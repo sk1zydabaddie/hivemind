@@ -113,7 +113,7 @@ test("resolveChangeset cleans up throwaway worktrees on success and failure", as
 
     assert.equal(success.ok, true);
     assert.equal(failure.ok, false);
-    assert.deepEqual(await tempChangesetDirs(), before);
+    assert.deepEqual(newTempChangesetDirs(before, await tempChangesetDirs()), []);
     assert.doesNotMatch(await gitStdout(repo, ["worktree", "list", "--porcelain"]), /hivemind-changeset-/);
   });
 });
@@ -181,6 +181,10 @@ function sortOps<T extends { path: string; op: string }>(ops: T[]): T[] {
 async function tempChangesetDirs(): Promise<string[]> {
   const entries = await stat(tmpdir()).then(() => readFileNames(tmpdir()));
   return entries.filter((entry) => entry.startsWith("hivemind-changeset-")).sort();
+}
+
+function newTempChangesetDirs(before: string[], after: string[]): string[] {
+  return after.filter((entry) => !before.includes(entry));
 }
 
 async function readFileNames(dir: string): Promise<string[]> {

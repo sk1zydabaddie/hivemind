@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -14,34 +14,78 @@ export interface ChangesetOp {
   op: ChangesetOpType;
 }
 
+export interface ResolvedChangesetCheckouts {
+  ops: ChangesetOp[];
+  baseCheckoutPath: string;
+  appliedCheckoutPath: string;
+}
+
 export async function resolveChangeset(
   repoRoot: string,
   baseCommit: string,
   patchPath: string
 ): Promise<{ ok: true; ops: ChangesetOp[] } | { ok: false; reason: string }> {
+  const result = await withResolvedChangesetCheckouts(repoRoot, baseCommit, patchPath, async ({ ops }) => ops);
+  if (!result.ok) {
+    return result;
+  }
+
+  return { ok: true, ops: result.value };
+}
+
+export async function withResolvedChangesetCheckouts<T>(
+  repoRoot: string,
+  baseCommit: string,
+  patchPath: string,
+  callback: (context: ResolvedChangesetCheckouts) => Promise<T>
+): Promise<{ ok: true; value: T } | { ok: false; reason: string }> {
   const tempRoot = await mkdtemp(path.join(tmpdir(), "hivemind-changeset-"));
-  const checkoutPath = path.join(tempRoot, "checkout");
+  const baseCheckoutPath = path.join(tempRoot, "base");
+  const appliedCheckoutPath = path.join(tempRoot, "applied");
 
   try {
-    const worktreeResult = await git(repoRoot, ["worktree", "add", "--detach", checkoutPath, baseCommit]);
-    if (!worktreeResult.ok) {
-      return { ok: false, reason: worktreeResult.reason };
+    const baseWorktreeResult = await git(repoRoot, ["worktree", "add", "--detach", baseCheckoutPath, baseCommit]);
+    if (!baseWorktreeResult.ok) {
+      return { ok: false, reason: baseWorktreeResult.reason };
     }
 
-    const checkResult = await git(checkoutPath, ["apply", "--check", "--index", patchPath]);
-    if (!checkResult.ok) {
-      return { ok: false, reason: patchDoesNotApplyReason };
+    const appliedWorktreeResult = await git(repoRoot, ["worktree", "add", "--detach", appliedCheckoutPath, baseCommit]);
+    if (!appliedWorktreeResult.ok) {
+      return { ok: false, reason: appliedWorktreeResult.reason };
     }
 
-    const applyResult = await git(checkoutPath, ["apply", "--index", patchPath]);
-    if (!applyResult.ok) {
-      return { ok: false, reason: patchDoesNotApplyReason };
+    if (!(await isEmptyPatch(patchPath))) {
+      const checkResult = await git(appliedCheckoutPath, ["apply", "--check", "--index", patchPath]);
+      if (!checkResult.ok) {
+        return { ok: false, reason: patchDoesNotApplyReason };
+      }
+
+      const applyResult = await git(appliedCheckoutPath, ["apply", "--index", patchPath]);
+      if (!applyResult.ok) {
+        return { ok: false, reason: patchDoesNotApplyReason };
+      }
     }
 
-    return { ok: true, ops: await readChangesetOps(checkoutPath) };
+    return {
+      ok: true,
+      value: await callback({
+        ops: await readChangesetOps(appliedCheckoutPath),
+        baseCheckoutPath,
+        appliedCheckoutPath
+      })
+    };
   } finally {
-    await git(repoRoot, ["worktree", "remove", "--force", checkoutPath]);
+    await git(repoRoot, ["worktree", "remove", "--force", baseCheckoutPath]);
+    await git(repoRoot, ["worktree", "remove", "--force", appliedCheckoutPath]);
     await rm(tempRoot, { recursive: true, force: true });
+  }
+}
+
+async function isEmptyPatch(patchPath: string): Promise<boolean> {
+  try {
+    return (await readFile(patchPath, "utf8")).trim() === "";
+  } catch {
+    return false;
   }
 }
 
