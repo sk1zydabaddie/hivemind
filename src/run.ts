@@ -1,0 +1,173 @@
+import { execFile } from "node:child_process";
+import { mkdir, rename, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { promisify } from "node:util";
+import { invokeAgent } from "./adapter.js";
+import { loadContract, normalizeContract, validateContract } from "./contract.js";
+import { findGitRoot } from "./repo.js";
+import { createTaskWorktree } from "./worktree.js";
+
+const execFileAsync = promisify(execFile);
+const agentLogPath = "agent.log";
+
+export interface RunResult {
+  task_id: string;
+  diff_path: string;
+  tool_exit: number;
+  changed_files: number;
+}
+
+export async function runCommand(cwd: string, args: string[]): Promise<number> {
+  const [taskId, flag, tool, ...rest] = args;
+  if (!taskId || flag !== "--tool" || !tool || rest.length > 0) {
+    console.error("error: usage: hivemind run <id> --tool <tool>");
+    return 1;
+  }
+
+  const repoRoot = await findGitRoot(cwd);
+  if (!repoRoot) {
+    console.error("error: not a git repository");
+    return 1;
+  }
+
+  const result = await runTask(repoRoot, taskId, tool);
+  if (!result.ok) {
+    console.error(`error: ${result.reason}`);
+    return 1;
+  }
+
+  console.log(JSON.stringify(result.value, null, 2));
+  return 0;
+}
+
+export async function runTask(
+  repoRoot: string,
+  taskId: string,
+  tool: string
+): Promise<{ ok: true; value: RunResult } | { ok: false; reason: string }> {
+  const contractResult = await loadAndValidateContract(repoRoot, taskId);
+  if (!contractResult.ok) {
+    return contractResult;
+  }
+
+  const worktreeResult = await createTaskWorktree(repoRoot, taskId);
+  if (!worktreeResult.ok) {
+    return worktreeResult;
+  }
+
+  const invokeResult = await invokeAgent(repoRoot, taskId, tool);
+  if (!invokeResult.ok) {
+    return invokeResult;
+  }
+
+  const diffResult = await captureDiff(repoRoot, worktreeResult.value.worktree, taskId, contractResult.contract.base_commit);
+  if (!diffResult.ok) {
+    return diffResult;
+  }
+
+  return {
+    ok: true,
+    value: {
+      task_id: taskId,
+      diff_path: diffResult.value.diffPath,
+      tool_exit: invokeResult.value.exitCode,
+      changed_files: diffResult.value.changedFiles
+    }
+  };
+}
+
+async function captureDiff(
+  repoRoot: string,
+  worktreePath: string,
+  taskId: string,
+  baseCommit: string
+): Promise<{ ok: true; value: { diffPath: string; changedFiles: number } } | { ok: false; reason: string }> {
+  const untrackedResult = await makeUntrackedFilesDiffable(worktreePath);
+  if (!untrackedResult.ok) {
+    return untrackedResult;
+  }
+
+  const diffResult = await git(worktreePath, ["diff", baseCommit]);
+  if (!diffResult.ok) {
+    return diffResult;
+  }
+
+  const changedResult = await git(worktreePath, ["diff", "--name-only", "-z", baseCommit]);
+  if (!changedResult.ok) {
+    return changedResult;
+  }
+
+  const patchDir = path.join(repoRoot, ".hivemind", "patches", taskId);
+  const diffPath = path.join(patchDir, "diff.patch");
+  await writeFileAtomic(diffPath, diffResult.stdout);
+
+  return {
+    ok: true,
+    value: {
+      diffPath,
+      changedFiles: countNullSeparatedEntries(changedResult.stdout)
+    }
+  };
+}
+
+async function makeUntrackedFilesDiffable(worktreePath: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const statusResult = await git(worktreePath, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+  if (!statusResult.ok) {
+    return statusResult;
+  }
+
+  const untracked = statusResult.stdout
+    .split("\0")
+    .filter((entry) => entry.startsWith("?? "))
+    .map((entry) => entry.slice(3))
+    .filter((entry) => normalizeGitPath(entry) !== agentLogPath);
+
+  if (untracked.length === 0) {
+    return { ok: true };
+  }
+
+  return git(worktreePath, ["add", "--intent-to-add", "--", ...untracked]);
+}
+
+async function loadAndValidateContract(
+  repoRoot: string,
+  taskId: string
+): Promise<{ ok: true; contract: ReturnType<typeof normalizeContract> } | { ok: false; reason: string }> {
+  const loaded = await loadContract(repoRoot, taskId);
+  if (!loaded.ok) {
+    return loaded;
+  }
+
+  const problems = validateContract(loaded.raw);
+  if (problems.length > 0) {
+    return { ok: false, reason: problems.join("; ") };
+  }
+
+  return { ok: true, contract: normalizeContract(loaded.raw) };
+}
+
+async function writeFileAtomic(filePath: string, content: string): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  await writeFile(tempPath, content, "utf8");
+  await rename(tempPath, filePath);
+}
+
+async function git(cwd: string, args: string[]): Promise<{ ok: true; stdout: string } | { ok: false; reason: string }> {
+  try {
+    const result = await execFileAsync("git", args, { cwd, windowsHide: true, maxBuffer: 1024 * 1024 * 32 });
+    return { ok: true, stdout: result.stdout };
+  } catch (error: unknown) {
+    const stderr = typeof error === "object" && error !== null && "stderr" in error ? String(error.stderr).trim() : "";
+    const stdout = typeof error === "object" && error !== null && "stdout" in error ? String(error.stdout).trim() : "";
+    return { ok: false, reason: stderr || stdout || "git command failed" };
+  }
+}
+
+function countNullSeparatedEntries(value: string): number {
+  return value.split("\0").filter((entry) => entry.length > 0).length;
+}
+
+function normalizeGitPath(value: string): string {
+  return value.replaceAll("\\", "/");
+}
