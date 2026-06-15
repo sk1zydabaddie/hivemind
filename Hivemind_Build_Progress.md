@@ -7,9 +7,11 @@ It is the project-local build ledger for Hivemind AI.
 
 - Current milestone: M0 - Tracer bullet
 - Last completed subtask: M0.3 - `hivemind worktree <id>` create/teardown
-- Next subtask: M0.4 - Headless adapter + Adapter Profile
+- Active subtask: M0.4 - Headless adapter + Adapter Profile; implementation checkpoint is no-paid validated, live Codex acceptance pending explicit approval
+- Next subtask: M0.4 live Codex acceptance
 - Current branch: `master`
-- Latest completed commit: `e5f1115` - `feat: add task worktree command`
+- Latest completed commit: `23e7556` - `docs: record m0.3 progress`
+- Latest implementation checkpoint: pending commit - M0.4 adapter module/profile/tests
 - Paid AI/provider calls run: none
 
 ## Completed Subtasks
@@ -27,7 +29,7 @@ It is the project-local build ledger for Hivemind AI.
 | M0.1 - `hivemind init` project scaffold | Complete | Committed in `422486b`. |
 | M0.2 - Task-contract format + loader | Complete | Committed in `9af793d`. |
 | M0.3 - `hivemind worktree <id>` create/teardown | Complete | Committed in `e5f1115`. Must not be treated as agent invocation, lease, or gate support. |
-| M0.4 - Headless adapter + Adapter Profile | Next | Requires M0.3. Must keep volatile tool flags in adapter profile data. |
+| M0.4 - Headless adapter + Adapter Profile | Ready for live acceptance | Implementation checkpoint no-paid validated with fake adapters; real Codex acceptance pending explicit approval because it may consume provider quota. Must keep volatile tool flags in adapter profile data. |
 | M0.5 - `hivemind run` end-to-end diff capture [GATE] | Not started | Requires M0.2-M0.4. Must not implement scope gate or leases. |
 
 ## M1 - The Gate, Airtight

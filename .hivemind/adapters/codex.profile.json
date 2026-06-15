@@ -1,0 +1,16 @@
+{
+  "tool": "codex",
+  "invoke": [
+    "codex",
+    "exec",
+    "--sandbox",
+    "workspace-write",
+    "--ignore-user-config",
+    "--ignore-rules",
+    "--ephemeral",
+    "-"
+  ],
+  "prompt_arg": "stdin",
+  "verified_on": "2026-06-15",
+  "context_window": 200000
+}
