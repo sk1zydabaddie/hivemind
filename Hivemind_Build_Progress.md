@@ -9,7 +9,7 @@ It is the project-local build ledger for Hivemind AI.
 - Last completed subtask: M0.5 - `hivemind run` end-to-end diff capture [GATE]
 - Next subtask: M1.1 - Apply-to-base changeset resolver (requires user approval to start M1)
 - Current branch: `master`
-- Latest completed implementation commit: pending - pre-M1 hardening audit and fixes
+- Latest completed implementation commit: `d8104e7` - `fix: harden m0 surfaces before m1`
 - Latest M0.5 gate completion commit: `8a9786c` - `docs: complete m0.5 real-tool gate`
 - Paid AI/provider calls run: none for the pre-M1 hardening checkpoint. Previous approved live Codex and Claude Code acceptance ran on 2026-06-15. Codex launched in disposable task worktrees. First Codex attempt returned exit code 1 because the default `gpt-5.3-codex` model was not supported by the active ChatGPT account. After updating the adapter profile to `gpt-5.5`, Codex used 6,130 tokens but could not write under a read-only inner sandbox. After the approved writable Codex profile update and adapter timeout containment, Codex used 8,674 tokens and produced a correct one-file `README.md` diff. The first Claude Code run returned exit code 1 with `Not logged in - Please run /login`; after CLI login, Claude Code rerun returned `tool_exit: 0`, `changed_files: 1`, and produced a correct one-file `README.md` diff.
 
@@ -17,7 +17,7 @@ It is the project-local build ledger for Hivemind AI.
 
 | Checkpoint | Status | Commit | What changed | Validation |
 | --- | --- | --- | --- | --- |
-| Pre-M1 comprehensive audit hardening | Complete | pending | Fixed the package bin to point at the emitted CLI; added shared task-id validation and contract/requested-id matching; made contract and adapter profile JSON tolerate UTF-8 BOMs; made existing worktree reuse fail closed when branch or `HEAD` does not match the contract base; added explicit `--allow-dangerous-adapter` opt-in for provider profiles containing bypass flags; added regression coverage for each audited fragility. No M1 gate logic was started. | `npm run typecheck`; `npm test` with 45 tests; `git diff --check`; cleanup/static scans for stale bin path, raw task-id joins, TODO-style markers, and dangerous adapter policy; no-paid disposable CLI probe for package bin, path traversal rejection, stale worktree rejection, and dangerous adapter gating. |
+| Pre-M1 comprehensive audit hardening | Complete | `d8104e7` | Fixed the package bin to point at the emitted CLI; added shared task-id validation and contract/requested-id matching; made contract and adapter profile JSON tolerate UTF-8 BOMs; made existing worktree reuse fail closed when branch or `HEAD` does not match the contract base; added explicit `--allow-dangerous-adapter` opt-in for provider profiles containing bypass flags; added regression coverage for each audited fragility. No M1 gate logic was started. | `npm run typecheck`; `npm test` with 45 tests; `git diff --check`; cleanup/static scans for stale bin path, raw task-id joins, TODO-style markers, and dangerous adapter policy; no-paid disposable CLI probe for package bin, path traversal rejection, stale worktree rejection, and dangerous adapter gating. |
 
 ## Completed Subtasks
 
