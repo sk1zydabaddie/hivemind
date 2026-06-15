@@ -6,8 +6,8 @@ It is the project-local build ledger for Hivemind AI.
 ## Current State
 
 - Current milestone: M0 - Tracer bullet
-- Last completed subtask: M0.2 - Task-contract format + loader
-- Next subtask: M0.3 - `hivemind worktree <id>` (create/teardown)
+- Last completed subtask: M0.3 - `hivemind worktree <id>` create/teardown
+- Next subtask: M0.4 - Headless adapter + Adapter Profile
 - Current branch: `master`
 - Latest completed commit: `9af793d` - `feat: add task contract validation`
 - Paid AI/provider calls run: none
@@ -18,6 +18,7 @@ It is the project-local build ledger for Hivemind AI.
 | --- | --- | --- | --- | --- |
 | M0.1 - `hivemind init` project scaffold | Complete | `422486b` | Added TypeScript/Node CLI scaffold and `hivemind init`; creates `.hivemind/`, required subdirs, empty `log/events.jsonl`, and atomic `config.json`; idempotent and fails outside git. | `npm run typecheck`; `npm test` with 4 tests; cleanup scans clean. |
 | M0.2 - Task-contract format + loader | Complete | `9af793d` | Added `TaskContract` type, contract loading from `.hivemind/tasks/<id>.contract.json`, validation/normalization, and `hivemind contract <id> --validate`. | `npm run typecheck`; `npm test` with 11 tests; cleanup scans clean except expected deferred-scope references. |
+| M0.3 - `hivemind worktree <id>` create/teardown | Complete | Pending commit | Added task worktree create/remove helper and CLI command; creates branch `hivemind/<id>` from contract `base_commit`; remove cleans up worktree and branch. | `npm run typecheck`; `npm test` with 16 tests; cleanup scans clean except roadmap references. |
 
 ## M0 - Tracer Bullet
 
@@ -25,8 +26,8 @@ It is the project-local build ledger for Hivemind AI.
 | --- | --- | --- |
 | M0.1 - `hivemind init` project scaffold | Complete | Committed in `422486b`. |
 | M0.2 - Task-contract format + loader | Complete | Committed in `9af793d`. |
-| M0.3 - `hivemind worktree <id>` create/teardown | Next | Must read Overview Worktree Manager section before implementation. Must not touch agent invocation, leases, or gate. |
-| M0.4 - Headless adapter + Adapter Profile | Not started | Requires M0.3. Must keep volatile tool flags in adapter profile data. |
+| M0.3 - `hivemind worktree <id>` create/teardown | Complete | Pending commit. Must not be treated as agent invocation, lease, or gate support. |
+| M0.4 - Headless adapter + Adapter Profile | Next | Requires M0.3. Must keep volatile tool flags in adapter profile data. |
 | M0.5 - `hivemind run` end-to-end diff capture [GATE] | Not started | Requires M0.2-M0.4. Must not implement scope gate or leases. |
 
 ## M1 - The Gate, Airtight

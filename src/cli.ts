@@ -2,6 +2,7 @@
 
 import { initProject } from "./init.js";
 import { validateContractCommand } from "./contract.js";
+import { worktreeCommand } from "./worktree.js";
 
 async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
@@ -12,6 +13,10 @@ async function main(argv: string[]): Promise<number> {
 
   if (command === "contract") {
     return validateContractCommand(process.cwd(), rest);
+  }
+
+  if (command === "worktree") {
+    return worktreeCommand(process.cwd(), rest);
   }
 
   console.error(command ? `error: unknown command ${command}` : "error: missing command");
