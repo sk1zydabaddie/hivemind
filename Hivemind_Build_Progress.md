@@ -9,7 +9,7 @@ It is the project-local build ledger for Hivemind AI.
 - Last completed subtask: M0.5 - `hivemind run` end-to-end diff capture implementation checkpoint
 - Next subtask: M0.5 full real-tool gate acceptance
 - Current branch: `master`
-- Latest completed commit: pending commit - M0.5 run command implementation checkpoint
+- Latest completed commit: `301d725` - `feat: add run diff capture command`
 - Paid AI/provider calls run: approved live Codex acceptance on 2026-06-15; Codex launched in the task worktree and returned exit code 1 because the default `gpt-5.3-codex` model is not supported by the active ChatGPT account
 
 ## Completed Subtasks
@@ -20,7 +20,7 @@ It is the project-local build ledger for Hivemind AI.
 | M0.2 - Task-contract format + loader | Complete | `9af793d` | Added `TaskContract` type, contract loading from `.hivemind/tasks/<id>.contract.json`, validation/normalization, and `hivemind contract <id> --validate`. | `npm run typecheck`; `npm test` with 11 tests; cleanup scans clean except expected deferred-scope references. |
 | M0.3 - `hivemind worktree <id>` create/teardown | Complete | `e5f1115` | Added task worktree create/remove helper and CLI command; creates branch `hivemind/<id>` from contract `base_commit`; remove cleans up worktree and branch. | `npm run typecheck`; `npm test` with 16 tests; cleanup scans clean except roadmap references. |
 | M0.4 - Headless adapter + Adapter Profile | Complete | `7f939f1` | Added internal `invokeAgent(repoRoot, taskId, tool)`, adapter profile loading/validation, contract-derived prompts, subprocess execution in the task worktree, `agent.log` stdout/stderr/exit-code capture, a dated Codex profile, and fake-adapter tests. Live Codex acceptance launched through the profile, ran in `.hivemind/worktrees/T-001`, wrote `agent.log`, and returned exit code 1 due unsupported default model/account pairing. | `codex exec --help`; live `invokeAgent` with Codex profile; `npm run typecheck`; `npm test` with 25 tests; cleanup scans clean except expected roadmap references. |
-| M0.5 - `hivemind run` end-to-end diff capture | Implementation checkpoint complete; full gate blocked | pending commit | Added `hivemind run <id> --tool <tool>` composing contract validation, worktree creation, headless adapter invocation, deterministic diff capture, and atomic `.hivemind/patches/<id>/diff.patch` writes. Captures no-change runs, non-zero tool exits, and untracked worker-created files while excluding `agent.log`. | `npm run typecheck`; `npm test` with 31 tests; cleanup scans clean except expected roadmap references. Full `[GATE]` still requires real Codex and Claude Code runs; Claude Code is not installed and Codex currently exits 1 due unsupported default model/account pairing. |
+| M0.5 - `hivemind run` end-to-end diff capture | Implementation checkpoint complete; full gate blocked | `301d725` | Added `hivemind run <id> --tool <tool>` composing contract validation, worktree creation, headless adapter invocation, deterministic diff capture, and atomic `.hivemind/patches/<id>/diff.patch` writes. Captures no-change runs, non-zero tool exits, and untracked worker-created files while excluding `agent.log`. | `npm run typecheck`; `npm test` with 31 tests; cleanup scans clean except expected roadmap references. Full `[GATE]` still requires real Codex and Claude Code runs; Claude Code is not installed and Codex currently exits 1 due unsupported default model/account pairing. |
 
 ## M0 - Tracer Bullet
 
@@ -30,7 +30,7 @@ It is the project-local build ledger for Hivemind AI.
 | M0.2 - Task-contract format + loader | Complete | Committed in `9af793d`. |
 | M0.3 - `hivemind worktree <id>` create/teardown | Complete | Committed in `e5f1115`. Must not be treated as agent invocation, lease, or gate support. |
 | M0.4 - Headless adapter + Adapter Profile | Complete | Implementation checkpoint in `1861486`; completed in `7f939f1`. Codex launched through the dated profile and returned its exit code; tool exited 1 due unsupported default model/account pairing. |
-| M0.5 - `hivemind run` end-to-end diff capture [GATE] | Implementation checkpoint complete; full gate blocked | No-paid implementation pending commit. Full real-tool gate is blocked until Claude Code is installed/configured and Codex can complete a real edit with a supported model/account pairing. Must not proceed to M1 until the full gate passes. |
+| M0.5 - `hivemind run` end-to-end diff capture [GATE] | Implementation checkpoint complete; full gate blocked | No-paid implementation in `301d725`. Full real-tool gate is blocked until Claude Code is installed/configured and Codex can complete a real edit with a supported model/account pairing. Must not proceed to M1 until the full gate passes. |
 
 ## M1 - The Gate, Airtight
 
