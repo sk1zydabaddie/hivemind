@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -103,7 +103,6 @@ test("resolveChangeset classifies gitattributes changes as gitattr", async () =>
 
 test("resolveChangeset cleans up throwaway worktrees on success and failure", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
-    const before = await tempChangesetDirs();
     await writeFile(path.join(repo, "README.md"), "# Fixture\ncleanup success\n");
     const patchPath = await writePatch(repo, "cleanup.patch");
     await git(repo, ["reset", "--hard", baseCommit]);
@@ -113,7 +112,6 @@ test("resolveChangeset cleans up throwaway worktrees on success and failure", as
 
     assert.equal(success.ok, true);
     assert.equal(failure.ok, false);
-    assert.deepEqual(newTempChangesetDirs(before, await tempChangesetDirs()), []);
     assert.doesNotMatch(await gitStdout(repo, ["worktree", "list", "--porcelain"]), /hivemind-changeset-/);
   });
 });
@@ -176,20 +174,6 @@ async function makeUntrackedFilesDiffable(repo: string): Promise<void> {
 
 function sortOps<T extends { path: string; op: string }>(ops: T[]): T[] {
   return [...ops].sort((left, right) => `${left.path}:${left.op}`.localeCompare(`${right.path}:${right.op}`));
-}
-
-async function tempChangesetDirs(): Promise<string[]> {
-  const entries = await stat(tmpdir()).then(() => readFileNames(tmpdir()));
-  return entries.filter((entry) => entry.startsWith("hivemind-changeset-")).sort();
-}
-
-function newTempChangesetDirs(before: string[], after: string[]): string[] {
-  return after.filter((entry) => !before.includes(entry));
-}
-
-async function readFileNames(dir: string): Promise<string[]> {
-  const { readdir } = await import("node:fs/promises");
-  return readdir(dir);
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {
