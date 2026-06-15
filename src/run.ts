@@ -17,10 +17,15 @@ export interface RunResult {
   changed_files: number;
 }
 
+export interface RunTaskOptions {
+  allowDangerousAdapter?: boolean;
+}
+
 export async function runCommand(cwd: string, args: string[]): Promise<number> {
   const [taskId, flag, tool, ...rest] = args;
-  if (!taskId || flag !== "--tool" || !tool || rest.length > 0) {
-    console.error("error: usage: hivemind run <id> --tool <tool>");
+  const allowDangerousAdapter = rest.length === 1 && rest[0] === "--allow-dangerous-adapter";
+  if (!taskId || flag !== "--tool" || !tool || (rest.length > 0 && !allowDangerousAdapter)) {
+    console.error("error: usage: hivemind run <id> --tool <tool> [--allow-dangerous-adapter]");
     return 1;
   }
 
@@ -30,7 +35,7 @@ export async function runCommand(cwd: string, args: string[]): Promise<number> {
     return 1;
   }
 
-  const result = await runTask(repoRoot, taskId, tool);
+  const result = await runTask(repoRoot, taskId, tool, { allowDangerousAdapter });
   if (!result.ok) {
     console.error(`error: ${result.reason}`);
     return 1;
@@ -43,7 +48,8 @@ export async function runCommand(cwd: string, args: string[]): Promise<number> {
 export async function runTask(
   repoRoot: string,
   taskId: string,
-  tool: string
+  tool: string,
+  options: RunTaskOptions = {}
 ): Promise<{ ok: true; value: RunResult } | { ok: false; reason: string }> {
   const contractResult = await loadAndValidateContract(repoRoot, taskId);
   if (!contractResult.ok) {
@@ -55,7 +61,7 @@ export async function runTask(
     return worktreeResult;
   }
 
-  const invokeResult = await invokeAgent(repoRoot, taskId, tool);
+  const invokeResult = await invokeAgent(repoRoot, taskId, tool, options);
   if (!invokeResult.ok) {
     return invokeResult;
   }
@@ -138,7 +144,7 @@ async function loadAndValidateContract(
     return loaded;
   }
 
-  const problems = validateContract(loaded.raw);
+  const problems = validateContract(loaded.raw, taskId);
   if (problems.length > 0) {
     return { ok: false, reason: problems.join("; ") };
   }

@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { normalizeContract, validateContract } from "../src/contract.js";
+import { loadContract, normalizeContract, validateContract } from "../src/contract.js";
 import { initProject } from "../src/init.js";
 
 const execFileAsync = promisify(execFile);
@@ -77,6 +77,24 @@ test("invalid path entries report all relevant problems", () => {
   ]);
 });
 
+test("contract validation rejects unsafe and mismatched task ids", () => {
+  assert.deepEqual(
+    validateContract(
+      {
+        task_id: "T-OTHER",
+        base_commit: "abc123",
+        allowed_files: ["README.md"]
+      },
+      "T-001"
+    ),
+    ['task_id "T-OTHER" must match requested task id "T-001"']
+  );
+
+  assert.deepEqual(validateContract({ task_id: "../evil", base_commit: "abc123", allowed_files: ["README.md"] }), [
+    "task_id contains invalid task id: task id may contain only letters, numbers, dots, underscores, and hyphens, and must start with a letter or number"
+  ]);
+});
+
 test("CLI contract validate prints normalized JSON", async () => {
   await withTempRepo(async (repo) => {
     await initProject(repo);
@@ -106,6 +124,46 @@ test("CLI contract validate prints normalized JSON", async () => {
       required_tests: [],
       patch_requirements: []
     });
+  });
+});
+
+test("loadContract accepts UTF-8 BOM prefixed JSON", async () => {
+  await withTempRepo(async (repo) => {
+    await initProject(repo);
+    await writeContract(
+      repo,
+      "T-001",
+      {
+        task_id: "T-001",
+        base_commit: "abc123",
+        allowed_files: ["README.md"]
+      },
+      true
+    );
+
+    const result = await loadContract(repo, "T-001");
+
+    assert.equal(result.ok, true);
+  });
+});
+
+test("CLI contract validate rejects path-traversal task ids", async () => {
+  await withTempRepo(async (repo) => {
+    await initProject(repo);
+    await writeContract(repo, "evil", {
+      task_id: "evil",
+      base_commit: "abc123",
+      allowed_files: ["README.md"]
+    });
+
+    await assert.rejects(
+      execFileAsync("node", [cliPath, "contract", "../evil", "--validate"], { cwd: repo, windowsHide: true }),
+      (error: unknown) => {
+        assert.equal((error as { code?: number }).code, 1);
+        assert.match(String((error as { stderr?: string }).stderr), /invalid task id "\.\.\/evil"/);
+        return true;
+      }
+    );
   });
 });
 
@@ -160,10 +218,10 @@ async function withTempRepo(run: (repo: string) => Promise<void>): Promise<void>
   }
 }
 
-async function writeContract(repo: string, taskId: string, contract: unknown): Promise<void> {
+async function writeContract(repo: string, taskId: string, contract: unknown, bom = false): Promise<void> {
   const tasksDir = path.join(repo, ".hivemind", "tasks");
   await mkdir(tasksDir, { recursive: true });
-  await writeFile(path.join(tasksDir, `${taskId}.contract.json`), `${JSON.stringify(contract, null, 2)}\n`);
+  await writeFile(path.join(tasksDir, `${taskId}.contract.json`), `${bom ? "\uFEFF" : ""}${JSON.stringify(contract, null, 2)}\n`);
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {

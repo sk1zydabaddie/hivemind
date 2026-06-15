@@ -129,6 +129,36 @@ test("CLI run prints stable JSON", async () => {
   });
 });
 
+test("CLI run requires explicit approval for dangerous adapter flags", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const agentPath = await writeAgent(repo, "dangerous-cli-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'changed by approved dangerous cli fake agent\\n');"
+    ]);
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writeProfile(repo, "fake", agentPath, undefined, true);
+
+    await assert.rejects(
+      execFileAsync("node", [cliPath, "run", "T-001", "--tool", "fake"], { cwd: repo, windowsHide: true }),
+      (error: unknown) => {
+        assert.equal((error as { code?: number }).code, 1);
+        assert.match(String((error as { stderr?: string }).stderr), /dangerous invocation flags/);
+        return true;
+      }
+    );
+
+    const result = await execFileAsync("node", [cliPath, "run", "T-001", "--tool", "fake", "--allow-dangerous-adapter"], {
+      cwd: repo,
+      windowsHide: true
+    });
+
+    const parsed = JSON.parse(result.stdout) as { changed_files: number; tool_exit: number; diff_path: string };
+    assert.equal(parsed.tool_exit, 0);
+    assert.equal(parsed.changed_files, 1);
+    assert.match(await readFile(parsed.diff_path, "utf8"), /\+changed by approved dangerous cli fake agent/);
+  });
+});
+
 test("CLI run rejects invalid usage", async () => {
   await withTempRepo(async ({ repo }) => {
     await assert.rejects(
@@ -227,12 +257,12 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
   );
 }
 
-async function writeProfile(repo: string, tool: string, agentPath: string, timeoutMs?: number): Promise<void> {
+async function writeProfile(repo: string, tool: string, agentPath: string, timeoutMs?: number, dangerous = false): Promise<void> {
   const adaptersDir = path.join(repo, ".hivemind", "adapters");
   await mkdir(adaptersDir, { recursive: true });
   const profile = {
     tool,
-    invoke: ["node", agentPath],
+    invoke: dangerous ? ["node", agentPath, "--dangerously-skip-permissions"] : ["node", agentPath],
     prompt_arg: "stdin",
     verified_on: "2026-06-15",
     context_window: 1024,

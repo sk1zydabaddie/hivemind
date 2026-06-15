@@ -6,7 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { buildAgentPrompt, invokeAgent, loadAdapterProfile, validateAdapterProfile } from "../src/adapter.js";
+import { buildAgentPrompt, findDangerousAdapterArgs, invokeAgent, loadAdapterProfile, validateAdapterProfile } from "../src/adapter.js";
 import { initProject } from "../src/init.js";
 import { createTaskWorktree } from "../src/worktree.js";
 
@@ -57,6 +57,27 @@ test("loadAdapterProfile validates the requested tool profile", async () => {
   });
 });
 
+test("loadAdapterProfile accepts UTF-8 BOM prefixed JSON", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await writeProfile(
+      repo,
+      "fake",
+      {
+        tool: "fake",
+        invoke: ["node", "fake-agent.mjs"],
+        prompt_arg: "stdin",
+        verified_on: "2026-06-15",
+        context_window: 1024
+      },
+      true
+    );
+
+    const profile = await loadAdapterProfile(repo, "fake");
+
+    assert.equal(profile.ok, true);
+  });
+});
+
 test("validateAdapterProfile rejects missing volatile invocation data", () => {
   assert.deepEqual(validateAdapterProfile({ tool: "fake" }, "fake"), [
     "invoke must be a non-empty array of strings",
@@ -81,6 +102,13 @@ test("validateAdapterProfile rejects invalid timeout values", () => {
     ),
     ["timeout_ms must be a positive integer when provided"]
   );
+});
+
+test("findDangerousAdapterArgs detects provider bypass flags", () => {
+  assert.deepEqual(findDangerousAdapterArgs(["codex", "exec", "--dangerously-bypass-approvals-and-sandbox"]), [
+    "--dangerously-bypass-approvals-and-sandbox"
+  ]);
+  assert.deepEqual(findDangerousAdapterArgs(["claude", "--permission-mode", "bypassPermissions"]), ["bypassPermissions"]);
 });
 
 test("invokeAgent runs stdin adapter inside the task worktree and writes agent.log", async () => {
@@ -122,6 +150,63 @@ test("invokeAgent runs stdin adapter inside the task worktree and writes agent.l
     assert.match(log, /"cwd":/);
     assert.match(log, /"sawTitle":true/);
     assert.match(log, /stderr from fake stdin adapter/);
+  });
+});
+
+test("invokeAgent rejects dangerous adapter flags unless explicitly approved", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-001", baseCommit);
+    const worktree = await createTaskWorktree(repo, "T-001");
+    assert.equal(worktree.ok, true);
+    if (!worktree.ok) {
+      return;
+    }
+
+    await writeFile(path.join(worktree.value.worktree, "dangerous-agent.mjs"), "console.log('should not run without approval');\n");
+    await writeProfile(repo, "fake", {
+      tool: "fake",
+      invoke: ["node", "dangerous-agent.mjs", "--dangerously-skip-permissions"],
+      prompt_arg: "stdin",
+      verified_on: "2026-06-15",
+      context_window: 1024
+    });
+
+    const result = await invokeAgent(repo, "T-001", "fake");
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.match(result.reason, /dangerous invocation flags/);
+    await assertMissing(path.join(worktree.value.worktree, "agent.log"));
+  });
+});
+
+test("invokeAgent runs dangerous adapter flags with explicit approval", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-001", baseCommit);
+    const worktree = await createTaskWorktree(repo, "T-001");
+    assert.equal(worktree.ok, true);
+    if (!worktree.ok) {
+      return;
+    }
+
+    await writeFile(path.join(worktree.value.worktree, "approved-dangerous-agent.mjs"), "console.log('approved dangerous adapter run');\n");
+    await writeProfile(repo, "fake", {
+      tool: "fake",
+      invoke: ["node", "approved-dangerous-agent.mjs", "--dangerously-skip-permissions"],
+      prompt_arg: "stdin",
+      verified_on: "2026-06-15",
+      context_window: 1024
+    });
+
+    const result = await invokeAgent(repo, "T-001", "fake", { allowDangerousAdapter: true });
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.match(await readFile(result.value.logPath, "utf8"), /approved dangerous adapter run/);
   });
 });
 
@@ -348,10 +433,10 @@ async function writeContract(repo: string, taskId: string, baseCommit: string): 
   );
 }
 
-async function writeProfile(repo: string, tool: string, profile: unknown): Promise<void> {
+async function writeProfile(repo: string, tool: string, profile: unknown, bom = false): Promise<void> {
   const adaptersDir = path.join(repo, ".hivemind", "adapters");
   await mkdir(adaptersDir, { recursive: true });
-  await writeFile(path.join(adaptersDir, `${tool}.profile.json`), `${JSON.stringify(profile, null, 2)}\n`);
+  await writeFile(path.join(adaptersDir, `${tool}.profile.json`), `${bom ? "\uFEFF" : ""}${JSON.stringify(profile, null, 2)}\n`);
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {

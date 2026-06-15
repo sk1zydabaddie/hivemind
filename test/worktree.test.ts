@@ -43,6 +43,43 @@ test("worktree create is idempotent when worktree already exists", async () => {
   });
 });
 
+test("worktree create fails closed when an existing worktree is stale", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-001", baseCommit);
+
+    const first = await createTaskWorktree(repo, "T-001");
+    assert.equal(first.ok, true);
+
+    await writeFile(path.join(repo, "SECOND.md"), "second commit\n");
+    await git(repo, ["add", "SECOND.md"]);
+    await git(repo, ["commit", "-m", "second"]);
+    const nextBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
+    await writeContract(repo, "T-001", nextBase);
+
+    const second = await createTaskWorktree(repo, "T-001");
+
+    assert.equal(second.ok, false);
+    if (second.ok) {
+      return;
+    }
+    assert.match(second.reason, /existing worktree \.hivemind\/worktrees\/T-001 is at/);
+    assert.match(second.reason, /expected contract base/);
+  });
+});
+
+test("worktree create rejects unsafe task ids before constructing paths", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const result = await createTaskWorktree(repo, "../evil");
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.match(result.reason, /invalid task id "\.\.\/evil"/);
+    await assertMissing(path.join(repo, ".hivemind", "evil"));
+  });
+});
+
 test("worktree remove cleans up worktree and branch", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit);

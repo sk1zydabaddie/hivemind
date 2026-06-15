@@ -5,7 +5,7 @@
   "description": "Graph-aware multi-agent coding orchestration harness.",
   "type": "module",
   "bin": {
-    "hivemind": "./dist/cli.js"
+    "hivemind": "./dist/src/cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

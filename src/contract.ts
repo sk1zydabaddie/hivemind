@@ -1,6 +1,7 @@
-import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
+import { validateRequestedTaskId, validateTaskId } from "./task-id.js";
 
 export type AgentRole = "coordinator" | "scout" | "builder" | "reviewer";
 
@@ -51,7 +52,7 @@ export async function validateContractCommand(cwd: string, args: string[]): Prom
     return 1;
   }
 
-  const problems = validateContract(result.raw);
+  const problems = validateContract(result.raw, taskId);
   if (problems.length > 0) {
     for (const problem of problems) {
       console.error(`error: ${problem}`);
@@ -67,9 +68,14 @@ export async function loadContract(
   repoRoot: string,
   taskId: string
 ): Promise<{ ok: true; raw: unknown } | { ok: false; reason: string }> {
+  const taskIdResult = validateRequestedTaskId(taskId);
+  if (!taskIdResult.ok) {
+    return taskIdResult;
+  }
+
   const contractPath = path.join(repoRoot, ".hivemind", "tasks", `${taskId}.contract.json`);
   try {
-    return { ok: true, raw: JSON.parse(await readFile(contractPath, "utf8")) };
+    return { ok: true, raw: await readJsonFile(contractPath) };
   } catch (error: unknown) {
     if (isNodeError(error, "ENOENT")) {
       return { ok: false, reason: `contract not found: .hivemind/tasks/${taskId}.contract.json` };
@@ -81,7 +87,7 @@ export async function loadContract(
   }
 }
 
-export function validateContract(raw: unknown): string[] {
+export function validateContract(raw: unknown, expectedTaskId?: string): string[] {
   const problems: string[] = [];
   if (!isRecord(raw)) {
     return ["contract must be a JSON object"];
@@ -89,6 +95,16 @@ export function validateContract(raw: unknown): string[] {
 
   requireString(raw, "task_id", problems);
   requireString(raw, "base_commit", problems);
+
+  if (typeof raw.task_id === "string" && raw.task_id.trim() !== "") {
+    const taskIdProblem = validateTaskId(raw.task_id);
+    if (taskIdProblem) {
+      problems.push(`task_id contains invalid task id: ${taskIdProblem}`);
+    }
+    if (expectedTaskId !== undefined && raw.task_id !== expectedTaskId) {
+      problems.push(`task_id "${raw.task_id}" must match requested task id "${expectedTaskId}"`);
+    }
+  }
 
   if (!Array.isArray(raw.allowed_files) || raw.allowed_files.length === 0) {
     problems.push("allowed_files must be a non-empty array");

@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { loadContract, normalizeContract, TaskContract, validateContract } from "./contract.js";
+import { readJsonFile } from "./json.js";
 
 export type PromptArgMode = "stdin" | "arg";
 
@@ -19,6 +20,10 @@ export interface InvokeAgentResult {
   logPath: string;
 }
 
+export interface InvokeAgentOptions {
+  allowDangerousAdapter?: boolean;
+}
+
 interface AdapterProcessResult {
   exitCode: number;
   stdout: string;
@@ -29,7 +34,8 @@ interface AdapterProcessResult {
 export async function invokeAgent(
   repoRoot: string,
   taskId: string,
-  tool: string
+  tool: string,
+  options: InvokeAgentOptions = {}
 ): Promise<{ ok: true; value: InvokeAgentResult } | { ok: false; reason: string }> {
   const contractResult = await loadAndValidateContract(repoRoot, taskId);
   if (!contractResult.ok) {
@@ -39,6 +45,14 @@ export async function invokeAgent(
   const profileResult = await loadAdapterProfile(repoRoot, tool);
   if (!profileResult.ok) {
     return profileResult;
+  }
+
+  const dangerousArgs = findDangerousAdapterArgs(profileResult.profile.invoke);
+  if (dangerousArgs.length > 0 && options.allowDangerousAdapter !== true) {
+    return {
+      ok: false,
+      reason: `adapter profile "${tool}" contains dangerous invocation flags (${dangerousArgs.join(", ")}); rerun with --allow-dangerous-adapter only for approved disposable gate runs`
+    };
   }
 
   const worktreePath = path.join(repoRoot, ".hivemind", "worktrees", taskId);
@@ -64,7 +78,7 @@ export async function loadAdapterProfile(
   const profilePath = path.join(repoRoot, ".hivemind", "adapters", `${tool}.profile.json`);
   let raw: unknown;
   try {
-    raw = JSON.parse(await readFile(profilePath, "utf8"));
+    raw = await readJsonFile(profilePath);
   } catch (error: unknown) {
     if (isNodeError(error, "ENOENT")) {
       return { ok: false, reason: `adapter profile not found: .hivemind/adapters/${tool}.profile.json` };
@@ -121,6 +135,23 @@ export function validateAdapterProfile(raw: unknown, expectedTool?: string): str
   return problems;
 }
 
+export function findDangerousAdapterArgs(invoke: string[]): string[] {
+  const dangerous = new Set<string>();
+  for (const arg of invoke) {
+    if (
+      arg === "bypassPermissions" ||
+      arg === "--dangerously-bypass-approvals-and-sandbox" ||
+      arg === "--dangerously-skip-permissions" ||
+      arg === "--allow-dangerously-skip-permissions" ||
+      arg.includes("bypassPermissions") ||
+      arg.includes("dangerously")
+    ) {
+      dangerous.add(arg);
+    }
+  }
+  return [...dangerous];
+}
+
 export function buildAgentPrompt(contract: TaskContract): string {
   return [
     "You are a Hivemind AI worker running one scoped task.",
@@ -153,7 +184,7 @@ async function loadAndValidateContract(
     return loaded;
   }
 
-  const problems = validateContract(loaded.raw);
+  const problems = validateContract(loaded.raw, taskId);
   if (problems.length > 0) {
     return { ok: false, reason: problems.join("; ") };
   }

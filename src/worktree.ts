@@ -4,6 +4,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { loadContract, normalizeContract, validateContract } from "./contract.js";
 import { findGitRoot } from "./repo.js";
+import { validateRequestedTaskId } from "./task-id.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -39,6 +40,11 @@ export async function createTaskWorktree(
   repoRoot: string,
   taskId: string
 ): Promise<{ ok: true; value: WorktreeResult } | { ok: false; reason: string }> {
+  const taskIdResult = validateRequestedTaskId(taskId);
+  if (!taskIdResult.ok) {
+    return taskIdResult;
+  }
+
   const contractResult = await loadAndValidateContract(repoRoot, taskId);
   if (!contractResult.ok) {
     return contractResult;
@@ -46,6 +52,10 @@ export async function createTaskWorktree(
 
   const value = getWorktreeResult(repoRoot, taskId);
   if (await exists(value.worktree)) {
+    const reuseResult = await verifyExistingWorktree(repoRoot, taskId, value, contractResult.contract.base_commit);
+    if (!reuseResult.ok) {
+      return reuseResult;
+    }
     return { ok: true, value };
   }
 
@@ -69,6 +79,11 @@ export async function removeTaskWorktree(
   repoRoot: string,
   taskId: string
 ): Promise<{ ok: true; value: WorktreeResult } | { ok: false; reason: string }> {
+  const taskIdResult = validateRequestedTaskId(taskId);
+  if (!taskIdResult.ok) {
+    return taskIdResult;
+  }
+
   const value = getWorktreeResult(repoRoot, taskId);
   if (await exists(value.worktree)) {
     const removeResult = await git(repoRoot, ["worktree", "remove", path.join(".hivemind", "worktrees", taskId)]);
@@ -101,7 +116,7 @@ async function loadAndValidateContract(
     return loaded;
   }
 
-  const problems = validateContract(loaded.raw);
+  const problems = validateContract(loaded.raw, taskId);
   if (problems.length > 0) {
     return { ok: false, reason: problems.join("; ") };
   }
@@ -109,10 +124,58 @@ async function loadAndValidateContract(
   return { ok: true, contract: normalizeContract(loaded.raw) };
 }
 
+async function verifyExistingWorktree(
+  repoRoot: string,
+  taskId: string,
+  value: WorktreeResult,
+  baseCommit: string
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const branchResult = await gitStdout(value.worktree, ["branch", "--show-current"]);
+  if (!branchResult.ok) {
+    return { ok: false, reason: `existing worktree .hivemind/worktrees/${taskId} could not be inspected: ${branchResult.reason}` };
+  }
+  if (branchResult.stdout !== value.branch) {
+    return {
+      ok: false,
+      reason: `existing worktree .hivemind/worktrees/${taskId} is on branch "${branchResult.stdout}", expected "${value.branch}"; remove it and retry`
+    };
+  }
+
+  const headResult = await gitStdout(value.worktree, ["rev-parse", "HEAD"]);
+  if (!headResult.ok) {
+    return { ok: false, reason: `existing worktree .hivemind/worktrees/${taskId} HEAD could not be inspected: ${headResult.reason}` };
+  }
+
+  const baseResult = await gitStdout(repoRoot, ["rev-parse", baseCommit]);
+  if (!baseResult.ok) {
+    return { ok: false, reason: baseResult.reason };
+  }
+
+  if (headResult.stdout !== baseResult.stdout) {
+    return {
+      ok: false,
+      reason: `existing worktree .hivemind/worktrees/${taskId} is at ${headResult.stdout}, expected contract base ${baseResult.stdout}; remove it and retry`
+    };
+  }
+
+  return { ok: true };
+}
+
 async function git(cwd: string, args: string[]): Promise<{ ok: true } | { ok: false; reason: string }> {
   try {
     await execFileAsync("git", args, { cwd, windowsHide: true });
     return { ok: true };
+  } catch (error: unknown) {
+    const stderr = typeof error === "object" && error !== null && "stderr" in error ? String(error.stderr).trim() : "";
+    const stdout = typeof error === "object" && error !== null && "stdout" in error ? String(error.stdout).trim() : "";
+    return { ok: false, reason: stderr || stdout || "git command failed" };
+  }
+}
+
+async function gitStdout(cwd: string, args: string[]): Promise<{ ok: true; stdout: string } | { ok: false; reason: string }> {
+  try {
+    const result = await execFileAsync("git", args, { cwd, windowsHide: true });
+    return { ok: true, stdout: result.stdout.trim() };
   } catch (error: unknown) {
     const stderr = typeof error === "object" && error !== null && "stderr" in error ? String(error.stderr).trim() : "";
     const stdout = typeof error === "object" && error !== null && "stdout" in error ? String(error.stdout).trim() : "";
