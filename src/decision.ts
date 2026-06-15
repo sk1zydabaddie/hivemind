@@ -1,7 +1,7 @@
 import type { ChangesetOpType } from "./changeset.js";
 import { canonicalize } from "./canonicalize.js";
+import type { HivemindConfig } from "./config.js";
 import type { TaskContract } from "./contract.js";
-import type { HivemindConfig } from "./init.js";
 
 export type DecisionVerdict = "pass" | "reject" | "escalate";
 

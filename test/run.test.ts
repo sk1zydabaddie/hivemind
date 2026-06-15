@@ -189,6 +189,56 @@ test("runTask returns a scoped error when the adapter profile is missing", async
   });
 });
 
+test("runTask rejects an existing dirty worktree before invoking the adapter", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const agentPath = await writeAgent(repo, "should-not-run-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'agent should not run\\n');"
+    ]);
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writeProfile(repo, "fake", agentPath);
+
+    const firstRun = await runTask(repo, "T-001", "fake");
+    assert.equal(firstRun.ok, true);
+    if (!firstRun.ok) {
+      return;
+    }
+    const previousPatch = await readFile(firstRun.value.diff_path, "utf8");
+
+    const secondRun = await runTask(repo, "T-001", "fake");
+
+    assert.equal(secondRun.ok, false);
+    if (secondRun.ok) {
+      return;
+    }
+    assert.match(secondRun.reason, /existing changes/);
+    assert.match(secondRun.reason, /README\.md/);
+    assert.equal(await readFile(firstRun.value.diff_path, "utf8"), previousPatch);
+  });
+});
+
+test("runTask allows rerun when only the Hivemind-owned agent.log remains", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const agentPath = await writeAgent(repo, "noop-rerun-agent.mjs", ["console.log('rerun ok');"]);
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writeProfile(repo, "fake", agentPath);
+
+    const firstRun = await runTask(repo, "T-001", "fake");
+    assert.equal(firstRun.ok, true);
+    if (!firstRun.ok) {
+      return;
+    }
+
+    const secondRun = await runTask(repo, "T-001", "fake");
+
+    assert.equal(secondRun.ok, true);
+    if (!secondRun.ok) {
+      return;
+    }
+    assert.equal(secondRun.value.changed_files, 0);
+  });
+});
+
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
   const repo = await mkdtemp(path.join(tmpdir(), "hivemind-run-test-"));
   try {

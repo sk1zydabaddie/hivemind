@@ -1,9 +1,8 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
-import { loadContract, normalizeContract, validateContract } from "./contract.js";
-import type { DecisionConfig } from "./decision.js";
+import { loadConfig } from "./config.js";
+import { loadAndValidateContract } from "./contract.js";
 import { runGate, type GateResult } from "./gate.js";
-import { readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
 
 export async function analyzeCommand(cwd: string, args: string[]): Promise<number> {
@@ -38,7 +37,7 @@ export async function analyzeTask(
     return contractResult;
   }
 
-  const configResult = await loadAndValidateConfig(repoRoot);
+  const configResult = await loadConfig(repoRoot);
   if (!configResult.ok) {
     return configResult;
   }
@@ -52,88 +51,6 @@ export async function analyzeTask(
     ok: true,
     value: await runGate(contractResult.contract.base_commit, patchPath, contractResult.contract, configResult.config)
   };
-}
-
-async function loadAndValidateContract(
-  repoRoot: string,
-  taskId: string
-): Promise<{ ok: true; contract: ReturnType<typeof normalizeContract> } | { ok: false; reason: string }> {
-  const loaded = await loadContract(repoRoot, taskId);
-  if (!loaded.ok) {
-    return loaded;
-  }
-
-  const problems = validateContract(loaded.raw, taskId);
-  if (problems.length > 0) {
-    return { ok: false, reason: problems.join("; ") };
-  }
-
-  return { ok: true, contract: normalizeContract(loaded.raw) };
-}
-
-async function loadAndValidateConfig(
-  repoRoot: string
-): Promise<{ ok: true; config: DecisionConfig } | { ok: false; reason: string }> {
-  const configPath = path.join(repoRoot, ".hivemind", "config.json");
-  let raw: unknown;
-  try {
-    raw = await readJsonFile(configPath);
-  } catch (error: unknown) {
-    if (isNodeError(error, "ENOENT")) {
-      return { ok: false, reason: "config not found: .hivemind/config.json" };
-    }
-    if (error instanceof SyntaxError) {
-      return { ok: false, reason: "invalid JSON in .hivemind/config.json" };
-    }
-    throw error;
-  }
-
-  const problems = validateConfig(raw);
-  if (problems.length > 0) {
-    return { ok: false, reason: problems.join("; ") };
-  }
-
-  return { ok: true, config: raw as DecisionConfig };
-}
-
-function validateConfig(raw: unknown): string[] {
-  const problems: string[] = [];
-  if (!isRecord(raw)) {
-    return ["config must be a JSON object"];
-  }
-
-  if (raw.version !== 1) {
-    problems.push("version must be 1");
-  }
-  if (raw.stack !== "typescript-node") {
-    problems.push("stack must be typescript-node");
-  }
-  requireString(raw, "repo_root", problems);
-  requireString(raw, "test_command", problems);
-  requireStringArray(raw, "allowed_globs", problems);
-  requireStringArray(raw, "forbidden_globs", problems);
-  if ("critical_globs" in raw) {
-    requireStringArray(raw, "critical_globs", problems);
-  }
-
-  return problems;
-}
-
-function requireString(raw: Record<string, unknown>, field: string, problems: string[]): void {
-  if (typeof raw[field] !== "string") {
-    problems.push(`${field} must be a string`);
-  }
-}
-
-function requireStringArray(raw: Record<string, unknown>, field: string, problems: string[]): void {
-  const value = raw[field];
-  if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string")) {
-    problems.push(`${field} must be an array of strings`);
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function exists(filePath: string): Promise<boolean> {

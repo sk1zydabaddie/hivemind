@@ -87,6 +87,23 @@ export async function loadContract(
   }
 }
 
+export async function loadAndValidateContract(
+  repoRoot: string,
+  taskId: string
+): Promise<{ ok: true; contract: TaskContract } | { ok: false; reason: string }> {
+  const loaded = await loadContract(repoRoot, taskId);
+  if (!loaded.ok) {
+    return loaded;
+  }
+
+  const problems = validateContract(loaded.raw, taskId);
+  if (problems.length > 0) {
+    return { ok: false, reason: problems.join("; ") };
+  }
+
+  return { ok: true, contract: normalizeContract(loaded.raw) };
+}
+
 export function validateContract(raw: unknown, expectedTaskId?: string): string[] {
   const problems: string[] = [];
   if (!isRecord(raw)) {

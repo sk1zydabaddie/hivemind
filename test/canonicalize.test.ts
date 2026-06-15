@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { canonicalize } from "../src/canonicalize.js";
+import { canonicalize, canonicalizeIntentPath } from "../src/canonicalize.js";
 
 test("canonicalize resolves dot-dot to a normalized repo-relative path", async () => {
   await withRepo(async (repo) => {
@@ -89,6 +89,51 @@ test("canonicalize follows filesystem case rules", async () => {
     } else {
       assert.equal(wrongCaseResult.ok, false);
     }
+  });
+});
+
+test("canonicalizeIntentPath accepts a non-existent file under an existing in-root directory", async () => {
+  await withRepo(async (repo) => {
+    await mkdir(path.join(repo, "src"), { recursive: true });
+
+    const result = await canonicalizeIntentPath(repo, "src/new-file.ts");
+
+    assert.deepEqual(result, { ok: true, resolved: "src/new-file.ts" });
+  });
+});
+
+test("canonicalizeIntentPath rejects globs, absolute paths, traversal, and .git paths", async () => {
+  await withRepo(async (repo) => {
+    const cases = ["src/*.ts", path.join(repo, "src", "a.ts"), "../outside.ts", ".git/config", "src/./a.ts"];
+
+    for (const value of cases) {
+      const result = await canonicalizeIntentPath(repo, value);
+      assert.equal(result.ok, false, value);
+    }
+  });
+});
+
+test("canonicalizeIntentPath rejects an escaping symlink ancestor", async () => {
+  await withRepo(async (repo) => {
+    const outside = path.join(path.dirname(repo), "outside-intent-target");
+    const linkPath = path.join(repo, "link-out");
+    await mkdir(outside, { recursive: true });
+    await createDirectoryLink(outside, linkPath);
+
+    const result = await canonicalizeIntentPath(repo, "link-out/new-file.ts");
+
+    assert.equal(result.ok, false);
+  });
+});
+
+test("canonicalizeIntentPath resolves an in-root symlink ancestor to the real target", async () => {
+  await withRepo(async (repo) => {
+    await mkdir(path.join(repo, "real"), { recursive: true });
+    await createDirectoryLink(path.join(repo, "real"), path.join(repo, "link-in"));
+
+    const result = await canonicalizeIntentPath(repo, "link-in/new-file.ts");
+
+    assert.deepEqual(result, { ok: true, resolved: "real/new-file.ts" });
   });
 });
 

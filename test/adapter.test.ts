@@ -80,11 +80,27 @@ test("loadAdapterProfile accepts UTF-8 BOM prefixed JSON", async () => {
 
 test("validateAdapterProfile rejects missing volatile invocation data", () => {
   assert.deepEqual(validateAdapterProfile({ tool: "fake" }, "fake"), [
-    "invoke must be a non-empty array of strings",
+    "invoke must be a non-empty array of non-empty strings",
     "prompt_arg must be stdin or arg",
     "verified_on is required",
     "context_window must be a positive integer"
   ]);
+});
+
+test("validateAdapterProfile rejects empty invoke entries", () => {
+  assert.deepEqual(
+    validateAdapterProfile(
+      {
+        tool: "fake",
+        invoke: ["node", ""],
+        prompt_arg: "stdin",
+        verified_on: "2026-06-15",
+        context_window: 1024
+      },
+      "fake"
+    ),
+    ["invoke must be a non-empty array of non-empty strings"]
+  );
 });
 
 test("validateAdapterProfile rejects invalid timeout values", () => {

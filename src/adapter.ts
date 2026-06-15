@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { loadContract, normalizeContract, TaskContract, validateContract } from "./contract.js";
+import { loadAndValidateContract, TaskContract } from "./contract.js";
 import { readJsonFile } from "./json.js";
 
 export type PromptArgMode = "stdin" | "arg";
@@ -109,8 +109,12 @@ export function validateAdapterProfile(raw: unknown, expectedTool?: string): str
     problems.push(`tool must match requested adapter "${expectedTool}"`);
   }
 
-  if (!Array.isArray(raw.invoke) || raw.invoke.length === 0 || !raw.invoke.every((entry) => typeof entry === "string")) {
-    problems.push("invoke must be a non-empty array of strings");
+  if (
+    !Array.isArray(raw.invoke) ||
+    raw.invoke.length === 0 ||
+    !raw.invoke.every((entry) => typeof entry === "string" && entry.trim() !== "")
+  ) {
+    problems.push("invoke must be a non-empty array of non-empty strings");
   }
 
   if (raw.prompt_arg !== "stdin" && raw.prompt_arg !== "arg") {
@@ -173,23 +177,6 @@ export function buildAgentPrompt(contract: TaskContract): string {
     "",
     "Stop when the required tests pass."
   ].join("\n");
-}
-
-async function loadAndValidateContract(
-  repoRoot: string,
-  taskId: string
-): Promise<{ ok: true; contract: TaskContract } | { ok: false; reason: string }> {
-  const loaded = await loadContract(repoRoot, taskId);
-  if (!loaded.ok) {
-    return loaded;
-  }
-
-  const problems = validateContract(loaded.raw, taskId);
-  if (problems.length > 0) {
-    return { ok: false, reason: problems.join("; ") };
-  }
-
-  return { ok: true, contract: normalizeContract(loaded.raw) };
 }
 
 function runAdapter(

@@ -1,9 +1,9 @@
 import { execFile } from "node:child_process";
-import { mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { invokeAgent } from "./adapter.js";
-import { loadContract, normalizeContract, validateContract } from "./contract.js";
+import { writeFileAtomic } from "./atomic.js";
+import { loadAndValidateContract } from "./contract.js";
 import { findGitRoot } from "./repo.js";
 import { createTaskWorktree } from "./worktree.js";
 
@@ -59,6 +59,11 @@ export async function runTask(
   const worktreeResult = await createTaskWorktree(repoRoot, taskId);
   if (!worktreeResult.ok) {
     return worktreeResult;
+  }
+
+  const cleanResult = await verifyRunWorktreeClean(worktreeResult.value.worktree, taskId);
+  if (!cleanResult.ok) {
+    return cleanResult;
   }
 
   const invokeResult = await invokeAgent(repoRoot, taskId, tool, options);
@@ -135,28 +140,21 @@ async function makeUntrackedFilesDiffable(worktreePath: string): Promise<{ ok: t
   return git(worktreePath, ["add", "--intent-to-add", "--", ...untracked]);
 }
 
-async function loadAndValidateContract(
-  repoRoot: string,
-  taskId: string
-): Promise<{ ok: true; contract: ReturnType<typeof normalizeContract> } | { ok: false; reason: string }> {
-  const loaded = await loadContract(repoRoot, taskId);
-  if (!loaded.ok) {
-    return loaded;
+async function verifyRunWorktreeClean(worktreePath: string, taskId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const statusResult = await git(worktreePath, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+  if (!statusResult.ok) {
+    return statusResult;
   }
 
-  const problems = validateContract(loaded.raw, taskId);
-  if (problems.length > 0) {
-    return { ok: false, reason: problems.join("; ") };
+  const dirtyPaths = parseStatusPaths(statusResult.stdout).filter((entry) => normalizeGitPath(entry) !== agentLogPath);
+  if (dirtyPaths.length > 0) {
+    return {
+      ok: false,
+      reason: `worktree .hivemind/worktrees/${taskId} has existing changes (${dirtyPaths.join(", ")}); remove it or reset before rerun`
+    };
   }
 
-  return { ok: true, contract: normalizeContract(loaded.raw) };
-}
-
-async function writeFileAtomic(filePath: string, content: string): Promise<void> {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  await writeFile(tempPath, content, "utf8");
-  await rename(tempPath, filePath);
+  return { ok: true };
 }
 
 async function git(cwd: string, args: string[]): Promise<{ ok: true; stdout: string } | { ok: false; reason: string }> {
@@ -176,4 +174,11 @@ function countNullSeparatedEntries(value: string): number {
 
 function normalizeGitPath(value: string): string {
   return value.replaceAll("\\", "/");
+}
+
+function parseStatusPaths(statusOutput: string): string[] {
+  return statusOutput
+    .split("\0")
+    .filter((entry) => entry.length > 0)
+    .map((entry) => entry.slice(3));
 }

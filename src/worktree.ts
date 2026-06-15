@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { loadContract, normalizeContract, validateContract } from "./contract.js";
+import { loadAndValidateContract } from "./contract.js";
 import { findGitRoot } from "./repo.js";
 import { validateRequestedTaskId } from "./task-id.js";
 
@@ -105,23 +105,6 @@ function getWorktreeResult(repoRoot: string, taskId: string): WorktreeResult {
     worktree: path.join(repoRoot, ".hivemind", "worktrees", taskId),
     branch: `hivemind/${taskId}`
   };
-}
-
-async function loadAndValidateContract(
-  repoRoot: string,
-  taskId: string
-): Promise<{ ok: true; contract: ReturnType<typeof normalizeContract> } | { ok: false; reason: string }> {
-  const loaded = await loadContract(repoRoot, taskId);
-  if (!loaded.ok) {
-    return loaded;
-  }
-
-  const problems = validateContract(loaded.raw, taskId);
-  if (problems.length > 0) {
-    return { ok: false, reason: problems.join("; ") };
-  }
-
-  return { ok: true, contract: normalizeContract(loaded.raw) };
 }
 
 async function verifyExistingWorktree(

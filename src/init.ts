@@ -1,15 +1,8 @@
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { writeJsonAtomic } from "./atomic.js";
+import type { HivemindConfig } from "./config.js";
 import { findGitRoot } from "./repo.js";
-
-export interface HivemindConfig {
-  version: 1;
-  stack: "typescript-node";
-  repo_root: string;
-  test_command: string;
-  allowed_globs: string[];
-  forbidden_globs: string[];
-}
 
 const hivemindDirs = ["tasks", "log", "patches", "worktrees", "adapters", "canon"] as const;
 
@@ -59,13 +52,6 @@ async function detectTestCommand(repoRoot: string): Promise<string> {
     }
     return "";
   }
-}
-
-async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> {
-  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  const serialized = `${JSON.stringify(value, null, 2)}\n`;
-  await writeFile(tempPath, serialized, "utf8");
-  await rename(tempPath, filePath);
 }
 
 async function exists(filePath: string): Promise<boolean> {

@@ -146,6 +146,46 @@ test("CLI analyze rejects invalid config before running the gate", async () => {
   });
 });
 
+test("CLI analyze fails closed when config repo_root points at another repository", async () => {
+  const otherRepo = await mkdtemp(path.join(tmpdir(), "hivemind-analyze-other-repo-"));
+  try {
+    await withTempRepo(async ({ repo, baseCommit }) => {
+      await mkdir(path.join(otherRepo, ".hivemind"), { recursive: true });
+      await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+      await appendFile(repo, "README.md", "accepted change\n");
+      await writePatch(repo, "T-001");
+      await resetRepo(repo, baseCommit);
+      await writeFile(
+        path.join(repo, ".hivemind", "config.json"),
+        `${JSON.stringify(
+          {
+            version: 1,
+            stack: "typescript-node",
+            repo_root: otherRepo,
+            test_command: "",
+            allowed_globs: [],
+            forbidden_globs: ["**/*.lock", "**/package.json", "**/.git/**"]
+          },
+          null,
+          2
+        )}\n`
+      );
+
+      await assert.rejects(
+        execFileAsync("node", [cliPath, "analyze", "T-001"], { cwd: repo, windowsHide: true }),
+        (error: unknown) => {
+          assert.equal((error as { code?: number }).code, 1);
+          assert.equal(String((error as { stdout?: string }).stdout), "");
+          assert.match(String((error as { stderr?: string }).stderr), /repo_root must match the current git repository root/);
+          return true;
+        }
+      );
+    });
+  } finally {
+    await rm(otherRepo, { recursive: true, force: true });
+  }
+});
+
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
   const repo = await mkdtemp(path.join(tmpdir(), "hivemind-analyze-test-"));
   try {
