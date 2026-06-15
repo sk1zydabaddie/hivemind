@@ -1,7 +1,11 @@
 {
   "tool": "codex",
   "invoke": [
-    "codex",
+    "cmd.exe",
+    "/d",
+    "/s",
+    "/c",
+    "codex.cmd",
     "exec",
     "--sandbox",
     "workspace-write",

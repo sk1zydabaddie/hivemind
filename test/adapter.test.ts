@@ -209,6 +209,29 @@ test("invokeAgent returns a scoped error when the worktree is missing", async ()
   });
 });
 
+test("invokeAgent returns a scoped error when the adapter command cannot start", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-001", baseCommit);
+    const worktree = await createTaskWorktree(repo, "T-001");
+    assert.equal(worktree.ok, true);
+    await writeProfile(repo, "fake", {
+      tool: "fake",
+      invoke: ["definitely-missing-hivemind-command"],
+      prompt_arg: "stdin",
+      verified_on: "2026-06-15",
+      context_window: 1024
+    });
+
+    const result = await invokeAgent(repo, "T-001", "fake");
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.match(result.reason, /failed to start adapter "fake"/);
+  });
+});
+
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
   const repo = await mkdtemp(path.join(tmpdir(), "hivemind-adapter-test-"));
   try {

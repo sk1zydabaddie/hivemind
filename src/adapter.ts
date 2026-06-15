@@ -40,10 +40,13 @@ export async function invokeAgent(
 
   const prompt = buildAgentPrompt(contractResult.contract);
   const processResult = await runAdapter(profileResult.profile, worktreePath, prompt);
+  if (!processResult.ok) {
+    return processResult;
+  }
   const logPath = path.join(worktreePath, "agent.log");
-  await writeAgentLog(logPath, profileResult.profile.tool, processResult);
+  await writeAgentLog(logPath, profileResult.profile.tool, processResult.value);
 
-  return { ok: true, value: { exitCode: processResult.exitCode, logPath } };
+  return { ok: true, value: { exitCode: processResult.value.exitCode, logPath } };
 }
 
 export async function loadAdapterProfile(
@@ -147,22 +150,37 @@ function runAdapter(
   profile: AdapterProfile,
   cwd: string,
   prompt: string
-): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+): Promise<{ ok: true; value: { exitCode: number; stdout: string; stderr: string } } | { ok: false; reason: string }> {
   return new Promise((resolve, reject) => {
     const [command, ...baseArgs] = profile.invoke;
     const args = profile.prompt_arg === "arg" ? [...baseArgs, prompt] : baseArgs;
     const child = spawn(command, args, { cwd, windowsHide: true });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    let failedToStart = false;
 
     child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.on("error", reject);
+    child.stdin.on("error", (error: NodeJS.ErrnoException) => {
+      if (!failedToStart) {
+        reject(error);
+      }
+    });
+    child.on("error", (error: NodeJS.ErrnoException) => {
+      failedToStart = true;
+      resolve({ ok: false, reason: formatSpawnError(profile.tool, error) });
+    });
     child.on("close", (code) => {
+      if (failedToStart) {
+        return;
+      }
       resolve({
-        exitCode: code ?? 1,
-        stdout: Buffer.concat(stdout).toString("utf8"),
-        stderr: Buffer.concat(stderr).toString("utf8")
+        ok: true,
+        value: {
+          exitCode: code ?? 1,
+          stdout: Buffer.concat(stdout).toString("utf8"),
+          stderr: Buffer.concat(stderr).toString("utf8")
+        }
       });
     });
 
@@ -199,6 +217,11 @@ function formatList(label: string, values: string[]): string {
     return `${label}:\n- (none)`;
   }
   return `${label}:\n${values.map((value) => `- ${value}`).join("\n")}`;
+}
+
+function formatSpawnError(tool: string, error: NodeJS.ErrnoException): string {
+  const code = typeof error.code === "string" ? ` (${error.code})` : "";
+  return `failed to start adapter "${tool}"${code}: ${error.message}`;
 }
 
 async function exists(filePath: string): Promise<boolean> {

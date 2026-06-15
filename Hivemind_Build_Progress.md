@@ -6,13 +6,11 @@ It is the project-local build ledger for Hivemind AI.
 ## Current State
 
 - Current milestone: M0 - Tracer bullet
-- Last completed subtask: M0.3 - `hivemind worktree <id>` create/teardown
-- Active subtask: M0.4 - Headless adapter + Adapter Profile; implementation checkpoint is no-paid validated, live Codex acceptance pending explicit approval
-- Next subtask: M0.4 live Codex acceptance
+- Last completed subtask: M0.4 - Headless adapter + Adapter Profile
+- Next subtask: M0.5 - `hivemind run` end-to-end diff capture [GATE]
 - Current branch: `master`
-- Latest completed commit: `23e7556` - `docs: record m0.3 progress`
-- Latest implementation checkpoint: `1861486` - `feat: add headless adapter invocation`
-- Paid AI/provider calls run: none
+- Latest completed commit: pending commit - M0.4 live acceptance/profile fix
+- Paid AI/provider calls run: approved live Codex acceptance on 2026-06-15; Codex launched in the task worktree and returned exit code 1 because the default `gpt-5.3-codex` model is not supported by the active ChatGPT account
 
 ## Completed Subtasks
 
@@ -21,6 +19,7 @@ It is the project-local build ledger for Hivemind AI.
 | M0.1 - `hivemind init` project scaffold | Complete | `422486b` | Added TypeScript/Node CLI scaffold and `hivemind init`; creates `.hivemind/`, required subdirs, empty `log/events.jsonl`, and atomic `config.json`; idempotent and fails outside git. | `npm run typecheck`; `npm test` with 4 tests; cleanup scans clean. |
 | M0.2 - Task-contract format + loader | Complete | `9af793d` | Added `TaskContract` type, contract loading from `.hivemind/tasks/<id>.contract.json`, validation/normalization, and `hivemind contract <id> --validate`. | `npm run typecheck`; `npm test` with 11 tests; cleanup scans clean except expected deferred-scope references. |
 | M0.3 - `hivemind worktree <id>` create/teardown | Complete | `e5f1115` | Added task worktree create/remove helper and CLI command; creates branch `hivemind/<id>` from contract `base_commit`; remove cleans up worktree and branch. | `npm run typecheck`; `npm test` with 16 tests; cleanup scans clean except roadmap references. |
+| M0.4 - Headless adapter + Adapter Profile | Complete | pending commit | Added internal `invokeAgent(repoRoot, taskId, tool)`, adapter profile loading/validation, contract-derived prompts, subprocess execution in the task worktree, `agent.log` stdout/stderr/exit-code capture, a dated Codex profile, and fake-adapter tests. Live Codex acceptance launched through the profile, ran in `.hivemind/worktrees/T-001`, wrote `agent.log`, and returned exit code 1 due unsupported default model/account pairing. | `codex exec --help`; live `invokeAgent` with Codex profile; `npm run typecheck`; `npm test` with 25 tests; cleanup scans clean except expected roadmap references. |
 
 ## M0 - Tracer Bullet
 
@@ -29,8 +28,8 @@ It is the project-local build ledger for Hivemind AI.
 | M0.1 - `hivemind init` project scaffold | Complete | Committed in `422486b`. |
 | M0.2 - Task-contract format + loader | Complete | Committed in `9af793d`. |
 | M0.3 - `hivemind worktree <id>` create/teardown | Complete | Committed in `e5f1115`. Must not be treated as agent invocation, lease, or gate support. |
-| M0.4 - Headless adapter + Adapter Profile | Ready for live acceptance | Implementation checkpoint no-paid validated with fake adapters; real Codex acceptance pending explicit approval because it may consume provider quota. Must keep volatile tool flags in adapter profile data. |
-| M0.5 - `hivemind run` end-to-end diff capture [GATE] | Not started | Requires M0.2-M0.4. Must not implement scope gate or leases. |
+| M0.4 - Headless adapter + Adapter Profile | Complete | Implementation checkpoint in `1861486`; live acceptance/profile fix pending commit. Codex launched through the dated profile and returned its exit code; tool exited 1 due unsupported default model/account pairing. |
+| M0.5 - `hivemind run` end-to-end diff capture [GATE] | Next | Requires M0.2-M0.4. Must not implement scope gate or leases. |
 
 ## M1 - The Gate, Airtight
 
