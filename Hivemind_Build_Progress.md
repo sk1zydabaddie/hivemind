@@ -11,7 +11,7 @@ It is the project-local build ledger for Hivemind AI.
 - Next subtask: M0.4 live Codex acceptance
 - Current branch: `master`
 - Latest completed commit: `23e7556` - `docs: record m0.3 progress`
-- Latest implementation checkpoint: pending commit - M0.4 adapter module/profile/tests
+- Latest implementation checkpoint: `1861486` - `feat: add headless adapter invocation`
 - Paid AI/provider calls run: none
 
 ## Completed Subtasks
