@@ -1,0 +1,20 @@
+{
+  "tool": "claude",
+  "invoke": [
+    "cmd.exe",
+    "/d",
+    "/s",
+    "/c",
+    "claude.cmd",
+    "-p",
+    "--permission-mode",
+    "bypassPermissions",
+    "--no-session-persistence",
+    "--output-format",
+    "text"
+  ],
+  "prompt_arg": "stdin",
+  "verified_on": "2026-06-15",
+  "context_window": 200000,
+  "timeout_ms": 120000
+}

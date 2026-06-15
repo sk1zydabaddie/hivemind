@@ -11,11 +11,19 @@ export interface AdapterProfile {
   prompt_arg: PromptArgMode;
   verified_on: string;
   context_window: number;
+  timeout_ms?: number;
 }
 
 export interface InvokeAgentResult {
   exitCode: number;
   logPath: string;
+}
+
+interface AdapterProcessResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
 }
 
 export async function invokeAgent(
@@ -103,6 +111,13 @@ export function validateAdapterProfile(raw: unknown, expectedTool?: string): str
     problems.push("context_window must be a positive integer");
   }
 
+  if (
+    "timeout_ms" in raw &&
+    (typeof raw.timeout_ms !== "number" || !Number.isInteger(raw.timeout_ms) || raw.timeout_ms <= 0)
+  ) {
+    problems.push("timeout_ms must be a positive integer when provided");
+  }
+
   return problems;
 }
 
@@ -150,7 +165,7 @@ function runAdapter(
   profile: AdapterProfile,
   cwd: string,
   prompt: string
-): Promise<{ ok: true; value: { exitCode: number; stdout: string; stderr: string } } | { ok: false; reason: string }> {
+): Promise<{ ok: true; value: AdapterProcessResult } | { ok: false; reason: string }> {
   return new Promise((resolve, reject) => {
     const [command, ...baseArgs] = profile.invoke;
     const args = profile.prompt_arg === "arg" ? [...baseArgs, prompt] : baseArgs;
@@ -158,6 +173,15 @@ function runAdapter(
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let failedToStart = false;
+    let timedOut = false;
+    const timeout =
+      profile.timeout_ms === undefined
+        ? undefined
+        : setTimeout(() => {
+            timedOut = true;
+            stderr.push(Buffer.from(`\nadapter timed out after ${profile.timeout_ms}ms\n`, "utf8"));
+            terminateProcessTree(child.pid);
+          }, profile.timeout_ms);
 
     child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
@@ -168,18 +192,25 @@ function runAdapter(
     });
     child.on("error", (error: NodeJS.ErrnoException) => {
       failedToStart = true;
+      if (timeout) {
+        clearTimeout(timeout);
+      }
       resolve({ ok: false, reason: formatSpawnError(profile.tool, error) });
     });
     child.on("close", (code) => {
       if (failedToStart) {
         return;
       }
+      if (timeout) {
+        clearTimeout(timeout);
+      }
       resolve({
         ok: true,
         value: {
-          exitCode: code ?? 1,
+          exitCode: timedOut ? 124 : code ?? 1,
           stdout: Buffer.concat(stdout).toString("utf8"),
-          stderr: Buffer.concat(stderr).toString("utf8")
+          stderr: Buffer.concat(stderr).toString("utf8"),
+          timedOut
         }
       });
     });
@@ -193,7 +224,7 @@ function runAdapter(
 async function writeAgentLog(
   logPath: string,
   tool: string,
-  result: { exitCode: number; stdout: string; stderr: string }
+  result: AdapterProcessResult
 ): Promise<void> {
   await mkdir(path.dirname(logPath), { recursive: true });
   await writeFile(
@@ -202,6 +233,7 @@ async function writeAgentLog(
       "# Hivemind Agent Log",
       `tool: ${tool}`,
       `exit_code: ${result.exitCode}`,
+      `timed_out: ${result.timedOut}`,
       "",
       "## stdout",
       result.stdout,
@@ -210,6 +242,24 @@ async function writeAgentLog(
     ].join("\n"),
     "utf8"
   );
+}
+
+function terminateProcessTree(pid: number | undefined): void {
+  if (pid === undefined) {
+    return;
+  }
+
+  if (process.platform === "win32") {
+    const killer = spawn("taskkill.exe", ["/pid", String(pid), "/t", "/f"], { windowsHide: true });
+    killer.on("error", () => undefined);
+    return;
+  }
+
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    return;
+  }
 }
 
 function formatList(label: string, values: string[]): string {

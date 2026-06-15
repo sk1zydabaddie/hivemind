@@ -7,6 +7,9 @@
     "/c",
     "codex.cmd",
     "exec",
+    "--model",
+    "gpt-5.5",
+    "--dangerously-bypass-approvals-and-sandbox",
     "--sandbox",
     "workspace-write",
     "--ignore-user-config",
@@ -16,5 +19,6 @@
   ],
   "prompt_arg": "stdin",
   "verified_on": "2026-06-15",
-  "context_window": 200000
+  "context_window": 200000,
+  "timeout_ms": 120000
 }

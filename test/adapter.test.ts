@@ -66,6 +66,23 @@ test("validateAdapterProfile rejects missing volatile invocation data", () => {
   ]);
 });
 
+test("validateAdapterProfile rejects invalid timeout values", () => {
+  assert.deepEqual(
+    validateAdapterProfile(
+      {
+        tool: "fake",
+        invoke: ["node", "fake-agent.mjs"],
+        prompt_arg: "stdin",
+        verified_on: "2026-06-15",
+        context_window: 1024,
+        timeout_ms: 0
+      },
+      "fake"
+    ),
+    ["timeout_ms must be a positive integer when provided"]
+  );
+});
+
 test("invokeAgent runs stdin adapter inside the task worktree and writes agent.log", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit);
@@ -168,6 +185,45 @@ test("invokeAgent surfaces non-zero adapter exits without crashing", async () =>
     const log = await readFile(result.value.logPath, "utf8");
     assert.match(log, /exit_code: 7/);
     assert.match(log, /planned exit/);
+  });
+});
+
+test("invokeAgent times out a wedged adapter and writes agent.log", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-001", baseCommit);
+    const worktree = await createTaskWorktree(repo, "T-001");
+    assert.equal(worktree.ok, true);
+    if (!worktree.ok) {
+      return;
+    }
+
+    await writeFile(
+      path.join(worktree.value.worktree, "fake-timeout-agent.mjs"),
+      [
+        "await import('node:fs/promises').then(({ appendFile }) => appendFile('README.md', 'changed before timeout\\n'));",
+        "setInterval(() => undefined, 1000);"
+      ].join("\n")
+    );
+    await writeProfile(repo, "fake", {
+      tool: "fake",
+      invoke: ["node", "fake-timeout-agent.mjs"],
+      prompt_arg: "stdin",
+      verified_on: "2026-06-15",
+      context_window: 1024,
+      timeout_ms: 50
+    });
+
+    const result = await invokeAgent(repo, "T-001", "fake");
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.value.exitCode, 124);
+    const log = await readFile(result.value.logPath, "utf8");
+    assert.match(log, /exit_code: 124/);
+    assert.match(log, /timed_out: true/);
+    assert.match(log, /adapter timed out after 50ms/);
   });
 });
 

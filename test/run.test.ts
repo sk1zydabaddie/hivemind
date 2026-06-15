@@ -79,6 +79,30 @@ test("runTask captures diff even when the adapter exits non-zero", async () => {
   });
 });
 
+test("runTask captures diff even when the adapter times out", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const agentPath = await writeAgent(repo, "timeout-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'changed before timeout\\n');",
+      "setInterval(() => undefined, 1000);"
+    ]);
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writeProfile(repo, "fake", agentPath, 50);
+
+    const result = await runTask(repo, "T-001", "fake");
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.value.tool_exit, 124);
+    assert.equal(result.value.changed_files, 1);
+    assert.match(await readFile(result.value.diff_path, "utf8"), /\+changed before timeout/);
+    const log = await readFile(path.join(repo, ".hivemind", "worktrees", "T-001", "agent.log"), "utf8");
+    assert.match(log, /timed_out: true/);
+  });
+});
+
 test("CLI run prints stable JSON", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     const agentPath = await writeAgent(repo, "cli-agent.mjs", [
@@ -203,22 +227,20 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
   );
 }
 
-async function writeProfile(repo: string, tool: string, agentPath: string): Promise<void> {
+async function writeProfile(repo: string, tool: string, agentPath: string, timeoutMs?: number): Promise<void> {
   const adaptersDir = path.join(repo, ".hivemind", "adapters");
   await mkdir(adaptersDir, { recursive: true });
+  const profile = {
+    tool,
+    invoke: ["node", agentPath],
+    prompt_arg: "stdin",
+    verified_on: "2026-06-15",
+    context_window: 1024,
+    ...(timeoutMs === undefined ? {} : { timeout_ms: timeoutMs })
+  };
   await writeFile(
     path.join(adaptersDir, `${tool}.profile.json`),
-    `${JSON.stringify(
-      {
-        tool,
-        invoke: ["node", agentPath],
-        prompt_arg: "stdin",
-        verified_on: "2026-06-15",
-        context_window: 1024
-      },
-      null,
-      2
-    )}\n`
+    `${JSON.stringify(profile, null, 2)}\n`
   );
 }
 
