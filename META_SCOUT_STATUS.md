@@ -2,28 +2,35 @@
 
 ## Current Phase
 
-- Phase: M0.1 — `hivemind init` project scaffold
-- Status: implementation in progress
+- Phase: M0.2 - Task-contract format and loader
+- Status: completed
 - Stack: TypeScript on Node.js
 - Source of truth: `Hivemind_AI_Overview.md` and `Hivemind_Build_Tasks.md`
 
-## Completed This Phase
+## Completed So Far
 
-- Initialized this folder as a git repository.
-- Committed the two source specification documents as the baseline history.
-- Added a minimal TypeScript/Node CLI scaffold.
-- Implemented only the `hivemind init` command.
-- Added tests for scaffold creation, outside-git failure, idempotency, and CLI exit/output behavior.
+- M0.1:
+  - Initialized this folder as a git repository.
+  - Committed the two source specification documents as the baseline history.
+  - Added a minimal TypeScript/Node CLI scaffold.
+  - Implemented only the `hivemind init` command.
+  - Added tests for scaffold creation, outside-git failure, idempotency, and CLI exit/output behavior.
+- M0.2:
+  - Added the canonical task-contract type and normalization behavior.
+  - Added contract loading from `.hivemind/tasks/<id>.contract.json`.
+  - Added validation for required fields, path arrays, invalid path entries, allowed/forbidden overlap, and agent role.
+  - Added `hivemind contract <id> --validate`.
+  - Added unit and CLI acceptance tests for M0.2.
 
 ## Validation
 
-- `npm install`: passed, zero reported vulnerabilities.
+- `npm install`: previously passed, zero reported vulnerabilities.
 - `npm run typecheck`: passed.
-- `npm test`: passed, 4 tests passing.
+- `npm test`: passed, 11 tests passing.
 - Cleanup scans:
   - unfinished-code markers: no matches.
   - secret/env patterns: no matches.
-  - future-scope command terms: only required `.hivemind/worktrees` scaffold references.
+  - future-scope command terms: only deferred-scope notes and required `.hivemind/worktrees` scaffold references.
 
 ## Paid Calls
 
@@ -32,9 +39,10 @@
 
 ## Deferred Scope
 
-The following are explicitly not implemented in M0.1:
+The following are explicitly not implemented in M0.2:
 
-- task-contract loader or generator
+- contract generation
+- symbol enforcement
 - worktree create/remove command
 - headless agent adapter
 - `hivemind run`
@@ -46,7 +54,7 @@ The following are explicitly not implemented in M0.1:
 
 ## Known Limitations
 
-- The CLI has only `init`.
-- The scaffold is local-only and has no worker-agent integration.
-- `.hivemind/config.json` contains the initial M0.1 fields only.
-- M0.2 must not begin until M0.1 is committed and approved.
+- The CLI has only `init` and `contract <id> --validate`.
+- Contract validation is path/string/schema validation only.
+- `allowed_symbols` and `forbidden_symbols` are carried but not enforced.
+- M0.3 must not begin until M0.2 is committed and approved.

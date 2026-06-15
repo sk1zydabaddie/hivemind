@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 
 import { initProject } from "./init.js";
+import { validateContractCommand } from "./contract.js";
 
 async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
 
   if (command === "init" && rest.length === 0) {
     return initProject(process.cwd());
+  }
+
+  if (command === "contract") {
+    return validateContractCommand(process.cwd(), rest);
   }
 
   console.error(command ? `error: unknown command ${command}` : "error: missing command");
