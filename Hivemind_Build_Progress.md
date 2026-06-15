@@ -9,7 +9,7 @@ It is the project-local build ledger for Hivemind AI.
 - Last completed subtask: M1.6 - `hivemind analyze <id>` CLI wiring
 - Next subtask: M2.1 - Lease store + disjoint-grant check
 - Current branch: `master`
-- Latest completed implementation commit: `a40a908` - `chore: harden pre-m2 foundation`
+- Latest completed implementation commit: `6a61f70` - `chore: harden pre-m2 foundation`
 - Latest M0.5 gate completion commit: `8a9786c` - `docs: complete m0.5 real-tool gate`
 - Paid AI/provider calls run: none for M1.6. Previous approved live Codex and Claude Code acceptance ran on 2026-06-15. Codex launched in disposable task worktrees. First Codex attempt returned exit code 1 because the default `gpt-5.3-codex` model was not supported by the active ChatGPT account. After updating the adapter profile to `gpt-5.5`, Codex used 6,130 tokens but could not write under a read-only inner sandbox. After the approved writable Codex profile update and adapter timeout containment, Codex used 8,674 tokens and produced a correct one-file `README.md` diff. The first Claude Code run returned exit code 1 with `Not logged in - Please run /login`; after CLI login, Claude Code rerun returned `tool_exit: 0`, `changed_files: 1`, and produced a correct one-file `README.md` diff.
 
@@ -23,7 +23,7 @@ It is the project-local build ledger for Hivemind AI.
 
 | Checkpoint | Status | Commit | What changed | Validation |
 | --- | --- | --- | --- | --- |
-| Pre-M2 comprehensive audit hardening | Complete | `a40a908` | Added shared config loading/validation with `repo_root` realpath matching; added shared atomic writers; exported shared contract load+validate; removed duplicate loader/atomic implementations from analyze/run/worktree/adapter paths; made `hivemind run` reject dirty existing task worktrees before invoking an adapter while allowing Hivemind-owned `agent.log`; added a separate tested future-intent path canonicalizer for later lease/write-intent use without implementing leases; tightened adapter profile validation to reject empty invoke entries. No M2 lease, submit, integration, status, or event-log commands were started. | `npm run typecheck`; `npm test` with 87 tests; `git diff --check`; cleanup/static scans for duplicate loaders, stale config validators, duplicate atomic writers, TODO-style markers, accidental M2 command/API implementation, and unused/stale references. No paid provider calls. |
+| Pre-M2 comprehensive audit hardening | Complete | `6a61f70` | Added shared config loading/validation with `repo_root` realpath matching; added shared atomic writers; exported shared contract load+validate; removed duplicate loader/atomic implementations from analyze/run/worktree/adapter paths; made `hivemind run` reject dirty existing task worktrees before invoking an adapter while allowing Hivemind-owned `agent.log`; added a separate tested future-intent path canonicalizer for later lease/write-intent use without implementing leases; tightened adapter profile validation to reject empty invoke entries. No M2 lease, submit, integration, status, or event-log commands were started. | `npm run typecheck`; `npm test` with 87 tests; `git diff --check`; cleanup/static scans for duplicate loaders, stale config validators, duplicate atomic writers, TODO-style markers, accidental M2 command/API implementation, and unused/stale references. No paid provider calls. |
 
 ## Completed Subtasks
 
