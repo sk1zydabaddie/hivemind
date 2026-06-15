@@ -6,12 +6,12 @@ It is the project-local build ledger for Hivemind AI.
 ## Current State
 
 - Current milestone: M1 - The Gate, Airtight
-- Last completed subtask: M1.2 - Path canonicalization + repo-root confinement
-- Next subtask: M1.3 - Operation-decision table
+- Last completed subtask: M1.3 - Operation-decision table
+- Next subtask: M1.4 - Gate assembly + fail-closed + reason
 - Current branch: `master`
-- Latest completed implementation commit: `8c9a2e9` - `feat: canonicalize repo-confined paths`
+- Latest completed implementation commit: `513285f` - `feat: decide changeset operations`
 - Latest M0.5 gate completion commit: `8a9786c` - `docs: complete m0.5 real-tool gate`
-- Paid AI/provider calls run: none for M1.2. Previous approved live Codex and Claude Code acceptance ran on 2026-06-15. Codex launched in disposable task worktrees. First Codex attempt returned exit code 1 because the default `gpt-5.3-codex` model was not supported by the active ChatGPT account. After updating the adapter profile to `gpt-5.5`, Codex used 6,130 tokens but could not write under a read-only inner sandbox. After the approved writable Codex profile update and adapter timeout containment, Codex used 8,674 tokens and produced a correct one-file `README.md` diff. The first Claude Code run returned exit code 1 with `Not logged in - Please run /login`; after CLI login, Claude Code rerun returned `tool_exit: 0`, `changed_files: 1`, and produced a correct one-file `README.md` diff.
+- Paid AI/provider calls run: none for M1.3. Previous approved live Codex and Claude Code acceptance ran on 2026-06-15. Codex launched in disposable task worktrees. First Codex attempt returned exit code 1 because the default `gpt-5.3-codex` model was not supported by the active ChatGPT account. After updating the adapter profile to `gpt-5.5`, Codex used 6,130 tokens but could not write under a read-only inner sandbox. After the approved writable Codex profile update and adapter timeout containment, Codex used 8,674 tokens and produced a correct one-file `README.md` diff. The first Claude Code run returned exit code 1 with `Not logged in - Please run /login`; after CLI login, Claude Code rerun returned `tool_exit: 0`, `changed_files: 1`, and produced a correct one-file `README.md` diff.
 
 ## Pre-M1 Hardening Checkpoint
 
@@ -30,6 +30,7 @@ It is the project-local build ledger for Hivemind AI.
 | M0.5 - `hivemind run` end-to-end diff capture [GATE] | Complete | `8a9786c` | Added `hivemind run <id> --tool <tool>` composing contract validation, worktree creation, headless adapter invocation, deterministic diff capture, and atomic `.hivemind/patches/<id>/diff.patch` writes. Captures no-change runs, non-zero tool exits, timed-out tool exits, and untracked worker-created files while excluding `agent.log`. Added bounded adapter `timeout_ms` support so wedged workers are terminated, logged as `tool_exit: 124`, and still allow diff capture. Added a Claude Code adapter profile. Updated the Codex adapter profile to explicit `gpt-5.5`, approved writable invocation flags, and a 120000ms timeout. Pre-M1 hardening later made dangerous adapter bypass flags require explicit `--allow-dangerous-adapter` approval when rerunning live provider gates. | `npm run typecheck`; `npm test` with 34 tests; `git diff --check`. Codex real-tool gate passed in a disposable repo with `tool_exit: 0`, `changed_files: 1`, and a correct `README.md` diff. Claude Code real-tool gate passed after CLI login in a disposable repo with `tool_exit: 0`, `changed_files: 1`, and a correct `README.md` diff. |
 | M1.1 - Apply-to-base changeset resolver | Complete | `d522cac` | Added deterministic `resolveChangeset(repoRoot, baseCommit, patchPath)` support that creates a throwaway checkout at the declared base, applies patches through Git's index, derives staged file operations with rename detection disabled, classifies add/modify/delete/chmod/gitattr plus symlink/submodule when Git reports those modes, returns the required wrong-base reason on apply failure, and always cleans up its throwaway worktree. Did not add path canonicalization, pass/reject decisions, gate assembly, corpus, or CLI wiring. | `npm run typecheck`; `npm test` with 51 tests; `git diff --check`; cleanup/static scans for TODO-style markers and out-of-scope M1.2/M1.3 symbols in source/test files. |
 | M1.2 - Path canonicalization + repo-root confinement | Complete | `8c9a2e9` | Added deterministic `canonicalize(repoRoot, path)` support that resolves the real repo root, normalizes relative or absolute concrete paths through filesystem realpath, applies filesystem case/link behavior, rejects unresolvable paths and paths escaping the repo root, and returns canonical repo-relative POSIX-style paths. Kept contract glob validation, changeset resolution, decision table, gate assembly, corpus, and CLI wiring out of scope. | `npm run typecheck`; `npm test` with 58 tests; `git diff --check`; cleanup/static scans for TODO-style markers and accidental M1.3/M1.4 integration. |
+| M1.3 - Operation-decision table | Complete | `513285f` | Added deterministic `decideOp(op, contract, config)` support that canonicalizes each op path before membership checks, applies default-deny for unknown ops and unresolvable paths, rejects out-of-allowed-scope paths and symlink ops, rejects forbidden/Critical deletes, escalates chmod/submodule/git behavior/dependency-manifest/lockfile changes, and passes only in-scope ordinary ops. Added minimal exact/`*`/`**` path-pattern matching for current contract/config sets. Kept gate aggregation, CLI analyze wiring, and adversarial corpus out of scope. | `npm run typecheck`; `npm test` with 60 tests; `git diff --check`; cleanup/static scans for TODO-style markers, unused/out-of-scope gate symbols, and accidental M1.4/M1.6 integration. |
 
 ## M0 - Tracer Bullet
 
@@ -47,7 +48,7 @@ It is the project-local build ledger for Hivemind AI.
 | --- | --- | --- |
 | M1.1 - Apply-to-base changeset resolver | Complete | Implemented in `d522cac`. No dogfooding until M1.5 passes. |
 | M1.2 - Path canonicalization + repo-root confinement | Complete | Implemented in `8c9a2e9`. Pure utility only; no decision table or gate wiring yet. |
-| M1.3 - Operation-decision table | Not started | Must implement spec table verbatim. |
+| M1.3 - Operation-decision table | Complete | Implemented in `513285f`. Per-op verdicts only; no gate aggregation or CLI wiring yet. |
 | M1.4 - Gate assembly + fail-closed + reason | Not started | Reject wins over escalate wins over accept. |
 | M1.5 - Adversarial corpus harness + fixtures [GATE] | Not started | Must reject named adversarial fixtures before M3. |
 | M1.6 - `hivemind analyze <id>` CLI wiring | Not started | Runs gate over submitted bundle. |
