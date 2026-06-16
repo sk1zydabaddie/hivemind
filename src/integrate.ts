@@ -19,7 +19,7 @@ export interface IntegrationStatus {
   report: string;
 }
 
-interface QueueEntry {
+export interface IntegrationQueueEntry {
   task_id: string;
 }
 
@@ -141,9 +141,9 @@ export async function integrateShadow(
   return outcome ?? { ok: false, reason: "shadow integration did not produce a result" };
 }
 
-async function loadIntegrationQueue(
+export async function loadIntegrationQueue(
   repoRoot: string
-): Promise<{ ok: true; value: QueueEntry[] } | { ok: false; reason: string }> {
+): Promise<{ ok: true; value: IntegrationQueueEntry[] } | { ok: false; reason: string }> {
   const queuePath = path.join(repoRoot, ".hivemind", "integration", "queue.json");
   let raw: unknown;
   try {
@@ -162,7 +162,7 @@ async function loadIntegrationQueue(
     return { ok: false, reason: "integration queue must be an array" };
   }
 
-  const entries: QueueEntry[] = [];
+  const entries: IntegrationQueueEntry[] = [];
   const problems: string[] = [];
   for (const [index, entry] of raw.entries()) {
     if (!isRecord(entry) || typeof entry.task_id !== "string") {
@@ -180,7 +180,7 @@ async function loadIntegrationQueue(
   return problems.length === 0 ? { ok: true, value: entries } : { ok: false, reason: problems.join("; ") };
 }
 
-async function gateQueue(repoRoot: string, queue: QueueEntry[]): Promise<{ ok: true; value: GateSummary[] } | { ok: false; reason: string }> {
+async function gateQueue(repoRoot: string, queue: IntegrationQueueEntry[]): Promise<{ ok: true; value: GateSummary[] } | { ok: false; reason: string }> {
   const summaries: GateSummary[] = [];
   for (const entry of queue) {
     const result = await analyzeTask(repoRoot, entry.task_id);

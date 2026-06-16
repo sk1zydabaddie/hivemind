@@ -7,6 +7,7 @@ import { initProject } from "./init.js";
 import { leaseCommand } from "./lease.js";
 import { validateContractCommand } from "./contract.js";
 import { runCommand } from "./run.js";
+import { statusCommand } from "./status.js";
 import { submitCommand } from "./submit.js";
 import { worktreeCommand } from "./worktree.js";
 
@@ -43,6 +44,10 @@ async function main(argv: string[]): Promise<number> {
 
   if (command === "integrate") {
     return integrateCommand(process.cwd(), rest);
+  }
+
+  if (command === "status") {
+    return statusCommand(process.cwd(), rest);
   }
 
   if (command === "submit") {
