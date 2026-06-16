@@ -1,5 +1,5 @@
 import { exec, execFile } from "node:child_process";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { analyzeTask } from "./analyze.js";
@@ -23,6 +23,12 @@ export interface IntegrationStatus {
 
 export interface IntegrationQueueEntry {
   task_id: string;
+}
+
+export interface EnqueueIntegrationPatchResult {
+  task_id: string;
+  queue_path: string;
+  queue: string[];
 }
 
 interface GateSummary {
@@ -185,6 +191,61 @@ export async function loadIntegrationQueue(
   return problems.length === 0 ? { ok: true, value: entries } : { ok: false, reason: problems.join("; ") };
 }
 
+export async function enqueueIntegrationPatch(
+  repoRoot: string,
+  taskId: string
+): Promise<{ ok: true; value: EnqueueIntegrationPatchResult } | { ok: false; reason: string }> {
+  const taskIdResult = validateRequestedTaskId(taskId);
+  if (!taskIdResult.ok) {
+    return taskIdResult;
+  }
+
+  const patchResult = await statPatchBundle(repoRoot, taskId);
+  if (!patchResult.ok) {
+    return patchResult;
+  }
+
+  const queueResult = await loadQueueOrEmpty(repoRoot);
+  if (!queueResult.ok) {
+    return queueResult;
+  }
+  if (queueResult.value.some((entry) => entry.task_id === taskId)) {
+    return { ok: false, reason: `integration queue already contains ${taskId}` };
+  }
+
+  const nextQueue = [...queueResult.value, { task_id: taskId }];
+  const queuePath = path.join(repoRoot, ".hivemind", "integration", "queue.json");
+  await writeJsonAtomic(queuePath, nextQueue);
+  const eventResult = await appendEvent(repoRoot, {
+    type: "integration.queued",
+    task_id: taskId,
+    data: {
+      queue_path: ".hivemind/integration/queue.json",
+      position: nextQueue.length,
+      queue: nextQueue.map((entry) => entry.task_id)
+    }
+  });
+  if (!eventResult.ok) {
+    return { ok: false, reason: `failed to append integration.queued event: ${eventResult.reason}` };
+  }
+  return {
+    ok: true,
+    value: {
+      task_id: taskId,
+      queue_path: ".hivemind/integration/queue.json",
+      queue: nextQueue.map((entry) => entry.task_id)
+    }
+  };
+}
+
+async function loadQueueOrEmpty(repoRoot: string): Promise<{ ok: true; value: IntegrationQueueEntry[] } | { ok: false; reason: string }> {
+  const queueResult = await loadIntegrationQueue(repoRoot);
+  if (queueResult.ok) {
+    return queueResult;
+  }
+  return queueResult.reason.includes("integration queue not found") ? { ok: true, value: [] } : queueResult;
+}
+
 async function gateQueue(repoRoot: string, queue: IntegrationQueueEntry[]): Promise<{ ok: true; value: GateSummary[] } | { ok: false; reason: string }> {
   const summaries: GateSummary[] = [];
   for (const entry of queue) {
@@ -297,6 +358,19 @@ async function git(cwd: string, args: string[]): Promise<{ ok: true; stdout: str
 
 function patchPath(repoRoot: string, taskId: string): string {
   return path.join(repoRoot, ".hivemind", "patches", taskId, "diff.patch");
+}
+
+async function statPatchBundle(repoRoot: string, taskId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const filePath = patchPath(repoRoot, taskId);
+  try {
+    const file = await stat(filePath);
+    return file.isFile() ? { ok: true } : { ok: false, reason: `.hivemind/patches/${taskId}/diff.patch is not a file` };
+  } catch (error: unknown) {
+    if (isNodeError(error, "ENOENT")) {
+      return { ok: false, reason: `patch bundle not found: .hivemind/patches/${taskId}/diff.patch` };
+    }
+    throw error;
+  }
 }
 
 function integrationTimestamp(): string {

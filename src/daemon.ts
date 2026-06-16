@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { analyzeTask } from "./analyze.js";
 import { createTaskContract } from "./contract.js";
 import { removeDaemonState, writeDaemonState } from "./daemon-state.js";
-import { integrateShadow } from "./integrate.js";
+import { enqueueIntegrationPatch, integrateShadow } from "./integrate.js";
 import { requestLeaseForContract, releaseLease } from "./lease.js";
 import { findGitRoot } from "./repo.js";
 import { readQuotaLedger } from "./resource-ledger.js";
@@ -166,6 +166,12 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
   }
   if (request.method === "POST" && request.url === "/integrate/shadow") {
     return async () => integrateShadow(repoRoot);
+  }
+  if (request.method === "POST" && request.url === "/integration/enqueue") {
+    return async (payload) => {
+      const taskId = readTaskId(payload);
+      return taskId.ok ? enqueueIntegrationPatch(repoRoot, taskId.value) : taskId;
+    };
   }
   return null;
 }
