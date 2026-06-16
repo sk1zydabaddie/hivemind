@@ -39,6 +39,7 @@ export interface QuotaUsageRecord {
 
 const ledgerLockRetryMs = 25;
 const ledgerLockTimeoutMs = 2000;
+const ledgerQueues = new Map<string, Promise<void>>();
 
 export async function quotaCommand(cwd: string, args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
@@ -91,35 +92,37 @@ export async function recordQuotaUsage(repoRoot: string, record: QuotaUsageRecor
     return { ok: false, reason: "quota wall_time_ms must be a non-negative safe integer" };
   }
 
-  return withLedgerLock(repoRoot, async () => {
-    const ledgerResult = await readQuotaLedger(repoRoot);
-    if (!ledgerResult.ok) {
-      return ledgerResult;
-    }
+  return withInProcessLedgerQueue(repoRoot, () =>
+    withLedgerLock(repoRoot, async () => {
+      const ledgerResult = await readQuotaLedger(repoRoot);
+      if (!ledgerResult.ok) {
+        return ledgerResult;
+      }
 
-    const now = new Date().toISOString();
-    const previous = ledgerResult.value[provider] ?? createEmptyEntry(provider, now);
-    const used = addUsage(previous.used, {
-      requests: 1,
-      input_tokens_estimated: estimateTokens(record.input_text),
-      output_tokens_estimated: estimateTokens(record.output_text),
-      wall_time_ms: record.wall_time_ms
-    });
-    const nextEntry: QuotaLedgerEntry = {
-      used,
-      observed_limit: record.throttled ? { ...used, observed_at: now, reason: "throttle" } : previous.observed_limit,
-      resets_at: previous.resets_at,
-      source: "self-metered",
-      updated_at: now,
-      unmetered: isUnmeteredProvider(provider)
-    };
-    const nextLedger: QuotaLedger = {
-      ...ledgerResult.value,
-      [provider]: nextEntry
-    };
-    await writeQuotaLedger(repoRoot, nextLedger);
-    return { ok: true, value: nextEntry };
-  });
+      const now = new Date().toISOString();
+      const previous = ledgerResult.value[provider] ?? createEmptyEntry(provider, now);
+      const used = addUsage(previous.used, {
+        requests: 1,
+        input_tokens_estimated: estimateTokens(record.input_text),
+        output_tokens_estimated: estimateTokens(record.output_text),
+        wall_time_ms: record.wall_time_ms
+      });
+      const nextEntry: QuotaLedgerEntry = {
+        used,
+        observed_limit: record.throttled ? { ...used, observed_at: now, reason: "throttle" } : previous.observed_limit,
+        resets_at: previous.resets_at,
+        source: "self-metered",
+        updated_at: now,
+        unmetered: isUnmeteredProvider(provider)
+      };
+      const nextLedger: QuotaLedger = {
+        ...ledgerResult.value,
+        [provider]: nextEntry
+      };
+      await writeQuotaLedger(repoRoot, nextLedger);
+      return { ok: true, value: nextEntry };
+    })
+  );
 }
 
 export function adapterOutputIndicatesThrottle(stdout: string, stderr: string, exitCode: number): boolean {
@@ -189,6 +192,30 @@ async function withLedgerLock<T>(repoRoot: string, action: () => Promise<{ ok: t
         return { ok: false, reason: "could not acquire quota ledger lock" };
       }
       await sleep(ledgerLockRetryMs);
+    }
+  }
+}
+
+async function withInProcessLedgerQueue<T>(
+  repoRoot: string,
+  action: () => Promise<{ ok: true; value: T } | { ok: false; reason: string }>
+): Promise<{ ok: true; value: T } | { ok: false; reason: string }> {
+  const key = ledgerLockPath(repoRoot);
+  const previous = ledgerQueues.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const slot = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const next = previous.catch(() => undefined).then(() => slot);
+  ledgerQueues.set(key, next);
+
+  await previous.catch(() => undefined);
+  try {
+    return await action();
+  } finally {
+    release();
+    if (ledgerQueues.get(key) === next) {
+      ledgerQueues.delete(key);
     }
   }
 }
