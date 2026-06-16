@@ -7,7 +7,9 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
+import { createTaskContract } from "../src/contract.js";
 import { initProject } from "../src/init.js";
+import { readEvents } from "../src/events.js";
 import { requestLease } from "../src/lease.js";
 import { createTaskWorktree, removeTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
@@ -31,6 +33,23 @@ test("worktree create creates task branch at contract base commit", async () => 
     await assertExists(result.value.worktree);
     assert.equal(await gitStdout(result.value.worktree, ["branch", "--show-current"]), "hivemind/T-001");
     assert.equal(await gitStdout(result.value.worktree, ["rev-parse", "HEAD"]), baseCommit);
+  });
+});
+
+test("worktree create does not duplicate task.created after explicit task creation", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const contract = await createTaskContract(repo, fullContract("T-001", baseCommit, ["README.md"]));
+    assert.equal(contract.ok, true);
+
+    const created = await createTaskWorktree(repo, "T-001");
+
+    assert.equal(created.ok, true);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.equal(events.value.filter((event) => event.type === "task.created" && event.task_id === "T-001").length, 1);
   });
 });
 
@@ -252,6 +271,23 @@ async function writeContract(
       2
     )}\n`
   );
+}
+
+function fullContract(taskId: string, baseCommit: string, allowedFiles: string[]): Record<string, unknown> {
+  return {
+    task_id: taskId,
+    title: "Worktree fixture",
+    agent_role: "builder",
+    base_commit: baseCommit,
+    allowed_files: allowedFiles,
+    read_only_files: [],
+    forbidden_files: [],
+    allowed_symbols: [],
+    forbidden_symbols: [],
+    must_not_change: [],
+    required_tests: ["node -e \"process.exit(0)\""],
+    patch_requirements: ["submit diff only"]
+  };
 }
 
 async function restoreTrackedWrites(worktreePath: string): Promise<void> {

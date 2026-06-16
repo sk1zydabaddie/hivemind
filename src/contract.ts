@@ -1,6 +1,7 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { writeJsonAtomic } from "./atomic.js";
+import { appendTaskCreatedIfMissing } from "./events.js";
 import { readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
 import { requireActiveSpecRatified } from "./spec.js";
@@ -140,6 +141,17 @@ export async function createTaskContract(
   }
 
   await writeJsonAtomic(contractPath, contract);
+  const eventResult = await appendTaskCreatedIfMissing(repoRoot, contract.task_id, {
+    title: contract.title,
+    agent_role: contract.agent_role,
+    base_commit: contract.base_commit,
+    allowed_files: contract.allowed_files,
+    contract_path: relativeContractPath,
+    source: "contract.create"
+  });
+  if (!eventResult.ok) {
+    return { ok: false, reason: `failed to append task.created event: ${eventResult.reason}` };
+  }
   return {
     ok: true,
     value: {

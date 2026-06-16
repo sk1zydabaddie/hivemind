@@ -86,6 +86,27 @@ export async function readEvents(repoRoot: string): Promise<{ ok: true; value: H
   return { ok: true, value: events };
 }
 
+export async function appendTaskCreatedIfMissing(
+  repoRoot: string,
+  taskId: string,
+  data: Record<string, unknown>
+): Promise<{ ok: true; appended: boolean } | { ok: false; reason: string }> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) {
+    return events;
+  }
+  if (events.value.some((event) => event.type === "task.created" && event.task_id === taskId)) {
+    return { ok: true, appended: false };
+  }
+
+  const appended = await appendEvent(repoRoot, {
+    type: "task.created",
+    task_id: taskId,
+    data
+  });
+  return appended.ok ? { ok: true, appended: true } : appended;
+}
+
 function validateEventInput(input: HivemindEventInput): { ok: true } | { ok: false; reason: string } {
   return validateEventShape({ ts: new Date().toISOString(), ...input });
 }

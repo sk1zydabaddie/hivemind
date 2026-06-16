@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import type { TaskContract } from "./contract.js";
 import { loadAndValidateContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
-import { appendEvent } from "./events.js";
+import { appendTaskCreatedIfMissing } from "./events.js";
 import { canonicalizeConcreteFileScope } from "./file-scope.js";
 import { readActiveLeases } from "./lease.js";
 import { findGitRoot } from "./repo.js";
@@ -218,18 +218,15 @@ async function appendTaskCreatedEvent(
   value: WorktreeResult,
   reused: boolean
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const eventResult = await appendEvent(repoRoot, {
-    type: "task.created",
-    task_id: taskId,
-    data: {
-      title: contract.title,
-      agent_role: contract.agent_role,
-      base_commit: contract.base_commit,
-      allowed_files: contract.allowed_files,
-      worktree: path.relative(repoRoot, value.worktree).replaceAll("\\", "/"),
-      branch: value.branch,
-      reused
-    }
+  const eventResult = await appendTaskCreatedIfMissing(repoRoot, taskId, {
+    title: contract.title,
+    agent_role: contract.agent_role,
+    base_commit: contract.base_commit,
+    allowed_files: contract.allowed_files,
+    worktree: path.relative(repoRoot, value.worktree).replaceAll("\\", "/"),
+    branch: value.branch,
+    reused,
+    source: "worktree.create"
   });
   return eventResult.ok ? { ok: true } : { ok: false, reason: `failed to append task.created event: ${eventResult.reason}` };
 }

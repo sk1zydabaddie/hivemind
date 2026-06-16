@@ -89,6 +89,18 @@ export interface ManagerActionResult {
   result: ManagerActionExecutionRecord;
 }
 
+export interface ManagerLoopResult {
+  session_id: string;
+  session_path: string;
+  status: "passed" | "failed";
+  steps: Array<{
+    index: number;
+    action_type: ManagerAction["type"];
+    result: ManagerActionExecutionRecord;
+  }>;
+  final_status: HivemindStatus;
+}
+
 export async function managerCommand(cwd: string, args: string[]): Promise<number> {
   const parsed = parseManagerArgs(args);
   if (!parsed.ok) {
@@ -102,10 +114,7 @@ export async function managerCommand(cwd: string, args: string[]): Promise<numbe
     return 1;
   }
 
-  const result =
-    parsed.value.mode === "message"
-      ? await startManagerSession(repoRoot, parsed.value.message)
-      : await executeManagerActionFromFile(repoRoot, parsed.value.sessionId, parsed.value.actionFile);
+  const result = await runParsedManagerCommand(repoRoot, parsed.value);
   if (!result.ok) {
     console.error(`error: ${result.reason}`);
     return 1;
@@ -115,7 +124,26 @@ export async function managerCommand(cwd: string, args: string[]): Promise<numbe
   if ("result" in result.value && !result.value.result.ok) {
     return 1;
   }
+  if ("status" in result.value && result.value.status === "failed") {
+    return 1;
+  }
   return 0;
+}
+
+async function runParsedManagerCommand(
+  repoRoot: string,
+  parsed:
+    | { mode: "message"; message: string }
+    | { mode: "action"; sessionId: string; actionFile: string }
+    | { mode: "fake-loop"; message: string; actionsFile: string }
+): Promise<SpecResult<ManagerSessionResult | ManagerActionResult | ManagerLoopResult>> {
+  if (parsed.mode === "message") {
+    return startManagerSession(repoRoot, parsed.message);
+  }
+  if (parsed.mode === "action") {
+    return executeManagerActionFromFile(repoRoot, parsed.sessionId, parsed.actionFile);
+  }
+  return runNoPaidManagerLoopFromFile(repoRoot, parsed.message, parsed.actionsFile);
 }
 
 export async function startManagerSession(repoRoot: string, message: string): Promise<SpecResult<ManagerSessionResult>> {
@@ -207,6 +235,82 @@ export async function executeManagerActionFromFile(
     return action;
   }
   return executeManagerAction(repoRoot, sessionId, action.value);
+}
+
+export async function runNoPaidManagerLoopFromFile(
+  repoRoot: string,
+  message: string,
+  actionsFile: string
+): Promise<SpecResult<ManagerLoopResult>> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(actionsFile, "utf8"));
+  } catch (error: unknown) {
+    if (error instanceof SyntaxError) {
+      return { ok: false, reason: "fake-manager action file must contain valid JSON" };
+    }
+    throw error;
+  }
+
+  const actions = parseManagerActionList(raw);
+  if (!actions.ok) {
+    return actions;
+  }
+  return runNoPaidManagerLoop(repoRoot, message, actions.value);
+}
+
+export async function runNoPaidManagerLoop(
+  repoRoot: string,
+  message: string,
+  actions: ManagerAction[]
+): Promise<SpecResult<ManagerLoopResult>> {
+  const session = await startManagerSession(repoRoot, message);
+  if (!session.ok) {
+    return session;
+  }
+
+  const steps: ManagerLoopResult["steps"] = [];
+  for (const [index, action] of actions.entries()) {
+    const result = await executeManagerAction(repoRoot, session.value.session_id, action);
+    if (!result.ok) {
+      return result;
+    }
+    steps.push({
+      index,
+      action_type: result.value.action_type,
+      result: result.value.result
+    });
+    if (!result.value.result.ok) {
+      const status = await getStatus(repoRoot);
+      return status.ok
+        ? {
+            ok: true,
+            value: {
+              session_id: session.value.session_id,
+              session_path: session.value.session_path,
+              status: "failed",
+              steps,
+              final_status: status.value
+            }
+          }
+        : status;
+    }
+  }
+
+  const status = await getStatus(repoRoot);
+  if (!status.ok) {
+    return status;
+  }
+  return {
+    ok: true,
+    value: {
+      session_id: session.value.session_id,
+      session_path: session.value.session_path,
+      status: "passed",
+      steps,
+      final_status: status.value
+    }
+  };
 }
 
 export async function executeManagerAction(
@@ -399,6 +503,21 @@ function parseManagerAction(raw: unknown): SpecResult<ManagerAction> {
   return { ok: false, reason: `unknown manager action type: ${raw.type}` };
 }
 
+function parseManagerActionList(raw: unknown): SpecResult<ManagerAction[]> {
+  if (!Array.isArray(raw)) {
+    return { ok: false, reason: "fake-manager action file must contain a JSON array" };
+  }
+  const actions: ManagerAction[] = [];
+  for (const [index, entry] of raw.entries()) {
+    const parsed = parseManagerAction(entry);
+    if (!parsed.ok) {
+      return { ok: false, reason: `fake-manager action[${index}]: ${parsed.reason}` };
+    }
+    actions.push(parsed.value);
+  }
+  return { ok: true, value: actions };
+}
+
 function isTaskActionType(value: string): value is "request_lease" | "create_worktree" | "run_worker" | "submit_patch" | "analyze_patch" | "enqueue_patch" {
   return value === "request_lease" || value === "create_worktree" || value === "run_worker" || value === "submit_patch" || value === "analyze_patch" || value === "enqueue_patch";
 }
@@ -415,14 +534,19 @@ function managerSessionRelativePath(sessionId: string): string {
   return `.hivemind/orchestrator/sessions/${sessionId}.json`;
 }
 
-function parseManagerArgs(args: string[]): SpecResult<{ mode: "message"; message: string } | { mode: "action"; sessionId: string; actionFile: string }> {
+function parseManagerArgs(
+  args: string[]
+): SpecResult<{ mode: "message"; message: string } | { mode: "action"; sessionId: string; actionFile: string } | { mode: "fake-loop"; message: string; actionsFile: string }> {
   if (args[0] === "--message" && typeof args[1] === "string" && args.length === 2) {
     return { ok: true, value: { mode: "message", message: args[1] } };
+  }
+  if (args[0] === "--message" && typeof args[1] === "string" && args[2] === "--fake-manager" && typeof args[3] === "string" && args.length === 4) {
+    return { ok: true, value: { mode: "fake-loop", message: args[1], actionsFile: args[3] } };
   }
   if (args[0] === "--session" && typeof args[1] === "string" && args[2] === "--action" && typeof args[3] === "string" && args.length === 4) {
     return { ok: true, value: { mode: "action", sessionId: args[1], actionFile: args[3] } };
   }
-  return { ok: false, reason: "usage: hivemind manager --message <message> | --session <session_id> --action <action-json-file>" };
+  return { ok: false, reason: "usage: hivemind manager --message <message> [--fake-manager <actions-json-file>] | --session <session_id> --action <action-json-file>" };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

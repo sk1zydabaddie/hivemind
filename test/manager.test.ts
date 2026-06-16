@@ -146,6 +146,74 @@ test("manager executor records a read-only status action in the session", async 
   });
 });
 
+test("manager fake loop drives a user message through gated shadow integration with no paid provider", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await setConfigTestCommand(repo, "node -e \"process.exit(0)\"");
+    const agentPath = await writeAgent(repo, "manager-loop-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'changed by manager fake loop\\n');"
+    ]);
+    await writeProfile(repo, "fake", agentPath);
+    const actionsPath = path.join(repo, "fake-manager-actions.json");
+    await writeFile(
+      actionsPath,
+      `${JSON.stringify(
+        [
+          { type: "create_task_contract", contract: managerContract("T-LOOP", baseCommit, ["README.md"]) },
+          { type: "request_lease", task_id: "T-LOOP" },
+          { type: "create_worktree", task_id: "T-LOOP" },
+          { type: "run_worker", task_id: "T-LOOP", tool: "fake" },
+          { type: "submit_patch", task_id: "T-LOOP" },
+          { type: "analyze_patch", task_id: "T-LOOP" },
+          { type: "enqueue_patch", task_id: "T-LOOP" },
+          { type: "integrate_shadow" }
+        ],
+        null,
+        2
+      )}\n`
+    );
+
+    const result = await execFileAsync(process.execPath, [cliPath, "manager", "--message", "Run a fake manager loop", "--fake-manager", actionsPath], {
+      cwd: repo,
+      windowsHide: true
+    });
+    const parsed = JSON.parse(result.stdout) as {
+      status: string;
+      session_path: string;
+      steps: Array<{ action_type: string; result: { ok: boolean } }>;
+      final_status: { integration: { queue: string[]; status: { applied: string[]; tests: string } | null } };
+    };
+
+    assert.equal(parsed.status, "passed");
+    assert.deepEqual(parsed.steps.map((step) => step.action_type), [
+      "create_task_contract",
+      "request_lease",
+      "create_worktree",
+      "run_worker",
+      "submit_patch",
+      "analyze_patch",
+      "enqueue_patch",
+      "integrate_shadow"
+    ]);
+    assert.equal(parsed.steps.every((step) => step.result.ok), true);
+    assert.deepEqual(parsed.final_status.integration.queue, ["T-LOOP"]);
+    assert.deepEqual(parsed.final_status.integration.status?.applied, ["T-LOOP"]);
+    assert.equal(parsed.final_status.integration.status?.tests, "pass");
+    assert.match(await readFile(path.join(repo, ".hivemind", "patches", "T-LOOP", "diff.patch"), "utf8"), /\+changed by manager fake loop/);
+
+    const session = await readSession(repo, parsed.session_path);
+    assert.equal(session.executed_actions.length, 8);
+    const events = await readRequiredEvents(repo);
+    assertEventOrder(
+      events.map((event) => event.type),
+      ["task.created", "lease.approved", "patch.submitted", "patch.accepted", "integration.queued", "integration.passed"]
+    );
+    assert.equal(events.filter((event) => event.type === "task.created" && event.task_id === "T-LOOP").length, 1);
+    assert.equal(normalizeNewlines(await readFile(path.join(repo, "README.md"), "utf8")), "# Fixture\n");
+  });
+});
+
 test("manager executor drives deterministic task actions through shadow integration with no paid provider", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
@@ -214,6 +282,89 @@ test("manager executor drives deterministic task actions through shadow integrat
     }
     assert.equal(events.value.some((event) => event.type === "integration.queued" && event.task_id === "T-001"), true);
     assert.equal(events.value.at(-1)?.type, "integration.passed");
+  });
+});
+
+test("manager fake loop rejects malformed action scripts before creating a session", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const actionsPath = path.join(repo, "bad-fake-manager-actions.json");
+    await writeFile(actionsPath, `${JSON.stringify([{ type: "unknown_action" }], null, 2)}\n`);
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [cliPath, "manager", "--message", "Should not start", "--fake-manager", actionsPath], {
+        cwd: repo,
+        windowsHide: true
+      }),
+      (error: unknown) => {
+        assert.equal((error as { code?: number }).code, 1);
+        assert.match(String((error as { stderr?: string }).stderr), /fake-manager action\[0\]: unknown manager action type/);
+        return true;
+      }
+    );
+    assert.equal(await exists(path.join(repo, ".hivemind", "orchestrator", "sessions")), false);
+  });
+});
+
+test("manager fake loop stops after a deterministic action failure", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const actionsPath = path.join(repo, "failing-fake-manager-actions.json");
+    await writeFile(
+      actionsPath,
+      `${JSON.stringify(
+        [
+          { type: "create_task_contract", contract: managerContract("T-FAIL", baseCommit, ["README.md"]) },
+          { type: "run_worker", task_id: "T-FAIL", tool: "missing" },
+          { type: "submit_patch", task_id: "T-FAIL" }
+        ],
+        null,
+        2
+      )}\n`
+    );
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [cliPath, "manager", "--message", "Stop on failure", "--fake-manager", actionsPath], {
+        cwd: repo,
+        windowsHide: true
+      }),
+      (error: unknown) => {
+        assert.equal((error as { code?: number }).code, 1);
+        const parsed = JSON.parse(String((error as { stdout?: string }).stdout)) as {
+          status: string;
+          session_path: string;
+          steps: Array<{ action_type: string; result: { ok: boolean; reason?: string } }>;
+        };
+        assert.equal(parsed.status, "failed");
+        assert.deepEqual(parsed.steps.map((step) => step.action_type), ["create_task_contract", "run_worker"]);
+        assert.equal(parsed.steps[1].result.ok, false);
+        assert.match(parsed.steps[1].result.reason ?? "", /active lease does not cover task allowed_files/);
+        return true;
+      }
+    );
+    assert.equal(await exists(path.join(repo, ".hivemind", "patches", "T-FAIL", "diff.patch")), false);
+  });
+});
+
+test("manager fake loop refuses draft specs before creating a session", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const draft = await createSpec(repo, "S-DRAFT", "Draft manager loop");
+    assert.equal(draft.ok, true);
+    const actionsPath = path.join(repo, "fake-manager-actions.json");
+    await writeFile(actionsPath, "[]\n");
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [cliPath, "manager", "--message", "Blocked by draft", "--fake-manager", actionsPath], {
+        cwd: repo,
+        windowsHide: true
+      }),
+      (error: unknown) => {
+        assert.equal((error as { code?: number }).code, 1);
+        assert.match(String((error as { stderr?: string }).stderr), /active spec S-DRAFT is draft/);
+        return true;
+      }
+    );
+    assert.equal(await exists(path.join(repo, ".hivemind", "orchestrator", "sessions")), false);
   });
 });
 
@@ -385,6 +536,41 @@ test("manager enqueue_patch routes through a live daemon instead of direct queue
   });
 });
 
+test("manager fake loop routes mutating actions through a discovered live daemon", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const actionsPath = path.join(repo, "daemon-fake-manager-actions.json");
+    await writeFile(
+      actionsPath,
+      `${JSON.stringify(
+        [
+          { type: "create_task_contract", contract: managerContract("T-DAEMON", baseCommit, ["README.md"]) },
+          { type: "request_lease", task_id: "T-DAEMON" }
+        ],
+        null,
+        2
+      )}\n`
+    );
+
+    const daemon = await startDaemon(repo);
+    try {
+      const routed = await execFileAsync(process.execPath, [cliPath, "manager", "--message", "Route through daemon", "--fake-manager", actionsPath], {
+        cwd: repo,
+        env: { ...process.env, HIVEMIND_DAEMON_URL: "" },
+        windowsHide: true
+      });
+      const parsed = JSON.parse(routed.stdout) as { status: string; steps: Array<{ result: { ok: boolean } }> };
+      assert.equal(parsed.status, "passed");
+      assert.equal(parsed.steps.every((step) => step.result.ok), true);
+    } finally {
+      await stopDaemon(daemon);
+    }
+
+    const events = await readRequiredEvents(repo);
+    assertEventOrder(events.map((event) => event.type), ["task.created", "lease.approved"]);
+  });
+});
+
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
   const repo = await mkdtemp(path.join(tmpdir(), "hivemind-manager-test-"));
   try {
@@ -400,6 +586,23 @@ async function withTempRepo(run: (context: { repo: string; baseCommit: string })
   } finally {
     await cleanupTempRepo(repo);
   }
+}
+
+function managerContract(taskId: string, baseCommit: string, allowedFiles: string[]): Record<string, unknown> {
+  return {
+    task_id: taskId,
+    title: "Manager loop fixture",
+    agent_role: "builder",
+    base_commit: baseCommit,
+    allowed_files: allowedFiles,
+    read_only_files: [],
+    forbidden_files: [],
+    allowed_symbols: [],
+    forbidden_symbols: [],
+    must_not_change: [],
+    required_tests: ["node -e \"process.exit(0)\""],
+    patch_requirements: ["submit diff only"]
+  };
 }
 
 async function contractFiles(repo: string): Promise<string[]> {
@@ -448,6 +651,32 @@ async function readSession(
   return JSON.parse(await readFile(path.join(repo, sessionPath), "utf8")) as {
     executed_actions: Array<{ type: string; result: { ok: boolean; reason?: string } }>;
   };
+}
+
+async function readRequiredEvents(repo: string) {
+  const events = await readEvents(repo);
+  assert.equal(events.ok, true);
+  if (!events.ok) {
+    return [];
+  }
+  return events.value;
+}
+
+function assertEventOrder(actual: string[], expected: string[]): void {
+  let cursor = 0;
+  for (const type of actual) {
+    if (type === expected[cursor]) {
+      cursor += 1;
+    }
+    if (cursor === expected.length) {
+      return;
+    }
+  }
+  assert.fail(`event order missing subsequence: ${expected.join(", ")} in ${actual.join(", ")}`);
+}
+
+function normalizeNewlines(value: string): string {
+  return value.replace(/\r\n/g, "\n");
 }
 
 async function setConfigTestCommand(repo: string, testCommand: string): Promise<void> {
