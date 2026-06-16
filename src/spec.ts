@@ -67,29 +67,6 @@ export async function specCommand(cwd: string, args: string[]): Promise<number> 
   return 0;
 }
 
-export async function planCommand(cwd: string, args: string[]): Promise<number> {
-  const [specId, flag, ...rest] = args;
-  if (!specId || flag !== "--check" || rest.length > 0) {
-    console.error("error: usage: hivemind plan <spec-id> --check");
-    return 1;
-  }
-
-  const repoRoot = await findGitRoot(cwd);
-  if (!repoRoot) {
-    console.error("error: not a git repository");
-    return 1;
-  }
-
-  const result = await checkPlanningAllowed(repoRoot, specId);
-  if (!result.ok) {
-    console.error(`error: ${result.reason}`);
-    return 1;
-  }
-
-  console.log(JSON.stringify(result.value, null, 2));
-  return 0;
-}
-
 export async function createSpec(repoRoot: string, specId: string, title: string): Promise<SpecResult<SpecSummary>> {
   const specIdResult = validateRequestedSpecId(specId);
   if (!specIdResult.ok) {

@@ -171,7 +171,7 @@ export async function startManagerSession(repoRoot: string, message: string): Pr
 
   const proposedAction: ManagerProposedAction = {
     type: "await_planning_loop",
-    reason: "M5.4 planning loop must produce tentative tasks before manager action execution can continue",
+    reason: "M5.4 planning loop must produce a tentative plan with `hivemind plan <spec-id> --propose <plan-json-file>` before manager action execution can continue",
     requires: "M5.4"
   };
   const sessionId = randomUUID();
@@ -350,7 +350,7 @@ async function executeDeterministicAction(repoRoot: string, action: ManagerActio
   if (action.type === "await_planning_loop") {
     return {
       ok: false,
-      reason: "M5.4 planning loop must produce tentative tasks before manager action execution can continue"
+      reason: "M5.4 planning loop must produce a tentative plan with `hivemind plan <spec-id> --propose <plan-json-file>` before manager action execution can continue"
     };
   }
   if (action.type === "get_status") {
