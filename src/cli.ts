@@ -6,6 +6,7 @@ import { initProject } from "./init.js";
 import { leaseCommand } from "./lease.js";
 import { validateContractCommand } from "./contract.js";
 import { runCommand } from "./run.js";
+import { submitCommand } from "./submit.js";
 import { worktreeCommand } from "./worktree.js";
 
 async function main(argv: string[]): Promise<number> {
@@ -37,6 +38,10 @@ async function main(argv: string[]): Promise<number> {
 
   if (command === "intent") {
     return intentCommand(process.cwd(), rest);
+  }
+
+  if (command === "submit") {
+    return submitCommand(process.cwd(), rest);
   }
 
   console.error(command ? `error: unknown command ${command}` : "error: missing command");

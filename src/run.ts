@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { invokeAgent } from "./adapter.js";
 import { writeFileAtomic } from "./atomic.js";
 import { loadAndValidateContract } from "./contract.js";
+import { captureWorktreeDiff } from "./diff-capture.js";
 import { findGitRoot } from "./repo.js";
 import { createTaskWorktree } from "./worktree.js";
 
@@ -93,51 +94,22 @@ async function captureDiff(
   taskId: string,
   baseCommit: string
 ): Promise<{ ok: true; value: { diffPath: string; changedFiles: number } } | { ok: false; reason: string }> {
-  const untrackedResult = await makeUntrackedFilesDiffable(worktreePath);
-  if (!untrackedResult.ok) {
-    return untrackedResult;
-  }
-
-  const diffResult = await git(worktreePath, ["diff", baseCommit]);
+  const diffResult = await captureWorktreeDiff(worktreePath, baseCommit, { excludeUntracked: [agentLogPath] });
   if (!diffResult.ok) {
     return diffResult;
   }
 
-  const changedResult = await git(worktreePath, ["diff", "--name-only", "-z", baseCommit]);
-  if (!changedResult.ok) {
-    return changedResult;
-  }
-
   const patchDir = path.join(repoRoot, ".hivemind", "patches", taskId);
   const diffPath = path.join(patchDir, "diff.patch");
-  await writeFileAtomic(diffPath, diffResult.stdout);
+  await writeFileAtomic(diffPath, diffResult.value.diff);
 
   return {
     ok: true,
     value: {
       diffPath,
-      changedFiles: countNullSeparatedEntries(changedResult.stdout)
+      changedFiles: diffResult.value.changedFiles
     }
   };
-}
-
-async function makeUntrackedFilesDiffable(worktreePath: string): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const statusResult = await git(worktreePath, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
-  if (!statusResult.ok) {
-    return statusResult;
-  }
-
-  const untracked = statusResult.stdout
-    .split("\0")
-    .filter((entry) => entry.startsWith("?? "))
-    .map((entry) => entry.slice(3))
-    .filter((entry) => normalizeGitPath(entry) !== agentLogPath);
-
-  if (untracked.length === 0) {
-    return { ok: true };
-  }
-
-  return git(worktreePath, ["add", "--intent-to-add", "--", ...untracked]);
 }
 
 async function verifyRunWorktreeClean(worktreePath: string, taskId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
@@ -166,10 +138,6 @@ async function git(cwd: string, args: string[]): Promise<{ ok: true; stdout: str
     const stdout = typeof error === "object" && error !== null && "stdout" in error ? String(error.stdout).trim() : "";
     return { ok: false, reason: stderr || stdout || "git command failed" };
   }
-}
-
-function countNullSeparatedEntries(value: string): number {
-  return value.split("\0").filter((entry) => entry.length > 0).length;
 }
 
 function normalizeGitPath(value: string): string {
