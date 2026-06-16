@@ -182,7 +182,7 @@ async function withLedgerLock<T>(repoRoot: string, action: () => Promise<{ ok: t
         await rm(lockPath, { force: true });
       }
     } catch (error: unknown) {
-      if (!isNodeError(error, "EEXIST")) {
+      if (!isRetryableLockError(error)) {
         throw error;
       }
       if (Date.now() >= deadline) {
@@ -293,4 +293,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNodeError(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
+function isRetryableLockError(error: unknown): boolean {
+  return isNodeError(error, "EEXIST") || isNodeError(error, "EPERM");
 }

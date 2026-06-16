@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
+import { appendEvent } from "../src/events.js";
 import { markIdeationConvergence, recordIdeationRound, startIdeationSession } from "../src/ideation.js";
 import { initProject } from "../src/init.js";
 import { createSpec, ratifySpec } from "../src/spec.js";
@@ -467,6 +468,107 @@ test("plan proposal rejects non-boolean Critical approval flags", async () => {
   });
 });
 
+test("plan thrash records targeted re-scope and rejects a known-failed scope repeat", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const planPath = await writePlan(repo, validPlan());
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+    await appendPatchRejected(repo, "T-WRITE", "outside allowed_files: src/feature.ts");
+    await appendPatchRejected(repo, "T-WRITE", "diff-scope rejected a required src/feature.ts edit outside scope");
+
+    const result = await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--thrash", "T-WRITE", "--budget", "2"], {
+      cwd: repo,
+      windowsHide: true
+    });
+    const parsed = JSON.parse(result.stdout) as {
+      status: string;
+      cause: string;
+      remedy: string;
+      attempt_count: number;
+      attempts_remaining: number;
+      replan_path: string;
+      evidence: { failure_count: number };
+    };
+
+    assert.equal(parsed.status, "replan_required");
+    assert.equal(parsed.cause, "scope-too-narrow");
+    assert.equal(parsed.remedy, "widen");
+    assert.equal(parsed.attempt_count, 1);
+    assert.equal(parsed.attempts_remaining, 1);
+    assert.equal(parsed.evidence.failure_count, 2);
+
+    const record = JSON.parse(await readFile(path.join(repo, parsed.replan_path), "utf8")) as {
+      status: string;
+      known_failed_scope_hashes: string[];
+      attempts: Array<{ cause: string; remedy: string; scope_hash: string }>;
+    };
+    assert.equal(record.status, "active");
+    assert.equal(record.attempts.length, 1);
+    assert.equal(record.attempts[0].cause, "scope-too-narrow");
+    assert.equal(record.attempts[0].remedy, "widen");
+    assert.equal(record.known_failed_scope_hashes.includes(record.attempts[0].scope_hash), true);
+
+    const repeatedPlanPath = await writePlan(repo, validPlan(), "repeat-known-failed-scope.json");
+    await assertPlanRejects(repo, ["plan", "S-001", "--propose", repeatedPlanPath], /known failed scope repeat: task T-WRITE/);
+  });
+});
+
+test("plan thrash terminates in blocked escalation within budget", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const planPath = await writePlan(repo, validPlan());
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+    await appendPatchRejected(repo, "T-WRITE", "ambiguous spec: acceptance contradicts requested behavior");
+    await appendPatchRejected(repo, "T-WRITE", "unclear spec: cannot determine intended output");
+
+    const result = await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--thrash", "T-WRITE", "--budget", "1"], {
+      cwd: repo,
+      windowsHide: true
+    });
+    const parsed = JSON.parse(result.stdout) as {
+      status: string;
+      cause: string;
+      remedy: string;
+      attempt_count: number;
+      attempts_remaining: number;
+      replan_path: string;
+    };
+
+    assert.equal(parsed.status, "blocked");
+    assert.equal(parsed.cause, "spec-ambiguity");
+    assert.equal(parsed.remedy, "escalate");
+    assert.equal(parsed.attempt_count, 1);
+    assert.equal(parsed.attempts_remaining, 0);
+
+    const record = JSON.parse(await readFile(path.join(repo, parsed.replan_path), "utf8")) as {
+      status: string;
+      escalation?: { cause: string; reason: string };
+    };
+    assert.equal(record.status, "blocked");
+    assert.equal(record.escalation?.cause, "spec-ambiguity");
+    assert.match(record.escalation?.reason ?? "", /re-plan budget exhausted/);
+
+    const status = JSON.parse((await execFileAsync(process.execPath, [cliPath, "status"], { cwd: repo, windowsHide: true })).stdout) as {
+      replans: Array<{ task_id: string; status: string; last_cause: string; last_remedy: string; attempts_remaining: number }>;
+    };
+    assert.deepEqual(status.replans, [
+      {
+        spec_id: "S-001",
+        task_id: "T-WRITE",
+        status: "blocked",
+        budget: 1,
+        attempt_count: 1,
+        attempts_remaining: 0,
+        last_cause: "spec-ambiguity",
+        last_remedy: "escalate",
+        escalation: record.escalation
+      }
+    ]);
+  });
+});
+
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
   const repo = await mkdtemp(path.join(tmpdir(), "hivemind-plan-test-"));
   try {
@@ -581,6 +683,15 @@ async function writePlan(repo: string, body: unknown, name = "plan.json"): Promi
   const filePath = path.join(repo, name);
   await writeFile(filePath, `${JSON.stringify(body, null, 2)}\n`);
   return filePath;
+}
+
+async function appendPatchRejected(repo: string, taskId: string, reason: string): Promise<void> {
+  const result = await appendEvent(repo, {
+    type: "patch.rejected",
+    task_id: taskId,
+    data: { verdict: "reject", reason }
+  });
+  assert.equal(result.ok, true);
 }
 
 async function updateConfig(repo: string, patch: Record<string, unknown>): Promise<void> {

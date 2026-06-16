@@ -11,6 +11,8 @@ export const eventTypes = [
   "patch.rejected",
   "cache.read",
   "scout.completed",
+  "replan.triggered",
+  "task.blocked",
   "integration.queued",
   "integration.passed",
   "integration.failed"

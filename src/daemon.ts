@@ -6,6 +6,7 @@ import { removeDaemonState, writeDaemonState } from "./daemon-state.js";
 import { enqueueIntegrationPatch, integrateShadow } from "./integrate.js";
 import { requestLeaseForContract, releaseLease } from "./lease.js";
 import { findGitRoot } from "./repo.js";
+import { evaluatePlanThrash } from "./plan.js";
 import { readQuotaLedger } from "./resource-ledger.js";
 import { runTask } from "./run.js";
 import { runScout } from "./scout.js";
@@ -115,6 +116,20 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
   }
   if (request.method === "POST" && request.url === "/resource/quota") {
     return async () => readQuotaLedger(repoRoot);
+  }
+  if (request.method === "POST" && request.url === "/plan/thrash") {
+    return async (payload) => {
+      const specId = readRequiredString(payload, "spec_id");
+      if (!specId.ok) {
+        return specId;
+      }
+      const taskId = readTaskId(payload);
+      if (!taskId.ok) {
+        return taskId;
+      }
+      const budget = readOptionalPositiveInteger(payload, "budget");
+      return budget.ok ? evaluatePlanThrash(repoRoot, specId.value, taskId.value, budget.value) : budget;
+    };
   }
   if (request.method === "POST" && request.url === "/lease/release") {
     return async (payload) => {
@@ -261,6 +276,16 @@ function readRequiredString(payload: DaemonPayload, field: string): { ok: true; 
   return typeof payload[field] === "string" && payload[field].trim() !== ""
     ? { ok: true, value: payload[field] }
     : { ok: false, reason: `${field} must be a non-empty string` };
+}
+
+function readOptionalPositiveInteger(payload: DaemonPayload, field: string): { ok: true; value?: number } | { ok: false; reason: string } {
+  if (!(field in payload) || payload[field] === undefined) {
+    return { ok: true };
+  }
+  const value = payload[field];
+  return Number.isSafeInteger(value) && typeof value === "number" && value >= 1
+    ? { ok: true, value }
+    : { ok: false, reason: `${field} must be a positive integer` };
 }
 
 function writeJson(response: ServerResponse, statusCode: number, value: unknown): void {

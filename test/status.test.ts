@@ -34,7 +34,8 @@ test("getStatus returns empty durable state for an initialized repo", async () =
         integration: {
           queue: [],
           status: null
-        }
+        },
+        replans: []
       }
     });
   });
@@ -54,7 +55,8 @@ test("CLI status prints stable JSON and rejects invalid usage", async () => {
       integration: {
         queue: [],
         status: null
-      }
+      },
+      replans: []
     });
 
     await assert.rejects(

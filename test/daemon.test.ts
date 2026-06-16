@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
+import { appendEvent } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { readActiveLeases } from "../src/lease.js";
 import { createRatifiedSpec } from "./support/spec.js";
@@ -155,6 +156,35 @@ test("lease command rejects a daemon for a different repo before mutating", asyn
   });
 });
 
+test("plan thrash discovers a live daemon and routes the re-plan write", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const planPath = await writePlan(repo, {
+      tasks: [planTask("T-WRITE")],
+      execution_groups: [{ group_id: "G-1", mode: "parallel", task_ids: ["T-WRITE"] }]
+    });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+    await appendPatchRejected(repo, "T-WRITE", "outside allowed_files: src/feature.ts");
+    await appendPatchRejected(repo, "T-WRITE", "outside allowed_files again: src/feature.ts");
+
+    const daemon = await startDaemon(repo);
+    try {
+      const routed = await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--thrash", "T-WRITE"], {
+        cwd: repo,
+        env: { ...process.env, HIVEMIND_DAEMON_URL: "" },
+        windowsHide: true
+      });
+      const parsed = JSON.parse(routed.stdout) as { status: string; replan_path: string };
+      assert.equal(parsed.status, "replan_required");
+      const record = JSON.parse(await readFile(path.join(repo, parsed.replan_path), "utf8")) as { task_id: string; attempts: unknown[] };
+      assert.equal(record.task_id, "T-WRITE");
+      assert.equal(record.attempts.length, 1);
+    } finally {
+      await stopDaemon(daemon);
+    }
+  });
+});
+
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
   const repo = await mkdtemp(path.join(tmpdir(), "hivemind-daemon-test-"));
   try {
@@ -261,6 +291,41 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
       2
     )}\n`
   );
+}
+
+async function writePlan(repo: string, body: unknown): Promise<string> {
+  const filePath = path.join(repo, "plan.json");
+  await writeFile(filePath, `${JSON.stringify(body, null, 2)}\n`);
+  return filePath;
+}
+
+function planTask(taskId: string): Record<string, unknown> {
+  return {
+    task_id: taskId,
+    title: "Daemon thrash fixture",
+    mode: "write",
+    agent_role: "builder",
+    draft_scope: {
+      allowed_files: ["README.md"],
+      read_only_files: [],
+      forbidden_files: [],
+      must_not_change: []
+    },
+    depends_on: [],
+    parallel_safe: true,
+    acceptance_criterion: "One binary acceptance check passes.",
+    required_tests: ["npm run typecheck"],
+    patch_requirements: ["submit diff only"]
+  };
+}
+
+async function appendPatchRejected(repo: string, taskId: string, reason: string): Promise<void> {
+  const result = await appendEvent(repo, {
+    type: "patch.rejected",
+    task_id: taskId,
+    data: { verdict: "reject", reason }
+  });
+  assert.equal(result.ok, true);
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {

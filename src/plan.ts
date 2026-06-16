@@ -3,9 +3,11 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { writeJsonAtomic } from "./atomic.js";
+import { callDaemonIfConfigured } from "./daemon-client.js";
 import { loadConfig } from "./config.js";
 import { type AgentRole } from "./contract.js";
 import { matchesAny } from "./glob.js";
+import { assertNoKnownFailedScopeRepeat, evaluateThrashForPlan, type ReplanEvaluationResult } from "./replan.js";
 import { findGitRoot } from "./repo.js";
 import { checkPlanningAllowed } from "./spec.js";
 import { type SpecResult, validateRequestedSpecId } from "./spec-format.js";
@@ -137,7 +139,9 @@ export async function planCommand(cwd: string, args: string[]): Promise<number> 
         ? await createTentativePlanFromFile(repoRoot, parsed.value.specId, parsed.value.planFile)
         : parsed.value.action === "ground"
           ? await groundTentativePlan(repoRoot, parsed.value.specId)
-          : await lintTentativePlan(repoRoot, parsed.value.specId);
+          : parsed.value.action === "lint"
+            ? await lintTentativePlan(repoRoot, parsed.value.specId)
+            : await routeThrashEvaluation(repoRoot, parsed.value.specId, parsed.value.taskId, parsed.value.budget);
   if (!result.ok) {
     console.error(`error: ${result.reason}`);
     return 1;
@@ -178,6 +182,10 @@ export async function createTentativePlan(
   if (!parsed.ok) {
     return parsed;
   }
+  const failedScopeGuard = await assertNoKnownFailedScopeRepeat(repoRoot, specId, parsed.value.tasks);
+  if (!failedScopeGuard.ok) {
+    return failedScopeGuard;
+  }
 
   const baseCommit = await currentHead(repoRoot);
   if (!baseCommit.ok) {
@@ -217,6 +225,7 @@ function parsePlanArgs(
   | { action: "propose"; specId: string; planFile: string }
   | { action: "ground"; specId: string }
   | { action: "lint"; specId: string }
+  | { action: "thrash"; specId: string; taskId: string; budget?: number }
 > {
   const [specId, flag, value, ...rest] = args;
   if (!specId) {
@@ -234,11 +243,58 @@ function parsePlanArgs(
   if (flag === "--lint" && value === undefined && rest.length === 0) {
     return { ok: true, value: { action: "lint", specId } };
   }
+  if (flag === "--thrash" && typeof value === "string") {
+    const taskIdResult = validateRequestedTaskId(value);
+    if (!taskIdResult.ok) {
+      return taskIdResult;
+    }
+    if (rest.length === 0) {
+      return { ok: true, value: { action: "thrash", specId, taskId: value } };
+    }
+    if (rest.length === 2 && rest[0] === "--budget" && /^\d+$/.test(rest[1])) {
+      const budget = Number(rest[1]);
+      if (!Number.isSafeInteger(budget) || budget < 1) {
+        return { ok: false, reason: "re-plan budget must be a positive integer" };
+      }
+      return { ok: true, value: { action: "thrash", specId, taskId: value, budget } };
+    }
+  }
   return { ok: false, reason: planUsage() };
 }
 
 function planUsage(): string {
-  return "usage: hivemind plan <spec-id> --check | --propose <plan-json-file> | --ground | --lint";
+  return "usage: hivemind plan <spec-id> --check | --propose <plan-json-file> | --ground | --lint | --thrash <task-id> [--budget <n>]";
+}
+
+export async function evaluatePlanThrash(
+  repoRoot: string,
+  specId: string,
+  taskId: string,
+  budget?: number
+): Promise<SpecResult<ReplanEvaluationResult>> {
+  const allowed = await checkPlanningAllowed(repoRoot, specId);
+  if (!allowed.ok) {
+    return allowed;
+  }
+  const loaded = await loadTentativePlan(repoRoot, specId);
+  if (!loaded.ok) {
+    return loaded;
+  }
+  return evaluateThrashForPlan(repoRoot, loaded.value, taskId, budget);
+}
+
+async function routeThrashEvaluation(
+  repoRoot: string,
+  specId: string,
+  taskId: string,
+  budget?: number
+): Promise<SpecResult<ReplanEvaluationResult>> {
+  const daemonResult = await callDaemonIfConfigured<ReplanEvaluationResult>(repoRoot, "/plan/thrash", {
+    spec_id: specId,
+    task_id: taskId,
+    ...(budget === undefined ? {} : { budget })
+  });
+  return daemonResult.routed ? (daemonResult.ok ? { ok: true, value: daemonResult.value } : { ok: false, reason: daemonResult.reason }) : evaluatePlanThrash(repoRoot, specId, taskId, budget);
 }
 
 export async function groundTentativePlan(repoRoot: string, specId: string): Promise<SpecResult<GroundPlanResult>> {

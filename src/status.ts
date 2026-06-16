@@ -6,6 +6,7 @@ import type { IntegrationStatus } from "./integrate.js";
 import { loadIntegrationQueue } from "./integrate.js";
 import { readJsonFile } from "./json.js";
 import { readActiveLeases, type LeaseStore } from "./lease.js";
+import { listReplanStatuses, type ReplanStatus } from "./replan.js";
 import { findGitRoot } from "./repo.js";
 
 export interface HivemindStatus {
@@ -15,6 +16,7 @@ export interface HivemindStatus {
     queue: string[];
     status: IntegrationStatus | null;
   };
+  replans: ReplanStatus[];
 }
 
 export interface StatusTask {
@@ -72,6 +74,10 @@ export async function getStatus(repoRoot: string): Promise<{ ok: true; value: Hi
   if (!integrationStatusResult.ok) {
     return integrationStatusResult;
   }
+  const replanResult = await listReplanStatuses(repoRoot);
+  if (!replanResult.ok) {
+    return replanResult;
+  }
 
   const taskIds = await listTaskIds(repoRoot);
   const tasks: StatusTask[] = [];
@@ -97,7 +103,8 @@ export async function getStatus(repoRoot: string): Promise<{ ok: true; value: Hi
       integration: {
         queue: queueResult.value,
         status: integrationStatusResult.value
-      }
+      },
+      replans: replanResult.value
     }
   };
 }
