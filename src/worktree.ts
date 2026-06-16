@@ -3,6 +3,7 @@ import { chmod, mkdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { loadAndValidateContract, TaskContract } from "./contract.js";
+import { appendEvent } from "./events.js";
 import { canonicalizeConcreteFileScope } from "./file-scope.js";
 import { findGitRoot } from "./repo.js";
 import { validateRequestedTaskId } from "./task-id.js";
@@ -61,6 +62,10 @@ export async function createTaskWorktree(
     if (!prepResult.ok) {
       return prepResult;
     }
+    const eventResult = await appendTaskCreatedEvent(repoRoot, taskId, contractResult.contract, value, true);
+    if (!eventResult.ok) {
+      return eventResult;
+    }
     return { ok: true, value };
   }
 
@@ -80,6 +85,11 @@ export async function createTaskWorktree(
   const prepResult = await prepareReadonlyWorktree(value.worktree, contractResult.contract);
   if (!prepResult.ok) {
     return prepResult;
+  }
+
+  const eventResult = await appendTaskCreatedEvent(repoRoot, taskId, contractResult.contract, value, false);
+  if (!eventResult.ok) {
+    return eventResult;
   }
 
   return { ok: true, value };
@@ -164,6 +174,29 @@ function getWorktreeResult(repoRoot: string, taskId: string): WorktreeResult {
     worktree: path.join(repoRoot, ".hivemind", "worktrees", taskId),
     branch: `hivemind/${taskId}`
   };
+}
+
+async function appendTaskCreatedEvent(
+  repoRoot: string,
+  taskId: string,
+  contract: TaskContract,
+  value: WorktreeResult,
+  reused: boolean
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const eventResult = await appendEvent(repoRoot, {
+    type: "task.created",
+    task_id: taskId,
+    data: {
+      title: contract.title,
+      agent_role: contract.agent_role,
+      base_commit: contract.base_commit,
+      allowed_files: contract.allowed_files,
+      worktree: path.relative(repoRoot, value.worktree).replaceAll("\\", "/"),
+      branch: value.branch,
+      reused
+    }
+  });
+  return eventResult.ok ? { ok: true } : { ok: false, reason: `failed to append task.created event: ${eventResult.reason}` };
 }
 
 function parseNullSeparated(value: string): string[] {

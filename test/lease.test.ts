@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
+import { readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { releaseLease, requestLease } from "../src/lease.js";
 
@@ -26,6 +27,17 @@ test("requestLease rejects an overlapping grant and names the holder", async () 
     }
     assert.match(second.reason, /README\.md held by T-001/);
     assert.deepEqual(await readActive(repo), { "README.md": "T-001" });
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.deepEqual(
+      events.value.map((event) => event.type),
+      ["lease.approved", "lease.rejected"]
+    );
+    assert.equal(events.value[1].task_id, "T-002");
+    assert.match(String(events.value[1].data.reason), /README\.md held by T-001/);
   });
 });
 

@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { analyzeTask } from "../src/analyze.js";
+import { readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
 
 const execFileAsync = promisify(execFile);
@@ -30,6 +31,14 @@ test("analyzeTask returns accept for a clean in-scope bundle", async () => {
         reason: "all changes are within scope"
       }
     });
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.equal(events.value.at(-1)?.type, "patch.accepted");
+    assert.equal(events.value.at(-1)?.task_id, "T-001");
+    assert.equal(events.value.at(-1)?.data.verdict, "accept");
   });
 });
 
@@ -68,6 +77,14 @@ test("CLI analyze prints reject JSON and exits non-zero for an out-of-scope bund
         return true;
       }
     );
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.equal(events.value.at(-1)?.type, "patch.rejected");
+    assert.equal(events.value.at(-1)?.task_id, "T-001");
+    assert.equal(events.value.at(-1)?.data.verdict, "reject");
   });
 });
 

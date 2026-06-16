@@ -2,6 +2,7 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 import { loadConfig } from "./config.js";
 import { loadAndValidateContract } from "./contract.js";
+import { appendEvent } from "./events.js";
 import { runGate, type GateResult } from "./gate.js";
 import { findGitRoot } from "./repo.js";
 
@@ -30,7 +31,8 @@ export async function analyzeCommand(cwd: string, args: string[]): Promise<numbe
 
 export async function analyzeTask(
   repoRoot: string,
-  taskId: string
+  taskId: string,
+  options: { emitEvent?: boolean } = {}
 ): Promise<{ ok: true; value: GateResult } | { ok: false; reason: string }> {
   const contractResult = await loadAndValidateContract(repoRoot, taskId);
   if (!contractResult.ok) {
@@ -47,9 +49,25 @@ export async function analyzeTask(
     return { ok: false, reason: `patch not found: .hivemind/patches/${taskId}/diff.patch` };
   }
 
+  const gateResult = await runGate(contractResult.contract.base_commit, patchPath, contractResult.contract, configResult.config);
+  if (options.emitEvent !== false) {
+    const eventType = gateResult.verdict === "accept" ? "patch.accepted" : "patch.rejected";
+    const eventResult = await appendEvent(repoRoot, {
+      type: eventType,
+      task_id: taskId,
+      data: {
+        verdict: gateResult.verdict,
+        reason: gateResult.reason
+      }
+    });
+    if (!eventResult.ok) {
+      return { ok: false, reason: `failed to append ${eventType} event: ${eventResult.reason}` };
+    }
+  }
+
   return {
     ok: true,
-    value: await runGate(contractResult.contract.base_commit, patchPath, contractResult.contract, configResult.config)
+    value: gateResult
   };
 }
 

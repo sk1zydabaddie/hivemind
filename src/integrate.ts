@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { analyzeTask } from "./analyze.js";
 import { writeJsonAtomic } from "./atomic.js";
 import { loadConfig } from "./config.js";
+import { appendEvent } from "./events.js";
 import { readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
 import { validateRequestedTaskId } from "./task-id.js";
@@ -113,7 +114,8 @@ export async function integrateShadow(
             report: buildReport(gateResult.value, configResult.config.test_command, null, applyError)
           };
           await writeIntegrationStatus(repoRoot, status);
-          outcome = { ok: true, value: status };
+          const eventResult = await appendIntegrationEvent(repoRoot, status);
+          outcome = eventResult.ok ? { ok: true, value: status } : eventResult;
           break;
         }
       }
@@ -127,7 +129,8 @@ export async function integrateShadow(
           report: buildReport(gateResult.value, configResult.config.test_command, testResult, null)
         };
         await writeIntegrationStatus(repoRoot, status);
-        outcome = { ok: true, value: status };
+        const eventResult = await appendIntegrationEvent(repoRoot, status);
+        outcome = eventResult.ok ? { ok: true, value: status } : eventResult;
       }
     }
   } finally {
@@ -243,6 +246,21 @@ function trimReportOutput(value: string): string {
 
 async function writeIntegrationStatus(repoRoot: string, status: IntegrationStatus): Promise<void> {
   await writeJsonAtomic(path.join(repoRoot, ".hivemind", "integration", "status.json"), status);
+}
+
+async function appendIntegrationEvent(repoRoot: string, status: IntegrationStatus): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const eventType = status.tests === "pass" ? "integration.passed" : "integration.failed";
+  const eventResult = await appendEvent(repoRoot, {
+    type: eventType,
+    task_id: null,
+    data: {
+      branch: status.branch,
+      applied: status.applied,
+      tests: status.tests,
+      report: status.report
+    }
+  });
+  return eventResult.ok ? { ok: true } : { ok: false, reason: `failed to append ${eventType} event: ${eventResult.reason}` };
 }
 
 async function cleanupShadow(repoRoot: string, worktreePath: string, branch: string, worktreeCreated: boolean): Promise<string[]> {

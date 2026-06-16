@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
+import { readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { submitTask } from "../src/submit.js";
 import { createTaskWorktree } from "../src/worktree.js";
@@ -57,6 +58,22 @@ test("submitTask assembles exactly the seven patch bundle files", async () => {
     assert.match(await readBundle(repo, "T-001", "diff.patch"), /\+submitted change/);
     assert.equal(await readBundle(repo, "T-001", "summary.md"), "");
     assert.equal(await readBundle(repo, "T-001", "files_changed.json"), "");
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.equal(events.value.at(-1)?.type, "patch.submitted");
+    assert.equal(events.value.at(-1)?.task_id, "T-001");
+    assert.deepEqual(events.value.at(-1)?.data.files, [
+      "diff.patch",
+      "summary.md",
+      "files_changed.json",
+      "symbols_changed.json",
+      "tests_run.json",
+      "risks.md",
+      "memory_proposals.json"
+    ]);
   });
 });
 

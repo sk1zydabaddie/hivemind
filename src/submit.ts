@@ -3,6 +3,7 @@ import path from "node:path";
 import { writeFileAtomic } from "./atomic.js";
 import { loadAndValidateContract } from "./contract.js";
 import { captureWorktreeDiff } from "./diff-capture.js";
+import { appendEvent } from "./events.js";
 import { findGitRoot } from "./repo.js";
 
 const bundleFiles = [
@@ -88,6 +89,19 @@ export async function submitTask(repoRoot: string, taskId: string): Promise<{ ok
   }
 
   await removeStaleBundleEntries(patchDir);
+
+  const eventResult = await appendEvent(repoRoot, {
+    type: "patch.submitted",
+    task_id: taskId,
+    data: {
+      bundle_path: path.relative(repoRoot, patchDir).replaceAll("\\", "/"),
+      files: [...bundleFiles],
+      changed_files: diffResult.value.changedFiles
+    }
+  });
+  if (!eventResult.ok) {
+    return { ok: false, reason: `failed to append patch.submitted event: ${eventResult.reason}` };
+  }
 
   return {
     ok: true,

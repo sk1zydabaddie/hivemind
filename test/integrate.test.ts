@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
+import { readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { integrateShadow, type IntegrationStatus } from "../src/integrate.js";
 
@@ -54,6 +55,14 @@ test("integrateShadow applies accepted queued patches together, runs tests, repo
     assert.equal(normalizeNewlines(await readFile(path.join(repo, "src", "feature.ts"), "utf8")), "export const feature = 'base';\n");
     assert.equal(await gitStdout(repo, ["rev-parse", "HEAD"]), integrationBase);
     assert.equal(baseCommit.length > 0, true);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.equal(events.value.at(-1)?.type, "integration.passed");
+    assert.equal(events.value.at(-1)?.task_id, null);
+    assert.deepEqual(events.value.at(-1)?.data.applied, ["T-001", "T-002"]);
   });
 });
 
@@ -99,6 +108,14 @@ test("integrateShadow records failed tests, exits through fail status, and clean
     assert.deepEqual(result.value.applied, ["T-001"]);
     assert.match(result.value.report, /test exit code: 7/);
     assert.equal(await branchExists(repo, result.value.branch), false);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.equal(events.value.at(-1)?.type, "integration.failed");
+    assert.equal(events.value.at(-1)?.task_id, null);
+    assert.deepEqual(events.value.at(-1)?.data.applied, ["T-001"]);
   });
 });
 

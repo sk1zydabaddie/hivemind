@@ -4,6 +4,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { writeJsonAtomic } from "./atomic.js";
 import { canonicalizeIntentPath } from "./canonicalize.js";
 import { loadAndValidateContract } from "./contract.js";
+import { appendEvent } from "./events.js";
 import { canonicalizeConcreteFileScope } from "./file-scope.js";
 import { findGitRoot } from "./repo.js";
 import { validateRequestedTaskId } from "./task-id.js";
@@ -61,6 +62,23 @@ export async function requestLease(repoRoot: string, taskId: string, files: stri
   if (!taskIdResult.ok) {
     return taskIdResult;
   }
+
+  const result = await requestLeaseValidated(repoRoot, taskId, files);
+  const eventResult = await appendEvent(repoRoot, {
+    type: result.ok ? "lease.approved" : "lease.rejected",
+    task_id: taskId,
+    data: result.ok
+      ? { requested_files: files, granted: result.value.granted }
+      : { requested_files: files, reason: result.reason }
+  });
+  if (!eventResult.ok) {
+    return { ok: false, reason: `failed to append ${result.ok ? "lease.approved" : "lease.rejected"} event: ${eventResult.reason}` };
+  }
+
+  return result;
+}
+
+async function requestLeaseValidated(repoRoot: string, taskId: string, files: string[]): Promise<LeaseResult<LeaseGrantResult>> {
   if (files.length === 0) {
     return { ok: false, reason: "lease request must include at least one file" };
   }

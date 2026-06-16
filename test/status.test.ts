@@ -8,12 +8,14 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { analyzeTask } from "../src/analyze.js";
+import { readEvents, type HivemindEvent, type HivemindEventType } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { integrateShadow } from "../src/integrate.js";
 import { requestLease } from "../src/lease.js";
 import { runTask } from "../src/run.js";
 import { getStatus, type HivemindStatus, type StatusTask } from "../src/status.js";
 import { submitTask } from "../src/submit.js";
+import { createTaskWorktree } from "../src/worktree.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -89,13 +91,16 @@ test("getStatus reports contracts, leases, patch verdicts, queue, and integratio
       tests: "pass",
       report: "status fixture\n"
     });
+    const eventsBeforeStatus = await readRequiredEvents(repo);
 
     const result = await getStatus(repo);
+    const eventsAfterStatus = await readRequiredEvents(repo);
 
     assert.equal(result.ok, true);
     if (!result.ok) {
       return;
     }
+    assert.equal(eventsAfterStatus.length, eventsBeforeStatus.length);
     assert.deepEqual(result.value.leases, {
       "README.md": "T-001",
       "src/feature.ts": "T-002"
@@ -145,8 +150,13 @@ test("M2.6 MVP gate runs two fake agents in parallel, rejects out-of-scope work,
     await writeProfile(repo, "fake-accepted", path.join(repo, "fake-agents", "agent-accepted.mjs"));
     await writeProfile(repo, "fake-rejected", path.join(repo, "fake-agents", "agent-rejected.mjs"));
 
+    const worktrees = await Promise.all([createTaskWorktree(repo, "T-001"), createTaskWorktree(repo, "T-002")]);
+    assert.equal(worktrees.every((result) => result.ok), true);
+
     const leaseResults = await Promise.all([requestLease(repo, "T-001", ["README.md"]), requestLease(repo, "T-002", ["src/feature.ts"])]);
     assert.equal(leaseResults.every((result) => result.ok), true);
+    const rejectedLease = await requestLease(repo, "T-002", ["README.md"]);
+    assert.equal(rejectedLease.ok, false);
 
     const runResults = await Promise.all([runTask(repo, "T-001", "fake-accepted"), runTask(repo, "T-002", "fake-rejected")]);
     assert.equal(runResults.every((result) => result.ok), true);
@@ -171,6 +181,15 @@ test("M2.6 MVP gate runs two fake agents in parallel, rejects out-of-scope work,
     assert.match(rejected.value.reason, /outside\.txt/);
 
     await writeQueue(repo, ["T-001", "T-002"]);
+    await setConfigTestCommand(repo, "node -e \"process.exit(9)\"");
+    const failedIntegration = await integrateShadow(repo);
+    assert.equal(failedIntegration.ok, true);
+    if (!failedIntegration.ok) {
+      return;
+    }
+    assert.equal(failedIntegration.value.tests, "fail");
+
+    await setConfigTestCommand(repo, "node verify-shadow.mjs");
     const integrated = await integrateShadow(repo);
 
     assert.equal(integrated.ok, true);
@@ -200,6 +219,25 @@ test("M2.6 MVP gate runs two fake agents in parallel, rejects out-of-scope work,
     assert.deepEqual(status.value.integration.queue, ["T-001", "T-002"]);
     assert.deepEqual(status.value.integration.status?.applied, ["T-001"]);
     assert.equal(status.value.integration.status?.tests, "pass");
+
+    const eventsBeforeStatus = await readRequiredEvents(repo);
+    await getStatus(repo);
+    const eventsAfterStatus = await readRequiredEvents(repo);
+    assert.equal(eventsAfterStatus.length, eventsBeforeStatus.length);
+    assertEventOrder(
+      eventsAfterStatus.map((event) => event.type),
+      [
+        "task.created",
+        "lease.approved",
+        "lease.rejected",
+        "patch.submitted",
+        "patch.accepted",
+        "patch.rejected",
+        "integration.failed",
+        "integration.passed"
+      ]
+    );
+    assert.equal(eventsAfterStatus.every((event) => typeof event.ts === "string" && Date.parse(event.ts) > 0), true);
   });
 });
 
@@ -322,6 +360,28 @@ function task(status: HivemindStatus, taskId: string): StatusTask {
     throw new Error(`missing task ${taskId}`);
   }
   return found;
+}
+
+async function readRequiredEvents(repo: string): Promise<HivemindEvent[]> {
+  const events = await readEvents(repo);
+  assert.equal(events.ok, true);
+  if (!events.ok) {
+    return [];
+  }
+  return events.value;
+}
+
+function assertEventOrder(actual: HivemindEventType[], expected: HivemindEventType[]): void {
+  let cursor = 0;
+  for (const type of actual) {
+    if (type === expected[cursor]) {
+      cursor += 1;
+    }
+    if (cursor === expected.length) {
+      return;
+    }
+  }
+  assert.fail(`event order missing subsequence: ${expected.join(", ")} in ${actual.join(", ")}`);
 }
 
 async function branchExists(repo: string, branch: string): Promise<boolean> {

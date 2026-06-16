@@ -143,7 +143,7 @@ async function readPatchStatus(repoRoot: string, taskId: string): Promise<Status
     return { bundle: "missing", verdict: "not_submitted", reason: "patch not submitted" };
   }
 
-  const result = await analyzeTask(repoRoot, taskId);
+  const result = await analyzeTask(repoRoot, taskId, { emitEvent: false });
   if (!result.ok) {
     return { bundle: "present", verdict: "error", reason: result.reason };
   }
