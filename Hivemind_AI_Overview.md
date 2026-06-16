@@ -311,7 +311,7 @@ The UI, CLI, MCP server, and worker adapters do not write shared state directly 
 There is exactly one authoritative store: the `.hivemind/` directory on disk. Rules that keep it consistent under concurrency:
 
 - **One writer for shared state.** Only the daemon (or, in the CLI-only early build, the single active CLI invocation) writes shared files such as `leases/active.json` and `integration/status.json`. Agents write only inside their own worktree and their own patch-bundle folder — never shared state.
-- **Atomic writes.** Shared files are written to a temp file and renamed into place, so a reader never sees a half-written file.
+- **Atomic writes.** Shared files are written to a temp file and renamed into place, so a reader never sees a half-written file. **Exception — append-only logs:** an append-only stream such as `log/events.jsonl` is not rewritten via temp+rename; it is extended by a single atomic append of one complete line (`O_APPEND`), which is the correct durability model for an append-only event log. Atomicity there is guaranteed per record, not whole-file.
 - **File locks** guard the few genuinely shared mutable files.
 - **SQLite, if used at all, is a derived index/cache** for fast queries — rebuildable from `.hivemind/` and never the source of truth.
 
@@ -976,7 +976,7 @@ This gate is the single deterministic check the entire safety story rests on: di
 
 **2. Disable rename detection.** Rename detection is turned *off* so a rename of a forbidden file (e.g. `playerStore.ts → player_store.ts`) surfaces as a **delete** of the forbidden path *and* an **add** of a new path — and both halves are checked independently. A rename can never launder a forbidden file into an allowed-looking one.
 
-**3. Canonicalize and confine every path before membership testing.** Each path in the changeset is normalized (resolve `..`, resolve symlinks, apply the filesystem's case rules) and confined to the repository root. Any path that resolves outside the repo root, outside the allowed set, or that cannot be resolved is **rejected**. Membership is a resolved-path security check, not a textual prefix comparison.
+**3. Canonicalize and confine every path before membership testing.** Each path in the changeset is normalized (resolve `..`, resolve symlinks, apply the filesystem's case rules) and confined to the repository root. Any path that resolves outside the repo root, outside the allowed set, or that cannot be resolved is **rejected**. Membership is a resolved-path security check, not a textual prefix comparison. **Resolution is tree-aware:** an *added* path does not exist at the base, so its pre-image checks resolve against the *applied* tree; a *deleted* path does not exist after apply, so it resolves against the *base* tree; symlink and case resolution use whichever tree the path's pre- or post-image actually lives in. The apply-to-base checkout from rule 1 furnishes both trees, so neither a not-yet-existing add nor a no-longer-existing delete is mistaken for an unresolvable path.
 
 **4. Decide per operation type — not just "modify."** The gate enumerates the operation on each path and routes the *decision* to the existing risk tiers (the gate detects; [Risk Configuration](#human-approval-model) and the [Blast-Radius Analyzer](#core-system-components) decide):
 

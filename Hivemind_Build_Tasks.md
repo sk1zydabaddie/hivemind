@@ -16,7 +16,7 @@ These hold for **every** sub-task unless a contract overrides them. State them t
 
 **C2 — Single source of truth.** The authoritative store is the `.hivemind/` directory on disk. No component holds shared state in memory as the source. SQLite (if introduced at M4) is a rebuildable cache, never the source.
 
-**C3 — Atomic writes.** Every write to a shared file under `.hivemind/` is written to a temp file and `rename()`d into place. Readers never see a half-written file.
+**C3 — Atomic writes.** Every write to a shared file under `.hivemind/` is written to a temp file and `rename()`d into place. Readers never see a half-written file. **Exception — append-only logs:** `log/events.jsonl` (and any append-only Tier-1 log) is *not* temp+rename'd; it is extended by a single atomic append of one complete JSON line (`O_APPEND`). That is the one sanctioned exception to temp+rename — its atomicity guarantee is per-line, not whole-file. (This reconciles C3 with M2.7.)
 
 **C4 — Determinism boundary.** Anything that enforces a guarantee (lease grant, the diff-scope gate, integration, ceilings) is plain deterministic code with **no LLM call and no network**. LLM calls happen only in worker/orchestrator invocation, never inside a gate.
 
@@ -255,7 +255,7 @@ In the early build, `allowed_symbols`/`forbidden_symbols` are carried but not en
 - **Depends on:** M0.1.
 - **Read first:** Overview § *Real-Time Supervision* (event list), § *Project Memory Log* (Tier-1).
 - **Goal:** Record key actions as append-only evidence.
-- **Behavior — exact (C3):** Append one JSON object per line to `.hivemind/log/events.jsonl`: `{ "ts", "type", "task_id", "data" }`. Emit at minimum: `task.created`, `lease.approved`/`lease.rejected`, `patch.submitted`, `patch.accepted`/`patch.rejected`, `integration.passed`/`integration.failed`. Append-only; never rewritten.
+- **Behavior — exact (C3):** Append one JSON object per line to `.hivemind/log/events.jsonl`: `{ "ts", "type", "task_id", "data" }`. Emit at minimum: `task.created`, `lease.approved`/`lease.rejected`, `patch.submitted`, `patch.accepted`/`patch.rejected`, `integration.passed`/`integration.failed`. Append-only; never rewritten (the C3 append-only exception). **`task.created` definition (MVP):** pre-M5 there is no separate task-create command, so `task.created` is emitted the first time a valid contract enters execution — i.e. on first worktree creation/reuse for that `task_id`. (When the orchestrator arrives at M5, explicit creation will move earlier; the event's meaning — "this contract is now a live task" — is unchanged.)
 - **Acceptance test (binary):** Running the M2.6 demo appends well-formed JSONL lines for each of the listed event types, in order.
 
 ---
