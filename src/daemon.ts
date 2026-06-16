@@ -5,6 +5,7 @@ import { createTaskContract } from "./contract.js";
 import { integrateShadow } from "./integrate.js";
 import { requestLeaseForContract, releaseLease } from "./lease.js";
 import { findGitRoot } from "./repo.js";
+import { readQuotaLedger } from "./resource-ledger.js";
 import { runTask } from "./run.js";
 import { getStatus } from "./status.js";
 import { submitTask } from "./submit.js";
@@ -102,6 +103,9 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
   }
   if (request.method === "POST" && request.url === "/status") {
     return async () => getStatus(repoRoot);
+  }
+  if (request.method === "POST" && request.url === "/resource/quota") {
+    return async () => readQuotaLedger(repoRoot);
   }
   if (request.method === "POST" && request.url === "/lease/release") {
     return async (payload) => {

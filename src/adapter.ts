@@ -3,6 +3,7 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { loadAndValidateContract, TaskContract } from "./contract.js";
 import { readJsonFile } from "./json.js";
+import { adapterOutputIndicatesThrottle, recordQuotaUsage } from "./resource-ledger.js";
 
 export type PromptArgMode = "stdin" | "arg";
 
@@ -61,12 +62,24 @@ export async function invokeAgent(
   }
 
   const prompt = buildAgentPrompt(contractResult.contract);
+  const startedAt = Date.now();
   const processResult = await runAdapter(profileResult.profile, worktreePath, prompt);
   if (!processResult.ok) {
     return processResult;
   }
+  const wallTimeMs = Date.now() - startedAt;
   const logPath = path.join(worktreePath, "agent.log");
   await writeAgentLog(logPath, profileResult.profile.tool, processResult.value);
+  const ledgerResult = await recordQuotaUsage(repoRoot, {
+    provider: profileResult.profile.tool,
+    input_text: prompt,
+    output_text: `${processResult.value.stdout}\n${processResult.value.stderr}`,
+    wall_time_ms: wallTimeMs,
+    throttled: adapterOutputIndicatesThrottle(processResult.value.stdout, processResult.value.stderr, processResult.value.exitCode)
+  });
+  if (!ledgerResult.ok) {
+    return { ok: false, reason: ledgerResult.reason };
+  }
 
   return { ok: true, value: { exitCode: processResult.value.exitCode, logPath } };
 }

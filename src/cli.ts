@@ -6,6 +6,7 @@ import { integrateCommand } from "./integrate.js";
 import { intentCommand } from "./intent.js";
 import { initProject } from "./init.js";
 import { leaseCommand } from "./lease.js";
+import { quotaCommand } from "./resource-ledger.js";
 import { validateContractCommand } from "./contract.js";
 import { runCommand } from "./run.js";
 import { statusCommand } from "./status.js";
@@ -42,6 +43,10 @@ async function main(argv: string[]): Promise<number> {
   if (command === "cache") {
     const { cacheCommand } = await import("./cache.js");
     return cacheCommand(process.cwd(), rest);
+  }
+
+  if (command === "quota") {
+    return quotaCommand(process.cwd(), rest);
   }
 
   if (command === "mcp") {

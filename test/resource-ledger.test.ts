@@ -1,0 +1,226 @@
+import assert from "node:assert/strict";
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path, { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import test from "node:test";
+
+import { initProject } from "../src/init.js";
+import { readQuotaLedger, recordQuotaUsage, type QuotaLedger } from "../src/resource-ledger.js";
+
+const execFileAsync = promisify(execFile);
+const testDir = dirname(fileURLToPath(import.meta.url));
+const cliPath = path.resolve(testDir, "../src/cli.js");
+
+interface DaemonProcess {
+  child: ChildProcessWithoutNullStreams;
+  url: string;
+}
+
+test("quota ledger reads empty when missing and records self-metered usage atomically", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const empty = await readQuotaLedger(repo);
+    assert.equal(empty.ok, true);
+    if (!empty.ok) {
+      return;
+    }
+    assert.deepEqual(empty.value, {});
+
+    const first = await recordQuotaUsage(repo, {
+      provider: "fake",
+      input_text: "12345678",
+      output_text: "1234",
+      wall_time_ms: 25,
+      throttled: false
+    });
+    assert.equal(first.ok, true);
+    const second = await recordQuotaUsage(repo, {
+      provider: "fake",
+      input_text: "1234",
+      output_text: "",
+      wall_time_ms: 75,
+      throttled: false
+    });
+    assert.equal(second.ok, true);
+
+    const ledger = await readQuotaLedger(repo);
+    assert.equal(ledger.ok, true);
+    if (!ledger.ok) {
+      return;
+    }
+    assert.equal(ledger.value.fake.source, "self-metered");
+    assert.deepEqual(ledger.value.fake.used, {
+      requests: 2,
+      input_tokens_estimated: 3,
+      output_tokens_estimated: 1,
+      wall_time_ms: 100
+    });
+    assert.equal(ledger.value.fake.observed_limit, null);
+    assert.equal(await exists(path.join(repo, ".hivemind", "resource", "ledger.json")), true);
+  });
+});
+
+test("quota ledger fails closed for malformed state and marks local providers unmetered", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const local = await recordQuotaUsage(repo, {
+      provider: "local",
+      input_text: "local prompt",
+      output_text: "local output",
+      wall_time_ms: 1,
+      throttled: false
+    });
+    assert.equal(local.ok, true);
+    if (!local.ok) {
+      return;
+    }
+    assert.equal(local.value.unmetered, true);
+
+    await writeFile(path.join(repo, ".hivemind", "resource", "ledger.json"), "{\"fake\":{\"used\":1}}\n");
+    const result = await recordQuotaUsage(repo, {
+      provider: "fake",
+      input_text: "prompt",
+      output_text: "output",
+      wall_time_ms: 1,
+      throttled: false
+    });
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.match(result.reason, /must be a JSON object|must be self-metered|must be an ISO timestamp/);
+  });
+});
+
+test("quota CLI and daemon route return the current ledger", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await recordQuotaUsage(repo, {
+      provider: "fake",
+      input_text: "prompt",
+      output_text: "output",
+      wall_time_ms: 10,
+      throttled: false
+    });
+
+    const direct = await execFileAsync(process.execPath, [cliPath, "quota", "status"], { cwd: repo, windowsHide: true });
+    const directLedger = JSON.parse(direct.stdout) as QuotaLedger;
+    assert.equal(direct.stderr, "");
+    assert.equal(directLedger.fake.used.requests, 1);
+
+    const daemon = await startDaemon(repo);
+    try {
+      const routed = await execFileAsync(process.execPath, [cliPath, "quota", "status"], {
+        cwd: repo,
+        env: { ...process.env, HIVEMIND_DAEMON_URL: daemon.url },
+        windowsHide: true
+      });
+      assert.deepEqual(JSON.parse(routed.stdout), directLedger);
+    } finally {
+      await stopDaemon(daemon);
+    }
+  });
+});
+
+test("quota CLI rejects invalid usage", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await assert.rejects(
+      execFileAsync(process.execPath, [cliPath, "quota"], { cwd: repo, windowsHide: true }),
+      (error: unknown) => {
+        assert.equal((error as { code?: number }).code, 1);
+        assert.match(String((error as { stderr?: string }).stderr), /usage: hivemind quota status/);
+        return true;
+      }
+    );
+  });
+});
+
+async function withTempRepo(run: (context: { repo: string }) => Promise<void>): Promise<void> {
+  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-resource-ledger-test-"));
+  try {
+    await git(repo, ["init"]);
+    await git(repo, ["config", "user.name", "Hivemind Test"]);
+    await git(repo, ["config", "user.email", "hivemind@example.test"]);
+    await writeFile(path.join(repo, "README.md"), "# Fixture\n");
+    await git(repo, ["add", "README.md"]);
+    await git(repo, ["commit", "-m", "initial"]);
+    await initProject(repo);
+    await run({ repo });
+  } finally {
+    await rm(repo, { recursive: true, force: true, maxRetries: 3 });
+  }
+}
+
+async function startDaemon(repo: string): Promise<DaemonProcess> {
+  const child = spawn(process.execPath, [cliPath, "daemon", "--port", "0"], {
+    cwd: repo,
+    env: { ...process.env, HIVEMIND_DAEMON_URL: "" },
+    windowsHide: true
+  });
+  const line = await readLine(child);
+  const parsed = JSON.parse(line) as { event: string; url: string };
+  assert.equal(parsed.event, "daemon.ready");
+  return { child, url: parsed.url };
+}
+
+async function stopDaemon(daemon: DaemonProcess): Promise<void> {
+  if (daemon.child.exitCode !== null) {
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    daemon.child.once("exit", () => resolve());
+    daemon.child.kill();
+  });
+}
+
+function readLine(child: ChildProcessWithoutNullStreams): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error(`daemon did not become ready; stderr: ${stderr}`));
+    }, 5000);
+    const onStdout = (chunk: Buffer) => {
+      stdout += chunk.toString("utf8");
+      const newline = stdout.indexOf("\n");
+      if (newline !== -1) {
+        cleanup();
+        resolve(stdout.slice(0, newline).trim());
+      }
+    };
+    const onStderr = (chunk: Buffer) => {
+      stderr += chunk.toString("utf8");
+    };
+    const onExit = (code: number | null) => {
+      cleanup();
+      reject(new Error(`daemon exited before ready with code ${code}; stderr: ${stderr}`));
+    };
+    const cleanup = () => {
+      clearTimeout(timeout);
+      child.stdout.off("data", onStdout);
+      child.stderr.off("data", onStderr);
+      child.off("exit", onExit);
+    };
+    child.stdout.on("data", onStdout);
+    child.stderr.on("data", onStderr);
+    child.once("exit", onExit);
+  });
+}
+
+async function git(cwd: string, args: string[]): Promise<void> {
+  await execFileAsync("git", args, { cwd, windowsHide: true });
+}
+
+async function exists(filePath: string): Promise<boolean> {
+  try {
+    await stat(filePath);
+    return true;
+  } catch (error: unknown) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+}

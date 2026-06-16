@@ -8,6 +8,7 @@ import test from "node:test";
 
 import { buildAgentPrompt, findDangerousAdapterArgs, invokeAgent, loadAdapterProfile, validateAdapterProfile } from "../src/adapter.js";
 import { initProject } from "../src/init.js";
+import { readQuotaLedger } from "../src/resource-ledger.js";
 import { createTaskWorktree } from "../src/worktree.js";
 
 const execFileAsync = promisify(execFile);
@@ -166,6 +167,51 @@ test("invokeAgent runs stdin adapter inside the task worktree and writes agent.l
     assert.match(log, /"cwd":/);
     assert.match(log, /"sawTitle":true/);
     assert.match(log, /stderr from fake stdin adapter/);
+    const ledger = await readQuotaLedger(repo);
+    assert.equal(ledger.ok, true);
+    if (!ledger.ok) {
+      return;
+    }
+    assert.equal(ledger.value.fake.used.requests, 1);
+    assert.equal(ledger.value.fake.source, "self-metered");
+    assert.equal(ledger.value.fake.observed_limit, null);
+  });
+});
+
+test("invokeAgent updates observed quota limit on a simulated throttle", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-001", baseCommit);
+    const worktree = await createTaskWorktree(repo, "T-001");
+    assert.equal(worktree.ok, true);
+    if (!worktree.ok) {
+      return;
+    }
+
+    await writeFile(path.join(worktree.value.worktree, "throttle-agent.mjs"), "console.error('429 too many requests'); process.exit(1);\n");
+    await writeProfile(repo, "fake", {
+      tool: "fake",
+      invoke: ["node", "throttle-agent.mjs"],
+      prompt_arg: "stdin",
+      verified_on: "2026-06-15",
+      context_window: 1024
+    });
+
+    const result = await invokeAgent(repo, "T-001", "fake");
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.value.exitCode, 1);
+    const ledger = await readQuotaLedger(repo);
+    assert.equal(ledger.ok, true);
+    if (!ledger.ok) {
+      return;
+    }
+    assert.equal(ledger.value.fake.used.requests, 1);
+    assert.notEqual(ledger.value.fake.observed_limit, null);
+    assert.equal(ledger.value.fake.observed_limit?.reason, "throttle");
+    assert.equal(ledger.value.fake.observed_limit?.requests, ledger.value.fake.used.requests);
   });
 });
 
