@@ -44,6 +44,11 @@ async function main(argv: string[]): Promise<number> {
     return cacheCommand(process.cwd(), rest);
   }
 
+  if (command === "mcp") {
+    const { mcpCommand } = await import("./mcp.js");
+    return mcpCommand(process.cwd(), rest);
+  }
+
   if (command === "lease") {
     return leaseCommand(process.cwd(), rest);
   }
