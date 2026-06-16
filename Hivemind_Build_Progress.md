@@ -5,13 +5,13 @@ It is the project-local build ledger for Hivemind AI.
 
 ## Current State
 
-- Current milestone: M4 - Daemon + MCP + Resource Baseline complete; M5 awaiting approval
-- Last completed subtask: M4.7 - Prompt-cache layered prefix + read cache + metering
+- Current milestone: M4 - Daemon + MCP + Resource Baseline complete; Pre-M5 hardening complete; M5 awaiting approval
+- Last completed subtask: Pre-M5 hardening - M4 adversarial review fixes
 - Next subtask: M5.1 - Spec artifact + ratification gate
 - Current branch: `master`
-- Latest completed implementation commit: `cad71b4` - `feat: add layered prompt read cache`
+- Latest completed implementation commit: `159376e` - `fix: harden m4 before m5`
 - Latest M0.5 gate completion commit: `8a9786c` - `docs: complete m0.5 real-tool gate`
-- Paid AI/provider calls run: none for Pre-M3 hardening, M3.1, M4.1, M4.2, M4.3, M4.4, M4.5, M4.6, or M4.7. Previous approved live Codex and Claude Code acceptance ran on 2026-06-15. Codex launched in disposable task worktrees. First Codex attempt returned exit code 1 because the default `gpt-5.3-codex` model was not supported by the active ChatGPT account. After updating the adapter profile to `gpt-5.5`, Codex used 6,130 tokens but could not write under a read-only inner sandbox. After the approved writable Codex profile update and adapter timeout containment, Codex used 8,674 tokens and produced a correct one-file `README.md` diff. The first Claude Code run returned exit code 1 with `Not logged in - Please run /login`; after CLI login, Claude Code rerun returned `tool_exit: 0`, `changed_files: 1`, and produced a correct one-file `README.md` diff.
+- Paid AI/provider calls run: none for Pre-M3 hardening, M3.1, M4.1, M4.2, M4.3, M4.4, M4.5, M4.6, M4.7, or Pre-M5 hardening. Previous approved live Codex and Claude Code acceptance ran on 2026-06-15. Codex launched in disposable task worktrees. First Codex attempt returned exit code 1 because the default `gpt-5.3-codex` model was not supported by the active ChatGPT account. After updating the adapter profile to `gpt-5.5`, Codex used 6,130 tokens but could not write under a read-only inner sandbox. After the approved writable Codex profile update and adapter timeout containment, Codex used 8,674 tokens and produced a correct one-file `README.md` diff. The first Claude Code run returned exit code 1 with `Not logged in - Please run /login`; after CLI login, Claude Code rerun returned `tool_exit: 0`, `changed_files: 1`, and produced a correct one-file `README.md` diff.
 
 ## Pre-M1 Hardening Checkpoint
 
@@ -32,6 +32,12 @@ It is the project-local build ledger for Hivemind AI.
 | A - Enforce lease-before-run | Complete | `658d64a` | Made `hivemind run` fail closed before worktree creation or adapter invocation unless `.hivemind/leases/active.json` contains active leases held by the task for every contract `allowed_files` entry. Missing, invalid, or partial lease coverage rejects with no invocation. | `npm run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; node --test dist/test/run.test.js`; `npm run typecheck`; `git diff --check`; cleanup/static scans for stale run paths. No paid provider calls. |
 | B - Key read-only prep off active lease store | Complete | `6cbb75e` | Made task worktree read-only preparation derive writable files from the active lease store instead of `contract.allowed_files`, so the lease grant is authoritative when it diverges from the contract request. Updated submit/worktree tests to grant leases explicitly where worktrees need writable files. | `npm run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; node --test dist/test/worktree.test.js dist/test/submit.test.js`; `npm run typecheck`; `npm test` with 131 tests; `git diff --check`; cleanup/static scans for stale read-only prep references. No paid provider calls. |
 | C - Mandatory write intent in `hivemind run` | Deferred to M5 | N/A | Per user decision, leave `hivemind intent` as an optional standalone for now. Reconsider mandatory write-intent when the M5 orchestrator lands, because the submit-time diff-scope gate already provides the current safety guarantee while a human is orchestrating hand-run tasks. | No code change. |
+
+## Pre-M5 Hardening Checkpoint
+
+| Checkpoint | Status | Commit | What changed | Validation |
+| --- | --- | --- | --- | --- |
+| M4 adversarial review fixes | Complete | `159376e` | Fixed all five pre-M5 findings from the M4 review. Daemon discovery now records `.hivemind/daemon.json`, so CLI mutations route through a live daemon even when `HIVEMIND_DAEMON_URL` is empty and stale dead daemon state falls back to direct CLI-only mode. Quota ledger read-modify-write is guarded by `.hivemind/resource/ledger.lock`, and atomic temp filenames use a UUID suffix to avoid same-process collisions. Worker prompt assembly now reads write-context files from the verified task worktree at `base_commit` instead of the live repo root. MCP `hivemind.analyze_patch` now calls a non-emitting `/analyze/verdict` route, while the CLI/emitting analyze path remains available. C4 docs now clarify that guarantee code forbids LLM and external/provider network calls while permitting local loopback daemon IPC as deterministic transport. No M5 orchestrator behavior was started. | Per-fix acceptance: daemon live/no-env lease routing in `daemon.test`; 20 concurrent quota records produce exactly 20 requests in `resource-ledger.test`; base-pinned prompt reads base worktree bytes in `prompt-cache.test`; read-only MCP analyze appends zero new events in `mcp.test`; docs grep confirmed old absolute C4 wording was removed. Full validation: `npm run build`; `npm test` with 172 tests; `git diff --check`; cleanup/static scans for daemon discovery, temp naming, old C4 wording, MCP analyze route, prompt-cache source root, and write paths. No paid provider calls. |
 
 ## Completed Subtasks
 
