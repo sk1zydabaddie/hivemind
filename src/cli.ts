@@ -8,6 +8,7 @@ import { initProject } from "./init.js";
 import { leaseCommand } from "./lease.js";
 import { quotaCommand } from "./resource-ledger.js";
 import { validateContractCommand } from "./contract.js";
+import { planCommand, specCommand } from "./spec.js";
 import { runCommand } from "./run.js";
 import { statusCommand } from "./status.js";
 import { submitCommand } from "./submit.js";
@@ -22,6 +23,14 @@ async function main(argv: string[]): Promise<number> {
 
   if (command === "contract") {
     return validateContractCommand(process.cwd(), rest);
+  }
+
+  if (command === "spec") {
+    return specCommand(process.cwd(), rest);
+  }
+
+  if (command === "plan") {
+    return planCommand(process.cwd(), rest);
   }
 
   if (command === "worktree") {

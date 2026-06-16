@@ -10,6 +10,7 @@ import { captureWorktreeDiff } from "./diff-capture.js";
 import { findGitRoot } from "./repo.js";
 import { verifyLeaseCoverage } from "./lease.js";
 import { routeTaskProvider } from "./routing.js";
+import { requireActiveSpecRatified } from "./spec.js";
 import { createTaskWorktree } from "./worktree.js";
 
 const execFileAsync = promisify(execFile);
@@ -64,6 +65,11 @@ export async function runTask(
   tool?: string,
   options: RunTaskOptions = {}
 ): Promise<{ ok: true; value: RunResult } | { ok: false; reason: string }> {
+  const specResult = await requireActiveSpecRatified(repoRoot);
+  if (!specResult.ok) {
+    return specResult;
+  }
+
   const contractResult = await loadAndValidateContract(repoRoot, taskId);
   if (!contractResult.ok) {
     return contractResult;

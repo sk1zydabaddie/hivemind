@@ -10,6 +10,7 @@ import test from "node:test";
 import { readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { releaseLease, requestLease } from "../src/lease.js";
+import { createRatifiedSpec } from "./support/spec.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -200,6 +201,7 @@ async function withTempRepo(run: (context: { repo: string; baseCommit: string })
     await git(repo, ["add", "README.md", "src/feature.ts", "src/other.ts"]);
     await git(repo, ["commit", "-m", "initial"]);
     await initProject(repo);
+    await createRatifiedSpec(repo);
     await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
   } finally {
     await rm(repo, { recursive: true, force: true });

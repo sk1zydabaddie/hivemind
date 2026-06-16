@@ -9,6 +9,7 @@ import { appendEvent } from "./events.js";
 import { canonicalizeConcreteFileScope } from "./file-scope.js";
 import { readActiveLeases } from "./lease.js";
 import { findGitRoot } from "./repo.js";
+import { requireActiveSpecRatified } from "./spec.js";
 import { validateRequestedTaskId } from "./task-id.js";
 
 const execFileAsync = promisify(execFile);
@@ -53,6 +54,11 @@ export async function createTaskWorktree(
   const taskIdResult = validateRequestedTaskId(taskId);
   if (!taskIdResult.ok) {
     return taskIdResult;
+  }
+
+  const specResult = await requireActiveSpecRatified(repoRoot);
+  if (!specResult.ok) {
+    return specResult;
   }
 
   const contractResult = await loadAndValidateContract(repoRoot, taskId);

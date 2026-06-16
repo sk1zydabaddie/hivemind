@@ -12,6 +12,7 @@ import { readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { assembleAgentPrompt, readCachedRepoFile, readCacheMetrics } from "../src/prompt-cache.js";
 import { createTaskWorktree } from "../src/worktree.js";
+import { createRatifiedSpec } from "./support/spec.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -186,6 +187,7 @@ async function withTempRepo(run: (context: { repo: string; baseCommit: string })
     await git(repo, ["add", "AGENTS.md", "README.md", "src/feature.ts"]);
     await git(repo, ["commit", "-m", "initial"]);
     await initProject(repo);
+    await createRatifiedSpec(repo);
     await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
   } finally {
     await rm(repo, { recursive: true, force: true, maxRetries: 3 });

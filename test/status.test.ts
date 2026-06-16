@@ -16,6 +16,7 @@ import { runTask } from "../src/run.js";
 import { getStatus, type HivemindStatus, type StatusTask } from "../src/status.js";
 import { submitTask } from "../src/submit.js";
 import { createTaskWorktree } from "../src/worktree.js";
+import { createRatifiedSpec } from "./support/spec.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -254,6 +255,7 @@ async function withTempRepo(run: (context: { repo: string; baseCommit: string })
     await git(repo, ["add", "README.md", "src/feature.ts"]);
     await git(repo, ["commit", "-m", "initial"]);
     await initProject(repo);
+    await createRatifiedSpec(repo);
     await mkdir(path.join(repo, ".hivemind", "integration"), { recursive: true });
     await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
   } finally {

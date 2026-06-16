@@ -8,6 +8,7 @@ import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent } from "./events.js";
 import { canonicalizeConcreteFileScope } from "./file-scope.js";
 import { findGitRoot } from "./repo.js";
+import { requireActiveSpecRatified } from "./spec.js";
 import { validateRequestedTaskId } from "./task-id.js";
 
 const lockRetryMs = 25;
@@ -102,6 +103,11 @@ export async function requestLease(repoRoot: string, taskId: string, files: stri
   const taskIdResult = validateRequestedTaskId(taskId);
   if (!taskIdResult.ok) {
     return taskIdResult;
+  }
+
+  const specResult = await requireActiveSpecRatified(repoRoot);
+  if (!specResult.ok) {
+    return specResult;
   }
 
   const result = await requestLeaseValidated(repoRoot, taskId, files);

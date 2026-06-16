@@ -3,6 +3,7 @@ import path from "node:path";
 import { writeJsonAtomic } from "./atomic.js";
 import { readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
+import { requireActiveSpecRatified } from "./spec.js";
 import { validateRequestedTaskId, validateTaskId } from "./task-id.js";
 
 export type AgentRole = "coordinator" | "scout" | "builder" | "reviewer";
@@ -116,6 +117,11 @@ export async function createTaskContract(
   repoRoot: string,
   rawContract: unknown
 ): Promise<{ ok: true; value: CreateTaskContractResult } | { ok: false; reason: string }> {
+  const specResult = await requireActiveSpecRatified(repoRoot);
+  if (!specResult.ok) {
+    return specResult;
+  }
+
   const problems = validateContract(rawContract);
   if (problems.length > 0) {
     return { ok: false, reason: problems.join("; ") };

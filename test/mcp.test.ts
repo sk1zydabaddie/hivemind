@@ -13,6 +13,8 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { initProject } from "../src/init.js";
 import { readEvents } from "../src/events.js";
 import { mcpToolDefinitions } from "../src/mcp.js";
+import { createSpec } from "../src/spec.js";
+import { createRatifiedSpec } from "./support/spec.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -156,6 +158,48 @@ test("MCP tools route through daemon and match the core task/worktree/patch/stat
   });
 });
 
+test("draft active spec blocks daemon-routed lease and MCP task creation", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContractFile(repo, buildContract("T-DRAFT", baseCommit, ["README.md"]));
+    const draft = await createSpec(repo, "S-DRAFT", "Draft gate");
+    assert.equal(draft.ok, true);
+    const daemon = await startDaemon(repo);
+    const server = await startHttpMcp(repo, { HIVEMIND_DAEMON_URL: daemon.url });
+    const client = new Client({ name: "hivemind-draft-gate-test", version: "0.0.0" }, { capabilities: {} });
+    const transport = new StreamableHTTPClientTransport(new URL(server.url));
+    try {
+      await assert.rejects(
+        execFileAsync(process.execPath, [cliPath, "lease", "T-DRAFT"], {
+          cwd: repo,
+          env: { ...process.env, HIVEMIND_DAEMON_URL: daemon.url },
+          windowsHide: true
+        }),
+        (error: unknown) => {
+          assert.equal((error as { code?: number }).code, 1);
+          assert.match(String((error as { stderr?: string }).stderr), /active spec S-DRAFT is draft/);
+          return true;
+        }
+      );
+      assert.equal(await exists(path.join(repo, ".hivemind", "leases", "active.json")), false);
+
+      await client.connect(transport);
+      const result = await client.callTool({
+        name: "hivemind.create_task_contract",
+        arguments: { contract: buildContract("T-BLOCKED", baseCommit, ["README.md"]) }
+      });
+
+      assert.equal(result.isError, true);
+      const content = (result.content as Array<{ type?: unknown; text?: unknown }>)[0];
+      assert.match(String(content?.type === "text" ? content.text : ""), /active spec S-DRAFT is draft/);
+      assert.equal(await exists(path.join(repo, ".hivemind", "tasks", "T-BLOCKED.contract.json")), false);
+    } finally {
+      await client.close();
+      await stopHttpMcp(server);
+      await stopProcess(daemon);
+    }
+  });
+});
+
 test("MCP analyze_patch rejects out-of-scope patch bundles", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     const daemon = await startDaemon(repo);
@@ -270,6 +314,7 @@ async function withTempRepo(run: (context: { repo: string; baseCommit: string })
     await git(repo, ["add", "README.md", "outside.txt"]);
     await git(repo, ["commit", "-m", "initial"]);
     await initProject(repo);
+    await createRatifiedSpec(repo);
     await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
   } finally {
     await cleanupTempRepo(repo);
@@ -423,6 +468,11 @@ async function writePatchFromRootEdit(repo: string, taskId: string, baseCommit: 
   await mkdir(patchDir, { recursive: true });
   await writeFile(path.join(patchDir, "diff.patch"), await gitRawStdout(repo, ["diff", "--no-renames", baseCommit]));
   await git(repo, ["reset", "--hard", baseCommit]);
+}
+
+async function writeContractFile(repo: string, contract: Record<string, unknown>): Promise<void> {
+  await mkdir(path.join(repo, ".hivemind", "tasks"), { recursive: true });
+  await writeFile(path.join(repo, ".hivemind", "tasks", `${String(contract.task_id)}.contract.json`), `${JSON.stringify(contract, null, 2)}\n`);
 }
 
 async function cleanupTempRepo(repo: string): Promise<void> {

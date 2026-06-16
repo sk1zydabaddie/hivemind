@@ -12,6 +12,7 @@ import { initProject } from "../src/init.js";
 import { requestLease } from "../src/lease.js";
 import { submitTask } from "../src/submit.js";
 import { createTaskWorktree } from "../src/worktree.js";
+import { createRatifiedSpec } from "./support/spec.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -241,6 +242,7 @@ async function withTempRepo(run: (context: { repo: string; baseCommit: string })
     await git(repo, ["add", "README.md", "src/nonleased.ts"]);
     await git(repo, ["commit", "-m", "initial"]);
     await initProject(repo);
+    await createRatifiedSpec(repo);
     await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
   } finally {
     await cleanupTempRepo(repo);
