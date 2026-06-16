@@ -9,6 +9,7 @@ export const eventTypes = [
   "patch.submitted",
   "patch.accepted",
   "patch.rejected",
+  "cache.read",
   "integration.passed",
   "integration.failed"
 ] as const;

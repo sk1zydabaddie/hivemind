@@ -3,6 +3,7 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { loadAndValidateContract, TaskContract } from "./contract.js";
 import { readJsonFile } from "./json.js";
+import { assembleAgentPrompt, buildAgentPromptFromContract } from "./prompt-cache.js";
 import { adapterOutputIndicatesThrottle, recordQuotaUsage } from "./resource-ledger.js";
 
 export type PromptArgMode = "stdin" | "arg";
@@ -65,7 +66,11 @@ export async function invokeAgent(
     return { ok: false, reason: `worktree not found: .hivemind/worktrees/${taskId}` };
   }
 
-  const prompt = buildAgentPrompt(contractResult.contract);
+  const promptResult = await assembleAgentPrompt(repoRoot, contractResult.contract);
+  if (!promptResult.ok) {
+    return promptResult;
+  }
+  const prompt = promptResult.value.full_prompt;
   const startedAt = Date.now();
   const processResult = await runAdapter(profileResult.profile, worktreePath, prompt);
   if (!processResult.ok) {
@@ -188,26 +193,7 @@ export function findDangerousAdapterArgs(invoke: string[]): string[] {
 }
 
 export function buildAgentPrompt(contract: TaskContract): string {
-  return [
-    "You are a Hivemind AI worker running one scoped task.",
-    "Submit a diff only. Do not commit, push, rename unrelated files, or edit outside the contract.",
-    "",
-    `Task ID: ${contract.task_id}`,
-    `Title: ${contract.title}`,
-    `Agent role: ${contract.agent_role}`,
-    `Base commit: ${contract.base_commit}`,
-    "",
-    formatList("Allowed files", contract.allowed_files),
-    formatList("Read-only files", contract.read_only_files),
-    formatList("Forbidden files", contract.forbidden_files),
-    formatList("Allowed symbols", contract.allowed_symbols),
-    formatList("Forbidden symbols", contract.forbidden_symbols),
-    formatList("Must not change", contract.must_not_change),
-    formatList("Required tests", contract.required_tests),
-    formatList("Patch requirements", contract.patch_requirements),
-    "",
-    "Stop when the required tests pass."
-  ].join("\n");
+  return buildAgentPromptFromContract(contract);
 }
 
 function runAdapter(
@@ -309,13 +295,6 @@ function terminateProcessTree(pid: number | undefined): void {
   } catch {
     return;
   }
-}
-
-function formatList(label: string, values: string[]): string {
-  if (values.length === 0) {
-    return `${label}:\n- (none)`;
-  }
-  return `${label}:\n${values.map((value) => `- ${value}`).join("\n")}`;
 }
 
 function formatSpawnError(tool: string, error: NodeJS.ErrnoException): string {
