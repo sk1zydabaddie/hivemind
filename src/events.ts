@@ -10,6 +10,7 @@ export const eventTypes = [
   "patch.accepted",
   "patch.rejected",
   "cache.read",
+  "scout.completed",
   "integration.queued",
   "integration.passed",
   "integration.failed"

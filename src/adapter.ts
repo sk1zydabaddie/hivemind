@@ -30,7 +30,7 @@ export interface InvokeAgentOptions {
   allowDangerousAdapter?: boolean;
 }
 
-interface AdapterProcessResult {
+export interface AdapterProcessResult {
   exitCode: number;
   stdout: string;
   stderr: string;
@@ -72,7 +72,7 @@ export async function invokeAgent(
   }
   const prompt = promptResult.value.full_prompt;
   const startedAt = Date.now();
-  const processResult = await runAdapter(profileResult.profile, worktreePath, prompt);
+  const processResult = await runAdapterProcess(profileResult.profile, worktreePath, prompt);
   if (!processResult.ok) {
     return processResult;
   }
@@ -196,7 +196,7 @@ export function buildAgentPrompt(contract: TaskContract): string {
   return buildAgentPromptFromContract(contract);
 }
 
-function runAdapter(
+export function runAdapterProcess(
   profile: AdapterProfile,
   cwd: string,
   prompt: string

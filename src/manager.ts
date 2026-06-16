@@ -9,6 +9,7 @@ import { enqueueIntegrationPatch, integrateShadow, type EnqueueIntegrationPatchR
 import { requestLeaseForContract, type LeaseGrantResult } from "./lease.js";
 import { findGitRoot } from "./repo.js";
 import { runTask, type RunResult } from "./run.js";
+import { runScout, type ScoutResult } from "./scout.js";
 import { requireActiveSpecRatified, type SpecResult } from "./spec.js";
 import { loadSpecDocument } from "./spec-format.js";
 import { getStatus, type HivemindStatus } from "./status.js";
@@ -69,6 +70,7 @@ type ManagerAction =
   | { type: "create_task_contract"; contract: Record<string, unknown> }
   | { type: "request_lease"; task_id: string }
   | { type: "create_worktree"; task_id: string }
+  | { type: "scout_task"; task_id: string; tool: string }
   | { type: "run_worker"; task_id: string; tool?: string; allow_dangerous_adapter?: boolean }
   | { type: "submit_patch"; task_id: string }
   | { type: "analyze_patch"; task_id: string }
@@ -375,6 +377,16 @@ async function executeDeterministicAction(repoRoot: string, action: ManagerActio
       )
     );
   }
+  if (action.type === "scout_task") {
+    return recordResult(
+      await routeMutatingAction<ScoutResult>(
+        repoRoot,
+        "/scout/run",
+        { task_id: action.task_id, tool: action.tool },
+        () => runScout(repoRoot, action.task_id, action.tool)
+      )
+    );
+  }
   if (action.type === "submit_patch") {
     return recordResult(await routeMutatingAction<SubmitResult>(repoRoot, "/submit", { task_id: action.task_id }, () => submitTask(repoRoot, action.task_id)));
   }
@@ -487,6 +499,12 @@ function parseManagerAction(raw: unknown): SpecResult<ManagerAction> {
     if (typeof raw.task_id !== "string") {
       return { ok: false, reason: `${raw.type} action requires task_id` };
     }
+    if (raw.type === "scout_task") {
+      const allowedKeys = new Set(["type", "task_id", "tool"]);
+      return typeof raw.tool === "string" && raw.tool.trim() !== "" && Object.keys(raw).every((key) => allowedKeys.has(key))
+        ? { ok: true, value: { type: "scout_task", task_id: raw.task_id, tool: raw.tool } }
+        : { ok: false, reason: "scout_task action accepts task_id and non-empty tool" };
+    }
     if (raw.type === "run_worker") {
       if (!validOptionalString(raw.tool) || (raw.allow_dangerous_adapter !== undefined && typeof raw.allow_dangerous_adapter !== "boolean")) {
         return { ok: false, reason: "run_worker action accepts task_id, optional tool, and optional allow_dangerous_adapter" };
@@ -518,8 +536,16 @@ function parseManagerActionList(raw: unknown): SpecResult<ManagerAction[]> {
   return { ok: true, value: actions };
 }
 
-function isTaskActionType(value: string): value is "request_lease" | "create_worktree" | "run_worker" | "submit_patch" | "analyze_patch" | "enqueue_patch" {
-  return value === "request_lease" || value === "create_worktree" || value === "run_worker" || value === "submit_patch" || value === "analyze_patch" || value === "enqueue_patch";
+function isTaskActionType(value: string): value is "request_lease" | "create_worktree" | "scout_task" | "run_worker" | "submit_patch" | "analyze_patch" | "enqueue_patch" {
+  return (
+    value === "request_lease" ||
+    value === "create_worktree" ||
+    value === "scout_task" ||
+    value === "run_worker" ||
+    value === "submit_patch" ||
+    value === "analyze_patch" ||
+    value === "enqueue_patch"
+  );
 }
 
 function validOptionalString(value: unknown): value is string | undefined {

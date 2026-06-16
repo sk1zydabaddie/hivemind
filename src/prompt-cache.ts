@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { writeJsonAtomic } from "./atomic.js";
 import { canonicalizeIntentPath } from "./canonicalize.js";
+import { loadContextPackForContract, taskKnowledgePath } from "./context-pack.js";
 import type { TaskContract } from "./contract.js";
 import { appendEvent } from "./events.js";
 import { readJsonFile } from "./json.js";
@@ -212,6 +213,35 @@ async function buildTaskContextPackLayer(repoRoot: string, contract: TaskContrac
   }
 
   const sections = [buildContractTaskContextLayer(contract)];
+  const contextPackResult = await loadContextPackForContract(repoRoot, contract);
+  if (!contextPackResult.ok) {
+    return contextPackResult;
+  }
+  if (contextPackResult.value !== null) {
+    sections.push(contextPackResult.value.markdown);
+    const knowledgeResult = await readTaskKnowledge(repoRoot, contract.task_id);
+    if (!knowledgeResult.ok) {
+      return knowledgeResult;
+    }
+    if (knowledgeResult.value !== null) {
+      sections.push(formatContentBlock("Task Knowledge", knowledgeResult.value));
+    }
+    for (const citedFile of contextPackResult.value.cited_files) {
+      const readResult = await readCachedRepoFile(repoRoot, citedFile.path, { taskId: contract.task_id, mode: "write-context", sourceRoot: sourceRootResult.value });
+      if (!readResult.ok) {
+        return readResult;
+      }
+      if (readResult.value.content_hash !== citedFile.content_hash) {
+        return {
+          ok: false,
+          reason: `context pack cached file ${citedFile.path} hash ${citedFile.content_hash} does not match task base content ${readResult.value.content_hash}`
+        };
+      }
+      sections.push(formatContentBlock(`Reused cached read ${readResult.value.path} (${readResult.value.content_hash}, ${readResult.value.cache})`, readResult.value.content));
+    }
+    return { ok: true, value: sections.join("\n\n") };
+  }
+
   for (const repoPath of taskContextReadPaths(contract)) {
     const readResult = await readCachedRepoFile(repoRoot, repoPath, { taskId: contract.task_id, mode: "write-context", sourceRoot: sourceRootResult.value });
     if (!readResult.ok) {
@@ -223,7 +253,7 @@ async function buildTaskContextPackLayer(repoRoot: string, contract: TaskContrac
   return { ok: true, value: sections.join("\n\n") };
 }
 
-async function resolveTaskPromptSourceRoot(repoRoot: string, contract: TaskContract): Promise<{ ok: true; value: string } | { ok: false; reason: string }> {
+export async function resolveTaskPromptSourceRoot(repoRoot: string, contract: TaskContract): Promise<{ ok: true; value: string } | { ok: false; reason: string }> {
   const worktreePath = path.join(repoRoot, ".hivemind", "worktrees", contract.task_id);
   const headResult = await gitStdout(worktreePath, ["rev-parse", "HEAD"]);
   if (!headResult.ok) {
@@ -265,7 +295,7 @@ function buildPerTurnDeltaLayer(): string {
   return "Per-turn delta:\n- Stop when the required tests pass.";
 }
 
-function taskContextReadPaths(contract: TaskContract): string[] {
+export function taskContextReadPaths(contract: TaskContract): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
   for (const repoPath of [...contract.allowed_files, ...contract.read_only_files]) {
@@ -276,6 +306,17 @@ function taskContextReadPaths(contract: TaskContract): string[] {
     result.push(repoPath);
   }
   return result;
+}
+
+async function readTaskKnowledge(repoRoot: string, taskId: string): Promise<{ ok: true; value: string | null } | { ok: false; reason: string }> {
+  try {
+    return { ok: true, value: await readFile(taskKnowledgePath(repoRoot, taskId), "utf8") };
+  } catch (error: unknown) {
+    if (isNodeError(error, "ENOENT")) {
+      return { ok: true, value: null };
+    }
+    throw error;
+  }
 }
 
 async function readValidCacheEntry(cachePath: string, repoPath: string, contentHash: string): Promise<ReadCacheEntry | null> {

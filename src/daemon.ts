@@ -8,6 +8,7 @@ import { requestLeaseForContract, releaseLease } from "./lease.js";
 import { findGitRoot } from "./repo.js";
 import { readQuotaLedger } from "./resource-ledger.js";
 import { runTask } from "./run.js";
+import { runScout } from "./scout.js";
 import { getStatus } from "./status.js";
 import { submitTask } from "./submit.js";
 import { createTaskWorktree, removeTaskWorktree } from "./worktree.js";
@@ -146,6 +147,19 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
       return runTask(repoRoot, taskId.value, tool.value, { allowDangerousAdapter: payload.allow_dangerous_adapter === true });
     };
   }
+  if (request.method === "POST" && request.url === "/scout/run") {
+    return async (payload) => {
+      const taskId = readTaskId(payload);
+      if (!taskId.ok) {
+        return taskId;
+      }
+      const tool = readRequiredString(payload, "tool");
+      if (!tool.ok) {
+        return tool;
+      }
+      return runScout(repoRoot, taskId.value, tool.value);
+    };
+  }
   if (request.method === "POST" && request.url === "/submit") {
     return async (payload) => {
       const taskId = readTaskId(payload);
@@ -241,6 +255,12 @@ function readOptionalString(payload: DaemonPayload, field: string): { ok: true; 
     return { ok: true };
   }
   return typeof payload[field] === "string" ? { ok: true, value: payload[field] } : { ok: false, reason: `${field} must be a string` };
+}
+
+function readRequiredString(payload: DaemonPayload, field: string): { ok: true; value: string } | { ok: false; reason: string } {
+  return typeof payload[field] === "string" && payload[field].trim() !== ""
+    ? { ok: true, value: payload[field] }
+    : { ok: false, reason: `${field} must be a non-empty string` };
 }
 
 function writeJson(response: ServerResponse, statusCode: number, value: unknown): void {

@@ -13,6 +13,7 @@ import { validateContractCommand } from "./contract.js";
 import { planCommand } from "./plan.js";
 import { specCommand } from "./spec.js";
 import { runCommand } from "./run.js";
+import { scoutCommand } from "./scout.js";
 import { statusCommand } from "./status.js";
 import { submitCommand } from "./submit.js";
 import { worktreeCommand } from "./worktree.js";
@@ -50,6 +51,10 @@ async function main(argv: string[]): Promise<number> {
 
   if (command === "run") {
     return runCommand(process.cwd(), rest);
+  }
+
+  if (command === "scout") {
+    return scoutCommand(process.cwd(), rest);
   }
 
   if (command === "analyze") {
