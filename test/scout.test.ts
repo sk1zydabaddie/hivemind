@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { initProject } from "../src/init.js";
+import { checkWriteIntent } from "../src/intent.js";
 import { requestLease } from "../src/lease.js";
 import { readEvents } from "../src/events.js";
 import { runTask } from "../src/run.js";
@@ -132,12 +133,14 @@ test("manager fake loop can sequence a Scout task before worker execution", asyn
   await withTempRepo(async ({ repo, baseCommit }) => {
     const scoutAgent = await writeAgent(repo, "manager-scout.mjs", ["console.log('MANAGER_SCOUT_FINDING');"]);
     await writeProfile(repo, "fake-scout", scoutAgent);
+    const contract = contractFor("T-SCOUT", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, contract);
     const actionsPath = path.join(repo, "manager-scout-actions.json");
     await writeFile(
       actionsPath,
       `${JSON.stringify(
         [
-          { type: "create_task_contract", contract: contractFor("T-SCOUT", baseCommit, ["README.md"]) },
+          { type: "create_task_contract", contract },
           { type: "create_worktree", task_id: "T-SCOUT" },
           { type: "scout_task", task_id: "T-SCOUT", tool: "fake-scout" }
         ],
@@ -183,6 +186,7 @@ function contractFor(taskId: string, baseCommit: string, allowedFiles: string[])
     title: "Scout reusable context",
     agent_role: "builder",
     base_commit: baseCommit,
+    acceptance_criterion: "Scout gathers one reusable context pack.",
     allowed_files: allowedFiles,
     read_only_files: [],
     forbidden_files: [],
@@ -192,6 +196,42 @@ function contractFor(taskId: string, baseCommit: string, allowedFiles: string[])
     required_tests: ["node -e \"console.log('acceptance')\""],
     patch_requirements: ["submit diff only"]
   };
+}
+
+async function prepareLintedPlan(repo: string, contract: Record<string, unknown>): Promise<void> {
+  const planPath = path.join(repo, `${String(contract.task_id)}-plan.json`);
+  await writeFile(
+    planPath,
+    `${JSON.stringify(
+      {
+        tasks: [
+          {
+            task_id: contract.task_id,
+            title: contract.title,
+            mode: "write",
+            agent_role: contract.agent_role,
+            draft_scope: {
+              allowed_files: contract.allowed_files,
+              read_only_files: contract.read_only_files,
+              forbidden_files: contract.forbidden_files,
+              must_not_change: contract.must_not_change
+            },
+            depends_on: [],
+            parallel_safe: true,
+            acceptance_criterion: contract.acceptance_criterion,
+            required_tests: contract.required_tests,
+            patch_requirements: contract.patch_requirements
+          }
+        ],
+        execution_groups: [{ group_id: "G-1", mode: "parallel", task_ids: [contract.task_id] }]
+      },
+      null,
+      2
+    )}\n`
+  );
+  await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+  await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+  await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
 }
 
 async function writeAgent(repo: string, fileName: string, lines: string[]): Promise<string> {
@@ -233,6 +273,11 @@ async function writeProfile(repo: string, tool: string, agentPath: string, dange
 async function grantLease(repo: string, taskId: string, files: string[]): Promise<void> {
   const result = await requestLease(repo, taskId, files);
   assert.equal(result.ok, true);
+  const intent = await checkWriteIntent(repo, taskId, {
+    task_id: taskId,
+    intended_files: files
+  });
+  assert.equal(intent.ok, true);
 }
 
 async function startDaemon(repo: string): Promise<DaemonProcess> {

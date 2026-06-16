@@ -103,6 +103,7 @@ test("MCP tools route through daemon and match the core task/worktree/patch/stat
       await client.connect(transport);
 
       const contract = buildContract("T-OK", baseCommit, ["README.md"]);
+      await prepareLintedPlan(repo, contract);
       const created = await callStructured(client, "hivemind.create_task_contract", { contract });
       assert.equal(created.task_id, "T-OK");
       assert.equal(created.contract_path, ".hivemind/tasks/T-OK.contract.json");
@@ -208,6 +209,7 @@ test("MCP analyze_patch rejects out-of-scope patch bundles", async () => {
     const transport = new StreamableHTTPClientTransport(new URL(server.url));
     try {
       await client.connect(transport);
+      await prepareLintedPlan(repo, buildContract("T-OUT", baseCommit, ["README.md"]));
       await callStructured(client, "hivemind.create_task_contract", {
         contract: buildContract("T-OUT", baseCommit, ["README.md"])
       });
@@ -242,6 +244,7 @@ test("MCP create_task_contract rejects invalid input and duplicate task ids", as
       assert.equal(invalid.isError, true);
       assert.equal(await exists(path.join(repo, ".hivemind", "tasks", "bad", "id.contract.json")), false);
 
+      await prepareLintedPlan(repo, buildContract("T-DUP", baseCommit, ["README.md"]));
       await callStructured(client, "hivemind.create_task_contract", {
         contract: buildContract("T-DUP", baseCommit, ["README.md"])
       });
@@ -253,6 +256,56 @@ test("MCP create_task_contract rejects invalid input and duplicate task ids", as
       assert.equal(duplicate.isError, true);
       const content = (duplicate.content as Array<{ type?: unknown; text?: unknown }>)[0];
       assert.match(String(content?.type === "text" ? content.text : ""), /contract already exists/);
+    } finally {
+      await client.close();
+      await stopHttpMcp(server);
+      await stopProcess(daemon);
+    }
+  });
+});
+
+test("MCP create_task_contract inherits the lint-passed plan precondition", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const bypass = buildContract("T-BYPASS", baseCommit, ["README.md"]);
+    const other = buildContract("T-OTHER", baseCommit, ["README.md"]);
+    const badPlanPath = path.join(repo, "mcp-overlap-plan.json");
+    await writeFile(
+      badPlanPath,
+      `${JSON.stringify(
+        {
+          tasks: [planTaskFromContract(bypass), planTaskFromContract(other)],
+          execution_groups: [{ group_id: "G-1", mode: "parallel", task_ids: ["T-BYPASS", "T-OTHER"] }]
+        },
+        null,
+        2
+      )}\n`
+    );
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", badPlanPath], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+    await assert.rejects(
+      execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true }),
+      (error: unknown) => {
+        assert.equal((error as { code?: number }).code, 1);
+        assert.match(String((error as { stderr?: string }).stderr), /PARALLEL_SCOPE_OVERLAP/);
+        return true;
+      }
+    );
+
+    const daemon = await startDaemon(repo);
+    const server = await startHttpMcp(repo, { HIVEMIND_DAEMON_URL: daemon.url });
+    const client = new Client({ name: "hivemind-mcp-lint-floor-test", version: "0.0.0" }, { capabilities: {} });
+    const transport = new StreamableHTTPClientTransport(new URL(server.url));
+    try {
+      await client.connect(transport);
+      const result = await client.callTool({
+        name: "hivemind.create_task_contract",
+        arguments: { contract: bypass }
+      });
+
+      assert.equal(result.isError, true);
+      const content = (result.content as Array<{ type?: unknown; text?: unknown }>)[0];
+      assert.match(String(content?.type === "text" ? content.text : ""), /current lint-passed tentative plan/);
+      assert.equal(await exists(path.join(repo, ".hivemind", "tasks", "T-BYPASS.contract.json")), false);
     } finally {
       await client.close();
       await stopHttpMcp(server);
@@ -427,14 +480,53 @@ function buildContract(taskId: string, baseCommit: string, allowedFiles: string[
     title: "MCP task",
     agent_role: "builder",
     base_commit: baseCommit,
+    acceptance_criterion: "MCP task completes one deterministic check.",
     allowed_files: allowedFiles,
     read_only_files: [],
     forbidden_files: [],
     allowed_symbols: [],
     forbidden_symbols: [],
     must_not_change: [],
-    required_tests: [],
+    required_tests: ["node -e \"process.exit(0)\""],
     patch_requirements: []
+  };
+}
+
+async function prepareLintedPlan(repo: string, contract: Record<string, unknown>, name = `${String(contract.task_id)}-plan.json`): Promise<void> {
+  const planPath = path.join(repo, name);
+  await writeFile(
+    planPath,
+    `${JSON.stringify(
+      {
+        tasks: [planTaskFromContract(contract)],
+        execution_groups: [{ group_id: "G-1", mode: "parallel", task_ids: [contract.task_id] }]
+      },
+      null,
+      2
+    )}\n`
+  );
+  await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+  await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+  await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
+}
+
+function planTaskFromContract(contract: Record<string, unknown>): Record<string, unknown> {
+  return {
+    task_id: contract.task_id,
+    title: contract.title,
+    mode: "write",
+    agent_role: contract.agent_role,
+    draft_scope: {
+      allowed_files: contract.allowed_files,
+      read_only_files: contract.read_only_files,
+      forbidden_files: contract.forbidden_files,
+      must_not_change: contract.must_not_change
+    },
+    depends_on: [],
+    parallel_safe: true,
+    acceptance_criterion: contract.acceptance_criterion,
+    required_tests: contract.required_tests,
+    patch_requirements: contract.patch_requirements
   };
 }
 

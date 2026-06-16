@@ -704,7 +704,7 @@ Planning is the **highest-leverage link in the system.** The deterministic gate 
    - the write scopes of any two tasks marked `parallel_safe` must not overlap — this is the disjoint-lease invariant checked at *plan time* instead of waiting for lease-grant time (the lease manager remains the authoritative grant-time check; this is an earlier, cheaper surfacing of the same rule, **not** the advisory scheduling heuristic);
    - no scope includes a Critical-tier path (per the Blast-Radius config) without an explicit approval flag;
    - the `depends_on` graph is acyclic;
-   - each task declares a single binary acceptance criterion (the conjunction of its `required_tests`); a task with none — or one bundling several unrelated criteria — is bounced to be decomposed (the deterministic half of Right-sizing below);
+   - each task declares exactly one structural `acceptance_criterion`, backed by at least one named `required_tests` command; semantic right-sizing ("is this secretly two unrelated tasks?") is caught by human ratification and planner review, not pretended to be machine-provable;
    - every write scope carries grounding evidence that is valid and fresh — cited paths exist at `base_commit`, derived from the current base (see Grounding evidence below).
 5. **Ratify, risk-scaled.** A trivial single-file plan needs no sign-off; a multi-task or high-blast plan is presented to the user — tasks, scopes, and explicitly *what it will not touch* — for confirmation. Same tiering as the [approval model](#human-approval-model): don't make the user approve trivia; do make them ratify consequential plans.
 6. **Then, and only then, request leases and execute.**
@@ -730,7 +730,7 @@ Grounding decides *whether* a scope is real; right-sizing decides *how big* a ta
 
 This is, reflexively, the same discipline this document's own [Development Plan](#development-plan) applies to building Hivemind: the build is decomposed into one-acceptance-test, one-invocation-sized sub-tasks *because* the coding agent constructing it has a rotting context — so Hivemind's planner owes its own workers exactly that courtesy.
 
-The deterministic half folds into plan-lint (rule 4 above): a task with no declared acceptance criterion, or one bundling several unrelated criteria, is bounced to be decomposed. "Small enough for one invocation" is not deterministically provable, so it stays a heuristic the orchestrator applies and the human ratifies — and when that heuristic is wrong it degrades, per the [Robustness Principle](#robustness-principle-eliminate-prevent-degrade-never-break), into the safe and visible failure of thrash-detection re-opening the plan, never into a broken guarantee.
+The deterministic half folds into plan-lint and contract validation (rule 4 above): a task with no structural acceptance criterion, or one whose acceptance is not backed by named required tests, is bounced to be corrected. "Is this secretly two unrelated tasks?" and "small enough for one invocation" are not deterministically provable, so they stay heuristics the orchestrator applies and the human ratifies — and when those heuristics are wrong they degrade, per the [Robustness Principle](#robustness-principle-eliminate-prevent-degrade-never-break), into the safe and visible failure of thrash-detection re-opening the plan, never into a broken guarantee.
 
 #### Grounding evidence: present, valid, fresh — and the limit of all three
 

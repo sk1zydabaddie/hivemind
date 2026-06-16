@@ -9,6 +9,7 @@ import { callDaemonIfConfigured } from "./daemon-client.js";
 import { captureWorktreeDiff } from "./diff-capture.js";
 import { findGitRoot } from "./repo.js";
 import { verifyLeaseCoverage } from "./lease.js";
+import { requirePassedWriteIntent } from "./intent.js";
 import { routeTaskProvider } from "./routing.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { createTaskWorktree } from "./worktree.js";
@@ -83,6 +84,11 @@ export async function runTask(
   const leaseResult = await verifyLeaseCoverage(repoRoot, taskId, contractResult.contract.allowed_files);
   if (!leaseResult.ok) {
     return leaseResult;
+  }
+
+  const intentResult = await requirePassedWriteIntent(repoRoot, taskId);
+  if (!intentResult.ok) {
+    return intentResult;
   }
 
   const routeResult = await routeTaskProvider(repoRoot, contractResult.contract, configResult.config, tool);

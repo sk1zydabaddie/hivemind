@@ -276,8 +276,11 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
     `${JSON.stringify(
       {
         task_id: taskId,
+        title: "Submit fixture",
         base_commit: baseCommit,
-        allowed_files: allowedFiles
+        acceptance_criterion: "Submit fixture assembles one patch bundle.",
+        allowed_files: allowedFiles,
+        required_tests: ["node -e \"process.exit(0)\""]
       },
       null,
       2

@@ -6,6 +6,7 @@ import { writeJsonAtomic } from "./atomic.js";
 import { createTaskContract, type CreateTaskContractResult } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { enqueueIntegrationPatch, integrateShadow, type EnqueueIntegrationPatchResult, type IntegrationStatus } from "./integrate.js";
+import { checkWriteIntent, type WriteIntentPass } from "./intent.js";
 import { requestLeaseForContract, type LeaseGrantResult } from "./lease.js";
 import { findGitRoot } from "./repo.js";
 import { runTask, type RunResult } from "./run.js";
@@ -69,6 +70,7 @@ type ManagerAction =
   | { type: "get_status" }
   | { type: "create_task_contract"; contract: Record<string, unknown> }
   | { type: "request_lease"; task_id: string }
+  | { type: "check_write_intent"; task_id: string; intent: Record<string, unknown> }
   | { type: "create_worktree"; task_id: string }
   | { type: "scout_task"; task_id: string; tool: string }
   | { type: "run_worker"; task_id: string; tool?: string; allow_dangerous_adapter?: boolean }
@@ -364,6 +366,16 @@ async function executeDeterministicAction(repoRoot: string, action: ManagerActio
   if (action.type === "request_lease") {
     return recordResult(await routeMutatingAction<LeaseGrantResult>(repoRoot, "/lease/request-contract", { task_id: action.task_id }, () => requestLeaseForContract(repoRoot, action.task_id)));
   }
+  if (action.type === "check_write_intent") {
+    return recordResult(
+      await routeMutatingAction<WriteIntentPass>(
+        repoRoot,
+        "/intent/check",
+        { task_id: action.task_id, intent: action.intent },
+        () => checkWriteIntent(repoRoot, action.task_id, action.intent)
+      )
+    );
+  }
   if (action.type === "create_worktree") {
     return recordResult(await routeMutatingAction<WorktreeResult>(repoRoot, "/worktree/create", { task_id: action.task_id }, () => createTaskWorktree(repoRoot, action.task_id)));
   }
@@ -494,6 +506,11 @@ function parseManagerAction(raw: unknown): SpecResult<ManagerAction> {
     return isRecord(raw.contract) && Object.keys(raw).length === 2
       ? { ok: true, value: { type: "create_task_contract", contract: raw.contract } }
       : { ok: false, reason: "create_task_contract action requires only a contract object" };
+  }
+  if (raw.type === "check_write_intent") {
+    return typeof raw.task_id === "string" && isRecord(raw.intent) && Object.keys(raw).every((key) => key === "type" || key === "task_id" || key === "intent")
+      ? { ok: true, value: { type: "check_write_intent", task_id: raw.task_id, intent: raw.intent } }
+      : { ok: false, reason: "check_write_intent action requires only task_id and intent object" };
   }
   if (isTaskActionType(raw.type)) {
     if (typeof raw.task_id !== "string") {

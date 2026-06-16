@@ -20,6 +20,7 @@ test("valid sample contract validates and normalizes", () => {
     title: "Validate contracts",
     agent_role: "scout",
     base_commit: "abc123",
+    acceptance_criterion: "Contract validation fixture passes typecheck.",
     allowed_files: ["src/contract.ts"],
     read_only_files: ["src/cli.ts"],
     forbidden_files: ["package.json"],
@@ -34,10 +35,30 @@ test("valid sample contract validates and normalizes", () => {
   assert.deepEqual(normalizeContract(raw), raw);
 });
 
+test("contract validation requires exactly one acceptance criterion backed by a test", () => {
+  const base = {
+    task_id: "T-001",
+    base_commit: "abc123",
+    allowed_files: ["README.md"],
+    required_tests: ["npm run typecheck"]
+  };
+
+  assert.deepEqual(validateContract(base), ["acceptance_criterion is required"]);
+  assert.deepEqual(validateContract({ ...base, acceptance_criteria: ["one", "two"] }), [
+    "acceptance_criterion is required",
+    "unsupported contract field: acceptance_criteria"
+  ]);
+  assert.deepEqual(validateContract({ ...base, acceptance_criterion: "One binary check passes.", required_tests: [] }), [
+    "required_tests must include at least one non-empty command backing acceptance_criterion"
+  ]);
+});
+
 test("missing allowed_files reports the exact problem", () => {
   const problems = validateContract({
     task_id: "T-001",
-    base_commit: "abc123"
+    base_commit: "abc123",
+    acceptance_criterion: "One file is validated.",
+    required_tests: ["npm run typecheck"]
   });
 
   assert.deepEqual(problems, ["allowed_files must be a non-empty array"]);
@@ -47,8 +68,10 @@ test("path in both allowed and forbidden reports the exact problem", () => {
   const problems = validateContract({
     task_id: "T-001",
     base_commit: "abc123",
+    acceptance_criterion: "Path conflict is detected.",
     allowed_files: ["src/contract.ts"],
-    forbidden_files: ["src/contract.ts"]
+    forbidden_files: ["src/contract.ts"],
+    required_tests: ["npm run typecheck"]
   });
 
   assert.deepEqual(problems, ['path "src/contract.ts" may not appear in both allowed_files and forbidden_files']);
@@ -58,10 +81,12 @@ test("invalid path entries report all relevant problems", () => {
   const problems = validateContract({
     task_id: "",
     base_commit: "",
+    acceptance_criterion: "Invalid path entries are reported.",
     allowed_files: ["", "../escape.ts", "src/.git/config", path.resolve("absolute.ts")],
     read_only_files: ["src\\..\\escape.ts"],
     forbidden_files: [1],
-    agent_role: "planner"
+    agent_role: "planner",
+    required_tests: ["npm run typecheck"]
   });
 
   assert.deepEqual(problems, [
@@ -83,14 +108,16 @@ test("contract validation rejects unsafe and mismatched task ids", () => {
       {
         task_id: "T-OTHER",
         base_commit: "abc123",
-        allowed_files: ["README.md"]
+        acceptance_criterion: "Task id mismatch is detected.",
+        allowed_files: ["README.md"],
+        required_tests: ["npm run typecheck"]
       },
       "T-001"
     ),
     ['task_id "T-OTHER" must match requested task id "T-001"']
   );
 
-  assert.deepEqual(validateContract({ task_id: "../evil", base_commit: "abc123", allowed_files: ["README.md"] }), [
+  assert.deepEqual(validateContract({ task_id: "../evil", base_commit: "abc123", acceptance_criterion: "Unsafe id is detected.", allowed_files: ["README.md"], required_tests: ["npm run typecheck"] }), [
     "task_id contains invalid task id: task id may contain only letters, numbers, dots, underscores, and hyphens, and must start with a letter or number"
   ]);
 });
@@ -101,7 +128,9 @@ test("CLI contract validate prints normalized JSON", async () => {
     await writeContract(repo, "T-001", {
       task_id: "T-001",
       base_commit: "abc123",
-      allowed_files: ["src/contract.ts"]
+      acceptance_criterion: "CLI normalize prints one contract.",
+      allowed_files: ["src/contract.ts"],
+      required_tests: ["npm run typecheck"]
     });
 
     const result = await execFileAsync("node", [cliPath, "contract", "T-001", "--validate"], {
@@ -115,13 +144,14 @@ test("CLI contract validate prints normalized JSON", async () => {
       title: "",
       agent_role: "builder",
       base_commit: "abc123",
+      acceptance_criterion: "CLI normalize prints one contract.",
       allowed_files: ["src/contract.ts"],
       read_only_files: [],
       forbidden_files: [],
       allowed_symbols: [],
       forbidden_symbols: [],
       must_not_change: [],
-      required_tests: [],
+      required_tests: ["npm run typecheck"],
       patch_requirements: []
     });
   });
@@ -136,7 +166,9 @@ test("loadContract accepts UTF-8 BOM prefixed JSON", async () => {
       {
         task_id: "T-001",
         base_commit: "abc123",
-        allowed_files: ["README.md"]
+        acceptance_criterion: "BOM contract loads.",
+        allowed_files: ["README.md"],
+        required_tests: ["npm run typecheck"]
       },
       true
     );
@@ -153,7 +185,9 @@ test("CLI contract validate rejects path-traversal task ids", async () => {
     await writeContract(repo, "evil", {
       task_id: "evil",
       base_commit: "abc123",
-      allowed_files: ["README.md"]
+      acceptance_criterion: "Unsafe requested id is rejected.",
+      allowed_files: ["README.md"],
+      required_tests: ["npm run typecheck"]
     });
 
     await assert.rejects(
@@ -173,9 +207,11 @@ test("CLI contract validate exits non-zero and lists all validation problems", a
     await writeContract(repo, "T-001", {
       task_id: "T-001",
       base_commit: "abc123",
+      acceptance_criterion: "Invalid contract reports all problems.",
       allowed_files: ["src/contract.ts"],
       forbidden_files: ["src/contract.ts"],
-      read_only_files: ["../escape.ts"]
+      read_only_files: ["../escape.ts"],
+      required_tests: ["npm run typecheck"]
     });
 
     await assert.rejects(

@@ -32,6 +32,7 @@ These hold for **every** sub-task unless a contract overrides them. State them t
   "title": "Implement minimap zoom controls",
   "agent_role": "builder",
   "base_commit": "abc123",
+  "acceptance_criterion": "Minimap zoom controls pass their focused test.",
   "allowed_files": ["src/components/Minimap.tsx", "src/styles/minimap.css"],
   "read_only_files": ["src/world/coordinateSystem.ts"],
   "forbidden_files": ["src/save/saveGameSchema.ts"],
@@ -64,6 +65,8 @@ In the early build, `allowed_symbols`/`forbidden_symbols` are carried but not en
 **C9 — The patch bundle is exactly these 7 files** (C8 `patches/<id>/`). The gate trusts none of the agent-reported `*.json`; it re-derives truth from `diff.patch` applied to `base_commit`.
 
 **C10 — Right-sizing & the split rule.** Every sub-task here is sized to be *context-survivable* per the design spec's canonical discipline — Overview § *Right-sizing tasks: contracts that survive a worker's context*. That means each one is: **self-contained** (this contract + its named spec slice is all the context the agent needs — it never relies on the agent remembering the rest of the spec); defined by **one binary acceptance criterion**; **one-invocation-sized** (small enough to finish well inside one fresh invocation, so the tool's auto-compaction rarely fires mid-task); and depends on prior work only through stated **Depends-on** ordering, never through the agent recalling an earlier task. The **granularity oracle / split rule** is the operative tool while building: *if you cannot state a single binary acceptance check for the unit in front of you, it is too big — split it* into `M_.x.a`, `M_.x.b`, … before handing it off. This is the same discipline Hivemind's own planner will apply to its workers; here you apply it by hand.
+
+Deterministic enforcement is structural: a task contract has exactly one `acceptance_criterion`, and that criterion must be backed by at least one named `required_tests` command. Whether that sentence secretly bundles multiple unrelated tasks is a human ratification/planner-review judgment, not something deterministic lint pretends to prove.
 
 **Gate markers:** **[GATE]** sub-tasks must pass before the next milestone starts. The hardest rule: **M1.5 must be green before any dogfooding (M3).**
 

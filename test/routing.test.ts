@@ -100,13 +100,14 @@ function contractFor(overrides: Partial<TaskContract> = {}): TaskContract {
     title: "Route task",
     agent_role: "builder",
     base_commit: "abc123",
+    acceptance_criterion: "Routing fixture selects one provider.",
     allowed_files: ["README.md"],
     read_only_files: [],
     forbidden_files: [],
     allowed_symbols: [],
     forbidden_symbols: [],
     must_not_change: [],
-    required_tests: [],
+    required_tests: ["node -e \"process.exit(0)\""],
     patch_requirements: [],
     ...overrides
   };

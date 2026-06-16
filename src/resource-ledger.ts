@@ -38,7 +38,7 @@ export interface QuotaUsageRecord {
 }
 
 const ledgerLockRetryMs = 25;
-const ledgerLockTimeoutMs = 2000;
+const ledgerLockTimeoutMs = 10000;
 
 export async function quotaCommand(cwd: string, args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;

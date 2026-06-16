@@ -3,6 +3,7 @@ import path from "node:path";
 import { writeJsonAtomic } from "./atomic.js";
 import { appendTaskCreatedIfMissing } from "./events.js";
 import { readJsonFile } from "./json.js";
+import { requireContractFromLintedPlan } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { validateRequestedTaskId, validateTaskId } from "./task-id.js";
@@ -14,6 +15,7 @@ export interface TaskContract {
   title: string;
   agent_role: AgentRole;
   base_commit: string;
+  acceptance_criterion: string;
   allowed_files: string[];
   read_only_files: string[];
   forbidden_files: string[];
@@ -42,6 +44,21 @@ const arrayFields = [
 ] as const;
 
 const pathArrayFields = ["allowed_files", "read_only_files", "forbidden_files"] as const;
+const allowedContractFields = new Set([
+  "task_id",
+  "title",
+  "agent_role",
+  "base_commit",
+  "acceptance_criterion",
+  "allowed_files",
+  "read_only_files",
+  "forbidden_files",
+  "allowed_symbols",
+  "forbidden_symbols",
+  "must_not_change",
+  "required_tests",
+  "patch_requirements"
+]);
 
 export async function validateContractCommand(cwd: string, args: string[]): Promise<number> {
   const [taskId, flag, ...rest] = args;
@@ -134,6 +151,11 @@ export async function createTaskContract(
     return taskIdResult;
   }
 
+  const planResult = await requireContractFromLintedPlan(repoRoot, specResult.value.spec_id, contract);
+  if (!planResult.ok) {
+    return planResult;
+  }
+
   const relativeContractPath = `.hivemind/tasks/${contract.task_id}.contract.json`;
   const contractPath = path.join(repoRoot, ".hivemind", "tasks", `${contract.task_id}.contract.json`);
   if (await exists(contractPath)) {
@@ -145,6 +167,7 @@ export async function createTaskContract(
     title: contract.title,
     agent_role: contract.agent_role,
     base_commit: contract.base_commit,
+    acceptance_criterion: contract.acceptance_criterion,
     allowed_files: contract.allowed_files,
     contract_path: relativeContractPath,
     source: "contract.create"
@@ -170,6 +193,13 @@ export function validateContract(raw: unknown, expectedTaskId?: string): string[
 
   requireString(raw, "task_id", problems);
   requireString(raw, "base_commit", problems);
+  requireString(raw, "acceptance_criterion", problems);
+
+  for (const key of Object.keys(raw)) {
+    if (!allowedContractFields.has(key)) {
+      problems.push(`unsupported contract field: ${key}`);
+    }
+  }
 
   if (typeof raw.task_id === "string" && raw.task_id.trim() !== "") {
     const taskIdProblem = validateTaskId(raw.task_id);
@@ -183,6 +213,9 @@ export function validateContract(raw: unknown, expectedTaskId?: string): string[
 
   if (!Array.isArray(raw.allowed_files) || raw.allowed_files.length === 0) {
     problems.push("allowed_files must be a non-empty array");
+  }
+  if (!Array.isArray(raw.required_tests) || raw.required_tests.filter((entry) => typeof entry === "string" && entry.trim() !== "").length === 0) {
+    problems.push("required_tests must include at least one non-empty command backing acceptance_criterion");
   }
 
   for (const field of arrayFields) {
@@ -233,6 +266,7 @@ export function normalizeContract(raw: unknown): TaskContract {
     title: typeof raw.title === "string" ? raw.title : "",
     agent_role: isAgentRole(raw.agent_role) ? raw.agent_role : "builder",
     base_commit: String(raw.base_commit),
+    acceptance_criterion: typeof raw.acceptance_criterion === "string" ? raw.acceptance_criterion.trim() : "",
     allowed_files: normalizeStringArray(raw.allowed_files),
     read_only_files: normalizeStringArray(raw.read_only_files),
     forbidden_files: normalizeStringArray(raw.forbidden_files),

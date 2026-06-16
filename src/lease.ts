@@ -7,6 +7,7 @@ import { loadAndValidateContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent } from "./events.js";
 import { canonicalizeConcreteFileScope } from "./file-scope.js";
+import { resolveContractFilesAtBase } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { validateRequestedTaskId } from "./task-id.js";
@@ -65,7 +66,20 @@ export async function requestLeaseForContract(repoRoot: string, taskId: string):
     return contractResult;
   }
 
-  return requestLease(repoRoot, taskId, contractResult.contract.allowed_files);
+  const baseScope = await resolveContractFilesAtBase(repoRoot, taskId, contractResult.contract.base_commit, contractResult.contract.allowed_files, "allowed_files");
+  if (!baseScope.ok) {
+    const eventResult = await appendEvent(repoRoot, {
+      type: "lease.rejected",
+      task_id: taskId,
+      data: { requested_files: contractResult.contract.allowed_files, reason: baseScope.reason }
+    });
+    if (!eventResult.ok) {
+      return { ok: false, reason: `failed to append lease.rejected event: ${eventResult.reason}` };
+    }
+    return { ok: false, reason: baseScope.reason };
+  }
+
+  return requestLease(repoRoot, taskId, baseScope.value);
 }
 
 export async function verifyLeaseCoverage(repoRoot: string, taskId: string, files: string[]): Promise<{ ok: true; files: string[] } | { ok: false; reason: string }> {

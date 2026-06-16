@@ -129,7 +129,7 @@ test("concurrent requestLease calls for the same file never both win", async () 
 
 test("CLI lease grants contract allowed_files and releases them", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
-    await writeContract(repo, "T-001", baseCommit, ["README.md", "src/new-file.ts"]);
+    await writeContract(repo, "T-001", baseCommit, ["README.md", "src/feature.ts"]);
 
     const granted = await execFileAsync("node", [cliPath, "lease", "T-001"], { cwd: repo, windowsHide: true });
     const released = await execFileAsync("node", [cliPath, "lease", "T-001", "--release"], { cwd: repo, windowsHide: true });
@@ -137,14 +137,33 @@ test("CLI lease grants contract allowed_files and releases them", async () => {
     assert.equal(granted.stderr, "");
     assert.deepEqual(JSON.parse(granted.stdout), {
       task_id: "T-001",
-      granted: ["README.md", "src/new-file.ts"]
+      granted: ["README.md", "src/feature.ts"]
     });
     assert.equal(released.stderr, "");
     assert.deepEqual(JSON.parse(released.stdout), {
       task_id: "T-001",
-      released: ["README.md", "src/new-file.ts"]
+      released: ["README.md", "src/feature.ts"]
     });
     assert.deepEqual(await readActive(repo), {});
+  });
+});
+
+test("CLI lease refuses contract files that do not exist at the contract base commit", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeFile(path.join(repo, "LATER.md"), "later\n");
+    await git(repo, ["add", "LATER.md"]);
+    await git(repo, ["commit", "-m", "add later"]);
+    await writeContract(repo, "T-STALE", baseCommit, ["LATER.md"]);
+
+    await assert.rejects(
+      execFileAsync("node", [cliPath, "lease", "T-STALE"], { cwd: repo, windowsHide: true }),
+      (error: unknown) => {
+        assert.equal((error as { code?: number }).code, 1);
+        assert.match(String((error as { stderr?: string }).stderr), /LATER\.md.*not a tracked file at base/);
+        return true;
+      }
+    );
+    await assertMissing(path.join(repo, ".hivemind", "leases", "active.json"));
   });
 });
 
@@ -168,7 +187,7 @@ test("CLI lease rejects contract globs and overlapping leases", async () => {
       execFileAsync("node", [cliPath, "lease", "T-003"], { cwd: repo, windowsHide: true }),
       (error: unknown) => {
         assert.equal((error as { code?: number }).code, 1);
-        assert.match(String((error as { stderr?: string }).stderr), /globs are not allowed/);
+        assert.match(String((error as { stderr?: string }).stderr), /uses a glob; contract lease scopes must be concrete files/);
         return true;
       }
     );
@@ -219,13 +238,14 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
         title: "Lease files",
         agent_role: "builder",
         base_commit: baseCommit,
+        acceptance_criterion: "Lease fixture grants one concrete scope.",
         allowed_files: allowedFiles,
         read_only_files: [],
         forbidden_files: [],
         allowed_symbols: [],
         forbidden_symbols: [],
         must_not_change: [],
-        required_tests: [],
+        required_tests: ["node -e \"process.exit(0)\""],
         patch_requirements: []
       },
       null,

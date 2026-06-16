@@ -1,4 +1,5 @@
 import path from "node:path";
+import { writeJsonAtomic } from "./atomic.js";
 import { canonicalizeConcreteFileScope } from "./file-scope.js";
 import { readJsonFile } from "./json.js";
 import { readActiveLeases } from "./lease.js";
@@ -17,6 +18,11 @@ export interface WriteIntentPass {
   task_id: string;
   verdict: "pass";
   intended_files: string[];
+}
+
+export interface StoredWriteIntentPass extends WriteIntentPass {
+  version: 1;
+  approved_at: string;
 }
 
 type IntentResult<T> = { ok: true; value: T } | { ok: false; reason: string };
@@ -83,7 +89,58 @@ export async function checkWriteIntent(repoRoot: string, taskId: string, rawInte
     };
   }
 
+  const approved: StoredWriteIntentPass = {
+    version: 1,
+    task_id: taskId,
+    verdict: "pass",
+    intended_files: pathsResult.paths,
+    approved_at: new Date().toISOString()
+  };
+  await writeJsonAtomic(passedIntentPath(repoRoot, taskId), approved);
   return { ok: true, value: { task_id: taskId, verdict: "pass", intended_files: pathsResult.paths } };
+}
+
+export async function requirePassedWriteIntent(repoRoot: string, taskId: string): Promise<IntentResult<StoredWriteIntentPass>> {
+  const taskIdResult = validateRequestedTaskId(taskId);
+  if (!taskIdResult.ok) {
+    return taskIdResult;
+  }
+
+  let raw: unknown;
+  try {
+    raw = await readJsonFile(passedIntentPath(repoRoot, taskId));
+  } catch (error: unknown) {
+    if (isNodeError(error, "ENOENT")) {
+      return { ok: false, reason: `passed write intent not found for ${taskId}; run hivemind intent ${taskId} <intent.json> before invoking a worker` };
+    }
+    if (error instanceof SyntaxError) {
+      return { ok: false, reason: `invalid JSON in .hivemind/intents/${taskId}.approved.json` };
+    }
+    throw error;
+  }
+
+  const parsed = validateStoredWriteIntent(raw, taskId);
+  if (!parsed.ok) {
+    return parsed;
+  }
+
+  const storeResult = await readActiveLeases(repoRoot);
+  if (!storeResult.ok) {
+    return storeResult;
+  }
+  const conflicts = parsed.value.intended_files
+    .map((filePath) => ({ filePath, holder: storeResult.store[filePath] }))
+    .filter((entry) => entry.holder !== taskId);
+  if (conflicts.length > 0) {
+    return {
+      ok: false,
+      reason: `passed write intent is no longer covered by the active lease: ${conflicts
+        .map((entry) => `${entry.filePath} ${entry.holder === undefined ? "is not leased" : `held by ${entry.holder}`}`)
+        .join("; ")}`
+    };
+  }
+
+  return parsed;
 }
 
 export function validateWriteIntent(raw: unknown, expectedTaskId: string): IntentResult<WriteIntent> {
@@ -149,6 +206,41 @@ async function loadIntentFile(cwd: string, intentPath: string): Promise<IntentRe
 
 function normalizeStringArray(value: unknown): string[] {
   return isStringArray(value) ? value : [];
+}
+
+function validateStoredWriteIntent(raw: unknown, expectedTaskId: string): IntentResult<StoredWriteIntentPass> {
+  if (!isRecord(raw)) {
+    return { ok: false, reason: `passed write intent for ${expectedTaskId} must be a JSON object` };
+  }
+  if (raw.version !== 1) {
+    return { ok: false, reason: `passed write intent for ${expectedTaskId} must have version 1` };
+  }
+  if (raw.task_id !== expectedTaskId) {
+    return { ok: false, reason: `passed write intent task_id must be ${expectedTaskId}` };
+  }
+  if (raw.verdict !== "pass") {
+    return { ok: false, reason: `passed write intent for ${expectedTaskId} must have verdict pass` };
+  }
+  if (!Array.isArray(raw.intended_files) || raw.intended_files.length === 0 || !raw.intended_files.every((entry) => typeof entry === "string")) {
+    return { ok: false, reason: `passed write intent for ${expectedTaskId} must include intended_files` };
+  }
+  if (typeof raw.approved_at !== "string" || Number.isNaN(Date.parse(raw.approved_at))) {
+    return { ok: false, reason: `passed write intent for ${expectedTaskId} must include approved_at` };
+  }
+  return {
+    ok: true,
+    value: {
+      version: 1,
+      task_id: expectedTaskId,
+      verdict: "pass",
+      intended_files: raw.intended_files,
+      approved_at: raw.approved_at
+    }
+  };
+}
+
+function passedIntentPath(repoRoot: string, taskId: string): string {
+  return path.join(repoRoot, ".hivemind", "intents", `${taskId}.approved.json`);
 }
 
 function isStringArray(value: unknown): value is string[] {

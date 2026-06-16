@@ -180,13 +180,14 @@ function contractFor(overrides: Partial<TaskContract> = {}): TaskContract {
     title: "Gate fixture",
     agent_role: "builder",
     base_commit: "abc123",
+    acceptance_criterion: "Gate fixture produces one verdict.",
     allowed_files: ["README.md"],
     read_only_files: [],
     forbidden_files: [],
     allowed_symbols: [],
     forbidden_symbols: [],
     must_not_change: [],
-    required_tests: [],
+    required_tests: ["node -e \"process.exit(0)\""],
     patch_requirements: [],
     ...overrides
   };

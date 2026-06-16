@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { writeJsonAtomic } from "./atomic.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { loadConfig } from "./config.js";
-import { type AgentRole } from "./contract.js";
+import { type AgentRole, type TaskContract } from "./contract.js";
 import { matchesAny } from "./glob.js";
 import { assertNoKnownFailedScopeRepeat, evaluateThrashForPlan, type ReplanEvaluationResult } from "./replan.js";
 import { findGitRoot } from "./repo.js";
@@ -58,6 +58,9 @@ export interface TentativePlan {
   grounding_status?: "grounded";
   grounded_at?: string;
   grounded_base_commit?: string;
+  lint_status?: "passed";
+  linted_at?: string;
+  linted_base_commit?: string;
   tasks: TentativePlanTask[];
   execution_groups: TentativePlanExecutionGroup[];
 }
@@ -377,21 +380,18 @@ export async function lintTentativePlan(repoRoot: string, specId: string): Promi
     return config;
   }
 
-  const rules: Array<() => SpecResult<void>> = [
-    () => lintGroundingRequired(loaded.value),
-    () => lintGroundingFreshness(loaded.value, head.value),
-    () => lintParallelScopeOverlap(loaded.value),
-    () => lintDependencyCycle(loaded.value),
-    () => lintCriticalApproval(loaded.value, config.config.critical_globs ?? []),
-    () => lintRightSizingAcceptance(loaded.value)
-  ];
-
-  for (const rule of rules) {
-    const result = rule();
-    if (!result.ok) {
-      return { ok: false, reason: `plan-lint failed: ${result.reason}` };
-    }
+  const lintResult = runPlanLintRules(loaded.value, head.value, config.config.critical_globs ?? []);
+  if (!lintResult.ok) {
+    return lintResult;
   }
+
+  const lintedPlan: TentativePlan = {
+    ...loaded.value,
+    lint_status: "passed",
+    linted_at: new Date().toISOString(),
+    linted_base_commit: loaded.value.base_commit
+  };
+  await writeJsonAtomic(tentativePlanPath(repoRoot, specId), lintedPlan);
 
   return {
     ok: true,
@@ -402,12 +402,65 @@ export async function lintTentativePlan(repoRoot: string, specId: string): Promi
       lint_status: "passed",
       base_commit: loaded.value.base_commit,
       task_count: loaded.value.tasks.length,
-      rule_count: rules.length
+      rule_count: planLintRuleCount
     }
   };
 }
 
-async function loadTentativePlan(repoRoot: string, specId: string): Promise<SpecResult<TentativePlan>> {
+export async function requireContractFromLintedPlan(
+  repoRoot: string,
+  specId: string,
+  contract: TaskContract
+): Promise<SpecResult<void>> {
+  const loaded = await loadTentativePlan(repoRoot, specId);
+  if (!loaded.ok) {
+    return { ok: false, reason: `contract creation requires a lint-passed tentative plan: ${loaded.reason}` };
+  }
+  const head = await currentHead(repoRoot);
+  if (!head.ok) {
+    return head;
+  }
+  const config = await loadConfig(repoRoot);
+  if (!config.ok) {
+    return config;
+  }
+  const plan = loaded.value;
+  if (plan.lint_status !== "passed" || plan.linted_base_commit !== plan.base_commit || plan.linted_at === undefined) {
+    return { ok: false, reason: "contract creation requires a current lint-passed tentative plan" };
+  }
+  const lintResult = runPlanLintRules(plan, head.value, config.config.critical_globs ?? []);
+  if (!lintResult.ok) {
+    return lintResult;
+  }
+  const task = plan.tasks.find((entry) => entry.task_id === contract.task_id);
+  if (task === undefined) {
+    return { ok: false, reason: `contract task ${contract.task_id} is not present in lint-passed plan ${tentativePlanRelativePath(specId)}` };
+  }
+  if (task.grounded_scope === undefined) {
+    return { ok: false, reason: `contract task ${contract.task_id} is not grounded in lint-passed plan` };
+  }
+  const mismatches = contractPlanMismatches(contract, task, plan);
+  if (mismatches.length > 0) {
+    return { ok: false, reason: `contract does not match lint-passed plan task ${contract.task_id}: ${mismatches.join("; ")}` };
+  }
+  return { ok: true, value: undefined };
+}
+
+export async function resolveContractFilesAtBase(
+  repoRoot: string,
+  taskId: string,
+  baseCommit: string,
+  files: string[],
+  label: keyof Omit<DraftScope, "must_not_change">
+): Promise<SpecResult<string[]>> {
+  const tracked = await trackedFilesAtBase(repoRoot, baseCommit);
+  if (!tracked.ok) {
+    return tracked;
+  }
+  return resolveScopeEntries(taskId, label, files, tracked.value, { allowGlobs: false });
+}
+
+export async function loadTentativePlan(repoRoot: string, specId: string): Promise<SpecResult<TentativePlan>> {
   let raw: unknown;
   try {
     raw = JSON.parse(await readFile(tentativePlanPath(repoRoot, specId), "utf8"));
@@ -428,7 +481,22 @@ function validateStoredTentativePlan(raw: unknown, specId: string): SpecResult<T
   if (!isRecord(raw)) {
     return { ok: false, reason: "tentative plan must be a JSON object" };
   }
-  const allowedKeys = new Set(["version", "spec_id", "status", "base_commit", "source", "created_at", "grounding_status", "grounded_at", "grounded_base_commit", "tasks", "execution_groups"]);
+  const allowedKeys = new Set([
+    "version",
+    "spec_id",
+    "status",
+    "base_commit",
+    "source",
+    "created_at",
+    "grounding_status",
+    "grounded_at",
+    "grounded_base_commit",
+    "lint_status",
+    "linted_at",
+    "linted_base_commit",
+    "tasks",
+    "execution_groups"
+  ]);
   const extra = Object.keys(raw).filter((key) => !allowedKeys.has(key));
   if (extra.length > 0) {
     return { ok: false, reason: `tentative plan contains unsupported field: ${extra[0]}` };
@@ -471,6 +539,27 @@ function validateStoredTentativePlan(raw: unknown, specId: string): SpecResult<T
   }
   if (raw.grounded_base_commit !== undefined && (typeof raw.grounded_base_commit !== "string" || raw.grounded_base_commit.trim() === "")) {
     return { ok: false, reason: "tentative plan grounded_base_commit must be a non-empty string when present" };
+  }
+  if (raw.lint_status !== undefined && raw.lint_status !== "passed") {
+    return { ok: false, reason: "tentative plan lint_status must be passed when present" };
+  }
+  if (raw.lint_status === "passed" && raw.linted_at === undefined) {
+    return { ok: false, reason: "tentative plan linted_at must be present when lint_status is passed" };
+  }
+  if (raw.lint_status === "passed" && raw.linted_base_commit === undefined) {
+    return { ok: false, reason: "tentative plan linted_base_commit must be present when lint_status is passed" };
+  }
+  if (raw.lint_status === undefined && raw.linted_at !== undefined) {
+    return { ok: false, reason: "tentative plan linted_at requires lint_status" };
+  }
+  if (raw.lint_status === undefined && raw.linted_base_commit !== undefined) {
+    return { ok: false, reason: "tentative plan linted_base_commit requires lint_status" };
+  }
+  if (raw.linted_at !== undefined && (typeof raw.linted_at !== "string" || raw.linted_at.trim() === "")) {
+    return { ok: false, reason: "tentative plan linted_at must be a non-empty string when present" };
+  }
+  if (raw.linted_base_commit !== undefined && (typeof raw.linted_base_commit !== "string" || raw.linted_base_commit.trim() === "")) {
+    return { ok: false, reason: "tentative plan linted_base_commit must be a non-empty string when present" };
   }
   if (!Array.isArray(raw.tasks) || raw.tasks.length === 0) {
     return { ok: false, reason: "tentative plan tasks must be a non-empty array" };
@@ -534,6 +623,9 @@ function validateStoredTentativePlan(raw: unknown, specId: string): SpecResult<T
       ...(raw.grounding_status === undefined ? {} : { grounding_status: "grounded" }),
       ...(raw.grounded_at === undefined ? {} : { grounded_at: raw.grounded_at }),
       ...(raw.grounded_base_commit === undefined ? {} : { grounded_base_commit: raw.grounded_base_commit }),
+      ...(raw.lint_status === undefined ? {} : { lint_status: "passed" }),
+      ...(raw.linted_at === undefined ? {} : { linted_at: raw.linted_at }),
+      ...(raw.linted_base_commit === undefined ? {} : { linted_base_commit: raw.linted_base_commit }),
       tasks,
       execution_groups: executionGroups
     }
@@ -716,15 +808,15 @@ function groundTaskScope(
   baseCommit: string,
   checkedAt: string
 ): SpecResult<TentativePlanTask> {
-  const allowed = resolveScopeEntries(task.task_id, "allowed_files", task.draft_scope.allowed_files, trackedFiles);
+  const allowed = resolveScopeEntries(task.task_id, "allowed_files", task.draft_scope.allowed_files, trackedFiles, { allowGlobs: true });
   if (!allowed.ok) {
     return allowed;
   }
-  const readOnly = resolveScopeEntries(task.task_id, "read_only_files", task.draft_scope.read_only_files, trackedFiles);
+  const readOnly = resolveScopeEntries(task.task_id, "read_only_files", task.draft_scope.read_only_files, trackedFiles, { allowGlobs: true });
   if (!readOnly.ok) {
     return readOnly;
   }
-  const forbidden = resolveScopeEntries(task.task_id, "forbidden_files", task.draft_scope.forbidden_files, trackedFiles);
+  const forbidden = resolveScopeEntries(task.task_id, "forbidden_files", task.draft_scope.forbidden_files, trackedFiles, { allowGlobs: true });
   if (!forbidden.ok) {
     return forbidden;
   }
@@ -753,7 +845,13 @@ function groundTaskScope(
   };
 }
 
-function resolveScopeEntries(taskId: string, field: keyof Omit<DraftScope, "must_not_change">, entries: string[], trackedFiles: string[]): SpecResult<string[]> {
+function resolveScopeEntries(
+  taskId: string,
+  field: keyof Omit<DraftScope, "must_not_change">,
+  entries: string[],
+  trackedFiles: string[],
+  options: { allowGlobs: boolean }
+): SpecResult<string[]> {
   const resolved: string[] = [];
   const tracked = new Set(trackedFiles);
   for (const entry of entries) {
@@ -765,6 +863,9 @@ function resolveScopeEntries(taskId: string, field: keyof Omit<DraftScope, "must
       return { ok: false, reason: `task ${taskId} ${field} path "${entry}" uses unsupported bracket glob syntax` };
     }
     if (hasGlob(normalized)) {
+      if (!options.allowGlobs) {
+        return { ok: false, reason: `task ${taskId} ${field} path "${entry}" uses a glob; contract lease scopes must be concrete files` };
+      }
       const matches = trackedFiles.filter((file) => globMatches(normalized, file));
       if (matches.length === 0) {
         return { ok: false, reason: `task ${taskId} ${field} glob "${entry}" matched no tracked files at base` };
@@ -796,6 +897,73 @@ function globMatches(pattern: string, file: string): boolean {
 
 function uniqueSorted(values: string[]): string[] {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+}
+
+const planLintRuleCount = 6;
+
+function runPlanLintRules(plan: TentativePlan, head: string, criticalGlobs: string[]): SpecResult<void> {
+  const rules: Array<() => SpecResult<void>> = [
+    () => lintGroundingRequired(plan),
+    () => lintGroundingFreshness(plan, head),
+    () => lintParallelScopeOverlap(plan),
+    () => lintDependencyCycle(plan),
+    () => lintCriticalApproval(plan, criticalGlobs),
+    () => lintRightSizingAcceptance(plan)
+  ];
+
+  for (const rule of rules) {
+    const result = rule();
+    if (!result.ok) {
+      return { ok: false, reason: `plan-lint failed: ${result.reason}` };
+    }
+  }
+  return { ok: true, value: undefined };
+}
+
+function contractPlanMismatches(contract: TaskContract, task: TentativePlanTask, plan: TentativePlan): string[] {
+  const mismatches: string[] = [];
+  const scope = task.grounded_scope;
+  if (scope === undefined) {
+    return ["grounded_scope is missing"];
+  }
+  if (contract.base_commit !== plan.base_commit) {
+    mismatches.push(`base_commit ${contract.base_commit} does not match plan base ${plan.base_commit}`);
+  }
+  if (contract.title !== task.title) {
+    mismatches.push("title does not match plan task");
+  }
+  if (contract.agent_role !== task.agent_role) {
+    mismatches.push("agent_role does not match plan task");
+  }
+  if (contract.acceptance_criterion !== task.acceptance_criterion) {
+    mismatches.push("acceptance_criterion does not match plan task");
+  }
+  if (!sameArray(contract.allowed_files, scope.allowed_files)) {
+    mismatches.push("allowed_files do not match grounded plan scope");
+  }
+  if (!sameArray(contract.read_only_files, scope.read_only_files)) {
+    mismatches.push("read_only_files do not match grounded plan scope");
+  }
+  if (!sameArray(contract.forbidden_files, scope.forbidden_files)) {
+    mismatches.push("forbidden_files do not match grounded plan scope");
+  }
+  if (!sameArray(contract.must_not_change, scope.must_not_change)) {
+    mismatches.push("must_not_change does not match plan task");
+  }
+  if (!sameArray(contract.required_tests, task.required_tests)) {
+    mismatches.push("required_tests do not match plan task");
+  }
+  if (!sameArray(contract.patch_requirements, task.patch_requirements)) {
+    mismatches.push("patch_requirements do not match plan task");
+  }
+  if (contract.allowed_symbols.length > 0 || contract.forbidden_symbols.length > 0) {
+    mismatches.push("symbol scopes are not produced by lint-passed plans yet");
+  }
+  return mismatches;
+}
+
+function sameArray(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((entry, index) => entry === right[index]);
 }
 
 function lintGroundingRequired(plan: TentativePlan): SpecResult<void> {

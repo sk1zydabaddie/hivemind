@@ -11,6 +11,7 @@ import { analyzeTask } from "../src/analyze.js";
 import { readEvents, type HivemindEvent, type HivemindEventType } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { integrateShadow } from "../src/integrate.js";
+import { checkWriteIntent } from "../src/intent.js";
 import { requestLease } from "../src/lease.js";
 import { runTask } from "../src/run.js";
 import { getStatus, type HivemindStatus, type StatusTask } from "../src/status.js";
@@ -158,6 +159,8 @@ test("M2.6 MVP gate runs two fake agents in parallel, rejects out-of-scope work,
 
     const leaseResults = await Promise.all([requestLease(repo, "T-001", ["README.md"]), requestLease(repo, "T-002", ["src/feature.ts"])]);
     assert.equal(leaseResults.every((result) => result.ok), true);
+    await approveIntent(repo, "T-001", ["README.md"]);
+    await approveIntent(repo, "T-002", ["src/feature.ts"]);
     const rejectedLease = await requestLease(repo, "T-002", ["README.md"]);
     assert.equal(rejectedLease.ok, false);
 
@@ -294,19 +297,28 @@ async function writeContract(repo: string, taskId: string, title: string, baseCo
         title,
         agent_role: "builder",
         base_commit: baseCommit,
+        acceptance_criterion: "Status fixture reports one task state.",
         allowed_files: allowedFiles,
         read_only_files: [],
         forbidden_files: [],
         allowed_symbols: [],
         forbidden_symbols: [],
         must_not_change: [],
-        required_tests: [],
+        required_tests: ["node -e \"process.exit(0)\""],
         patch_requirements: []
       },
       null,
       2
     )}\n`
   );
+}
+
+async function approveIntent(repo: string, taskId: string, files: string[]): Promise<void> {
+  const result = await checkWriteIntent(repo, taskId, {
+    task_id: taskId,
+    intended_files: files
+  });
+  assert.equal(result.ok, true);
 }
 
 async function writePatchFromEdit(repo: string, taskId: string, baseCommit: string, edit: () => Promise<void>): Promise<void> {

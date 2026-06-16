@@ -155,13 +155,16 @@ test("manager fake loop drives a user message through gated shadow integration w
       "await appendFile('README.md', 'changed by manager fake loop\\n');"
     ]);
     await writeProfile(repo, "fake", agentPath);
+    const contract = managerContract("T-LOOP", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, contract);
     const actionsPath = path.join(repo, "fake-manager-actions.json");
     await writeFile(
       actionsPath,
       `${JSON.stringify(
         [
-          { type: "create_task_contract", contract: managerContract("T-LOOP", baseCommit, ["README.md"]) },
+          { type: "create_task_contract", contract },
           { type: "request_lease", task_id: "T-LOOP" },
+          { type: "check_write_intent", task_id: "T-LOOP", intent: intentFor("T-LOOP", ["README.md"]) },
           { type: "create_worktree", task_id: "T-LOOP" },
           { type: "run_worker", task_id: "T-LOOP", tool: "fake" },
           { type: "submit_patch", task_id: "T-LOOP" },
@@ -189,6 +192,7 @@ test("manager fake loop drives a user message through gated shadow integration w
     assert.deepEqual(parsed.steps.map((step) => step.action_type), [
       "create_task_contract",
       "request_lease",
+      "check_write_intent",
       "create_worktree",
       "run_worker",
       "submit_patch",
@@ -203,7 +207,7 @@ test("manager fake loop drives a user message through gated shadow integration w
     assert.match(await readFile(path.join(repo, ".hivemind", "patches", "T-LOOP", "diff.patch"), "utf8"), /\+changed by manager fake loop/);
 
     const session = await readSession(repo, parsed.session_path);
-    assert.equal(session.executed_actions.length, 8);
+    assert.equal(session.executed_actions.length, 9);
     const events = await readRequiredEvents(repo);
     assertEventOrder(
       events.map((event) => event.type),
@@ -211,6 +215,98 @@ test("manager fake loop drives a user message through gated shadow integration w
     );
     assert.equal(events.filter((event) => event.type === "task.created" && event.task_id === "T-LOOP").length, 1);
     assert.equal(normalizeNewlines(await readFile(path.join(repo, "README.md"), "utf8")), "# Fixture\n");
+  });
+});
+
+test("manager create_task_contract is refused when the current plan fails lint", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const bypass = managerContract("T-BYPASS", baseCommit, ["README.md"]);
+    const other = managerContract("T-OTHER", baseCommit, ["README.md"]);
+    const badPlanPath = path.join(repo, "overlapping-plan.json");
+    await writeFile(
+      badPlanPath,
+      `${JSON.stringify(
+        {
+          tasks: [planTaskFromContract(bypass), planTaskFromContract(other)],
+          execution_groups: [{ group_id: "G-1", mode: "parallel", task_ids: ["T-BYPASS", "T-OTHER"] }]
+        },
+        null,
+        2
+      )}\n`
+    );
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", badPlanPath], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+    await assert.rejects(
+      execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true }),
+      (error: unknown) => {
+        assert.equal((error as { code?: number }).code, 1);
+        assert.match(String((error as { stderr?: string }).stderr), /PARALLEL_SCOPE_OVERLAP/);
+        return true;
+      }
+    );
+    const actionsPath = path.join(repo, "lint-bypass-actions.json");
+    await writeFile(actionsPath, `${JSON.stringify([{ type: "create_task_contract", contract: bypass }], null, 2)}\n`);
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [cliPath, "manager", "--message", "Try lint bypass", "--fake-manager", actionsPath], {
+        cwd: repo,
+        windowsHide: true
+      }),
+      (error: unknown) => {
+        assert.equal((error as { code?: number }).code, 1);
+        const parsed = JSON.parse(String((error as { stdout?: string }).stdout)) as { status: string; steps: Array<{ result: { ok: boolean; reason?: string } }> };
+        assert.equal(parsed.status, "failed");
+        assert.equal(parsed.steps[0].result.ok, false);
+        assert.match(parsed.steps[0].result.reason ?? "", /current lint-passed tentative plan/);
+        return true;
+      }
+    );
+    assert.equal(await exists(path.join(repo, ".hivemind", "tasks", "T-BYPASS.contract.json")), false);
+  });
+});
+
+test("manager run_worker refuses to invoke without a passed write-intent", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const agentPath = await writeAgent(repo, "no-intent-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'agent should not run without intent\\n');"
+    ]);
+    await writeProfile(repo, "fake", agentPath);
+    const contract = managerContract("T-NOINTENT", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, contract);
+    const actionsPath = path.join(repo, "no-intent-actions.json");
+    await writeFile(
+      actionsPath,
+      `${JSON.stringify(
+        [
+          { type: "create_task_contract", contract },
+          { type: "request_lease", task_id: "T-NOINTENT" },
+          { type: "run_worker", task_id: "T-NOINTENT", tool: "fake" }
+        ],
+        null,
+        2
+      )}\n`
+    );
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [cliPath, "manager", "--message", "Run without intent", "--fake-manager", actionsPath], {
+        cwd: repo,
+        windowsHide: true
+      }),
+      (error: unknown) => {
+        assert.equal((error as { code?: number }).code, 1);
+        const parsed = JSON.parse(String((error as { stdout?: string }).stdout)) as { status: string; steps: Array<{ action_type: string; result: { ok: boolean; reason?: string } }> };
+        assert.equal(parsed.status, "failed");
+        assert.deepEqual(parsed.steps.map((step) => step.action_type), ["create_task_contract", "request_lease", "run_worker"]);
+        assert.equal(parsed.steps[2].result.ok, false);
+        assert.match(parsed.steps[2].result.reason ?? "", /passed write intent not found/);
+        return true;
+      }
+    );
+    await assertMissing(path.join(repo, ".hivemind", "worktrees", "T-NOINTENT"));
+    await assertMissing(path.join(repo, ".hivemind", "patches", "T-NOINTENT", "diff.patch"));
   });
 });
 
@@ -235,6 +331,7 @@ test("manager executor drives deterministic task actions through shadow integrat
       title: "Manager executor fixture",
       agent_role: "builder",
       base_commit: baseCommit,
+      acceptance_criterion: "Manager executor fixture passes shadow integration.",
       allowed_files: ["README.md"],
       read_only_files: [],
       forbidden_files: [],
@@ -244,9 +341,11 @@ test("manager executor drives deterministic task actions through shadow integrat
       required_tests: ["node -e \"process.exit(0)\""],
       patch_requirements: ["submit diff only"]
     };
+    await prepareLintedPlan(repo, contract);
     const actions = [
       { type: "create_task_contract", contract },
       { type: "request_lease", task_id: "T-001" },
+      { type: "check_write_intent", task_id: "T-001", intent: intentFor("T-001", ["README.md"]) },
       { type: "create_worktree", task_id: "T-001" },
       { type: "run_worker", task_id: "T-001", tool: "fake" },
       { type: "submit_patch", task_id: "T-001" },
@@ -309,12 +408,14 @@ test("manager fake loop rejects malformed action scripts before creating a sessi
 test("manager fake loop stops after a deterministic action failure", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
+    const contract = managerContract("T-FAIL", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, contract);
     const actionsPath = path.join(repo, "failing-fake-manager-actions.json");
     await writeFile(
       actionsPath,
       `${JSON.stringify(
         [
-          { type: "create_task_contract", contract: managerContract("T-FAIL", baseCommit, ["README.md"]) },
+          { type: "create_task_contract", contract },
           { type: "run_worker", task_id: "T-FAIL", tool: "missing" },
           { type: "submit_patch", task_id: "T-FAIL" }
         ],
@@ -539,12 +640,14 @@ test("manager enqueue_patch routes through a live daemon instead of direct queue
 test("manager fake loop routes mutating actions through a discovered live daemon", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
+    const contract = managerContract("T-DAEMON", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, contract);
     const actionsPath = path.join(repo, "daemon-fake-manager-actions.json");
     await writeFile(
       actionsPath,
       `${JSON.stringify(
         [
-          { type: "create_task_contract", contract: managerContract("T-DAEMON", baseCommit, ["README.md"]) },
+          { type: "create_task_contract", contract },
           { type: "request_lease", task_id: "T-DAEMON" }
         ],
         null,
@@ -594,6 +697,7 @@ function managerContract(taskId: string, baseCommit: string, allowedFiles: strin
     title: "Manager loop fixture",
     agent_role: "builder",
     base_commit: baseCommit,
+    acceptance_criterion: "Manager loop fixture completes one deterministic flow.",
     allowed_files: allowedFiles,
     read_only_files: [],
     forbidden_files: [],
@@ -602,6 +706,54 @@ function managerContract(taskId: string, baseCommit: string, allowedFiles: strin
     must_not_change: [],
     required_tests: ["node -e \"process.exit(0)\""],
     patch_requirements: ["submit diff only"]
+  };
+}
+
+function intentFor(taskId: string, intendedFiles: string[]): Record<string, unknown> {
+  return {
+    task_id: taskId,
+    intended_files: intendedFiles,
+    intended_symbols: [],
+    possible_risks: [],
+    will_not_change: []
+  };
+}
+
+async function prepareLintedPlan(repo: string, contract: Record<string, unknown>, name = `${String(contract.task_id)}-plan.json`): Promise<void> {
+  const planPath = path.join(repo, name);
+  await writeFile(
+    planPath,
+    `${JSON.stringify(
+        {
+          tasks: [planTaskFromContract(contract)],
+        execution_groups: [{ group_id: "G-1", mode: "parallel", task_ids: [contract.task_id] }]
+      },
+      null,
+      2
+    )}\n`
+  );
+  await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+  await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+  await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
+}
+
+function planTaskFromContract(contract: Record<string, unknown>): Record<string, unknown> {
+  return {
+    task_id: contract.task_id,
+    title: contract.title,
+    mode: "write",
+    agent_role: contract.agent_role,
+    draft_scope: {
+      allowed_files: contract.allowed_files,
+      read_only_files: contract.read_only_files,
+      forbidden_files: contract.forbidden_files,
+      must_not_change: contract.must_not_change
+    },
+    depends_on: [],
+    parallel_safe: true,
+    acceptance_criterion: contract.acceptance_criterion,
+    required_tests: contract.required_tests,
+    patch_requirements: contract.patch_requirements
   };
 }
 
@@ -622,6 +774,13 @@ async function childNames(directory: string): Promise<string[]> {
 
 async function assertExists(filePath: string): Promise<void> {
   await stat(filePath);
+}
+
+async function assertMissing(filePath: string): Promise<void> {
+  await assert.rejects(stat(filePath), (error: unknown) => {
+    assert.equal(isNodeError(error, "ENOENT"), true);
+    return true;
+  });
 }
 
 async function exists(filePath: string): Promise<boolean> {
@@ -726,13 +885,14 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
         title: "Manager executor fixture",
         agent_role: "builder",
         base_commit: baseCommit,
+        acceptance_criterion: "Manager executor fixture reaches one deterministic result.",
         allowed_files: allowedFiles,
         read_only_files: [],
         forbidden_files: [],
         allowed_symbols: [],
         forbidden_symbols: [],
         must_not_change: [],
-        required_tests: [],
+        required_tests: ["node -e \"process.exit(0)\""],
         patch_requirements: []
       },
       null,

@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { initProject } from "../src/init.js";
+import { checkWriteIntent } from "../src/intent.js";
 import { requestLease } from "../src/lease.js";
 import { runTask } from "../src/run.js";
 import { createRatifiedSpec } from "./support/spec.js";
@@ -483,6 +484,7 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
         title: "Run fake adapter and capture diff",
         agent_role: "builder",
         base_commit: baseCommit,
+        acceptance_criterion: "Run fake adapter and capture one diff.",
         allowed_files: allowedFiles,
         read_only_files: [],
         forbidden_files: ["src/gate.ts"],
@@ -547,6 +549,14 @@ async function writeProfile(
 async function grantLease(repo: string, taskId: string, files: string[]): Promise<void> {
   const result = await requestLease(repo, taskId, files);
   assert.equal(result.ok, true);
+  const intent = await checkWriteIntent(repo, taskId, {
+    task_id: taskId,
+    intended_files: files,
+    intended_symbols: [],
+    possible_risks: [],
+    will_not_change: []
+  });
+  assert.equal(intent.ok, true);
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {

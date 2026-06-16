@@ -4,6 +4,7 @@ import { analyzeTask } from "./analyze.js";
 import { createTaskContract } from "./contract.js";
 import { removeDaemonState, writeDaemonState } from "./daemon-state.js";
 import { enqueueIntegrationPatch, integrateShadow } from "./integrate.js";
+import { checkWriteIntent } from "./intent.js";
 import { requestLeaseForContract, releaseLease } from "./lease.js";
 import { findGitRoot } from "./repo.js";
 import { evaluatePlanThrash } from "./plan.js";
@@ -135,6 +136,15 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
     return async (payload) => {
       const taskId = readTaskId(payload);
       return taskId.ok ? releaseLease(repoRoot, taskId.value) : taskId;
+    };
+  }
+  if (request.method === "POST" && request.url === "/intent/check") {
+    return async (payload) => {
+      const taskId = readTaskId(payload);
+      if (!taskId.ok) {
+        return taskId;
+      }
+      return isRecord(payload.intent) ? checkWriteIntent(repoRoot, taskId.value, payload.intent) : { ok: false, reason: "intent must be a JSON object" };
     };
   }
   if (request.method === "POST" && request.url === "/worktree/create") {

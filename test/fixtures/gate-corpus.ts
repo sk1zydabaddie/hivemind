@@ -252,13 +252,14 @@ function contractFor(overrides: Partial<TaskContract>): TaskContract {
     title: "Gate corpus fixture",
     agent_role: "builder",
     base_commit: "unused-by-runGate-call",
+    acceptance_criterion: "Gate corpus fixture produces one verdict.",
     allowed_files: ["src/Minimap.tsx"],
     read_only_files: [],
     forbidden_files: [],
     allowed_symbols: [],
     forbidden_symbols: [],
     must_not_change: [],
-    required_tests: [],
+    required_tests: ["node -e \"process.exit(0)\""],
     patch_requirements: [],
     ...overrides
   };

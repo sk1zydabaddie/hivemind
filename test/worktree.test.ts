@@ -38,7 +38,9 @@ test("worktree create creates task branch at contract base commit", async () => 
 
 test("worktree create does not duplicate task.created after explicit task creation", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
-    const contract = await createTaskContract(repo, fullContract("T-001", baseCommit, ["README.md"]));
+    const plannedContract = fullContract("T-001", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, plannedContract);
+    const contract = await createTaskContract(repo, plannedContract);
     assert.equal(contract.ok, true);
 
     const created = await createTaskWorktree(repo, "T-001");
@@ -264,8 +266,11 @@ async function writeContract(
     `${JSON.stringify(
       {
         task_id: taskId,
+        title: "Worktree fixture",
         base_commit: baseCommit,
-        allowed_files: allowedFiles
+        acceptance_criterion: "Worktree fixture creates one worktree.",
+        allowed_files: allowedFiles,
+        required_tests: ["node -e \"process.exit(0)\""]
       },
       null,
       2
@@ -279,6 +284,7 @@ function fullContract(taskId: string, baseCommit: string, allowedFiles: string[]
     title: "Worktree fixture",
     agent_role: "builder",
     base_commit: baseCommit,
+    acceptance_criterion: "Worktree fixture creates one worktree.",
     allowed_files: allowedFiles,
     read_only_files: [],
     forbidden_files: [],
@@ -288,6 +294,42 @@ function fullContract(taskId: string, baseCommit: string, allowedFiles: string[]
     required_tests: ["node -e \"process.exit(0)\""],
     patch_requirements: ["submit diff only"]
   };
+}
+
+async function prepareLintedPlan(repo: string, contract: Record<string, unknown>): Promise<void> {
+  const planPath = path.join(repo, `${String(contract.task_id)}-plan.json`);
+  await writeFile(
+    planPath,
+    `${JSON.stringify(
+      {
+        tasks: [
+          {
+            task_id: contract.task_id,
+            title: contract.title,
+            mode: "write",
+            agent_role: contract.agent_role,
+            draft_scope: {
+              allowed_files: contract.allowed_files,
+              read_only_files: [],
+              forbidden_files: [],
+              must_not_change: contract.must_not_change
+            },
+            depends_on: [],
+            parallel_safe: true,
+            acceptance_criterion: contract.acceptance_criterion,
+            required_tests: contract.required_tests,
+            patch_requirements: contract.patch_requirements
+          }
+        ],
+        execution_groups: [{ group_id: "G-1", mode: "parallel", task_ids: [contract.task_id] }]
+      },
+      null,
+      2
+    )}\n`
+  );
+  await execFileAsync("node", [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+  await execFileAsync("node", [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+  await execFileAsync("node", [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
 }
 
 async function restoreTrackedWrites(worktreePath: string): Promise<void> {
