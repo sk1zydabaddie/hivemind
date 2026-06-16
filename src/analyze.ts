@@ -2,6 +2,7 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 import { loadConfig } from "./config.js";
 import { loadAndValidateContract } from "./contract.js";
+import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent } from "./events.js";
 import { runGate, type GateResult } from "./gate.js";
 import { findGitRoot } from "./repo.js";
@@ -19,7 +20,8 @@ export async function analyzeCommand(cwd: string, args: string[]): Promise<numbe
     return 1;
   }
 
-  const result = await analyzeTask(repoRoot, taskId);
+  const daemonResult = await callDaemonIfConfigured<GateResult>(repoRoot, "/analyze", { task_id: taskId });
+  const result = daemonResult.routed ? daemonResult : await analyzeTask(repoRoot, taskId);
   if (!result.ok) {
     console.error(`error: ${result.reason}`);
     return 1;

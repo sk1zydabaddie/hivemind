@@ -4,6 +4,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { TaskContract } from "./contract.js";
 import { loadAndValidateContract } from "./contract.js";
+import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent } from "./events.js";
 import { canonicalizeConcreteFileScope } from "./file-scope.js";
 import { readActiveLeases } from "./lease.js";
@@ -30,7 +31,12 @@ export async function worktreeCommand(cwd: string, args: string[]): Promise<numb
     return 1;
   }
 
-  const result = flag === "--remove" ? await removeTaskWorktree(repoRoot, taskId) : await createTaskWorktree(repoRoot, taskId);
+  const daemonResult = await callDaemonIfConfigured<WorktreeResult>(
+    repoRoot,
+    flag === "--remove" ? "/worktree/remove" : "/worktree/create",
+    { task_id: taskId }
+  );
+  const result = daemonResult.routed ? daemonResult : flag === "--remove" ? await removeTaskWorktree(repoRoot, taskId) : await createTaskWorktree(repoRoot, taskId);
   if (!result.ok) {
     console.error(`error: ${result.reason}`);
     return 1;

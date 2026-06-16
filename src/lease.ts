@@ -4,6 +4,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { writeJsonAtomic } from "./atomic.js";
 import { canonicalizeIntentPath } from "./canonicalize.js";
 import { loadAndValidateContract } from "./contract.js";
+import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent } from "./events.js";
 import { canonicalizeConcreteFileScope } from "./file-scope.js";
 import { findGitRoot } from "./repo.js";
@@ -38,7 +39,16 @@ export async function leaseCommand(cwd: string, args: string[]): Promise<number>
     return 1;
   }
 
-  const result = flag === "--release" ? await releaseLease(repoRoot, taskId) : await requestLeaseForContract(repoRoot, taskId);
+  const daemonResult = await callDaemonIfConfigured<LeaseGrantResult | LeaseReleaseResult>(
+    repoRoot,
+    flag === "--release" ? "/lease/release" : "/lease/request-contract",
+    { task_id: taskId }
+  );
+  const result = daemonResult.routed
+    ? daemonResult
+    : flag === "--release"
+      ? await releaseLease(repoRoot, taskId)
+      : await requestLeaseForContract(repoRoot, taskId);
   if (!result.ok) {
     console.error(`error: ${result.reason}`);
     return 1;

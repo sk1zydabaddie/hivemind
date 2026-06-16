@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { invokeAgent } from "./adapter.js";
 import { writeFileAtomic } from "./atomic.js";
 import { loadAndValidateContract } from "./contract.js";
+import { callDaemonIfConfigured } from "./daemon-client.js";
 import { captureWorktreeDiff } from "./diff-capture.js";
 import { findGitRoot } from "./repo.js";
 import { verifyLeaseCoverage } from "./lease.js";
@@ -37,7 +38,12 @@ export async function runCommand(cwd: string, args: string[]): Promise<number> {
     return 1;
   }
 
-  const result = await runTask(repoRoot, taskId, tool, { allowDangerousAdapter });
+  const daemonResult = await callDaemonIfConfigured<RunResult>(repoRoot, "/run", {
+    task_id: taskId,
+    tool,
+    allow_dangerous_adapter: allowDangerousAdapter
+  });
+  const result = daemonResult.routed ? daemonResult : await runTask(repoRoot, taskId, tool, { allowDangerousAdapter });
   if (!result.ok) {
     console.error(`error: ${result.reason}`);
     return 1;

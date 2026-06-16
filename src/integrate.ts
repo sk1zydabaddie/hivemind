@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { analyzeTask } from "./analyze.js";
 import { writeJsonAtomic } from "./atomic.js";
 import { loadConfig } from "./config.js";
+import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent } from "./events.js";
 import { readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
@@ -43,7 +44,8 @@ export async function integrateCommand(cwd: string, args: string[]): Promise<num
     return 1;
   }
 
-  const result = await integrateShadow(repoRoot);
+  const daemonResult = await callDaemonIfConfigured<IntegrationStatus>(repoRoot, "/integrate/shadow", {});
+  const result = daemonResult.routed ? daemonResult : await integrateShadow(repoRoot);
   if (!result.ok) {
     console.error(`error: ${result.reason}`);
     return 1;

@@ -2,6 +2,7 @@ import { readdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { writeFileAtomic } from "./atomic.js";
 import { loadAndValidateContract } from "./contract.js";
+import { callDaemonIfConfigured } from "./daemon-client.js";
 import { captureWorktreeDiff } from "./diff-capture.js";
 import { appendEvent } from "./events.js";
 import { findGitRoot } from "./repo.js";
@@ -37,7 +38,8 @@ export async function submitCommand(cwd: string, args: string[]): Promise<number
     return 1;
   }
 
-  const result = await submitTask(repoRoot, taskId);
+  const daemonResult = await callDaemonIfConfigured<SubmitResult>(repoRoot, "/submit", { task_id: taskId });
+  const result = daemonResult.routed ? daemonResult : await submitTask(repoRoot, taskId);
   if (!result.ok) {
     console.error(`error: ${result.reason}`);
     return 1;
