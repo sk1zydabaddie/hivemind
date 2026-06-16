@@ -32,7 +32,9 @@ export interface TentativePlanTask {
   acceptance_criterion: string;
   required_tests: string[];
   patch_requirements: string[];
-  scope_status: "draft_ungrounded";
+  scope_status: ScopeStatus;
+  grounding_evidence?: GroundingEvidence;
+  grounded_scope?: DraftScope;
 }
 
 export interface TentativePlanExecutionGroup {
@@ -48,6 +50,9 @@ export interface TentativePlan {
   base_commit: string;
   source: "cli-json";
   created_at: string;
+  grounding_status?: "grounded";
+  grounded_at?: string;
+  grounded_base_commit?: string;
   tasks: TentativePlanTask[];
   execution_groups: TentativePlanExecutionGroup[];
 }
@@ -60,6 +65,25 @@ export interface TentativePlanResult {
   task_count: number;
   execution_group_count: number;
 }
+
+export interface GroundPlanResult {
+  spec_id: string;
+  plan_path: string;
+  status: "tentative";
+  grounding_status: "grounded";
+  base_commit: string;
+  task_count: number;
+}
+
+export interface GroundingEvidence {
+  source: "git-tree";
+  base_commit: string;
+  checked_at: string;
+  cited_paths: string[];
+  resolved_files: string[];
+}
+
+type ScopeStatus = "draft_ungrounded" | "grounded";
 
 interface TentativePlanInputTask {
   task_id: string;
@@ -95,7 +119,9 @@ export async function planCommand(cwd: string, args: string[]): Promise<number> 
   const result =
     parsed.value.action === "check"
       ? await checkPlanningAllowed(repoRoot, parsed.value.specId)
-      : await createTentativePlanFromFile(repoRoot, parsed.value.specId, parsed.value.planFile);
+      : parsed.value.action === "propose"
+        ? await createTentativePlanFromFile(repoRoot, parsed.value.specId, parsed.value.planFile)
+        : await groundTentativePlan(repoRoot, parsed.value.specId);
   if (!result.ok) {
     console.error(`error: ${result.reason}`);
     return 1;
@@ -170,7 +196,7 @@ export async function createTentativePlan(
 
 function parsePlanArgs(
   args: string[]
-): SpecResult<{ action: "check"; specId: string } | { action: "propose"; specId: string; planFile: string }> {
+): SpecResult<{ action: "check"; specId: string } | { action: "propose"; specId: string; planFile: string } | { action: "ground"; specId: string }> {
   const [specId, flag, value, ...rest] = args;
   if (!specId) {
     return { ok: false, reason: planUsage() };
@@ -181,11 +207,459 @@ function parsePlanArgs(
   if (flag === "--propose" && typeof value === "string" && rest.length === 0) {
     return { ok: true, value: { action: "propose", specId, planFile: value } };
   }
+  if (flag === "--ground" && value === undefined && rest.length === 0) {
+    return { ok: true, value: { action: "ground", specId } };
+  }
   return { ok: false, reason: planUsage() };
 }
 
 function planUsage(): string {
-  return "usage: hivemind plan <spec-id> --check | --propose <plan-json-file>";
+  return "usage: hivemind plan <spec-id> --check | --propose <plan-json-file> | --ground";
+}
+
+export async function groundTentativePlan(repoRoot: string, specId: string): Promise<SpecResult<GroundPlanResult>> {
+  const allowed = await checkPlanningAllowed(repoRoot, specId);
+  if (!allowed.ok) {
+    return allowed;
+  }
+
+  const loaded = await loadTentativePlan(repoRoot, specId);
+  if (!loaded.ok) {
+    return loaded;
+  }
+
+  const head = await currentHead(repoRoot);
+  if (!head.ok) {
+    return head;
+  }
+  if (loaded.value.base_commit !== head.value) {
+    return {
+      ok: false,
+      reason: `tentative plan base ${loaded.value.base_commit} is stale relative to current HEAD ${head.value}; re-propose the plan before grounding`
+    };
+  }
+
+  const tracked = await trackedFilesAtBase(repoRoot, loaded.value.base_commit);
+  if (!tracked.ok) {
+    return tracked;
+  }
+
+  const checkedAt = new Date().toISOString();
+  const groundedTasks: TentativePlanTask[] = [];
+  for (const task of loaded.value.tasks) {
+    const grounded = groundTaskScope(task, tracked.value, loaded.value.base_commit, checkedAt);
+    if (!grounded.ok) {
+      return grounded;
+    }
+    groundedTasks.push(grounded.value);
+  }
+
+  const groundedPlan: TentativePlan = {
+    ...loaded.value,
+    grounding_status: "grounded",
+    grounded_at: checkedAt,
+    grounded_base_commit: loaded.value.base_commit,
+    tasks: groundedTasks
+  };
+
+  await writeJsonAtomic(tentativePlanPath(repoRoot, specId), groundedPlan);
+  return {
+    ok: true,
+    value: {
+      spec_id: specId,
+      plan_path: tentativePlanRelativePath(specId),
+      status: "tentative",
+      grounding_status: "grounded",
+      base_commit: loaded.value.base_commit,
+      task_count: groundedPlan.tasks.length
+    }
+  };
+}
+
+async function loadTentativePlan(repoRoot: string, specId: string): Promise<SpecResult<TentativePlan>> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(tentativePlanPath(repoRoot, specId), "utf8"));
+  } catch (error: unknown) {
+    if (isNodeError(error, "ENOENT")) {
+      return { ok: false, reason: `tentative plan not found: ${tentativePlanRelativePath(specId)}` };
+    }
+    if (error instanceof SyntaxError) {
+      return { ok: false, reason: `invalid JSON in ${tentativePlanRelativePath(specId)}` };
+    }
+    throw error;
+  }
+
+  return validateStoredTentativePlan(raw, specId);
+}
+
+function validateStoredTentativePlan(raw: unknown, specId: string): SpecResult<TentativePlan> {
+  if (!isRecord(raw)) {
+    return { ok: false, reason: "tentative plan must be a JSON object" };
+  }
+  const allowedKeys = new Set(["version", "spec_id", "status", "base_commit", "source", "created_at", "grounding_status", "grounded_at", "grounded_base_commit", "tasks", "execution_groups"]);
+  const extra = Object.keys(raw).filter((key) => !allowedKeys.has(key));
+  if (extra.length > 0) {
+    return { ok: false, reason: `tentative plan contains unsupported field: ${extra[0]}` };
+  }
+  if (raw.version !== 1) {
+    return { ok: false, reason: "tentative plan version must be 1" };
+  }
+  if (raw.spec_id !== specId) {
+    return { ok: false, reason: `tentative plan spec_id must be ${specId}` };
+  }
+  if (raw.status !== "tentative") {
+    return { ok: false, reason: "tentative plan status must be tentative" };
+  }
+  if (typeof raw.base_commit !== "string" || raw.base_commit.trim() === "") {
+    return { ok: false, reason: "tentative plan base_commit must be a non-empty string" };
+  }
+  if (raw.source !== "cli-json") {
+    return { ok: false, reason: "tentative plan source must be cli-json" };
+  }
+  if (typeof raw.created_at !== "string" || raw.created_at.trim() === "") {
+    return { ok: false, reason: "tentative plan created_at must be a non-empty string" };
+  }
+  if (raw.grounding_status !== undefined && raw.grounding_status !== "grounded") {
+    return { ok: false, reason: "tentative plan grounding_status must be grounded when present" };
+  }
+  if (raw.grounding_status === "grounded" && raw.grounded_at === undefined) {
+    return { ok: false, reason: "tentative plan grounded_at must be present when grounding_status is grounded" };
+  }
+  if (raw.grounding_status === "grounded" && raw.grounded_base_commit === undefined) {
+    return { ok: false, reason: "tentative plan grounded_base_commit must be present when grounding_status is grounded" };
+  }
+  if (raw.grounding_status === undefined && raw.grounded_at !== undefined) {
+    return { ok: false, reason: "tentative plan grounded_at requires top-level grounding_status" };
+  }
+  if (raw.grounding_status === undefined && raw.grounded_base_commit !== undefined) {
+    return { ok: false, reason: "tentative plan grounded_base_commit requires top-level grounding_status" };
+  }
+  if (raw.grounded_at !== undefined && (typeof raw.grounded_at !== "string" || raw.grounded_at.trim() === "")) {
+    return { ok: false, reason: "tentative plan grounded_at must be a non-empty string when present" };
+  }
+  if (raw.grounded_base_commit !== undefined && (typeof raw.grounded_base_commit !== "string" || raw.grounded_base_commit.trim() === "")) {
+    return { ok: false, reason: "tentative plan grounded_base_commit must be a non-empty string when present" };
+  }
+  if (!Array.isArray(raw.tasks) || raw.tasks.length === 0) {
+    return { ok: false, reason: "tentative plan tasks must be a non-empty array" };
+  }
+  if (!Array.isArray(raw.execution_groups) || raw.execution_groups.length === 0) {
+    return { ok: false, reason: "tentative plan execution_groups must be a non-empty array" };
+  }
+
+  const tasks: TentativePlanTask[] = [];
+  const taskIds = new Set<string>();
+  for (const [index, entry] of raw.tasks.entries()) {
+    const task = validateStoredTask(index, entry);
+    if (!task.ok) {
+      return task;
+    }
+    if (taskIds.has(task.value.task_id)) {
+      return { ok: false, reason: `tasks[${index}].task_id duplicates ${task.value.task_id}` };
+    }
+    taskIds.add(task.value.task_id);
+    tasks.push(task.value);
+  }
+  for (const [index, task] of tasks.entries()) {
+    if (raw.grounding_status === "grounded" && task.scope_status !== "grounded") {
+      return { ok: false, reason: `tasks[${index}].scope_status must be grounded when top-level grounding_status is grounded` };
+    }
+    if (raw.grounding_status === undefined && task.scope_status === "grounded") {
+      return { ok: false, reason: `tasks[${index}].grounded tasks require top-level grounding_status` };
+    }
+    for (const dependency of task.depends_on) {
+      if (!taskIds.has(dependency)) {
+        return { ok: false, reason: `tasks[${index}].depends_on references unknown task ${dependency}` };
+      }
+    }
+  }
+
+  const executionGroups: TentativePlanExecutionGroup[] = [];
+  const groupedTaskIds = new Set<string>();
+  const groupIds = new Set<string>();
+  for (const [index, entry] of raw.execution_groups.entries()) {
+    const group = parseExecutionGroup(index, entry, taskIds, groupedTaskIds, groupIds);
+    if (!group.ok) {
+      return group;
+    }
+    executionGroups.push(group.value);
+  }
+  for (const taskId of taskIds) {
+    if (!groupedTaskIds.has(taskId)) {
+      return { ok: false, reason: `execution_groups must include task ${taskId}` };
+    }
+  }
+
+  return {
+    ok: true,
+    value: {
+      version: 1,
+      spec_id: specId,
+      status: "tentative",
+      base_commit: raw.base_commit,
+      source: "cli-json",
+      created_at: raw.created_at,
+      ...(raw.grounding_status === undefined ? {} : { grounding_status: "grounded" }),
+      ...(raw.grounded_at === undefined ? {} : { grounded_at: raw.grounded_at }),
+      ...(raw.grounded_base_commit === undefined ? {} : { grounded_base_commit: raw.grounded_base_commit }),
+      tasks,
+      execution_groups: executionGroups
+    }
+  };
+}
+
+function validateStoredTask(index: number, raw: unknown): SpecResult<TentativePlanTask> {
+  if (!isRecord(raw)) {
+    return { ok: false, reason: `tasks[${index}] must be a JSON object` };
+  }
+  const allowedKeys = new Set([
+    "task_id",
+    "title",
+    "mode",
+    "agent_role",
+    "draft_scope",
+    "depends_on",
+    "parallel_safe",
+    "acceptance_criterion",
+    "required_tests",
+    "patch_requirements",
+    "scope_status",
+    "grounding_evidence",
+    "grounded_scope"
+  ]);
+  const extra = Object.keys(raw).filter((key) => !allowedKeys.has(key));
+  if (extra.length > 0) {
+    return { ok: false, reason: `tasks[${index}] contains unsupported field: ${extra[0]}` };
+  }
+  if (raw.scope_status !== "draft_ungrounded" && raw.scope_status !== "grounded") {
+    return { ok: false, reason: `tasks[${index}].scope_status must be draft_ungrounded or grounded` };
+  }
+  const base = parseStoredTaskBase(index, raw);
+  if (!base.ok) {
+    return base;
+  }
+  if (raw.scope_status === "grounded") {
+    const evidence = parseGroundingEvidence(index, raw.grounding_evidence);
+    if (!evidence.ok) {
+      return evidence;
+    }
+    if (!isRecord(raw.grounded_scope)) {
+      return { ok: false, reason: `tasks[${index}].grounded_scope must be a JSON object when scope_status is grounded` };
+    }
+    const groundedScope = parseDraftScope(index, raw.grounded_scope);
+    if (!groundedScope.ok) {
+      return groundedScope;
+    }
+    return {
+      ok: true,
+      value: {
+        ...base.value,
+        scope_status: "grounded",
+        grounding_evidence: evidence.value,
+        grounded_scope: groundedScope.value
+      }
+    };
+  }
+  if (raw.grounding_evidence !== undefined || raw.grounded_scope !== undefined) {
+    return { ok: false, reason: `tasks[${index}] must not include grounding fields while scope_status is draft_ungrounded` };
+  }
+  return { ok: true, value: { ...base.value, scope_status: "draft_ungrounded" } };
+}
+
+function parseStoredTaskBase(index: number, raw: Record<string, unknown>): SpecResult<Omit<TentativePlanTask, "scope_status" | "grounding_evidence" | "grounded_scope">> {
+  if (typeof raw.task_id !== "string") {
+    return { ok: false, reason: `tasks[${index}].task_id is required` };
+  }
+  const taskIdResult = validateRequestedTaskId(raw.task_id);
+  if (!taskIdResult.ok) {
+    return { ok: false, reason: `tasks[${index}].${taskIdResult.reason}` };
+  }
+  if (typeof raw.title !== "string" || raw.title.trim() === "") {
+    return { ok: false, reason: `tasks[${index}].title must be a non-empty string` };
+  }
+  if (!isTaskMode(raw.mode)) {
+    return { ok: false, reason: `tasks[${index}].mode must be read_only, write, or integration` };
+  }
+  if (!isAgentRole(raw.agent_role)) {
+    return { ok: false, reason: `tasks[${index}].agent_role must be coordinator, scout, builder, or reviewer` };
+  }
+  if (!isRecord(raw.draft_scope)) {
+    return { ok: false, reason: `tasks[${index}].draft_scope must be a JSON object` };
+  }
+  const draftScope = parseDraftScope(index, raw.draft_scope);
+  if (!draftScope.ok) {
+    return draftScope;
+  }
+  const dependsOn = parseStringArray(`tasks[${index}].depends_on`, raw.depends_on);
+  if (!dependsOn.ok) {
+    return dependsOn;
+  }
+  for (const dependency of dependsOn.value) {
+    const dependencyIdResult = validateRequestedTaskId(dependency);
+    if (!dependencyIdResult.ok) {
+      return { ok: false, reason: `tasks[${index}].depends_on contains invalid task id "${dependency}"` };
+    }
+  }
+  if (typeof raw.parallel_safe !== "boolean") {
+    return { ok: false, reason: `tasks[${index}].parallel_safe must be a boolean` };
+  }
+  if (typeof raw.acceptance_criterion !== "string" || raw.acceptance_criterion.trim() === "") {
+    return { ok: false, reason: `tasks[${index}].acceptance_criterion must be a non-empty string` };
+  }
+  const requiredTests = parseStringArray(`tasks[${index}].required_tests`, raw.required_tests);
+  if (!requiredTests.ok) {
+    return requiredTests;
+  }
+  const patchRequirements = parseStringArray(`tasks[${index}].patch_requirements`, raw.patch_requirements);
+  if (!patchRequirements.ok) {
+    return patchRequirements;
+  }
+  return {
+    ok: true,
+    value: {
+      task_id: raw.task_id,
+      title: raw.title.trim(),
+      mode: raw.mode,
+      agent_role: raw.agent_role,
+      draft_scope: draftScope.value,
+      depends_on: dependsOn.value,
+      parallel_safe: raw.parallel_safe,
+      acceptance_criterion: raw.acceptance_criterion.trim(),
+      required_tests: requiredTests.value,
+      patch_requirements: patchRequirements.value
+    }
+  };
+}
+
+function parseGroundingEvidence(index: number, raw: unknown): SpecResult<GroundingEvidence> {
+  if (!isRecord(raw)) {
+    return { ok: false, reason: `tasks[${index}].grounding_evidence must be a JSON object when scope_status is grounded` };
+  }
+  if (raw.source !== "git-tree") {
+    return { ok: false, reason: `tasks[${index}].grounding_evidence.source must be git-tree` };
+  }
+  if (typeof raw.base_commit !== "string" || raw.base_commit.trim() === "") {
+    return { ok: false, reason: `tasks[${index}].grounding_evidence.base_commit must be a non-empty string` };
+  }
+  if (typeof raw.checked_at !== "string" || raw.checked_at.trim() === "") {
+    return { ok: false, reason: `tasks[${index}].grounding_evidence.checked_at must be a non-empty string` };
+  }
+  const citedPaths = parseStringArray(`tasks[${index}].grounding_evidence.cited_paths`, raw.cited_paths);
+  if (!citedPaths.ok) {
+    return citedPaths;
+  }
+  const resolvedFiles = parseStringArray(`tasks[${index}].grounding_evidence.resolved_files`, raw.resolved_files);
+  if (!resolvedFiles.ok) {
+    return resolvedFiles;
+  }
+  return {
+    ok: true,
+    value: {
+      source: "git-tree",
+      base_commit: raw.base_commit,
+      checked_at: raw.checked_at,
+      cited_paths: citedPaths.value,
+      resolved_files: resolvedFiles.value
+    }
+  };
+}
+
+async function trackedFilesAtBase(repoRoot: string, baseCommit: string): Promise<SpecResult<string[]>> {
+  try {
+    const { stdout } = await execFileAsync("git", ["ls-tree", "-r", "--name-only", baseCommit], { cwd: repoRoot, windowsHide: true });
+    return { ok: true, value: uniqueSorted(stdout.split(/\r?\n/).map((entry) => normalizeGitPath(entry)).filter((entry) => entry !== "")) };
+  } catch {
+    return { ok: false, reason: `failed to list tracked files at base commit ${baseCommit}` };
+  }
+}
+
+function groundTaskScope(
+  task: TentativePlanTask,
+  trackedFiles: string[],
+  baseCommit: string,
+  checkedAt: string
+): SpecResult<TentativePlanTask> {
+  const allowed = resolveScopeEntries(task.task_id, "allowed_files", task.draft_scope.allowed_files, trackedFiles);
+  if (!allowed.ok) {
+    return allowed;
+  }
+  const readOnly = resolveScopeEntries(task.task_id, "read_only_files", task.draft_scope.read_only_files, trackedFiles);
+  if (!readOnly.ok) {
+    return readOnly;
+  }
+  const forbidden = resolveScopeEntries(task.task_id, "forbidden_files", task.draft_scope.forbidden_files, trackedFiles);
+  if (!forbidden.ok) {
+    return forbidden;
+  }
+
+  const citedPaths = uniqueSorted([...task.draft_scope.allowed_files, ...task.draft_scope.read_only_files, ...task.draft_scope.forbidden_files]);
+  const resolvedFiles = uniqueSorted([...allowed.value, ...readOnly.value, ...forbidden.value]);
+  return {
+    ok: true,
+    value: {
+      ...task,
+      scope_status: "grounded",
+      grounding_evidence: {
+        source: "git-tree",
+        base_commit: baseCommit,
+        checked_at: checkedAt,
+        cited_paths: citedPaths,
+        resolved_files: resolvedFiles
+      },
+      grounded_scope: {
+        allowed_files: allowed.value,
+        read_only_files: readOnly.value,
+        forbidden_files: forbidden.value,
+        must_not_change: task.draft_scope.must_not_change
+      }
+    }
+  };
+}
+
+function resolveScopeEntries(taskId: string, field: keyof Omit<DraftScope, "must_not_change">, entries: string[], trackedFiles: string[]): SpecResult<string[]> {
+  const resolved: string[] = [];
+  const tracked = new Set(trackedFiles);
+  for (const entry of entries) {
+    const normalized = normalizeGitPath(entry);
+    if (normalized === "" || normalized.startsWith("/") || normalized.includes("..")) {
+      return { ok: false, reason: `task ${taskId} ${field} contains invalid path "${entry}"` };
+    }
+    if (/[\[\]]/u.test(normalized)) {
+      return { ok: false, reason: `task ${taskId} ${field} path "${entry}" uses unsupported bracket glob syntax` };
+    }
+    if (hasGlob(normalized)) {
+      const matches = trackedFiles.filter((file) => globMatches(normalized, file));
+      if (matches.length === 0) {
+        return { ok: false, reason: `task ${taskId} ${field} glob "${entry}" matched no tracked files at base` };
+      }
+      resolved.push(...matches);
+      continue;
+    }
+    if (!tracked.has(normalized)) {
+      return { ok: false, reason: `task ${taskId} ${field} path "${entry}" is not a tracked file at base` };
+    }
+    resolved.push(normalized);
+  }
+  return { ok: true, value: uniqueSorted(resolved) };
+}
+
+function normalizeGitPath(value: string): string {
+  return value.replaceAll("\\", "/").replace(/^\.\/+/u, "").trim();
+}
+
+function hasGlob(value: string): boolean {
+  return /[*?]/u.test(value);
+}
+
+function globMatches(pattern: string, file: string): boolean {
+  const escaped = pattern.replace(/[.+^${}()|\\]/gu, "\\$&");
+  const regex = escaped.replace(/\*\*/gu, "\u0000").replace(/\*/gu, "[^/]*").replace(/\?/gu, "[^/]").replace(/\u0000/gu, ".*");
+  return new RegExp(`^${regex}$`, "u").test(file);
+}
+
+function uniqueSorted(values: string[]): string[] {
+  return [...new Set(values)].sort((left, right) => left.localeCompare(right));
 }
 
 async function parseTentativePlanInput(repoRoot: string, specId: string, raw: unknown): Promise<SpecResult<TentativePlanInput>> {
@@ -475,6 +949,10 @@ function isAgentRole(value: unknown): value is AgentRole {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNodeError(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 async function exists(filePath: string): Promise<boolean> {

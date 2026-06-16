@@ -159,6 +159,185 @@ test("plan check preserves the M5.1 ratified planning gate behavior", async () =
   });
 });
 
+test("plan ground updates the tentative plan with git-tree evidence without executable task state", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const planPath = await writePlan(repo, validPlan());
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+
+    const grounded = await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], {
+      cwd: repo,
+      windowsHide: true
+    });
+
+    assert.deepEqual(JSON.parse(grounded.stdout), {
+      spec_id: "S-001",
+      plan_path: ".hivemind/plans/S-001.tentative.json",
+      status: "tentative",
+      grounding_status: "grounded",
+      base_commit: baseCommit,
+      task_count: 3
+    });
+    const stored = JSON.parse(await readFile(path.join(repo, ".hivemind", "plans", "S-001.tentative.json"), "utf8")) as {
+      grounding_status: string;
+      grounded_base_commit: string;
+      grounded_at: string;
+      tasks: Array<{
+        task_id: string;
+        scope_status: string;
+        grounding_evidence: { source: string; base_commit: string; cited_paths: string[]; resolved_files: string[] };
+        grounded_scope: { allowed_files: string[]; read_only_files: string[]; forbidden_files: string[]; must_not_change: string[] };
+      }>;
+    };
+    assert.equal(stored.grounding_status, "grounded");
+    assert.equal(stored.grounded_base_commit, baseCommit);
+    assert.equal(typeof stored.grounded_at, "string");
+    const writeTask = stored.tasks.find((taskEntry) => taskEntry.task_id === "T-WRITE");
+    assert.notEqual(writeTask, undefined);
+    assert.equal(writeTask?.scope_status, "grounded");
+    assert.deepEqual(writeTask?.grounded_scope.allowed_files, ["README.md"]);
+    assert.equal(writeTask?.grounding_evidence.source, "git-tree");
+    assert.equal(writeTask?.grounding_evidence.base_commit, baseCommit);
+    assert.deepEqual(writeTask?.grounding_evidence.cited_paths, ["README.md"]);
+    assert.deepEqual(writeTask?.grounding_evidence.resolved_files, ["README.md"]);
+    await assertMissing(path.join(repo, ".hivemind", "tasks", "T-WRITE.contract.json"));
+    await assertMissing(path.join(repo, ".hivemind", "leases", "active.json"));
+    await assertMissing(path.join(repo, ".hivemind", "worktrees", "T-WRITE"));
+    await assertMissing(path.join(repo, ".hivemind", "patches", "T-WRITE"));
+    await assertMissing(path.join(repo, ".hivemind", "integration", "queue.json"));
+  });
+});
+
+test("plan ground resolves matching globs to concrete tracked files", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await mkdir(path.join(repo, "src"), { recursive: true });
+    await writeFile(path.join(repo, "src", "alpha.ts"), "export const alpha = true;\n");
+    await writeFile(path.join(repo, "src", "beta.ts"), "export const beta = true;\n");
+    await git(repo, ["add", "src/alpha.ts", "src/beta.ts"]);
+    await git(repo, ["commit", "-m", "add source files"]);
+    await createRatifiedSpec(repo, "S-001");
+    const planPath = await writePlan(repo, {
+      tasks: [task("T-GLOB", { draft_scope: draftScope(["src/*.ts"]) })],
+      execution_groups: [group("G-1", "parallel", ["T-GLOB"])]
+    });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+
+    const stored = JSON.parse(await readFile(path.join(repo, ".hivemind", "plans", "S-001.tentative.json"), "utf8")) as {
+      tasks: Array<{ grounded_scope: { allowed_files: string[] }; grounding_evidence: { cited_paths: string[]; resolved_files: string[] } }>;
+    };
+    assert.deepEqual(stored.tasks[0].grounded_scope.allowed_files, ["src/alpha.ts", "src/beta.ts"]);
+    assert.deepEqual(stored.tasks[0].grounding_evidence.cited_paths, ["src/*.ts"]);
+    assert.deepEqual(stored.tasks[0].grounding_evidence.resolved_files, ["src/alpha.ts", "src/beta.ts"]);
+  });
+});
+
+test("plan ground refuses missing paths and leaves the plan ungrounded", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const planPath = await writePlan(repo, {
+      tasks: [task("T-MISSING", { draft_scope: draftScope(["MISSING.md"]) })],
+      execution_groups: [group("G-1", "parallel", ["T-MISSING"])]
+    });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+
+    await assertPlanRejects(repo, ["plan", "S-001", "--ground"], /task T-MISSING allowed_files path "MISSING.md" is not a tracked file at base/);
+
+    const stored = JSON.parse(await readFile(path.join(repo, ".hivemind", "plans", "S-001.tentative.json"), "utf8")) as {
+      grounding_status?: string;
+      tasks: Array<{ scope_status: string }>;
+    };
+    assert.equal(stored.grounding_status, undefined);
+    assert.equal(stored.tasks[0].scope_status, "draft_ungrounded");
+  });
+});
+
+test("plan ground refuses zero-match globs and stale base plans", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const globPlan = await writePlan(repo, {
+      tasks: [task("T-GLOB", { draft_scope: draftScope(["src/*.ts"]) })],
+      execution_groups: [group("G-1", "parallel", ["T-GLOB"])]
+    });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", globPlan], { cwd: repo, windowsHide: true });
+
+    await assertPlanRejects(repo, ["plan", "S-001", "--ground"], /task T-GLOB allowed_files glob "src\/\*\.ts" matched no tracked files at base/);
+
+    const stalePlan = await writePlan(repo, validPlan(), "stale-plan.json");
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", stalePlan], { cwd: repo, windowsHide: true });
+    await writeFile(path.join(repo, "SECOND.md"), "second\n");
+    await git(repo, ["add", "SECOND.md"]);
+    await git(repo, ["commit", "-m", "move head"]);
+
+    await assertPlanRejects(repo, ["plan", "S-001", "--ground"], /tentative plan base .* is stale relative to current HEAD .* re-propose/);
+    const stored = JSON.parse(await readFile(path.join(repo, ".hivemind", "plans", "S-001.tentative.json"), "utf8")) as {
+      grounding_status?: string;
+      tasks: Array<{ scope_status: string }>;
+    };
+    assert.equal(stored.grounding_status, undefined);
+    assert.equal(stored.tasks[0].scope_status, "draft_ungrounded");
+  });
+});
+
+test("plan ground fails closed for malformed tentative artifacts", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+
+    await assertPlanRejects(repo, ["plan", "S-001", "--ground"], /tentative plan not found/);
+
+    const planFile = path.join(repo, ".hivemind", "plans", "S-001.tentative.json");
+    await mkdir(path.dirname(planFile), { recursive: true });
+    const badCases: Array<[string, unknown, RegExp]> = [
+      ["wrong spec", { ...validStoredPlan("S-OTHER"), spec_id: "S-OTHER" }, /tentative plan spec_id must be S-001/],
+      ["bad version", { ...validStoredPlan("S-001"), version: 2 }, /tentative plan version must be 1/],
+      ["bad status", { ...validStoredPlan("S-001"), status: "committed" }, /tentative plan status must be tentative/],
+      ["missing grounded_at", { ...validStoredPlan("S-001"), grounding_status: "grounded", grounded_base_commit: "abc123" }, /grounded_at must be present/],
+      ["grounded task without plan marker", { ...validStoredPlan("S-001"), tasks: [{ ...task("T-001"), scope_status: "grounded", grounding_evidence: validGroundingEvidence(), grounded_scope: draftScope(["README.md"]) }] }, /grounded tasks require top-level grounding_status/],
+      ["bad grounding", { ...validStoredPlan("S-001"), grounding_status: "grounded", grounded_at: "2026-06-16T00:00:00.000Z", grounded_base_commit: "abc123", tasks: [{ ...task("T-001"), scope_status: "grounded", grounding_evidence: { source: "manual" }, grounded_scope: draftScope(["README.md"]) }] }, /grounding_evidence.source must be git-tree/]
+    ];
+
+    for (const [, body, pattern] of badCases) {
+      await writeFile(planFile, `${JSON.stringify(body, null, 2)}\n`);
+      await assertPlanRejects(repo, ["plan", "S-001", "--ground"], pattern);
+    }
+
+    await writeFile(planFile, "{not json");
+    await assertPlanRejects(repo, ["plan", "S-001", "--ground"], /invalid JSON/);
+  });
+});
+
+test("plan ground rejects unsupported bracket glob syntax fail-closed", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const planPath = await writePlan(repo, {
+      tasks: [task("T-BRACKET", { draft_scope: draftScope(["src/[broken"]) })],
+      execution_groups: [group("G-1", "parallel", ["T-BRACKET"])]
+    });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+
+    await assertPlanRejects(repo, ["plan", "S-001", "--ground"], /unsupported bracket glob syntax/);
+  });
+});
+
+test("plan ground still defers overlap and dependency-cycle checks to M5.6", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const planPath = await writePlan(repo, {
+      tasks: [
+        { ...task("T-001"), draft_scope: draftScope(["README.md"]), depends_on: ["T-002"] },
+        { ...task("T-002"), draft_scope: draftScope(["README.md"]), depends_on: ["T-001"] }
+      ],
+      execution_groups: [group("G-1", "parallel", ["T-001", "T-002"])]
+    });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+
+    const grounded = await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+
+    assert.equal(JSON.parse(grounded.stdout).grounding_status, "grounded");
+  });
+});
+
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
   const repo = await mkdtemp(path.join(tmpdir(), "hivemind-plan-test-"));
   try {
@@ -173,6 +352,29 @@ async function withTempRepo(run: (context: { repo: string; baseCommit: string })
   } finally {
     await rm(repo, { recursive: true, force: true, maxRetries: 3 });
   }
+}
+
+function validStoredPlan(specId: string): Record<string, unknown> {
+  return {
+    version: 1,
+    spec_id: specId,
+    status: "tentative",
+    base_commit: "abc123",
+    source: "cli-json",
+    created_at: "2026-06-16T00:00:00.000Z",
+    tasks: [{ ...task("T-001"), scope_status: "draft_ungrounded" }],
+    execution_groups: [group("G-1", "parallel", ["T-001"])]
+  };
+}
+
+function validGroundingEvidence(): Record<string, unknown> {
+  return {
+    source: "git-tree",
+    base_commit: "abc123",
+    checked_at: "2026-06-16T00:00:00.000Z",
+    cited_paths: ["README.md"],
+    resolved_files: ["README.md"]
+  };
 }
 
 async function createRatifiedSpec(repo: string, specId: string): Promise<void> {
