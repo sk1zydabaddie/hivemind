@@ -2,9 +2,9 @@
 
 ## M3 Self-Protection Loop
 
-Hivemind changes must go through Hivemind's own gate before they merge.
+Hivemind's protected merge workflow is available, but mandatory dogfooding is deferred until the operator explicitly re-enables it after the MVP feels ready for daily use. Until then, Hivemind changes continue through the current Axiom-gated, scoped-commit workflow.
 
-For each Hivemind feature or fix:
+When the protected workflow is used for a Hivemind feature or fix:
 
 1. Write a C7 task contract under `.hivemind/tasks/<task_id>.contract.json`.
 2. Build and submit the change through the harness so `.hivemind/patches/<task_id>/diff.patch` reflects the actual proposed repo diff.

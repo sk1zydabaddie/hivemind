@@ -5,9 +5,9 @@ It is the project-local build ledger for Hivemind AI.
 
 ## Current State
 
-- Current milestone: M3 - Dogfood self-protection enabled
+- Current milestone: M3 - Self-protection available; mandatory dogfooding deferred by operator decision
 - Last completed subtask: M3.1 - Self-protection workflow
-- Next subtask: M4.1 - `hivemind daemon` single-writer state owner, built through the harness
+- Next subtask: M4.1 - `hivemind daemon` single-writer state owner
 - Current branch: `master`
 - Latest completed implementation commit: `23844a4` - `feat: add self-protected merge workflow`
 - Latest M0.5 gate completion commit: `8a9786c` - `docs: complete m0.5 real-tool gate`
@@ -95,7 +95,7 @@ It is the project-local build ledger for Hivemind AI.
 | Subtask | Status | Notes |
 | --- | --- | --- |
 | M3.1 - Self-protection workflow | Complete | Implemented in `23844a4`. Hivemind changes now have a protected merge path that blocks on non-accept `hivemind analyze` verdicts. |
-| Ongoing - Build later features through the harness | Active | M4+ work should use contracts, leases, submitted patch bundles, `hivemind analyze`, and the protected merge workflow. |
+| Ongoing - Build later features through the harness | Deferred | Protected merge remains available, but mandatory dogfooding is deferred until the operator explicitly re-enables it after the MVP feels ready for daily use. Continue the current Axiom-gated, scoped-commit workflow for M4. |
 
 ## M4 - Daemon + MCP + Resource Baseline
 
