@@ -5,13 +5,13 @@ It is the project-local build ledger for Hivemind AI.
 
 ## Current State
 
-- Current milestone: M2 - The MVP (complete; awaiting approval for M3)
-- Last completed subtask: M2.7 - Append-only Tier-1 event log
-- Next subtask: M3.1 - Self-protection workflow (requires explicit approval before starting M3)
+- Current milestone: Pre-M3 hardening complete; ready to implement M3.1 self-protection
+- Last completed subtask: Pre-M3 hardening A/B - Lease-before-run and lease-authoritative read-only prep
+- Next subtask: M3.1 - Self-protection workflow
 - Current branch: `master`
-- Latest completed implementation commit: `50d72ca` - `feat: add tier one event log`
+- Latest completed implementation commit: `6cbb75e` - `fix: prep worktrees from active leases`
 - Latest M0.5 gate completion commit: `8a9786c` - `docs: complete m0.5 real-tool gate`
-- Paid AI/provider calls run: none for M2.7. Previous approved live Codex and Claude Code acceptance ran on 2026-06-15. Codex launched in disposable task worktrees. First Codex attempt returned exit code 1 because the default `gpt-5.3-codex` model was not supported by the active ChatGPT account. After updating the adapter profile to `gpt-5.5`, Codex used 6,130 tokens but could not write under a read-only inner sandbox. After the approved writable Codex profile update and adapter timeout containment, Codex used 8,674 tokens and produced a correct one-file `README.md` diff. The first Claude Code run returned exit code 1 with `Not logged in - Please run /login`; after CLI login, Claude Code rerun returned `tool_exit: 0`, `changed_files: 1`, and produced a correct one-file `README.md` diff.
+- Paid AI/provider calls run: none for Pre-M3 hardening. Previous approved live Codex and Claude Code acceptance ran on 2026-06-15. Codex launched in disposable task worktrees. First Codex attempt returned exit code 1 because the default `gpt-5.3-codex` model was not supported by the active ChatGPT account. After updating the adapter profile to `gpt-5.5`, Codex used 6,130 tokens but could not write under a read-only inner sandbox. After the approved writable Codex profile update and adapter timeout containment, Codex used 8,674 tokens and produced a correct one-file `README.md` diff. The first Claude Code run returned exit code 1 with `Not logged in - Please run /login`; after CLI login, Claude Code rerun returned `tool_exit: 0`, `changed_files: 1`, and produced a correct one-file `README.md` diff.
 
 ## Pre-M1 Hardening Checkpoint
 
@@ -24,6 +24,14 @@ It is the project-local build ledger for Hivemind AI.
 | Checkpoint | Status | Commit | What changed | Validation |
 | --- | --- | --- | --- | --- |
 | Pre-M2 comprehensive audit hardening | Complete | `6a61f70` | Added shared config loading/validation with `repo_root` realpath matching; added shared atomic writers; exported shared contract load+validate; removed duplicate loader/atomic implementations from analyze/run/worktree/adapter paths; made `hivemind run` reject dirty existing task worktrees before invoking an adapter while allowing Hivemind-owned `agent.log`; added a separate tested future-intent path canonicalizer for later lease/write-intent use without implementing leases; tightened adapter profile validation to reject empty invoke entries. No M2 lease, submit, integration, status, or event-log commands were started. | `npm run typecheck`; `npm test` with 87 tests; `git diff --check`; cleanup/static scans for duplicate loaders, stale config validators, duplicate atomic writers, TODO-style markers, accidental M2 command/API implementation, and unused/stale references. No paid provider calls. |
+
+## Pre-M3 Hardening Checkpoint
+
+| Checkpoint | Status | Commit | What changed | Validation |
+| --- | --- | --- | --- | --- |
+| A - Enforce lease-before-run | Complete | `658d64a` | Made `hivemind run` fail closed before worktree creation or adapter invocation unless `.hivemind/leases/active.json` contains active leases held by the task for every contract `allowed_files` entry. Missing, invalid, or partial lease coverage rejects with no invocation. | `npm run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; node --test dist/test/run.test.js`; `npm run typecheck`; `git diff --check`; cleanup/static scans for stale run paths. No paid provider calls. |
+| B - Key read-only prep off active lease store | Complete | `6cbb75e` | Made task worktree read-only preparation derive writable files from the active lease store instead of `contract.allowed_files`, so the lease grant is authoritative when it diverges from the contract request. Updated submit/worktree tests to grant leases explicitly where worktrees need writable files. | `npm run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; node --test dist/test/worktree.test.js dist/test/submit.test.js`; `npm run typecheck`; `npm test` with 131 tests; `git diff --check`; cleanup/static scans for stale read-only prep references. No paid provider calls. |
+| C - Mandatory write intent in `hivemind run` | Deferred to M5 | N/A | Per user decision, leave `hivemind intent` as an optional standalone for now. Reconsider mandatory write-intent when the M5 orchestrator lands, because the submit-time diff-scope gate already provides the current safety guarantee while a human is orchestrating hand-run tasks. | No code change. |
 
 ## Completed Subtasks
 
