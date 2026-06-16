@@ -338,6 +338,135 @@ test("plan ground still defers overlap and dependency-cycle checks to M5.6", asy
   });
 });
 
+test("plan lint passes a clean grounded plan without executable task state", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const planPath = await writePlan(repo, validPlan());
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+
+    const linted = await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
+
+    assert.deepEqual(JSON.parse(linted.stdout), {
+      spec_id: "S-001",
+      plan_path: ".hivemind/plans/S-001.tentative.json",
+      status: "tentative",
+      lint_status: "passed",
+      base_commit: baseCommit,
+      task_count: 3,
+      rule_count: 6
+    });
+    await assertMissing(path.join(repo, ".hivemind", "tasks", "T-WRITE.contract.json"));
+    await assertMissing(path.join(repo, ".hivemind", "leases", "active.json"));
+    await assertMissing(path.join(repo, ".hivemind", "worktrees", "T-WRITE"));
+    await assertMissing(path.join(repo, ".hivemind", "patches", "T-WRITE"));
+    await assertMissing(path.join(repo, ".hivemind", "integration", "queue.json"));
+  });
+});
+
+test("plan lint rejects overlapping parallel write scopes", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const planPath = await writePlan(repo, {
+      tasks: [task("T-ONE"), task("T-TWO")],
+      execution_groups: [group("G-1", "parallel", ["T-ONE", "T-TWO"])]
+    });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+
+    await assertPlanRejects(repo, ["plan", "S-001", "--lint"], /PARALLEL_SCOPE_OVERLAP: group G-1 tasks T-ONE and T-TWO both allow README\.md/);
+  });
+});
+
+test("plan lint rejects dependency cycles with the cycle path", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const planPath = await writePlan(repo, {
+      tasks: [
+        task("T-ONE", { depends_on: ["T-TWO"] }),
+        task("T-TWO", { depends_on: ["T-ONE"] })
+      ],
+      execution_groups: [group("G-1", "sequence", ["T-ONE", "T-TWO"])]
+    });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+
+    await assertPlanRejects(repo, ["plan", "S-001", "--lint"], /DEPENDENCY_CYCLE: T-ONE -> T-TWO -> T-ONE/);
+  });
+});
+
+test("plan lint rejects ungrounded and stale grounded plans", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const planPath = await writePlan(repo, validPlan());
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+
+    await assertPlanRejects(repo, ["plan", "S-001", "--lint"], /GROUNDING_REQUIRED: tentative plan must be grounded before lint/);
+
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+    await writeFile(path.join(repo, "SECOND.md"), "second\n");
+    await git(repo, ["add", "SECOND.md"]);
+    await git(repo, ["commit", "-m", "move head after grounding"]);
+
+    await assertPlanRejects(repo, ["plan", "S-001", "--lint"], /GROUNDING_FRESHNESS: tentative plan base .* is stale relative to current HEAD/);
+  });
+});
+
+test("plan lint requires explicit approval for Critical paths", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await updateConfig(repo, { critical_globs: ["README.md"] });
+    const unapprovedPlan = await writePlan(repo, {
+      tasks: [task("T-CRITICAL")],
+      execution_groups: [group("G-1", "parallel", ["T-CRITICAL"])]
+    });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", unapprovedPlan], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+
+    await assertPlanRejects(repo, ["plan", "S-001", "--lint"], /CRITICAL_APPROVAL_REQUIRED: task T-CRITICAL touches Critical path README\.md without critical_path_approved/);
+
+    const approvedPlan = await writePlan(
+      repo,
+      {
+        tasks: [task("T-CRITICAL-OK", { critical_path_approved: true })],
+        execution_groups: [group("G-1", "parallel", ["T-CRITICAL-OK"])]
+      },
+      "approved-critical-plan.json"
+    );
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", approvedPlan], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+
+    const linted = await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
+    assert.equal(JSON.parse(linted.stdout).lint_status, "passed");
+  });
+});
+
+test("plan lint rejects tasks without a non-empty required test command", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const planPath = await writePlan(repo, {
+      tasks: [task("T-NO-TEST", { required_tests: [""] })],
+      execution_groups: [group("G-1", "parallel", ["T-NO-TEST"])]
+    });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+
+    await assertPlanRejects(repo, ["plan", "S-001", "--lint"], /RIGHT_SIZING_ACCEPTANCE: task T-NO-TEST required_tests must include at least one non-empty command/);
+  });
+});
+
+test("plan proposal rejects non-boolean Critical approval flags", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const planPath = await writePlan(repo, {
+      tasks: [task("T-BAD-APPROVAL", { critical_path_approved: "yes" })],
+      execution_groups: [group("G-1", "parallel", ["T-BAD-APPROVAL"])]
+    });
+
+    await assertPlanRejects(repo, ["plan", "S-001", "--propose", planPath], /critical_path_approved must be a boolean/);
+  });
+});
+
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
   const repo = await mkdtemp(path.join(tmpdir(), "hivemind-plan-test-"));
   try {
@@ -452,6 +581,12 @@ async function writePlan(repo: string, body: unknown, name = "plan.json"): Promi
   const filePath = path.join(repo, name);
   await writeFile(filePath, `${JSON.stringify(body, null, 2)}\n`);
   return filePath;
+}
+
+async function updateConfig(repo: string, patch: Record<string, unknown>): Promise<void> {
+  const configPath = path.join(repo, ".hivemind", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+  await writeFile(configPath, `${JSON.stringify({ ...config, ...patch }, null, 2)}\n`);
 }
 
 async function writeContract(repo: string, taskId: string, baseCommit: string): Promise<void> {

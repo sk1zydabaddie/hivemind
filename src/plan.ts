@@ -3,7 +3,9 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { writeJsonAtomic } from "./atomic.js";
+import { loadConfig } from "./config.js";
 import { type AgentRole } from "./contract.js";
+import { matchesAny } from "./glob.js";
 import { findGitRoot } from "./repo.js";
 import { checkPlanningAllowed } from "./spec.js";
 import { type SpecResult, validateRequestedSpecId } from "./spec-format.js";
@@ -32,6 +34,7 @@ export interface TentativePlanTask {
   acceptance_criterion: string;
   required_tests: string[];
   patch_requirements: string[];
+  critical_path_approved: boolean;
   scope_status: ScopeStatus;
   grounding_evidence?: GroundingEvidence;
   grounded_scope?: DraftScope;
@@ -75,6 +78,16 @@ export interface GroundPlanResult {
   task_count: number;
 }
 
+export interface PlanLintResult {
+  spec_id: string;
+  plan_path: string;
+  status: "tentative";
+  lint_status: "passed";
+  base_commit: string;
+  task_count: number;
+  rule_count: number;
+}
+
 export interface GroundingEvidence {
   source: "git-tree";
   base_commit: string;
@@ -96,6 +109,7 @@ interface TentativePlanInputTask {
   acceptance_criterion: string;
   required_tests: string[];
   patch_requirements: string[];
+  critical_path_approved: boolean;
 }
 
 interface TentativePlanInput {
@@ -121,7 +135,9 @@ export async function planCommand(cwd: string, args: string[]): Promise<number> 
       ? await checkPlanningAllowed(repoRoot, parsed.value.specId)
       : parsed.value.action === "propose"
         ? await createTentativePlanFromFile(repoRoot, parsed.value.specId, parsed.value.planFile)
-        : await groundTentativePlan(repoRoot, parsed.value.specId);
+        : parsed.value.action === "ground"
+          ? await groundTentativePlan(repoRoot, parsed.value.specId)
+          : await lintTentativePlan(repoRoot, parsed.value.specId);
   if (!result.ok) {
     console.error(`error: ${result.reason}`);
     return 1;
@@ -196,7 +212,12 @@ export async function createTentativePlan(
 
 function parsePlanArgs(
   args: string[]
-): SpecResult<{ action: "check"; specId: string } | { action: "propose"; specId: string; planFile: string } | { action: "ground"; specId: string }> {
+): SpecResult<
+  | { action: "check"; specId: string }
+  | { action: "propose"; specId: string; planFile: string }
+  | { action: "ground"; specId: string }
+  | { action: "lint"; specId: string }
+> {
   const [specId, flag, value, ...rest] = args;
   if (!specId) {
     return { ok: false, reason: planUsage() };
@@ -210,11 +231,14 @@ function parsePlanArgs(
   if (flag === "--ground" && value === undefined && rest.length === 0) {
     return { ok: true, value: { action: "ground", specId } };
   }
+  if (flag === "--lint" && value === undefined && rest.length === 0) {
+    return { ok: true, value: { action: "lint", specId } };
+  }
   return { ok: false, reason: planUsage() };
 }
 
 function planUsage(): string {
-  return "usage: hivemind plan <spec-id> --check | --propose <plan-json-file> | --ground";
+  return "usage: hivemind plan <spec-id> --check | --propose <plan-json-file> | --ground | --lint";
 }
 
 export async function groundTentativePlan(repoRoot: string, specId: string): Promise<SpecResult<GroundPlanResult>> {
@@ -272,6 +296,57 @@ export async function groundTentativePlan(repoRoot: string, specId: string): Pro
       grounding_status: "grounded",
       base_commit: loaded.value.base_commit,
       task_count: groundedPlan.tasks.length
+    }
+  };
+}
+
+export async function lintTentativePlan(repoRoot: string, specId: string): Promise<SpecResult<PlanLintResult>> {
+  const allowed = await checkPlanningAllowed(repoRoot, specId);
+  if (!allowed.ok) {
+    return allowed;
+  }
+
+  const loaded = await loadTentativePlan(repoRoot, specId);
+  if (!loaded.ok) {
+    return loaded;
+  }
+
+  const head = await currentHead(repoRoot);
+  if (!head.ok) {
+    return head;
+  }
+
+  const config = await loadConfig(repoRoot);
+  if (!config.ok) {
+    return config;
+  }
+
+  const rules: Array<() => SpecResult<void>> = [
+    () => lintGroundingRequired(loaded.value),
+    () => lintGroundingFreshness(loaded.value, head.value),
+    () => lintParallelScopeOverlap(loaded.value),
+    () => lintDependencyCycle(loaded.value),
+    () => lintCriticalApproval(loaded.value, config.config.critical_globs ?? []),
+    () => lintRightSizingAcceptance(loaded.value)
+  ];
+
+  for (const rule of rules) {
+    const result = rule();
+    if (!result.ok) {
+      return { ok: false, reason: `plan-lint failed: ${result.reason}` };
+    }
+  }
+
+  return {
+    ok: true,
+    value: {
+      spec_id: specId,
+      plan_path: tentativePlanRelativePath(specId),
+      status: "tentative",
+      lint_status: "passed",
+      base_commit: loaded.value.base_commit,
+      task_count: loaded.value.tasks.length,
+      rule_count: rules.length
     }
   };
 }
@@ -424,6 +499,7 @@ function validateStoredTask(index: number, raw: unknown): SpecResult<TentativePl
     "acceptance_criterion",
     "required_tests",
     "patch_requirements",
+    "critical_path_approved",
     "scope_status",
     "grounding_evidence",
     "grounded_scope"
@@ -515,6 +591,9 @@ function parseStoredTaskBase(index: number, raw: Record<string, unknown>): SpecR
   if (!patchRequirements.ok) {
     return patchRequirements;
   }
+  if (raw.critical_path_approved !== undefined && typeof raw.critical_path_approved !== "boolean") {
+    return { ok: false, reason: `tasks[${index}].critical_path_approved must be a boolean when present` };
+  }
   return {
     ok: true,
     value: {
@@ -527,7 +606,8 @@ function parseStoredTaskBase(index: number, raw: Record<string, unknown>): SpecR
       parallel_safe: raw.parallel_safe,
       acceptance_criterion: raw.acceptance_criterion.trim(),
       required_tests: requiredTests.value,
-      patch_requirements: patchRequirements.value
+      patch_requirements: patchRequirements.value,
+      critical_path_approved: raw.critical_path_approved ?? false
     }
   };
 }
@@ -662,6 +742,134 @@ function uniqueSorted(values: string[]): string[] {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right));
 }
 
+function lintGroundingRequired(plan: TentativePlan): SpecResult<void> {
+  if (plan.grounding_status !== "grounded") {
+    return { ok: false, reason: "GROUNDING_REQUIRED: tentative plan must be grounded before lint" };
+  }
+  if (plan.grounded_base_commit === undefined || plan.grounded_at === undefined) {
+    return { ok: false, reason: "GROUNDING_REQUIRED: tentative plan is missing top-level grounding metadata" };
+  }
+  for (const task of plan.tasks) {
+    if (task.scope_status !== "grounded" || task.grounding_evidence === undefined || task.grounded_scope === undefined) {
+      return { ok: false, reason: `GROUNDING_REQUIRED: task ${task.task_id} is not grounded` };
+    }
+  }
+  return { ok: true, value: undefined };
+}
+
+function lintGroundingFreshness(plan: TentativePlan, head: string): SpecResult<void> {
+  if (plan.base_commit !== head) {
+    return { ok: false, reason: `GROUNDING_FRESHNESS: tentative plan base ${plan.base_commit} is stale relative to current HEAD ${head}` };
+  }
+  if (plan.grounded_base_commit !== plan.base_commit) {
+    return { ok: false, reason: `GROUNDING_FRESHNESS: grounded_base_commit ${plan.grounded_base_commit ?? "<missing>"} does not match plan base ${plan.base_commit}` };
+  }
+  for (const task of plan.tasks) {
+    if (task.grounding_evidence?.base_commit !== plan.base_commit) {
+      return { ok: false, reason: `GROUNDING_FRESHNESS: task ${task.task_id} grounding evidence is not derived from plan base ${plan.base_commit}` };
+    }
+  }
+  return { ok: true, value: undefined };
+}
+
+function lintParallelScopeOverlap(plan: TentativePlan): SpecResult<void> {
+  const tasksById = new Map(plan.tasks.map((task) => [task.task_id, task]));
+  for (const group of plan.execution_groups) {
+    if (group.mode !== "parallel") {
+      continue;
+    }
+    const owners = new Map<string, string>();
+    for (const taskId of group.task_ids) {
+      const task = tasksById.get(taskId);
+      if (task === undefined) {
+        continue;
+      }
+      for (const file of task.grounded_scope?.allowed_files ?? []) {
+        const existing = owners.get(file);
+        if (existing !== undefined) {
+          return {
+            ok: false,
+            reason: `PARALLEL_SCOPE_OVERLAP: group ${group.group_id} tasks ${existing} and ${task.task_id} both allow ${file}`
+          };
+        }
+        owners.set(file, task.task_id);
+      }
+    }
+  }
+  return { ok: true, value: undefined };
+}
+
+function lintDependencyCycle(plan: TentativePlan): SpecResult<void> {
+  const tasksById = new Map(plan.tasks.map((task) => [task.task_id, task]));
+  const visited = new Set<string>();
+  const visiting = new Set<string>();
+  const stack: string[] = [];
+
+  function visit(taskId: string): SpecResult<void> {
+    if (visiting.has(taskId)) {
+      const cycleStart = stack.indexOf(taskId);
+      const cycle = [...stack.slice(cycleStart), taskId].join(" -> ");
+      return { ok: false, reason: `DEPENDENCY_CYCLE: ${cycle}` };
+    }
+    if (visited.has(taskId)) {
+      return { ok: true, value: undefined };
+    }
+    const task = tasksById.get(taskId);
+    if (task === undefined) {
+      return { ok: false, reason: `DEPENDENCY_CYCLE: unknown dependency ${taskId}` };
+    }
+    visiting.add(taskId);
+    stack.push(taskId);
+    for (const dependency of task.depends_on) {
+      const result = visit(dependency);
+      if (!result.ok) {
+        return result;
+      }
+    }
+    stack.pop();
+    visiting.delete(taskId);
+    visited.add(taskId);
+    return { ok: true, value: undefined };
+  }
+
+  for (const task of plan.tasks) {
+    const result = visit(task.task_id);
+    if (!result.ok) {
+      return result;
+    }
+  }
+  return { ok: true, value: undefined };
+}
+
+function lintCriticalApproval(plan: TentativePlan, criticalGlobs: string[]): SpecResult<void> {
+  if (criticalGlobs.length === 0) {
+    return { ok: true, value: undefined };
+  }
+  for (const task of plan.tasks) {
+    const grounded = task.grounded_scope;
+    if (grounded === undefined) {
+      return { ok: false, reason: `GROUNDING_REQUIRED: task ${task.task_id} is not grounded` };
+    }
+    const criticalFile = [...grounded.allowed_files, ...grounded.read_only_files, ...grounded.forbidden_files].find((file) => matchesAny(file, criticalGlobs));
+    if (criticalFile !== undefined && task.critical_path_approved !== true) {
+      return { ok: false, reason: `CRITICAL_APPROVAL_REQUIRED: task ${task.task_id} touches Critical path ${criticalFile} without critical_path_approved` };
+    }
+  }
+  return { ok: true, value: undefined };
+}
+
+function lintRightSizingAcceptance(plan: TentativePlan): SpecResult<void> {
+  for (const task of plan.tasks) {
+    if (task.acceptance_criterion.trim() === "") {
+      return { ok: false, reason: `RIGHT_SIZING_ACCEPTANCE: task ${task.task_id} acceptance_criterion must be non-empty` };
+    }
+    if (task.required_tests.filter((entry) => entry.trim() !== "").length === 0) {
+      return { ok: false, reason: `RIGHT_SIZING_ACCEPTANCE: task ${task.task_id} required_tests must include at least one non-empty command` };
+    }
+  }
+  return { ok: true, value: undefined };
+}
+
 async function parseTentativePlanInput(repoRoot: string, specId: string, raw: unknown): Promise<SpecResult<TentativePlanInput>> {
   const specIdResult = validateRequestedSpecId(specId);
   if (!specIdResult.ok) {
@@ -740,7 +948,8 @@ async function parseTentativeTask(repoRoot: string, index: number, raw: unknown)
     "parallel_safe",
     "acceptance_criterion",
     "required_tests",
-    "patch_requirements"
+    "patch_requirements",
+    "critical_path_approved"
   ]);
   const extra = Object.keys(raw).filter((key) => !allowedKeys.has(key));
   if (extra.length > 0) {
@@ -798,6 +1007,9 @@ async function parseTentativeTask(repoRoot: string, index: number, raw: unknown)
   if (!patchRequirements.ok) {
     return patchRequirements;
   }
+  if (raw.critical_path_approved !== undefined && typeof raw.critical_path_approved !== "boolean") {
+    return { ok: false, reason: `tasks[${index}].critical_path_approved must be a boolean when present` };
+  }
 
   return {
     ok: true,
@@ -811,7 +1023,8 @@ async function parseTentativeTask(repoRoot: string, index: number, raw: unknown)
       parallel_safe: raw.parallel_safe,
       acceptance_criterion: raw.acceptance_criterion.trim(),
       required_tests: requiredTests.value,
-      patch_requirements: patchRequirements.value
+      patch_requirements: patchRequirements.value,
+      critical_path_approved: raw.critical_path_approved ?? false
     }
   };
 }
