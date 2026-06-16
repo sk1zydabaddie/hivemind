@@ -1,4 +1,6 @@
+import { stat } from "node:fs/promises";
 import path from "node:path";
+import { writeJsonAtomic } from "./atomic.js";
 import { readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
 import { validateRequestedTaskId, validateTaskId } from "./task-id.js";
@@ -18,6 +20,12 @@ export interface TaskContract {
   must_not_change: string[];
   required_tests: string[];
   patch_requirements: string[];
+}
+
+export interface CreateTaskContractResult {
+  task_id: string;
+  contract_path: string;
+  contract: TaskContract;
 }
 
 const arrayFields = [
@@ -102,6 +110,38 @@ export async function loadAndValidateContract(
   }
 
   return { ok: true, contract: normalizeContract(loaded.raw) };
+}
+
+export async function createTaskContract(
+  repoRoot: string,
+  rawContract: unknown
+): Promise<{ ok: true; value: CreateTaskContractResult } | { ok: false; reason: string }> {
+  const problems = validateContract(rawContract);
+  if (problems.length > 0) {
+    return { ok: false, reason: problems.join("; ") };
+  }
+
+  const contract = normalizeContract(rawContract);
+  const taskIdResult = validateRequestedTaskId(contract.task_id);
+  if (!taskIdResult.ok) {
+    return taskIdResult;
+  }
+
+  const relativeContractPath = `.hivemind/tasks/${contract.task_id}.contract.json`;
+  const contractPath = path.join(repoRoot, ".hivemind", "tasks", `${contract.task_id}.contract.json`);
+  if (await exists(contractPath)) {
+    return { ok: false, reason: `contract already exists: ${relativeContractPath}` };
+  }
+
+  await writeJsonAtomic(contractPath, contract);
+  return {
+    ok: true,
+    value: {
+      task_id: contract.task_id,
+      contract_path: relativeContractPath,
+      contract
+    }
+  };
 }
 
 export function validateContract(raw: unknown, expectedTaskId?: string): string[] {
@@ -227,4 +267,16 @@ function isAgentRole(value: unknown): value is AgentRole {
 
 function isNodeError(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
+async function exists(filePath: string): Promise<boolean> {
+  try {
+    await stat(filePath);
+    return true;
+  } catch (error: unknown) {
+    if (isNodeError(error, "ENOENT")) {
+      return false;
+    }
+    throw error;
+  }
 }

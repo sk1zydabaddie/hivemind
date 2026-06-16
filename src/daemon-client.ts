@@ -43,6 +43,18 @@ export async function callDaemonIfConfigured<T>(
   return result.value.ok ? { routed: true, ok: true, value: result.value.value as T } : { routed: true, ok: false, reason: result.value.reason };
 }
 
+export async function callDaemonRequired<T>(
+  repoRoot: string,
+  endpoint: string,
+  body: Record<string, unknown>
+): Promise<{ ok: true; value: T } | { ok: false; reason: string }> {
+  const result = await callDaemonIfConfigured<T>(repoRoot, endpoint, body);
+  if (!result.routed) {
+    return { ok: false, reason: "HIVEMIND_DAEMON_URL is required for MCP tool execution" };
+  }
+  return result.ok ? { ok: true, value: result.value } : { ok: false, reason: result.reason };
+}
+
 function normalizeDaemonUrl(value: string | undefined): string | null {
   const trimmed = value?.trim();
   if (!trimmed) {

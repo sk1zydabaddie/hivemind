@@ -1,10 +1,12 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { analyzeTask } from "./analyze.js";
+import { createTaskContract } from "./contract.js";
 import { integrateShadow } from "./integrate.js";
 import { requestLeaseForContract, releaseLease } from "./lease.js";
 import { findGitRoot } from "./repo.js";
 import { runTask } from "./run.js";
+import { getStatus } from "./status.js";
 import { submitTask } from "./submit.js";
 import { createTaskWorktree, removeTaskWorktree } from "./worktree.js";
 
@@ -94,6 +96,12 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
       const taskId = readTaskId(payload);
       return taskId.ok ? requestLeaseForContract(repoRoot, taskId.value) : taskId;
     };
+  }
+  if (request.method === "POST" && request.url === "/contract/create") {
+    return async (payload) => createTaskContract(repoRoot, payload.contract);
+  }
+  if (request.method === "POST" && request.url === "/status") {
+    return async () => getStatus(repoRoot);
   }
   if (request.method === "POST" && request.url === "/lease/release") {
     return async (payload) => {

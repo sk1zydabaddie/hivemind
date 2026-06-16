@@ -1,8 +1,11 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { z } from "zod";
+import { callDaemonRequired } from "./daemon-client.js";
 import { findGitRoot } from "./repo.js";
 
 const mcpPath = "/mcp";
@@ -22,10 +25,16 @@ interface McpToolDefinition {
 
 export const mcpToolDefinitions: McpToolDefinition[] = [
   {
-    name: "hivemind.validate_contract",
-    title: "Validate contract",
-    description: "Validate and normalize a Hivemind task contract.",
+    name: "hivemind.get_status",
+    title: "Get status",
+    description: "Read Hivemind task, lease, patch, and integration status.",
     readOnly: true
+  },
+  {
+    name: "hivemind.create_task_contract",
+    title: "Create task contract",
+    description: "Validate, normalize, and create a Hivemind task contract.",
+    readOnly: false
   },
   {
     name: "hivemind.create_worktree",
@@ -34,28 +43,10 @@ export const mcpToolDefinitions: McpToolDefinition[] = [
     readOnly: false
   },
   {
-    name: "hivemind.remove_worktree",
-    title: "Remove worktree",
-    description: "Remove a task worktree and branch.",
-    readOnly: false
-  },
-  {
     name: "hivemind.request_lease",
     title: "Request lease",
     description: "Request the active file lease for a task contract.",
     readOnly: false
-  },
-  {
-    name: "hivemind.release_lease",
-    title: "Release lease",
-    description: "Release active leases held by a task.",
-    readOnly: false
-  },
-  {
-    name: "hivemind.check_write_intent",
-    title: "Check write intent",
-    description: "Check intended writes against the active lease store.",
-    readOnly: true
   },
   {
     name: "hivemind.submit_patch",
@@ -74,12 +65,6 @@ export const mcpToolDefinitions: McpToolDefinition[] = [
     title: "Integrate shadow",
     description: "Run shadow integration for accepted queued patches.",
     readOnly: false
-  },
-  {
-    name: "hivemind.get_status",
-    title: "Get status",
-    description: "Read Hivemind task, lease, patch, and integration status.",
-    readOnly: true
   }
 ];
 
@@ -112,36 +97,89 @@ function createHivemindMcpServer(repoRoot: string): McpServer {
       capabilities: {
         tools: {}
       },
-      instructions: `Hivemind MCP facade for ${repoRoot}. Tool implementations land in M4.4.`
+      instructions: `Hivemind MCP facade for ${repoRoot}. All state-changing tools route through the daemon.`
     }
   );
 
-  for (const tool of mcpToolDefinitions) {
-    server.registerTool(
-      tool.name,
-      {
-        title: tool.title,
-        description: tool.description,
-        annotations: {
-          readOnlyHint: tool.readOnly,
-          destructiveHint: !tool.readOnly,
-          idempotentHint: tool.readOnly,
-          openWorldHint: false
-        }
-      },
-      async () => ({
-        content: [
-          {
-            type: "text",
-            text: `${tool.name} is listed by the M4.3 scaffold; tool execution is implemented in M4.4.`
-          }
-        ],
-        isError: true
-      })
-    );
-  }
+  registerNoArgTool(server, repoRoot, "hivemind.get_status", "/status");
+  server.registerTool(
+    "hivemind.create_task_contract",
+    toolConfig("hivemind.create_task_contract", {
+      contract: z.record(z.string(), z.unknown())
+    }),
+    async ({ contract }) => mcpDaemonCall(repoRoot, "/contract/create", { contract })
+  );
+  registerTaskTool(server, repoRoot, "hivemind.create_worktree", "/worktree/create");
+  registerTaskTool(server, repoRoot, "hivemind.request_lease", "/lease/request-contract");
+  registerTaskTool(server, repoRoot, "hivemind.submit_patch", "/submit");
+  registerTaskTool(server, repoRoot, "hivemind.analyze_patch", "/analyze");
+  registerNoArgTool(server, repoRoot, "hivemind.integrate_shadow", "/integrate/shadow");
 
   return server;
+}
+
+function registerTaskTool(server: McpServer, repoRoot: string, name: string, endpoint: string): void {
+  server.registerTool(name, toolConfig(name, { task_id: z.string() }), async ({ task_id }) => mcpDaemonCall(repoRoot, endpoint, { task_id }));
+}
+
+function registerNoArgTool(server: McpServer, repoRoot: string, name: string, endpoint: string): void {
+  server.registerTool(name, toolConfig(name, {}), async () => mcpDaemonCall(repoRoot, endpoint, {}));
+}
+
+function toolConfig<InputSchema extends Record<string, z.ZodType>>(
+  name: string,
+  inputSchema: InputSchema
+): {
+  title: string;
+  description: string;
+  inputSchema: InputSchema;
+  annotations: {
+    readOnlyHint: boolean;
+    destructiveHint: boolean;
+    idempotentHint: boolean;
+    openWorldHint: false;
+  };
+} {
+  const definition = mcpToolDefinitions.find((tool) => tool.name === name);
+  if (definition === undefined) {
+    throw new Error(`MCP tool definition missing for ${name}`);
+  }
+  return {
+    title: definition.title,
+    description: definition.description,
+    inputSchema,
+    annotations: {
+      readOnlyHint: definition.readOnly,
+      destructiveHint: !definition.readOnly,
+      idempotentHint: definition.readOnly,
+      openWorldHint: false
+    }
+  };
+}
+
+async function mcpDaemonCall(repoRoot: string, endpoint: string, body: Record<string, unknown>): Promise<CallToolResult> {
+  const result = await callDaemonRequired<unknown>(repoRoot, endpoint, body);
+  if (!result.ok) {
+    return mcpJsonResult({ ok: false, reason: result.reason }, true);
+  }
+  return mcpJsonResult(toStructuredContent(result.value), false);
+}
+
+function mcpJsonResult(value: Record<string, unknown>, isError: boolean): CallToolResult {
+  return {
+    structuredContent: value,
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify(value, null, 2)
+      }
+    ],
+    isError
+  };
+}
+
+function toStructuredContent(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : { value };
 }
 
 async function runStdioMcpServer(repoRoot: string): Promise<number> {
@@ -293,4 +331,8 @@ function formatHostForUrl(host: string): string {
 function writeJson(response: ServerResponse, statusCode: number, value: unknown): void {
   response.writeHead(statusCode, { "content-type": "application/json" });
   response.end(`${JSON.stringify(value, null, 2)}\n`);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
