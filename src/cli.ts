@@ -39,6 +39,11 @@ async function main(argv: string[]): Promise<number> {
     return daemonCommand(process.cwd(), rest);
   }
 
+  if (command === "cache") {
+    const { cacheCommand } = await import("./cache.js");
+    return cacheCommand(process.cwd(), rest);
+  }
+
   if (command === "lease") {
     return leaseCommand(process.cwd(), rest);
   }
