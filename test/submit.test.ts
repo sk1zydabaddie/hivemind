@@ -9,6 +9,7 @@ import test from "node:test";
 
 import { readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
+import { requestLease } from "../src/lease.js";
 import { submitTask } from "../src/submit.js";
 import { createTaskWorktree } from "../src/worktree.js";
 
@@ -28,6 +29,7 @@ const bundleFiles = [
 test("submitTask assembles exactly the seven patch bundle files", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await grantLease(repo, "T-001", ["README.md"]);
     const worktree = await createTaskWorktree(repo, "T-001");
     assert.equal(worktree.ok, true);
     if (!worktree.ok) {
@@ -80,6 +82,7 @@ test("submitTask assembles exactly the seven patch bundle files", async () => {
 test("submitTask copies advisory files from the worktree and creates missing advisory files empty", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await grantLease(repo, "T-001", ["README.md"]);
     const worktree = await createTaskWorktree(repo, "T-001");
     assert.equal(worktree.ok, true);
     if (!worktree.ok) {
@@ -102,6 +105,7 @@ test("submitTask copies advisory files from the worktree and creates missing adv
 test("submitTask captures untracked source files but excludes bundle metadata from diff.patch", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit, ["new-file.txt"]);
+    await grantLease(repo, "T-001", ["new-file.txt"]);
     const worktree = await createTaskWorktree(repo, "T-001");
     assert.equal(worktree.ok, true);
     if (!worktree.ok) {
@@ -123,6 +127,7 @@ test("submitTask captures untracked source files but excludes bundle metadata fr
 test("submitTask removes stale extra entries from an existing bundle directory", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await grantLease(repo, "T-001", ["README.md"]);
     const worktree = await createTaskWorktree(repo, "T-001");
     assert.equal(worktree.ok, true);
     if (!worktree.ok) {
@@ -159,6 +164,7 @@ test("submitTask fails closed when the task worktree is missing", async () => {
 test("submitTask rejects advisory bundle entries that are directories in the worktree", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await grantLease(repo, "T-001", ["README.md"]);
     const worktree = await createTaskWorktree(repo, "T-001");
     assert.equal(worktree.ok, true);
     if (!worktree.ok) {
@@ -179,6 +185,7 @@ test("submitTask rejects advisory bundle entries that are directories in the wor
 test("CLI submit prints stable JSON", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await grantLease(repo, "T-001", ["README.md"]);
     const worktree = await createTaskWorktree(repo, "T-001");
     assert.equal(worktree.ok, true);
     if (!worktree.ok) {
@@ -289,6 +296,11 @@ async function restoreTrackedWrites(worktreePath: string): Promise<void> {
   for (const file of files) {
     await chmod(path.join(worktreePath, file), 0o644);
   }
+}
+
+async function grantLease(repo: string, taskId: string, files: string[]): Promise<void> {
+  const result = await requestLease(repo, taskId, files);
+  assert.equal(result.ok, true);
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {

@@ -2,9 +2,11 @@ import { execFile } from "node:child_process";
 import { chmod, mkdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { loadAndValidateContract, TaskContract } from "./contract.js";
+import type { TaskContract } from "./contract.js";
+import { loadAndValidateContract } from "./contract.js";
 import { appendEvent } from "./events.js";
 import { canonicalizeConcreteFileScope } from "./file-scope.js";
+import { readActiveLeases } from "./lease.js";
 import { findGitRoot } from "./repo.js";
 import { validateRequestedTaskId } from "./task-id.js";
 
@@ -58,7 +60,7 @@ export async function createTaskWorktree(
     if (!reuseResult.ok) {
       return reuseResult;
     }
-    const prepResult = await prepareReadonlyWorktree(value.worktree, contractResult.contract);
+    const prepResult = await prepareReadonlyWorktree(repoRoot, value.worktree, taskId);
     if (!prepResult.ok) {
       return prepResult;
     }
@@ -82,7 +84,7 @@ export async function createTaskWorktree(
     return { ok: false, reason: gitResult.reason };
   }
 
-  const prepResult = await prepareReadonlyWorktree(value.worktree, contractResult.contract);
+  const prepResult = await prepareReadonlyWorktree(repoRoot, value.worktree, taskId);
   if (!prepResult.ok) {
     return prepResult;
   }
@@ -125,10 +127,16 @@ export async function removeTaskWorktree(
 }
 
 export async function prepareReadonlyWorktree(
+  repoRoot: string,
   worktreePath: string,
-  contract: TaskContract
+  taskId: string
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const writableResult = await canonicalizeConcreteFileScope(worktreePath, contract.allowed_files, "allowed");
+  const leaseFilesResult = await readLeaseFilesForTask(repoRoot, taskId);
+  if (!leaseFilesResult.ok) {
+    return leaseFilesResult;
+  }
+
+  const writableResult = await canonicalizeConcreteFileScope(worktreePath, leaseFilesResult.files, "leased");
   if (!writableResult.ok) {
     return writableResult;
   }
@@ -150,6 +158,21 @@ export async function prepareReadonlyWorktree(
   }
 
   return { ok: true };
+}
+
+async function readLeaseFilesForTask(repoRoot: string, taskId: string): Promise<{ ok: true; files: string[] } | { ok: false; reason: string }> {
+  const storeResult = await readActiveLeases(repoRoot);
+  if (!storeResult.ok) {
+    return storeResult;
+  }
+
+  return {
+    ok: true,
+    files: Object.entries(storeResult.store)
+      .filter(([, holder]) => holder === taskId)
+      .map(([filePath]) => filePath)
+      .sort((left, right) => left.localeCompare(right))
+  };
 }
 
 async function restoreTrackedFileWrites(worktreePath: string): Promise<{ ok: true } | { ok: false; reason: string }> {

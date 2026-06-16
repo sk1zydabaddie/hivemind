@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { initProject } from "../src/init.js";
+import { requestLease } from "../src/lease.js";
 import { createTaskWorktree, removeTaskWorktree } from "../src/worktree.js";
 
 const execFileAsync = promisify(execFile);
@@ -32,9 +33,10 @@ test("worktree create creates task branch at contract base commit", async () => 
   });
 });
 
-test("worktree create keeps allowed files writable and marks other tracked files read-only", async () => {
+test("worktree create keeps leased files writable and marks non-leased files read-only", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
-    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writeContract(repo, "T-001", baseCommit, ["README.md", "src/nonleased.ts"]);
+    await grantLease(repo, "T-001", ["README.md"]);
 
     const result = await createTaskWorktree(repo, "T-001");
 
@@ -50,6 +52,7 @@ test("worktree create keeps allowed files writable and marks other tracked files
 test("worktree create is idempotent when worktree already exists", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit);
+    await grantLease(repo, "T-001", ["README.md"]);
 
     const first = await createTaskWorktree(repo, "T-001");
     assert.equal(first.ok, true);
@@ -122,6 +125,7 @@ test("worktree remove cleans up worktree and branch", async () => {
 test("worktree remove succeeds after read-only prep", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit);
+    await grantLease(repo, "T-001", ["README.md"]);
     const created = await createTaskWorktree(repo, "T-001");
     assert.equal(created.ok, true);
     if (!created.ok) {
@@ -151,17 +155,18 @@ test("worktree create rejects invalid contracts without creating a worktree", as
   });
 });
 
-test("worktree create rejects glob allowed_files during read-only prep", async () => {
+test("worktree create ignores unleased glob allowed_files during read-only prep", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit, ["src/*.ts"]);
 
     const result = await createTaskWorktree(repo, "T-001");
 
-    assert.equal(result.ok, false);
-    if (result.ok) {
+    assert.equal(result.ok, true);
+    if (!result.ok) {
       return;
     }
-    assert.match(result.reason, /invalid allowed path "src\/\*\.ts": globs are not allowed/);
+    await assertOwnerReadOnly(path.join(result.value.worktree, "README.md"));
+    await assertOwnerReadOnly(path.join(result.value.worktree, "src", "nonleased.ts"));
   });
 });
 
@@ -252,6 +257,11 @@ async function restoreTrackedWrites(worktreePath: string): Promise<void> {
   for (const file of files) {
     await chmod(path.join(worktreePath, file), 0o644);
   }
+}
+
+async function grantLease(repo: string, taskId: string, files: string[]): Promise<void> {
+  const result = await requestLease(repo, taskId, files);
+  assert.equal(result.ok, true);
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {
