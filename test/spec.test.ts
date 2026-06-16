@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
+import { markIdeationConvergence, recordIdeationRound, startIdeationSession } from "../src/ideation.js";
 import { initProject } from "../src/init.js";
 import { createSpec, ratifySpec } from "../src/spec.js";
 
@@ -24,6 +25,7 @@ test("spec create writes the PRD template as draft and marks it active", async (
     }
     assert.equal(result.value.status, "draft");
     assert.equal(result.value.active, true);
+    assert.equal(result.value.non_goals_present, false);
     assert.equal(result.value.open_questions_empty, true);
     assert.equal(result.value.sections["Problem / goal"], true);
     assert.equal(result.value.sections["Open questions"], true);
@@ -52,7 +54,7 @@ test("spec validate rejects malformed status and missing sections", async () => 
   });
 });
 
-test("spec ratify rejects non-empty open questions and then flips status when cleared", async () => {
+test("spec ratify requires empty questions, non-goals, and completed ideation before flipping status", async () => {
   await withTempRepo(async ({ repo }) => {
     const created = await createSpec(repo, "S-001", "Clarify target");
     assert.equal(created.ok, true);
@@ -72,6 +74,34 @@ test("spec ratify rejects non-empty open questions and then flips status when cl
       path.join(repo, ".hivemind", "spec", "S-001.md"),
       (await readFile(path.join(repo, ".hivemind", "spec", "S-001.md"), "utf8")).replace("- Which API?\n", "")
     );
+    const noNonGoals = await ratifySpec(repo, "S-001");
+    assert.equal(noNonGoals.ok, false);
+    if (!noNonGoals.ok) {
+      assert.match(noNonGoals.reason, /Non-goals must be filled/);
+    }
+
+    const started = await startIdeationSession(repo, "S-001", "Clarify target", "Clarify target");
+    assert.equal(started.ok, true);
+    const round = await recordIdeationRound(repo, "S-001", {
+      alternatives: [
+        { title: "Minimal", tradeoffs: ["Smallest useful answer"] },
+        { title: "Full", tradeoffs: ["More complete but more work"] }
+      ],
+      self_critique: {
+        weakest_point: "The spec could remain too broad.",
+        cut_or_change: "Cut planning details until M5.4."
+      },
+      spec_updates: {
+        "Non-goals": "Do not start planning work.",
+        "Open questions": ""
+      },
+      substantive_change: true,
+      orchestrator_calls_convergence: true
+    });
+    assert.equal(round.ok, true);
+    const userConverged = await markIdeationConvergence(repo, "S-001", "user");
+    assert.equal(userConverged.ok, true);
+
     const ratified = await ratifySpec(repo, "S-001");
 
     assert.deepEqual(ratified, {
@@ -110,6 +140,7 @@ test("draft spec blocks planning and lease grants until ratified", async () => {
     );
     await assertMissing(path.join(repo, ".hivemind", "leases", "active.json"));
 
+    await completeIdeationViaCli(repo, "S-001");
     await execFileAsync(process.execPath, [cliPath, "spec", "S-001", "--ratify"], { cwd: repo, windowsHide: true });
     const plan = await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--check"], { cwd: repo, windowsHide: true });
     const lease = await execFileAsync(process.execPath, [cliPath, "lease", "T-001"], { cwd: repo, windowsHide: true });
@@ -159,6 +190,36 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
       2
     )}\n`
   );
+}
+
+async function completeIdeationViaCli(repo: string, specId: string): Promise<void> {
+  const roundPath = path.join(repo, "round.json");
+  await writeFile(
+    roundPath,
+    `${JSON.stringify(
+      {
+        alternatives: [
+          { title: "Small", tradeoffs: ["Fastest path"] },
+          { title: "Broad", tradeoffs: ["More complete"] }
+        ],
+        self_critique: {
+          weakest_point: "The draft is sparse.",
+          cut_or_change: "Keep it narrow for the acceptance test."
+        },
+        spec_updates: {
+          "Non-goals": "No extra planning behavior.",
+          "Open questions": ""
+        },
+        substantive_change: true,
+        orchestrator_calls_convergence: true
+      },
+      null,
+      2
+    )}\n`
+  );
+  await execFileAsync(process.execPath, [cliPath, "ideate", specId, "--start", "--title", "Draft work", "--goal", "Draft work"], { cwd: repo, windowsHide: true });
+  await execFileAsync(process.execPath, [cliPath, "ideate", specId, "--round", roundPath], { cwd: repo, windowsHide: true });
+  await execFileAsync(process.execPath, [cliPath, "ideate", specId, "--converge", "--by", "user"], { cwd: repo, windowsHide: true });
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {

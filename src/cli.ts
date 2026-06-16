@@ -4,6 +4,7 @@ import { analyzeCommand } from "./analyze.js";
 import { daemonCommand } from "./daemon.js";
 import { integrateCommand } from "./integrate.js";
 import { intentCommand } from "./intent.js";
+import { ideationCommand } from "./ideation.js";
 import { initProject } from "./init.js";
 import { leaseCommand } from "./lease.js";
 import { quotaCommand } from "./resource-ledger.js";
@@ -31,6 +32,10 @@ async function main(argv: string[]): Promise<number> {
 
   if (command === "plan") {
     return planCommand(process.cwd(), rest);
+  }
+
+  if (command === "ideate") {
+    return ideationCommand(process.cwd(), rest);
   }
 
   if (command === "worktree") {

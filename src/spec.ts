@@ -1,11 +1,25 @@
-import { readFile, stat } from "node:fs/promises";
-import path from "node:path";
+import { stat } from "node:fs/promises";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic.js";
+import { checkIdeationRatifiable } from "./ideation.js";
 import { readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
-import { validateTaskId } from "./task-id.js";
+import {
+  activeSpecPath,
+  buildSpecTemplate,
+  hasSection,
+  isNodeError,
+  loadSpecDocument,
+  nonGoalsPresent,
+  openQuestionsEmpty,
+  requiredSections,
+  specFilePath,
+  type SpecResult,
+  type SpecStatus,
+  validateRequestedSpecId,
+  validateSpecDocument
+} from "./spec-format.js";
 
-export type SpecStatus = "draft" | "ratified";
+export type { SpecResult, SpecStatus } from "./spec-format.js";
 
 export interface SpecSummary {
   spec_id: string;
@@ -14,6 +28,7 @@ export interface SpecSummary {
   status: SpecStatus;
   active: boolean;
   sections: Record<string, boolean>;
+  non_goals_present: boolean;
   open_questions_empty: boolean;
 }
 
@@ -23,20 +38,6 @@ export interface SpecRatificationResult {
   status: SpecStatus;
   active: boolean;
 }
-
-const requiredSections = [
-  "Problem / goal",
-  "Context",
-  "Users / stakeholders",
-  "In scope",
-  "Non-goals",
-  "Constraints",
-  "Acceptance criteria",
-  "Risks / unknowns",
-  "Open questions"
-] as const;
-
-type SpecResult<T> = { ok: true; value: T } | { ok: false; reason: string };
 
 export async function specCommand(cwd: string, args: string[]): Promise<number> {
   const parsed = parseSpecArgs(args);
@@ -120,6 +121,13 @@ export async function ratifySpec(repoRoot: string, specId: string): Promise<Spec
   }
   if (!openQuestionsEmpty(loaded.value.markdown)) {
     return { ok: false, reason: "Open questions must be empty before ratification" };
+  }
+  if (!nonGoalsPresent(loaded.value.markdown)) {
+    return { ok: false, reason: "Non-goals must be filled before ratification" };
+  }
+  const ideation = await checkIdeationRatifiable(repoRoot, specId, loaded.value.markdown);
+  if (!ideation.ok) {
+    return ideation;
   }
 
   const nextMarkdown = loaded.value.markdown.replace(/^status:\s*(draft|ratified)\s*$/m, "status: ratified");
@@ -241,91 +249,10 @@ async function loadSpecSummary(repoRoot: string, specId: string): Promise<SpecRe
       status: loaded.value.status,
       active: activeSpecId === specId,
       sections: Object.fromEntries(requiredSections.map((section) => [section, hasSection(loaded.value.markdown, section)])),
+      non_goals_present: nonGoalsPresent(loaded.value.markdown),
       open_questions_empty: openQuestionsEmpty(loaded.value.markdown)
     }
   };
-}
-
-async function loadSpecDocument(
-  repoRoot: string,
-  specId: string
-): Promise<SpecResult<{ markdown: string; title: string; status: SpecStatus }>> {
-  const specIdResult = validateRequestedSpecId(specId);
-  if (!specIdResult.ok) {
-    return specIdResult;
-  }
-
-  let markdown: string;
-  try {
-    markdown = await readFile(specFilePath(repoRoot, specId), "utf8");
-  } catch (error: unknown) {
-    if (isNodeError(error, "ENOENT")) {
-      return { ok: false, reason: `spec not found: .hivemind/spec/${specId}.md` };
-    }
-    throw error;
-  }
-
-  const titleMatch = /^# Spec:\s*(.+?)\s*$/m.exec(markdown);
-  const statusMatch = /^status:\s*(\S+)\s*$/m.exec(markdown);
-  const status = statusMatch?.[1];
-  return {
-    ok: true,
-    value: {
-      markdown,
-      title: titleMatch?.[1] ?? "",
-      status: status === "draft" || status === "ratified" ? status : "draft"
-    }
-  };
-}
-
-function validateSpecDocument(document: { markdown: string; title: string }): string[] {
-  const problems: string[] = [];
-  if (document.title.trim() === "") {
-    problems.push("spec title is required");
-  }
-
-  const statusMatches = [...document.markdown.matchAll(/^status:\s*(\S+)\s*$/gm)];
-  if (statusMatches.length !== 1) {
-    problems.push("spec must contain exactly one status line");
-  } else {
-    const status = statusMatches[0][1];
-    if (status !== "draft" && status !== "ratified") {
-      problems.push("spec status must be draft or ratified");
-    }
-  }
-
-  for (const section of requiredSections) {
-    if (!hasSection(document.markdown, section)) {
-      problems.push(`spec is missing required section: ${section}`);
-    }
-  }
-  return problems;
-}
-
-function buildSpecTemplate(title: string): string {
-  return [
-    `# Spec: ${title}`,
-    "status: draft",
-    "",
-    "## Problem / goal",
-    "",
-    "## Context",
-    "",
-    "## Users / stakeholders",
-    "",
-    "## In scope",
-    "",
-    "## Non-goals",
-    "",
-    "## Constraints",
-    "",
-    "## Acceptance criteria",
-    "",
-    "## Risks / unknowns",
-    "",
-    "## Open questions",
-    ""
-  ].join("\n");
 }
 
 async function readActiveSpec(repoRoot: string): Promise<SpecResult<{ spec_id: string }>> {
@@ -361,52 +288,8 @@ async function writeActiveSpec(repoRoot: string, specId: string): Promise<void> 
   await writeJsonAtomic(activeSpecPath(repoRoot), { version: 1, spec_id: specId });
 }
 
-function validateRequestedSpecId(specId: string): SpecResult<null> {
-  const problem = validateTaskId(specId);
-  return problem === null ? { ok: true, value: null } : { ok: false, reason: `invalid spec id "${specId}": ${problem}` };
-}
-
-function hasSection(markdown: string, section: string): boolean {
-  return sectionBody(markdown, section) !== null;
-}
-
-function openQuestionsEmpty(markdown: string): boolean {
-  const body = sectionBody(markdown, "Open questions");
-  return body !== null && body.trim() === "";
-}
-
-function sectionBody(markdown: string, section: string): string | null {
-  const lines = markdown.split(/\r?\n/);
-  const heading = `## ${section}`;
-  const start = lines.findIndex((line) => line.trim() === heading);
-  if (start === -1) {
-    return null;
-  }
-
-  const body: string[] = [];
-  for (let index = start + 1; index < lines.length; index += 1) {
-    if (lines[index].startsWith("## ")) {
-      break;
-    }
-    body.push(lines[index]);
-  }
-  return body.join("\n");
-}
-
-function specFilePath(repoRoot: string, specId: string): string {
-  return path.join(repoRoot, ".hivemind", "spec", `${specId}.md`);
-}
-
-function activeSpecPath(repoRoot: string): string {
-  return path.join(repoRoot, ".hivemind", "spec", "active.json");
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 async function exists(filePath: string): Promise<boolean> {
