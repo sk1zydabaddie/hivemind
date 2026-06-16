@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,14 +32,35 @@ test("worktree create creates task branch at contract base commit", async () => 
   });
 });
 
+test("worktree create keeps allowed files writable and marks other tracked files read-only", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+
+    const result = await createTaskWorktree(repo, "T-001");
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    await assertOwnerWritable(path.join(result.value.worktree, "README.md"));
+    await assertOwnerReadOnly(path.join(result.value.worktree, "src", "nonleased.ts"));
+  });
+});
+
 test("worktree create is idempotent when worktree already exists", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit);
 
     const first = await createTaskWorktree(repo, "T-001");
+    assert.equal(first.ok, true);
+    if (!first.ok) {
+      return;
+    }
+    await chmod(path.join(first.value.worktree, "src", "nonleased.ts"), 0o644);
     const second = await createTaskWorktree(repo, "T-001");
 
     assert.deepEqual(second, first);
+    await assertOwnerReadOnly(path.join(first.value.worktree, "src", "nonleased.ts"));
   });
 });
 
@@ -98,6 +119,23 @@ test("worktree remove cleans up worktree and branch", async () => {
   });
 });
 
+test("worktree remove succeeds after read-only prep", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-001", baseCommit);
+    const created = await createTaskWorktree(repo, "T-001");
+    assert.equal(created.ok, true);
+    if (!created.ok) {
+      return;
+    }
+    await assertOwnerReadOnly(path.join(created.value.worktree, "src", "nonleased.ts"));
+
+    const removed = await removeTaskWorktree(repo, "T-001");
+
+    assert.deepEqual(removed, created);
+    await assertMissing(created.value.worktree);
+  });
+});
+
 test("worktree create rejects invalid contracts without creating a worktree", async () => {
   await withTempRepo(async ({ repo }) => {
     await writeContract(repo, "T-001", "");
@@ -110,6 +148,20 @@ test("worktree create rejects invalid contracts without creating a worktree", as
     }
     assert.match(result.reason, /base_commit is required/);
     await assertMissing(path.join(repo, ".hivemind", "worktrees", "T-001"));
+  });
+});
+
+test("worktree create rejects glob allowed_files during read-only prep", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-001", baseCommit, ["src/*.ts"]);
+
+    const result = await createTaskWorktree(repo, "T-001");
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.match(result.reason, /invalid allowed path "src\/\*\.ts": globs are not allowed/);
   });
 });
 
@@ -142,8 +194,10 @@ async function withTempRepo(run: (context: { repo: string; baseCommit: string })
     await git(repo, ["init"]);
     await git(repo, ["config", "user.name", "Hivemind Test"]);
     await git(repo, ["config", "user.email", "hivemind@example.test"]);
+    await mkdir(path.join(repo, "src"), { recursive: true });
     await writeFile(path.join(repo, "README.md"), "# Fixture\n");
-    await git(repo, ["add", "README.md"]);
+    await writeFile(path.join(repo, "src", "nonleased.ts"), "export const nonleased = true;\n");
+    await git(repo, ["add", "README.md", "src/nonleased.ts"]);
     await git(repo, ["commit", "-m", "initial"]);
     await initProject(repo);
     await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
@@ -161,6 +215,7 @@ async function cleanupTempRepo(repo: string): Promise<void> {
       }
       const worktreePath = line.slice("worktree ".length);
       if (worktreePath !== repo) {
+        await restoreTrackedWrites(worktreePath);
         await git(repo, ["worktree", "remove", "--force", worktreePath]);
       }
     }
@@ -170,7 +225,12 @@ async function cleanupTempRepo(repo: string): Promise<void> {
   await rm(repo, { recursive: true, force: true });
 }
 
-async function writeContract(repo: string, taskId: string, baseCommit: string): Promise<void> {
+async function writeContract(
+  repo: string,
+  taskId: string,
+  baseCommit: string,
+  allowedFiles: string[] = ["README.md"]
+): Promise<void> {
   const tasksDir = path.join(repo, ".hivemind", "tasks");
   await mkdir(tasksDir, { recursive: true });
   await writeFile(
@@ -179,12 +239,19 @@ async function writeContract(repo: string, taskId: string, baseCommit: string): 
       {
         task_id: taskId,
         base_commit: baseCommit,
-        allowed_files: ["README.md"]
+        allowed_files: allowedFiles
       },
       null,
       2
     )}\n`
   );
+}
+
+async function restoreTrackedWrites(worktreePath: string): Promise<void> {
+  const files = (await gitStdout(worktreePath, ["ls-files", "-z"])).split("\0").filter((entry) => entry.length > 0);
+  for (const file of files) {
+    await chmod(path.join(worktreePath, file), 0o644);
+  }
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {
@@ -198,6 +265,16 @@ async function gitStdout(cwd: string, args: string[]): Promise<string> {
 
 async function assertExists(filePath: string): Promise<void> {
   await stat(filePath);
+}
+
+async function assertOwnerWritable(filePath: string): Promise<void> {
+  const fileStat = await stat(filePath);
+  assert.notEqual(fileStat.mode & 0o200, 0);
+}
+
+async function assertOwnerReadOnly(filePath: string): Promise<void> {
+  const fileStat = await stat(filePath);
+  assert.equal(fileStat.mode & 0o200, 0);
 }
 
 async function assertMissing(filePath: string): Promise<void> {

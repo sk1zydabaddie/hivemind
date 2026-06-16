@@ -1,9 +1,10 @@
-import { mkdir, open, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, open, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { writeJsonAtomic } from "./atomic.js";
 import { canonicalizeIntentPath } from "./canonicalize.js";
 import { loadAndValidateContract } from "./contract.js";
+import { canonicalizeConcreteFileScope } from "./file-scope.js";
 import { findGitRoot } from "./repo.js";
 import { validateRequestedTaskId } from "./task-id.js";
 
@@ -64,7 +65,7 @@ export async function requestLease(repoRoot: string, taskId: string, files: stri
     return { ok: false, reason: "lease request must include at least one file" };
   }
 
-  const pathsResult = await canonicalizeLeaseFiles(repoRoot, files);
+  const pathsResult = await canonicalizeConcreteFileScope(repoRoot, files, "lease");
   if (!pathsResult.ok) {
     return pathsResult;
   }
@@ -121,43 +122,6 @@ export async function releaseLease(repoRoot: string, taskId: string): Promise<Le
     }
     return { ok: true, value: { task_id: taskId, released } };
   });
-}
-
-async function canonicalizeLeaseFiles(
-  repoRoot: string,
-  files: string[]
-): Promise<{ ok: true; paths: string[] } | { ok: false; reason: string }> {
-  const paths: string[] = [];
-  const seen = new Set<string>();
-  for (const file of files) {
-    const canonical = await canonicalizeIntentPath(repoRoot, file);
-    if (!canonical.ok) {
-      return { ok: false, reason: `invalid lease path "${file}": ${canonical.reason}` };
-    }
-
-    const directoryProblem = await rejectExistingDirectory(repoRoot, canonical.resolved);
-    if (directoryProblem !== null) {
-      return { ok: false, reason: `invalid lease path "${file}": ${directoryProblem}` };
-    }
-
-    if (!seen.has(canonical.resolved)) {
-      paths.push(canonical.resolved);
-      seen.add(canonical.resolved);
-    }
-  }
-  return { ok: true, paths };
-}
-
-async function rejectExistingDirectory(repoRoot: string, filePath: string): Promise<string | null> {
-  try {
-    const fileStat = await stat(path.join(repoRoot, filePath));
-    return fileStat.isDirectory() ? "path is a directory" : null;
-  } catch (error: unknown) {
-    if (isNodeError(error, "ENOENT")) {
-      return null;
-    }
-    throw error;
-  }
 }
 
 async function readActiveLeases(repoRoot: string): Promise<{ ok: true; store: LeaseStore } | { ok: false; reason: string }> {

@@ -1,8 +1,9 @@
 import { execFile } from "node:child_process";
-import { mkdir, stat } from "node:fs/promises";
+import { chmod, mkdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { loadAndValidateContract } from "./contract.js";
+import { loadAndValidateContract, TaskContract } from "./contract.js";
+import { canonicalizeConcreteFileScope } from "./file-scope.js";
 import { findGitRoot } from "./repo.js";
 import { validateRequestedTaskId } from "./task-id.js";
 
@@ -56,6 +57,10 @@ export async function createTaskWorktree(
     if (!reuseResult.ok) {
       return reuseResult;
     }
+    const prepResult = await prepareReadonlyWorktree(value.worktree, contractResult.contract);
+    if (!prepResult.ok) {
+      return prepResult;
+    }
     return { ok: true, value };
   }
 
@@ -72,6 +77,11 @@ export async function createTaskWorktree(
     return { ok: false, reason: gitResult.reason };
   }
 
+  const prepResult = await prepareReadonlyWorktree(value.worktree, contractResult.contract);
+  if (!prepResult.ok) {
+    return prepResult;
+  }
+
   return { ok: true, value };
 }
 
@@ -86,6 +96,10 @@ export async function removeTaskWorktree(
 
   const value = getWorktreeResult(repoRoot, taskId);
   if (await exists(value.worktree)) {
+    const restoreResult = await restoreTrackedFileWrites(value.worktree);
+    if (!restoreResult.ok) {
+      return restoreResult;
+    }
     const removeResult = await git(repoRoot, ["worktree", "remove", path.join(".hivemind", "worktrees", taskId)]);
     if (!removeResult.ok) {
       return { ok: false, reason: removeResult.reason };
@@ -100,11 +114,64 @@ export async function removeTaskWorktree(
   return { ok: true, value };
 }
 
+export async function prepareReadonlyWorktree(
+  worktreePath: string,
+  contract: TaskContract
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const writableResult = await canonicalizeConcreteFileScope(worktreePath, contract.allowed_files, "allowed");
+  if (!writableResult.ok) {
+    return writableResult;
+  }
+
+  const trackedResult = await gitStdout(worktreePath, ["ls-files", "-z"]);
+  if (!trackedResult.ok) {
+    return { ok: false, reason: trackedResult.reason };
+  }
+
+  const writable = new Set(writableResult.paths);
+  for (const repoPath of parseNullSeparated(trackedResult.stdout)) {
+    const fullPath = path.join(worktreePath, repoPath);
+    const fileStat = await stat(fullPath);
+    if (fileStat.isDirectory()) {
+      continue;
+    }
+    const nextMode = writable.has(normalizeGitPath(repoPath)) ? fileStat.mode | 0o200 : fileStat.mode & ~0o222;
+    await chmod(fullPath, nextMode);
+  }
+
+  return { ok: true };
+}
+
+async function restoreTrackedFileWrites(worktreePath: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const trackedResult = await gitStdout(worktreePath, ["ls-files", "-z"]);
+  if (!trackedResult.ok) {
+    return { ok: false, reason: trackedResult.reason };
+  }
+
+  for (const repoPath of parseNullSeparated(trackedResult.stdout)) {
+    const fullPath = path.join(worktreePath, repoPath);
+    const fileStat = await stat(fullPath);
+    if (!fileStat.isDirectory()) {
+      await chmod(fullPath, fileStat.mode | 0o200);
+    }
+  }
+
+  return { ok: true };
+}
+
 function getWorktreeResult(repoRoot: string, taskId: string): WorktreeResult {
   return {
     worktree: path.join(repoRoot, ".hivemind", "worktrees", taskId),
     branch: `hivemind/${taskId}`
   };
+}
+
+function parseNullSeparated(value: string): string[] {
+  return value.split("\0").filter((entry) => entry.length > 0);
+}
+
+function normalizeGitPath(value: string): string {
+  return value.replaceAll("\\", "/");
 }
 
 async function verifyExistingWorktree(
