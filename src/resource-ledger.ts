@@ -1,4 +1,6 @@
+import { mkdir, open, rm } from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { writeJsonAtomic } from "./atomic.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { readJsonFile } from "./json.js";
@@ -34,6 +36,9 @@ export interface QuotaUsageRecord {
   wall_time_ms: number;
   throttled: boolean;
 }
+
+const ledgerLockRetryMs = 25;
+const ledgerLockTimeoutMs = 2000;
 
 export async function quotaCommand(cwd: string, args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
@@ -86,33 +91,35 @@ export async function recordQuotaUsage(repoRoot: string, record: QuotaUsageRecor
     return { ok: false, reason: "quota wall_time_ms must be a non-negative safe integer" };
   }
 
-  const ledgerResult = await readQuotaLedger(repoRoot);
-  if (!ledgerResult.ok) {
-    return ledgerResult;
-  }
+  return withLedgerLock(repoRoot, async () => {
+    const ledgerResult = await readQuotaLedger(repoRoot);
+    if (!ledgerResult.ok) {
+      return ledgerResult;
+    }
 
-  const now = new Date().toISOString();
-  const previous = ledgerResult.value[provider] ?? createEmptyEntry(provider, now);
-  const used = addUsage(previous.used, {
-    requests: 1,
-    input_tokens_estimated: estimateTokens(record.input_text),
-    output_tokens_estimated: estimateTokens(record.output_text),
-    wall_time_ms: record.wall_time_ms
+    const now = new Date().toISOString();
+    const previous = ledgerResult.value[provider] ?? createEmptyEntry(provider, now);
+    const used = addUsage(previous.used, {
+      requests: 1,
+      input_tokens_estimated: estimateTokens(record.input_text),
+      output_tokens_estimated: estimateTokens(record.output_text),
+      wall_time_ms: record.wall_time_ms
+    });
+    const nextEntry: QuotaLedgerEntry = {
+      used,
+      observed_limit: record.throttled ? { ...used, observed_at: now, reason: "throttle" } : previous.observed_limit,
+      resets_at: previous.resets_at,
+      source: "self-metered",
+      updated_at: now,
+      unmetered: isUnmeteredProvider(provider)
+    };
+    const nextLedger: QuotaLedger = {
+      ...ledgerResult.value,
+      [provider]: nextEntry
+    };
+    await writeQuotaLedger(repoRoot, nextLedger);
+    return { ok: true, value: nextEntry };
   });
-  const nextEntry: QuotaLedgerEntry = {
-    used,
-    observed_limit: record.throttled ? { ...used, observed_at: now, reason: "throttle" } : previous.observed_limit,
-    resets_at: previous.resets_at,
-    source: "self-metered",
-    updated_at: now,
-    unmetered: isUnmeteredProvider(provider)
-  };
-  const nextLedger: QuotaLedger = {
-    ...ledgerResult.value,
-    [provider]: nextEntry
-  };
-  await writeQuotaLedger(repoRoot, nextLedger);
-  return { ok: true, value: nextEntry };
 }
 
 export function adapterOutputIndicatesThrottle(stdout: string, stderr: string, exitCode: number): boolean {
@@ -160,8 +167,38 @@ async function writeQuotaLedger(repoRoot: string, ledger: QuotaLedger): Promise<
   await writeJsonAtomic(ledgerPath(repoRoot), sorted);
 }
 
+async function withLedgerLock<T>(repoRoot: string, action: () => Promise<{ ok: true; value: T } | { ok: false; reason: string }>): Promise<{ ok: true; value: T } | { ok: false; reason: string }> {
+  const lockPath = ledgerLockPath(repoRoot);
+  await mkdir(path.dirname(lockPath), { recursive: true });
+  const deadline = Date.now() + ledgerLockTimeoutMs;
+  while (true) {
+    try {
+      const handle = await open(lockPath, "wx");
+      try {
+        await handle.writeFile(`${process.pid}\n`, "utf8");
+        return await action();
+      } finally {
+        await handle.close();
+        await rm(lockPath, { force: true });
+      }
+    } catch (error: unknown) {
+      if (!isNodeError(error, "EEXIST")) {
+        throw error;
+      }
+      if (Date.now() >= deadline) {
+        return { ok: false, reason: "could not acquire quota ledger lock" };
+      }
+      await sleep(ledgerLockRetryMs);
+    }
+  }
+}
+
 function ledgerPath(repoRoot: string): string {
   return path.join(repoRoot, ".hivemind", "resource", "ledger.json");
+}
+
+function ledgerLockPath(repoRoot: string): string {
+  return path.join(repoRoot, ".hivemind", "resource", "ledger.lock");
 }
 
 function normalizeProvider(provider: string): string | null {

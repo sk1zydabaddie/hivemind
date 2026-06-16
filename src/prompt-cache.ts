@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 import { writeJsonAtomic } from "./atomic.js";
 import { canonicalizeIntentPath } from "./canonicalize.js";
 import type { TaskContract } from "./contract.js";
@@ -9,6 +11,7 @@ import { readJsonFile } from "./json.js";
 
 const readCacheVersion = 1;
 const instructionFiles = ["AGENTS.md", "CLAUDE.md"] as const;
+const execFileAsync = promisify(execFile);
 
 export interface PromptLayers {
   global: string;
@@ -73,16 +76,17 @@ export function buildAgentPromptFromContract(contract: TaskContract): string {
 export async function readCachedRepoFile(
   repoRoot: string,
   repoPath: string,
-  options: { taskId?: string | null; mode?: "write-context" | "advisory" } = {}
+  options: { taskId?: string | null; mode?: "write-context" | "advisory"; sourceRoot?: string } = {}
 ): Promise<{ ok: true; value: CachedReadResult } | { ok: false; reason: string }> {
-  const canonical = await canonicalizeIntentPath(repoRoot, repoPath);
+  const sourceRoot = options.sourceRoot ?? repoRoot;
+  const canonical = await canonicalizeIntentPath(sourceRoot, repoPath);
   if (!canonical.ok) {
     return { ok: false, reason: `invalid read-cache path "${repoPath}": ${canonical.reason}` };
   }
 
   let content: string;
   try {
-    content = await readFile(path.join(repoRoot, canonical.resolved), "utf8");
+    content = await readFile(path.join(sourceRoot, canonical.resolved), "utf8");
   } catch (error: unknown) {
     if (isNodeError(error, "ENOENT")) {
       return { ok: false, reason: `read-cache path not found: ${canonical.resolved}` };
@@ -202,9 +206,14 @@ async function readOptionalSubstrateFile(repoRoot: string, repoPath: string): Pr
 }
 
 async function buildTaskContextPackLayer(repoRoot: string, contract: TaskContract): Promise<{ ok: true; value: string } | { ok: false; reason: string }> {
+  const sourceRootResult = await resolveTaskPromptSourceRoot(repoRoot, contract);
+  if (!sourceRootResult.ok) {
+    return sourceRootResult;
+  }
+
   const sections = [buildContractTaskContextLayer(contract)];
   for (const repoPath of taskContextReadPaths(contract)) {
-    const readResult = await readCachedRepoFile(repoRoot, repoPath, { taskId: contract.task_id, mode: "write-context" });
+    const readResult = await readCachedRepoFile(repoRoot, repoPath, { taskId: contract.task_id, mode: "write-context", sourceRoot: sourceRootResult.value });
     if (!readResult.ok) {
       sections.push(`Cached read ${repoPath}:\n- ${readResult.reason}`);
       continue;
@@ -212,6 +221,25 @@ async function buildTaskContextPackLayer(repoRoot: string, contract: TaskContrac
     sections.push(formatContentBlock(`Cached read ${readResult.value.path} (${readResult.value.content_hash})`, readResult.value.content));
   }
   return { ok: true, value: sections.join("\n\n") };
+}
+
+async function resolveTaskPromptSourceRoot(repoRoot: string, contract: TaskContract): Promise<{ ok: true; value: string } | { ok: false; reason: string }> {
+  const worktreePath = path.join(repoRoot, ".hivemind", "worktrees", contract.task_id);
+  const headResult = await gitStdout(worktreePath, ["rev-parse", "HEAD"]);
+  if (!headResult.ok) {
+    return { ok: false, reason: `task prompt source worktree not ready: .hivemind/worktrees/${contract.task_id} (${headResult.reason})` };
+  }
+  const baseResult = await gitStdout(repoRoot, ["rev-parse", contract.base_commit]);
+  if (!baseResult.ok) {
+    return { ok: false, reason: baseResult.reason };
+  }
+  if (headResult.stdout !== baseResult.stdout) {
+    return {
+      ok: false,
+      reason: `task prompt source worktree .hivemind/worktrees/${contract.task_id} is at ${headResult.stdout}, expected contract base ${baseResult.stdout}`
+    };
+  }
+  return { ok: true, value: worktreePath };
 }
 
 function buildContractTaskContextLayer(contract: TaskContract): string {
@@ -305,6 +333,17 @@ function normalizeNewlines(value: string): string {
 
 function hashString(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+async function gitStdout(cwd: string, args: string[]): Promise<{ ok: true; stdout: string } | { ok: false; reason: string }> {
+  try {
+    const result = await execFileAsync("git", args, { cwd, windowsHide: true });
+    return { ok: true, stdout: result.stdout.trim() };
+  } catch (error: unknown) {
+    const stderr = typeof error === "object" && error !== null && "stderr" in error ? String(error.stderr).trim() : "";
+    const stdout = typeof error === "object" && error !== null && "stdout" in error ? String(error.stdout).trim() : "";
+    return { ok: false, reason: stderr || stdout || "git command failed" };
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

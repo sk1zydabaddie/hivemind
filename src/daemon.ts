@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import { analyzeTask } from "./analyze.js";
 import { createTaskContract } from "./contract.js";
+import { removeDaemonState, writeDaemonState } from "./daemon-state.js";
 import { integrateShadow } from "./integrate.js";
 import { requestLeaseForContract, releaseLease } from "./lease.js";
 import { findGitRoot } from "./repo.js";
@@ -42,10 +43,16 @@ export async function daemonCommand(cwd: string, args: string[]): Promise<number
   });
 
   const address = server.address() as AddressInfo;
+  const daemonUrl = `http://${options.value.host}:${address.port}`;
+  await writeDaemonState(repoRoot, {
+    pid: process.pid,
+    url: daemonUrl,
+    repo_root: repoRoot
+  });
   console.log(
     JSON.stringify({
       event: "daemon.ready",
-      url: `http://${options.value.host}:${address.port}`,
+      url: daemonUrl,
       repo_root: repoRoot
     })
   );
@@ -59,6 +66,7 @@ export async function daemonCommand(cwd: string, args: string[]): Promise<number
   await new Promise<void>((resolve) => {
     server.once("close", resolve);
   });
+  await removeDaemonState(repoRoot);
   return 0;
 }
 
@@ -148,6 +156,12 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
     return async (payload) => {
       const taskId = readTaskId(payload);
       return taskId.ok ? analyzeTask(repoRoot, taskId.value) : taskId;
+    };
+  }
+  if (request.method === "POST" && request.url === "/analyze/verdict") {
+    return async (payload) => {
+      const taskId = readTaskId(payload);
+      return taskId.ok ? analyzeTask(repoRoot, taskId.value, { emitEvent: false }) : taskId;
     };
   }
   if (request.method === "POST" && request.url === "/integrate/shadow") {

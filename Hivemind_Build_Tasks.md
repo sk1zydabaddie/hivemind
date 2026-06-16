@@ -18,7 +18,7 @@ These hold for **every** sub-task unless a contract overrides them. State them t
 
 **C3 — Atomic writes.** Every write to a shared file under `.hivemind/` is written to a temp file and `rename()`d into place. Readers never see a half-written file. **Exception — append-only logs:** `log/events.jsonl` (and any append-only Tier-1 log) is *not* temp+rename'd; it is extended by a single atomic append of one complete JSON line (`O_APPEND`). That is the one sanctioned exception to temp+rename — its atomicity guarantee is per-line, not whole-file. (This reconciles C3 with M2.7.)
 
-**C4 — Determinism boundary.** Anything that enforces a guarantee (lease grant, the diff-scope gate, integration, ceilings) is plain deterministic code with **no LLM call and no network**. LLM calls happen only in worker/orchestrator invocation, never inside a gate.
+**C4 — Determinism boundary.** Anything that enforces a guarantee (lease grant, the diff-scope gate, integration, ceilings) is plain deterministic code with **no LLM call and no external/provider network call**. Local loopback IPC to the Hivemind daemon is permitted because it is only a transport to the deterministic single writer, not an external dependency or judgment source. LLM calls happen only in worker/orchestrator invocation, never inside a gate.
 
 **C5 — Exit codes & output.** CLI commands exit `0` on success, non-zero on failure, and print machine-readable JSON to stdout when they produce data (human summary to stderr). Errors are explicit messages, never silent.
 
@@ -149,7 +149,7 @@ In the early build, `allowed_symbols`/`forbidden_symbols` are carried but not en
 - **Goal:** Resolve a patch into a trustworthy file-operation list by applying it to the declared base — never by parsing diff text.
 - **Create / may edit:** a pure function `resolveChangeset(baseCommit, patchPath) → { ok, ops[] } | { ok:false, reason }`.
 - **Must NOT touch:** path checks (M1.2), CLI.
-- **Behavior — exact (C4: no network/LLM):**
+- **Behavior — exact (C4: no external/provider network or LLM):**
   - Create a throwaway checkout/worktree at `base_commit`; `git apply --check` then apply the patch. If it does not apply cleanly, return `{ ok:false, reason:"patch does not apply to declared base" }`.
   - Read the resulting changeset via git **with rename detection OFF** (`--no-renames`), producing `ops`: list of `{ path, op }` where `op ∈ {add,modify,delete,chmod,symlink,submodule,gitattr}`. A rename surfaces as a `delete`+`add` pair.
   - Always clean up the throwaway checkout.

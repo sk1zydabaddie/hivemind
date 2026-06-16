@@ -16,15 +16,17 @@ import { createTaskWorktree } from "../src/worktree.js";
 const execFileAsync = promisify(execFile);
 
 test("assembleAgentPrompt keeps sibling shared prefixes byte-identical and stable", async () => {
-  await withTempDir(async (repo) => {
-    await writeFile(path.join(repo, "AGENTS.md"), "Project instructions\n");
-    await writeFile(path.join(repo, "README.md"), "# Fixture\n");
-    await mkdir(path.join(repo, "src"), { recursive: true });
-    await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = true;\n");
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writeContract(repo, "T-002", baseCommit, ["src/feature.ts"]);
+    const firstWorktree = await createTaskWorktree(repo, "T-001");
+    const secondWorktree = await createTaskWorktree(repo, "T-002");
+    assert.equal(firstWorktree.ok, true);
+    assert.equal(secondWorktree.ok, true);
 
-    const first = await assembleAgentPrompt(repo, contractFor({ task_id: "T-001", title: "First", allowed_files: ["README.md"] }));
-    const second = await assembleAgentPrompt(repo, contractFor({ task_id: "T-002", title: "Second", allowed_files: ["src/feature.ts"] }));
-    const repeat = await assembleAgentPrompt(repo, contractFor({ task_id: "T-001", title: "First", allowed_files: ["README.md"] }));
+    const first = await assembleAgentPrompt(repo, contractFor({ task_id: "T-001", title: "First", base_commit: baseCommit, allowed_files: ["README.md"] }));
+    const second = await assembleAgentPrompt(repo, contractFor({ task_id: "T-002", title: "Second", base_commit: baseCommit, allowed_files: ["src/feature.ts"] }));
+    const repeat = await assembleAgentPrompt(repo, contractFor({ task_id: "T-001", title: "First", base_commit: baseCommit, allowed_files: ["README.md"] }));
 
     assert.equal(first.ok, true);
     assert.equal(second.ok, true);
@@ -110,6 +112,27 @@ test("readCachedRepoFile replaces malformed exact-hash cache entries instead of 
   });
 });
 
+test("assembleAgentPrompt reads write-context files from the task base worktree instead of newer root content", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-BASE", baseCommit, ["README.md"]);
+    const worktree = await createTaskWorktree(repo, "T-BASE");
+    assert.equal(worktree.ok, true);
+
+    await writeFile(path.join(repo, "README.md"), "newer root content\n");
+    await git(repo, ["add", "README.md"]);
+    await git(repo, ["commit", "-m", "advance root"]);
+
+    const prompt = await assembleAgentPrompt(repo, contractFor({ task_id: "T-BASE", base_commit: baseCommit, allowed_files: ["README.md"] }));
+
+    assert.equal(prompt.ok, true);
+    if (!prompt.ok) {
+      return;
+    }
+    assert.match(prompt.value.full_prompt, /# Fixture/);
+    assert.doesNotMatch(prompt.value.full_prompt, /newer root content/);
+  });
+});
+
 test("invokeAgent sends layered prompt and records cache-read events", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit);
@@ -156,8 +179,11 @@ async function withTempRepo(run: (context: { repo: string; baseCommit: string })
     await git(repo, ["init"]);
     await git(repo, ["config", "user.name", "Hivemind Test"]);
     await git(repo, ["config", "user.email", "hivemind@example.test"]);
+    await writeFile(path.join(repo, "AGENTS.md"), "Project instructions\n");
     await writeFile(path.join(repo, "README.md"), "# Fixture\n");
-    await git(repo, ["add", "README.md"]);
+    await mkdir(path.join(repo, "src"), { recursive: true });
+    await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = true;\n");
+    await git(repo, ["add", "AGENTS.md", "README.md", "src/feature.ts"]);
     await git(repo, ["commit", "-m", "initial"]);
     await initProject(repo);
     await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
@@ -184,11 +210,11 @@ function contractFor(overrides: Partial<TaskContract> = {}): TaskContract {
   };
 }
 
-async function writeContract(repo: string, taskId: string, baseCommit: string): Promise<void> {
+async function writeContract(repo: string, taskId: string, baseCommit: string, allowedFiles: string[] = ["README.md"]): Promise<void> {
   await mkdir(path.join(repo, ".hivemind", "tasks"), { recursive: true });
   await writeFile(
     path.join(repo, ".hivemind", "tasks", `${taskId}.contract.json`),
-    `${JSON.stringify({ ...contractFor({ task_id: taskId, base_commit: baseCommit }), allowed_files: ["README.md"] }, null, 2)}\n`
+    `${JSON.stringify({ ...contractFor({ task_id: taskId, base_commit: baseCommit }), allowed_files: allowedFiles }, null, 2)}\n`
   );
 }
 

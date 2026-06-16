@@ -1,5 +1,6 @@
 import { realpath } from "node:fs/promises";
 import path from "node:path";
+import { daemonProcessIsLive, readDaemonState } from "./daemon-state.js";
 
 export type DaemonCallResult<T> =
   | { routed: false }
@@ -16,10 +17,14 @@ export async function callDaemonIfConfigured<T>(
   endpoint: string,
   body: Record<string, unknown>
 ): Promise<DaemonCallResult<T>> {
-  const baseUrl = normalizeDaemonUrl(process.env.HIVEMIND_DAEMON_URL);
-  if (baseUrl === null) {
+  const addressResult = await resolveDaemonAddress(repoRoot);
+  if (!addressResult.ok) {
+    return { routed: true, ok: false, reason: addressResult.reason };
+  }
+  if (addressResult.value === null) {
     return { routed: false };
   }
+  const baseUrl = addressResult.value;
 
   const healthResult = await requestJson<DaemonHealth>(`${baseUrl}/health`, { method: "GET" });
   if (!healthResult.ok) {
@@ -61,6 +66,28 @@ function normalizeDaemonUrl(value: string | undefined): string | null {
     return null;
   }
   return trimmed.replace(/\/+$/, "");
+}
+
+async function resolveDaemonAddress(repoRoot: string): Promise<{ ok: true; value: string | null } | { ok: false; reason: string }> {
+  const configured = normalizeDaemonUrl(process.env.HIVEMIND_DAEMON_URL);
+  if (configured !== null) {
+    return { ok: true, value: configured };
+  }
+
+  const stateResult = await readDaemonState(repoRoot);
+  if (!stateResult.ok) {
+    return stateResult;
+  }
+  if (stateResult.value === null) {
+    return { ok: true, value: null };
+  }
+  if (!daemonProcessIsLive(stateResult.value.pid)) {
+    return { ok: true, value: null };
+  }
+  const discovered = normalizeDaemonUrl(stateResult.value.url);
+  return discovered === null
+    ? { ok: false, reason: "live daemon state has an invalid URL" }
+    : { ok: true, value: discovered };
 }
 
 async function requestJson<T>(url: string, init: RequestInit): Promise<{ ok: true; value: T } | { ok: false; reason: string }> {

@@ -141,6 +141,8 @@ Practical consequences referenced later in this document:
 
 When in doubt about where a piece of logic belongs: if getting it wrong could corrupt the repo, leak secrets, or merge unsafe code, it belongs in deterministic code, not in a prompt.
 
+The determinism boundary forbids LLM judgment and external/provider network calls inside guarantee-enforcing code. Local loopback IPC to the Hivemind daemon is allowed as transport to the deterministic single writer; it carries already-bounded data and does not make a gate depend on a remote service.
+
 ## Robustness Principle: Eliminate, Prevent, Degrade, Never Break
 
 Where the Core Architectural Principle governs *who decides*, this one governs *what happens when an input the system depends on turns out to be missing, wrong, or weak.* Almost every fragile point in Hivemind is a seam where deterministic code must trust something it cannot verify — an LLM's plan, a provider's quota number, a repo's test strength, a tool's compacted context. At each such seam, climb as high as possible on this ladder:

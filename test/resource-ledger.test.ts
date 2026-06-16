@@ -62,6 +62,32 @@ test("quota ledger reads empty when missing and records self-metered usage atomi
   });
 });
 
+test("quota ledger serializes concurrent self-metered usage records", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const attempts = 20;
+    const results = await Promise.all(
+      Array.from({ length: attempts }, (_, index) =>
+        recordQuotaUsage(repo, {
+          provider: "fake",
+          input_text: `input ${index}`,
+          output_text: `output ${index}`,
+          wall_time_ms: 1,
+          throttled: false
+        })
+      )
+    );
+
+    assert.equal(results.every((result) => result.ok), true);
+    const ledger = await readQuotaLedger(repo);
+    assert.equal(ledger.ok, true);
+    if (!ledger.ok) {
+      return;
+    }
+    assert.equal(ledger.value.fake.used.requests, attempts);
+    assert.equal(ledger.value.fake.used.wall_time_ms, attempts);
+  });
+});
+
 test("quota ledger fails closed for malformed state and marks local providers unmetered", async () => {
   await withTempRepo(async ({ repo }) => {
     const local = await recordQuotaUsage(repo, {

@@ -57,7 +57,7 @@ export const mcpToolDefinitions: McpToolDefinition[] = [
   {
     name: "hivemind.analyze_patch",
     title: "Analyze patch",
-    description: "Run the deterministic diff-scope gate for a task patch.",
+    description: "Return the deterministic diff-scope gate verdict for a task patch without recording an event.",
     readOnly: true
   },
   {
@@ -112,7 +112,7 @@ function createHivemindMcpServer(repoRoot: string): McpServer {
   registerTaskTool(server, repoRoot, "hivemind.create_worktree", "/worktree/create");
   registerTaskTool(server, repoRoot, "hivemind.request_lease", "/lease/request-contract");
   registerTaskTool(server, repoRoot, "hivemind.submit_patch", "/submit");
-  registerTaskTool(server, repoRoot, "hivemind.analyze_patch", "/analyze");
+  registerTaskTool(server, repoRoot, "hivemind.analyze_patch", "/analyze/verdict");
   registerNoArgTool(server, repoRoot, "hivemind.integrate_shadow", "/integrate/shadow");
 
   return server;

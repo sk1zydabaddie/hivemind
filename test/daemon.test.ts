@@ -87,6 +87,42 @@ test("lease command falls back to direct single-writer mode without a daemon URL
   });
 });
 
+test("lease command discovers a live daemon without HIVEMIND_DAEMON_URL before falling back to direct mode", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writeContract(repo, "T-002", baseCommit, ["README.md"]);
+
+    const daemon = await startDaemon(repo);
+    try {
+      const routed = await execFileAsync(process.execPath, [cliPath, "lease", "T-001"], {
+        cwd: repo,
+        env: { ...process.env, HIVEMIND_DAEMON_URL: "" },
+        windowsHide: true
+      });
+      const parsed = JSON.parse(routed.stdout) as { task_id: string; granted: string[] };
+      assert.equal(parsed.task_id, "T-001");
+      assert.deepEqual(parsed.granted, ["README.md"]);
+    } finally {
+      await stopDaemon(daemon);
+    }
+
+    await writeFile(path.join(repo, ".hivemind", "daemon.json"), JSON.stringify({ version: 1, pid: 99999999, url: "http://127.0.0.1:1", repo_root: repo, started_at: new Date().toISOString() }));
+    const released = await execFileAsync(process.execPath, [cliPath, "lease", "T-001", "--release"], {
+      cwd: repo,
+      env: { ...process.env, HIVEMIND_DAEMON_URL: "" },
+      windowsHide: true
+    });
+    assert.equal(JSON.parse(released.stdout).task_id, "T-001");
+
+    const direct = await execFileAsync(process.execPath, [cliPath, "lease", "T-002"], {
+      cwd: repo,
+      env: { ...process.env, HIVEMIND_DAEMON_URL: "" },
+      windowsHide: true
+    });
+    assert.equal(JSON.parse(direct.stdout).task_id, "T-002");
+  });
+});
+
 test("lease command rejects a daemon for a different repo before mutating", async () => {
   await withTempRepo(async ({ repo: daemonRepo }) => {
     await withTempRepo(async ({ repo: commandRepo, baseCommit }) => {

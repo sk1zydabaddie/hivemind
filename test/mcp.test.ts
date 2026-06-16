@@ -11,6 +11,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 import { initProject } from "../src/init.js";
+import { readEvents } from "../src/events.js";
 import { mcpToolDefinitions } from "../src/mcp.js";
 
 const execFileAsync = promisify(execFile);
@@ -125,8 +126,16 @@ test("MCP tools route through daemon and match the core task/worktree/patch/stat
         "memory_proposals.json"
       ]);
 
+      const eventsBeforeAnalyze = await readEvents(repo);
+      assert.equal(eventsBeforeAnalyze.ok, true);
       const accepted = await callStructured(client, "hivemind.analyze_patch", { task_id: "T-OK" });
+      const eventsAfterAnalyze = await readEvents(repo);
+      assert.equal(eventsAfterAnalyze.ok, true);
       assert.equal(accepted.verdict, "accept");
+      if (!eventsBeforeAnalyze.ok || !eventsAfterAnalyze.ok) {
+        return;
+      }
+      assert.equal(eventsAfterAnalyze.value.length, eventsBeforeAnalyze.value.length);
 
       await writeQueue(repo, ["T-OK"]);
       const integration = await callStructured(client, "hivemind.integrate_shadow", {});
