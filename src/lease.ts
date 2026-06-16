@@ -21,7 +21,7 @@ export interface LeaseReleaseResult {
   released: string[];
 }
 
-type LeaseStore = Record<string, string>;
+export type LeaseStore = Record<string, string>;
 type LeaseResult<T> = { ok: true; value: T } | { ok: false; reason: string };
 
 export async function leaseCommand(cwd: string, args: string[]): Promise<number> {
@@ -124,7 +124,7 @@ export async function releaseLease(repoRoot: string, taskId: string): Promise<Le
   });
 }
 
-async function readActiveLeases(repoRoot: string): Promise<{ ok: true; store: LeaseStore } | { ok: false; reason: string }> {
+export async function readActiveLeases(repoRoot: string): Promise<{ ok: true; store: LeaseStore } | { ok: false; reason: string }> {
   const activePath = activeLeasePath(repoRoot);
   let raw: unknown;
   try {
