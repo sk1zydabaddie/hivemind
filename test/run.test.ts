@@ -31,6 +31,8 @@ test("runTask captures an untracked worker-created file in diff.patch", async ()
       return;
     }
     assert.equal(result.value.task_id, "T-001");
+    assert.equal(result.value.status, "completed");
+    assert.equal(result.value.tool, "fake");
     assert.equal(result.value.tool_exit, 0);
     assert.equal(result.value.changed_files, 1);
     assert.equal(result.value.diff_path, path.join(repo, ".hivemind", "patches", "T-001", "diff.patch"));
@@ -161,16 +163,154 @@ test("CLI run prints stable JSON", async () => {
       cwd: repo,
       windowsHide: true
     });
-    const parsed = JSON.parse(result.stdout) as { task_id: string; diff_path: string; tool_exit: number; changed_files: number };
+    const parsed = JSON.parse(result.stdout) as {
+      task_id: string;
+      status: string;
+      tool: string;
+      diff_path: string;
+      tool_exit: number;
+      changed_files: number;
+    };
 
     assert.equal(result.stderr, "");
     assert.deepEqual(parsed, {
       task_id: "T-001",
+      status: "completed",
+      tool: "fake",
       diff_path: path.join(repo, ".hivemind", "patches", "T-001", "diff.patch"),
       tool_exit: 0,
       changed_files: 1
     });
     assert.match(await readFile(parsed.diff_path, "utf8"), /\+changed by cli fake agent/);
+  });
+});
+
+test("CLI run auto-routes to the cheapest Low-tier provider", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const localAgent = await writeAgent(repo, "local-auto-route-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'changed by local auto route\\n');"
+    ]);
+    const strongAgent = await writeAgent(repo, "strong-auto-route-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'changed by strong auto route\\n');"
+    ]);
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writeConfig(repo, { low_globs: ["README.md"] });
+    await writeProfile(repo, "local", localAgent, undefined, false, "local", 1);
+    await writeProfile(repo, "strong", strongAgent, undefined, false, "strong", 20);
+    await grantLease(repo, "T-001", ["README.md"]);
+
+    const result = await execFileAsync("node", [cliPath, "run", "T-001"], {
+      cwd: repo,
+      windowsHide: true
+    });
+    const parsed = JSON.parse(result.stdout) as { tool: string; diff_path: string };
+
+    assert.equal(result.stderr, "");
+    assert.equal(parsed.tool, "local");
+    const diff = await readFile(parsed.diff_path, "utf8");
+    assert.match(diff, /\+changed by local auto route/);
+    assert.doesNotMatch(diff, /strong auto route/);
+  });
+});
+
+test("runTask rejects explicit below-floor provider before invocation", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const agentPath = await writeAgent(repo, "weak-critical-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('src/schema.ts', 'weak provider should not run\\n');"
+    ]);
+    await mkdir(path.join(repo, "src"), { recursive: true });
+    await writeFile(path.join(repo, "src", "schema.ts"), "export const schema = true;\n");
+    await git(repo, ["add", "src/schema.ts"]);
+    await git(repo, ["commit", "-m", "add schema"]);
+    const nextBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
+    await writeContract(repo, "T-CRIT", nextBase, ["src/schema.ts"]);
+    await writeConfig(repo, { critical_globs: ["src/schema.ts"] });
+    await writeProfile(repo, "weak", agentPath, undefined, false, "standard", 1);
+    await grantLease(repo, "T-CRIT", ["src/schema.ts"]);
+
+    const result = await runTask(repo, "T-CRIT", "weak");
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.match(result.reason, /below required floor for critical task tier/);
+    await assertMissing(path.join(repo, ".hivemind", "worktrees", "T-CRIT"));
+    await assertMissing(path.join(repo, ".hivemind", "patches", "T-CRIT", "diff.patch"));
+  });
+});
+
+test("runTask pauses before invocation when request ceiling is already exhausted", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const agentPath = await writeAgent(repo, "request-ceiling-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'request ceiling should block this\\n');"
+    ]);
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writeConfig(repo, { resource_policy: { run_ceiling: { requests: 0 } } });
+    await writeProfile(repo, "fake", agentPath);
+    await grantLease(repo, "T-001", ["README.md"]);
+
+    const result = await runTask(repo, "T-001", "fake");
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.match(result.reason, /run paused: request ceiling 0/);
+    await assertMissing(path.join(repo, ".hivemind", "worktrees", "T-001"));
+    await assertMissing(path.join(repo, ".hivemind", "patches", "T-001", "diff.patch"));
+  });
+});
+
+test("runTask pauses before invocation when adapter timeout exceeds wall-time ceiling", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const agentPath = await writeAgent(repo, "timeout-ceiling-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'timeout ceiling should block this\\n');"
+    ]);
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writeConfig(repo, { resource_policy: { run_ceiling: { wall_time_ms: 1 } } });
+    await writeProfile(repo, "fake", agentPath, 50);
+    await grantLease(repo, "T-001", ["README.md"]);
+
+    const result = await runTask(repo, "T-001", "fake");
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.match(result.reason, /run paused: fake timeout 50ms exceeds wall-time ceiling 1ms/);
+    await assertMissing(path.join(repo, ".hivemind", "worktrees", "T-001"));
+    await assertMissing(path.join(repo, ".hivemind", "patches", "T-001", "diff.patch"));
+  });
+});
+
+test("runTask pauses after invocation when actual wall time exceeds the ceiling", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const agentPath = await writeAgent(repo, "actual-wall-ceiling-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await new Promise((resolve) => setTimeout(resolve, 25));",
+      "await appendFile('README.md', 'changed before wall ceiling pause\\n');"
+    ]);
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writeConfig(repo, { resource_policy: { run_ceiling: { wall_time_ms: 1 } } });
+    await writeProfile(repo, "fake", agentPath);
+    await grantLease(repo, "T-001", ["README.md"]);
+
+    const result = await runTask(repo, "T-001", "fake");
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.match(result.reason, /run paused: wall-time ceiling 1ms exceeded/);
+    assert.match(await readFile(path.join(repo, ".hivemind", "worktrees", "T-001", "README.md"), "utf8"), /changed before wall ceiling pause/);
+    assert.match(await readFile(path.join(repo, ".hivemind", "worktrees", "T-001", "agent.log"), "utf8"), /exit_code: 0/);
+    await assertMissing(path.join(repo, ".hivemind", "patches", "T-001", "diff.patch"));
   });
 });
 
@@ -208,12 +348,12 @@ test("CLI run requires explicit approval for dangerous adapter flags", async () 
 test("CLI run rejects invalid usage", async () => {
   await withTempRepo(async ({ repo }) => {
     await assert.rejects(
-      execFileAsync("node", [cliPath, "run", "T-001"], { cwd: repo, windowsHide: true }),
+      execFileAsync("node", [cliPath, "run"], { cwd: repo, windowsHide: true }),
       (error: unknown) => {
         assert.equal(typeof error, "object");
         assert.notEqual(error, null);
         assert.equal((error as { code?: number }).code, 1);
-        assert.match(String((error as { stderr?: string }).stderr), /error: usage: hivemind run <id> --tool <tool>/);
+        assert.match(String((error as { stderr?: string }).stderr), /error: usage: hivemind run <id> \[--tool <tool>\]/);
         return true;
       }
     );
@@ -356,7 +496,34 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
   );
 }
 
-async function writeProfile(repo: string, tool: string, agentPath: string, timeoutMs?: number, dangerous = false): Promise<void> {
+async function writeConfig(repo: string, overrides: Record<string, unknown>): Promise<void> {
+  await writeFile(
+    path.join(repo, ".hivemind", "config.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        stack: "typescript-node",
+        repo_root: repo,
+        test_command: "",
+        allowed_globs: [],
+        forbidden_globs: [],
+        ...overrides
+      },
+      null,
+      2
+    )}\n`
+  );
+}
+
+async function writeProfile(
+  repo: string,
+  tool: string,
+  agentPath: string,
+  timeoutMs?: number,
+  dangerous = false,
+  routingTier = "strong",
+  costRank = 10
+): Promise<void> {
   const adaptersDir = path.join(repo, ".hivemind", "adapters");
   await mkdir(adaptersDir, { recursive: true });
   const profile = {
@@ -365,6 +532,8 @@ async function writeProfile(repo: string, tool: string, agentPath: string, timeo
     prompt_arg: "stdin",
     verified_on: "2026-06-15",
     context_window: 1024,
+    routing_tier: routingTier,
+    cost_rank: costRank,
     ...(timeoutMs === undefined ? {} : { timeout_ms: timeoutMs })
   };
   await writeFile(

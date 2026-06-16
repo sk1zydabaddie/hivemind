@@ -19,6 +19,8 @@
   ],
   "prompt_arg": "stdin",
   "verified_on": "2026-06-15",
+  "routing_tier": "strong",
+  "cost_rank": 20,
   "context_window": 200000,
   "timeout_ms": 120000
 }

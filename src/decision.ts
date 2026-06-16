@@ -2,6 +2,7 @@ import type { ChangesetOpType } from "./changeset.js";
 import { canonicalize } from "./canonicalize.js";
 import type { HivemindConfig } from "./config.js";
 import type { TaskContract } from "./contract.js";
+import { matchesAny } from "./glob.js";
 
 export type DecisionVerdict = "pass" | "reject" | "escalate";
 
@@ -83,53 +84,4 @@ function isGitBehaviorPath(pathValue: string): boolean {
 
 function isDependencyPath(pathValue: string): boolean {
   return dependencyFiles.has(pathValue.split("/").at(-1) ?? "");
-}
-
-function matchesAny(pathValue: string, patterns: string[]): boolean {
-  return patterns.some((pattern) => matchesPattern(pathValue, pattern));
-}
-
-function matchesPattern(pathValue: string, pattern: string): boolean {
-  const normalizedPattern = normalizePattern(pattern);
-  if (!normalizedPattern.includes("*")) {
-    return pathValue === normalizedPattern;
-  }
-
-  return globToRegExp(normalizedPattern).test(pathValue);
-}
-
-function normalizePattern(pattern: string): string {
-  return pattern.replaceAll("\\", "/");
-}
-
-function globToRegExp(pattern: string): RegExp {
-  let source = "^";
-  for (let index = 0; index < pattern.length; index += 1) {
-    const char = pattern[index];
-    const next = pattern[index + 1];
-
-    if (char === "*" && next === "*") {
-      index += 1;
-      if (pattern[index + 1] === "/") {
-        index += 1;
-        source += "(?:.*/)?";
-      } else {
-        source += ".*";
-      }
-      continue;
-    }
-
-    if (char === "*") {
-      source += "[^/]*";
-      continue;
-    }
-
-    source += escapeRegExp(char);
-  }
-  source += "$";
-  return new RegExp(source);
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[\\^$+?.()|[\]{}]/g, "\\$&");
 }

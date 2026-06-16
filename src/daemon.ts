@@ -131,7 +131,7 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
       if (!taskId.ok) {
         return taskId;
       }
-      const tool = readString(payload, "tool");
+      const tool = readOptionalString(payload, "tool");
       if (!tool.ok) {
         return tool;
       }
@@ -216,7 +216,10 @@ function readTaskId(payload: DaemonPayload): { ok: true; value: string } | { ok:
   return typeof payload.task_id === "string" ? { ok: true, value: payload.task_id } : { ok: false, reason: "task_id must be a string" };
 }
 
-function readString(payload: DaemonPayload, field: string): { ok: true; value: string } | { ok: false; reason: string } {
+function readOptionalString(payload: DaemonPayload, field: string): { ok: true; value?: string } | { ok: false; reason: string } {
+  if (!(field in payload) || payload[field] === undefined) {
+    return { ok: true };
+  }
   return typeof payload[field] === "string" ? { ok: true, value: payload[field] } : { ok: false, reason: `${field} must be a string` };
 }
 

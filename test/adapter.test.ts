@@ -121,6 +121,45 @@ test("validateAdapterProfile rejects invalid timeout values", () => {
   );
 });
 
+test("validateAdapterProfile rejects invalid routing metadata", () => {
+  assert.deepEqual(
+    validateAdapterProfile(
+      {
+        tool: "fake",
+        invoke: ["node", "fake-agent.mjs"],
+        prompt_arg: "stdin",
+        verified_on: "2026-06-15",
+        context_window: 1024,
+        routing_tier: "tiny",
+        cost_rank: 0
+      },
+      "fake"
+    ),
+    ["routing_tier must be one of local, cheap, standard, strong when provided", "cost_rank must be a positive integer when provided"]
+  );
+});
+
+test("loadAdapterProfile defaults routing metadata when omitted", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await writeProfile(repo, "fake", {
+      tool: "fake",
+      invoke: ["node", "fake-agent.mjs"],
+      prompt_arg: "stdin",
+      verified_on: "2026-06-15",
+      context_window: 1024
+    });
+
+    const profile = await loadAdapterProfile(repo, "fake");
+
+    assert.equal(profile.ok, true);
+    if (!profile.ok) {
+      return;
+    }
+    assert.equal(profile.profile.routing_tier, undefined);
+    assert.equal(profile.profile.cost_rank, undefined);
+  });
+});
+
 test("findDangerousAdapterArgs detects provider bypass flags", () => {
   assert.deepEqual(findDangerousAdapterArgs(["codex", "exec", "--dangerously-bypass-approvals-and-sandbox"]), [
     "--dangerously-bypass-approvals-and-sandbox"

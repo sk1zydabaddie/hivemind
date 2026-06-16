@@ -346,7 +346,9 @@ async function writeProfile(repo: string, tool: string, agentPath: string): Prom
         invoke: ["node", agentPath],
         prompt_arg: "stdin",
         verified_on: "2026-06-16",
-        context_window: 1024
+        context_window: 1024,
+        routing_tier: "strong",
+        cost_rank: 10
       },
       null,
       2

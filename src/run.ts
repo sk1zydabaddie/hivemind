@@ -3,11 +3,13 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { invokeAgent } from "./adapter.js";
 import { writeFileAtomic } from "./atomic.js";
+import { loadConfig, type RunCeiling } from "./config.js";
 import { loadAndValidateContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { captureWorktreeDiff } from "./diff-capture.js";
 import { findGitRoot } from "./repo.js";
 import { verifyLeaseCoverage } from "./lease.js";
+import { routeTaskProvider } from "./routing.js";
 import { createTaskWorktree } from "./worktree.js";
 
 const execFileAsync = promisify(execFile);
@@ -15,6 +17,8 @@ const agentLogPath = "agent.log";
 
 export interface RunResult {
   task_id: string;
+  status: "completed";
+  tool: string;
   diff_path: string;
   tool_exit: number;
   changed_files: number;
@@ -25,10 +29,9 @@ export interface RunTaskOptions {
 }
 
 export async function runCommand(cwd: string, args: string[]): Promise<number> {
-  const [taskId, flag, tool, ...rest] = args;
-  const allowDangerousAdapter = rest.length === 1 && rest[0] === "--allow-dangerous-adapter";
-  if (!taskId || flag !== "--tool" || !tool || (rest.length > 0 && !allowDangerousAdapter)) {
-    console.error("error: usage: hivemind run <id> --tool <tool> [--allow-dangerous-adapter]");
+  const parsed = parseRunArgs(args);
+  if (!parsed.ok) {
+    console.error(`error: ${parsed.reason}`);
     return 1;
   }
 
@@ -39,11 +42,13 @@ export async function runCommand(cwd: string, args: string[]): Promise<number> {
   }
 
   const daemonResult = await callDaemonIfConfigured<RunResult>(repoRoot, "/run", {
-    task_id: taskId,
-    tool,
-    allow_dangerous_adapter: allowDangerousAdapter
+    task_id: parsed.value.taskId,
+    ...(parsed.value.tool === undefined ? {} : { tool: parsed.value.tool }),
+    allow_dangerous_adapter: parsed.value.allowDangerousAdapter
   });
-  const result = daemonResult.routed ? daemonResult : await runTask(repoRoot, taskId, tool, { allowDangerousAdapter });
+  const result = daemonResult.routed
+    ? daemonResult
+    : await runTask(repoRoot, parsed.value.taskId, parsed.value.tool, { allowDangerousAdapter: parsed.value.allowDangerousAdapter });
   if (!result.ok) {
     console.error(`error: ${result.reason}`);
     return 1;
@@ -56,7 +61,7 @@ export async function runCommand(cwd: string, args: string[]): Promise<number> {
 export async function runTask(
   repoRoot: string,
   taskId: string,
-  tool: string,
+  tool?: string,
   options: RunTaskOptions = {}
 ): Promise<{ ok: true; value: RunResult } | { ok: false; reason: string }> {
   const contractResult = await loadAndValidateContract(repoRoot, taskId);
@@ -64,9 +69,25 @@ export async function runTask(
     return contractResult;
   }
 
+  const configResult = await loadConfig(repoRoot);
+  if (!configResult.ok) {
+    return configResult;
+  }
+
   const leaseResult = await verifyLeaseCoverage(repoRoot, taskId, contractResult.contract.allowed_files);
   if (!leaseResult.ok) {
     return leaseResult;
+  }
+
+  const routeResult = await routeTaskProvider(repoRoot, contractResult.contract, configResult.config, tool);
+  if (!routeResult.ok) {
+    return routeResult;
+  }
+
+  const ceiling = configResult.config.resource_policy?.run_ceiling;
+  const preflightResult = checkRunCeilingPreflight(ceiling, routeResult.value.profile);
+  if (!preflightResult.ok) {
+    return preflightResult;
   }
 
   const worktreeResult = await createTaskWorktree(repoRoot, taskId);
@@ -79,9 +100,14 @@ export async function runTask(
     return cleanResult;
   }
 
-  const invokeResult = await invokeAgent(repoRoot, taskId, tool, options);
+  const invokeResult = await invokeAgent(repoRoot, taskId, routeResult.value.tool, options);
   if (!invokeResult.ok) {
     return invokeResult;
+  }
+
+  const postRunResult = checkRunCeilingPostRun(ceiling, invokeResult.value.wallTimeMs);
+  if (!postRunResult.ok) {
+    return postRunResult;
   }
 
   const diffResult = await captureDiff(repoRoot, worktreeResult.value.worktree, taskId, contractResult.contract.base_commit);
@@ -93,11 +119,70 @@ export async function runTask(
     ok: true,
     value: {
       task_id: taskId,
+      status: "completed",
+      tool: routeResult.value.tool,
       diff_path: diffResult.value.diffPath,
       tool_exit: invokeResult.value.exitCode,
       changed_files: diffResult.value.changedFiles
     }
   };
+}
+
+function parseRunArgs(
+  args: string[]
+): { ok: true; value: { taskId: string; tool?: string; allowDangerousAdapter: boolean } } | { ok: false; reason: string } {
+  const [taskId, ...rest] = args;
+  if (!taskId) {
+    return { ok: false, reason: "usage: hivemind run <id> [--tool <tool>] [--allow-dangerous-adapter]" };
+  }
+
+  let tool: string | undefined;
+  let allowDangerousAdapter = false;
+  for (let index = 0; index < rest.length; index += 1) {
+    const arg = rest[index];
+    if (arg === "--tool") {
+      const value = rest[index + 1];
+      if (!value || tool !== undefined) {
+        return { ok: false, reason: "usage: hivemind run <id> [--tool <tool>] [--allow-dangerous-adapter]" };
+      }
+      tool = value;
+      index += 1;
+      continue;
+    }
+    if (arg === "--allow-dangerous-adapter") {
+      allowDangerousAdapter = true;
+      continue;
+    }
+    return { ok: false, reason: "usage: hivemind run <id> [--tool <tool>] [--allow-dangerous-adapter]" };
+  }
+
+  return { ok: true, value: { taskId, ...(tool === undefined ? {} : { tool }), allowDangerousAdapter } };
+}
+
+function checkRunCeilingPreflight(
+  ceiling: RunCeiling | undefined,
+  profile: { tool: string; timeout_ms?: number }
+): { ok: true } | { ok: false; reason: string } {
+  if (ceiling?.requests !== undefined && ceiling.requests < 1) {
+    return { ok: false, reason: `run paused: request ceiling ${ceiling.requests} would be exceeded before invoking ${profile.tool}` };
+  }
+  if (ceiling?.wall_time_ms !== undefined && profile.timeout_ms !== undefined && profile.timeout_ms > ceiling.wall_time_ms) {
+    return {
+      ok: false,
+      reason: `run paused: ${profile.tool} timeout ${profile.timeout_ms}ms exceeds wall-time ceiling ${ceiling.wall_time_ms}ms`
+    };
+  }
+  return { ok: true };
+}
+
+function checkRunCeilingPostRun(
+  ceiling: RunCeiling | undefined,
+  wallTimeMs: number
+): { ok: true } | { ok: false; reason: string } {
+  if (ceiling?.wall_time_ms !== undefined && wallTimeMs > ceiling.wall_time_ms) {
+    return { ok: false, reason: `run paused: wall-time ceiling ${ceiling.wall_time_ms}ms exceeded after ${wallTimeMs}ms` };
+  }
+  return { ok: true };
 }
 
 async function captureDiff(

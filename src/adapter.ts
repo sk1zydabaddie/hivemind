@@ -6,6 +6,7 @@ import { readJsonFile } from "./json.js";
 import { adapterOutputIndicatesThrottle, recordQuotaUsage } from "./resource-ledger.js";
 
 export type PromptArgMode = "stdin" | "arg";
+export type ProviderRoutingTier = "local" | "cheap" | "standard" | "strong";
 
 export interface AdapterProfile {
   tool: string;
@@ -14,11 +15,14 @@ export interface AdapterProfile {
   verified_on: string;
   context_window: number;
   timeout_ms?: number;
+  routing_tier?: ProviderRoutingTier;
+  cost_rank?: number;
 }
 
 export interface InvokeAgentResult {
   exitCode: number;
   logPath: string;
+  wallTimeMs: number;
 }
 
 export interface InvokeAgentOptions {
@@ -81,7 +85,7 @@ export async function invokeAgent(
     return { ok: false, reason: ledgerResult.reason };
   }
 
-  return { ok: true, value: { exitCode: processResult.value.exitCode, logPath } };
+  return { ok: true, value: { exitCode: processResult.value.exitCode, logPath, wallTimeMs } };
 }
 
 export async function loadAdapterProfile(
@@ -148,8 +152,22 @@ export function validateAdapterProfile(raw: unknown, expectedTool?: string): str
   ) {
     problems.push("timeout_ms must be a positive integer when provided");
   }
+  if ("routing_tier" in raw && !isProviderRoutingTier(raw.routing_tier)) {
+    problems.push("routing_tier must be one of local, cheap, standard, strong when provided");
+  }
+  if ("cost_rank" in raw && (typeof raw.cost_rank !== "number" || !Number.isInteger(raw.cost_rank) || raw.cost_rank <= 0)) {
+    problems.push("cost_rank must be a positive integer when provided");
+  }
 
   return problems;
+}
+
+export function normalizeProfileRoutingTier(profile: AdapterProfile): ProviderRoutingTier {
+  return profile.routing_tier ?? "standard";
+}
+
+export function normalizeProfileCostRank(profile: AdapterProfile): number {
+  return profile.cost_rank ?? 100;
 }
 
 export function findDangerousAdapterArgs(invoke: string[]): string[] {
@@ -319,6 +337,10 @@ async function exists(filePath: string): Promise<boolean> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isProviderRoutingTier(value: unknown): value is ProviderRoutingTier {
+  return value === "local" || value === "cheap" || value === "standard" || value === "strong";
 }
 
 function isNodeError(error: unknown, code: string): boolean {

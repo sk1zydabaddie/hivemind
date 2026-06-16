@@ -9,7 +9,20 @@ export interface HivemindConfig {
   test_command: string;
   allowed_globs: string[];
   forbidden_globs: string[];
+  low_globs?: string[];
+  medium_globs?: string[];
+  high_globs?: string[];
   critical_globs?: string[];
+  resource_policy?: ResourcePolicy;
+}
+
+export interface ResourcePolicy {
+  run_ceiling?: RunCeiling;
+}
+
+export interface RunCeiling {
+  requests?: number;
+  wall_time_ms?: number;
 }
 
 export type LoadConfigResult = { ok: true; config: HivemindConfig } | { ok: false; reason: string };
@@ -59,8 +72,13 @@ export function validateConfig(raw: unknown): string[] {
   requireString(raw, "test_command", problems);
   requireStringArray(raw, "allowed_globs", problems);
   requireStringArray(raw, "forbidden_globs", problems);
-  if ("critical_globs" in raw) {
-    requireStringArray(raw, "critical_globs", problems);
+  for (const field of ["low_globs", "medium_globs", "high_globs", "critical_globs"] as const) {
+    if (field in raw) {
+      requireStringArray(raw, field, problems);
+    }
+  }
+  if ("resource_policy" in raw) {
+    validateResourcePolicy(raw.resource_policy, problems);
   }
 
   return problems;
@@ -78,7 +96,11 @@ export function normalizeConfig(raw: unknown): HivemindConfig {
     test_command: String(raw.test_command),
     allowed_globs: normalizeStringArray(raw.allowed_globs),
     forbidden_globs: normalizeStringArray(raw.forbidden_globs),
-    ...("critical_globs" in raw ? { critical_globs: normalizeStringArray(raw.critical_globs) } : {})
+    ...("low_globs" in raw ? { low_globs: normalizeStringArray(raw.low_globs) } : {}),
+    ...("medium_globs" in raw ? { medium_globs: normalizeStringArray(raw.medium_globs) } : {}),
+    ...("high_globs" in raw ? { high_globs: normalizeStringArray(raw.high_globs) } : {}),
+    ...("critical_globs" in raw ? { critical_globs: normalizeStringArray(raw.critical_globs) } : {}),
+    ...("resource_policy" in raw ? { resource_policy: normalizeResourcePolicy(raw.resource_policy) } : {})
   };
 }
 
@@ -113,6 +135,47 @@ function requireStringArray(raw: Record<string, unknown>, field: string, problem
   if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string")) {
     problems.push(`${field} must be an array of strings`);
   }
+}
+
+function validateResourcePolicy(value: unknown, problems: string[]): void {
+  if (!isRecord(value)) {
+    problems.push("resource_policy must be a JSON object");
+    return;
+  }
+  if ("run_ceiling" in value) {
+    validateRunCeiling(value.run_ceiling, problems);
+  }
+}
+
+function validateRunCeiling(value: unknown, problems: string[]): void {
+  if (!isRecord(value)) {
+    problems.push("resource_policy.run_ceiling must be a JSON object");
+    return;
+  }
+  for (const field of ["requests", "wall_time_ms"] as const) {
+    if (field in value && (!Number.isSafeInteger(value[field]) || typeof value[field] !== "number" || value[field] < 0)) {
+      problems.push(`resource_policy.run_ceiling.${field} must be a non-negative safe integer`);
+    }
+  }
+}
+
+function normalizeResourcePolicy(value: unknown): ResourcePolicy {
+  if (!isRecord(value)) {
+    return {};
+  }
+  return {
+    ...("run_ceiling" in value ? { run_ceiling: normalizeRunCeiling(value.run_ceiling) } : {})
+  };
+}
+
+function normalizeRunCeiling(value: unknown): RunCeiling {
+  if (!isRecord(value)) {
+    return {};
+  }
+  return {
+    ...("requests" in value && typeof value.requests === "number" ? { requests: value.requests } : {}),
+    ...("wall_time_ms" in value && typeof value.wall_time_ms === "number" ? { wall_time_ms: value.wall_time_ms } : {})
+  };
 }
 
 function normalizeStringArray(value: unknown): string[] {
