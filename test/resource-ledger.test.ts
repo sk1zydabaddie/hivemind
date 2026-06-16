@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, open, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { dirname } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
@@ -85,6 +86,87 @@ test("quota ledger serializes concurrent self-metered usage records", async () =
     }
     assert.equal(ledger.value.fake.used.requests, attempts);
     assert.equal(ledger.value.fake.used.wall_time_ms, attempts);
+  });
+});
+
+test("quota ledger serializes writers forced to contend behind one lock", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const lockPath = path.join(repo, ".hivemind", "resource", "ledger.lock");
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    const heldLock = await open(lockPath, "wx");
+    await heldLock.writeFile("test-held-lock\n", "utf8");
+
+    try {
+      const attempts = 20;
+      let settled = 0;
+      const resultsPromise = Promise.all(
+        Array.from({ length: attempts }, (_, index) =>
+          recordQuotaUsage(repo, {
+            provider: "fake",
+            input_text: `barrier input ${index}`,
+            output_text: `barrier output ${index}`,
+            wall_time_ms: 1,
+            throttled: false
+          }).finally(() => {
+            settled += 1;
+          })
+        )
+      );
+
+      await sleep(100);
+      assert.equal(settled, 0);
+
+      await heldLock.close();
+      await rm(lockPath, { force: true });
+
+      const results = await resultsPromise;
+      assert.equal(results.every((result) => result.ok), true);
+      const ledger = await readQuotaLedger(repo);
+      assert.equal(ledger.ok, true);
+      if (!ledger.ok) {
+        return;
+      }
+      assert.equal(ledger.value.fake.used.requests, attempts);
+      assert.equal(ledger.value.fake.used.wall_time_ms, attempts);
+    } finally {
+      await heldLock.close().catch(() => undefined);
+      await rm(lockPath, { force: true });
+    }
+  });
+});
+
+test("quota ledger lock timeout fails loudly without recording usage", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const lockPath = path.join(repo, ".hivemind", "resource", "ledger.lock");
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    const heldLock = await open(lockPath, "wx");
+    await heldLock.writeFile("test-held-lock\n", "utf8");
+
+    try {
+      const result = await recordQuotaUsage(repo, {
+        provider: "fake",
+        input_text: "blocked input",
+        output_text: "blocked output",
+        wall_time_ms: 1,
+        throttled: false
+      });
+
+      assert.equal(result.ok, false);
+      if (result.ok) {
+        return;
+      }
+      assert.match(result.reason, /could not acquire quota ledger lock/);
+
+      const ledger = await readQuotaLedger(repo);
+      assert.equal(ledger.ok, true);
+      if (!ledger.ok) {
+        return;
+      }
+      assert.deepEqual(ledger.value, {});
+    } finally {
+      await heldLock.close().catch(() => undefined);
+      await rm(lockPath, { force: true });
+    }
   });
 });
 
