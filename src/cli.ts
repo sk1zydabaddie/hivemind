@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { analyzeCommand } from "./analyze.js";
+import { integrateCommand } from "./integrate.js";
 import { intentCommand } from "./intent.js";
 import { initProject } from "./init.js";
 import { leaseCommand } from "./lease.js";
@@ -38,6 +39,10 @@ async function main(argv: string[]): Promise<number> {
 
   if (command === "intent") {
     return intentCommand(process.cwd(), rest);
+  }
+
+  if (command === "integrate") {
+    return integrateCommand(process.cwd(), rest);
   }
 
   if (command === "submit") {
