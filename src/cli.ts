@@ -2,6 +2,7 @@
 
 import { analyzeCommand } from "./analyze.js";
 import { initProject } from "./init.js";
+import { leaseCommand } from "./lease.js";
 import { validateContractCommand } from "./contract.js";
 import { runCommand } from "./run.js";
 import { worktreeCommand } from "./worktree.js";
@@ -27,6 +28,10 @@ async function main(argv: string[]): Promise<number> {
 
   if (command === "analyze") {
     return analyzeCommand(process.cwd(), rest);
+  }
+
+  if (command === "lease") {
+    return leaseCommand(process.cwd(), rest);
   }
 
   console.error(command ? `error: unknown command ${command}` : "error: missing command");
