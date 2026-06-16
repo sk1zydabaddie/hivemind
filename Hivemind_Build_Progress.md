@@ -5,13 +5,13 @@ It is the project-local build ledger for Hivemind AI.
 
 ## Current State
 
-- Current milestone: M4 - Daemon + MCP + Resource Baseline complete; Pre-M5 hardening complete; M5 awaiting approval
-- Last completed subtask: Pre-M5 hardening - M4 adversarial review fixes
-- Next subtask: M5.1 - Spec artifact + ratification gate
+- Current milestone: M5 - The Orchestrator in progress
+- Last completed subtask: M5.1 - Spec artifact + ratification gate
+- Next subtask: M5.2 - Discovery & ideation loop + self-critique
 - Current branch: `master`
-- Latest completed implementation commit: `159376e` - `fix: harden m4 before m5`
+- Latest completed implementation commit: `84573da` - `feat: add spec ratification gate`
 - Latest M0.5 gate completion commit: `8a9786c` - `docs: complete m0.5 real-tool gate`
-- Paid AI/provider calls run: none for Pre-M3 hardening, M3.1, M4.1, M4.2, M4.3, M4.4, M4.5, M4.6, M4.7, or Pre-M5 hardening. Previous approved live Codex and Claude Code acceptance ran on 2026-06-15. Codex launched in disposable task worktrees. First Codex attempt returned exit code 1 because the default `gpt-5.3-codex` model was not supported by the active ChatGPT account. After updating the adapter profile to `gpt-5.5`, Codex used 6,130 tokens but could not write under a read-only inner sandbox. After the approved writable Codex profile update and adapter timeout containment, Codex used 8,674 tokens and produced a correct one-file `README.md` diff. The first Claude Code run returned exit code 1 with `Not logged in - Please run /login`; after CLI login, Claude Code rerun returned `tool_exit: 0`, `changed_files: 1`, and produced a correct one-file `README.md` diff.
+- Paid AI/provider calls run: none for Pre-M3 hardening, M3.1, M4.1, M4.2, M4.3, M4.4, M4.5, M4.6, M4.7, Pre-M5 hardening, or M5.1. Previous approved live Codex and Claude Code acceptance ran on 2026-06-15. Codex launched in disposable task worktrees. First Codex attempt returned exit code 1 because the default `gpt-5.3-codex` model was not supported by the active ChatGPT account. After updating the adapter profile to `gpt-5.5`, Codex used 6,130 tokens but could not write under a read-only inner sandbox. After the approved writable Codex profile update and adapter timeout containment, Codex used 8,674 tokens and produced a correct one-file `README.md` diff. The first Claude Code run returned exit code 1 with `Not logged in - Please run /login`; after CLI login, Claude Code rerun returned `tool_exit: 0`, `changed_files: 1`, and produced a correct one-file `README.md` diff.
 
 ## Pre-M1 Hardening Checkpoint
 
@@ -126,7 +126,7 @@ It is the project-local build ledger for Hivemind AI.
 
 | Subtask | Status | Notes |
 | --- | --- | --- |
-| M5.1 - Spec artifact + ratification gate | Not started | No planning while spec is draft. |
+| M5.1 - Spec artifact + ratification gate | Complete | Implemented in `84573da`. Added versioned PRD spec artifacts under `.hivemind/spec/<id>.md`, an active spec pointer at `.hivemind/spec/active.json`, `hivemind spec <id> --create --title <title>`, `--validate`, `--ratify`, and a minimal deterministic `hivemind plan <spec-id> --check`. Draft, missing, invalid, or inactive specs now fail closed before task-contract creation, lease grants, worktree creation/reuse, or worker invocation; read-only status, contract validation, analyze verdicts, submit, and shadow integration remain outside the M5.1 gate. Acceptance proves draft specs block planning and lease grants, ratification unblocks both, and daemon/MCP mutation paths cannot bypass the draft gate. Validation: `npm run build; node --test dist/test/spec.test.js dist/test/mcp.test.js` with 12 tests; targeted affected slice with 100 tests; `npm run typecheck`; `npm test` with 177 tests; `git diff --check`; static scans for gated entrypoints and stale markers. No paid provider calls. |
 | M5.2 - Discovery & ideation loop + self-critique | Not started | Ratification requires user sign-off. |
 | M5.3 - Manager-agent loop + manager chat | Not started | Every mutation through deterministic tools/gates. |
 | M5.4 - Planning loop | Not started | Tentative scopes only until grounded/linted. |
