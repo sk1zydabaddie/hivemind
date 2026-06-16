@@ -6,6 +6,7 @@ import { writeFileAtomic } from "./atomic.js";
 import { loadAndValidateContract } from "./contract.js";
 import { captureWorktreeDiff } from "./diff-capture.js";
 import { findGitRoot } from "./repo.js";
+import { verifyLeaseCoverage } from "./lease.js";
 import { createTaskWorktree } from "./worktree.js";
 
 const execFileAsync = promisify(execFile);
@@ -55,6 +56,11 @@ export async function runTask(
   const contractResult = await loadAndValidateContract(repoRoot, taskId);
   if (!contractResult.ok) {
     return contractResult;
+  }
+
+  const leaseResult = await verifyLeaseCoverage(repoRoot, taskId, contractResult.contract.allowed_files);
+  if (!leaseResult.ok) {
+    return leaseResult;
   }
 
   const worktreeResult = await createTaskWorktree(repoRoot, taskId);

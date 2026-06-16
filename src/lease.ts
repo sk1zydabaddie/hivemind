@@ -57,6 +57,37 @@ export async function requestLeaseForContract(repoRoot: string, taskId: string):
   return requestLease(repoRoot, taskId, contractResult.contract.allowed_files);
 }
 
+export async function verifyLeaseCoverage(repoRoot: string, taskId: string, files: string[]): Promise<{ ok: true; files: string[] } | { ok: false; reason: string }> {
+  const taskIdResult = validateRequestedTaskId(taskId);
+  if (!taskIdResult.ok) {
+    return taskIdResult;
+  }
+
+  const pathsResult = await canonicalizeConcreteFileScope(repoRoot, files, "lease coverage");
+  if (!pathsResult.ok) {
+    return pathsResult;
+  }
+
+  const storeResult = await readActiveLeases(repoRoot);
+  if (!storeResult.ok) {
+    return storeResult;
+  }
+
+  const missing = pathsResult.paths
+    .map((filePath) => ({ filePath, holder: storeResult.store[filePath] }))
+    .filter((entry) => entry.holder !== taskId);
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      reason: `active lease does not cover task allowed_files: ${missing
+        .map((entry) => `${entry.filePath} ${entry.holder === undefined ? "is not leased" : `held by ${entry.holder}`}`)
+        .join("; ")}`
+    };
+  }
+
+  return { ok: true, files: pathsResult.paths };
+}
+
 export async function requestLease(repoRoot: string, taskId: string, files: string[]): Promise<LeaseResult<LeaseGrantResult>> {
   const taskIdResult = validateRequestedTaskId(taskId);
   if (!taskIdResult.ok) {

@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { initProject } from "../src/init.js";
+import { requestLease } from "../src/lease.js";
 import { runTask } from "../src/run.js";
 
 const execFileAsync = promisify(execFile);
@@ -21,6 +22,7 @@ test("runTask captures an untracked worker-created file in diff.patch", async ()
     ]);
     await writeContract(repo, "T-001", baseCommit, ["new-file.txt"]);
     await writeProfile(repo, "fake", agentPath);
+    await grantLease(repo, "T-001", ["new-file.txt"]);
 
     const result = await runTask(repo, "T-001", "fake");
 
@@ -39,11 +41,51 @@ test("runTask captures an untracked worker-created file in diff.patch", async ()
   });
 });
 
+test("runTask refuses to invoke an agent without a covering active lease", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const agentPath = await writeAgent(repo, "should-not-run-without-lease.mjs", [
+      "await import('node:fs/promises').then(({ writeFile }) => writeFile('README.md', '# Fixture\\nagent ran without lease\\n'));"
+    ]);
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writeProfile(repo, "fake", agentPath);
+
+    const noLease = await runTask(repo, "T-001", "fake");
+
+    assert.equal(noLease.ok, false);
+    if (noLease.ok) {
+      return;
+    }
+    assert.match(noLease.reason, /active lease does not cover task allowed_files/);
+    assert.match(noLease.reason, /README\.md is not leased/);
+    await assertMissing(path.join(repo, ".hivemind", "worktrees", "T-001"));
+    await assertMissing(path.join(repo, ".hivemind", "patches", "T-001", "diff.patch"));
+
+    await mkdir(path.join(repo, "src"), { recursive: true });
+    await writeFile(path.join(repo, "src", "extra.ts"), "export const extra = true;\n");
+    await git(repo, ["add", "src/extra.ts"]);
+    await git(repo, ["commit", "-m", "add extra"]);
+    const nextBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
+    await writeContract(repo, "T-002", nextBase, ["README.md", "src/extra.ts"]);
+    await grantLease(repo, "T-002", ["README.md"]);
+
+    const partialLease = await runTask(repo, "T-002", "fake");
+
+    assert.equal(partialLease.ok, false);
+    if (partialLease.ok) {
+      return;
+    }
+    assert.match(partialLease.reason, /src\/extra\.ts is not leased/);
+    await assertMissing(path.join(repo, ".hivemind", "worktrees", "T-002"));
+    await assertMissing(path.join(repo, ".hivemind", "patches", "T-002", "diff.patch"));
+  });
+});
+
 test("runTask writes an empty diff when the adapter makes no changes", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     const agentPath = await writeAgent(repo, "noop-agent.mjs", ["console.log('no changes');"]);
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
     await writeProfile(repo, "fake", agentPath);
+    await grantLease(repo, "T-001", ["README.md"]);
 
     const result = await runTask(repo, "T-001", "fake");
 
@@ -66,6 +108,7 @@ test("runTask captures diff even when the adapter exits non-zero", async () => {
     ]);
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
     await writeProfile(repo, "fake", agentPath);
+    await grantLease(repo, "T-001", ["README.md"]);
 
     const result = await runTask(repo, "T-001", "fake");
 
@@ -88,6 +131,7 @@ test("runTask captures diff even when the adapter times out", async () => {
     ]);
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
     await writeProfile(repo, "fake", agentPath, 50);
+    await grantLease(repo, "T-001", ["README.md"]);
 
     const result = await runTask(repo, "T-001", "fake");
 
@@ -111,6 +155,7 @@ test("CLI run prints stable JSON", async () => {
     ]);
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
     await writeProfile(repo, "fake", agentPath);
+    await grantLease(repo, "T-001", ["README.md"]);
 
     const result = await execFileAsync("node", [cliPath, "run", "T-001", "--tool", "fake"], {
       cwd: repo,
@@ -137,6 +182,7 @@ test("CLI run requires explicit approval for dangerous adapter flags", async () 
     ]);
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
     await writeProfile(repo, "fake", agentPath, undefined, true);
+    await grantLease(repo, "T-001", ["README.md"]);
 
     await assert.rejects(
       execFileAsync("node", [cliPath, "run", "T-001", "--tool", "fake"], { cwd: repo, windowsHide: true }),
@@ -177,6 +223,7 @@ test("CLI run rejects invalid usage", async () => {
 test("runTask returns a scoped error when the adapter profile is missing", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await grantLease(repo, "T-001", ["README.md"]);
 
     const result = await runTask(repo, "T-001", "missing");
 
@@ -197,6 +244,7 @@ test("runTask rejects an existing dirty worktree before invoking the adapter", a
     ]);
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
     await writeProfile(repo, "fake", agentPath);
+    await grantLease(repo, "T-001", ["README.md"]);
 
     const firstRun = await runTask(repo, "T-001", "fake");
     assert.equal(firstRun.ok, true);
@@ -222,6 +270,7 @@ test("runTask allows rerun when only the Hivemind-owned agent.log remains", asyn
     const agentPath = await writeAgent(repo, "noop-rerun-agent.mjs", ["console.log('rerun ok');"]);
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
     await writeProfile(repo, "fake", agentPath);
+    await grantLease(repo, "T-001", ["README.md"]);
 
     const firstRun = await runTask(repo, "T-001", "fake");
     assert.equal(firstRun.ok, true);
@@ -322,6 +371,11 @@ async function writeProfile(repo: string, tool: string, agentPath: string, timeo
     path.join(adaptersDir, `${tool}.profile.json`),
     `${JSON.stringify(profile, null, 2)}\n`
   );
+}
+
+async function grantLease(repo: string, taskId: string, files: string[]): Promise<void> {
+  const result = await requestLease(repo, taskId, files);
+  assert.equal(result.ok, true);
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {
