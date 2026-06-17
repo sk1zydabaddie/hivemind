@@ -1,12 +1,12 @@
 import { exec, execFile } from "node:child_process";
-import { mkdir, rm, stat } from "node:fs/promises";
+import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { analyzeTask } from "./analyze.js";
 import { writeJsonAtomic } from "./atomic.js";
 import { loadConfig } from "./config.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
-import { appendEvent } from "./events.js";
+import { appendEvent, readEvents } from "./events.js";
 import { readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
 import { validateRequestedTaskId } from "./task-id.js";
@@ -205,6 +205,11 @@ export async function enqueueIntegrationPatch(
     return patchResult;
   }
 
+  const acceptedResult = await requireAcceptedPatchEvidence(repoRoot, taskId);
+  if (!acceptedResult.ok) {
+    return acceptedResult;
+  }
+
   const queueResult = await loadQueueOrEmpty(repoRoot);
   if (!queueResult.ok) {
     return queueResult;
@@ -364,13 +369,63 @@ async function statPatchBundle(repoRoot: string, taskId: string): Promise<{ ok: 
   const filePath = patchPath(repoRoot, taskId);
   try {
     const file = await stat(filePath);
-    return file.isFile() ? { ok: true } : { ok: false, reason: `.hivemind/patches/${taskId}/diff.patch is not a file` };
+    if (!file.isFile()) {
+      return { ok: false, reason: `.hivemind/patches/${taskId}/diff.patch is not a file` };
+    }
+    const patch = await readFile(filePath, "utf8");
+    if (patch.trim() === "") {
+      return { ok: false, reason: `patch bundle is empty: .hivemind/patches/${taskId}/diff.patch` };
+    }
+    return { ok: true };
   } catch (error: unknown) {
     if (isNodeError(error, "ENOENT")) {
       return { ok: false, reason: `patch bundle not found: .hivemind/patches/${taskId}/diff.patch` };
     }
     throw error;
   }
+}
+
+async function requireAcceptedPatchEvidence(repoRoot: string, taskId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const eventsResult = await readEvents(repoRoot);
+  if (!eventsResult.ok) {
+    return eventsResult;
+  }
+
+  let latestSubmitIndex = -1;
+  let latestAcceptedIndex = -1;
+  let latestRejectedIndex = -1;
+  for (const [index, event] of eventsResult.value.entries()) {
+    if (event.task_id !== taskId) {
+      continue;
+    }
+    if (event.type === "patch.submitted") {
+      latestSubmitIndex = index;
+      latestAcceptedIndex = -1;
+      latestRejectedIndex = -1;
+      continue;
+    }
+    if (latestSubmitIndex === -1 || index <= latestSubmitIndex) {
+      continue;
+    }
+    if (event.type === "patch.accepted" && event.data.verdict === "accept") {
+      latestAcceptedIndex = index;
+    }
+    if (event.type === "patch.rejected") {
+      latestRejectedIndex = index;
+    }
+  }
+
+  if (latestSubmitIndex === -1) {
+    return { ok: false, reason: `patch ${taskId} has no patch.submitted event` };
+  }
+  if (latestAcceptedIndex === -1) {
+    return { ok: false, reason: `patch ${taskId} has no patch.accepted event after latest patch.submitted` };
+  }
+  if (latestRejectedIndex > latestAcceptedIndex) {
+    return { ok: false, reason: `latest analysis for patch ${taskId} is patch.rejected` };
+  }
+
+  return { ok: true };
 }
 
 function integrationTimestamp(): string {

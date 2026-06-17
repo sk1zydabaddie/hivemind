@@ -7,9 +7,9 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { readEvents } from "../src/events.js";
+import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
-import { integrateShadow, type IntegrationStatus } from "../src/integrate.js";
+import { enqueueIntegrationPatch, integrateShadow, type IntegrationStatus } from "../src/integrate.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -214,6 +214,46 @@ test("CLI integrate rejects invalid usage", async () => {
         return true;
       }
     );
+  });
+});
+
+test("enqueueIntegrationPatch requires a real submitted and accepted non-empty patch", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writePatchFromEdit(repo, "T-001", baseCommit, async () => {
+      await writeFile(path.join(repo, "README.md"), "# Fixture\nqueued only after analysis\n");
+    });
+
+    const noSubmit = await enqueueIntegrationPatch(repo, "T-001");
+    assert.equal(noSubmit.ok, false);
+    if (noSubmit.ok) {
+      return;
+    }
+    assert.match(noSubmit.reason, /no patch\.submitted event/);
+
+    await appendEvent(repo, {
+      type: "patch.submitted",
+      task_id: "T-001",
+      data: { patch_path: ".hivemind/patches/T-001/diff.patch", changed_files: 1 }
+    });
+    const noAccept = await enqueueIntegrationPatch(repo, "T-001");
+    assert.equal(noAccept.ok, false);
+    if (noAccept.ok) {
+      return;
+    }
+    assert.match(noAccept.reason, /no patch\.accepted event after latest patch\.submitted/);
+
+    await appendEvent(repo, {
+      type: "patch.accepted",
+      task_id: "T-001",
+      data: { verdict: "accept", reason: "all changes are within scope" }
+    });
+    const queued = await enqueueIntegrationPatch(repo, "T-001");
+    assert.equal(queued.ok, true);
+    if (!queued.ok) {
+      return;
+    }
+    assert.deepEqual(queued.value.queue, ["T-001"]);
   });
 });
 

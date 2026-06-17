@@ -130,6 +130,13 @@ export async function runTask(
     return diffResult;
   }
 
+  if (invokeResult.value.exitCode !== 0) {
+    return {
+      ok: false,
+      reason: `worker ${routeResult.value.tool} exited ${invokeResult.value.exitCode}; diff captured at .hivemind/patches/${taskId}/diff.patch with ${diffResult.value.changedFiles} changed file(s)`
+    };
+  }
+
   return {
     ok: true,
     value: {

@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { readEvents } from "../src/events.js";
+import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import {
   executeManagerAction,
@@ -427,6 +427,58 @@ test("manager autonomous loop hard-stops on gate rejection without retrying or c
   });
 });
 
+test("manager autonomous loop stops on non-zero worker exit and does not enqueue", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const agentPath = await writeAgent(repo, "crashing-worker-agent.mjs", [
+      "console.error('worker crashed before producing changes');",
+      "process.exit(9);"
+    ]);
+    await writeProfile(repo, "strong-worker", agentPath, "strong", 1);
+    const contract = managerContract("T-CRASH", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, contract);
+    await writeReactiveManagerProposalProfile(repo, {
+      initial: proposalFor([{ type: "create_task_contract", contract }]),
+      after_create_task_contract_ok: proposalFor([{ type: "request_lease", task_id: "T-CRASH" }]),
+      after_request_lease_ok: proposalFor([{ type: "check_write_intent", task_id: "T-CRASH", intent: intentFor("T-CRASH", ["README.md"]) }]),
+      after_check_write_intent_ok: proposalFor([{ type: "create_worktree", task_id: "T-CRASH" }]),
+      after_create_worktree_ok: proposalFor([{ type: "run_worker", task_id: "T-CRASH", tool: "strong-worker" }], ["run_worker"]),
+      after_run_worker_rejected: proposalFor([{ type: "enqueue_patch", task_id: "T-CRASH" }])
+    });
+
+    const result = await runAutonomousManagerLoop(repo, "Drive crashing worker", {
+      tool: "manager",
+      approvedActions: new Set(["run_worker"]),
+      maxSteps: 10
+    });
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.value.status, "stopped");
+    assert.deepEqual(result.value.steps.map((step) => step.action_type), [
+      "create_task_contract",
+      "request_lease",
+      "check_write_intent",
+      "create_worktree",
+      "run_worker"
+    ]);
+    const finalStep = result.value.steps.at(-1);
+    assert.equal(finalStep?.tier, "gate_rejection");
+    assert.equal(finalStep?.result?.ok, false);
+    assert.match(finalStep.result.reason, /worker strong-worker exited 9/);
+    assert.equal(await exists(path.join(repo, ".hivemind", "integration", "queue.json")), false);
+    assert.deepEqual(await managerReactiveCalls(repo), [
+      "initial",
+      "after_create_task_contract_ok",
+      "after_request_lease_ok",
+      "after_check_write_intent_ok",
+      "after_create_worktree_ok"
+    ]);
+  });
+});
+
 test("manager create_task_contract is refused when the current plan fails lint", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
@@ -786,6 +838,19 @@ test("manager enqueue_patch rejects missing and duplicate patch bundles determin
 
     await mkdir(path.join(repo, ".hivemind", "patches", "T-001"), { recursive: true });
     await writeFile(path.join(repo, ".hivemind", "patches", "T-001", "diff.patch"), "");
+    const empty = await executeManagerAction(repo, sessionResult.value.session_id, { type: "enqueue_patch", task_id: "T-001" });
+    assert.equal(empty.ok, true);
+    if (!empty.ok) {
+      return;
+    }
+    assert.equal(empty.value.result.ok, false);
+    if (!empty.value.result.ok) {
+      assert.match(empty.value.result.reason, /patch bundle is empty/);
+    }
+
+    await writeAcceptedPatchBundle(repo, "T-001", baseCommit, async () => {
+      await writeFile(path.join(repo, "README.md"), "# Fixture\nqueue after accepted analysis\n");
+    });
     const queued = await executeManagerAction(repo, sessionResult.value.session_id, { type: "enqueue_patch", task_id: "T-001" });
     assert.equal(queued.ok, true);
     if (!queued.ok) {
@@ -817,8 +882,9 @@ test("manager enqueue_patch routes through a live daemon instead of direct queue
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
-    await mkdir(path.join(repo, ".hivemind", "patches", "T-001"), { recursive: true });
-    await writeFile(path.join(repo, ".hivemind", "patches", "T-001", "diff.patch"), "");
+    await writeAcceptedPatchBundle(repo, "T-001", baseCommit, async () => {
+      await writeFile(path.join(repo, "README.md"), "# Fixture\nqueued through daemon\n");
+    });
     const sessionResult = await startManagerSession(repo, "Queue through daemon", { proposedAction: testProposal() });
     assert.equal(sessionResult.ok, true);
     if (!sessionResult.ok) {
@@ -1198,9 +1264,32 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
   );
 }
 
+async function writeAcceptedPatchBundle(repo: string, taskId: string, baseCommit: string, edit: () => Promise<void>): Promise<void> {
+  await git(repo, ["reset", "--hard", baseCommit]);
+  await edit();
+  const patchDir = path.join(repo, ".hivemind", "patches", taskId);
+  await mkdir(patchDir, { recursive: true });
+  await writeFile(path.join(patchDir, "diff.patch"), await gitRawStdout(repo, ["diff", "--no-renames", baseCommit]));
+  await git(repo, ["reset", "--hard", baseCommit]);
+  await appendEvent(repo, {
+    type: "patch.submitted",
+    task_id: taskId,
+    data: { patch_path: `.hivemind/patches/${taskId}/diff.patch`, changed_files: 1 }
+  });
+  await appendEvent(repo, {
+    type: "patch.accepted",
+    task_id: taskId,
+    data: { verdict: "accept", reason: "all changes are within scope" }
+  });
+}
+
 async function gitStdout(cwd: string, args: string[]): Promise<string> {
+  return (await gitRawStdout(cwd, args)).trim();
+}
+
+async function gitRawStdout(cwd: string, args: string[]): Promise<string> {
   const result = await execFileAsync("git", args, { cwd, windowsHide: true });
-  return result.stdout.trim();
+  return result.stdout;
 }
 
 async function cleanupTempRepo(repo: string): Promise<void> {

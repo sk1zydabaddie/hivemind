@@ -134,7 +134,7 @@ test("runTask writes an empty diff when the adapter makes no changes", async () 
   });
 });
 
-test("runTask captures diff even when the adapter exits non-zero", async () => {
+test("runTask captures diff but returns failure when the adapter exits non-zero", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     const agentPath = await writeAgent(repo, "nonzero-agent.mjs", [
       "const { appendFile } = await import('node:fs/promises');",
@@ -147,17 +147,17 @@ test("runTask captures diff even when the adapter exits non-zero", async () => {
 
     const result = await runTask(repo, "T-001", "fake");
 
-    assert.equal(result.ok, true);
-    if (!result.ok) {
+    assert.equal(result.ok, false);
+    if (result.ok) {
       return;
     }
-    assert.equal(result.value.tool_exit, 7);
-    assert.equal(result.value.changed_files, 1);
-    assert.match(await readFile(result.value.diff_path, "utf8"), /\+changed before nonzero exit/);
+    assert.match(result.reason, /worker fake exited 7/);
+    assert.match(result.reason, /1 changed file/);
+    assert.match(await readFile(path.join(repo, ".hivemind", "patches", "T-001", "diff.patch"), "utf8"), /\+changed before nonzero exit/);
   });
 });
 
-test("runTask captures diff even when the adapter times out", async () => {
+test("runTask captures diff but returns failure when the adapter times out", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     const agentPath = await writeAgent(repo, "timeout-agent.mjs", [
       "const { appendFile } = await import('node:fs/promises');",
@@ -170,13 +170,13 @@ test("runTask captures diff even when the adapter times out", async () => {
 
     const result = await runTask(repo, "T-001", "fake");
 
-    assert.equal(result.ok, true);
-    if (!result.ok) {
+    assert.equal(result.ok, false);
+    if (result.ok) {
       return;
     }
-    assert.equal(result.value.tool_exit, 124);
-    assert.equal(result.value.changed_files, 1);
-    assert.match(await readFile(result.value.diff_path, "utf8"), /\+changed before timeout/);
+    assert.match(result.reason, /worker fake exited 124/);
+    assert.match(result.reason, /1 changed file/);
+    assert.match(await readFile(path.join(repo, ".hivemind", "patches", "T-001", "diff.patch"), "utf8"), /\+changed before timeout/);
     const log = await readFile(path.join(repo, ".hivemind", "worktrees", "T-001", "agent.log"), "utf8");
     assert.match(log, /timed_out: true/);
   });

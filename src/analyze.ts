@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { loadConfig } from "./config.js";
 import { loadAndValidateContract } from "./contract.js";
@@ -51,7 +51,11 @@ export async function analyzeTask(
     return { ok: false, reason: `patch not found: .hivemind/patches/${taskId}/diff.patch` };
   }
 
-  const gateResult = await runGate(contractResult.contract.base_commit, patchPath, contractResult.contract, configResult.config);
+  const patch = await readFile(patchPath, "utf8");
+  const gateResult: GateResult =
+    patch.trim() === ""
+      ? { verdict: "reject", reason: "empty patch: no changes to analyze" }
+      : await runGate(contractResult.contract.base_commit, patchPath, contractResult.contract, configResult.config);
   if (options.emitEvent !== false) {
     const eventType = gateResult.verdict === "accept" ? "patch.accepted" : "patch.rejected";
     const eventResult = await appendEvent(repoRoot, {

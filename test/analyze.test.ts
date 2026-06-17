@@ -128,6 +128,33 @@ test("CLI analyze reports a missing diff patch before running the gate", async (
   });
 });
 
+test("analyzeTask rejects an empty patch instead of accepting no changes", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-EMPTY", baseCommit, ["README.md"]);
+    const patchDir = path.join(repo, ".hivemind", "patches", "T-EMPTY");
+    await mkdir(patchDir, { recursive: true });
+    await writeFile(path.join(patchDir, "diff.patch"), "");
+
+    const result = await analyzeTask(repo, "T-EMPTY");
+
+    assert.deepEqual(result, {
+      ok: true,
+      value: {
+        verdict: "reject",
+        reason: "empty patch: no changes to analyze"
+      }
+    });
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.equal(events.value.at(-1)?.type, "patch.rejected");
+    assert.equal(events.value.at(-1)?.task_id, "T-EMPTY");
+    assert.equal(events.value.at(-1)?.data.verdict, "reject");
+  });
+});
+
 test("CLI analyze rejects invalid usage", async () => {
   await withTempRepo(async ({ repo }) => {
     await assert.rejects(
