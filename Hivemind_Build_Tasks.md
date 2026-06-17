@@ -390,9 +390,9 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
 ### M5.5 — Grounding (evidence + existence + freshness)
 - **Depends on:** M5.4, M0.2.
 - **Read first:** § *Task Planner* → grounding evidence tiers (existence, freshness).
-- **Goal:** Require deterministic evidence that a scope's files exist at the base and are fresh before a lease can be granted.
-- **Behavior — exact (C4/C6):** For each tentative scope, verify every cited path **exists at the task's `base_commit`** (else fail closed — no guessed paths reach a lease) and that the evidence reflects the current base (stale → re-derive). Advisory closure-coverage is a flag only (fail-safe), not a block.
-- **Acceptance test (binary):** A scope citing a non-existent or moved path is refused before any lease; a scope built on a stale base is flagged for re-derivation.
+- **Goal:** Require deterministic create-vs-modify grounding evidence before a lease can be granted.
+- **Behavior — exact (C4/C6):** `draft_scope.allowed_files` may include optional per-path intent in `draft_scope.allowed_file_intents`: `{ "<allowed_files entry>": "create"|"modify" }`. Missing, ambiguous, or unparseable intent defaults to `modify` (the stricter side). `modify` allowed paths and all `read_only_files` must exist at the task's `base_commit`. `create` allowed paths must **not** exist at `base_commit` (else reject as a silent clobber) and must canonicalize/confine inside the repo and task scope. A `create` glob may ground with zero base matches; a `modify` glob must match tracked files. Evidence must reflect the current base (stale → re-derive). Advisory closure-coverage is a flag only (fail-safe), not a block.
+- **Acceptance test (binary):** A modify path that does not exist is rejected; a create path that already exists is rejected; a create path/glob that is confined and does not exist grounds; an unlabeled path is treated as modify and must exist; a scope built on a stale base is flagged for re-derivation.
 
 ### M5.6 — Plan-lint (deterministic plan checks)
 - **Depends on:** M5.4, M5.5, M2.1.

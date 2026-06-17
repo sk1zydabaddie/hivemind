@@ -338,6 +338,82 @@ test("plan ground refuses missing paths and leaves the plan ungrounded", async (
   });
 });
 
+test("plan ground treats unlabeled allowed paths as modify and rejects missing files", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const planPath = await writePlan(repo, {
+      tasks: [task("T-UNLABELED", { draft_scope: draftScope(["src/new.js"]) })],
+      execution_groups: [group("G-1", "parallel", ["T-UNLABELED"])]
+    });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+
+    await assertPlanRejects(repo, ["plan", "S-001", "--ground"], /task T-UNLABELED allowed_files path "src\/new\.js" is not a tracked file at base/);
+  });
+});
+
+test("plan ground rejects create paths that already exist at base as clobbers", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const planPath = await writePlan(repo, {
+      tasks: [task("T-CLOBBER", { draft_scope: draftScope(["README.md"], { "README.md": "create" }) })],
+      execution_groups: [group("G-1", "parallel", ["T-CLOBBER"])]
+    });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+
+    await assertPlanRejects(repo, ["plan", "S-001", "--ground"], /task T-CLOBBER allowed_files create path "README\.md" already exists at base/);
+  });
+});
+
+test("plan ground accepts confined create paths and create globs that do not exist at base", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const planPath = await writePlan(repo, {
+      tasks: [
+        task("T-CREATE", {
+          draft_scope: draftScope(["src/new.js", "test/**/*.js"], {
+            "src/new.js": "create",
+            "test/**/*.js": "create"
+          })
+        })
+      ],
+      execution_groups: [group("G-1", "parallel", ["T-CREATE"])]
+    });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+
+    const grounded = await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+    assert.equal(JSON.parse(grounded.stdout).grounding_status, "grounded");
+
+    const stored = JSON.parse(await readFile(path.join(repo, ".hivemind", "plans", "S-001.tentative.json"), "utf8")) as {
+      base_commit: string;
+      tasks: Array<{
+        grounded_scope: { allowed_files: string[]; allowed_file_intents?: Record<string, string> };
+        grounding_evidence: { base_commit: string; cited_paths: string[]; resolved_files: string[] };
+      }>;
+    };
+    assert.equal(stored.base_commit, baseCommit);
+    assert.deepEqual(stored.tasks[0].grounded_scope.allowed_files, ["src/new.js", "test/**/*.js"]);
+    assert.deepEqual(stored.tasks[0].grounded_scope.allowed_file_intents, {
+      "src/new.js": "create",
+      "test/**/*.js": "create"
+    });
+    assert.deepEqual(stored.tasks[0].grounding_evidence.cited_paths, ["src/new.js", "test/**/*.js"]);
+    assert.deepEqual(stored.tasks[0].grounding_evidence.resolved_files, ["src/new.js", "test/**/*.js"]);
+  });
+});
+
+test("plan ground treats invalid allowed_file_intents values as modify", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const planPath = await writePlan(repo, {
+      tasks: [task("T-BADINTENT", { draft_scope: draftScope(["src/new.js"], { "src/new.js": "creat" }) })],
+      execution_groups: [group("G-1", "parallel", ["T-BADINTENT"])]
+    });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+
+    await assertPlanRejects(repo, ["plan", "S-001", "--ground"], /task T-BADINTENT allowed_files path "src\/new\.js" is not a tracked file at base/);
+  });
+});
+
 test("plan ground refuses zero-match globs and stale base plans", async () => {
   await withTempRepo(async ({ repo }) => {
     await createRatifiedSpec(repo, "S-001");
@@ -750,9 +826,10 @@ function task(
   };
 }
 
-function draftScope(allowedFiles: unknown[]): Record<string, unknown> {
+function draftScope(allowedFiles: unknown[], allowedFileIntents?: Record<string, unknown>): Record<string, unknown> {
   return {
     allowed_files: allowedFiles,
+    ...(allowedFileIntents === undefined ? {} : { allowed_file_intents: allowedFileIntents }),
     read_only_files: [],
     forbidden_files: [],
     must_not_change: []
