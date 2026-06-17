@@ -370,8 +370,16 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
 - **Depends on:** M4.4 (MCP tools), M5.1.
 - **Read first:** Overview § *Primary Manager Agent* (the step sequence), § *Core Workflow*.
 - **Goal:** The orchestrator LLM loop that turns a user message into gated actions via the MCP tools.
-- **Behavior — exact (C4):** A chat surface drives the orchestrator through: ingest ratified spec → plan → request leases → launch workers → collect/analyze patches → integrate. **Every state-changing step goes through the deterministic tools/gates;** the orchestrator only ever *proposes*. (If this proves too large for one contract, split into: chat I/O, the action loop, and tool-call wiring.)
-- **Acceptance test (binary):** A user message results in the orchestrator driving a full task through to a gated integration, with every mutation passing through the deterministic layer (verifiable in the event log).
+- **Behavior — exact:** TWO halves.
+  (a) DETERMINISTIC action-execution loop — ALREADY BUILT in `src/manager.ts`; do not rewrite it. It stays the floor: every manager action is routed through the existing deterministic tools/gates for contract creation, create-aware lease grant, mandatory write-intent, worktree creation, worker invocation, patch submission, diff-scope analysis, queueing, and shadow integration.
+  (b) GENERATIVE half — NEW, the deliverable: replace the hardcoded `await_planning_loop` manager proposal with an orchestrator proposal generator. Given the current durable state (ratified spec, grounded+linted plan, task status, lease state, write-intent/gate/integration results), an LLM proposes the next manager actions: request leases, submit write-intent scoped to the granted lease, invoke workers, collect/analyze patches, and integrate. The generated proposal FEEDS the existing deterministic action loop (a); it does not bypass or duplicate it.
+  LLM-integration decisions:
+    * LLM calls are allowed here because a manager action list is a PROPOSAL, not a guarantee. C4 still forbids LLM calls inside contract validation, lease grant, write-intent checking, diff-scope analysis, integration, quota ceilings, and other guarantee-enforcing code.
+    * Use the existing adapter mechanism; route the call through the resource ledger so it is metered. Do not invent a provider path.
+    * The generator PROPOSES; deterministic gates DISPOSE. The manager must never self-approve a gate, mark a plan/spec ratified, skip plan-lint, skip write-intent, or treat its own narration as proof.
+    * Consequential steps such as worker invocation and shadow integration remain explicit manager actions whose deterministic results are recorded; human approval is represented by the operator choosing to execute those proposed actions.
+  If the generative half proves too large under C10, split it into state→action proposal generation and write-intent generation without creating a parallel manager executor.
+- **Acceptance test (BEHAVIORAL, human-judged — NOT binary):** On the trimr spec/plan, the ORCHESTRATOR (not a human-authored action JSON file) proposes a sequence of manager actions. A human reads `manager-transcript.md` and confirms: the actions were generated, not authored; write-intent is present before worker invocation; each action's deterministic gate result is recorded; no gate is self-approved or bypassed; and the old hardcoded `await_planning_loop` proposal path is gone. Judged by reading output, not an automated pass/fail.
 
 ### M5.4 — Planning loop (tentative plan + task split)
 - **Depends on:** M5.1.

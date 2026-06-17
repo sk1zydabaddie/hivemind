@@ -1,14 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { analyzeTask } from "./analyze.js";
 import { writeJsonAtomic } from "./atomic.js";
+import { findDangerousAdapterArgs, loadAdapterProfile, runAdapterProcess } from "./adapter.js";
 import { createTaskContract, type CreateTaskContractResult } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { enqueueIntegrationPatch, integrateShadow, type EnqueueIntegrationPatchResult, type IntegrationStatus } from "./integrate.js";
 import { checkWriteIntent, type WriteIntentPass } from "./intent.js";
+import { extractJsonObject } from "./json.js";
 import { requestLeaseForContract, type LeaseGrantResult } from "./lease.js";
+import { loadTentativePlan } from "./plan.js";
 import { findGitRoot } from "./repo.js";
+import { adapterOutputIndicatesThrottle, recordQuotaUsage } from "./resource-ledger.js";
 import { runTask, type RunResult } from "./run.js";
 import { runScout, type ScoutResult } from "./scout.js";
 import { requireActiveSpecRatified, type SpecResult } from "./spec.js";
@@ -48,10 +52,13 @@ interface ManagerTurn {
   content: string;
 }
 
-interface ManagerProposedAction {
-  type: "await_planning_loop";
+export interface ManagerProposedAction {
+  type: "proposed_actions";
+  source: "adapter-generated" | "scripted";
   reason: string;
-  requires: "M5.4";
+  actions: ManagerAction[];
+  human_approval_required_for: ManagerAction["type"][];
+  tool?: string;
 }
 
 interface ManagerExecutedAction {
@@ -65,8 +72,7 @@ type ManagerActionExecutionRecord =
   | { ok: true; value: unknown }
   | { ok: false; reason: string };
 
-type ManagerAction =
-  | { type: "await_planning_loop" }
+export type ManagerAction =
   | { type: "get_status" }
   | { type: "create_task_contract"; contract: Record<string, unknown> }
   | { type: "request_lease"; task_id: string }
@@ -105,6 +111,11 @@ export interface ManagerLoopResult {
   final_status: HivemindStatus;
 }
 
+interface StartManagerSessionOptions {
+  tool?: string;
+  proposedAction?: ManagerProposedAction;
+}
+
 export async function managerCommand(cwd: string, args: string[]): Promise<number> {
   const parsed = parseManagerArgs(args);
   if (!parsed.ok) {
@@ -137,12 +148,12 @@ export async function managerCommand(cwd: string, args: string[]): Promise<numbe
 async function runParsedManagerCommand(
   repoRoot: string,
   parsed:
-    | { mode: "message"; message: string }
+    | { mode: "message"; message: string; tool?: string }
     | { mode: "action"; sessionId: string; actionFile: string }
     | { mode: "fake-loop"; message: string; actionsFile: string }
 ): Promise<SpecResult<ManagerSessionResult | ManagerActionResult | ManagerLoopResult>> {
   if (parsed.mode === "message") {
-    return startManagerSession(repoRoot, parsed.message);
+    return startManagerSession(repoRoot, parsed.message, { tool: parsed.tool });
   }
   if (parsed.mode === "action") {
     return executeManagerActionFromFile(repoRoot, parsed.sessionId, parsed.actionFile);
@@ -150,7 +161,11 @@ async function runParsedManagerCommand(
   return runNoPaidManagerLoopFromFile(repoRoot, parsed.message, parsed.actionsFile);
 }
 
-export async function startManagerSession(repoRoot: string, message: string): Promise<SpecResult<ManagerSessionResult>> {
+export async function startManagerSession(
+  repoRoot: string,
+  message: string,
+  options: StartManagerSessionOptions = {}
+): Promise<SpecResult<ManagerSessionResult>> {
   if (message.trim() === "") {
     return { ok: false, reason: "manager message must not be empty" };
   }
@@ -173,11 +188,13 @@ export async function startManagerSession(repoRoot: string, message: string): Pr
     return status;
   }
 
-  const proposedAction: ManagerProposedAction = {
-    type: "await_planning_loop",
-    reason: "M5.4 planning loop must produce a tentative plan with `hivemind plan <spec-id> --propose <plan-json-file>` before manager action execution can continue",
-    requires: "M5.4"
-  };
+  const proposedAction =
+    options.proposedAction === undefined
+      ? await generateManagerProposal(repoRoot, message.trim(), options.tool ?? "manager", spec.value.spec_id)
+      : ({ ok: true, value: options.proposedAction } as const);
+  if (!proposedAction.ok) {
+    return proposedAction;
+  }
   const sessionId = randomUUID();
   const session: ManagerSession = {
     version: 1,
@@ -200,9 +217,9 @@ export async function startManagerSession(repoRoot: string, message: string): Pr
     },
     turns: [
       { role: "user", content: message.trim() },
-      { role: "manager", content: proposedAction.reason }
+      { role: "manager", content: proposedAction.value.reason }
     ],
-    proposed_action: proposedAction,
+    proposed_action: proposedAction.value,
     executed_actions: []
   };
 
@@ -214,8 +231,261 @@ export async function startManagerSession(repoRoot: string, message: string): Pr
       session_id: sessionId,
       session_path: relativePath,
       spec_id: spec.value.spec_id,
-      proposed_action: proposedAction
+      proposed_action: proposedAction.value
     }
+  };
+}
+
+export async function generateManagerProposal(
+  repoRoot: string,
+  message: string,
+  tool: string,
+  specId?: string
+): Promise<SpecResult<ManagerProposedAction>> {
+  let resolvedSpecId = specId;
+  if (resolvedSpecId === undefined) {
+    const activeSpec = await requireActiveSpecRatified(repoRoot);
+    if (!activeSpec.ok) {
+      return activeSpec;
+    }
+    resolvedSpecId = activeSpec.value.spec_id;
+  }
+
+  const profileResult = await loadAdapterProfile(repoRoot, tool);
+  if (!profileResult.ok) {
+    return profileResult;
+  }
+  const dangerousArgs = findDangerousAdapterArgs(profileResult.profile.invoke);
+  if (dangerousArgs.length > 0) {
+    return {
+      ok: false,
+      reason: `manager adapter profile "${tool}" contains dangerous invocation flags (${dangerousArgs.join(", ")}); manager proposals must use a non-dangerous profile`
+    };
+  }
+
+  const prompt = await buildManagerProposalPrompt(repoRoot, message, resolvedSpecId, tool);
+  if (!prompt.ok) {
+    return prompt;
+  }
+
+  const startedAt = Date.now();
+  const processResult = await runAdapterProcess(profileResult.profile, repoRoot, prompt.value);
+  if (!processResult.ok) {
+    return processResult;
+  }
+  const wallTimeMs = Date.now() - startedAt;
+  const ledgerResult = await recordQuotaUsage(repoRoot, {
+    provider: profileResult.profile.tool,
+    input_text: prompt.value,
+    output_text: `${processResult.value.stdout}\n${processResult.value.stderr}`,
+    wall_time_ms: wallTimeMs,
+    throttled: adapterOutputIndicatesThrottle(processResult.value.stdout, processResult.value.stderr, processResult.value.exitCode)
+  });
+  if (!ledgerResult.ok) {
+    return { ok: false, reason: ledgerResult.reason };
+  }
+  if (processResult.value.exitCode !== 0) {
+    return { ok: false, reason: `manager adapter "${tool}" exited ${processResult.value.exitCode}` };
+  }
+
+  const proposal = parseGeneratedManagerProposal(processResult.value.stdout);
+  if (!proposal.ok) {
+    return proposal;
+  }
+  return {
+    ok: true,
+    value: {
+      ...proposal.value,
+      source: "adapter-generated",
+      tool: profileResult.profile.tool
+    }
+  };
+}
+
+async function buildManagerProposalPrompt(repoRoot: string, message: string, specId: string, tool: string): Promise<SpecResult<string>> {
+  const spec = await loadSpecDocument(repoRoot, specId);
+  if (!spec.ok) {
+    return spec;
+  }
+  const status = await getStatus(repoRoot);
+  if (!status.ok) {
+    return status;
+  }
+  const plan = await loadTentativePlan(repoRoot, specId);
+  const adapters = await listAdapterTools(repoRoot);
+
+  return {
+    ok: true,
+    value: [
+      "You are the Hivemind manager/orchestrator. You PROPOSE actions; deterministic Hivemind gates DISPOSE.",
+      "",
+      "Return exactly one JSON object and no prose outside it:",
+      "{",
+      "  \"reason\": \"short explanation of the next gated action sequence\",",
+      "  \"human_approval_required_for\": [\"run_worker\", \"integrate_shadow\"],",
+      "  \"actions\": [",
+      "    {",
+      "      \"type\": \"create_task_contract\",",
+      "      \"contract\": {",
+      "        \"task_id\": \"T-001\",",
+      "        \"title\": \"Task title\",",
+      "        \"agent_role\": \"builder\",",
+      "        \"base_commit\": \"exact plan base_commit\",",
+      "        \"acceptance_criterion\": \"exact single criterion from the plan task\",",
+      "        \"allowed_files\": [\"path/from/grounded_scope\"],",
+      "        \"allowed_file_intents\": { \"path/from/grounded_scope\": \"create\" },",
+      "        \"read_only_files\": [\"path/from/grounded_scope\"],",
+      "        \"forbidden_files\": [],",
+      "        \"allowed_symbols\": [],",
+      "        \"forbidden_symbols\": [],",
+      "        \"must_not_change\": [],",
+      "        \"required_tests\": [\"test command from the plan task\"],",
+      "        \"patch_requirements\": [\"requirement from the plan task\"]",
+      "      }",
+      "    },",
+      "    { \"type\": \"request_lease\", \"task_id\": \"T-001\" },",
+      "    { \"type\": \"check_write_intent\", \"task_id\": \"T-001\", \"intent\": { \"task_id\": \"T-001\", \"intended_files\": [\"...\"], \"intended_symbols\": [], \"possible_risks\": [], \"will_not_change\": [\"...\"] } },",
+      "    { \"type\": \"create_worktree\", \"task_id\": \"T-001\" },",
+      "    { \"type\": \"run_worker\", \"task_id\": \"T-001\", \"tool\": \"worker-tool\" },",
+      "    { \"type\": \"submit_patch\", \"task_id\": \"T-001\" },",
+      "    { \"type\": \"analyze_patch\", \"task_id\": \"T-001\" },",
+      "    { \"type\": \"enqueue_patch\", \"task_id\": \"T-001\" },",
+      "    { \"type\": \"integrate_shadow\" }",
+      "  ]",
+      "}",
+      "",
+      "Hard rules:",
+      "- Do not mark anything ratified, approved, accepted, integrated, or passed. You are proposing actions only.",
+      "- Do not output self_approved, ratified, gate_verdict, result, skip_gates, or any other proof-like field.",
+      "- If the plan is missing or not ready, propose get_status and explain the blocking state in reason.",
+      "- Every state-changing action must be one of the supported action JSON shapes listed above.",
+      "- create_task_contract.contract must use the flat TaskContract schema exactly. Do not include mode, depends_on, scope, draft_scope, grounded_scope, grounding_evidence, scope_status, or critical_path_approved inside the contract.",
+      "- For contract scopes, copy fields from the plan task's grounded_scope into allowed_files, allowed_file_intents, read_only_files, forbidden_files, and must_not_change.",
+      "- Set contract.base_commit to the tentative plan base_commit.",
+      "- A run_worker action must be preceded by a check_write_intent action for that task in the proposed sequence unless the current durable status already proves a passed write-intent.",
+      "- Do not set allow_dangerous_adapter.",
+      "- Put run_worker and integrate_shadow in human_approval_required_for whenever those actions appear.",
+      "- Use only adapter tools that exist in the adapter_tools list.",
+      "",
+      `Manager adapter tool: ${tool}`,
+      `User message: ${message}`,
+      "",
+      "Active ratified spec markdown:",
+      spec.value.markdown,
+      "",
+      "Durable status JSON:",
+      JSON.stringify(status.value, null, 2),
+      "",
+      "Tentative plan JSON or missing state:",
+      plan.ok ? JSON.stringify(plan.value, null, 2) : JSON.stringify({ missing: true, reason: plan.reason }, null, 2),
+      "",
+      "Adapter tools JSON:",
+      JSON.stringify(adapters, null, 2)
+    ].join("\n")
+  };
+}
+
+async function listAdapterTools(repoRoot: string): Promise<string[]> {
+  try {
+    const names = await readdir(path.join(repoRoot, ".hivemind", "adapters"));
+    return names
+      .filter((name) => name.endsWith(".profile.json"))
+      .map((name) => name.slice(0, -".profile.json".length))
+      .sort((left, right) => left.localeCompare(right));
+  } catch (error: unknown) {
+    if (isNodeError(error, "ENOENT")) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+function parseGeneratedManagerProposal(stdout: string): SpecResult<ManagerProposedAction> {
+  const extracted = extractJsonObject(stdout, "manager proposal");
+  if (!extracted.ok) {
+    return extracted;
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(extracted.value);
+  } catch {
+    return { ok: false, reason: "manager proposal output was not valid JSON" };
+  }
+  if (!isRecord(raw)) {
+    return { ok: false, reason: "manager proposal must be a JSON object" };
+  }
+  const allowedKeys = new Set(["reason", "actions", "human_approval_required_for"]);
+  const unsupported = Object.keys(raw).filter((key) => !allowedKeys.has(key));
+  if (unsupported.length > 0) {
+    return { ok: false, reason: `manager proposal contains unsupported proof/control fields: ${unsupported.join(", ")}` };
+  }
+  if (typeof raw.reason !== "string" || raw.reason.trim() === "") {
+    return { ok: false, reason: "manager proposal requires a non-empty reason" };
+  }
+  const actions = parseManagerActionList(raw.actions, "manager proposal actions");
+  if (!actions.ok) {
+    return actions;
+  }
+  const approval = parseHumanApprovalList(raw.human_approval_required_for);
+  if (!approval.ok) {
+    return approval;
+  }
+  const actionValidation = validateGeneratedManagerActions(actions.value, approval.value);
+  if (!actionValidation.ok) {
+    return actionValidation;
+  }
+  return {
+    ok: true,
+    value: {
+      type: "proposed_actions",
+      source: "adapter-generated",
+      reason: raw.reason.trim(),
+      actions: actions.value,
+      human_approval_required_for: approval.value
+    }
+  };
+}
+
+function parseHumanApprovalList(raw: unknown): SpecResult<ManagerAction["type"][]> {
+  if (!Array.isArray(raw)) {
+    return { ok: false, reason: "manager proposal requires human_approval_required_for array" };
+  }
+  const values: ManagerAction["type"][] = [];
+  for (const [index, entry] of raw.entries()) {
+    if (typeof entry !== "string" || !isManagerActionType(entry)) {
+      return { ok: false, reason: `human_approval_required_for[${index}] must be a supported manager action type` };
+    }
+    if (!values.includes(entry)) {
+      values.push(entry);
+    }
+  }
+  return { ok: true, value: values };
+}
+
+function validateGeneratedManagerActions(actions: ManagerAction[], approvals: ManagerAction["type"][]): SpecResult<void> {
+  for (const action of actions) {
+    if (action.type === "run_worker") {
+      if (action.allow_dangerous_adapter === true) {
+        return { ok: false, reason: "manager proposal must not set allow_dangerous_adapter" };
+      }
+      if (!approvals.includes("run_worker")) {
+        return { ok: false, reason: "manager proposal with run_worker must list run_worker in human_approval_required_for" };
+      }
+    }
+    if (action.type === "integrate_shadow" && !approvals.includes("integrate_shadow")) {
+      return { ok: false, reason: "manager proposal with integrate_shadow must list integrate_shadow in human_approval_required_for" };
+    }
+  }
+  return { ok: true, value: undefined };
+}
+
+function scriptedManagerProposal(actions: ManagerAction[]): ManagerProposedAction {
+  return {
+    type: "proposed_actions",
+    source: "scripted",
+    reason: "No-paid manager loop executing a pre-supplied action script through the deterministic manager executor.",
+    actions,
+    human_approval_required_for: []
   };
 }
 
@@ -268,7 +538,7 @@ export async function runNoPaidManagerLoop(
   message: string,
   actions: ManagerAction[]
 ): Promise<SpecResult<ManagerLoopResult>> {
-  const session = await startManagerSession(repoRoot, message);
+  const session = await startManagerSession(repoRoot, message, { proposedAction: scriptedManagerProposal(actions) });
   if (!session.ok) {
     return session;
   }
@@ -351,12 +621,6 @@ export async function executeManagerAction(
 }
 
 async function executeDeterministicAction(repoRoot: string, action: ManagerAction): Promise<ManagerActionExecutionRecord> {
-  if (action.type === "await_planning_loop") {
-    return {
-      ok: false,
-      reason: "M5.4 planning loop must produce a tentative plan with `hivemind plan <spec-id> --propose <plan-json-file>` before manager action execution can continue"
-    };
-  }
   if (action.type === "get_status") {
     return recordResult(await getStatus(repoRoot));
   }
@@ -499,7 +763,7 @@ function parseManagerAction(raw: unknown): SpecResult<ManagerAction> {
   if (!isRecord(raw) || typeof raw.type !== "string") {
     return { ok: false, reason: "manager action must be a JSON object with a string type" };
   }
-  if (raw.type === "await_planning_loop" || raw.type === "get_status" || raw.type === "integrate_shadow") {
+  if (raw.type === "get_status" || raw.type === "integrate_shadow") {
     return Object.keys(raw).length === 1 ? { ok: true, value: { type: raw.type } } : { ok: false, reason: `${raw.type} action must not include extra fields` };
   }
   if (raw.type === "create_task_contract") {
@@ -538,19 +802,24 @@ function parseManagerAction(raw: unknown): SpecResult<ManagerAction> {
   return { ok: false, reason: `unknown manager action type: ${raw.type}` };
 }
 
-function parseManagerActionList(raw: unknown): SpecResult<ManagerAction[]> {
+function parseManagerActionList(raw: unknown, label = "fake-manager action file"): SpecResult<ManagerAction[]> {
   if (!Array.isArray(raw)) {
-    return { ok: false, reason: "fake-manager action file must contain a JSON array" };
+    return { ok: false, reason: `${label} must contain a JSON array` };
   }
   const actions: ManagerAction[] = [];
   for (const [index, entry] of raw.entries()) {
     const parsed = parseManagerAction(entry);
     if (!parsed.ok) {
-      return { ok: false, reason: `fake-manager action[${index}]: ${parsed.reason}` };
+      const prefix = label === "fake-manager action file" ? "fake-manager action" : label;
+      return { ok: false, reason: `${prefix}[${index}]: ${parsed.reason}` };
     }
     actions.push(parsed.value);
   }
   return { ok: true, value: actions };
+}
+
+function isManagerActionType(value: string): value is ManagerAction["type"] {
+  return value === "get_status" || value === "integrate_shadow" || isTaskActionType(value) || value === "create_task_contract" || value === "check_write_intent";
 }
 
 function isTaskActionType(value: string): value is "request_lease" | "create_worktree" | "scout_task" | "run_worker" | "submit_patch" | "analyze_patch" | "enqueue_patch" {
@@ -579,9 +848,16 @@ function managerSessionRelativePath(sessionId: string): string {
 
 function parseManagerArgs(
   args: string[]
-): SpecResult<{ mode: "message"; message: string } | { mode: "action"; sessionId: string; actionFile: string } | { mode: "fake-loop"; message: string; actionsFile: string }> {
+): SpecResult<
+  | { mode: "message"; message: string; tool?: string }
+  | { mode: "action"; sessionId: string; actionFile: string }
+  | { mode: "fake-loop"; message: string; actionsFile: string }
+> {
   if (args[0] === "--message" && typeof args[1] === "string" && args.length === 2) {
     return { ok: true, value: { mode: "message", message: args[1] } };
+  }
+  if (args[0] === "--message" && typeof args[1] === "string" && args[2] === "--tool" && typeof args[3] === "string" && args.length === 4) {
+    return { ok: true, value: { mode: "message", message: args[1], tool: args[3] } };
   }
   if (args[0] === "--message" && typeof args[1] === "string" && args[2] === "--fake-manager" && typeof args[3] === "string" && args.length === 4) {
     return { ok: true, value: { mode: "fake-loop", message: args[1], actionsFile: args[3] } };
@@ -589,7 +865,7 @@ function parseManagerArgs(
   if (args[0] === "--session" && typeof args[1] === "string" && args[2] === "--action" && typeof args[3] === "string" && args.length === 4) {
     return { ok: true, value: { mode: "action", sessionId: args[1], actionFile: args[3] } };
   }
-  return { ok: false, reason: "usage: hivemind manager --message <message> [--fake-manager <actions-json-file>] | --session <session_id> --action <action-json-file>" };
+  return { ok: false, reason: "usage: hivemind manager --message <message> [--tool <tool>] [--fake-manager <actions-json-file>] | --session <session_id> --action <action-json-file>" };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -9,7 +9,7 @@ import test from "node:test";
 
 import { readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
-import { executeManagerAction, startManagerSession } from "../src/manager.js";
+import { executeManagerAction, startManagerSession, type ManagerAction, type ManagerProposedAction } from "../src/manager.js";
 import { createSpec } from "../src/spec.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
@@ -25,6 +25,11 @@ interface DaemonProcess {
 test("manager session shell records a user message against the active ratified spec", async () => {
   await withTempRepo(async ({ repo }) => {
     await createRatifiedSpec(repo, "S-001");
+    await writeManagerProposalProfile(repo, {
+      reason: "Inspect current durable state before choosing a task.",
+      human_approval_required_for: [],
+      actions: [{ type: "get_status" }]
+    });
 
     const result = await startManagerSession(repo, "Build the next safe slice");
 
@@ -33,15 +38,17 @@ test("manager session shell records a user message against the active ratified s
       return;
     }
     assert.equal(result.value.spec_id, "S-001");
-    assert.equal(result.value.proposed_action.type, "await_planning_loop");
-    assert.equal(result.value.proposed_action.requires, "M5.4");
+    assert.equal(result.value.proposed_action.type, "proposed_actions");
+    assert.equal(result.value.proposed_action.source, "adapter-generated");
+    assert.equal(result.value.proposed_action.tool, "manager");
+    assert.deepEqual(result.value.proposed_action.actions, [{ type: "get_status" }]);
 
     const session = JSON.parse(await readFile(path.join(repo, result.value.session_path), "utf8")) as {
       version: number;
       spec_id: string;
       working_set: { spec: { title: string; status: string }; status: { task_count: number; active_lease_count: number } };
       turns: Array<{ role: string; content: string }>;
-      proposed_action: { type: string };
+      proposed_action: { type: string; source: string; actions: Array<{ type: string }> };
     };
     assert.equal(session.version, 1);
     assert.equal(session.spec_id, "S-001");
@@ -51,26 +58,100 @@ test("manager session shell records a user message against the active ratified s
     assert.equal(session.working_set.status.active_lease_count, 0);
     assert.deepEqual(session.turns.map((turn) => turn.role), ["user", "manager"]);
     assert.equal(session.turns[0].content, "Build the next safe slice");
-    assert.equal(session.proposed_action.type, "await_planning_loop");
+    assert.equal(session.turns[1].content, "Inspect current durable state before choosing a task.");
+    assert.equal(session.proposed_action.type, "proposed_actions");
+    assert.equal(session.proposed_action.source, "adapter-generated");
+    assert.deepEqual(session.proposed_action.actions, [{ type: "get_status" }]);
   });
 });
 
 test("manager CLI writes only the session artifact and does not create task execution state", async () => {
   await withTempRepo(async ({ repo }) => {
     await createRatifiedSpec(repo, "S-001");
+    await writeManagerProposalProfile(repo, {
+      reason: "Inspect current durable state.",
+      human_approval_required_for: [],
+      actions: [{ type: "get_status" }]
+    });
 
     const result = await execFileAsync(process.execPath, [cliPath, "manager", "--message", "Start from the ratified spec"], {
       cwd: repo,
       windowsHide: true
     });
-    const parsed = JSON.parse(result.stdout) as { session_path: string; proposed_action: { type: string } };
+    const parsed = JSON.parse(result.stdout) as { session_path: string; proposed_action: { type: string; source: string; actions: Array<{ type: string }> } };
 
-    assert.equal(parsed.proposed_action.type, "await_planning_loop");
+    assert.equal(parsed.proposed_action.type, "proposed_actions");
+    assert.equal(parsed.proposed_action.source, "adapter-generated");
+    assert.deepEqual(parsed.proposed_action.actions, [{ type: "get_status" }]);
     await assertExists(path.join(repo, parsed.session_path));
     assert.deepEqual(await contractFiles(repo), []);
     assert.equal(await exists(path.join(repo, ".hivemind", "leases", "active.json")), false);
     assert.deepEqual(await childNames(path.join(repo, ".hivemind", "patches")), []);
     assert.equal(await exists(path.join(repo, ".hivemind", "integration", "status.json")), false);
+  });
+});
+
+test("manager proposal generation rejects dangerous profiles before writing a session", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await writeManagerProposalProfile(
+      repo,
+      {
+        reason: "This should never be invoked.",
+        human_approval_required_for: [],
+        actions: [{ type: "get_status" }]
+      },
+      "manager",
+      ["--dangerously-skip-permissions"]
+    );
+
+    const result = await startManagerSession(repo, "Use unsafe manager profile");
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.match(result.reason, /dangerous invocation flags/);
+    assert.equal(await exists(path.join(repo, ".hivemind", "orchestrator", "sessions")), false);
+  });
+});
+
+test("manager proposal generation rejects self-approval fields and removed placeholder actions", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await writeManagerProposalProfile(repo, {
+      reason: "Unsupported self approval should fail closed.",
+      human_approval_required_for: [],
+      self_approved: true,
+      actions: [{ type: "get_status" }]
+    });
+
+    const proofLike = await startManagerSession(repo, "Do not self approve");
+
+    assert.equal(proofLike.ok, false);
+    if (proofLike.ok) {
+      return;
+    }
+    assert.match(proofLike.reason, /unsupported proof\/control fields: self_approved/);
+    assert.equal(await exists(path.join(repo, ".hivemind", "orchestrator", "sessions")), false);
+  });
+
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await writeManagerProposalProfile(repo, {
+      reason: "Old placeholder should fail closed.",
+      human_approval_required_for: [],
+      actions: [{ type: "await_planning_loop" }]
+    });
+
+    const oldPlaceholder = await startManagerSession(repo, "Use old placeholder");
+
+    assert.equal(oldPlaceholder.ok, false);
+    if (oldPlaceholder.ok) {
+      return;
+    }
+    assert.match(oldPlaceholder.reason, /unknown manager action type: await_planning_loop/);
+    assert.equal(await exists(path.join(repo, ".hivemind", "orchestrator", "sessions")), false);
   });
 });
 
@@ -122,7 +203,7 @@ test("manager CLI rejects empty messages before writing a session", async () => 
 test("manager executor records a read-only status action in the session", async () => {
   await withTempRepo(async ({ repo }) => {
     await createRatifiedSpec(repo, "S-001");
-    const sessionResult = await startManagerSession(repo, "Check status");
+    const sessionResult = await startManagerSession(repo, "Check status", { proposedAction: testProposal() });
     assert.equal(sessionResult.ok, true);
     if (!sessionResult.ok) {
       return;
@@ -319,7 +400,7 @@ test("manager executor drives deterministic task actions through shadow integrat
       "await appendFile('README.md', 'changed by manager executor\\n');"
     ]);
     await writeProfile(repo, "fake", agentPath);
-    const sessionResult = await startManagerSession(repo, "Run the deterministic executor");
+    const sessionResult = await startManagerSession(repo, "Run the deterministic executor", { proposedAction: testProposal() });
     assert.equal(sessionResult.ok, true);
     if (!sessionResult.ok) {
       return;
@@ -473,7 +554,7 @@ test("manager executor records deterministic failures but fails the CLI closed",
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
-    const sessionResult = await startManagerSession(repo, "Try to run without a lease");
+    const sessionResult = await startManagerSession(repo, "Try to run without a lease", { proposedAction: testProposal() });
     assert.equal(sessionResult.ok, true);
     if (!sessionResult.ok) {
       return;
@@ -506,7 +587,7 @@ test("manager executor records deterministic failures but fails the CLI closed",
 test("manager executor rejects malformed actions before mutating the session", async () => {
   await withTempRepo(async ({ repo }) => {
     await createRatifiedSpec(repo, "S-001");
-    const sessionResult = await startManagerSession(repo, "Reject bad action");
+    const sessionResult = await startManagerSession(repo, "Reject bad action", { proposedAction: testProposal() });
     assert.equal(sessionResult.ok, true);
     if (!sessionResult.ok) {
       return;
@@ -535,7 +616,7 @@ test("manager executor rejects malformed actions before mutating the session", a
 test("manager executor refuses actions when the active spec is not ratified", async () => {
   await withTempRepo(async ({ repo }) => {
     await createRatifiedSpec(repo, "S-001");
-    const sessionResult = await startManagerSession(repo, "Spec must stay ratified");
+    const sessionResult = await startManagerSession(repo, "Spec must stay ratified", { proposedAction: testProposal() });
     assert.equal(sessionResult.ok, true);
     if (!sessionResult.ok) {
       return;
@@ -559,7 +640,7 @@ test("manager enqueue_patch rejects missing and duplicate patch bundles determin
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
-    const sessionResult = await startManagerSession(repo, "Queue patch once");
+    const sessionResult = await startManagerSession(repo, "Queue patch once", { proposedAction: testProposal() });
     assert.equal(sessionResult.ok, true);
     if (!sessionResult.ok) {
       return;
@@ -610,7 +691,7 @@ test("manager enqueue_patch routes through a live daemon instead of direct queue
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
     await mkdir(path.join(repo, ".hivemind", "patches", "T-001"), { recursive: true });
     await writeFile(path.join(repo, ".hivemind", "patches", "T-001", "diff.patch"), "");
-    const sessionResult = await startManagerSession(repo, "Queue through daemon");
+    const sessionResult = await startManagerSession(repo, "Queue through daemon", { proposedAction: testProposal() });
     assert.equal(sessionResult.ok, true);
     if (!sessionResult.ok) {
       return;
@@ -716,6 +797,16 @@ function intentFor(taskId: string, intendedFiles: string[]): Record<string, unkn
     intended_symbols: [],
     possible_risks: [],
     will_not_change: []
+  };
+}
+
+function testProposal(actions: ManagerAction[] = []): ManagerProposedAction {
+  return {
+    type: "proposed_actions",
+    source: "scripted",
+    reason: "Test-seeded proposal for deterministic manager executor coverage.",
+    actions,
+    human_approval_required_for: []
   };
 }
 
@@ -862,6 +953,33 @@ async function writeProfile(repo: string, tool: string, agentPath: string): Prom
       {
         tool,
         invoke: ["node", agentPath],
+        prompt_arg: "stdin",
+        verified_on: "2026-06-16",
+        context_window: 1024,
+        routing_tier: "strong",
+        cost_rank: 1
+      },
+      null,
+      2
+    )}\n`
+  );
+}
+
+async function writeManagerProposalProfile(
+  repo: string,
+  proposal: Record<string, unknown>,
+  tool = "manager",
+  extraInvokeArgs: string[] = []
+): Promise<void> {
+  const agentPath = await writeAgent(repo, `${tool}-proposal-agent.mjs`, [`console.log(${JSON.stringify(JSON.stringify(proposal))});`]);
+  const adaptersDir = path.join(repo, ".hivemind", "adapters");
+  await mkdir(adaptersDir, { recursive: true });
+  await writeFile(
+    path.join(adaptersDir, `${tool}.profile.json`),
+    `${JSON.stringify(
+      {
+        tool,
+        invoke: ["node", agentPath, ...extraInvokeArgs],
         prompt_arg: "stdin",
         verified_on: "2026-06-16",
         context_window: 1024,
