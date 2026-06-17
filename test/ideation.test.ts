@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -236,6 +236,98 @@ test("CLI ideate records rounds and exposes ratifiable status", async () => {
   });
 });
 
+test("CLI ideation generator writes an adapter proposal that the recorder must explicitly approve", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await writeFakeIdeationAdapter(repo, {
+      alternatives: [
+        { title: "Minimal ledger CLI", tradeoffs: ["Smallest path", "Fewer import/export features"] },
+        { title: "JSON-backed CLI", tradeoffs: ["Persistent state", "More file handling"] }
+      ],
+      self_critique: {
+        weakest_point: "The draft could still include too much persistence behavior.",
+        cut_or_change: "Keep the first pass to one local data file and explicit commands."
+      },
+      spec_updates: {
+        "Context": "Blank Node CLI repo with a test runner.",
+        "Users / stakeholders": "One CLI user settling shared expenses.",
+        "In scope": "Add people, record shared expenses, and print settlement transfers.",
+        "Non-goals": "No web UI, accounts, syncing, currencies, or payment processing.",
+        "Constraints": "Use the existing Node test runner and keep local file behavior simple.",
+        "Acceptance criteria": "A test can add people and expenses and verify the printed settlement.",
+        "Risks / unknowns": "Rounding behavior needs to be explicit.",
+        "Open questions": ""
+      },
+      substantive_change: true,
+      orchestrator_calls_convergence: true
+    });
+
+    await execFileAsync(process.execPath, [cliPath, "ideate", "S-001", "--start", "--title", "trimr", "--goal", "Settle expenses"], {
+      cwd: repo,
+      windowsHide: true
+    });
+
+    const proposalResult = await execFileAsync(
+      process.execPath,
+      [cliPath, "ideate", "S-001", "--propose-round", "--tool", "fake-ideator", "--out", "generated-round.json", "--steer", "Prefer a small MVP"],
+      { cwd: repo, windowsHide: true }
+    );
+    const proposalOutput = JSON.parse(proposalResult.stdout) as { proposal: { orchestrator_calls_convergence: boolean } };
+    assert.equal(proposalOutput.proposal.orchestrator_calls_convergence, false);
+
+    const generated = JSON.parse(await readFile(path.join(repo, "generated-round.json"), "utf8")) as {
+      spec_updates: Record<string, string>;
+      orchestrator_calls_convergence: boolean;
+    };
+    assert.equal(generated.orchestrator_calls_convergence, false);
+    assert.equal(generated.spec_updates["Non-goals"], "No web UI, accounts, syncing, currencies, or payment processing.");
+
+    const statusBeforeApply = await execFileAsync(process.execPath, [cliPath, "ideate", "S-001", "--status"], { cwd: repo, windowsHide: true });
+    assert.equal(JSON.parse(statusBeforeApply.stdout).rounds.length, 0);
+
+    await execFileAsync(process.execPath, [cliPath, "ideate", "S-001", "--round", "generated-round.json"], { cwd: repo, windowsHide: true });
+    const statusAfterApply = await execFileAsync(process.execPath, [cliPath, "ideate", "S-001", "--status"], { cwd: repo, windowsHide: true });
+    const parsedStatus = JSON.parse(statusAfterApply.stdout) as { rounds: unknown[]; convergence: { orchestrator: boolean } };
+    assert.equal(parsedStatus.rounds.length, 1);
+    assert.equal(parsedStatus.convergence.orchestrator, false);
+
+    const spec = await readFile(path.join(repo, ".hivemind", "spec", "S-001.md"), "utf8");
+    assert.match(spec, /No web UI, accounts, syncing, currencies, or payment processing\./);
+
+    const ledger = JSON.parse(await readFile(path.join(repo, ".hivemind", "resource", "ledger.json"), "utf8")) as {
+      "fake-ideator": { used: { requests: number } };
+    };
+    assert.equal(ledger["fake-ideator"].used.requests, 1);
+  });
+});
+
+test("CLI ideation generator rejects dangerous adapter profiles before invocation", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await writeProfile(repo, "dangerous-ideator", {
+      tool: "dangerous-ideator",
+      invoke: ["node", "fake-ideator.mjs", "--dangerously-skip-permissions"],
+      prompt_arg: "stdin",
+      verified_on: "2026-06-16",
+      context_window: 1000
+    });
+    await execFileAsync(process.execPath, [cliPath, "ideate", "S-001", "--start", "--title", "trimr", "--goal", "Settle expenses"], {
+      cwd: repo,
+      windowsHide: true
+    });
+
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [cliPath, "ideate", "S-001", "--propose-round", "--tool", "dangerous-ideator", "--out", "generated-round.json"],
+        { cwd: repo, windowsHide: true }
+      ),
+      (error: unknown) => {
+        assert.match(String((error as { stderr?: string }).stderr), /proposal generation must use a non-dangerous profile/);
+        return true;
+      }
+    );
+  });
+});
+
 async function withTempRepo(run: (context: { repo: string }) => Promise<void>): Promise<void> {
   const repo = await mkdtemp(path.join(tmpdir(), "hivemind-ideation-test-"));
   try {
@@ -254,4 +346,36 @@ async function withTempRepo(run: (context: { repo: string }) => Promise<void>): 
 
 async function git(cwd: string, args: string[]): Promise<void> {
   await execFileAsync("git", args, { cwd, windowsHide: true });
+}
+
+async function writeFakeIdeationAdapter(repo: string, proposal: unknown): Promise<void> {
+  const agentPath = path.join(repo, "fake-ideator.mjs");
+  await writeFile(
+    agentPath,
+    [
+      "let prompt = '';",
+      "process.stdin.setEncoding('utf8');",
+      "process.stdin.on('data', chunk => { prompt += chunk; });",
+      "process.stdin.on('end', () => {",
+      "  if (!prompt.includes('Current spec markdown:')) process.exit(12);",
+      `  console.log(${JSON.stringify(JSON.stringify(proposal, null, 2))});`,
+      "});",
+      ""
+    ].join("\n")
+  );
+  await writeProfile(repo, "fake-ideator", {
+    tool: "fake-ideator",
+    invoke: ["node", "fake-ideator.mjs"],
+    prompt_arg: "stdin",
+    verified_on: "2026-06-16",
+    context_window: 1000,
+    routing_tier: "strong",
+    cost_rank: 1
+  });
+}
+
+async function writeProfile(repo: string, tool: string, profile: unknown): Promise<void> {
+  const adaptersDir = path.join(repo, ".hivemind", "adapters");
+  await mkdir(adaptersDir, { recursive: true });
+  await writeFile(path.join(adaptersDir, `${tool}.profile.json`), `${JSON.stringify(profile, null, 2)}\n`);
 }

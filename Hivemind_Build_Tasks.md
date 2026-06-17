@@ -352,12 +352,19 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
 - **Acceptance test (binary):** Any attempt to plan or grant a lease while the spec is `draft` is refused; flipping to `ratified` (via the human approval path) unblocks planning.
 
 ### M5.2 — Discovery & ideation loop (diverge → refine → converge) + self-critique
+- **Generative sub-tasks are judged behaviorally by a human reading the transcript, not by a binary automated test.**
 - **Depends on:** M5.1, M5.3 (manager loop) — build the loop logic here, wire to chat in M5.3.
 - **Read first:** § *Discovery & Ideation* → *The refinement loop* (the moves, mandatory self-critique, mutual-best-version exit).
 - **Goal:** Co-develop a vague wish into the best-achievable ratified spec via the disciplined improvement loop.
-- **Behavior — exact:** Implement the loop: diverge (alternatives/tradeoffs) → per-round **self-critique** (`critique_spec`: name the draft's weakest point + what to cut) → converge with a diminishing-returns signal; either party can call convergence, ratification requires both; non-goals are required and open-questions must be empty before ratifiable.
-- **Out of scope:** planning (M5.4).
-- **Acceptance test (binary):** Given a vague prompt, the orchestrator produces alternatives, emits a self-critique each round, and only marks the spec ratifiable once open-questions are empty and the user signs off; a forced never-ending loop is exited by the diminishing-returns signal.
+- **Behavior — exact:** TWO halves.
+  (a) DETERMINISTIC recorder/validator/spec-updater — ALREADY BUILT in `src/ideation.ts`; do not rewrite it. It stays the floor: it validates round shape, applies `spec_updates`, and enforces convergence/ratification (non-goals required, open-questions empty, both parties must call convergence).
+  (b) GENERATIVE half — NEW, the actual deliverable: an orchestrator proposal generator that, given the goal + current spec state, makes an LLM call to PRODUCE that round's content — 2 real alternatives with tradeoffs, a substantive self-critique (weakest point + what to cut/change), and proposed `spec_updates` including non-goals and scope. The human STEERS and APPROVES; the human does NOT author the content. The generator FEEDS the existing recorder (a) — it does not bypass it.
+  LLM-integration decisions (make these explicit so they aren't skipped again):
+    * This is the first LLM call in the codebase. It is allowed here — generation is PROPOSAL, not a guarantee, so it does NOT violate the C4 determinism boundary. C4 still forbids LLM calls inside guarantee-enforcing code (the recorder/validator/ratification stay deterministic). State this distinction in the contract.
+    * Use the worker-adapter mechanism already built for invoking a model; do not invent a new provider path. Route the call through the resource ledger so it's metered.
+    * The generator PROPOSES; it must NEVER self-approve convergence/ratification — that gate stays with the human (or the deterministic convergence rule). The LLM proposing AND deciding it's done is exactly the failure we forbid.
+- **Out of scope:** planning (M5.4); changing the deterministic recorder's behavior.
+- **Acceptance test (BEHAVIORAL, human-judged — NOT binary):** Run ideation on the trimr goal ("A command-line tool where I add people and shared expenses, and it tells me who owes whom to settle up"). The ORCHESTRATOR — not a human-authored JSON file — produces each round's alternatives, self-critique, and proposed `spec_updates`. A human reads the transcript and confirms: (1) 2 genuine alternatives with real tradeoffs were proposed by the orchestrator, (2) a non-trivial self-critique each round, (3) non-goals and scope were proposed by the orchestrator and are populated, (4) the human only steered/approved and did not author spec content, (5) convergence/ratification was gated, not self-declared. This test is judged by reading output, not by an automated pass/fail.
 
 ### M5.3 — Manager-agent loop + manager chat
 - **Depends on:** M4.4 (MCP tools), M5.1.
