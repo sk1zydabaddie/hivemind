@@ -3,7 +3,7 @@ import path from "node:path";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic.js";
 import { adapterOutputIndicatesThrottle, recordQuotaUsage } from "./resource-ledger.js";
 import { findDangerousAdapterArgs, loadAdapterProfile, runAdapterProcess } from "./adapter.js";
-import { readJsonFile } from "./json.js";
+import { extractJsonObject, readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
 import {
   activeSpecPath,
@@ -464,7 +464,7 @@ function buildIdeationGenerationPrompt(state: IdeationState, markdown: string, s
 }
 
 function parseGeneratedRound(stdout: string, firstRound: boolean): SpecResult<IdeationRoundInput> {
-  const extracted = extractJsonObject(stdout);
+  const extracted = extractJsonObject(stdout, "ideation generator");
   if (!extracted.ok) {
     return extracted;
   }
@@ -501,47 +501,6 @@ function parseGeneratedRound(stdout: string, firstRound: boolean): SpecResult<Id
       orchestrator_calls_convergence: false
     }
   };
-}
-
-function extractJsonObject(stdout: string): SpecResult<string> {
-  const trimmed = stdout.trim();
-  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  const source = fenced ? fenced[1].trim() : trimmed;
-  const start = source.indexOf("{");
-  if (start < 0) {
-    return { ok: false, reason: "ideation generator output did not contain a JSON object" };
-  }
-
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let index = start; index < source.length; index += 1) {
-    const char = source[index];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (char === "\\") {
-      escaped = true;
-      continue;
-    }
-    if (char === "\"") {
-      inString = !inString;
-      continue;
-    }
-    if (inString) {
-      continue;
-    }
-    if (char === "{") {
-      depth += 1;
-    } else if (char === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        return { ok: true, value: source.slice(start, index + 1) };
-      }
-    }
-  }
-  return { ok: false, reason: "ideation generator output contained incomplete JSON" };
 }
 
 function confineOutputPath(repoRoot: string, outPath: string): SpecResult<{ absolutePath: string; relativePath: string }> {

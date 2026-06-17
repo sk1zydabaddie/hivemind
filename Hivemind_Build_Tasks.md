@@ -377,8 +377,15 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
 - **Depends on:** M5.1.
 - **Read first:** Overview § *Task Planner* → *The Planning Loop* (propose → ground → commit).
 - **Goal:** Turn a ratified spec into a tentative task split with proposed parallel/sequence structure.
-- **Behavior — exact:** Produce tentative tasks with draft scopes (not yet committable); mark which can run in parallel (disjoint) vs must sequence. Scopes here are guesses until grounded (M5.5) and linted (M5.6).
-- **Acceptance test (binary):** A ratified spec yields a set of tentative task contracts with a parallel/sequence proposal; nothing is committed to a lease yet.
+- **Behavior — exact:** TWO halves.
+  (a) DETERMINISTIC plan-lint + storage — ALREADY BUILT in `src/plan.ts`; do not rewrite it. It stays the floor: disjoint parallel scopes, acyclic deps, grounding present/fresh, one acceptance criterion backed by a test, no unflagged Critical. The generator must FEED this, never bypass it.
+  (b) GENERATIVE half — NEW, the deliverable: given the ratified spec, an LLM produces the task decomposition — tasks with titles, draft scopes (`allowed_files`/`read_only_files`/`forbidden_files`), dependencies, parallel flags, one `acceptance_criterion` each backed by named tests, and Critical flags. The human steers/approves; the human does NOT author the plan JSON.
+  LLM-integration decisions:
+    * LLM call is allowed here — a plan is a PROPOSAL, not a guarantee; C4 still forbids LLM calls inside plan-lint/grounding/lease enforcement, which stay deterministic.
+    * Use the existing adapter mechanism (same as M5.2's ideation generator and Scout); route through the resource ledger so it's metered. Do not invent a new provider path.
+    * The generator PROPOSES the plan; plan-lint DISPOSES on validity; the human RATIFIES. The LLM must NEVER mark its own plan ratified or skip lint.
+    * The generated plan flows into the SAME path a human-authored plan JSON does today, so it hits the existing plan-lint unchanged.
+- **Acceptance test (BEHAVIORAL, human-judged — NOT binary):** On the trimr spec, the ORCHESTRATOR (not a human JSON file) produces the task decomposition. A human reads the plan and confirms: tasks have real scopes/deps/parallel flags/acceptance criteria, the plan was generated not authored, it passed the existing plan-lint, and nothing was self-ratified. Judged by reading output, not an automated pass/fail.
 
 ### M5.5 — Grounding (evidence + existence + freshness)
 - **Depends on:** M5.4, M0.2.

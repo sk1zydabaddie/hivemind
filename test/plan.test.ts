@@ -112,6 +112,90 @@ test("plan propose rejects malformed proposals before writing", async () => {
   });
 });
 
+test("plan generator writes an adapter proposal that still goes through ground and lint", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await writeFakePlanningAdapter(repo, validPlan());
+
+    const generated = await execFileAsync(
+      process.execPath,
+      [cliPath, "plan", "S-001", "--generate", "--tool", "fake-planner", "--out", "generated-plan.json", "--steer", "Keep the split small"],
+      { cwd: repo, windowsHide: true }
+    );
+
+    const parsedGenerated = JSON.parse(generated.stdout) as {
+      spec_id: string;
+      source: string;
+      tool: string;
+      proposal_path: string;
+      plan_path: string;
+      base_commit: string;
+      task_count: number;
+      execution_group_count: number;
+    };
+    assert.deepEqual(parsedGenerated, {
+      spec_id: "S-001",
+      plan_path: ".hivemind/plans/S-001.tentative.json",
+      status: "tentative",
+      base_commit: baseCommit,
+      task_count: 3,
+      execution_group_count: 2,
+      tool: "fake-planner",
+      proposal_path: "generated-plan.json",
+      source: "adapter-generated",
+      apply_command: "hivemind plan S-001 --propose generated-plan.json"
+    });
+
+    const proposal = JSON.parse(await readFile(path.join(repo, "generated-plan.json"), "utf8")) as Record<string, unknown>;
+    assert.deepEqual(Object.keys(proposal).sort(), ["execution_groups", "tasks"]);
+
+    const storedBeforeLint = JSON.parse(await readFile(path.join(repo, ".hivemind", "plans", "S-001.tentative.json"), "utf8")) as {
+      source: string;
+      lint_status?: string;
+      grounding_status?: string;
+      tasks: Array<{ task_id: string; scope_status: string }>;
+    };
+    assert.equal(storedBeforeLint.source, "adapter-generated");
+    assert.equal(storedBeforeLint.lint_status, undefined);
+    assert.equal(storedBeforeLint.grounding_status, undefined);
+    assert.deepEqual(
+      storedBeforeLint.tasks.map((taskEntry) => [taskEntry.task_id, taskEntry.scope_status]),
+      [
+        ["T-AUDIT", "draft_ungrounded"],
+        ["T-WRITE", "draft_ungrounded"],
+        ["T-INTEGRATE", "draft_ungrounded"]
+      ]
+    );
+
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+    const linted = await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
+    assert.equal(JSON.parse(linted.stdout).lint_status, "passed");
+
+    const ledger = JSON.parse(await readFile(path.join(repo, ".hivemind", "resource", "ledger.json"), "utf8")) as {
+      "fake-planner": { used: { requests: number } };
+    };
+    assert.equal(ledger["fake-planner"].used.requests, 1);
+  });
+});
+
+test("plan generator cannot self-ratify mark lint passed or skip deterministic storage checks", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await writeFakePlanningAdapter(repo, {
+      status: "ratified",
+      lint_status: "passed",
+      ...validPlan()
+    });
+
+    await assertPlanRejects(
+      repo,
+      ["plan", "S-001", "--generate", "--tool", "fake-planner", "--out", "generated-plan.json"],
+      /unsupported top-level field: status/
+    );
+    await assertMissing(path.join(repo, ".hivemind", "plans", "S-001.tentative.json"));
+  });
+});
+
 test("plan propose rejects task ids that collide with existing contracts", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
@@ -683,6 +767,34 @@ async function writePlan(repo: string, body: unknown, name = "plan.json"): Promi
   const filePath = path.join(repo, name);
   await writeFile(filePath, `${JSON.stringify(body, null, 2)}\n`);
   return filePath;
+}
+
+async function writeFakePlanningAdapter(repo: string, body: unknown): Promise<void> {
+  const agentPath = path.join(repo, "fake-planner.mjs");
+  await writeFile(
+    agentPath,
+    [
+      "import { readFileSync } from 'node:fs';",
+      "readFileSync(0, 'utf8');",
+      `console.log(${JSON.stringify(JSON.stringify(body))});`
+    ].join("\n")
+  );
+  const adapterDir = path.join(repo, ".hivemind", "adapters");
+  await mkdir(adapterDir, { recursive: true });
+  await writeFile(
+    path.join(adapterDir, "fake-planner.profile.json"),
+    `${JSON.stringify(
+      {
+        tool: "fake-planner",
+        invoke: ["node", "fake-planner.mjs"],
+        prompt_arg: "stdin",
+        verified_on: "2026-06-16",
+        context_window: 8000
+      },
+      null,
+      2
+    )}\n`
+  );
 }
 
 async function appendPatchRejected(repo: string, taskId: string, reason: string): Promise<void> {
