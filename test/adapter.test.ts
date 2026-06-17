@@ -22,6 +22,7 @@ test("buildAgentPrompt includes the scoped contract fields and diff-only instruc
     base_commit: "abc123",
     acceptance_criterion: "Adapter prompt includes scoped contract details.",
     allowed_files: ["src/adapter.ts"],
+    allowed_file_intents: { "src/adapter.ts": "modify" },
     read_only_files: ["Hivemind_AI_Overview.md"],
     forbidden_files: ["src/gate.ts"],
     allowed_symbols: ["invokeAgent"],

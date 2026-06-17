@@ -81,7 +81,10 @@ export async function runTask(
     return configResult;
   }
 
-  const leaseResult = await verifyLeaseCoverage(repoRoot, taskId, contractResult.contract.allowed_files);
+  const leaseResult = await verifyLeaseCoverage(repoRoot, taskId, contractResult.contract.allowed_files, {
+    baseCommit: contractResult.contract.base_commit,
+    allowedFileIntents: contractResult.contract.allowed_file_intents
+  });
   if (!leaseResult.ok) {
     return leaseResult;
   }

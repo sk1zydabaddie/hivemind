@@ -9,7 +9,7 @@ import test from "node:test";
 
 import { initProject } from "../src/init.js";
 import { checkWriteIntent } from "../src/intent.js";
-import { requestLease } from "../src/lease.js";
+import { requestLease, requestLeaseForContract } from "../src/lease.js";
 import { runTask } from "../src/run.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
@@ -22,7 +22,7 @@ test("runTask captures an untracked worker-created file in diff.patch", async ()
     const agentPath = await writeAgent(repo, "create-file-agent.mjs", [
       "await import('node:fs/promises').then(({ writeFile }) => writeFile('new-file.txt', 'created by fake agent\\n'));"
     ]);
-    await writeContract(repo, "T-001", baseCommit, ["new-file.txt"]);
+    await writeContract(repo, "T-001", baseCommit, ["new-file.txt"], { "new-file.txt": "create" });
     await writeProfile(repo, "fake", agentPath);
     await grantLease(repo, "T-001", ["new-file.txt"]);
 
@@ -42,6 +42,37 @@ test("runTask captures an untracked worker-created file in diff.patch", async ()
     assert.match(diff, /diff --git a\/new-file\.txt b\/new-file\.txt/);
     assert.match(diff, /\+created by fake agent/);
     assert.doesNotMatch(diff, /agent\.log/);
+  });
+});
+
+test("runTask lease-before-run accepts a contract-backed create lease", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const agentPath = await writeAgent(repo, "contract-create-agent.mjs", [
+      "await import('node:fs/promises').then(({ mkdir, writeFile }) => mkdir('src', { recursive: true }).then(() => writeFile('src/new-file.ts', 'export const created = true;\\n')));"
+    ]);
+    await writeContract(repo, "T-CREATE", baseCommit, ["src/new-file.ts"], { "src/new-file.ts": "create" });
+    await writeProfile(repo, "fake", agentPath);
+
+    const lease = await requestLeaseForContract(repo, "T-CREATE");
+    assert.equal(lease.ok, true);
+    const intent = await checkWriteIntent(repo, "T-CREATE", {
+      task_id: "T-CREATE",
+      intended_files: ["src/new-file.ts"],
+      intended_symbols: [],
+      possible_risks: [],
+      will_not_change: []
+    });
+    assert.equal(intent.ok, true);
+
+    const result = await runTask(repo, "T-CREATE", "fake");
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    const diff = await readFile(result.value.diff_path, "utf8");
+    assert.match(diff, /diff --git a\/src\/new-file\.ts b\/src\/new-file\.ts/);
+    assert.match(diff, /\+export const created = true;/);
   });
 });
 
@@ -473,7 +504,13 @@ async function writeAgent(repo: string, fileName: string, lines: string[]): Prom
   return agentPath;
 }
 
-async function writeContract(repo: string, taskId: string, baseCommit: string, allowedFiles: string[]): Promise<void> {
+async function writeContract(
+  repo: string,
+  taskId: string,
+  baseCommit: string,
+  allowedFiles: string[],
+  allowedFileIntents?: Record<string, string>
+): Promise<void> {
   const tasksDir = path.join(repo, ".hivemind", "tasks");
   await mkdir(tasksDir, { recursive: true });
   await writeFile(
@@ -486,6 +523,7 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
         base_commit: baseCommit,
         acceptance_criterion: "Run fake adapter and capture one diff.",
         allowed_files: allowedFiles,
+        ...(allowedFileIntents === undefined ? {} : { allowed_file_intents: allowedFileIntents }),
         read_only_files: [],
         forbidden_files: ["src/gate.ts"],
         allowed_symbols: [],

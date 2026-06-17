@@ -178,6 +178,7 @@ function contractFor(overrides: Partial<TaskContract> = {}): TaskContract {
     base_commit: "abc123",
     acceptance_criterion: "Decision fixture evaluates one operation.",
     allowed_files: ["src/allowed.ts"],
+    allowed_file_intents: { "src/allowed.ts": "modify" },
     read_only_files: [],
     forbidden_files: [],
     allowed_symbols: [],

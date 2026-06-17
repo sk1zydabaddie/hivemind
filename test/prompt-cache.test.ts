@@ -202,6 +202,7 @@ function contractFor(overrides: Partial<TaskContract> = {}): TaskContract {
     base_commit: "abc123",
     acceptance_criterion: "Prompt cache fixture assembles one prompt.",
     allowed_files: ["README.md"],
+    allowed_file_intents: { "README.md": "modify" },
     read_only_files: [],
     forbidden_files: [],
     allowed_symbols: [],
@@ -217,7 +218,15 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
   await mkdir(path.join(repo, ".hivemind", "tasks"), { recursive: true });
   await writeFile(
     path.join(repo, ".hivemind", "tasks", `${taskId}.contract.json`),
-    `${JSON.stringify({ ...contractFor({ task_id: taskId, base_commit: baseCommit }), allowed_files: allowedFiles }, null, 2)}\n`
+    `${JSON.stringify(
+      {
+        ...contractFor({ task_id: taskId, base_commit: baseCommit }),
+        allowed_files: allowedFiles,
+        allowed_file_intents: Object.fromEntries(allowedFiles.map((file) => [file, "modify"]))
+      },
+      null,
+      2
+    )}\n`
   );
 }
 

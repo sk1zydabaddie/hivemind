@@ -254,6 +254,7 @@ function contractFor(overrides: Partial<TaskContract>): TaskContract {
     base_commit: "unused-by-runGate-call",
     acceptance_criterion: "Gate corpus fixture produces one verdict.",
     allowed_files: ["src/Minimap.tsx"],
+    allowed_file_intents: { "src/Minimap.tsx": "modify" },
     read_only_files: [],
     forbidden_files: [],
     allowed_symbols: [],

@@ -9,6 +9,7 @@ import { requireActiveSpecRatified } from "./spec.js";
 import { validateRequestedTaskId, validateTaskId } from "./task-id.js";
 
 export type AgentRole = "coordinator" | "scout" | "builder" | "reviewer";
+export type AllowedFileIntent = "create" | "modify";
 
 export interface TaskContract {
   task_id: string;
@@ -17,6 +18,7 @@ export interface TaskContract {
   base_commit: string;
   acceptance_criterion: string;
   allowed_files: string[];
+  allowed_file_intents: Record<string, AllowedFileIntent>;
   read_only_files: string[];
   forbidden_files: string[];
   allowed_symbols: string[];
@@ -51,6 +53,7 @@ const allowedContractFields = new Set([
   "base_commit",
   "acceptance_criterion",
   "allowed_files",
+  "allowed_file_intents",
   "read_only_files",
   "forbidden_files",
   "allowed_symbols",
@@ -249,6 +252,11 @@ export function validateContract(raw: unknown, expectedTaskId?: string): string[
     }
   }
 
+  const intentProblem = validateAllowedFileIntentKeys(raw.allowed_files, raw.allowed_file_intents);
+  if (intentProblem !== null) {
+    problems.push(intentProblem);
+  }
+
   if (raw.agent_role !== undefined && !isAgentRole(raw.agent_role)) {
     problems.push("agent_role must be one of coordinator, scout, builder, reviewer");
   }
@@ -261,13 +269,15 @@ export function normalizeContract(raw: unknown): TaskContract {
     throw new Error("cannot normalize invalid contract");
   }
 
+  const allowedFiles = normalizeStringArray(raw.allowed_files);
   return {
     task_id: String(raw.task_id),
     title: typeof raw.title === "string" ? raw.title : "",
     agent_role: isAgentRole(raw.agent_role) ? raw.agent_role : "builder",
     base_commit: String(raw.base_commit),
     acceptance_criterion: typeof raw.acceptance_criterion === "string" ? raw.acceptance_criterion.trim() : "",
-    allowed_files: normalizeStringArray(raw.allowed_files),
+    allowed_files: allowedFiles,
+    allowed_file_intents: normalizeAllowedFileIntents(allowedFiles, raw.allowed_file_intents),
     read_only_files: normalizeStringArray(raw.read_only_files),
     forbidden_files: normalizeStringArray(raw.forbidden_files),
     allowed_symbols: normalizeStringArray(raw.allowed_symbols),
@@ -276,6 +286,23 @@ export function normalizeContract(raw: unknown): TaskContract {
     required_tests: normalizeStringArray(raw.required_tests),
     patch_requirements: normalizeStringArray(raw.patch_requirements)
   };
+}
+
+export function normalizeAllowedFileIntents(
+  allowedFiles: string[],
+  raw: unknown
+): Record<string, AllowedFileIntent> {
+  if (!isRecord(raw)) {
+    return Object.fromEntries(allowedFiles.map((entry) => [normalizePathKey(entry), "modify" as const]));
+  }
+  const intents: Record<string, AllowedFileIntent> = {};
+  for (const entry of allowedFiles) {
+    const normalized = normalizePathKey(entry);
+    const rawValues = [raw[entry], raw[normalized]];
+    const validValues = rawValues.filter((value): value is AllowedFileIntent => value === "create" || value === "modify");
+    intents[normalized] = validValues.length > 0 && validValues.every((value) => value === "create") ? "create" : "modify";
+  }
+  return intents;
 }
 
 function requireString(raw: Record<string, unknown>, field: string, problems: string[]): void {
@@ -299,6 +326,27 @@ function validateRepoRelativePathOrGlob(value: string): string | null {
     return ".git paths are not allowed";
   }
   return null;
+}
+
+function validateAllowedFileIntentKeys(allowedFiles: unknown, rawIntents: unknown): string | null {
+  if (rawIntents === undefined || !isRecord(rawIntents) || !Array.isArray(allowedFiles)) {
+    return null;
+  }
+  const allowedLookup = new Set(
+    allowedFiles
+      .filter((entry): entry is string => typeof entry === "string")
+      .flatMap((entry) => [entry, normalizePathKey(entry)])
+  );
+  for (const key of Object.keys(rawIntents)) {
+    if (!allowedLookup.has(key)) {
+      return `allowed_file_intents contains unknown allowed_files entry: ${key}`;
+    }
+  }
+  return null;
+}
+
+function normalizePathKey(value: string): string {
+  return value.replaceAll("\\", "/").replace(/^\.\/+/u, "").trim();
 }
 
 function normalizeStringArray(value: unknown): string[] {

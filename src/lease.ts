@@ -66,7 +66,14 @@ export async function requestLeaseForContract(repoRoot: string, taskId: string):
     return contractResult;
   }
 
-  const baseScope = await resolveContractFilesAtBase(repoRoot, taskId, contractResult.contract.base_commit, contractResult.contract.allowed_files, "allowed_files");
+  const baseScope = await resolveContractFilesAtBase(
+    repoRoot,
+    taskId,
+    contractResult.contract.base_commit,
+    contractResult.contract.allowed_files,
+    "allowed_files",
+    contractResult.contract.allowed_file_intents
+  );
   if (!baseScope.ok) {
     const eventResult = await appendEvent(repoRoot, {
       type: "lease.rejected",
@@ -82,15 +89,30 @@ export async function requestLeaseForContract(repoRoot: string, taskId: string):
   return requestLease(repoRoot, taskId, baseScope.value);
 }
 
-export async function verifyLeaseCoverage(repoRoot: string, taskId: string, files: string[]): Promise<{ ok: true; files: string[] } | { ok: false; reason: string }> {
+export async function verifyLeaseCoverage(
+  repoRoot: string,
+  taskId: string,
+  files: string[],
+  options: { baseCommit?: string; allowedFileIntents?: Record<string, "create" | "modify"> } = {}
+): Promise<{ ok: true; files: string[] } | { ok: false; reason: string }> {
   const taskIdResult = validateRequestedTaskId(taskId);
   if (!taskIdResult.ok) {
     return taskIdResult;
   }
 
-  const pathsResult = await canonicalizeConcreteFileScope(repoRoot, files, "lease coverage");
-  if (!pathsResult.ok) {
-    return pathsResult;
+  let paths: string[];
+  if (options.baseCommit !== undefined) {
+    const resolved = await resolveContractFilesAtBase(repoRoot, taskId, options.baseCommit, files, "allowed_files", options.allowedFileIntents);
+    if (!resolved.ok) {
+      return resolved;
+    }
+    paths = resolved.value;
+  } else {
+    const pathsResult = await canonicalizeConcreteFileScope(repoRoot, files, "lease coverage");
+    if (!pathsResult.ok) {
+      return pathsResult;
+    }
+    paths = pathsResult.paths;
   }
 
   const storeResult = await readActiveLeases(repoRoot);
@@ -98,7 +120,7 @@ export async function verifyLeaseCoverage(repoRoot: string, taskId: string, file
     return storeResult;
   }
 
-  const missing = pathsResult.paths
+  const missing = paths
     .map((filePath) => ({ filePath, holder: storeResult.store[filePath] }))
     .filter((entry) => entry.holder !== taskId);
   if (missing.length > 0) {
@@ -110,7 +132,7 @@ export async function verifyLeaseCoverage(repoRoot: string, taskId: string, file
     };
   }
 
-  return { ok: true, files: pathsResult.paths };
+  return { ok: true, files: paths };
 }
 
 export async function requestLease(repoRoot: string, taskId: string, files: string[]): Promise<LeaseResult<LeaseGrantResult>> {

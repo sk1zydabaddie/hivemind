@@ -182,6 +182,7 @@ function contractFor(overrides: Partial<TaskContract> = {}): TaskContract {
     base_commit: "abc123",
     acceptance_criterion: "Gate fixture produces one verdict.",
     allowed_files: ["README.md"],
+    allowed_file_intents: { "README.md": "modify" },
     read_only_files: [],
     forbidden_files: [],
     allowed_symbols: [],

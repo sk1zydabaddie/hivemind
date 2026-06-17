@@ -9,7 +9,7 @@ import test from "node:test";
 
 import { readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
-import { releaseLease, requestLease } from "../src/lease.js";
+import { releaseLease, requestLease, requestLeaseForContract } from "../src/lease.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
 const execFileAsync = promisify(execFile);
@@ -148,6 +148,80 @@ test("CLI lease grants contract allowed_files and releases them", async () => {
   });
 });
 
+test("contract lease grants absent confined create paths", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-CREATE", baseCommit, ["src/new.ts"], { "src/new.ts": "create" });
+
+    const result = await requestLeaseForContract(repo, "T-CREATE");
+
+    assert.deepEqual(result, { ok: true, value: { task_id: "T-CREATE", granted: ["src/new.ts"] } });
+    assert.deepEqual(await readActive(repo), { "src/new.ts": "T-CREATE" });
+  });
+});
+
+test("contract lease rejects create paths that already exist at base", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-CLOBBER", baseCommit, ["README.md"], { "README.md": "create" });
+
+    const result = await requestLeaseForContract(repo, "T-CLOBBER");
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.match(result.reason, /create path "README\.md" already exists at base/);
+    await assertMissing(path.join(repo, ".hivemind", "leases", "active.json"));
+  });
+});
+
+test("contract lease rejects create paths outside the repo scope", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-ESCAPE", baseCommit, ["../escape.ts"], { "../escape.ts": "create" });
+
+    const result = await requestLeaseForContract(repo, "T-ESCAPE");
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.match(result.reason, /allowed_files contains invalid path "\.\.\/escape\.ts"/);
+    await assertMissing(path.join(repo, ".hivemind", "leases", "active.json"));
+  });
+});
+
+test("contract lease conflicts when two tasks create the same path", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-001", baseCommit, ["src/new.ts"], { "src/new.ts": "create" });
+    await writeContract(repo, "T-002", baseCommit, ["src/new.ts"], { "src/new.ts": "create" });
+
+    const first = await requestLeaseForContract(repo, "T-001");
+    const second = await requestLeaseForContract(repo, "T-002");
+
+    assert.equal(first.ok, true);
+    assert.equal(second.ok, false);
+    if (second.ok) {
+      return;
+    }
+    assert.match(second.reason, /src\/new\.ts held by T-001/);
+    assert.deepEqual(await readActive(repo), { "src/new.ts": "T-001" });
+  });
+});
+
+test("contract lease treats unlabeled paths as modify and requires base existence", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-UNLABELED", baseCommit, ["src/new.ts"]);
+
+    const result = await requestLeaseForContract(repo, "T-UNLABELED");
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.match(result.reason, /src\/new\.ts.*not a tracked file at base/);
+    await assertMissing(path.join(repo, ".hivemind", "leases", "active.json"));
+  });
+});
+
 test("CLI lease refuses contract files that do not exist at the contract base commit", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeFile(path.join(repo, "LATER.md"), "later\n");
@@ -227,7 +301,13 @@ async function withTempRepo(run: (context: { repo: string; baseCommit: string })
   }
 }
 
-async function writeContract(repo: string, taskId: string, baseCommit: string, allowedFiles: string[]): Promise<void> {
+async function writeContract(
+  repo: string,
+  taskId: string,
+  baseCommit: string,
+  allowedFiles: string[],
+  allowedFileIntents?: Record<string, string>
+): Promise<void> {
   const tasksDir = path.join(repo, ".hivemind", "tasks");
   await mkdir(tasksDir, { recursive: true });
   await writeFile(
@@ -240,6 +320,7 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
         base_commit: baseCommit,
         acceptance_criterion: "Lease fixture grants one concrete scope.",
         allowed_files: allowedFiles,
+        ...(allowedFileIntents === undefined ? {} : { allowed_file_intents: allowedFileIntents }),
         read_only_files: [],
         forbidden_files: [],
         allowed_symbols: [],

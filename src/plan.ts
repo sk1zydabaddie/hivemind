@@ -7,7 +7,7 @@ import { findDangerousAdapterArgs, loadAdapterProfile, runAdapterProcess } from 
 import { canonicalizeIntentPath } from "./canonicalize.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { loadConfig } from "./config.js";
-import { type AgentRole, type TaskContract } from "./contract.js";
+import { normalizeAllowedFileIntents, type AgentRole, type AllowedFileIntent, type TaskContract } from "./contract.js";
 import { matchesAny } from "./glob.js";
 import { extractJsonObject } from "./json.js";
 import { assertNoKnownFailedScopeRepeat, evaluateThrashForPlan, type ReplanEvaluationResult } from "./replan.js";
@@ -21,7 +21,6 @@ const execFileAsync = promisify(execFile);
 
 export type TentativeTaskMode = "read_only" | "write" | "integration";
 export type ExecutionGroupMode = "parallel" | "sequence";
-export type AllowedFileIntent = "create" | "modify";
 type TentativePlanSource = "cli-json" | "adapter-generated";
 
 export interface DraftScope {
@@ -665,11 +664,15 @@ export async function resolveContractFilesAtBase(
   taskId: string,
   baseCommit: string,
   files: string[],
-  label: DraftScopePathField
+  label: DraftScopePathField,
+  allowedFileIntents?: Record<string, AllowedFileIntent>
 ): Promise<SpecResult<string[]>> {
   const tracked = await trackedFilesAtBase(repoRoot, baseCommit);
   if (!tracked.ok) {
     return tracked;
+  }
+  if (label === "allowed_files") {
+    return resolveContractAllowedFilesAtBase(repoRoot, taskId, files, tracked.value, allowedFileIntents);
   }
   return resolveScopeEntries(taskId, label, files, tracked.value, { allowGlobs: false });
 }
@@ -1146,6 +1149,45 @@ function resolveScopeEntries(
   return { ok: true, value: uniqueSorted(resolved) };
 }
 
+async function resolveContractAllowedFilesAtBase(
+  repoRoot: string,
+  taskId: string,
+  files: string[],
+  trackedFiles: string[],
+  allowedFileIntents: Record<string, AllowedFileIntent> | undefined
+): Promise<SpecResult<string[]>> {
+  const resolved: string[] = [];
+  const tracked = new Set(trackedFiles);
+  const intents = normalizeAllowedFileIntents(files, allowedFileIntents);
+  for (const entry of files) {
+    const normalized = normalizeGitPath(entry);
+    const problem = validateGroundingPathSyntax(taskId, "allowed_files", entry, normalized);
+    if (problem !== null) {
+      return { ok: false, reason: problem };
+    }
+    if (hasGlob(normalized)) {
+      return { ok: false, reason: `task ${taskId} allowed_files path "${entry}" uses a glob; contract lease scopes must be concrete files` };
+    }
+    const intent = allowedFileIntent({ allowed_files: files, allowed_file_intents: intents, read_only_files: [], forbidden_files: [], must_not_change: [] }, entry, normalized);
+    if (intent === "create") {
+      const canonical = await canonicalizeIntentPath(repoRoot, normalized);
+      if (!canonical.ok) {
+        return { ok: false, reason: `task ${taskId} allowed_files create path "${entry}" is not confined to the repo: ${canonical.reason}` };
+      }
+      if (tracked.has(canonical.resolved)) {
+        return { ok: false, reason: `task ${taskId} allowed_files create path "${entry}" already exists at base` };
+      }
+      resolved.push(canonical.resolved);
+      continue;
+    }
+    if (!tracked.has(normalized)) {
+      return { ok: false, reason: `task ${taskId} allowed_files path "${entry}" is not a tracked file at base` };
+    }
+    resolved.push(normalized);
+  }
+  return { ok: true, value: uniqueSorted(resolved) };
+}
+
 function normalizeGitPath(value: string): string {
   return value.replaceAll("\\", "/").replace(/^\.\/+/u, "").trim();
 }
@@ -1233,6 +1275,9 @@ function contractPlanMismatches(contract: TaskContract, task: TentativePlanTask,
   if (!sameArray(contract.allowed_files, scope.allowed_files)) {
     mismatches.push("allowed_files do not match grounded plan scope");
   }
+  if (!sameIntentMap(contract.allowed_file_intents, normalizeAllowedFileIntents(scope.allowed_files, scope.allowed_file_intents))) {
+    mismatches.push("allowed_file_intents do not match grounded plan scope");
+  }
   if (!sameArray(contract.read_only_files, scope.read_only_files)) {
     mismatches.push("read_only_files do not match grounded plan scope");
   }
@@ -1256,6 +1301,12 @@ function contractPlanMismatches(contract: TaskContract, task: TentativePlanTask,
 
 function sameArray(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((entry, index) => entry === right[index]);
+}
+
+function sameIntentMap(left: Record<string, AllowedFileIntent>, right: Record<string, AllowedFileIntent>): boolean {
+  const leftEntries = Object.entries(left).sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey));
+  const rightEntries = Object.entries(right).sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey));
+  return leftEntries.length === rightEntries.length && leftEntries.every(([key, value], index) => rightEntries[index][0] === key && rightEntries[index][1] === value);
 }
 
 function lintGroundingRequired(plan: TentativePlan): SpecResult<void> {
