@@ -1,4 +1,5 @@
 node_modules/
 dist/
+.hivemind/
 npm-debug.log*
 *.tsbuildinfo
