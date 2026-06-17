@@ -479,6 +479,57 @@ test("manager autonomous loop stops on non-zero worker exit and does not enqueue
   });
 });
 
+test("manager autonomous loop sees unsubmitted patch state after worker success and proposes submit_patch", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const agentPath = await writeAgent(repo, "successful-worker-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'worker produced a real diff\\n');"
+    ]);
+    await writeProfile(repo, "strong-worker", agentPath, "strong", 1);
+    const contract = managerContract("T-PIPE", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, contract);
+    await writePatchPipelineAwareManagerProfile(repo, "T-PIPE", "strong-worker");
+
+    const result = await runAutonomousManagerLoop(repo, "Drive worker to submit", {
+      tool: "manager",
+      approvedActions: new Set(["run_worker"]),
+      maxSteps: 10
+    });
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.value.status, "completed");
+    assert.deepEqual(result.value.steps.map((step) => step.action_type), [
+      "create_task_contract",
+      "request_lease",
+      "check_write_intent",
+      "create_worktree",
+      "run_worker",
+      "submit_patch"
+    ]);
+    assert.equal(result.value.steps.every((step) => step.result?.ok === true), true);
+    assert.deepEqual(await managerReactiveCalls(repo), [
+      "initial",
+      "after_create_task_contract_ok",
+      "after_request_lease_ok",
+      "after_check_write_intent_ok",
+      "after_create_worktree_ok",
+      "after_run_worker_ok_unsubmitted",
+      "after_submit_patch_ok"
+    ]);
+    const finalTask = result.value.final_status.tasks.find((entry) => entry.task_id === "T-PIPE");
+    assert.equal(finalTask?.patch.bundle, "present");
+    assert.equal(finalTask?.patch.submitted, true);
+    assert.equal(finalTask?.patch.analyzed, false);
+    assert.equal(finalTask?.patch.accepted, false);
+    assert.equal(finalTask?.patch.verdict, null);
+    assert.equal(await exists(path.join(repo, ".hivemind", "integration", "queue.json")), false);
+  });
+});
+
 test("manager create_task_contract is refused when the current plan fails lint", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
@@ -1179,6 +1230,61 @@ async function writeReactiveManagerProposalProfile(repo: string, proposals: Reco
     `const proposals = ${JSON.stringify(proposals)};`,
     "const match = input.match(/Last manager observation: action ([a-z_]+) returned (ok|rejected)/);",
     "const key = match ? `after_${match[1]}_${match[2]}` : 'initial';",
+    "await appendFile('.hivemind/manager-reactive-calls.log', `${key}\\n`);",
+    "console.log(JSON.stringify(proposals[key] ?? { reason: 'No follow-up action.', human_approval_required_for: [], actions: [] }));"
+  ]);
+  const adaptersDir = path.join(repo, ".hivemind", "adapters");
+  await mkdir(adaptersDir, { recursive: true });
+  await writeFile(
+    path.join(adaptersDir, `${tool}.profile.json`),
+    `${JSON.stringify(
+      {
+        tool,
+        invoke: ["node", agentPath],
+        prompt_arg: "stdin",
+        verified_on: "2026-06-16",
+        context_window: 1024,
+        routing_tier: "strong",
+        cost_rank: 1
+      },
+      null,
+      2
+    )}\n`
+  );
+}
+
+async function writePatchPipelineAwareManagerProfile(repo: string, taskId: string, workerTool: string, tool = "manager"): Promise<void> {
+  const contract = managerContract(taskId, await gitStdout(repo, ["rev-parse", "HEAD"]), ["README.md"]);
+  const proposals = {
+    initial: proposalFor([{ type: "create_task_contract", contract }]),
+    after_create_task_contract_ok: proposalFor([{ type: "request_lease", task_id: taskId }]),
+    after_request_lease_ok: proposalFor([{ type: "check_write_intent", task_id: taskId, intent: intentFor(taskId, ["README.md"]) }]),
+    after_check_write_intent_ok: proposalFor([{ type: "create_worktree", task_id: taskId }]),
+    after_create_worktree_ok: proposalFor([{ type: "run_worker", task_id: taskId, tool: workerTool }], ["run_worker"]),
+    after_submit_patch_ok: proposalFor([])
+  };
+  const submitProposal = proposalFor([{ type: "submit_patch", task_id: taskId }]);
+  const unsafeEnqueueProposal = proposalFor([{ type: "enqueue_patch", task_id: taskId }]);
+  const agentPath = await writeAgent(repo, `${tool}-pipeline-aware-proposal-agent.mjs`, [
+    "const { appendFile } = await import('node:fs/promises');",
+    "let input = '';",
+    "for await (const chunk of process.stdin) input += chunk;",
+    `const taskId = ${JSON.stringify(taskId)};`,
+    `const proposals = ${JSON.stringify(proposals)};`,
+    `const submitProposal = ${JSON.stringify(submitProposal)};`,
+    `const unsafeEnqueueProposal = ${JSON.stringify(unsafeEnqueueProposal)};`,
+    "const match = input.match(/Last manager observation: action ([a-z_]+) returned (ok|rejected)/);",
+    "const key = match ? `after_${match[1]}_${match[2]}` : 'initial';",
+    "if (key === 'after_run_worker_ok') {",
+    "  const statusStart = input.indexOf('Durable status JSON:');",
+    "  const planStart = input.indexOf('Tentative plan JSON or missing state:');",
+    "  const statusText = statusStart === -1 || planStart === -1 ? input : input.slice(statusStart, planStart);",
+    "  const taskMarker = `\"task_id\": \"${taskId}\"`;",
+    "  const sawUnsubmittedPatch = statusText.includes(taskMarker) && statusText.includes('\"bundle\": \"present\"') && statusText.includes('\"submitted\": false') && statusText.includes('\"analyzed\": false') && statusText.includes('\"accepted\": false') && statusText.includes('\"verdict\": null');",
+    "  await appendFile('.hivemind/manager-reactive-calls.log', sawUnsubmittedPatch ? 'after_run_worker_ok_unsubmitted\\n' : 'after_run_worker_ok_misleading\\n');",
+    "  console.log(JSON.stringify(sawUnsubmittedPatch ? submitProposal : unsafeEnqueueProposal));",
+    "  process.exit(0);",
+    "}",
     "await appendFile('.hivemind/manager-reactive-calls.log', `${key}\\n`);",
     "console.log(JSON.stringify(proposals[key] ?? { reason: 'No follow-up action.', human_approval_required_for: [], actions: [] }));"
   ]);

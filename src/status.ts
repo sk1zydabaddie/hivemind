@@ -1,7 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
-import { analyzeTask } from "./analyze.js";
 import { loadAndValidateContract } from "./contract.js";
+import { readEvents, type HivemindEvent } from "./events.js";
 import type { IntegrationStatus } from "./integrate.js";
 import { loadIntegrationQueue } from "./integrate.js";
 import { readJsonFile } from "./json.js";
@@ -34,8 +34,26 @@ export interface StatusTask {
 }
 
 export type StatusPatch =
-  | { bundle: "missing"; verdict: "not_submitted"; reason: string }
-  | { bundle: "present"; verdict: "accept" | "reject" | "escalate" | "error"; reason: string };
+  | {
+      bundle: "absent";
+      submitted: false;
+      analyzed: false;
+      accepted: false;
+      verdict: null;
+      reason: string;
+      submitted_at: null;
+      analyzed_at: null;
+    }
+  | {
+      bundle: "present";
+      submitted: boolean;
+      analyzed: boolean;
+      accepted: boolean;
+      verdict: "accept" | "reject" | "escalate" | null;
+      reason: string;
+      submitted_at: string | null;
+      analyzed_at: string | null;
+    };
 
 export async function statusCommand(cwd: string, args: string[]): Promise<number> {
   if (args.length > 0) {
@@ -78,6 +96,10 @@ export async function getStatus(repoRoot: string): Promise<{ ok: true; value: Hi
   if (!replanResult.ok) {
     return replanResult;
   }
+  const eventsResult = await readEvents(repoRoot);
+  if (!eventsResult.ok) {
+    return eventsResult;
+  }
 
   const taskIds = await listTaskIds(repoRoot);
   const tasks: StatusTask[] = [];
@@ -87,7 +109,8 @@ export async function getStatus(repoRoot: string): Promise<{ ok: true; value: Hi
       taskId,
       leaseResult.store,
       new Set(queueResult.value),
-      new Set(integrationStatusResult.value?.applied ?? [])
+      new Set(integrationStatusResult.value?.applied ?? []),
+      eventsResult.value
     );
     if (!taskResult.ok) {
       return taskResult;
@@ -114,7 +137,8 @@ async function buildTaskStatus(
   taskId: string,
   leases: LeaseStore,
   queued: Set<string>,
-  integrated: Set<string>
+  integrated: Set<string>,
+  events: HivemindEvent[]
 ): Promise<{ ok: true; value: StatusTask } | { ok: false; reason: string }> {
   const contractResult = await loadAndValidateContract(repoRoot, taskId);
   if (!contractResult.ok) {
@@ -137,25 +161,97 @@ async function buildTaskStatus(
         files: leaseFiles
       },
       worktree: (await exists(path.join(repoRoot, ".hivemind", "worktrees", taskId))) ? "present" : "missing",
-      patch: await readPatchStatus(repoRoot, taskId),
+      patch: await readPatchStatus(repoRoot, taskId, events),
       queued: queued.has(taskId),
       integrated: integrated.has(taskId)
     }
   };
 }
 
-async function readPatchStatus(repoRoot: string, taskId: string): Promise<StatusPatch> {
+async function readPatchStatus(repoRoot: string, taskId: string, events: HivemindEvent[]): Promise<StatusPatch> {
   const diffPath = path.join(repoRoot, ".hivemind", "patches", taskId, "diff.patch");
   if (!(await exists(diffPath))) {
-    return { bundle: "missing", verdict: "not_submitted", reason: "patch not submitted" };
+    return {
+      bundle: "absent",
+      submitted: false,
+      analyzed: false,
+      accepted: false,
+      verdict: null,
+      reason: "patch bundle not found",
+      submitted_at: null,
+      analyzed_at: null
+    };
   }
 
-  const result = await analyzeTask(repoRoot, taskId, { emitEvent: false });
-  if (!result.ok) {
-    return { bundle: "present", verdict: "error", reason: result.reason };
+  const eventState = latestPatchEventState(events, taskId);
+  if (eventState.submitted === null) {
+    return {
+      bundle: "present",
+      submitted: false,
+      analyzed: false,
+      accepted: false,
+      verdict: null,
+      reason: "patch bundle present but no patch.submitted event",
+      submitted_at: null,
+      analyzed_at: null
+    };
   }
 
-  return { bundle: "present", verdict: result.value.verdict, reason: result.value.reason };
+  if (eventState.analysis === null) {
+    return {
+      bundle: "present",
+      submitted: true,
+      analyzed: false,
+      accepted: false,
+      verdict: null,
+      reason: "patch submitted but not analyzed",
+      submitted_at: eventState.submitted.ts,
+      analyzed_at: null
+    };
+  }
+
+  const verdict = patchEventVerdict(eventState.analysis);
+  return {
+    bundle: "present",
+    submitted: true,
+    analyzed: true,
+    accepted: verdict === "accept",
+    verdict,
+    reason: patchEventReason(eventState.analysis),
+    submitted_at: eventState.submitted.ts,
+    analyzed_at: eventState.analysis.ts
+  };
+}
+
+function latestPatchEventState(events: HivemindEvent[], taskId: string): { submitted: HivemindEvent | null; analysis: HivemindEvent | null } {
+  let submitted: HivemindEvent | null = null;
+  let analysis: HivemindEvent | null = null;
+  for (const event of events) {
+    if (event.task_id !== taskId) {
+      continue;
+    }
+    if (event.type === "patch.submitted") {
+      submitted = event;
+      analysis = null;
+      continue;
+    }
+    if (submitted !== null && (event.type === "patch.accepted" || event.type === "patch.rejected")) {
+      analysis = event;
+    }
+  }
+  return { submitted, analysis };
+}
+
+function patchEventVerdict(event: HivemindEvent): "accept" | "reject" | "escalate" | null {
+  const verdict = event.data.verdict;
+  if (verdict === "accept" || verdict === "reject" || verdict === "escalate") {
+    return verdict;
+  }
+  return event.type === "patch.accepted" ? "accept" : null;
+}
+
+function patchEventReason(event: HivemindEvent): string {
+  return typeof event.data.reason === "string" ? event.data.reason : `${event.type} event did not include a reason`;
 }
 
 async function readStatusQueue(repoRoot: string): Promise<{ ok: true; value: string[] } | { ok: false; reason: string }> {

@@ -71,7 +71,7 @@ test("CLI status prints stable JSON and rejects invalid usage", async () => {
   });
 });
 
-test("getStatus reports contracts, leases, patch verdicts, queue, and integration status", async () => {
+test("getStatus reports contracts, leases, event-derived patch state, queue, and integration status", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeFile(path.join(repo, "outside.txt"), "outside base\n");
     await git(repo, ["add", "outside.txt"]);
@@ -119,17 +119,65 @@ test("getStatus reports contracts, leases, patch verdicts, queue, and integratio
     assert.deepEqual(accepted.lease, { held: true, files: ["README.md"] });
     assert.equal(accepted.worktree, "missing");
     assert.equal(accepted.patch.bundle, "present");
-    assert.equal(accepted.patch.verdict, "accept");
+    assert.equal(accepted.patch.submitted, false);
+    assert.equal(accepted.patch.analyzed, false);
+    assert.equal(accepted.patch.accepted, false);
+    assert.equal(accepted.patch.verdict, null);
+    assert.match(accepted.patch.reason, /no patch\.submitted event/);
     assert.equal(accepted.queued, true);
     assert.equal(accepted.integrated, true);
 
     const rejected = task(result.value, "T-002");
     assert.equal(rejected.patch.bundle, "present");
-    assert.equal(rejected.patch.verdict, "reject");
-    assert.match(rejected.patch.reason, /outside\.txt/);
+    assert.equal(rejected.patch.submitted, false);
+    assert.equal(rejected.patch.analyzed, false);
+    assert.equal(rejected.patch.accepted, false);
+    assert.equal(rejected.patch.verdict, null);
+    assert.match(rejected.patch.reason, /no patch\.submitted event/);
     assert.equal(rejected.queued, true);
     assert.equal(rejected.integrated, false);
     assert.notEqual(baseCommit, "");
+  });
+});
+
+test("getStatus reports a real patch verdict only after submit and analyze events", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-REAL", "Event-backed patch", baseCommit, ["README.md"]);
+    const lease = await requestLease(repo, "T-REAL", ["README.md"]);
+    assert.equal(lease.ok, true);
+    await approveIntent(repo, "T-REAL", ["README.md"]);
+    const worktree = await createTaskWorktree(repo, "T-REAL");
+    assert.equal(worktree.ok, true);
+    if (!worktree.ok) {
+      return;
+    }
+    await writeFile(path.join(worktree.value.worktree, "README.md"), "# Fixture\nevent-backed status patch\n");
+
+    const submitted = await submitTask(repo, "T-REAL");
+    assert.equal(submitted.ok, true);
+    const analyzed = await analyzeTask(repo, "T-REAL");
+    assert.deepEqual(analyzed, {
+      ok: true,
+      value: {
+        verdict: "accept",
+        reason: "all changes are within scope"
+      }
+    });
+
+    const result = await getStatus(repo);
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    const real = task(result.value, "T-REAL");
+    assert.equal(real.patch.bundle, "present");
+    assert.equal(real.patch.submitted, true);
+    assert.equal(real.patch.analyzed, true);
+    assert.equal(real.patch.accepted, true);
+    assert.equal(real.patch.verdict, "accept");
+    assert.equal(real.patch.reason, "all changes are within scope");
+    assert.equal(typeof real.patch.submitted_at, "string");
+    assert.equal(typeof real.patch.analyzed_at, "string");
   });
 });
 
@@ -217,8 +265,14 @@ test("M2.6 MVP gate runs two fake agents in parallel, rejects out-of-scope work,
 
     const acceptedStatus = task(status.value, "T-001");
     const rejectedStatus = task(status.value, "T-002");
+    assert.equal(acceptedStatus.patch.submitted, true);
+    assert.equal(acceptedStatus.patch.analyzed, true);
+    assert.equal(acceptedStatus.patch.accepted, true);
     assert.equal(acceptedStatus.patch.verdict, "accept");
     assert.equal(acceptedStatus.integrated, true);
+    assert.equal(rejectedStatus.patch.submitted, true);
+    assert.equal(rejectedStatus.patch.analyzed, true);
+    assert.equal(rejectedStatus.patch.accepted, false);
     assert.equal(rejectedStatus.patch.verdict, "reject");
     assert.match(rejectedStatus.patch.reason, /outside\.txt/);
     assert.equal(rejectedStatus.integrated, false);

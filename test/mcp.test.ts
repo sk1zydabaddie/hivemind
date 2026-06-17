@@ -147,8 +147,15 @@ test("MCP tools route through daemon and match the core task/worktree/patch/stat
 
       const status = await callStructured(client, "hivemind.get_status", {});
       assert.equal(Array.isArray(status.tasks), true);
-      const tasks = status.tasks as Array<{ task_id?: unknown; patch?: { verdict?: unknown }; integrated?: unknown }>;
+      const tasks = status.tasks as Array<{
+        task_id?: unknown;
+        patch?: { submitted?: unknown; analyzed?: unknown; accepted?: unknown; verdict?: unknown };
+        integrated?: unknown;
+      }>;
       const task = tasks.find((entry) => entry.task_id === "T-OK");
+      assert.equal(task?.patch?.submitted, true);
+      assert.equal(task?.patch?.analyzed, true);
+      assert.equal(task?.patch?.accepted, true);
       assert.equal(task?.patch?.verdict, "accept");
       assert.equal(task?.integrated, true);
     } finally {

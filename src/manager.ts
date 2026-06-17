@@ -427,6 +427,9 @@ async function buildManagerProposalPrompt(repoRoot: string, message: string, spe
       "- For contract scopes, copy fields from the plan task's grounded_scope into allowed_files, allowed_file_intents, read_only_files, forbidden_files, and must_not_change.",
       "- Set contract.base_commit to the tentative plan base_commit.",
       "- A run_worker action must be preceded by a check_write_intent action for that task in the proposed sequence unless the current durable status already proves a passed write-intent.",
+      "- Patch status is event-derived. A present patch bundle is not submitted, analyzed, or accepted unless status.tasks[].patch.submitted/analyzed/accepted say so.",
+      "- Never propose enqueue_patch unless durable status for that task shows patch.submitted === true, patch.analyzed === true, patch.accepted === true, and patch.verdict === \"accept\".",
+      "- After a successful run_worker that creates a diff, the normal next actions are submit_patch, then analyze_patch, then enqueue_patch only if the analyzed accepted state appears in durable status.",
       "- Do not set allow_dangerous_adapter.",
       "- Put run_worker and integrate_shadow in human_approval_required_for whenever those actions appear.",
       "- Use only adapter tools that exist in the adapter_tools list.",
@@ -689,6 +692,7 @@ function buildReactiveProposalMessage(session: ManagerSession): string {
     "Reactive manager loop: propose exactly the next single manager action from current durable state.",
     `Last manager observation: action ${last.type} returned ${last.result.ok ? "ok" : "rejected"}.`,
     `Last result JSON: ${JSON.stringify(last.result)}`,
+    "Patch pipeline rule: enqueue_patch is allowed only after a real submit_patch event and a real analyze_patch accepted event. If a task has a patch bundle but submitted/analyzed/accepted are not all true, propose submit_patch or analyze_patch as the next missing step.",
     "If the task is done or blocked awaiting human action, return an empty actions array.",
     "Do not propose any action that changes config, provider tier metadata, safety rules, approval policy, or deterministic gates to get around a rejection."
   ].join("\n");
