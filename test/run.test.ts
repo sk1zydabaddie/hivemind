@@ -11,6 +11,9 @@ import { initProject } from "../src/init.js";
 import { checkWriteIntent } from "../src/intent.js";
 import { requestLease, requestLeaseForContract } from "../src/lease.js";
 import { runTask } from "../src/run.js";
+import { analyzeTask } from "../src/analyze.js";
+import { submitTask } from "../src/submit.js";
+import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
 const execFileAsync = promisify(execFile);
@@ -438,6 +441,73 @@ test("runTask rejects an existing dirty worktree before invoking the adapter", a
   });
 });
 
+test("rejected patch analysis resets only that task worktree so a corrected worker can rerun", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await writeFile(path.join(repo, "other.txt"), "other base\n");
+    await git(repo, ["add", "other.txt"]);
+    await git(repo, ["commit", "-m", "add other fixture"]);
+    const baseCommit = await gitStdout(repo, ["rev-parse", "HEAD"]);
+    const outOfScopeAgent = await writeAgent(repo, "out-of-scope-agent.mjs", [
+      "const { mkdir, writeFile } = await import('node:fs/promises');",
+      "await mkdir('src', { recursive: true });",
+      "await writeFile('src/ledger.js', 'out of scope\\n');"
+    ]);
+    const inScopeAgent = await writeAgent(repo, "in-scope-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'corrected in-scope retry\\n');"
+    ]);
+    await writeContract(repo, "T-RETRY", baseCommit, ["README.md"]);
+    await writeContract(repo, "T-OTHER", baseCommit, ["other.txt"]);
+    await writeProfile(repo, "fake", outOfScopeAgent);
+    await grantLease(repo, "T-RETRY", ["README.md"]);
+    await grantLease(repo, "T-OTHER", ["other.txt"]);
+    const otherWorktree = await createTaskWorktree(repo, "T-OTHER");
+    assert.equal(otherWorktree.ok, true);
+    if (!otherWorktree.ok) {
+      return;
+    }
+    await writeFile(path.join(otherWorktree.value.worktree, "other.txt"), "other task dirty sentinel\n");
+    const leasesBeforeReject = await readFile(path.join(repo, ".hivemind", "leases", "active.json"), "utf8");
+
+    const firstRun = await runTask(repo, "T-RETRY", "fake");
+    assert.equal(firstRun.ok, true);
+    if (!firstRun.ok) {
+      return;
+    }
+    assert.match(await readFile(firstRun.value.diff_path, "utf8"), /src\/ledger\.js/);
+    const submitted = await submitTask(repo, "T-RETRY");
+    assert.equal(submitted.ok, true);
+    const rejected = await analyzeTask(repo, "T-RETRY");
+
+    assert.equal(rejected.ok, true);
+    if (!rejected.ok) {
+      return;
+    }
+    assert.equal(rejected.value.verdict, "reject");
+    assert.match(rejected.value.reason, /src\/ledger\.js/);
+    assert.deepEqual(await dirtyPaths(path.join(repo, ".hivemind", "worktrees", "T-RETRY")), []);
+    await assertMissing(path.join(repo, ".hivemind", "worktrees", "T-RETRY", "src", "ledger.js"));
+    assert.deepEqual(await dirtyPaths(otherWorktree.value.worktree), ["other.txt"]);
+    assert.equal(await readFile(path.join(otherWorktree.value.worktree, "other.txt"), "utf8"), "other task dirty sentinel\n");
+    assert.equal(await readFile(path.join(repo, ".hivemind", "leases", "active.json"), "utf8"), leasesBeforeReject);
+    assert.equal(await readFile(path.join(repo, "README.md"), "utf8"), "# Fixture\n");
+    await assertMissing(path.join(repo, "src", "ledger.js"));
+
+    await writeProfile(repo, "fake", inScopeAgent);
+    const retryRun = await runTask(repo, "T-RETRY", "fake");
+
+    assert.equal(retryRun.ok, true);
+    if (!retryRun.ok) {
+      return;
+    }
+    assert.equal(retryRun.value.changed_files, 1);
+    const retryDiff = await readFile(retryRun.value.diff_path, "utf8");
+    assert.match(retryDiff, /README\.md/);
+    assert.match(retryDiff, /\+corrected in-scope retry/);
+    assert.doesNotMatch(retryDiff, /src\/ledger\.js/);
+  });
+});
+
 test("runTask allows rerun when only the Hivemind-owned agent.log remains", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     const agentPath = await writeAgent(repo, "noop-rerun-agent.mjs", ["console.log('rerun ok');"]);
@@ -604,6 +674,21 @@ async function git(cwd: string, args: string[]): Promise<void> {
 async function gitStdout(cwd: string, args: string[]): Promise<string> {
   const result = await execFileAsync("git", args, { cwd, windowsHide: true });
   return result.stdout.trim();
+}
+
+async function gitRawStdout(cwd: string, args: string[]): Promise<string> {
+  const result = await execFileAsync("git", args, { cwd, windowsHide: true });
+  return result.stdout;
+}
+
+async function dirtyPaths(worktreePath: string): Promise<string[]> {
+  const status = await gitRawStdout(worktreePath, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+  return status
+    .split("\0")
+    .filter((entry) => entry.length > 0)
+    .map((entry) => entry.slice(3).replaceAll("\\", "/"))
+    .filter((entry) => entry !== "agent.log")
+    .sort((left, right) => left.localeCompare(right));
 }
 
 async function assertMissing(filePath: string): Promise<void> {
