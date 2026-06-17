@@ -4,7 +4,9 @@ import path from "node:path";
 import { analyzeTask } from "./analyze.js";
 import { writeJsonAtomic } from "./atomic.js";
 import { findDangerousAdapterArgs, loadAdapterProfile, runAdapterProcess } from "./adapter.js";
+import { loadConfig } from "./config.js";
 import { createTaskContract, type CreateTaskContractResult } from "./contract.js";
+import { loadAndValidateContract, normalizeContract, validateContract, type TaskContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { enqueueIntegrationPatch, integrateShadow, type EnqueueIntegrationPatchResult, type IntegrationStatus } from "./integrate.js";
 import { checkWriteIntent, type WriteIntentPass } from "./intent.js";
@@ -13,6 +15,7 @@ import { requestLeaseForContract, type LeaseGrantResult } from "./lease.js";
 import { loadTentativePlan } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { adapterOutputIndicatesThrottle, recordQuotaUsage } from "./resource-ledger.js";
+import { inferTaskTier } from "./routing.js";
 import { runTask, type RunResult } from "./run.js";
 import { runScout, type ScoutResult } from "./scout.js";
 import { requireActiveSpecRatified, type SpecResult } from "./spec.js";
@@ -29,6 +32,7 @@ interface ManagerSession {
   working_set: ManagerWorkingSet;
   turns: ManagerTurn[];
   proposed_action: ManagerProposedAction;
+  pending_action?: ManagerPendingAction;
   executed_actions: ManagerExecutedAction[];
 }
 
@@ -66,6 +70,13 @@ interface ManagerExecutedAction {
   ts: string;
   type: ManagerAction["type"];
   result: ManagerActionExecutionRecord;
+}
+
+interface ManagerPendingAction {
+  action: ManagerAction;
+  tier: "human_approval";
+  reason: string;
+  recommendation: string;
 }
 
 type ManagerActionExecutionRecord =
@@ -111,6 +122,40 @@ export interface ManagerLoopResult {
   final_status: HivemindStatus;
 }
 
+export interface ManagerAutonomousLoopResult {
+  session_id: string;
+  session_path: string;
+  status: "completed" | "paused" | "stopped" | "step_limit_reached";
+  steps: Array<{
+    index: number;
+    action_type: ManagerAction["type"];
+    tier: "autonomous" | "human_approval" | "gate_rejection";
+    result?: ManagerActionExecutionRecord;
+    pause?: ManagerPendingAction;
+    stop?: ManagerStopAdvice;
+  }>;
+  final_status: HivemindStatus;
+}
+
+interface ManagerStopAdvice {
+  reason: string;
+  diagnosis: string;
+  options: string[];
+  recommendation: string;
+}
+
+interface AutonomousLoopOptions {
+  tool: string;
+  approvedActions: Set<ManagerAction["type"]>;
+  maxSteps: number;
+}
+
+interface ActionClassification {
+  tier: "autonomous" | "human_approval";
+  reason: string;
+  recommendation: string;
+}
+
 interface StartManagerSessionOptions {
   tool?: string;
   proposedAction?: ManagerProposedAction;
@@ -142,6 +187,9 @@ export async function managerCommand(cwd: string, args: string[]): Promise<numbe
   if ("status" in result.value && result.value.status === "failed") {
     return 1;
   }
+  if ("status" in result.value && result.value.status === "stopped") {
+    return 1;
+  }
   return 0;
 }
 
@@ -149,11 +197,27 @@ async function runParsedManagerCommand(
   repoRoot: string,
   parsed:
     | { mode: "message"; message: string; tool?: string }
+    | { mode: "auto-message"; message: string; tool: string; approvedActions: Set<ManagerAction["type"]>; maxSteps: number }
+    | { mode: "auto-session"; sessionId: string; tool: string; approvedActions: Set<ManagerAction["type"]>; maxSteps: number }
     | { mode: "action"; sessionId: string; actionFile: string }
     | { mode: "fake-loop"; message: string; actionsFile: string }
-): Promise<SpecResult<ManagerSessionResult | ManagerActionResult | ManagerLoopResult>> {
+): Promise<SpecResult<ManagerSessionResult | ManagerActionResult | ManagerLoopResult | ManagerAutonomousLoopResult>> {
   if (parsed.mode === "message") {
     return startManagerSession(repoRoot, parsed.message, { tool: parsed.tool });
+  }
+  if (parsed.mode === "auto-message") {
+    return runAutonomousManagerLoop(repoRoot, parsed.message, {
+      tool: parsed.tool,
+      approvedActions: parsed.approvedActions,
+      maxSteps: parsed.maxSteps
+    });
+  }
+  if (parsed.mode === "auto-session") {
+    return continueAutonomousManagerLoop(repoRoot, parsed.sessionId, {
+      tool: parsed.tool,
+      approvedActions: parsed.approvedActions,
+      maxSteps: parsed.maxSteps
+    });
   }
   if (parsed.mode === "action") {
     return executeManagerActionFromFile(repoRoot, parsed.sessionId, parsed.actionFile);
@@ -489,6 +553,161 @@ function scriptedManagerProposal(actions: ManagerAction[]): ManagerProposedActio
   };
 }
 
+interface ManagerAutonomyRuntimePolicy {
+  tier2Actions: Set<ManagerAction["type"]>;
+  costThreshold: {
+    estimated_requests: number;
+    wall_time_ms?: number;
+  };
+}
+
+async function loadManagerAutonomyPolicy(repoRoot: string): Promise<SpecResult<ManagerAutonomyRuntimePolicy>> {
+  const config = await loadConfig(repoRoot);
+  if (!config.ok) {
+    return config;
+  }
+  const configuredTier2 = config.config.manager_autonomy?.tier2_actions;
+  const tier2Actions = configuredTier2 === undefined ? ["run_worker", "integrate_shadow"] : configuredTier2;
+  const invalid = tier2Actions.find((action) => !isManagerActionType(action));
+  if (invalid !== undefined) {
+    return { ok: false, reason: `manager_autonomy.tier2_actions contains unsupported manager action type: ${invalid}` };
+  }
+
+  return {
+    ok: true,
+    value: {
+      tier2Actions: new Set(tier2Actions as ManagerAction["type"][]),
+      costThreshold: {
+        estimated_requests: config.config.manager_autonomy?.cost_threshold?.estimated_requests ?? 0,
+        ...("wall_time_ms" in (config.config.manager_autonomy?.cost_threshold ?? {})
+          ? { wall_time_ms: config.config.manager_autonomy?.cost_threshold?.wall_time_ms }
+          : {})
+      }
+    }
+  };
+}
+
+async function classifyManagerAction(
+  repoRoot: string,
+  action: ManagerAction,
+  policy: ManagerAutonomyRuntimePolicy
+): Promise<ActionClassification> {
+  if (policy.tier2Actions.has(action.type)) {
+    return humanApprovalClassification(action, `action ${action.type} is configured as high-risk/consequential`);
+  }
+
+  const cost = estimateManagerActionCost(action);
+  if (cost.estimated_requests > policy.costThreshold.estimated_requests) {
+    return humanApprovalClassification(
+      action,
+      `action ${action.type} estimated provider requests ${cost.estimated_requests} exceeds configured autonomous threshold ${policy.costThreshold.estimated_requests}`
+    );
+  }
+  if (policy.costThreshold.wall_time_ms !== undefined && cost.wall_time_ms !== undefined && cost.wall_time_ms > policy.costThreshold.wall_time_ms) {
+    return humanApprovalClassification(
+      action,
+      `action ${action.type} estimated wall time ${cost.wall_time_ms}ms exceeds configured autonomous threshold ${policy.costThreshold.wall_time_ms}ms`
+    );
+  }
+
+  const critical = await actionTouchesCriticalScope(repoRoot, action);
+  if (!critical.ok) {
+    return humanApprovalClassification(action, critical.reason);
+  }
+  if (critical.value) {
+    return humanApprovalClassification(action, `action ${action.type} touches Critical-tier scope`);
+  }
+
+  return {
+    tier: "autonomous",
+    reason: `action ${action.type} is Tier 1 and may run after deterministic checks pass`,
+    recommendation: "Proceed through the deterministic manager executor."
+  };
+}
+
+function humanApprovalClassification(action: ManagerAction, reason: string): ActionClassification {
+  return {
+    tier: "human_approval",
+    reason,
+    recommendation: `Pause and ask the human to approve, modify, or reject ${action.type}; do not execute it autonomously.`
+  };
+}
+
+function estimateManagerActionCost(action: ManagerAction): { estimated_requests: number; wall_time_ms?: number } {
+  return action.type === "run_worker" || action.type === "scout_task" ? { estimated_requests: 1 } : { estimated_requests: 0 };
+}
+
+async function actionTouchesCriticalScope(repoRoot: string, action: ManagerAction): Promise<SpecResult<boolean>> {
+  const config = await loadConfig(repoRoot);
+  if (!config.ok) {
+    return config;
+  }
+  const contract = await contractForAction(repoRoot, action);
+  if (!contract.ok) {
+    return contract.reason === "no-contract-scope" ? { ok: true, value: false } : contract;
+  }
+  return { ok: true, value: inferTaskTier(contract.value, config.config) === "critical" };
+}
+
+async function contractForAction(repoRoot: string, action: ManagerAction): Promise<SpecResult<TaskContract> | { ok: false; reason: "no-contract-scope" }> {
+  if (action.type === "create_task_contract") {
+    const problems = validateContract(action.contract);
+    if (problems.length > 0) {
+      return { ok: false, reason: "no-contract-scope" };
+    }
+    return { ok: true, value: normalizeContract(action.contract) };
+  }
+  if ("task_id" in action) {
+    const loaded = await loadAndValidateContract(repoRoot, action.task_id);
+    if (!loaded.ok) {
+      return { ok: false, reason: "no-contract-scope" };
+    }
+    return { ok: true, value: loaded.contract };
+  }
+  return { ok: false, reason: "no-contract-scope" };
+}
+
+function buildGateRejectionAdvice(action: ManagerAction, reason: string): ManagerStopAdvice {
+  return {
+    reason,
+    diagnosis: `The deterministic gate rejected ${action.type}; this is a Tier 3 hard stop, not a prompt for autonomous retry.`,
+    options: [
+      "Change the work through a human-approved re-plan or narrower scope if the plan is wrong.",
+      "Inspect the deterministic rejection reason and fix the underlying task, lease, intent, patch, or tests.",
+      "Do not change provider tiers, risk config, safety rules, or approval policy inside the autonomous loop to force this action through."
+    ],
+    recommendation: "Stop the loop and ask the human which option to take."
+  };
+}
+
+function buildReactiveProposalMessage(session: ManagerSession): string {
+  const last = session.executed_actions.at(-1);
+  if (last === undefined) {
+    return "Reactive manager loop: propose exactly the next single manager action from current durable state.";
+  }
+  return [
+    "Reactive manager loop: propose exactly the next single manager action from current durable state.",
+    `Last manager observation: action ${last.type} returned ${last.result.ok ? "ok" : "rejected"}.`,
+    `Last result JSON: ${JSON.stringify(last.result)}`,
+    "If the task is done or blocked awaiting human action, return an empty actions array.",
+    "Do not propose any action that changes config, provider tier metadata, safety rules, approval policy, or deterministic gates to get around a rejection."
+  ].join("\n");
+}
+
+function appendProposalToSession(session: ManagerSession, proposal: ManagerProposedAction): ManagerSession {
+  return {
+    ...session,
+    proposed_action: proposal,
+    turns: [
+      ...session.turns,
+      {
+        role: "manager",
+        content: `proposed next action: ${proposal.actions[0]?.type ?? "none"} — ${proposal.reason}`
+      }
+    ]
+  };
+}
+
 export async function executeManagerActionFromFile(
   repoRoot: string,
   sessionId: string,
@@ -581,6 +800,183 @@ export async function runNoPaidManagerLoop(
       session_id: session.value.session_id,
       session_path: session.value.session_path,
       status: "passed",
+      steps,
+      final_status: status.value
+    }
+  };
+}
+
+export async function runAutonomousManagerLoop(
+  repoRoot: string,
+  message: string,
+  options: AutonomousLoopOptions
+): Promise<SpecResult<ManagerAutonomousLoopResult>> {
+  const session = await startManagerSession(repoRoot, message, { tool: options.tool });
+  if (!session.ok) {
+    return session;
+  }
+  return continueAutonomousManagerLoop(repoRoot, session.value.session_id, options, session.value.proposed_action);
+}
+
+export async function continueAutonomousManagerLoop(
+  repoRoot: string,
+  sessionId: string,
+  options: AutonomousLoopOptions,
+  initialProposal?: ManagerProposedAction
+): Promise<SpecResult<ManagerAutonomousLoopResult>> {
+  const policy = await loadManagerAutonomyPolicy(repoRoot);
+  if (!policy.ok) {
+    return policy;
+  }
+
+  const steps: ManagerAutonomousLoopResult["steps"] = [];
+  let nextProposal = initialProposal;
+  for (let index = 0; index < options.maxSteps; index += 1) {
+    const session = await loadManagerSession(repoRoot, sessionId);
+    if (!session.ok) {
+      return session;
+    }
+    let sessionForWrite = session.value;
+
+    let action: ManagerAction;
+    let classification: ActionClassification;
+    if (session.value.pending_action !== undefined) {
+      action = session.value.pending_action.action;
+      classification = {
+        tier: "human_approval",
+        reason: session.value.pending_action.reason,
+        recommendation: session.value.pending_action.recommendation
+      };
+      if (!options.approvedActions.has(action.type)) {
+        const status = await getStatus(repoRoot);
+        if (!status.ok) {
+          return status;
+        }
+        return {
+          ok: true,
+          value: {
+            session_id: sessionId,
+            session_path: managerSessionRelativePath(sessionId),
+            status: "paused",
+            steps,
+            final_status: status.value
+          }
+        };
+      }
+      await writeJsonAtomic(managerSessionPath(repoRoot, sessionId), { ...session.value, pending_action: undefined });
+    } else {
+      if (nextProposal === undefined) {
+        const generated = await generateManagerProposal(repoRoot, buildReactiveProposalMessage(session.value), options.tool, session.value.spec_id);
+        if (!generated.ok) {
+          return generated;
+        }
+        nextProposal = generated.value;
+        sessionForWrite = appendProposalToSession(session.value, nextProposal);
+        await writeJsonAtomic(managerSessionPath(repoRoot, sessionId), sessionForWrite);
+      }
+
+      if (nextProposal.actions.length === 0) {
+        const status = await getStatus(repoRoot);
+        if (!status.ok) {
+          return status;
+        }
+        return {
+          ok: true,
+          value: {
+            session_id: sessionId,
+            session_path: managerSessionRelativePath(sessionId),
+            status: "completed",
+            steps,
+            final_status: status.value
+          }
+        };
+      }
+
+      action = nextProposal.actions[0];
+      classification = await classifyManagerAction(repoRoot, action, policy.value);
+      if (classification.tier === "human_approval" && !options.approvedActions.has(action.type)) {
+        const pending: ManagerPendingAction = {
+          action,
+          tier: "human_approval",
+          reason: classification.reason,
+          recommendation: classification.recommendation
+        };
+        await writeJsonAtomic(managerSessionPath(repoRoot, sessionId), { ...sessionForWrite, proposed_action: nextProposal, pending_action: pending });
+        const status = await getStatus(repoRoot);
+        if (!status.ok) {
+          return status;
+        }
+        return {
+          ok: true,
+          value: {
+            session_id: sessionId,
+            session_path: managerSessionRelativePath(sessionId),
+            status: "paused",
+            steps: [
+              ...steps,
+              {
+                index,
+                action_type: action.type,
+                tier: "human_approval",
+                pause: pending
+              }
+            ],
+            final_status: status.value
+          }
+        };
+      }
+    }
+
+    const result = await executeManagerAction(repoRoot, sessionId, action);
+    if (!result.ok) {
+      return result;
+    }
+    if (!result.value.result.ok) {
+      const stop = buildGateRejectionAdvice(action, result.value.result.reason);
+      const status = await getStatus(repoRoot);
+      if (!status.ok) {
+        return status;
+      }
+      return {
+        ok: true,
+        value: {
+          session_id: sessionId,
+          session_path: managerSessionRelativePath(sessionId),
+          status: "stopped",
+          steps: [
+            ...steps,
+            {
+              index,
+              action_type: action.type,
+              tier: "gate_rejection",
+              result: result.value.result,
+              stop
+            }
+          ],
+          final_status: status.value
+        }
+      };
+    }
+
+    steps.push({
+      index,
+      action_type: action.type,
+      tier: classification.tier,
+      result: result.value.result
+    });
+    nextProposal = undefined;
+  }
+
+  const status = await getStatus(repoRoot);
+  if (!status.ok) {
+    return status;
+  }
+  return {
+    ok: true,
+    value: {
+      session_id: sessionId,
+      session_path: managerSessionRelativePath(sessionId),
+      status: "step_limit_reached",
       steps,
       final_status: status.value
     }
@@ -850,9 +1246,27 @@ function parseManagerArgs(
   args: string[]
 ): SpecResult<
   | { mode: "message"; message: string; tool?: string }
+  | { mode: "auto-message"; message: string; tool: string; approvedActions: Set<ManagerAction["type"]>; maxSteps: number }
+  | { mode: "auto-session"; sessionId: string; tool: string; approvedActions: Set<ManagerAction["type"]>; maxSteps: number }
   | { mode: "action"; sessionId: string; actionFile: string }
   | { mode: "fake-loop"; message: string; actionsFile: string }
 > {
+  if (args[0] === "--message" && typeof args[1] === "string" && args[2] === "--tool" && typeof args[3] === "string" && args[4] === "--auto-loop") {
+    const options = parseAutoLoopOptions(args.slice(5));
+    if (!options.ok) {
+      return options;
+    }
+    return {
+      ok: true,
+      value: {
+        mode: "auto-message",
+        message: args[1],
+        tool: args[3],
+        approvedActions: options.value.approvedActions,
+        maxSteps: options.value.maxSteps
+      }
+    };
+  }
   if (args[0] === "--message" && typeof args[1] === "string" && args.length === 2) {
     return { ok: true, value: { mode: "message", message: args[1] } };
   }
@@ -865,7 +1279,61 @@ function parseManagerArgs(
   if (args[0] === "--session" && typeof args[1] === "string" && args[2] === "--action" && typeof args[3] === "string" && args.length === 4) {
     return { ok: true, value: { mode: "action", sessionId: args[1], actionFile: args[3] } };
   }
-  return { ok: false, reason: "usage: hivemind manager --message <message> [--tool <tool>] [--fake-manager <actions-json-file>] | --session <session_id> --action <action-json-file>" };
+  if (args[0] === "--session" && typeof args[1] === "string" && args[2] === "--auto-loop" && args[3] === "--tool" && typeof args[4] === "string") {
+    const options = parseAutoLoopOptions(args.slice(5));
+    if (!options.ok) {
+      return options;
+    }
+    return {
+      ok: true,
+      value: {
+        mode: "auto-session",
+        sessionId: args[1],
+        tool: args[4],
+        approvedActions: options.value.approvedActions,
+        maxSteps: options.value.maxSteps
+      }
+    };
+  }
+  return {
+    ok: false,
+    reason:
+      "usage: hivemind manager --message <message> [--tool <tool>] [--fake-manager <actions-json-file>] | --message <message> --tool <tool> --auto-loop [--approve-actions <csv>] [--max-steps <n>] | --session <session_id> --auto-loop --tool <tool> [--approve-actions <csv>] [--max-steps <n>] | --session <session_id> --action <action-json-file>"
+  };
+}
+
+function parseAutoLoopOptions(args: string[]): SpecResult<{ approvedActions: Set<ManagerAction["type"]>; maxSteps: number }> {
+  const approvedActions = new Set<ManagerAction["type"]>();
+  let maxSteps = 20;
+  for (let index = 0; index < args.length; index += 1) {
+    const flag = args[index];
+    const value = args[index + 1];
+    if (flag === "--approve-actions" && typeof value === "string") {
+      index += 1;
+      if (value.trim() === "") {
+        continue;
+      }
+      for (const entry of value.split(",")) {
+        const action = entry.trim();
+        if (!isManagerActionType(action)) {
+          return { ok: false, reason: `--approve-actions contains unsupported manager action type: ${action}` };
+        }
+        approvedActions.add(action);
+      }
+      continue;
+    }
+    if (flag === "--max-steps" && typeof value === "string") {
+      index += 1;
+      const parsed = Number(value);
+      if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+        return { ok: false, reason: "--max-steps must be a positive safe integer" };
+      }
+      maxSteps = parsed;
+      continue;
+    }
+    return { ok: false, reason: `unknown autonomous manager option: ${flag ?? ""}` };
+  }
+  return { ok: true, value: { approvedActions, maxSteps } };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -14,10 +14,21 @@ export interface HivemindConfig {
   high_globs?: string[];
   critical_globs?: string[];
   resource_policy?: ResourcePolicy;
+  manager_autonomy?: ManagerAutonomyPolicy;
 }
 
 export interface ResourcePolicy {
   run_ceiling?: RunCeiling;
+}
+
+export interface ManagerAutonomyPolicy {
+  tier2_actions?: string[];
+  cost_threshold?: ManagerCostThreshold;
+}
+
+export interface ManagerCostThreshold {
+  estimated_requests?: number;
+  wall_time_ms?: number;
 }
 
 export interface RunCeiling {
@@ -80,6 +91,9 @@ export function validateConfig(raw: unknown): string[] {
   if ("resource_policy" in raw) {
     validateResourcePolicy(raw.resource_policy, problems);
   }
+  if ("manager_autonomy" in raw) {
+    validateManagerAutonomyPolicy(raw.manager_autonomy, problems);
+  }
 
   return problems;
 }
@@ -100,7 +114,8 @@ export function normalizeConfig(raw: unknown): HivemindConfig {
     ...("medium_globs" in raw ? { medium_globs: normalizeStringArray(raw.medium_globs) } : {}),
     ...("high_globs" in raw ? { high_globs: normalizeStringArray(raw.high_globs) } : {}),
     ...("critical_globs" in raw ? { critical_globs: normalizeStringArray(raw.critical_globs) } : {}),
-    ...("resource_policy" in raw ? { resource_policy: normalizeResourcePolicy(raw.resource_policy) } : {})
+    ...("resource_policy" in raw ? { resource_policy: normalizeResourcePolicy(raw.resource_policy) } : {}),
+    ...("manager_autonomy" in raw ? { manager_autonomy: normalizeManagerAutonomyPolicy(raw.manager_autonomy) } : {})
   };
 }
 
@@ -159,6 +174,31 @@ function validateRunCeiling(value: unknown, problems: string[]): void {
   }
 }
 
+function validateManagerAutonomyPolicy(value: unknown, problems: string[]): void {
+  if (!isRecord(value)) {
+    problems.push("manager_autonomy must be a JSON object");
+    return;
+  }
+  if ("tier2_actions" in value) {
+    requireStringArray(value, "tier2_actions", problems);
+  }
+  if ("cost_threshold" in value) {
+    validateManagerCostThreshold(value.cost_threshold, problems);
+  }
+}
+
+function validateManagerCostThreshold(value: unknown, problems: string[]): void {
+  if (!isRecord(value)) {
+    problems.push("manager_autonomy.cost_threshold must be a JSON object");
+    return;
+  }
+  for (const field of ["estimated_requests", "wall_time_ms"] as const) {
+    if (field in value && (!Number.isSafeInteger(value[field]) || typeof value[field] !== "number" || value[field] < 0)) {
+      problems.push(`manager_autonomy.cost_threshold.${field} must be a non-negative safe integer`);
+    }
+  }
+}
+
 function normalizeResourcePolicy(value: unknown): ResourcePolicy {
   if (!isRecord(value)) {
     return {};
@@ -174,6 +214,26 @@ function normalizeRunCeiling(value: unknown): RunCeiling {
   }
   return {
     ...("requests" in value && typeof value.requests === "number" ? { requests: value.requests } : {}),
+    ...("wall_time_ms" in value && typeof value.wall_time_ms === "number" ? { wall_time_ms: value.wall_time_ms } : {})
+  };
+}
+
+function normalizeManagerAutonomyPolicy(value: unknown): ManagerAutonomyPolicy {
+  if (!isRecord(value)) {
+    return {};
+  }
+  return {
+    ...("tier2_actions" in value ? { tier2_actions: normalizeStringArray(value.tier2_actions) } : {}),
+    ...("cost_threshold" in value ? { cost_threshold: normalizeManagerCostThreshold(value.cost_threshold) } : {})
+  };
+}
+
+function normalizeManagerCostThreshold(value: unknown): ManagerCostThreshold {
+  if (!isRecord(value)) {
+    return {};
+  }
+  return {
+    ...("estimated_requests" in value && typeof value.estimated_requests === "number" ? { estimated_requests: value.estimated_requests } : {}),
     ...("wall_time_ms" in value && typeof value.wall_time_ms === "number" ? { wall_time_ms: value.wall_time_ms } : {})
   };
 }

@@ -9,7 +9,13 @@ import test from "node:test";
 
 import { readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
-import { executeManagerAction, startManagerSession, type ManagerAction, type ManagerProposedAction } from "../src/manager.js";
+import {
+  executeManagerAction,
+  runAutonomousManagerLoop,
+  startManagerSession,
+  type ManagerAction,
+  type ManagerProposedAction
+} from "../src/manager.js";
 import { createSpec } from "../src/spec.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
@@ -296,6 +302,128 @@ test("manager fake loop drives a user message through gated shadow integration w
     );
     assert.equal(events.filter((event) => event.type === "task.created" && event.task_id === "T-LOOP").length, 1);
     assert.equal(normalizeNewlines(await readFile(path.join(repo, "README.md"), "utf8")), "# Fixture\n");
+  });
+});
+
+test("manager autonomous loop chains Tier-1 actions after deterministic passes", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const contract = managerContract("T-AUTO", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, contract);
+    await writeReactiveManagerProposalProfile(repo, {
+      initial: proposalFor([{ type: "create_task_contract", contract }]),
+      after_create_task_contract_ok: proposalFor([{ type: "request_lease", task_id: "T-AUTO" }]),
+      after_request_lease_ok: proposalFor([{ type: "check_write_intent", task_id: "T-AUTO", intent: intentFor("T-AUTO", ["README.md"]) }]),
+      after_check_write_intent_ok: proposalFor([])
+    });
+
+    const result = await runAutonomousManagerLoop(repo, "Drive Tier-1 steps", {
+      tool: "manager",
+      approvedActions: new Set(),
+      maxSteps: 10
+    });
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.value.status, "completed");
+    assert.deepEqual(result.value.steps.map((step) => step.action_type), ["create_task_contract", "request_lease", "check_write_intent"]);
+    assert.deepEqual(result.value.steps.map((step) => step.tier), ["autonomous", "autonomous", "autonomous"]);
+    assert.equal(result.value.steps.every((step) => step.result?.ok === true), true);
+    assert.deepEqual(await managerReactiveCalls(repo), [
+      "initial",
+      "after_create_task_contract_ok",
+      "after_request_lease_ok",
+      "after_check_write_intent_ok"
+    ]);
+    const session = await readSession(repo, result.value.session_path);
+    assert.deepEqual(session.executed_actions.map((action) => action.type), ["create_task_contract", "request_lease", "check_write_intent"]);
+    assert.equal(await exists(path.join(repo, ".hivemind", "tasks", "T-AUTO.contract.json")), true);
+  });
+});
+
+test("manager autonomous loop pauses Tier-2 actions for human approval", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await writeReactiveManagerProposalProfile(repo, {
+      initial: proposalFor([{ type: "run_worker", task_id: "T-PAUSE", tool: "fake" }], ["run_worker"])
+    });
+
+    const result = await runAutonomousManagerLoop(repo, "Try worker invocation", {
+      tool: "manager",
+      approvedActions: new Set(),
+      maxSteps: 5
+    });
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.value.status, "paused");
+    assert.equal(result.value.steps.length, 1);
+    assert.equal(result.value.steps[0].action_type, "run_worker");
+    assert.equal(result.value.steps[0].tier, "human_approval");
+    assert.match(result.value.steps[0].pause?.reason ?? "", /high-risk|consequential/);
+    const session = await readSession(repo, result.value.session_path);
+    assert.equal(session.executed_actions.length, 0);
+    assert.equal(session.pending_action?.action.type, "run_worker");
+  });
+});
+
+test("manager autonomous loop hard-stops on gate rejection without retrying or changing provider tier", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const agentPath = await writeAgent(repo, "weak-tier-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'weak provider should not run\\n');"
+    ]);
+    await writeProfile(repo, "weak", agentPath, "local", 1);
+    const contract = managerContract("T-REJECT", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, contract);
+    await writeReactiveManagerProposalProfile(repo, {
+      initial: proposalFor([{ type: "create_task_contract", contract }]),
+      after_create_task_contract_ok: proposalFor([{ type: "request_lease", task_id: "T-REJECT" }]),
+      after_request_lease_ok: proposalFor([{ type: "check_write_intent", task_id: "T-REJECT", intent: intentFor("T-REJECT", ["README.md"]) }]),
+      after_check_write_intent_ok: proposalFor([{ type: "create_worktree", task_id: "T-REJECT" }]),
+      after_create_worktree_ok: proposalFor([{ type: "run_worker", task_id: "T-REJECT", tool: "weak" }], ["run_worker"]),
+      after_run_worker_rejected: proposalFor([{ type: "get_status" }])
+    });
+
+    const result = await runAutonomousManagerLoop(repo, "Drive until gate rejection", {
+      tool: "manager",
+      approvedActions: new Set(["run_worker"]),
+      maxSteps: 10
+    });
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.value.status, "stopped");
+    assert.deepEqual(result.value.steps.map((step) => step.action_type), [
+      "create_task_contract",
+      "request_lease",
+      "check_write_intent",
+      "create_worktree",
+      "run_worker"
+    ]);
+    const finalStep = result.value.steps.at(-1);
+    assert.equal(finalStep?.tier, "gate_rejection");
+    assert.equal(finalStep?.result?.ok, false);
+    assert.match(finalStep.result.reason, /below required floor for high task tier/);
+    assert.match(finalStep.stop?.diagnosis ?? "", /Tier 3 hard stop/);
+    assert.match(finalStep.stop?.options.join("\n") ?? "", /Do not change provider tiers/);
+    assert.deepEqual(await managerReactiveCalls(repo), [
+      "initial",
+      "after_create_task_contract_ok",
+      "after_request_lease_ok",
+      "after_check_write_intent_ok",
+      "after_create_worktree_ok"
+    ]);
+    const weakProfile = JSON.parse(await readFile(path.join(repo, ".hivemind", "adapters", "weak.profile.json"), "utf8")) as { routing_tier: string };
+    assert.equal(weakProfile.routing_tier, "local");
+    assert.doesNotMatch(await readFile(path.join(repo, "README.md"), "utf8"), /weak provider should not run/);
   });
 });
 
@@ -810,6 +938,14 @@ function testProposal(actions: ManagerAction[] = []): ManagerProposedAction {
   };
 }
 
+function proposalFor(actions: ManagerAction[], humanApprovalRequiredFor: ManagerAction["type"][] = []): Record<string, unknown> {
+  return {
+    reason: actions.length === 0 ? "No next manager action is currently needed." : `Propose ${actions[0].type} from observed state.`,
+    human_approval_required_for: humanApprovalRequiredFor,
+    actions
+  };
+}
+
 async function prepareLintedPlan(repo: string, contract: Record<string, unknown>, name = `${String(contract.task_id)}-plan.json`): Promise<void> {
   const planPath = path.join(repo, name);
   await writeFile(
@@ -897,8 +1033,12 @@ function isNodeError(error: unknown, code: string): boolean {
 async function readSession(
   repo: string,
   sessionPath: string
-): Promise<{ executed_actions: Array<{ type: string; result: { ok: boolean; reason?: string } }> }> {
+): Promise<{
+  pending_action?: { action: { type: string }; reason: string; recommendation: string };
+  executed_actions: Array<{ type: string; result: { ok: boolean; reason?: string } }>;
+}> {
   return JSON.parse(await readFile(path.join(repo, sessionPath), "utf8")) as {
+    pending_action?: { action: { type: string }; reason: string; recommendation: string };
     executed_actions: Array<{ type: string; result: { ok: boolean; reason?: string } }>;
   };
 }
@@ -944,7 +1084,38 @@ async function writeAgent(repo: string, fileName: string, lines: string[]): Prom
   return agentPath;
 }
 
-async function writeProfile(repo: string, tool: string, agentPath: string): Promise<void> {
+async function writeProfile(repo: string, tool: string, agentPath: string, routingTier = "strong", costRank = 1): Promise<void> {
+  const adaptersDir = path.join(repo, ".hivemind", "adapters");
+  await mkdir(adaptersDir, { recursive: true });
+  await writeFile(
+    path.join(adaptersDir, `${tool}.profile.json`),
+    `${JSON.stringify(
+      {
+        tool,
+        invoke: ["node", agentPath],
+        prompt_arg: "stdin",
+        verified_on: "2026-06-16",
+        context_window: 1024,
+        routing_tier: routingTier,
+        cost_rank: costRank
+      },
+      null,
+      2
+    )}\n`
+  );
+}
+
+async function writeReactiveManagerProposalProfile(repo: string, proposals: Record<string, Record<string, unknown>>, tool = "manager"): Promise<void> {
+  const agentPath = await writeAgent(repo, `${tool}-reactive-proposal-agent.mjs`, [
+    "const { appendFile } = await import('node:fs/promises');",
+    "let input = '';",
+    "for await (const chunk of process.stdin) input += chunk;",
+    `const proposals = ${JSON.stringify(proposals)};`,
+    "const match = input.match(/Last manager observation: action ([a-z_]+) returned (ok|rejected)/);",
+    "const key = match ? `after_${match[1]}_${match[2]}` : 'initial';",
+    "await appendFile('.hivemind/manager-reactive-calls.log', `${key}\\n`);",
+    "console.log(JSON.stringify(proposals[key] ?? { reason: 'No follow-up action.', human_approval_required_for: [], actions: [] }));"
+  ]);
   const adaptersDir = path.join(repo, ".hivemind", "adapters");
   await mkdir(adaptersDir, { recursive: true });
   await writeFile(
@@ -963,6 +1134,14 @@ async function writeProfile(repo: string, tool: string, agentPath: string): Prom
       2
     )}\n`
   );
+}
+
+async function managerReactiveCalls(repo: string): Promise<string[]> {
+  const filePath = path.join(repo, ".hivemind", "manager-reactive-calls.log");
+  if (!(await exists(filePath))) {
+    return [];
+  }
+  return (await readFile(filePath, "utf8")).trim().split(/\r?\n/).filter(Boolean);
 }
 
 async function writeManagerProposalProfile(
