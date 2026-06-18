@@ -68,6 +68,8 @@ In the early build, `allowed_symbols`/`forbidden_symbols` are carried but not en
 
 Deterministic enforcement is structural: a task contract has exactly one `acceptance_criterion`, and that criterion must be backed by at least one named `required_tests` command. Whether that sentence secretly bundles multiple unrelated tasks is a human ratification/planner-review judgment, not something deterministic lint pretends to prove.
 
+Generative/judgment sub-tasks use BEHAVIORAL human-judged acceptance tests, not binary — a binary test on generative work is satisfiable by a deterministic stub that skips the generation (the M5.2/3/4 skeleton failure). Tasks with a generative core whose QUALITY matters must be human-judged; tasks whose generative output has a deterministic validity check (e.g. M7.6) may stay binary.
+
 **Gate markers:** **[GATE]** sub-tasks must pass before the next milestone starts. The hardest rule: **M1.5 must be green before any dogfooding (M3).**
 
 ---
@@ -419,7 +421,7 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
 - **Read first:** Overview § *Resource & Continuity Manager* (Scout-once context packs), § roles.
 - **Goal:** A Scout pass that gathers grounding evidence into a reusable context pack.
 - **Behavior — exact:** The Scout explores the relevant code and emits findings + a context pack (graph slice + conventions + key files) stored as a cacheable artifact (M4.7) and seeded into `tasks/<id>.knowledge.md`. Workers and reroutes reuse the pack instead of re-exploring.
-- **Acceptance test (binary):** A Scout pass produces a context pack that a subsequent worker invocation consumes (verified by a cache hit and a seeded knowledge file) rather than re-exploring from scratch.
+- **Acceptance test (BEHAVIORAL, human-judged — NOT binary):** On a real task, the Scout (an LLM, not a fixed file-dump) decides WHICH files/symbols are relevant and emits a context pack. A human reads the pack and confirms: it contains the genuinely relevant files for the task (not a blind dump or a hardcoded set), the relevance was reasoned, and a subsequent worker consumes it (cache hit + seeded knowledge file) instead of re-exploring. The generative relevance-judgment is what's being judged, not merely that a pack was produced and consumed. Judged by reading output, not an automated pass/fail. The Scout PROPOSES context; it never bypasses grounding/lint/lease — those still verify the scope deterministically.
 
 ### M5.8 — Thrash → re-plan convergence
 - **Depends on:** M5.4, M5.6.
@@ -513,14 +515,14 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
 - **Read first:** Overview § *Dreaming / Consolidation Worker*.
 - **Goal:** Periodically distill Tier-1 evidence into *proposed* canon/routing/playbooks for review.
 - **Behavior — exact:** Produce review proposals only; never auto-assert into canon (obeys M7.3's gate).
-- **Acceptance test (binary):** A consolidation run emits proposals to a review queue; none reach canon without human approval.
+- **Acceptance test (BEHAVIORAL, human-judged — NOT binary):** Given a realistic Tier-1 history, the consolidation worker (an LLM, not a stub) produces DISTILLED proposals — real lessons/patterns extracted from the history, not noise or placeholders. A human reads the proposals and confirms they are substantive distillations a reasonable reviewer would consider promoting. SEPARATELY, the deterministic gate is still verified (binary): no proposal reaches canon without human approval, nothing flows logcanon automatically. So: the DISTILLATION QUALITY is human-judged; the PROMOTION GATE stays a hard deterministic floor. The worker PROPOSES; it never self-promotes to canon.
 
 ### M7.5 — Learned routing policy
 - **Depends on:** M4.5, M4.6, M2.7.
 - **Read first:** Overview § *Agent Scorecards*, § *Resource & Continuity Manager* (waste accounting).
 - **Goal:** Adapt routing from metered merged-diff-per-quota and per-provider/per-task-type performance.
 - **Behavior — exact:** Derive routing weights from Tier-1 metrics (effective throughput, handoff-safety, merged-diff-per-quota); the tier cap from M4.6 still overrides (a Critical task is never downgraded).
-- **Acceptance test (binary):** Feeding history where provider A reliably outperforms B on a task type shifts routing toward A for that type, without ever breaching the tier cap.
+- **Acceptance test (binary):** Feeding history where provider A reliably outperforms B on a task type shifts routing toward A for that type, without ever breaching the tier cap. Additionally, the derived routing policy is human-inspectable: a reviewer can see WHY routing shifted (which metrics drove it), so a trivial hardcoded counter that fakes the correlation without real metric-derivation is distinguishable from a genuine learned policy.
 
 ### M7.6 — Oracle-strengthening
 - **Depends on:** M2.5, M7.1.
@@ -534,7 +536,7 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
 - **Read first:** Overview § *Value-Gated Quality Strategy*.
 - **Goal:** Spend extra effort only where value-gated, never blanket.
 - **Behavior — exact:** Offer best-of-N (parallel drafts in disjoint worktrees, keep the shadow-tested winner) and draft-cheap/refine-expensive; gate both to High/Critical or error-prone task types; all spend counts against the M4.6 ceiling; all stays advisory (never bypasses the gate).
-- **Acceptance test (binary):** Best-of-N runs only for a gated task and is skipped for a Low-tier task; the chosen draft is the one that passed shadow tests.
+- **Acceptance test (binary):** Best-of-N runs only for a gated task and is skipped for a Low-tier task; the chosen draft is the one that passed shadow tests. The winner selection must be genuinely driven by shadow-test results on real distinct drafts (not a stub that always returns draft 1); a human confirms the N drafts were real alternatives and the selection reflected their actual test outcomes.
 
 ### M7.8 — Verification learns which checks matter
 - **Depends on:** M2.5, M7.1, M7.3.
