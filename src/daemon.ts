@@ -3,6 +3,8 @@ import type { AddressInfo } from "node:net";
 import { analyzeTask } from "./analyze.js";
 import { createTaskContract } from "./contract.js";
 import { removeDaemonState, writeDaemonState } from "./daemon-state.js";
+import { EventBus } from "./event-bus.js";
+import { readEvents } from "./events.js";
 import { enqueueIntegrationPatch, integrateShadow } from "./integrate.js";
 import { checkWriteIntent } from "./intent.js";
 import { requestLeaseForContract, releaseLease } from "./lease.js";
@@ -21,7 +23,10 @@ interface DaemonOptions {
 }
 
 type DaemonPayload = Record<string, unknown>;
-type DaemonHandler = (payload: DaemonPayload) => Promise<{ ok: true; value: unknown } | { ok: false; reason: string }>;
+type DaemonHandler = (
+  payload: DaemonPayload,
+  eventBus: EventBus
+) => Promise<{ ok: true; value: unknown } | { ok: false; reason: string }>;
 
 export async function daemonCommand(cwd: string, args: string[]): Promise<number> {
   const options = parseDaemonOptions(args);
@@ -75,10 +80,15 @@ export async function daemonCommand(cwd: string, args: string[]): Promise<number
 
 function createDaemonServer(repoRoot: string) {
   const queue = new SerializedQueue();
+  const eventBus = new EventBus();
   return createServer(async (request, response) => {
     try {
       if (request.method === "GET" && request.url === "/health") {
         writeJson(response, 200, { ok: true, repo_root: repoRoot });
+        return;
+      }
+      if (request.method === "GET" && request.url === "/events/stream") {
+        await eventBus.stream(repoRoot, request, response);
         return;
       }
 
@@ -94,7 +104,14 @@ function createDaemonServer(repoRoot: string) {
         return;
       }
 
-      const result = await queue.run(() => handler(payloadResult.value));
+      const previousEvents = await readEvents(repoRoot);
+      if (!previousEvents.ok) {
+        writeJson(response, 500, { ok: false, reason: previousEvents.reason });
+        return;
+      }
+
+      const result = await queue.run(() => handler(payloadResult.value, eventBus));
+      await eventBus.publishNewDurableEvents(repoRoot, previousEvents.value.length);
       writeJson(response, result.ok ? 200 : 400, result);
     } catch (error: unknown) {
       writeJson(response, 500, { ok: false, reason: error instanceof Error ? error.message : "unexpected daemon failure" });
@@ -160,7 +177,7 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
     };
   }
   if (request.method === "POST" && request.url === "/run") {
-    return async (payload) => {
+    return async (payload, eventBus) => {
       const taskId = readTaskId(payload);
       if (!taskId.ok) {
         return taskId;
@@ -169,7 +186,10 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
       if (!tool.ok) {
         return tool;
       }
-      return runTask(repoRoot, taskId.value, tool.value, { allowDangerousAdapter: payload.allow_dangerous_adapter === true });
+      return runTask(repoRoot, taskId.value, tool.value, {
+        allowDangerousAdapter: payload.allow_dangerous_adapter === true,
+        onEvent: (event) => eventBus.publishEvent(event)
+      });
     };
   }
   if (request.method === "POST" && request.url === "/scout/run") {

@@ -7,6 +7,7 @@ import { loadConfig, type RunCeiling } from "./config.js";
 import { loadAndValidateContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { captureWorktreeDiff } from "./diff-capture.js";
+import { appendEvent, type HivemindEvent, type HivemindEventInput } from "./events.js";
 import { verifyLeaseCoverage } from "./lease.js";
 import { requireTaskDependenciesIntegrated } from "./plan.js";
 import { findGitRoot } from "./repo.js";
@@ -29,6 +30,7 @@ export interface RunResult {
 
 export interface RunTaskOptions {
   allowDangerousAdapter?: boolean;
+  onEvent?: (event: HivemindEvent) => void;
 }
 
 export async function runCommand(cwd: string, args: string[]): Promise<number> {
@@ -121,7 +123,45 @@ export async function runTask(
     return cleanResult;
   }
 
-  const invokeResult = await invokeAgent(repoRoot, taskId, routeResult.value.tool, options);
+  const startedEvent = await emitRunEvent(
+    repoRoot,
+    {
+      type: "task.started",
+      task_id: taskId,
+      data: { tool: routeResult.value.tool, worktree: worktreeResult.value.worktree }
+    },
+    options.onEvent
+  );
+  if (!startedEvent.ok) {
+    return startedEvent;
+  }
+
+  const streamEventWrites: Array<Promise<{ ok: true } | { ok: false; reason: string }>> = [];
+  let streamEventTail: Promise<{ ok: true } | { ok: false; reason: string }> = Promise.resolve({ ok: true });
+  const invokeResult = await invokeAgent(repoRoot, taskId, routeResult.value.tool, {
+    allowDangerousAdapter: options.allowDangerousAdapter,
+    onStreamChunk: (chunk) => {
+      streamEventTail = streamEventTail.then((previous) =>
+        previous.ok
+          ? emitRunEvent(
+              repoRoot,
+              {
+                type: "task.output",
+                task_id: taskId,
+                data: { tool: routeResult.value.tool, stream: chunk.stream, text: chunk.text }
+              },
+              options.onEvent
+            )
+          : previous
+      );
+      streamEventWrites.push(streamEventTail);
+    }
+  });
+  const streamEventResults = await Promise.all(streamEventWrites);
+  const failedStreamEvent = streamEventResults.find((result) => !result.ok);
+  if (failedStreamEvent !== undefined && !failedStreamEvent.ok) {
+    return failedStreamEvent;
+  }
   if (!invokeResult.ok) {
     return invokeResult;
   }
@@ -154,6 +194,19 @@ export async function runTask(
       changed_files: diffResult.value.changedFiles
     }
   };
+}
+
+async function emitRunEvent(
+  repoRoot: string,
+  input: HivemindEventInput,
+  onEvent: ((event: HivemindEvent) => void) | undefined
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const eventResult = await appendEvent(repoRoot, input);
+  if (!eventResult.ok) {
+    return eventResult;
+  }
+  onEvent?.(eventResult.value);
+  return { ok: true };
 }
 
 function parseRunArgs(

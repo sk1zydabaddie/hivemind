@@ -26,8 +26,14 @@ export interface InvokeAgentResult {
   wallTimeMs: number;
 }
 
+export interface AdapterStreamChunk {
+  stream: "stdout" | "stderr";
+  text: string;
+}
+
 export interface InvokeAgentOptions {
   allowDangerousAdapter?: boolean;
+  onStreamChunk?: (chunk: AdapterStreamChunk) => void;
 }
 
 export interface AdapterProcessResult {
@@ -72,7 +78,9 @@ export async function invokeAgent(
   }
   const prompt = promptResult.value.full_prompt;
   const startedAt = Date.now();
-  const processResult = await runAdapterProcess(profileResult.profile, worktreePath, prompt);
+  const processResult = await runAdapterProcess(profileResult.profile, worktreePath, prompt, {
+    onStreamChunk: options.onStreamChunk
+  });
   if (!processResult.ok) {
     return processResult;
   }
@@ -199,7 +207,8 @@ export function buildAgentPrompt(contract: TaskContract): string {
 export function runAdapterProcess(
   profile: AdapterProfile,
   cwd: string,
-  prompt: string
+  prompt: string,
+  options: { onStreamChunk?: (chunk: AdapterStreamChunk) => void } = {}
 ): Promise<{ ok: true; value: AdapterProcessResult } | { ok: false; reason: string }> {
   return new Promise((resolve, reject) => {
     const [command, ...baseArgs] = profile.invoke;
@@ -218,8 +227,14 @@ export function runAdapterProcess(
             terminateProcessTree(child.pid);
           }, profile.timeout_ms);
 
-    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout.push(chunk);
+      options.onStreamChunk?.({ stream: "stdout", text: chunk.toString("utf8") });
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr.push(chunk);
+      options.onStreamChunk?.({ stream: "stderr", text: chunk.toString("utf8") });
+    });
     child.stdin.on("error", (error: NodeJS.ErrnoException) => {
       if (!failedToStart) {
         reject(error);

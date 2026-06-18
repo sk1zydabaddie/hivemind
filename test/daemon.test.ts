@@ -9,7 +9,8 @@ import test from "node:test";
 
 import { appendEvent } from "../src/events.js";
 import { initProject } from "../src/init.js";
-import { readActiveLeases } from "../src/lease.js";
+import { checkWriteIntent } from "../src/intent.js";
+import { readActiveLeases, requestLeaseForContract } from "../src/lease.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
 const execFileAsync = promisify(execFile);
@@ -185,6 +186,78 @@ test("plan thrash discovers a live daemon and routes the re-plan write", async (
   });
 });
 
+test("daemon event stream publishes run events live and replays durable history to late subscribers", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writeStreamingProfile(repo, "fake-stream");
+    const lease = await requestLeaseForContract(repo, "T-001");
+    assert.equal(lease.ok, true);
+    const intent = await checkWriteIntent(repo, "T-001", {
+      task_id: "T-001",
+      intended_files: ["README.md"],
+      intended_symbols: [],
+      possible_risks: [],
+      will_not_change: []
+    });
+    assert.equal(intent.ok, true);
+
+    const daemon = await startDaemon(repo);
+    try {
+      const subscriber = await EventStreamClient.connect(repo, daemon.url);
+      try {
+        let runSettled = false;
+        const run = execCli(repo, daemon.url, ["run", "T-001", "--tool", "fake-stream"]).finally(() => {
+          runSettled = true;
+        });
+
+        const started = await subscriber.nextEvent((message) => message.event.type === "task.started" && message.event.task_id === "T-001");
+        assert.equal(started.source, "live");
+
+        const firstOutput = await subscriber.nextEvent(
+          (message) =>
+            message.event.type === "task.output" &&
+            message.event.task_id === "T-001" &&
+            message.event.data.stream === "stdout" &&
+            typeof message.event.data.text === "string" &&
+            message.event.data.text.includes("live-start")
+        );
+        assert.equal(firstOutput.source, "live");
+        assert.equal(runSettled, false);
+
+        const lateSubscriber = await EventStreamClient.connect(repo, daemon.url);
+        try {
+          const replayedStart = await lateSubscriber.nextEvent(
+            (message) => message.source === "history" && message.event.type === "task.started" && message.event.task_id === "T-001"
+          );
+          assert.equal(replayedStart.event.data.tool, "fake-stream");
+          const replayedOutput = await lateSubscriber.nextEvent(
+            (message) =>
+              message.source === "history" &&
+              message.event.type === "task.output" &&
+              typeof message.event.data.text === "string" &&
+              message.event.data.text.includes("live-start")
+          );
+          assert.equal(replayedOutput.event.data.stream, "stdout");
+        } finally {
+          await lateSubscriber.close();
+        }
+
+        const completed = await run;
+        const parsed = JSON.parse(completed.stdout) as { status: string; changed_files: number };
+        assert.equal(parsed.status, "completed");
+        assert.equal(parsed.changed_files, 1);
+      } finally {
+        await subscriber.close();
+      }
+    } finally {
+      await stopDaemon(daemon);
+    }
+
+    const busSourceText = await readFile(path.join(process.cwd(), "src", "event-bus.ts"), "utf8");
+    assert.doesNotMatch(busSourceText, /claude|codex/i);
+  });
+});
+
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
   const repo = await mkdtemp(path.join(tmpdir(), "hivemind-daemon-test-"));
   try {
@@ -212,6 +285,119 @@ async function startDaemon(repo: string): Promise<DaemonProcess> {
   const parsed = JSON.parse(line) as { event: string; url: string; repo_root: string };
   assert.equal(parsed.event, "daemon.ready");
   return { child, url: parsed.url, repoRoot: parsed.repo_root };
+}
+
+interface StreamMessage {
+  kind: "event";
+  source: "history" | "live";
+  seq?: number;
+  event: {
+    ts: string;
+    type: string;
+    task_id: string | null;
+    data: Record<string, unknown>;
+  };
+}
+
+class EventStreamClient {
+  private readonly decoder = new TextDecoder();
+  private readonly messages: StreamMessage[] = [];
+  private readonly waiters: Array<{
+    predicate: (message: StreamMessage) => boolean;
+    resolve: (message: StreamMessage) => void;
+    reject: (error: Error) => void;
+    timeout: NodeJS.Timeout;
+  }> = [];
+  private buffer = "";
+  private readLoop: Promise<void>;
+
+  private constructor(
+    private readonly reader: ReadableStreamDefaultReader<Uint8Array>,
+    private readonly controller: AbortController
+  ) {
+    this.readLoop = this.read();
+  }
+
+  static async connect(repo: string, daemonUrl: string): Promise<EventStreamClient> {
+    const controller = new AbortController();
+    const response = await fetch(`${daemonUrl}/events/stream`, { signal: controller.signal });
+    assert.equal(response.ok, true);
+    assert.ok(response.body, "event stream response must have a body");
+    return new EventStreamClient(response.body.getReader(), controller);
+  }
+
+  nextEvent(predicate: (message: StreamMessage) => boolean, timeoutMs = 5000): Promise<StreamMessage> {
+    const existingIndex = this.messages.findIndex(predicate);
+    if (existingIndex !== -1) {
+      const [message] = this.messages.splice(existingIndex, 1);
+      return Promise.resolve(message);
+    }
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        const index = this.waiters.findIndex((waiter) => waiter.reject === reject);
+        if (index !== -1) {
+          this.waiters.splice(index, 1);
+        }
+        reject(new Error("timed out waiting for event stream message"));
+      }, timeoutMs);
+      this.waiters.push({ predicate, resolve, reject, timeout });
+    });
+  }
+
+  async close(): Promise<void> {
+    this.controller.abort();
+    for (const waiter of this.waiters.splice(0)) {
+      clearTimeout(waiter.timeout);
+      waiter.reject(new Error("event stream closed"));
+    }
+    await this.readLoop.catch(() => undefined);
+  }
+
+  private async read(): Promise<void> {
+    try {
+      while (true) {
+        const chunk = await this.reader.read();
+        if (chunk.done) {
+          return;
+        }
+        this.buffer += this.decoder.decode(chunk.value, { stream: true });
+        this.drainBuffer();
+      }
+    } catch {
+      return;
+    }
+  }
+
+  private drainBuffer(): void {
+    let boundary = this.buffer.indexOf("\n\n");
+    while (boundary !== -1) {
+      const frame = this.buffer.slice(0, boundary);
+      this.buffer = this.buffer.slice(boundary + 2);
+      this.handleFrame(frame);
+      boundary = this.buffer.indexOf("\n\n");
+    }
+  }
+
+  private handleFrame(frame: string): void {
+    const data = frame
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data: "))
+      .map((line) => line.slice("data: ".length))
+      .join("\n");
+    if (data === "") {
+      return;
+    }
+    const parsed = JSON.parse(data) as StreamMessage;
+    const waiterIndex = this.waiters.findIndex((waiter) => waiter.predicate(parsed));
+    if (waiterIndex !== -1) {
+      const [waiter] = this.waiters.splice(waiterIndex, 1);
+      clearTimeout(waiter.timeout);
+      waiter.resolve(parsed);
+      return;
+    }
+    this.messages.push(parsed);
+  }
 }
 
 async function stopDaemon(daemon: DaemonProcess): Promise<void> {
@@ -291,6 +477,40 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
       null,
       2
     )}\n`
+  );
+}
+
+async function writeStreamingProfile(repo: string, tool: string): Promise<void> {
+  const agentPath = path.join(repo, "streaming-agent.mjs");
+  await writeFile(
+    agentPath,
+    [
+      "const { writeFile } = await import('node:fs/promises');",
+      "console.log('live-start');",
+      "await new Promise((resolve) => setTimeout(resolve, 750));",
+      "await writeFile('README.md', '# Fixture\\nchanged by streaming agent\\n');",
+      "console.log('live-end');"
+    ].join("\n"),
+    "utf8"
+  );
+  const adaptersDir = path.join(repo, ".hivemind", "adapters");
+  await mkdir(adaptersDir, { recursive: true });
+  await writeFile(
+    path.join(adaptersDir, `${tool}.profile.json`),
+    `${JSON.stringify(
+      {
+        tool,
+        invoke: [process.execPath, agentPath],
+        prompt_arg: "stdin",
+        verified_on: "test",
+        context_window: 100000,
+        timeout_ms: 5000,
+        routing_tier: "strong"
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
   );
 }
 

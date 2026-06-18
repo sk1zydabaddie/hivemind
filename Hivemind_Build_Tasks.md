@@ -439,8 +439,8 @@ Generative/judgment sub-tasks use BEHAVIORAL human-judged acceptance tests, not 
 - **Depends on:** M2.7, M4.1.
 - **Read first:** Overview § *Real-Time Supervision*, § *Context & Working-Set Management*.
 - **Goal:** Publish events to subscribers and stream worker output live.
-- **Behavior — exact:** A pub/sub layer over the daemon emits the event types (M2.7 + `task.*`, `quota.low`, `context.low`, `orchestrator.*`) to connected UIs; worker stdout streams live (parse `claude -p --output-format stream-json`; for Codex, parse the `exec` stream — asymmetry per the harmony section).
-- **Acceptance test (binary):** A subscriber receives events in real time during a run, and a running worker's output appears live rather than only at completion.
+- **Behavior — exact:** A pub/sub layer over the daemon emits the event types (M2.7 + `task.*`, `quota.low`, `context.low`, `orchestrator.*`) to connected subscribers. The bus is read/publish only over durable state: `.hivemind/log/events.jsonl` remains authoritative, subscribers replay current state from that trail, and observation never mutates state or gates work. Worker stdout streams live during a run through normalized adapter stream events; tool-specific parsing asymmetry (Claude Code stream-json vs Codex exec stream vs future tools) stays inside the adapter abstraction, not in the event bus or core.
+- **Acceptance test (binary):** A subscriber receives events in real time during a run; a running worker's stdout is observable mid-run rather than only at completion; a subscriber connecting mid-run can replay correct current state from the durable trail; and the event bus contains no tool-specific Claude/Codex branching because it consumes normalized adapter stream chunks.
 
 ### M6.2 — Live task board + agent monitor
 - **Depends on:** M6.1.
