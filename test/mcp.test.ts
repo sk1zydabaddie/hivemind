@@ -11,7 +11,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 import { initProject } from "../src/init.js";
-import { readEvents } from "../src/events.js";
+import { appendEvent, readEvents } from "../src/events.js";
 import { mcpToolDefinitions } from "../src/mcp.js";
 import { createSpec } from "../src/spec.js";
 import { createRatifiedSpec } from "./support/spec.js";
@@ -321,6 +321,43 @@ test("MCP create_task_contract inherits the lint-passed plan precondition", asyn
   });
 });
 
+test("MCP create_task_contract refuses a dependent task until dependencies are event-integrated", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const dependency = buildContract("T-BASE", baseCommit, ["README.md"]);
+    const dependent = buildContract("T-DEP", baseCommit, ["outside.txt"]);
+    await prepareLintedPlanWithTasks(repo, [
+      planTaskFromContract(dependency),
+      planTaskFromContract(dependent, ["T-BASE"])
+    ]);
+
+    const daemon = await startDaemon(repo);
+    const server = await startHttpMcp(repo, { HIVEMIND_DAEMON_URL: daemon.url });
+    const client = new Client({ name: "hivemind-mcp-dependency-floor-test", version: "0.0.0" }, { capabilities: {} });
+    const transport = new StreamableHTTPClientTransport(new URL(server.url));
+    try {
+      await client.connect(transport);
+      const blocked = await client.callTool({
+        name: "hivemind.create_task_contract",
+        arguments: { contract: dependent }
+      });
+
+      assert.equal(blocked.isError, true);
+      const blockedContent = (blocked.content as Array<{ type?: unknown; text?: unknown }>)[0];
+      assert.match(String(blockedContent?.type === "text" ? blockedContent.text : ""), /task T-DEP depends_on not integrated: T-BASE/);
+      assert.equal(await exists(path.join(repo, ".hivemind", "tasks", "T-DEP.contract.json")), false);
+
+      await appendIntegratedDependencyEvents(repo, "T-BASE");
+      const allowed = await callStructured(client, "hivemind.create_task_contract", { contract: dependent });
+      assert.equal(allowed.task_id, "T-DEP");
+      assert.equal(await exists(path.join(repo, ".hivemind", "tasks", "T-DEP.contract.json")), true);
+    } finally {
+      await client.close();
+      await stopHttpMcp(server);
+      await stopProcess(daemon);
+    }
+  });
+});
+
 test("MCP HTTP transport rejects non-local origins and CLI invalid usage", async () => {
   await withTempRepo(async ({ repo }) => {
     const server = await startHttpMcp(repo);
@@ -500,13 +537,17 @@ function buildContract(taskId: string, baseCommit: string, allowedFiles: string[
 }
 
 async function prepareLintedPlan(repo: string, contract: Record<string, unknown>, name = `${String(contract.task_id)}-plan.json`): Promise<void> {
+  await prepareLintedPlanWithTasks(repo, [planTaskFromContract(contract)], name);
+}
+
+async function prepareLintedPlanWithTasks(repo: string, tasks: Record<string, unknown>[], name = "plan.json"): Promise<void> {
   const planPath = path.join(repo, name);
   await writeFile(
     planPath,
     `${JSON.stringify(
       {
-        tasks: [planTaskFromContract(contract)],
-        execution_groups: [{ group_id: "G-1", mode: "parallel", task_ids: [contract.task_id] }]
+        tasks,
+        execution_groups: [{ group_id: "G-1", mode: "sequence", task_ids: tasks.map((task) => task.task_id) }]
       },
       null,
       2
@@ -517,7 +558,7 @@ async function prepareLintedPlan(repo: string, contract: Record<string, unknown>
   await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
 }
 
-function planTaskFromContract(contract: Record<string, unknown>): Record<string, unknown> {
+function planTaskFromContract(contract: Record<string, unknown>, dependsOn: string[] = []): Record<string, unknown> {
   return {
     task_id: contract.task_id,
     title: contract.title,
@@ -529,12 +570,30 @@ function planTaskFromContract(contract: Record<string, unknown>): Record<string,
       forbidden_files: contract.forbidden_files,
       must_not_change: contract.must_not_change
     },
-    depends_on: [],
+    depends_on: dependsOn,
     parallel_safe: true,
     acceptance_criterion: contract.acceptance_criterion,
     required_tests: contract.required_tests,
     patch_requirements: contract.patch_requirements
   };
+}
+
+async function appendIntegratedDependencyEvents(repo: string, taskId: string): Promise<void> {
+  await appendEvent(repo, {
+    type: "patch.submitted",
+    task_id: taskId,
+    data: { bundle_path: `.hivemind/patches/${taskId}`, changed_files: 1 }
+  });
+  await appendEvent(repo, {
+    type: "patch.accepted",
+    task_id: taskId,
+    data: { verdict: "accept", reason: "accepted dependency fixture" }
+  });
+  await appendEvent(repo, {
+    type: "integration.passed",
+    task_id: null,
+    data: { applied: [taskId], tests: "pass" }
+  });
 }
 
 async function callStructured(client: Client, name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {

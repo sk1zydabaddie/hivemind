@@ -8,7 +8,9 @@ import { canonicalizeIntentPath } from "./canonicalize.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { loadConfig } from "./config.js";
 import { normalizeAllowedFileIntents, type AgentRole, type AllowedFileIntent, type TaskContract } from "./contract.js";
+import { readEvents } from "./events.js";
 import { matchesAny } from "./glob.js";
+import { integratedTaskIdsFromEvents } from "./integration-state.js";
 import { extractJsonObject } from "./json.js";
 import { assertNoKnownFailedScopeRepeat, evaluateThrashForPlan, type ReplanEvaluationResult } from "./replan.js";
 import { findGitRoot } from "./repo.js";
@@ -625,26 +627,11 @@ export async function requireContractFromLintedPlan(
   specId: string,
   contract: TaskContract
 ): Promise<SpecResult<void>> {
-  const loaded = await loadTentativePlan(repoRoot, specId);
-  if (!loaded.ok) {
-    return { ok: false, reason: `contract creation requires a lint-passed tentative plan: ${loaded.reason}` };
+  const planResult = await loadCurrentLintedPlan(repoRoot, specId, "contract creation");
+  if (!planResult.ok) {
+    return planResult;
   }
-  const head = await currentHead(repoRoot);
-  if (!head.ok) {
-    return head;
-  }
-  const config = await loadConfig(repoRoot);
-  if (!config.ok) {
-    return config;
-  }
-  const plan = loaded.value;
-  if (plan.lint_status !== "passed" || plan.linted_base_commit !== plan.base_commit || plan.linted_at === undefined) {
-    return { ok: false, reason: "contract creation requires a current lint-passed tentative plan" };
-  }
-  const lintResult = runPlanLintRules(plan, head.value, config.config.critical_globs ?? []);
-  if (!lintResult.ok) {
-    return lintResult;
-  }
+  const plan = planResult.value;
   const task = plan.tasks.find((entry) => entry.task_id === contract.task_id);
   if (task === undefined) {
     return { ok: false, reason: `contract task ${contract.task_id} is not present in lint-passed plan ${tentativePlanRelativePath(specId)}` };
@@ -656,7 +643,65 @@ export async function requireContractFromLintedPlan(
   if (mismatches.length > 0) {
     return { ok: false, reason: `contract does not match lint-passed plan task ${contract.task_id}: ${mismatches.join("; ")}` };
   }
+  const dependencyResult = await requireTaskDependenciesIntegrated(repoRoot, specId, contract.task_id);
+  if (!dependencyResult.ok) {
+    return dependencyResult;
+  }
   return { ok: true, value: undefined };
+}
+
+export async function requireTaskDependenciesIntegrated(
+  repoRoot: string,
+  specId: string,
+  taskId: string
+): Promise<SpecResult<void>> {
+  const planResult = await loadCurrentLintedPlan(repoRoot, specId, `task ${taskId} dependency check`);
+  if (!planResult.ok) {
+    return planResult;
+  }
+  const task = planResult.value.tasks.find((entry) => entry.task_id === taskId);
+  if (task === undefined) {
+    return { ok: false, reason: `task ${taskId} is not present in lint-passed plan ${tentativePlanRelativePath(specId)}` };
+  }
+  if (task.depends_on.length === 0) {
+    return { ok: true, value: undefined };
+  }
+
+  const eventsResult = await readEvents(repoRoot);
+  if (!eventsResult.ok) {
+    return eventsResult;
+  }
+  const integrated = integratedTaskIdsFromEvents(eventsResult.value);
+  const missing = task.depends_on.filter((dependency) => !integrated.has(dependency));
+  if (missing.length > 0) {
+    return { ok: false, reason: `task ${taskId} depends_on not integrated: ${missing.join(", ")}` };
+  }
+
+  return { ok: true, value: undefined };
+}
+
+async function loadCurrentLintedPlan(repoRoot: string, specId: string, action: string): Promise<SpecResult<TentativePlan>> {
+  const loaded = await loadTentativePlan(repoRoot, specId);
+  if (!loaded.ok) {
+    return { ok: false, reason: `${action} requires a lint-passed tentative plan: ${loaded.reason}` };
+  }
+  const head = await currentHead(repoRoot);
+  if (!head.ok) {
+    return head;
+  }
+  const config = await loadConfig(repoRoot);
+  if (!config.ok) {
+    return config;
+  }
+  const plan = loaded.value;
+  if (plan.lint_status !== "passed" || plan.linted_base_commit !== plan.base_commit || plan.linted_at === undefined) {
+    return { ok: false, reason: `${action} requires a current lint-passed tentative plan` };
+  }
+  const lintResult = runPlanLintRules(plan, head.value, config.config.critical_globs ?? []);
+  if (!lintResult.ok) {
+    return lintResult;
+  }
+  return { ok: true, value: plan };
 }
 
 export async function resolveContractFilesAtBase(

@@ -8,7 +8,9 @@ import { loadConfig } from "./config.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent, readEvents } from "./events.js";
 import { readJsonFile } from "./json.js";
+import { requireTaskDependenciesIntegrated } from "./plan.js";
 import { findGitRoot } from "./repo.js";
+import { requireActiveSpecRatified } from "./spec.js";
 import { validateRequestedTaskId } from "./task-id.js";
 
 const execAsync = promisify(exec);
@@ -203,6 +205,11 @@ export async function enqueueIntegrationPatch(
   const patchResult = await statPatchBundle(repoRoot, taskId);
   if (!patchResult.ok) {
     return patchResult;
+  }
+
+  const dependencyResult = await requireDependenciesIfPlanBacked(repoRoot, taskId);
+  if (!dependencyResult.ok) {
+    return dependencyResult;
   }
 
   const acceptedResult = await requireAcceptedPatchEvidence(repoRoot, taskId);
@@ -426,6 +433,18 @@ async function requireAcceptedPatchEvidence(repoRoot: string, taskId: string): P
   }
 
   return { ok: true };
+}
+
+async function requireDependenciesIfPlanBacked(repoRoot: string, taskId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const specResult = await requireActiveSpecRatified(repoRoot);
+  if (!specResult.ok) {
+    return specResult.reason.startsWith("no active spec") ? { ok: true } : specResult;
+  }
+  const dependencyResult = await requireTaskDependenciesIntegrated(repoRoot, specResult.value.spec_id, taskId);
+  if (!dependencyResult.ok && dependencyResult.reason.includes("tentative plan not found")) {
+    return { ok: true };
+  }
+  return dependencyResult;
 }
 
 function integrationTimestamp(): string {

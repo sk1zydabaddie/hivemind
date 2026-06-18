@@ -12,6 +12,7 @@ import { checkWriteIntent } from "../src/intent.js";
 import { requestLease, requestLeaseForContract } from "../src/lease.js";
 import { runTask } from "../src/run.js";
 import { analyzeTask } from "../src/analyze.js";
+import { appendEvent } from "../src/events.js";
 import { submitTask } from "../src/submit.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
@@ -76,6 +77,47 @@ test("runTask lease-before-run accepts a contract-backed create lease", async ()
     const diff = await readFile(result.value.diff_path, "utf8");
     assert.match(diff, /diff --git a\/src\/new-file\.ts b\/src\/new-file\.ts/);
     assert.match(diff, /\+export const created = true;/);
+  });
+});
+
+test("runTask refuses a plan-backed dependent task until dependencies are event-integrated", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const agentPath = await writeAgent(repo, "dependency-bypass-agent.mjs", [
+      "const { writeFile } = await import('node:fs/promises');",
+      "await writeFile('README.md', '# Fixture\\ndependency bypass worker ran\\n');"
+    ]);
+    await prepareLintedPlanWithTasks(repo, [
+      planTask("T-BASE", "README.md"),
+      planTask("T-DEP", "README.md", ["T-BASE"])
+    ]);
+    await writeContract(repo, "T-DEP", baseCommit, ["README.md"]);
+    await writeProfile(repo, "fake", agentPath);
+    const lease = await requestLease(repo, "T-DEP", ["README.md"]);
+    assert.equal(lease.ok, true);
+    const intent = await checkWriteIntent(repo, "T-DEP", {
+      task_id: "T-DEP",
+      intended_files: ["README.md"],
+      intended_symbols: [],
+      possible_risks: [],
+      will_not_change: []
+    });
+    assert.equal(intent.ok, true);
+
+    const blocked = await runTask(repo, "T-DEP", "fake");
+    assert.equal(blocked.ok, false);
+    if (blocked.ok) {
+      return;
+    }
+    assert.match(blocked.reason, /task T-DEP depends_on not integrated: T-BASE/);
+    await assertMissing(path.join(repo, ".hivemind", "worktrees", "T-DEP"));
+
+    await appendIntegratedDependencyEvents(repo, "T-BASE");
+    const allowed = await runTask(repo, "T-DEP", "fake");
+    assert.equal(allowed.ok, true);
+    if (!allowed.ok) {
+      return;
+    }
+    assert.equal(allowed.value.changed_files, 1);
   });
 });
 
@@ -606,6 +648,62 @@ async function writeContract(
       2
     )}\n`
   );
+}
+
+async function prepareLintedPlanWithTasks(repo: string, tasks: Record<string, unknown>[]): Promise<void> {
+  const planPath = path.join(repo, "dependency-plan.json");
+  await writeFile(
+    planPath,
+    `${JSON.stringify(
+      {
+        tasks,
+        execution_groups: [{ group_id: "G-1", mode: "sequence", task_ids: tasks.map((task) => task.task_id) }]
+      },
+      null,
+      2
+    )}\n`
+  );
+  await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+  await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+  await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
+}
+
+function planTask(taskId: string, allowedFile: string, dependsOn: string[] = []): Record<string, unknown> {
+  return {
+    task_id: taskId,
+    title: `Plan-backed ${taskId}`,
+    mode: "write",
+    agent_role: "builder",
+    draft_scope: {
+      allowed_files: [allowedFile],
+      read_only_files: [],
+      forbidden_files: [],
+      must_not_change: []
+    },
+    depends_on: dependsOn,
+    parallel_safe: true,
+    acceptance_criterion: `${taskId} completes one deterministic check.`,
+    required_tests: ["node -e \"process.exit(0)\""],
+    patch_requirements: []
+  };
+}
+
+async function appendIntegratedDependencyEvents(repo: string, taskId: string): Promise<void> {
+  await appendEvent(repo, {
+    type: "patch.submitted",
+    task_id: taskId,
+    data: { bundle_path: `.hivemind/patches/${taskId}`, changed_files: 1 }
+  });
+  await appendEvent(repo, {
+    type: "patch.accepted",
+    task_id: taskId,
+    data: { verdict: "accept", reason: "accepted dependency fixture" }
+  });
+  await appendEvent(repo, {
+    type: "integration.passed",
+    task_id: null,
+    data: { applied: [taskId], tests: "pass" }
+  });
 }
 
 async function writeConfig(repo: string, overrides: Record<string, unknown>): Promise<void> {

@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { analyzeTask } from "../src/analyze.js";
-import { readEvents, type HivemindEvent, type HivemindEventType } from "../src/events.js";
+import { appendEvent, readEvents, type HivemindEvent, type HivemindEventType } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { integrateShadow } from "../src/integrate.js";
 import { checkWriteIntent } from "../src/intent.js";
@@ -125,7 +125,7 @@ test("getStatus reports contracts, leases, event-derived patch state, queue, and
     assert.equal(accepted.patch.verdict, null);
     assert.match(accepted.patch.reason, /no patch\.submitted event/);
     assert.equal(accepted.queued, true);
-    assert.equal(accepted.integrated, true);
+    assert.equal(accepted.integrated, false);
 
     const rejected = task(result.value, "T-002");
     assert.equal(rejected.patch.bundle, "present");
@@ -137,6 +137,60 @@ test("getStatus reports contracts, leases, event-derived patch state, queue, and
     assert.equal(rejected.queued, true);
     assert.equal(rejected.integrated, false);
     assert.notEqual(baseCommit, "");
+  });
+});
+
+test("getStatus reports integrated only from event-backed submitted accepted integration trail", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-001", "Event-backed task", baseCommit, ["README.md"]);
+    await writeIntegrationStatus(repo, {
+      branch: "integration/20260616-000000000Z",
+      applied: ["T-001"],
+      tests: "pass",
+      report: "status fixture\n"
+    });
+
+    const statusOnly = await getStatus(repo);
+    assert.equal(statusOnly.ok, true);
+    if (!statusOnly.ok) {
+      return;
+    }
+    assert.equal(task(statusOnly.value, "T-001").integrated, false);
+
+    await appendEvent(repo, {
+      type: "integration.passed",
+      task_id: null,
+      data: { applied: ["T-001"], tests: "pass" }
+    });
+    const missingPatchTrail = await getStatus(repo);
+    assert.equal(missingPatchTrail.ok, true);
+    if (!missingPatchTrail.ok) {
+      return;
+    }
+    assert.equal(task(missingPatchTrail.value, "T-001").integrated, false);
+
+    await appendEvent(repo, {
+      type: "patch.submitted",
+      task_id: "T-001",
+      data: { bundle_path: ".hivemind/patches/T-001", changed_files: 1 }
+    });
+    await appendEvent(repo, {
+      type: "patch.accepted",
+      task_id: "T-001",
+      data: { verdict: "accept", reason: "accepted fixture" }
+    });
+    await appendEvent(repo, {
+      type: "integration.passed",
+      task_id: null,
+      data: { applied: ["T-001"], tests: "pass" }
+    });
+
+    const eventBacked = await getStatus(repo);
+    assert.equal(eventBacked.ok, true);
+    if (!eventBacked.ok) {
+      return;
+    }
+    assert.equal(task(eventBacked.value, "T-001").integrated, true);
   });
 });
 

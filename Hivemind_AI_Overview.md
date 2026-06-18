@@ -1466,7 +1466,7 @@ State meanings:
 - **in_progress** — a Builder has declared write-intent (validated against its lease) and is editing in its worktree.
 - **submitted** — a patch bundle has been handed in; the deterministic patch broker runs its gate.
 - **in_review** — **the structural wall.** A task can only reach here if the deterministic gate has already passed (it is not a place to rescue an out-of-scope diff). Here the advisory Reviewer comments and any *required* human approvals are collected.
-- **integrated** — applied via the shadow integration service and merged after its checks/approvals; terminal success.
+- **integrated** — applied via the shadow integration service and merged after its checks/approvals; terminal success. A task is integrated only when the durable event trail proves the full path (`patch.submitted` -> `patch.accepted` -> `integration.passed` for that task); derived cache files such as `integration/status.json` may report integration details but are not authoritative for per-task completion.
 - **revision_requested** — gate or review found a problem; returns to in_progress with feedback.
 - **blocked / cancelled** — escalated or stopped; reachable from any state.
 

@@ -7,7 +7,7 @@ import { loadAndValidateContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent } from "./events.js";
 import { canonicalizeConcreteFileScope } from "./file-scope.js";
-import { resolveContractFilesAtBase } from "./plan.js";
+import { requireTaskDependenciesIntegrated, resolveContractFilesAtBase } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { validateRequestedTaskId } from "./task-id.js";
@@ -64,6 +64,14 @@ export async function requestLeaseForContract(repoRoot: string, taskId: string):
   const contractResult = await loadAndValidateContract(repoRoot, taskId);
   if (!contractResult.ok) {
     return contractResult;
+  }
+  const specResult = await requireActiveSpecRatified(repoRoot);
+  if (!specResult.ok) {
+    return specResult;
+  }
+  const dependencyResult = await requireTaskDependenciesIntegrated(repoRoot, specResult.value.spec_id, taskId);
+  if (!dependencyResult.ok && !dependencyResult.reason.includes("tentative plan not found")) {
+    return dependencyResult;
   }
 
   const baseScope = await resolveContractFilesAtBase(

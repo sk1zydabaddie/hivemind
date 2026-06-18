@@ -7,8 +7,9 @@ import { loadConfig, type RunCeiling } from "./config.js";
 import { loadAndValidateContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { captureWorktreeDiff } from "./diff-capture.js";
-import { findGitRoot } from "./repo.js";
 import { verifyLeaseCoverage } from "./lease.js";
+import { requireTaskDependenciesIntegrated } from "./plan.js";
+import { findGitRoot } from "./repo.js";
 import { requirePassedWriteIntent } from "./intent.js";
 import { routeTaskProvider } from "./routing.js";
 import { requireActiveSpecRatified } from "./spec.js";
@@ -87,6 +88,11 @@ export async function runTask(
   });
   if (!leaseResult.ok) {
     return leaseResult;
+  }
+
+  const dependencyResult = await requireTaskDependenciesIntegrated(repoRoot, specResult.value.spec_id, taskId);
+  if (!dependencyResult.ok && !dependencyResult.reason.includes("tentative plan not found")) {
+    return dependencyResult;
   }
 
   const intentResult = await requirePassedWriteIntent(repoRoot, taskId);

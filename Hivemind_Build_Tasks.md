@@ -371,7 +371,7 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
 - **Read first:** Overview § *Primary Manager Agent* (the step sequence), § *Core Workflow*.
 - **Goal:** The orchestrator LLM loop that turns a user message into gated actions via the MCP tools.
 - **Behavior — exact:** TWO halves.
-  (a) DETERMINISTIC action-execution loop — ALREADY BUILT in `src/manager.ts`; do not rewrite it. It stays the floor: every manager action is routed through the existing deterministic tools/gates for contract creation, create-aware lease grant, mandatory write-intent, worktree creation, worker invocation, patch submission, diff-scope analysis, queueing, and shadow integration.
+  (a) DETERMINISTIC action-execution loop — ALREADY BUILT in `src/manager.ts`; do not rewrite it. It stays the floor: every manager action is routed through the existing deterministic tools/gates for contract creation, create-aware lease grant, mandatory write-intent, dependency-order enforcement from the event trail, worktree creation, worker invocation, patch submission, diff-scope analysis, queueing, and shadow integration.
   (b) GENERATIVE half — NEW, the deliverable: replace the hardcoded `await_planning_loop` manager proposal with an orchestrator proposal generator. Given the current durable state (ratified spec, grounded+linted plan, task status, lease state, write-intent/gate/integration results), an LLM proposes the next manager actions: request leases, submit write-intent scoped to the granted lease, invoke workers, collect/analyze patches, and integrate. The generated proposal FEEDS the existing deterministic action loop (a); it does not bypass or duplicate it.
   LLM-integration decisions:
     * LLM calls are allowed here because a manager action list is a PROPOSAL, not a guarantee. C4 still forbids LLM calls inside contract validation, lease grant, write-intent checking, diff-scope analysis, integration, quota ceilings, and other guarantee-enforcing code.
@@ -411,7 +411,7 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
 - **Depends on:** M5.4, M5.5, M2.1.
 - **Read first:** § *Task Planner* (plan-lint).
 - **Goal:** Deterministically reject a malformed plan before execution.
-- **Behavior — exact (C4):** Check: parallel task scopes are pairwise disjoint (else they can't both hold leases); the dependency graph is acyclic; grounding is present and fresh (M5.5); no Critical path is touched without the required approval flag. Any failure bounces the plan with the specific rule.
+- **Behavior — exact (C4):** Check: parallel task scopes are pairwise disjoint (else they can't both hold leases); the dependency graph is acyclic; grounding is present and fresh (M5.5); no Critical path is touched without the required approval flag. Any failure bounces the plan with the specific rule. Plan-lint validates dependency shape, but execution primitives enforce dependency completion as a floor: a dependent task cannot contract, lease, run, or enqueue until the durable event trail proves each dependency integrated.
 - **Acceptance test (binary):** A plan with two overlapping parallel scopes, or a dependency cycle, or an unflagged Critical edit, is rejected naming the failing rule; a clean plan passes.
 
 ### M5.7 — Scout role + context-pack assembly

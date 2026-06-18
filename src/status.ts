@@ -2,6 +2,7 @@ import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { loadAndValidateContract } from "./contract.js";
 import { readEvents, type HivemindEvent } from "./events.js";
+import { integratedTaskIdsFromEvents } from "./integration-state.js";
 import type { IntegrationStatus } from "./integrate.js";
 import { loadIntegrationQueue } from "./integrate.js";
 import { readJsonFile } from "./json.js";
@@ -109,7 +110,7 @@ export async function getStatus(repoRoot: string): Promise<{ ok: true; value: Hi
       taskId,
       leaseResult.store,
       new Set(queueResult.value),
-      new Set(integrationStatusResult.value?.applied ?? []),
+      integratedTaskIdsFromEvents(eventsResult.value),
       eventsResult.value
     );
     if (!taskResult.ok) {

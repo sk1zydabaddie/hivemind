@@ -578,6 +578,49 @@ test("manager create_task_contract is refused when the current plan fails lint",
   });
 });
 
+test("manager create_task_contract refuses a dependent task until dependencies are event-integrated", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const dependency = managerContract("T-BASE", baseCommit, ["README.md"]);
+    const dependent = managerContract("T-DEP", baseCommit, ["README.md"]);
+    await prepareLintedPlanWithTasks(repo, [
+      planTaskFromContract(dependency),
+      planTaskFromContract(dependent, ["T-BASE"])
+    ]);
+    const action = [{ type: "create_task_contract", contract: dependent }];
+    const blockedPath = path.join(repo, "dependency-blocked-actions.json");
+    await writeFile(blockedPath, `${JSON.stringify(action, null, 2)}\n`);
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [cliPath, "manager", "--message", "Try dependency bypass", "--fake-manager", blockedPath], {
+        cwd: repo,
+        windowsHide: true
+      }),
+      (error: unknown) => {
+        assert.equal((error as { code?: number }).code, 1);
+        const parsed = JSON.parse(String((error as { stdout?: string }).stdout)) as { status: string; steps: Array<{ result: { ok: boolean; reason?: string } }> };
+        assert.equal(parsed.status, "failed");
+        assert.equal(parsed.steps[0].result.ok, false);
+        assert.match(parsed.steps[0].result.reason ?? "", /task T-DEP depends_on not integrated: T-BASE/);
+        return true;
+      }
+    );
+    assert.equal(await exists(path.join(repo, ".hivemind", "tasks", "T-DEP.contract.json")), false);
+
+    await appendIntegratedDependencyEvents(repo, "T-BASE");
+    const allowedPath = path.join(repo, "dependency-allowed-actions.json");
+    await writeFile(allowedPath, `${JSON.stringify(action, null, 2)}\n`);
+    const allowed = await execFileAsync(process.execPath, [cliPath, "manager", "--message", "Create after dependency", "--fake-manager", allowedPath], {
+      cwd: repo,
+      windowsHide: true
+    });
+    const parsed = JSON.parse(allowed.stdout) as { status: string; steps: Array<{ result: { ok: boolean } }> };
+    assert.equal(parsed.status, "passed");
+    assert.equal(parsed.steps[0].result.ok, true);
+    await assertExists(path.join(repo, ".hivemind", "tasks", "T-DEP.contract.json"));
+  });
+});
+
 test("manager run_worker refuses to invoke without a passed write-intent", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
@@ -1064,13 +1107,17 @@ function proposalFor(actions: ManagerAction[], humanApprovalRequiredFor: Manager
 }
 
 async function prepareLintedPlan(repo: string, contract: Record<string, unknown>, name = `${String(contract.task_id)}-plan.json`): Promise<void> {
+  await prepareLintedPlanWithTasks(repo, [planTaskFromContract(contract)], name);
+}
+
+async function prepareLintedPlanWithTasks(repo: string, tasks: Record<string, unknown>[], name = "plan.json"): Promise<void> {
   const planPath = path.join(repo, name);
   await writeFile(
     planPath,
     `${JSON.stringify(
         {
-          tasks: [planTaskFromContract(contract)],
-        execution_groups: [{ group_id: "G-1", mode: "parallel", task_ids: [contract.task_id] }]
+          tasks,
+        execution_groups: [{ group_id: "G-1", mode: "sequence", task_ids: tasks.map((task) => task.task_id) }]
       },
       null,
       2
@@ -1081,7 +1128,7 @@ async function prepareLintedPlan(repo: string, contract: Record<string, unknown>
   await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
 }
 
-function planTaskFromContract(contract: Record<string, unknown>): Record<string, unknown> {
+function planTaskFromContract(contract: Record<string, unknown>, dependsOn: string[] = []): Record<string, unknown> {
   return {
     task_id: contract.task_id,
     title: contract.title,
@@ -1093,12 +1140,30 @@ function planTaskFromContract(contract: Record<string, unknown>): Record<string,
       forbidden_files: contract.forbidden_files,
       must_not_change: contract.must_not_change
     },
-    depends_on: [],
+    depends_on: dependsOn,
     parallel_safe: true,
     acceptance_criterion: contract.acceptance_criterion,
     required_tests: contract.required_tests,
     patch_requirements: contract.patch_requirements
   };
+}
+
+async function appendIntegratedDependencyEvents(repo: string, taskId: string): Promise<void> {
+  await appendEvent(repo, {
+    type: "patch.submitted",
+    task_id: taskId,
+    data: { bundle_path: `.hivemind/patches/${taskId}`, changed_files: 1 }
+  });
+  await appendEvent(repo, {
+    type: "patch.accepted",
+    task_id: taskId,
+    data: { verdict: "accept", reason: "accepted dependency fixture" }
+  });
+  await appendEvent(repo, {
+    type: "integration.passed",
+    task_id: null,
+    data: { applied: [taskId], tests: "pass" }
+  });
 }
 
 async function contractFiles(repo: string): Promise<string[]> {

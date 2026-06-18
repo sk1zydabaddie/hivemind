@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { readEvents } from "../src/events.js";
+import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { releaseLease, requestLease, requestLeaseForContract } from "../src/lease.js";
 import { createRatifiedSpec } from "./support/spec.js";
@@ -145,6 +145,33 @@ test("CLI lease grants contract allowed_files and releases them", async () => {
       released: ["README.md", "src/feature.ts"]
     });
     assert.deepEqual(await readActive(repo), {});
+  });
+});
+
+test("CLI lease refuses a plan-backed dependent task until dependencies are event-integrated", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await prepareLintedPlanWithTasks(repo, [
+      planTask("T-BASE", "README.md"),
+      planTask("T-DEP", "src/feature.ts", ["T-BASE"])
+    ]);
+    await writeContract(repo, "T-DEP", baseCommit, ["src/feature.ts"]);
+
+    await assert.rejects(
+      execFileAsync("node", [cliPath, "lease", "T-DEP"], { cwd: repo, windowsHide: true }),
+      (error: unknown) => {
+        assert.equal((error as { code?: number }).code, 1);
+        assert.match(String((error as { stderr?: string }).stderr), /task T-DEP depends_on not integrated: T-BASE/);
+        return true;
+      }
+    );
+    await assertMissing(path.join(repo, ".hivemind", "leases", "active.json"));
+
+    await appendIntegratedDependencyEvents(repo, "T-BASE");
+    const granted = await execFileAsync("node", [cliPath, "lease", "T-DEP"], { cwd: repo, windowsHide: true });
+    assert.deepEqual(JSON.parse(granted.stdout), {
+      task_id: "T-DEP",
+      granted: ["src/feature.ts"]
+    });
   });
 });
 
@@ -333,6 +360,62 @@ async function writeContract(
       2
     )}\n`
   );
+}
+
+async function prepareLintedPlanWithTasks(repo: string, tasks: Record<string, unknown>[]): Promise<void> {
+  const planPath = path.join(repo, "dependency-plan.json");
+  await writeFile(
+    planPath,
+    `${JSON.stringify(
+      {
+        tasks,
+        execution_groups: [{ group_id: "G-1", mode: "sequence", task_ids: tasks.map((task) => task.task_id) }]
+      },
+      null,
+      2
+    )}\n`
+  );
+  await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+  await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+  await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
+}
+
+function planTask(taskId: string, allowedFile: string, dependsOn: string[] = []): Record<string, unknown> {
+  return {
+    task_id: taskId,
+    title: `Plan-backed ${taskId}`,
+    mode: "write",
+    agent_role: "builder",
+    draft_scope: {
+      allowed_files: [allowedFile],
+      read_only_files: [],
+      forbidden_files: [],
+      must_not_change: []
+    },
+    depends_on: dependsOn,
+    parallel_safe: true,
+    acceptance_criterion: `${taskId} completes one deterministic check.`,
+    required_tests: ["node -e \"process.exit(0)\""],
+    patch_requirements: []
+  };
+}
+
+async function appendIntegratedDependencyEvents(repo: string, taskId: string): Promise<void> {
+  await appendEvent(repo, {
+    type: "patch.submitted",
+    task_id: taskId,
+    data: { bundle_path: `.hivemind/patches/${taskId}`, changed_files: 1 }
+  });
+  await appendEvent(repo, {
+    type: "patch.accepted",
+    task_id: taskId,
+    data: { verdict: "accept", reason: "accepted dependency fixture" }
+  });
+  await appendEvent(repo, {
+    type: "integration.passed",
+    task_id: null,
+    data: { applied: [taskId], tests: "pass" }
+  });
 }
 
 async function readActive(repo: string): Promise<Record<string, string>> {
