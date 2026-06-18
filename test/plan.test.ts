@@ -146,24 +146,34 @@ test("plan generator writes an adapter proposal that still goes through ground a
       apply_command: "hivemind plan S-001 --propose generated-plan.json"
     });
 
-    const proposal = JSON.parse(await readFile(path.join(repo, "generated-plan.json"), "utf8")) as Record<string, unknown>;
+    const proposal = JSON.parse(await readFile(path.join(repo, "generated-plan.json"), "utf8")) as {
+      tasks: Array<{ task_id: string; task_type?: string }>;
+    } & Record<string, unknown>;
     assert.deepEqual(Object.keys(proposal).sort(), ["execution_groups", "tasks"]);
+    assert.deepEqual(
+      proposal.tasks.map((taskEntry) => [taskEntry.task_id, taskEntry.task_type]),
+      [
+        ["T-AUDIT", "deterministic"],
+        ["T-WRITE", "deterministic"],
+        ["T-INTEGRATE", "deterministic"]
+      ]
+    );
 
     const storedBeforeLint = JSON.parse(await readFile(path.join(repo, ".hivemind", "plans", "S-001.tentative.json"), "utf8")) as {
       source: string;
       lint_status?: string;
       grounding_status?: string;
-      tasks: Array<{ task_id: string; scope_status: string }>;
+      tasks: Array<{ task_id: string; task_type: string; scope_status: string }>;
     };
     assert.equal(storedBeforeLint.source, "adapter-generated");
     assert.equal(storedBeforeLint.lint_status, undefined);
     assert.equal(storedBeforeLint.grounding_status, undefined);
     assert.deepEqual(
-      storedBeforeLint.tasks.map((taskEntry) => [taskEntry.task_id, taskEntry.scope_status]),
+      storedBeforeLint.tasks.map((taskEntry) => [taskEntry.task_id, taskEntry.task_type, taskEntry.scope_status]),
       [
-        ["T-AUDIT", "draft_ungrounded"],
-        ["T-WRITE", "draft_ungrounded"],
-        ["T-INTEGRATE", "draft_ungrounded"]
+        ["T-AUDIT", "deterministic", "draft_ungrounded"],
+        ["T-WRITE", "deterministic", "draft_ungrounded"],
+        ["T-INTEGRATE", "deterministic", "draft_ungrounded"]
       ]
     );
 
@@ -515,7 +525,7 @@ test("plan lint passes a clean grounded plan without executable task state", asy
       lint_status: "passed",
       base_commit: baseCommit,
       task_count: 3,
-      rule_count: 6
+      rule_count: 7
     });
     await assertMissing(path.join(repo, ".hivemind", "tasks", "T-WRITE.contract.json"));
     await assertMissing(path.join(repo, ".hivemind", "leases", "active.json"));
@@ -613,6 +623,82 @@ test("plan lint rejects tasks without a non-empty required test command", async 
     await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
 
     await assertPlanRejects(repo, ["plan", "S-001", "--lint"], /RIGHT_SIZING_ACCEPTANCE: task T-NO-TEST required_tests must include at least one non-empty command/);
+  });
+});
+
+test("plan lint rejects generative skeleton-trap acceptance while preserving valid exceptions", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+
+    const stubbablePlan = await writePlan(
+      repo,
+      {
+        tasks: [
+          task("T-GEN-STUB", {
+            task_type: "generative",
+            acceptance_criterion: "Generated JSON exists and typecheck passes.",
+            required_tests: ["npm run typecheck"]
+          })
+        ],
+        execution_groups: [group("G-1", "parallel", ["T-GEN-STUB"])]
+      },
+      "generative-stub.json"
+    );
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", stubbablePlan], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+    await assertPlanRejects(repo, ["plan", "S-001", "--lint"], /SKELETON_TRAP_ACCEPTANCE: task T-GEN-STUB is generative/);
+
+    const behavioralPlan = await writePlan(
+      repo,
+      {
+        tasks: [
+          task("T-GEN-BEHAVIOR", {
+            task_type: "generative",
+            acceptance_criterion: "BEHAVIORAL, human-judged: a human reads the proposal and confirms the generated alternatives are substantive.",
+            required_tests: ["human review of generated transcript"]
+          })
+        ],
+        execution_groups: [group("G-1", "parallel", ["T-GEN-BEHAVIOR"])]
+      },
+      "generative-behavioral.json"
+    );
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", behavioralPlan], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+    const behavioralLint = await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
+    assert.equal(JSON.parse(behavioralLint.stdout).lint_status, "passed");
+
+    const deterministicCheckPlan = await writePlan(
+      repo,
+      {
+        tasks: [
+          task("T-GEN-VALID", {
+            task_type: "generative",
+            deterministic_validity_check: "Generated characterization test must pass on the base commit before it can be used.",
+            acceptance_criterion: "Generated characterization test passes on base and fails on the injected regression.",
+            required_tests: ["node --test generated-characterization.test.js"]
+          })
+        ],
+        execution_groups: [group("G-1", "parallel", ["T-GEN-VALID"])]
+      },
+      "generative-deterministic-validity.json"
+    );
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", deterministicCheckPlan], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+    const deterministicCheckLint = await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
+    assert.equal(JSON.parse(deterministicCheckLint.stdout).lint_status, "passed");
+
+    const deterministicPlan = await writePlan(
+      repo,
+      {
+        tasks: [task("T-DETERMINISTIC", { task_type: "deterministic" })],
+        execution_groups: [group("G-1", "parallel", ["T-DETERMINISTIC"])]
+      },
+      "deterministic-binary.json"
+    );
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", deterministicPlan], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+    const deterministicLint = await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
+    assert.equal(JSON.parse(deterministicLint.stdout).lint_status, "passed");
   });
 });
 
@@ -814,6 +900,7 @@ function task(
   return {
     task_id: taskId,
     title: `Task ${taskId}`,
+    task_type: "deterministic",
     mode: "write",
     agent_role: "builder",
     draft_scope: draftScope(["README.md"]),

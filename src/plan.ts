@@ -22,6 +22,7 @@ import { validateRequestedTaskId } from "./task-id.js";
 const execFileAsync = promisify(execFile);
 
 export type TentativeTaskMode = "read_only" | "write" | "integration";
+export type TentativeTaskType = "generative" | "deterministic";
 export type ExecutionGroupMode = "parallel" | "sequence";
 type TentativePlanSource = "cli-json" | "adapter-generated";
 
@@ -38,12 +39,14 @@ type DraftScopePathField = "allowed_files" | "read_only_files" | "forbidden_file
 export interface TentativePlanTask {
   task_id: string;
   title: string;
+  task_type: TentativeTaskType;
   mode: TentativeTaskMode;
   agent_role: AgentRole;
   draft_scope: DraftScope;
   depends_on: string[];
   parallel_safe: boolean;
   acceptance_criterion: string;
+  deterministic_validity_check?: string;
   required_tests: string[];
   patch_requirements: string[];
   critical_path_approved: boolean;
@@ -123,12 +126,14 @@ type ScopeStatus = "draft_ungrounded" | "grounded";
 interface TentativePlanInputTask {
   task_id: string;
   title: string;
+  task_type: TentativeTaskType;
   mode: TentativeTaskMode;
   agent_role: AgentRole;
   draft_scope: DraftScope;
   depends_on: string[];
   parallel_safe: boolean;
   acceptance_criterion: string;
+  deterministic_validity_check?: string;
   required_tests: string[];
   patch_requirements: string[];
   critical_path_approved: boolean;
@@ -406,6 +411,7 @@ function buildPlanningGenerationPrompt(
     "    {",
     '      "task_id": "T-001",',
     '      "title": "short imperative task title",',
+    '      "task_type": "generative|deterministic",',
     '      "mode": "read_only|write|integration",',
     '      "agent_role": "coordinator|scout|builder|reviewer",',
     '      "draft_scope": {',
@@ -417,7 +423,8 @@ function buildPlanningGenerationPrompt(
     "      },",
     '      "depends_on": ["T-000"],',
     '      "parallel_safe": true,',
-    '      "acceptance_criterion": "exactly one binary acceptance criterion for this task",',
+    '      "acceptance_criterion": "binary criterion for deterministic tasks, or BEHAVIORAL human-judged criterion for generative quality tasks",',
+    '      "deterministic_validity_check": "omit unless a generative task has a machine-checkable validity rule for its generated output",',
     '      "required_tests": ["named command that proves the acceptance criterion"],',
     '      "patch_requirements": ["specific diff requirements"],',
     '      "critical_path_approved": false',
@@ -432,7 +439,12 @@ function buildPlanningGenerationPrompt(
     "- Output only proposal fields accepted by the deterministic plan parser: tasks and execution_groups.",
     "- Do not include status, source, base_commit, grounding_status, lint_status, ratification, leases, or contracts.",
     "- Use stable task ids like T-001, T-002, and include every task in exactly one execution group.",
-    "- Every task must have exactly one acceptance_criterion and at least one required_tests command that proves it.",
+    "- Every task must include task_type: deterministic or generative.",
+    "- Use deterministic for ordinary implementation/checking tasks whose success is proven by tests or deterministic checks.",
+    "- Use generative when the task's core output depends on LLM judgment and the QUALITY of that output matters, such as ideation, planning, Scout relevance selection, consolidation, or best-of-N draft selection.",
+    "- A generative task must either use a BEHAVIORAL human-judged acceptance_criterion, or include deterministic_validity_check when its generated output has a machine-checkable validity rule.",
+    "- Do not give a generative quality task a stubbable binary criterion such as merely producing a file, JSON object, or passing typecheck.",
+    "- Every task must have exactly one acceptance_criterion and at least one required_tests command or named review check that backs it.",
     "- Draft scopes are guesses, but every allowed_files entry must be labeled in allowed_file_intents as either modify or create.",
     "- Use modify for paths that already exist at base and create for paths/globs the task is meant to add. Missing or invalid labels are treated as modify by the grounder.",
     "- Modify paths/globs must exist in the tracked file list below. Create paths/globs must not already match tracked files at base.",
@@ -899,15 +911,17 @@ function validateStoredTask(index: number, raw: unknown): SpecResult<TentativePl
     return { ok: false, reason: `tasks[${index}] must be a JSON object` };
   }
   const allowedKeys = new Set([
-    "task_id",
-    "title",
-    "mode",
-    "agent_role",
+      "task_id",
+      "title",
+      "task_type",
+      "mode",
+      "agent_role",
     "draft_scope",
     "depends_on",
-    "parallel_safe",
-    "acceptance_criterion",
-    "required_tests",
+      "parallel_safe",
+      "acceptance_criterion",
+      "deterministic_validity_check",
+      "required_tests",
     "patch_requirements",
     "critical_path_approved",
     "scope_status",
@@ -964,6 +978,10 @@ function parseStoredTaskBase(index: number, raw: Record<string, unknown>): SpecR
   if (typeof raw.title !== "string" || raw.title.trim() === "") {
     return { ok: false, reason: `tasks[${index}].title must be a non-empty string` };
   }
+  const taskType = parseTaskType(index, raw.task_type);
+  if (!taskType.ok) {
+    return taskType;
+  }
   if (!isTaskMode(raw.mode)) {
     return { ok: false, reason: `tasks[${index}].mode must be read_only, write, or integration` };
   }
@@ -993,6 +1011,10 @@ function parseStoredTaskBase(index: number, raw: Record<string, unknown>): SpecR
   if (typeof raw.acceptance_criterion !== "string" || raw.acceptance_criterion.trim() === "") {
     return { ok: false, reason: `tasks[${index}].acceptance_criterion must be a non-empty string` };
   }
+  const deterministicValidityCheck = parseOptionalNonEmptyString(index, "deterministic_validity_check", raw.deterministic_validity_check);
+  if (!deterministicValidityCheck.ok) {
+    return deterministicValidityCheck;
+  }
   const requiredTests = parseStringArray(`tasks[${index}].required_tests`, raw.required_tests);
   if (!requiredTests.ok) {
     return requiredTests;
@@ -1009,12 +1031,14 @@ function parseStoredTaskBase(index: number, raw: Record<string, unknown>): SpecR
     value: {
       task_id: raw.task_id,
       title: raw.title.trim(),
+      task_type: taskType.value,
       mode: raw.mode,
       agent_role: raw.agent_role,
       draft_scope: draftScope.value,
       depends_on: dependsOn.value,
       parallel_safe: raw.parallel_safe,
       acceptance_criterion: raw.acceptance_criterion.trim(),
+      ...(deterministicValidityCheck.value === undefined ? {} : { deterministic_validity_check: deterministicValidityCheck.value }),
       required_tests: requiredTests.value,
       patch_requirements: patchRequirements.value,
       critical_path_approved: raw.critical_path_approved ?? false
@@ -1278,7 +1302,7 @@ function uniqueSorted(values: string[]): string[] {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right));
 }
 
-const planLintRuleCount = 6;
+const planLintRuleCount = 7;
 
 function runPlanLintRules(plan: TentativePlan, head: string, criticalGlobs: string[]): SpecResult<void> {
   const rules: Array<() => SpecResult<void>> = [
@@ -1287,7 +1311,8 @@ function runPlanLintRules(plan: TentativePlan, head: string, criticalGlobs: stri
     () => lintParallelScopeOverlap(plan),
     () => lintDependencyCycle(plan),
     () => lintCriticalApproval(plan, criticalGlobs),
-    () => lintRightSizingAcceptance(plan)
+    () => lintRightSizingAcceptance(plan),
+    () => lintSkeletonTrapAcceptance(plan)
   ];
 
   for (const rule of rules) {
@@ -1482,6 +1507,36 @@ function lintRightSizingAcceptance(plan: TentativePlan): SpecResult<void> {
   return { ok: true, value: undefined };
 }
 
+function lintSkeletonTrapAcceptance(plan: TentativePlan): SpecResult<void> {
+  for (const task of plan.tasks) {
+    if (task.task_type !== "generative") {
+      continue;
+    }
+    if (task.deterministic_validity_check !== undefined) {
+      continue;
+    }
+    if (!isBehavioralAcceptanceCriterion(task.acceptance_criterion)) {
+      return {
+        ok: false,
+        reason: `SKELETON_TRAP_ACCEPTANCE: task ${task.task_id} is generative and requires a BEHAVIORAL human-judged acceptance_criterion or deterministic_validity_check`
+      };
+    }
+  }
+  return { ok: true, value: undefined };
+}
+
+function isBehavioralAcceptanceCriterion(criterion: string): boolean {
+  const normalized = criterion.toLowerCase();
+  return (
+    normalized.includes("behavioral") ||
+    normalized.includes("human-judged") ||
+    normalized.includes("human judged") ||
+    normalized.includes("human reads") ||
+    normalized.includes("human confirms") ||
+    normalized.includes("human review")
+  );
+}
+
 async function parseTentativePlanInput(repoRoot: string, specId: string, raw: unknown): Promise<SpecResult<TentativePlanInput>> {
   const specIdResult = validateRequestedSpecId(specId);
   if (!specIdResult.ok) {
@@ -1551,15 +1606,17 @@ async function parseTentativeTask(repoRoot: string, index: number, raw: unknown)
     return { ok: false, reason: `tasks[${index}] must be a JSON object` };
   }
   const allowedKeys = new Set([
-    "task_id",
-    "title",
-    "mode",
-    "agent_role",
+      "task_id",
+      "title",
+      "task_type",
+      "mode",
+      "agent_role",
     "draft_scope",
     "depends_on",
-    "parallel_safe",
-    "acceptance_criterion",
-    "required_tests",
+      "parallel_safe",
+      "acceptance_criterion",
+      "deterministic_validity_check",
+      "required_tests",
     "patch_requirements",
     "critical_path_approved"
   ]);
@@ -1581,6 +1638,10 @@ async function parseTentativeTask(repoRoot: string, index: number, raw: unknown)
 
   if (typeof raw.title !== "string" || raw.title.trim() === "") {
     return { ok: false, reason: `tasks[${index}].title must be a non-empty string` };
+  }
+  const taskType = parseTaskType(index, raw.task_type);
+  if (!taskType.ok) {
+    return taskType;
   }
   if (!isTaskMode(raw.mode)) {
     return { ok: false, reason: `tasks[${index}].mode must be read_only, write, or integration` };
@@ -1611,6 +1672,10 @@ async function parseTentativeTask(repoRoot: string, index: number, raw: unknown)
   if (typeof raw.acceptance_criterion !== "string" || raw.acceptance_criterion.trim() === "") {
     return { ok: false, reason: `tasks[${index}].acceptance_criterion must be a non-empty string` };
   }
+  const deterministicValidityCheck = parseOptionalNonEmptyString(index, "deterministic_validity_check", raw.deterministic_validity_check);
+  if (!deterministicValidityCheck.ok) {
+    return deterministicValidityCheck;
+  }
   const requiredTests = parseStringArray(`tasks[${index}].required_tests`, raw.required_tests);
   if (!requiredTests.ok) {
     return requiredTests;
@@ -1628,12 +1693,14 @@ async function parseTentativeTask(repoRoot: string, index: number, raw: unknown)
     value: {
       task_id: raw.task_id,
       title: raw.title.trim(),
+      task_type: taskType.value,
       mode: raw.mode,
       agent_role: raw.agent_role,
       draft_scope: draftScope.value,
       depends_on: dependsOn.value,
       parallel_safe: raw.parallel_safe,
       acceptance_criterion: raw.acceptance_criterion.trim(),
+      ...(deterministicValidityCheck.value === undefined ? {} : { deterministic_validity_check: deterministicValidityCheck.value }),
       required_tests: requiredTests.value,
       patch_requirements: patchRequirements.value,
       critical_path_approved: raw.critical_path_approved ?? false
@@ -1794,6 +1861,26 @@ function tentativePlanRelativePath(specId: string): string {
 
 function isTaskMode(value: unknown): value is TentativeTaskMode {
   return value === "read_only" || value === "write" || value === "integration";
+}
+
+function parseTaskType(index: number, value: unknown): SpecResult<TentativeTaskType> {
+  if (value === undefined) {
+    return { ok: true, value: "deterministic" };
+  }
+  if (value === "generative" || value === "deterministic") {
+    return { ok: true, value };
+  }
+  return { ok: false, reason: `tasks[${index}].task_type must be generative or deterministic` };
+}
+
+function parseOptionalNonEmptyString(index: number, field: string, value: unknown): SpecResult<string | undefined> {
+  if (value === undefined) {
+    return { ok: true, value: undefined };
+  }
+  if (typeof value !== "string" || value.trim() === "") {
+    return { ok: false, reason: `tasks[${index}].${field} must be a non-empty string when present` };
+  }
+  return { ok: true, value: value.trim() };
 }
 
 function isExecutionGroupMode(value: unknown): value is ExecutionGroupMode {
