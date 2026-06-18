@@ -10,6 +10,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
+import { captureWorktreeDiff } from "../src/diff-capture.js";
 import { initProject } from "../src/init.js";
 import { appendEvent, readEvents } from "../src/events.js";
 import { mcpToolDefinitions } from "../src/mcp.js";
@@ -116,6 +117,7 @@ test("MCP tools route through daemon and match the core task/worktree/patch/stat
       assert.equal(worktree.branch, "hivemind/T-OK");
       assert.equal(typeof worktree.worktree, "string");
       await writeFile(path.join(String(worktree.worktree), "README.md"), "# Fixture\nMCP accepted edit\n");
+      await markRunCompleted(repo, "T-OK", String(worktree.worktree), baseCommit);
 
       const submitted = await callStructured(client, "hivemind.submit_patch", { task_id: "T-OK" });
       assert.equal(submitted.task_id, "T-OK");
@@ -534,6 +536,37 @@ function buildContract(taskId: string, baseCommit: string, allowedFiles: string[
     required_tests: ["node -e \"process.exit(0)\""],
     patch_requirements: []
   };
+}
+
+async function markRunCompleted(repo: string, taskId: string, worktree: string, baseCommit: string): Promise<void> {
+  const diff = await captureWorktreeDiff(worktree, baseCommit);
+  assert.equal(diff.ok, true);
+  if (!diff.ok) {
+    return;
+  }
+  const patchDir = path.join(repo, ".hivemind", "patches", taskId);
+  await mkdir(patchDir, { recursive: true });
+  const diffPath = path.join(patchDir, "diff.patch");
+  await writeFile(diffPath, diff.value.diff);
+  const started = await appendEvent(repo, {
+    type: "task.started",
+    task_id: taskId,
+    data: { tool: "fake", worktree }
+  });
+  assert.equal(started.ok, true);
+  const completed = await appendEvent(repo, {
+    type: "task.completed",
+    task_id: taskId,
+    data: {
+      task_id: taskId,
+      status: "completed",
+      tool: "fake",
+      diff_path: diffPath,
+      tool_exit: 0,
+      changed_files: diff.value.changedFiles
+    }
+  });
+  assert.equal(completed.ok, true);
 }
 
 async function prepareLintedPlan(repo: string, contract: Record<string, unknown>, name = `${String(contract.task_id)}-plan.json`): Promise<void> {

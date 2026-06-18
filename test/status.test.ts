@@ -200,12 +200,16 @@ test("getStatus reports a real patch verdict only after submit and analyze event
     const lease = await requestLease(repo, "T-REAL", ["README.md"]);
     assert.equal(lease.ok, true);
     await approveIntent(repo, "T-REAL", ["README.md"]);
-    const worktree = await createTaskWorktree(repo, "T-REAL");
-    assert.equal(worktree.ok, true);
-    if (!worktree.ok) {
+    await writeAgent(repo, "status-real-agent.mjs", [
+      "const { writeFile } = await import('node:fs/promises');",
+      "await writeFile('README.md', '# Fixture\\nevent-backed status patch\\n');"
+    ]);
+    await writeProfile(repo, "status-real-worker", path.join(repo, "fake-agents", "status-real-agent.mjs"));
+    const run = await runTask(repo, "T-REAL", "status-real-worker");
+    assert.equal(run.ok, true);
+    if (!run.ok) {
       return;
     }
-    await writeFile(path.join(worktree.value.worktree, "README.md"), "# Fixture\nevent-backed status patch\n");
 
     const submitted = await submitTask(repo, "T-REAL");
     assert.equal(submitted.ok, true);

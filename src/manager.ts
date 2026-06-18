@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { analyzeTask } from "./analyze.js";
 import { writeJsonAtomic } from "./atomic.js";
@@ -8,6 +8,7 @@ import { loadConfig } from "./config.js";
 import { createTaskContract, type CreateTaskContractResult } from "./contract.js";
 import { loadAndValidateContract, normalizeContract, validateContract, type TaskContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
+import { readEvents, type HivemindEvent } from "./events.js";
 import { enqueueIntegrationPatch, integrateShadow, type EnqueueIntegrationPatchResult, type IntegrationStatus } from "./integrate.js";
 import { checkWriteIntent, type WriteIntentPass } from "./intent.js";
 import { extractJsonObject } from "./json.js";
@@ -16,7 +17,8 @@ import { loadTentativePlan } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { adapterOutputIndicatesThrottle, recordQuotaUsage } from "./resource-ledger.js";
 import { inferTaskTier } from "./routing.js";
-import { runTask, type RunResult } from "./run.js";
+import { runTask, type RunResult, type RunStartResult } from "./run.js";
+import { latestTaskRunState } from "./run-state.js";
 import { runScout, type ScoutResult } from "./scout.js";
 import { requireActiveSpecRatified, type SpecResult } from "./spec.js";
 import { loadSpecDocument } from "./spec-format.js";
@@ -692,6 +694,7 @@ function buildReactiveProposalMessage(session: ManagerSession): string {
     "Reactive manager loop: propose exactly the next single manager action from current durable state.",
     `Last manager observation: action ${last.type} returned ${last.result.ok ? "ok" : "rejected"}.`,
     `Last result JSON: ${JSON.stringify(last.result)}`,
+    "Run pipeline rule: run_worker returning started means only that the daemon accepted the worker job. Do not propose submit_patch until durable state has a task.completed event and a patch bundle.",
     "Patch pipeline rule: enqueue_patch is allowed only after a real submit_patch event and a real analyze_patch accepted event. If a task has a patch bundle but submitted/analyzed/accepted are not all true, propose submit_patch or analyze_patch as the next missing step.",
     "If the task is done or blocked awaiting human action, return an empty actions array.",
     "Do not propose any action that changes config, provider tier metadata, safety rules, approval policy, or deterministic gates to get around a rejection."
@@ -1044,14 +1047,16 @@ async function executeDeterministicAction(repoRoot: string, action: ManagerActio
     return recordResult(await routeMutatingAction<WorktreeResult>(repoRoot, "/worktree/create", { task_id: action.task_id }, () => createTaskWorktree(repoRoot, action.task_id)));
   }
   if (action.type === "run_worker") {
-    return recordResult(
-      await routeMutatingAction<RunResult>(
-        repoRoot,
-        "/run",
-        { task_id: action.task_id, ...(action.tool === undefined ? {} : { tool: action.tool }), allow_dangerous_adapter: action.allow_dangerous_adapter === true },
-        () => runTask(repoRoot, action.task_id, action.tool, { allowDangerousAdapter: action.allow_dangerous_adapter === true })
-      )
+    const started = await routeMutatingAction<RunStartResult | RunResult>(
+      repoRoot,
+      "/run",
+      { task_id: action.task_id, ...(action.tool === undefined ? {} : { tool: action.tool }), allow_dangerous_adapter: action.allow_dangerous_adapter === true },
+      () => runTask(repoRoot, action.task_id, action.tool, { allowDangerousAdapter: action.allow_dangerous_adapter === true })
     );
+    if (!started.ok) {
+      return recordResult(started);
+    }
+    return recordResult(await waitForTaskRunCompletion(repoRoot, action.task_id));
   }
   if (action.type === "scout_task") {
     return recordResult(
@@ -1080,6 +1085,93 @@ async function executeDeterministicAction(repoRoot: string, action: ManagerActio
     );
   }
   return recordResult(await routeMutatingAction<IntegrationStatus>(repoRoot, "/integrate/shadow", {}, () => integrateShadow(repoRoot)));
+}
+
+async function waitForTaskRunCompletion(repoRoot: string, taskId: string): Promise<{ ok: true; value: RunResult } | { ok: false; reason: string }> {
+  const timeoutMs = runWaitTimeoutMs();
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() <= deadline) {
+    const events = await readEvents(repoRoot);
+    if (!events.ok) {
+      return events;
+    }
+
+    const state = latestTaskRunState(events.value, taskId);
+    if (state.state === "completed") {
+      const result = await runResultFromCompletedEvent(repoRoot, taskId, state.completed);
+      if (!result.ok) {
+        return result;
+      }
+      return { ok: true, value: result.value };
+    }
+    if (state.state === "failed") {
+      const reason = typeof state.failed.data.reason === "string" ? state.failed.data.reason : "worker run failed";
+      return { ok: false, reason: `task ${taskId} worker run failed: ${reason}` };
+    }
+
+    await delay(500);
+  }
+
+  return { ok: false, reason: `timed out waiting for task.completed/task.failed for ${taskId} after ${timeoutMs}ms` };
+}
+
+async function runResultFromCompletedEvent(
+  repoRoot: string,
+  taskId: string,
+  event: HivemindEvent
+): Promise<{ ok: true; value: RunResult } | { ok: false; reason: string }> {
+  const data = event.data;
+  if (
+    data.task_id !== taskId ||
+    data.status !== "completed" ||
+    typeof data.tool !== "string" ||
+    typeof data.diff_path !== "string" ||
+    typeof data.tool_exit !== "number" ||
+    typeof data.changed_files !== "number"
+  ) {
+    return { ok: false, reason: `task.completed event for ${taskId} has invalid run result data` };
+  }
+
+  const diff = await statIfExists(data.diff_path);
+  if (!diff.ok || !diff.value.isFile()) {
+    return { ok: false, reason: `task.completed event for ${taskId} has no patch bundle diff.patch` };
+  }
+
+  return {
+    ok: true,
+    value: {
+      task_id: taskId,
+      status: "completed",
+      tool: data.tool,
+      diff_path: data.diff_path,
+      tool_exit: data.tool_exit,
+      changed_files: data.changed_files
+    }
+  };
+}
+
+function runWaitTimeoutMs(): number {
+  const raw = process.env.HIVEMIND_RUN_WAIT_TIMEOUT_MS;
+  if (raw === undefined) {
+    return 30 * 60 * 1000;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 30 * 60 * 1000;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function statIfExists(filePath: string) {
+  try {
+    return { ok: true as const, value: await stat(filePath) };
+  } catch (error: unknown) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+      return { ok: false as const };
+    }
+    throw error;
+  }
 }
 
 async function routeMutatingAction<T>(

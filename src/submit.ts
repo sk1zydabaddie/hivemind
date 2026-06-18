@@ -4,8 +4,9 @@ import { writeFileAtomic } from "./atomic.js";
 import { loadAndValidateContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { captureWorktreeDiff } from "./diff-capture.js";
-import { appendEvent } from "./events.js";
+import { appendEvent, readEvents } from "./events.js";
 import { findGitRoot } from "./repo.js";
+import { latestTaskRunState } from "./run-state.js";
 
 const bundleFiles = [
   "diff.patch",
@@ -53,6 +54,11 @@ export async function submitTask(repoRoot: string, taskId: string): Promise<{ ok
   const contractResult = await loadAndValidateContract(repoRoot, taskId);
   if (!contractResult.ok) {
     return contractResult;
+  }
+
+  const completedRun = await requireCompletedRunWithBundle(repoRoot, taskId);
+  if (!completedRun.ok) {
+    return completedRun;
   }
 
   const worktreePath = path.join(repoRoot, ".hivemind", "worktrees", taskId);
@@ -113,6 +119,32 @@ export async function submitTask(repoRoot: string, taskId: string): Promise<{ ok
       files: [...bundleFiles]
     }
   };
+}
+
+async function requireCompletedRunWithBundle(repoRoot: string, taskId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) {
+    return events;
+  }
+
+  const runState = latestTaskRunState(events.value, taskId);
+  if (runState.state === "not_started") {
+    return { ok: false, reason: `task ${taskId} has no completed worker run; submit_patch requires a task.completed event` };
+  }
+  if (runState.state === "running") {
+    return { ok: false, reason: `task ${taskId} worker run is still running; submit_patch requires a task.completed event` };
+  }
+  if (runState.state === "failed") {
+    const reason = typeof runState.failed.data.reason === "string" ? runState.failed.data.reason : "worker run failed";
+    return { ok: false, reason: `task ${taskId} worker run failed; submit_patch refused: ${reason}` };
+  }
+
+  const diffPath = path.join(repoRoot, ".hivemind", "patches", taskId, "diff.patch");
+  const diff = await statIfExists(diffPath);
+  if (!diff.ok || !diff.value.isFile()) {
+    return { ok: false, reason: `task ${taskId} has task.completed but no patch bundle diff.patch; submit_patch refused` };
+  }
+  return { ok: true };
 }
 
 async function writeBundleFile(

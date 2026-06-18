@@ -4,14 +4,14 @@ import { analyzeTask } from "./analyze.js";
 import { createTaskContract } from "./contract.js";
 import { removeDaemonState, writeDaemonState } from "./daemon-state.js";
 import { EventBus } from "./event-bus.js";
-import { readEvents } from "./events.js";
+import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
 import { enqueueIntegrationPatch, integrateShadow } from "./integrate.js";
 import { checkWriteIntent } from "./intent.js";
 import { requestLeaseForContract, releaseLease } from "./lease.js";
 import { findGitRoot } from "./repo.js";
 import { evaluatePlanThrash } from "./plan.js";
 import { readQuotaLedger } from "./resource-ledger.js";
-import { runTask } from "./run.js";
+import { startRunTaskJob } from "./run.js";
 import { runScout } from "./scout.js";
 import { getStatus } from "./status.js";
 import { submitTask } from "./submit.js";
@@ -39,6 +39,12 @@ export async function daemonCommand(cwd: string, args: string[]): Promise<number
   const repoRoot = await findGitRoot(cwd);
   if (!repoRoot) {
     console.error("error: not a git repository");
+    return 1;
+  }
+
+  const reconcileResult = await reconcileIncompleteRuns(repoRoot);
+  if (!reconcileResult.ok) {
+    console.error(`error: ${reconcileResult.reason}`);
     return 1;
   }
 
@@ -196,7 +202,7 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
       if (!tool.ok) {
         return tool;
       }
-      return runTask(repoRoot, taskId.value, tool.value, {
+      return startRunTaskJob(repoRoot, taskId.value, tool.value, {
         allowDangerousAdapter: payload.allow_dangerous_adapter === true,
         onEvent: (event) => eventBus.publishEvent(event),
         onOutput: (record) => eventBus.publishTaskOutput(record)
@@ -244,6 +250,46 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
     };
   }
   return null;
+}
+
+async function reconcileIncompleteRuns(repoRoot: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) {
+    return events;
+  }
+
+  for (const taskId of startedWithoutTerminal(events.value)) {
+    const append = await appendEvent(repoRoot, {
+      type: "task.failed",
+      task_id: taskId,
+      data: {
+        reason: "daemon restarted before worker completion; in-flight run marked failed",
+        recovered: false
+      }
+    });
+    if (!append.ok) {
+      return append;
+    }
+  }
+
+  return { ok: true };
+}
+
+function startedWithoutTerminal(events: HivemindEvent[]): string[] {
+  const running = new Set<string>();
+  for (const event of events) {
+    if (event.task_id === null) {
+      continue;
+    }
+    if (event.type === "task.started") {
+      running.add(event.task_id);
+      continue;
+    }
+    if (event.type === "task.completed" || event.type === "task.failed") {
+      running.delete(event.task_id);
+    }
+  }
+  return [...running].sort((left, right) => left.localeCompare(right));
 }
 
 function parseDaemonOptions(args: string[]): { ok: true; value: DaemonOptions } | { ok: false; reason: string } {

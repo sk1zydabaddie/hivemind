@@ -29,7 +29,25 @@ export interface RunResult {
   changed_files: number;
 }
 
+export interface RunStartResult {
+  task_id: string;
+  status: "started";
+  tool: string;
+  worktree: string;
+}
+
 export interface RunTaskOptions {
+  allowDangerousAdapter?: boolean;
+  onEvent?: (event: HivemindEvent) => void;
+  onOutput?: (record: TaskOutputRecord) => void;
+}
+
+interface PreparedRun {
+  taskId: string;
+  tool: string;
+  worktree: string;
+  baseCommit: string;
+  ceiling: RunCeiling | undefined;
   allowDangerousAdapter?: boolean;
   onEvent?: (event: HivemindEvent) => void;
   onOutput?: (record: TaskOutputRecord) => void;
@@ -48,7 +66,7 @@ export async function runCommand(cwd: string, args: string[]): Promise<number> {
     return 1;
   }
 
-  const daemonResult = await callDaemonIfConfigured<RunResult>(repoRoot, "/run", {
+  const daemonResult = await callDaemonIfConfigured<RunStartResult>(repoRoot, "/run", {
     task_id: parsed.value.taskId,
     ...(parsed.value.tool === undefined ? {} : { tool: parsed.value.tool }),
     allow_dangerous_adapter: parsed.value.allowDangerousAdapter
@@ -71,6 +89,45 @@ export async function runTask(
   tool?: string,
   options: RunTaskOptions = {}
 ): Promise<{ ok: true; value: RunResult } | { ok: false; reason: string }> {
+  const prepared = await prepareRunTask(repoRoot, taskId, tool, options);
+  if (!prepared.ok) {
+    return prepared;
+  }
+  return finishPreparedRun(repoRoot, prepared.value);
+}
+
+export async function startRunTaskJob(
+  repoRoot: string,
+  taskId: string,
+  tool: string | undefined,
+  options: RunTaskOptions = {}
+): Promise<{ ok: true; value: RunStartResult } | { ok: false; reason: string }> {
+  const prepared = await prepareRunTask(repoRoot, taskId, tool, options);
+  if (!prepared.ok) {
+    return prepared;
+  }
+
+  void finishPreparedRun(repoRoot, prepared.value).catch(async (error: unknown) => {
+    await emitRunFailure(repoRoot, prepared.value, error instanceof Error ? error.message : "unexpected run failure");
+  });
+
+  return {
+    ok: true,
+    value: {
+      task_id: taskId,
+      status: "started",
+      tool: prepared.value.tool,
+      worktree: prepared.value.worktree
+    }
+  };
+}
+
+async function prepareRunTask(
+  repoRoot: string,
+  taskId: string,
+  tool: string | undefined,
+  options: RunTaskOptions
+): Promise<{ ok: true; value: PreparedRun } | { ok: false; reason: string }> {
   const specResult = await requireActiveSpecRatified(repoRoot);
   if (!specResult.ok) {
     return specResult;
@@ -125,6 +182,19 @@ export async function runTask(
     return cleanResult;
   }
 
+  const acceptedEvent = await emitRunEvent(
+    repoRoot,
+    {
+      type: "task.run_accepted",
+      task_id: taskId,
+      data: { tool: routeResult.value.tool, worktree: worktreeResult.value.worktree }
+    },
+    options.onEvent
+  );
+  if (!acceptedEvent.ok) {
+    return acceptedEvent;
+  }
+
   const startedEvent = await emitRunEvent(
     repoRoot,
     {
@@ -138,22 +208,41 @@ export async function runTask(
     return startedEvent;
   }
 
+  return {
+    ok: true,
+    value: {
+      taskId,
+      tool: routeResult.value.tool,
+      worktree: worktreeResult.value.worktree,
+      baseCommit: contractResult.contract.base_commit,
+      ceiling,
+      allowDangerousAdapter: options.allowDangerousAdapter,
+      onEvent: options.onEvent,
+      onOutput: options.onOutput
+    }
+  };
+}
+
+async function finishPreparedRun(
+  repoRoot: string,
+  prepared: PreparedRun
+): Promise<{ ok: true; value: RunResult } | { ok: false; reason: string }> {
   const streamOutputWrites: Array<Promise<{ ok: true } | { ok: false; reason: string }>> = [];
   let streamOutputTail: Promise<{ ok: true } | { ok: false; reason: string }> = Promise.resolve({ ok: true });
-  const invokeResult = await invokeAgent(repoRoot, taskId, routeResult.value.tool, {
-    allowDangerousAdapter: options.allowDangerousAdapter,
+  const invokeResult = await invokeAgent(repoRoot, prepared.taskId, prepared.tool, {
+    allowDangerousAdapter: prepared.allowDangerousAdapter,
     onStreamChunk: (chunk) => {
       streamOutputTail = streamOutputTail.then((previous) =>
         previous.ok
           ? emitTaskOutput(
               repoRoot,
               {
-                task_id: taskId,
-                tool: routeResult.value.tool,
+                task_id: prepared.taskId,
+                tool: prepared.tool,
                 stream: chunk.stream,
                 text: chunk.text
               },
-              options.onOutput
+              prepared.onOutput
             )
           : previous
       );
@@ -163,40 +252,53 @@ export async function runTask(
   const streamOutputResults = await Promise.all(streamOutputWrites);
   const failedStreamOutput = streamOutputResults.find((result) => !result.ok);
   if (failedStreamOutput !== undefined && !failedStreamOutput.ok) {
+    await emitRunFailure(repoRoot, prepared, failedStreamOutput.reason);
     return failedStreamOutput;
   }
   if (!invokeResult.ok) {
+    await emitRunFailure(repoRoot, prepared, invokeResult.reason);
     return invokeResult;
   }
 
-  const postRunResult = checkRunCeilingPostRun(ceiling, invokeResult.value.wallTimeMs);
+  const postRunResult = checkRunCeilingPostRun(prepared.ceiling, invokeResult.value.wallTimeMs);
   if (!postRunResult.ok) {
+    await emitRunFailure(repoRoot, prepared, postRunResult.reason, invokeResult.value.exitCode);
     return postRunResult;
   }
 
-  const diffResult = await captureDiff(repoRoot, worktreeResult.value.worktree, taskId, contractResult.contract.base_commit);
+  const diffResult = await captureDiff(repoRoot, prepared.worktree, prepared.taskId, prepared.baseCommit);
   if (!diffResult.ok) {
+    await emitRunFailure(repoRoot, prepared, diffResult.reason, invokeResult.value.exitCode);
     return diffResult;
   }
 
   if (invokeResult.value.exitCode !== 0) {
+    const reason = `worker ${prepared.tool} exited ${invokeResult.value.exitCode}; diff captured at .hivemind/patches/${prepared.taskId}/diff.patch with ${diffResult.value.changedFiles} changed file(s)`;
+    await emitRunFailure(repoRoot, prepared, reason, invokeResult.value.exitCode, diffResult.value.diffPath, diffResult.value.changedFiles);
     return {
       ok: false,
-      reason: `worker ${routeResult.value.tool} exited ${invokeResult.value.exitCode}; diff captured at .hivemind/patches/${taskId}/diff.patch with ${diffResult.value.changedFiles} changed file(s)`
+      reason
     };
   }
 
-  return {
-    ok: true,
-    value: {
-      task_id: taskId,
-      status: "completed",
-      tool: routeResult.value.tool,
-      diff_path: diffResult.value.diffPath,
-      tool_exit: invokeResult.value.exitCode,
-      changed_files: diffResult.value.changedFiles
-    }
+  const value: RunResult = {
+    task_id: prepared.taskId,
+    status: "completed",
+    tool: prepared.tool,
+    diff_path: diffResult.value.diffPath,
+    tool_exit: invokeResult.value.exitCode,
+    changed_files: diffResult.value.changedFiles
   };
+  const completed = await emitRunEvent(
+    repoRoot,
+    {
+      type: "task.completed",
+      task_id: prepared.taskId,
+      data: { ...value }
+    },
+    prepared.onEvent
+  );
+  return completed.ok ? { ok: true, value } : completed;
 }
 
 async function emitRunEvent(
@@ -223,6 +325,31 @@ async function emitTaskOutput(
   }
   onOutput?.(outputResult.value);
   return { ok: true };
+}
+
+async function emitRunFailure(
+  repoRoot: string,
+  prepared: PreparedRun,
+  reason: string,
+  toolExit?: number,
+  diffPath?: string,
+  changedFiles?: number
+): Promise<void> {
+  await emitRunEvent(
+    repoRoot,
+    {
+      type: "task.failed",
+      task_id: prepared.taskId,
+      data: {
+        tool: prepared.tool,
+        reason,
+        ...(toolExit === undefined ? {} : { tool_exit: toolExit }),
+        ...(diffPath === undefined ? {} : { diff_path: diffPath }),
+        ...(changedFiles === undefined ? {} : { changed_files: changedFiles })
+      }
+    },
+    prepared.onEvent
+  );
 }
 
 function parseRunArgs(

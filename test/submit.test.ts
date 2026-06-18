@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { readEvents } from "../src/events.js";
+import { captureWorktreeDiff } from "../src/diff-capture.js";
+import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { requestLease } from "../src/lease.js";
 import { submitTask } from "../src/submit.js";
@@ -37,6 +38,7 @@ test("submitTask assembles exactly the seven patch bundle files", async () => {
       return;
     }
     await writeFile(path.join(worktree.value.worktree, "README.md"), "# Fixture\nsubmitted change\n");
+    await markRunCompleted(repo, "T-001", worktree.value.worktree, baseCommit);
 
     const result = await submitTask(repo, "T-001");
 
@@ -92,6 +94,7 @@ test("submitTask copies advisory files from the worktree and creates missing adv
     await writeFile(path.join(worktree.value.worktree, "README.md"), "# Fixture\nadvisory change\n");
     await writeFile(path.join(worktree.value.worktree, "summary.md"), "Implemented advisory summary.\n");
     await writeFile(path.join(worktree.value.worktree, "tests_run.json"), "[\"npm test\"]\n");
+    await markRunCompleted(repo, "T-001", worktree.value.worktree, baseCommit);
 
     const result = await submitTask(repo, "T-001");
 
@@ -114,6 +117,7 @@ test("submitTask captures untracked source files but excludes bundle metadata fr
     }
     await writeFile(path.join(worktree.value.worktree, "new-file.txt"), "new source file\n");
     await writeFile(path.join(worktree.value.worktree, "summary.md"), "This should be copied, not diffed.\n");
+    await markRunCompleted(repo, "T-001", worktree.value.worktree, baseCommit);
 
     const result = await submitTask(repo, "T-001");
 
@@ -138,6 +142,7 @@ test("submitTask removes stale extra entries from an existing bundle directory",
     const patchDir = path.join(repo, ".hivemind", "patches", "T-001");
     await mkdir(path.join(patchDir, "stale-dir"), { recursive: true });
     await writeFile(path.join(patchDir, "old.txt"), "stale\n");
+    await markRunCompleted(repo, "T-001", worktree.value.worktree, baseCommit);
 
     const result = await submitTask(repo, "T-001");
 
@@ -151,6 +156,11 @@ test("submitTask removes stale extra entries from an existing bundle directory",
 test("submitTask fails closed when the task worktree is missing", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    const patchDir = path.join(repo, ".hivemind", "patches", "T-001");
+    await mkdir(patchDir, { recursive: true });
+    const diffPath = path.join(patchDir, "diff.patch");
+    await writeFile(diffPath, "");
+    await appendCompletedRunEvents(repo, "T-001", diffPath, 0);
 
     const result = await submitTask(repo, "T-001");
 
@@ -172,6 +182,7 @@ test("submitTask rejects advisory bundle entries that are directories in the wor
       return;
     }
     await mkdir(path.join(worktree.value.worktree, "summary.md"));
+    await markRunCompleted(repo, "T-001", worktree.value.worktree, baseCommit);
 
     const result = await submitTask(repo, "T-001");
 
@@ -193,6 +204,7 @@ test("CLI submit prints stable JSON", async () => {
       return;
     }
     await writeFile(path.join(worktree.value.worktree, "README.md"), "# Fixture\ncli submit change\n");
+    await markRunCompleted(repo, "T-001", worktree.value.worktree, baseCommit);
 
     const result = await execFileAsync("node", [cliPath, "submit", "T-001"], {
       cwd: repo,
@@ -214,6 +226,35 @@ test("CLI submit prints stable JSON", async () => {
       ]
     });
     assert.match(await readBundle(repo, "T-001", "diff.patch"), /\+cli submit change/);
+  });
+});
+
+test("submitTask rejects a patch bundle without a completed worker run", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await grantLease(repo, "T-001", ["README.md"]);
+    const worktree = await createTaskWorktree(repo, "T-001");
+    assert.equal(worktree.ok, true);
+    if (!worktree.ok) {
+      return;
+    }
+    await writeFile(path.join(worktree.value.worktree, "README.md"), "# Fixture\nnot completed\n");
+    const diff = await captureWorktreeDiff(worktree.value.worktree, baseCommit);
+    assert.equal(diff.ok, true);
+    if (!diff.ok) {
+      return;
+    }
+    const patchDir = path.join(repo, ".hivemind", "patches", "T-001");
+    await mkdir(patchDir, { recursive: true });
+    await writeFile(path.join(patchDir, "diff.patch"), diff.value.diff);
+
+    const result = await submitTask(repo, "T-001");
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.match(result.reason, /submit_patch requires a task\.completed event/);
   });
 });
 
@@ -306,6 +347,44 @@ async function restoreTrackedWrites(worktreePath: string): Promise<void> {
 async function grantLease(repo: string, taskId: string, files: string[]): Promise<void> {
   const result = await requestLease(repo, taskId, files);
   assert.equal(result.ok, true);
+}
+
+async function markRunCompleted(repo: string, taskId: string, worktree: string, baseCommit: string): Promise<void> {
+  const diff = await captureWorktreeDiff(worktree, baseCommit, {
+    excludeUntracked: ["agent.log", ...bundleFiles]
+  });
+  assert.equal(diff.ok, true);
+  if (!diff.ok) {
+    return;
+  }
+
+  const patchDir = path.join(repo, ".hivemind", "patches", taskId);
+  await mkdir(patchDir, { recursive: true });
+  const diffPath = path.join(patchDir, "diff.patch");
+  await writeFile(diffPath, diff.value.diff);
+  await appendCompletedRunEvents(repo, taskId, diffPath, diff.value.changedFiles);
+}
+
+async function appendCompletedRunEvents(repo: string, taskId: string, diffPath: string, changedFiles: number): Promise<void> {
+  const started = await appendEvent(repo, {
+    type: "task.started",
+    task_id: taskId,
+    data: { tool: "fake", worktree: path.join(repo, ".hivemind", "worktrees", taskId) }
+  });
+  assert.equal(started.ok, true);
+  const completed = await appendEvent(repo, {
+    type: "task.completed",
+    task_id: taskId,
+    data: {
+      task_id: taskId,
+      status: "completed",
+      tool: "fake",
+      diff_path: diffPath,
+      tool_exit: 0,
+      changed_files: changedFiles
+    }
+  });
+  assert.equal(completed.ok, true);
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {

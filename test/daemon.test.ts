@@ -214,13 +214,14 @@ test("daemon streams compact authoritative events separately from per-task worke
       const subscriber = await EventStreamClient.connect(daemon.url, "/events/stream");
       const outputSubscriber = await EventStreamClient.connect(daemon.url, "/tasks/T-001/output/stream");
       try {
-        let runSettled = false;
-        const run = execCli(repo, daemon.url, ["run", "T-001", "--tool", "fake-stream"]).finally(() => {
-          runSettled = true;
-        });
+        const run = execCli(repo, daemon.url, ["run", "T-001", "--tool", "fake-stream"]);
 
         const started = await subscriber.nextEvent((message) => message.event.type === "task.started" && message.event.task_id === "T-001");
         assert.equal(started.source, "live");
+        const accepted = await run;
+        const acceptedParsed = JSON.parse(accepted.stdout) as { status: string; task_id: string };
+        assert.equal(acceptedParsed.status, "started");
+        assert.equal(acceptedParsed.task_id, "T-001");
 
         const firstOutput = await outputSubscriber.nextOutput(
           (message) =>
@@ -229,7 +230,6 @@ test("daemon streams compact authoritative events separately from per-task worke
             message.record.text.includes("live-start")
         );
         assert.equal(firstOutput.source, "live");
-        assert.equal(runSettled, false);
 
         const lateSubscriber = await EventStreamClient.connect(daemon.url, "/events/stream");
         const lateOutputSubscriber = await EventStreamClient.connect(daemon.url, "/tasks/T-001/output/stream");
@@ -251,10 +251,13 @@ test("daemon streams compact authoritative events separately from per-task worke
           await lateOutputSubscriber.close();
         }
 
-        const completed = await run;
-        const parsed = JSON.parse(completed.stdout) as { status: string; changed_files: number };
-        assert.equal(parsed.status, "completed");
-        assert.equal(parsed.changed_files, 1);
+        const completed = await subscriber.nextEvent(
+          (message) => message.event.type === "task.completed" && message.event.task_id === "T-001",
+          10000
+        );
+        assert.equal(completed.source, "live");
+        assert.equal(completed.event.data.status, "completed");
+        assert.equal(completed.event.data.changed_files, 1);
       } finally {
         await subscriber.close();
         await outputSubscriber.close();
@@ -271,6 +274,7 @@ test("daemon streams compact authoritative events separately from per-task worke
     assert.equal(events.value.some((event) => String(event.type) === "task.output"), false);
     assert.equal(events.value.every((event) => String(event.type) !== "task.output" && !JSON.stringify(event).includes("live-start")), true);
     assert.equal(events.value.some((event) => event.type === "task.started" && event.task_id === "T-001"), true);
+    assert.equal(events.value.some((event) => event.type === "task.completed" && event.task_id === "T-001"), true);
 
     const output = await readTaskOutput(repo, "T-001");
     assert.equal(output.ok, true);
@@ -285,6 +289,31 @@ test("daemon streams compact authoritative events separately from per-task worke
     assert.doesNotMatch(busSourceText, /claude|codex/i);
     for (const sourcePath of ["src/plan.ts", "src/integrate.ts", "src/status.ts", "src/replan.ts", "src/cache.ts"]) {
       assert.doesNotMatch(await readFile(path.join(process.cwd(), sourcePath), "utf8"), /output-stream|readTaskOutput|TaskOutput/u);
+    }
+  });
+});
+
+test("daemon startup marks started runs without completion as failed", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const started = await appendEvent(repo, {
+      type: "task.started",
+      task_id: "T-001",
+      data: { tool: "fake-stream", worktree: path.join(repo, ".hivemind", "worktrees", "T-001") }
+    });
+    assert.equal(started.ok, true);
+
+    const daemon = await startDaemon(repo);
+    try {
+      const events = await readEvents(repo);
+      assert.equal(events.ok, true);
+      if (!events.ok) {
+        return;
+      }
+      const failed = events.value.find((event) => event.type === "task.failed" && event.task_id === "T-001");
+      assert.notEqual(failed, undefined);
+      assert.match(String(failed?.data.reason), /daemon restarted before worker completion/);
+    } finally {
+      await stopDaemon(daemon);
     }
   });
 });

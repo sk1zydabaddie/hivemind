@@ -734,8 +734,39 @@ test("manager executor drives deterministic task actions through shadow integrat
     if (!events.ok) {
       return;
     }
+    assert.equal(events.value.some((event) => event.type === "task.completed" && event.task_id === "T-001"), true);
     assert.equal(events.value.some((event) => event.type === "integration.queued" && event.task_id === "T-001"), true);
     assert.equal(events.value.at(-1)?.type, "integration.passed");
+  });
+});
+
+test("manager submit_patch refuses a bundle without task.completed evidence", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await writeContract(repo, "T-NOCOMPLETE", baseCommit, ["README.md"]);
+    const patchDir = path.join(repo, ".hivemind", "patches", "T-NOCOMPLETE");
+    await mkdir(patchDir, { recursive: true });
+    await writeFile(path.join(patchDir, "diff.patch"), "");
+    const sessionResult = await startManagerSession(repo, "Reject uncompleted submit", { proposedAction: testProposal() });
+    assert.equal(sessionResult.ok, true);
+    if (!sessionResult.ok) {
+      return;
+    }
+
+    const result = await executeManagerAction(repo, sessionResult.value.session_id, { type: "submit_patch", task_id: "T-NOCOMPLETE" });
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.value.result.ok, false);
+    assert.match(result.value.result.reason, /submit_patch requires a task\.completed event/);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.equal(events.value.some((event) => event.type === "patch.submitted" && event.task_id === "T-NOCOMPLETE"), false);
   });
 });
 
