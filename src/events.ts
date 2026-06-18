@@ -14,7 +14,6 @@ export const eventTypes = [
   "task.revision_requested",
   "task.redirected",
   "task.integrated",
-  "task.output",
   "task.checkpointed",
   "task.resumed",
   "task.rerouted",

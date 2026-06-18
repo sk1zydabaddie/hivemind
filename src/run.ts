@@ -9,6 +9,7 @@ import { callDaemonIfConfigured } from "./daemon-client.js";
 import { captureWorktreeDiff } from "./diff-capture.js";
 import { appendEvent, type HivemindEvent, type HivemindEventInput } from "./events.js";
 import { verifyLeaseCoverage } from "./lease.js";
+import { appendTaskOutput, type TaskOutputRecord, type TaskOutputInput } from "./output-stream.js";
 import { requireTaskDependenciesIntegrated } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { requirePassedWriteIntent } from "./intent.js";
@@ -31,6 +32,7 @@ export interface RunResult {
 export interface RunTaskOptions {
   allowDangerousAdapter?: boolean;
   onEvent?: (event: HivemindEvent) => void;
+  onOutput?: (record: TaskOutputRecord) => void;
 }
 
 export async function runCommand(cwd: string, args: string[]): Promise<number> {
@@ -136,31 +138,32 @@ export async function runTask(
     return startedEvent;
   }
 
-  const streamEventWrites: Array<Promise<{ ok: true } | { ok: false; reason: string }>> = [];
-  let streamEventTail: Promise<{ ok: true } | { ok: false; reason: string }> = Promise.resolve({ ok: true });
+  const streamOutputWrites: Array<Promise<{ ok: true } | { ok: false; reason: string }>> = [];
+  let streamOutputTail: Promise<{ ok: true } | { ok: false; reason: string }> = Promise.resolve({ ok: true });
   const invokeResult = await invokeAgent(repoRoot, taskId, routeResult.value.tool, {
     allowDangerousAdapter: options.allowDangerousAdapter,
     onStreamChunk: (chunk) => {
-      streamEventTail = streamEventTail.then((previous) =>
+      streamOutputTail = streamOutputTail.then((previous) =>
         previous.ok
-          ? emitRunEvent(
+          ? emitTaskOutput(
               repoRoot,
               {
-                type: "task.output",
                 task_id: taskId,
-                data: { tool: routeResult.value.tool, stream: chunk.stream, text: chunk.text }
+                tool: routeResult.value.tool,
+                stream: chunk.stream,
+                text: chunk.text
               },
-              options.onEvent
+              options.onOutput
             )
           : previous
       );
-      streamEventWrites.push(streamEventTail);
+      streamOutputWrites.push(streamOutputTail);
     }
   });
-  const streamEventResults = await Promise.all(streamEventWrites);
-  const failedStreamEvent = streamEventResults.find((result) => !result.ok);
-  if (failedStreamEvent !== undefined && !failedStreamEvent.ok) {
-    return failedStreamEvent;
+  const streamOutputResults = await Promise.all(streamOutputWrites);
+  const failedStreamOutput = streamOutputResults.find((result) => !result.ok);
+  if (failedStreamOutput !== undefined && !failedStreamOutput.ok) {
+    return failedStreamOutput;
   }
   if (!invokeResult.ok) {
     return invokeResult;
@@ -206,6 +209,19 @@ async function emitRunEvent(
     return eventResult;
   }
   onEvent?.(eventResult.value);
+  return { ok: true };
+}
+
+async function emitTaskOutput(
+  repoRoot: string,
+  input: TaskOutputInput,
+  onOutput: ((record: TaskOutputRecord) => void) | undefined
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const outputResult = await appendTaskOutput(repoRoot, input);
+  if (!outputResult.ok) {
+    return outputResult;
+  }
+  onOutput?.(outputResult.value);
   return { ok: true };
 }
 

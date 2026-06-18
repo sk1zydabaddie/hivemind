@@ -15,6 +15,7 @@ import { runTask } from "./run.js";
 import { runScout } from "./scout.js";
 import { getStatus } from "./status.js";
 import { submitTask } from "./submit.js";
+import { validateRequestedTaskId } from "./task-id.js";
 import { createTaskWorktree, removeTaskWorktree } from "./worktree.js";
 
 interface DaemonOptions {
@@ -89,6 +90,15 @@ function createDaemonServer(repoRoot: string) {
       }
       if (request.method === "GET" && request.url === "/events/stream") {
         await eventBus.stream(repoRoot, request, response);
+        return;
+      }
+      const outputStreamTaskId = readOutputStreamTaskId(request);
+      if (outputStreamTaskId !== null) {
+        if (!outputStreamTaskId.ok) {
+          writeJson(response, 400, { ok: false, reason: outputStreamTaskId.reason });
+          return;
+        }
+        await eventBus.streamTaskOutput(repoRoot, outputStreamTaskId.value, request, response);
         return;
       }
 
@@ -188,7 +198,8 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
       }
       return runTask(repoRoot, taskId.value, tool.value, {
         allowDangerousAdapter: payload.allow_dangerous_adapter === true,
-        onEvent: (event) => eventBus.publishEvent(event)
+        onEvent: (event) => eventBus.publishEvent(event),
+        onOutput: (record) => eventBus.publishTaskOutput(record)
       });
     };
   }
@@ -293,6 +304,24 @@ async function readPayload(request: IncomingMessage): Promise<{ ok: true; value:
 
 function readTaskId(payload: DaemonPayload): { ok: true; value: string } | { ok: false; reason: string } {
   return typeof payload.task_id === "string" ? { ok: true, value: payload.task_id } : { ok: false, reason: "task_id must be a string" };
+}
+
+function readOutputStreamTaskId(request: IncomingMessage): { ok: true; value: string } | { ok: false; reason: string } | null {
+  if (request.method !== "GET" || request.url === undefined) {
+    return null;
+  }
+  const match = /^\/tasks\/([^/]+)\/output\/stream$/u.exec(request.url);
+  if (match === null) {
+    return null;
+  }
+  let taskId: string;
+  try {
+    taskId = decodeURIComponent(match[1]);
+  } catch {
+    return { ok: false, reason: "task output stream task_id must be URI-decodable" };
+  }
+  const validation = validateRequestedTaskId(taskId);
+  return validation.ok ? { ok: true, value: taskId } : validation;
 }
 
 function readOptionalString(payload: DaemonPayload, field: string): { ok: true; value?: string } | { ok: false; reason: string } {

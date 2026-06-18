@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { readEvents, type HivemindEvent } from "./events.js";
+import { readTaskOutput, type TaskOutputRecord } from "./output-stream.js";
 
 export interface EventBusMessage {
   kind: "event";
@@ -14,9 +15,18 @@ export interface EventBusErrorMessage {
 }
 
 type Subscriber = (message: EventBusMessage) => void;
+type OutputSubscriber = (message: TaskOutputBusMessage) => void;
+
+export interface TaskOutputBusMessage {
+  kind: "output";
+  source: "history" | "live";
+  seq?: number;
+  record: TaskOutputRecord;
+}
 
 export class EventBus {
   private readonly subscribers = new Set<Subscriber>();
+  private readonly outputSubscribers = new Map<string, Set<OutputSubscriber>>();
   private readonly publishedEventKeys = new Set<string>();
 
   async stream(repoRoot: string, request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -45,9 +55,54 @@ export class EventBus {
     });
   }
 
+  async streamTaskOutput(repoRoot: string, taskId: string, request: IncomingMessage, response: ServerResponse): Promise<void> {
+    response.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive"
+    });
+    response.write(": hivemind task output stream\n\n");
+
+    const history = await readTaskOutput(repoRoot, taskId);
+    if (!history.ok) {
+      this.writeMessage(response, { kind: "error", reason: history.reason });
+      response.end();
+      return;
+    }
+
+    for (const [index, record] of history.value.entries()) {
+      this.writeMessage(response, { kind: "output", source: "history", seq: index + 1, record });
+    }
+
+    const subscriber: OutputSubscriber = (message) => this.writeMessage(response, message);
+    let subscribers = this.outputSubscribers.get(taskId);
+    if (subscribers === undefined) {
+      subscribers = new Set<OutputSubscriber>();
+      this.outputSubscribers.set(taskId, subscribers);
+    }
+    subscribers.add(subscriber);
+    request.on("close", () => {
+      subscribers?.delete(subscriber);
+      if (subscribers?.size === 0) {
+        this.outputSubscribers.delete(taskId);
+      }
+    });
+  }
+
   publishEvent(event: HivemindEvent): void {
     this.publishedEventKeys.add(eventKey(event));
     this.publish({ kind: "event", source: "live", event });
+  }
+
+  publishTaskOutput(record: TaskOutputRecord): void {
+    const subscribers = this.outputSubscribers.get(record.task_id);
+    if (subscribers === undefined) {
+      return;
+    }
+    const message: TaskOutputBusMessage = { kind: "output", source: "live", record };
+    for (const subscriber of subscribers) {
+      subscriber(message);
+    }
   }
 
   async publishNewDurableEvents(repoRoot: string, previousCount: number): Promise<void> {
@@ -72,7 +127,7 @@ export class EventBus {
     }
   }
 
-  private writeMessage(response: ServerResponse, message: EventBusMessage | EventBusErrorMessage): void {
+  private writeMessage(response: ServerResponse, message: EventBusMessage | TaskOutputBusMessage | EventBusErrorMessage): void {
     response.write(`data: ${JSON.stringify(message)}\n\n`);
   }
 }

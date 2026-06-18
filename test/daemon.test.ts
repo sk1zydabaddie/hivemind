@@ -7,10 +7,11 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { appendEvent } from "../src/events.js";
+import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { checkWriteIntent } from "../src/intent.js";
 import { readActiveLeases, requestLeaseForContract } from "../src/lease.js";
+import { appendTaskOutput, readTaskOutput } from "../src/output-stream.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
 const execFileAsync = promisify(execFile);
@@ -186,10 +187,17 @@ test("plan thrash discovers a live daemon and routes the re-plan write", async (
   });
 });
 
-test("daemon event stream publishes run events live and replays durable history to late subscribers", async () => {
+test("daemon streams compact authoritative events separately from per-task worker output", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
     await writeStreamingProfile(repo, "fake-stream");
+    const unrelatedOutput = await appendTaskOutput(repo, {
+      task_id: "T-999",
+      tool: "other",
+      stream: "stdout",
+      text: "other task chatter\n"
+    });
+    assert.equal(unrelatedOutput.ok, true);
     const lease = await requestLeaseForContract(repo, "T-001");
     assert.equal(lease.ok, true);
     const intent = await checkWriteIntent(repo, "T-001", {
@@ -203,7 +211,8 @@ test("daemon event stream publishes run events live and replays durable history 
 
     const daemon = await startDaemon(repo);
     try {
-      const subscriber = await EventStreamClient.connect(repo, daemon.url);
+      const subscriber = await EventStreamClient.connect(daemon.url, "/events/stream");
+      const outputSubscriber = await EventStreamClient.connect(daemon.url, "/tasks/T-001/output/stream");
       try {
         let runSettled = false;
         const run = execCli(repo, daemon.url, ["run", "T-001", "--tool", "fake-stream"]).finally(() => {
@@ -213,33 +222,33 @@ test("daemon event stream publishes run events live and replays durable history 
         const started = await subscriber.nextEvent((message) => message.event.type === "task.started" && message.event.task_id === "T-001");
         assert.equal(started.source, "live");
 
-        const firstOutput = await subscriber.nextEvent(
+        const firstOutput = await outputSubscriber.nextOutput(
           (message) =>
-            message.event.type === "task.output" &&
-            message.event.task_id === "T-001" &&
-            message.event.data.stream === "stdout" &&
-            typeof message.event.data.text === "string" &&
-            message.event.data.text.includes("live-start")
+            message.record.task_id === "T-001" &&
+            message.record.stream === "stdout" &&
+            message.record.text.includes("live-start")
         );
         assert.equal(firstOutput.source, "live");
         assert.equal(runSettled, false);
 
-        const lateSubscriber = await EventStreamClient.connect(repo, daemon.url);
+        const lateSubscriber = await EventStreamClient.connect(daemon.url, "/events/stream");
+        const lateOutputSubscriber = await EventStreamClient.connect(daemon.url, "/tasks/T-001/output/stream");
         try {
           const replayedStart = await lateSubscriber.nextEvent(
             (message) => message.source === "history" && message.event.type === "task.started" && message.event.task_id === "T-001"
           );
           assert.equal(replayedStart.event.data.tool, "fake-stream");
-          const replayedOutput = await lateSubscriber.nextEvent(
+          const replayedOutput = await lateOutputSubscriber.nextOutput(
             (message) =>
               message.source === "history" &&
-              message.event.type === "task.output" &&
-              typeof message.event.data.text === "string" &&
-              message.event.data.text.includes("live-start")
+              message.record.task_id === "T-001" &&
+              message.record.text.includes("live-start")
           );
-          assert.equal(replayedOutput.event.data.stream, "stdout");
+          assert.equal(replayedOutput.record.stream, "stdout");
+          assert.doesNotMatch(JSON.stringify(lateOutputSubscriber.seenMessages()), /other task chatter/);
         } finally {
           await lateSubscriber.close();
+          await lateOutputSubscriber.close();
         }
 
         const completed = await run;
@@ -248,13 +257,35 @@ test("daemon event stream publishes run events live and replays durable history 
         assert.equal(parsed.changed_files, 1);
       } finally {
         await subscriber.close();
+        await outputSubscriber.close();
       }
     } finally {
       await stopDaemon(daemon);
     }
 
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.equal(events.value.some((event) => String(event.type) === "task.output"), false);
+    assert.equal(events.value.every((event) => String(event.type) !== "task.output" && !JSON.stringify(event).includes("live-start")), true);
+    assert.equal(events.value.some((event) => event.type === "task.started" && event.task_id === "T-001"), true);
+
+    const output = await readTaskOutput(repo, "T-001");
+    assert.equal(output.ok, true);
+    if (!output.ok) {
+      return;
+    }
+    assert.equal(output.value.some((record) => record.text.includes("live-start")), true);
+    assert.equal(output.value.some((record) => record.text.includes("live-end")), true);
+    assert.equal(output.value.some((record) => record.text.includes("other task chatter")), false);
+
     const busSourceText = await readFile(path.join(process.cwd(), "src", "event-bus.ts"), "utf8");
     assert.doesNotMatch(busSourceText, /claude|codex/i);
+    for (const sourcePath of ["src/plan.ts", "src/integrate.ts", "src/status.ts", "src/replan.ts", "src/cache.ts"]) {
+      assert.doesNotMatch(await readFile(path.join(process.cwd(), sourcePath), "utf8"), /output-stream|readTaskOutput|TaskOutput/u);
+    }
   });
 });
 
@@ -287,7 +318,7 @@ async function startDaemon(repo: string): Promise<DaemonProcess> {
   return { child, url: parsed.url, repoRoot: parsed.repo_root };
 }
 
-interface StreamMessage {
+interface EventStreamMessage {
   kind: "event";
   source: "history" | "live";
   seq?: number;
@@ -298,6 +329,26 @@ interface StreamMessage {
     data: Record<string, unknown>;
   };
 }
+
+interface OutputStreamMessage {
+  kind: "output";
+  source: "history" | "live";
+  seq?: number;
+  record: {
+    ts: string;
+    task_id: string;
+    tool: string;
+    stream: "stdout" | "stderr";
+    text: string;
+  };
+}
+
+interface ErrorStreamMessage {
+  kind: "error";
+  reason: string;
+}
+
+type StreamMessage = EventStreamMessage | OutputStreamMessage | ErrorStreamMessage;
 
 class EventStreamClient {
   private readonly decoder = new TextDecoder();
@@ -318,31 +369,24 @@ class EventStreamClient {
     this.readLoop = this.read();
   }
 
-  static async connect(repo: string, daemonUrl: string): Promise<EventStreamClient> {
+  static async connect(daemonUrl: string, route: string): Promise<EventStreamClient> {
     const controller = new AbortController();
-    const response = await fetch(`${daemonUrl}/events/stream`, { signal: controller.signal });
+    const response = await fetch(`${daemonUrl}${route}`, { signal: controller.signal });
     assert.equal(response.ok, true);
     assert.ok(response.body, "event stream response must have a body");
     return new EventStreamClient(response.body.getReader(), controller);
   }
 
-  nextEvent(predicate: (message: StreamMessage) => boolean, timeoutMs = 5000): Promise<StreamMessage> {
-    const existingIndex = this.messages.findIndex(predicate);
-    if (existingIndex !== -1) {
-      const [message] = this.messages.splice(existingIndex, 1);
-      return Promise.resolve(message);
-    }
+  nextEvent(predicate: (message: EventStreamMessage) => boolean, timeoutMs = 5000): Promise<EventStreamMessage> {
+    return this.nextMessage((message): message is EventStreamMessage => message.kind === "event" && predicate(message), timeoutMs);
+  }
 
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        const index = this.waiters.findIndex((waiter) => waiter.reject === reject);
-        if (index !== -1) {
-          this.waiters.splice(index, 1);
-        }
-        reject(new Error("timed out waiting for event stream message"));
-      }, timeoutMs);
-      this.waiters.push({ predicate, resolve, reject, timeout });
-    });
+  nextOutput(predicate: (message: OutputStreamMessage) => boolean, timeoutMs = 5000): Promise<OutputStreamMessage> {
+    return this.nextMessage((message): message is OutputStreamMessage => message.kind === "output" && predicate(message), timeoutMs);
+  }
+
+  seenMessages(): StreamMessage[] {
+    return this.messages;
   }
 
   async close(): Promise<void> {
@@ -377,6 +421,25 @@ class EventStreamClient {
       this.handleFrame(frame);
       boundary = this.buffer.indexOf("\n\n");
     }
+  }
+
+  private nextMessage<T extends StreamMessage>(predicate: (message: StreamMessage) => message is T, timeoutMs: number): Promise<T> {
+    const existingIndex = this.messages.findIndex(predicate);
+    if (existingIndex !== -1) {
+      const [message] = this.messages.splice(existingIndex, 1);
+      return Promise.resolve(message as T);
+    }
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        const index = this.waiters.findIndex((waiter) => waiter.reject === reject);
+        if (index !== -1) {
+          this.waiters.splice(index, 1);
+        }
+        reject(new Error("timed out waiting for event stream message"));
+      }, timeoutMs);
+      this.waiters.push({ predicate, resolve: resolve as (message: StreamMessage) => void, reject, timeout });
+    });
   }
 
   private handleFrame(frame: string): void {
