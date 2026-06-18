@@ -1,0 +1,28 @@
+{
+  "codex-planner": {
+    "used": {
+      "requests": 11,
+      "input_tokens_estimated": 36106,
+      "output_tokens_estimated": 39337,
+      "wall_time_ms": 168599
+    },
+    "observed_limit": null,
+    "resets_at": null,
+    "source": "self-metered",
+    "updated_at": "2026-06-18T22:46:31.607Z",
+    "unmetered": false
+  },
+  "codex-worker": {
+    "used": {
+      "requests": 1,
+      "input_tokens_estimated": 1558,
+      "output_tokens_estimated": 58121,
+      "wall_time_ms": 353937
+    },
+    "observed_limit": null,
+    "resets_at": null,
+    "source": "self-metered",
+    "updated_at": "2026-06-18T22:44:40.875Z",
+    "unmetered": false
+  }
+}

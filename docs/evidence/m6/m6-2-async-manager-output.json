@@ -1,0 +1,240 @@
+{
+  "session_id": "1d58c688-2e1d-4f9f-ba13-18ab60b47a0d",
+  "session_path": ".hivemind/orchestrator/sessions/1d58c688-2e1d-4f9f-ba13-18ab60b47a0d.json",
+  "status": "completed",
+  "steps": [
+    {
+      "index": 0,
+      "action_type": "create_task_contract",
+      "tier": "autonomous",
+      "result": {
+        "ok": true,
+        "value": {
+          "task_id": "T-001",
+          "contract_path": ".hivemind/tasks/T-001.contract.json",
+          "contract": {
+            "task_id": "T-001",
+            "title": "Implement strict JSON ledger storage helpers",
+            "agent_role": "builder",
+            "base_commit": "31877dff5697f36ca64cdd39c4e2447240ce2061",
+            "acceptance_criterion": "node --test test/ledger.test.js exits 0 and proves strict JSON ledger loading/saving behavior.",
+            "allowed_files": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ],
+            "allowed_file_intents": {
+              "src/ledger.js": "create",
+              "test/ledger.test.js": "create"
+            },
+            "read_only_files": [
+              ".hivemind/spec/S-001.md",
+              "package.json",
+              "README.md"
+            ],
+            "forbidden_files": [],
+            "allowed_symbols": [],
+            "forbidden_symbols": [],
+            "must_not_change": [],
+            "required_tests": [
+              "node --test test/ledger.test.js"
+            ],
+            "patch_requirements": [
+              "Create src/ledger.js exporting deterministic JSON ledger load/save/validation helpers only.",
+              "Create test/ledger.test.js covering valid v1 ledgers, malformed JSON, unsupported versions, unknown participants, and deterministic save output.",
+              "Do not modify package.json, README.md, CLI files, or Hivemind metadata."
+            ]
+          }
+        }
+      }
+    },
+    {
+      "index": 1,
+      "action_type": "request_lease",
+      "tier": "autonomous",
+      "result": {
+        "ok": true,
+        "value": {
+          "task_id": "T-001",
+          "granted": [
+            "src/ledger.js",
+            "test/ledger.test.js"
+          ]
+        }
+      }
+    },
+    {
+      "index": 2,
+      "action_type": "check_write_intent",
+      "tier": "autonomous",
+      "result": {
+        "ok": true,
+        "value": {
+          "task_id": "T-001",
+          "verdict": "pass",
+          "intended_files": [
+            "src/ledger.js",
+            "test/ledger.test.js"
+          ]
+        }
+      }
+    },
+    {
+      "index": 3,
+      "action_type": "create_worktree",
+      "tier": "autonomous",
+      "result": {
+        "ok": true,
+        "value": {
+          "worktree": "D:\\Projects\\trimr-m6-2-async-live-20260618-152954\\.hivemind\\worktrees\\T-001",
+          "branch": "hivemind/T-001"
+        }
+      }
+    },
+    {
+      "index": 4,
+      "action_type": "check_write_intent",
+      "tier": "autonomous",
+      "result": {
+        "ok": true,
+        "value": {
+          "task_id": "T-001",
+          "verdict": "pass",
+          "intended_files": [
+            "src/ledger.js",
+            "test/ledger.test.js"
+          ]
+        }
+      }
+    },
+    {
+      "index": 5,
+      "action_type": "run_worker",
+      "tier": "human_approval",
+      "result": {
+        "ok": true,
+        "value": {
+          "task_id": "T-001",
+          "status": "completed",
+          "tool": "codex-worker",
+          "diff_path": "D:\\Projects\\trimr-m6-2-async-live-20260618-152954\\.hivemind\\patches\\T-001\\diff.patch",
+          "tool_exit": 0,
+          "changed_files": 2
+        }
+      }
+    },
+    {
+      "index": 6,
+      "action_type": "submit_patch",
+      "tier": "autonomous",
+      "result": {
+        "ok": true,
+        "value": {
+          "task_id": "T-001",
+          "bundle_path": "D:\\Projects\\trimr-m6-2-async-live-20260618-152954\\.hivemind\\patches\\T-001",
+          "files": [
+            "diff.patch",
+            "summary.md",
+            "files_changed.json",
+            "symbols_changed.json",
+            "tests_run.json",
+            "risks.md",
+            "memory_proposals.json"
+          ]
+        }
+      }
+    },
+    {
+      "index": 7,
+      "action_type": "analyze_patch",
+      "tier": "autonomous",
+      "result": {
+        "ok": true,
+        "value": {
+          "verdict": "accept",
+          "reason": "all changes are within scope"
+        }
+      }
+    },
+    {
+      "index": 8,
+      "action_type": "enqueue_patch",
+      "tier": "autonomous",
+      "result": {
+        "ok": true,
+        "value": {
+          "task_id": "T-001",
+          "queue_path": ".hivemind/integration/queue.json",
+          "queue": [
+            "T-001"
+          ]
+        }
+      }
+    },
+    {
+      "index": 9,
+      "action_type": "integrate_shadow",
+      "tier": "human_approval",
+      "result": {
+        "ok": true,
+        "value": {
+          "branch": "integration/20260618-224617216Z",
+          "applied": [
+            "T-001"
+          ],
+          "tests": "pass",
+          "report": "gate results:\n- T-001: accept (all changes are within scope)\ntest command: node --test test/ledger.test.js\ntest exit code: 0\nstdout:\nTAP version 13\n# Subtest: validates and loads valid v1 ledgers\nok 1 - validates and loads valid v1 ledgers\n  ---\n  duration_ms: 5.6713\n  type: 'test'\n  ...\n# Subtest: creates an empty v1 ledger shape\nok 2 - creates an empty v1 ledger shape\n  ---\n  duration_ms: 0.2352\n  type: 'test'\n  ...\n# Subtest: rejects malformed JSON\nok 3 - rejects malformed JSON\n  ---\n  duration_ms: 0.4536\n  type: 'test'\n  ...\n# Subtest: rejects unsupported ledger versions\nok 4 - rejects unsupported ledger versions\n  ---\n  duration_ms: 0.1606\n  type: 'test'\n  ...\n# Subtest: rejects expenses with unknown payers or participants\nok 5 - rejects expenses with unknown payers or participants\n  ---\n  duration_ms: 0.2331\n  type: 'test'\n  ...\n# Subtest: rejects unsupported split methods\nok 6 - rejects unsupported split methods\n  ---\n  duration_ms: 0.1511\n  type: 'test'\n  ...\n# Subtest: saves deterministic JSON output\nok 7 - saves deterministic JSON output\n  ---\n  duration_ms: 2.1966\n  type: 'test'\n  ...\n1..7\n# tests 7\n# suites 0\n# pass 7\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 124.2799\nstderr:\n\n"
+        }
+      }
+    }
+  ],
+  "final_status": {
+    "tasks": [
+      {
+        "task_id": "T-001",
+        "title": "Implement strict JSON ledger storage helpers",
+        "allowed_files": [
+          "src/ledger.js",
+          "test/ledger.test.js"
+        ],
+        "lease": {
+          "held": true,
+          "files": [
+            "src/ledger.js",
+            "test/ledger.test.js"
+          ]
+        },
+        "worktree": "present",
+        "patch": {
+          "bundle": "present",
+          "submitted": true,
+          "analyzed": true,
+          "accepted": true,
+          "verdict": "accept",
+          "reason": "all changes are within scope",
+          "submitted_at": "2026-06-18T22:44:49.149Z",
+          "analyzed_at": "2026-06-18T22:46:17.215Z"
+        },
+        "queued": true,
+        "integrated": true
+      }
+    ],
+    "leases": {
+      "src/ledger.js": "T-001",
+      "test/ledger.test.js": "T-001"
+    },
+    "integration": {
+      "queue": [
+        "T-001"
+      ],
+      "status": {
+        "branch": "integration/20260618-224617216Z",
+        "applied": [
+          "T-001"
+        ],
+        "tests": "pass",
+        "report": "gate results:\n- T-001: accept (all changes are within scope)\ntest command: node --test test/ledger.test.js\ntest exit code: 0\nstdout:\nTAP version 13\n# Subtest: validates and loads valid v1 ledgers\nok 1 - validates and loads valid v1 ledgers\n  ---\n  duration_ms: 5.6713\n  type: 'test'\n  ...\n# Subtest: creates an empty v1 ledger shape\nok 2 - creates an empty v1 ledger shape\n  ---\n  duration_ms: 0.2352\n  type: 'test'\n  ...\n# Subtest: rejects malformed JSON\nok 3 - rejects malformed JSON\n  ---\n  duration_ms: 0.4536\n  type: 'test'\n  ...\n# Subtest: rejects unsupported ledger versions\nok 4 - rejects unsupported ledger versions\n  ---\n  duration_ms: 0.1606\n  type: 'test'\n  ...\n# Subtest: rejects expenses with unknown payers or participants\nok 5 - rejects expenses with unknown payers or participants\n  ---\n  duration_ms: 0.2331\n  type: 'test'\n  ...\n# Subtest: rejects unsupported split methods\nok 6 - rejects unsupported split methods\n  ---\n  duration_ms: 0.1511\n  type: 'test'\n  ...\n# Subtest: saves deterministic JSON output\nok 7 - saves deterministic JSON output\n  ---\n  duration_ms: 2.1966\n  type: 'test'\n  ...\n1..7\n# tests 7\n# suites 0\n# pass 7\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 124.2799\nstderr:\n\n"
+      }
+    },
+    "replans": []
+  }
+}

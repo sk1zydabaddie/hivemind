@@ -1,0 +1,402 @@
+diff --git a/src/ledger.js b/src/ledger.js
+new file mode 100644
+index 0000000..05d2408
+--- /dev/null
++++ b/src/ledger.js
+@@ -0,0 +1,203 @@
++import { readFileSync, writeFileSync } from 'node:fs';
++
++export const LEDGER_VERSION = 1;
++
++const LEDGER_FIELDS = ['version', 'participants', 'expenses'];
++const EXPENSE_FIELDS = [
++  'payer',
++  'amountMinor',
++  'description',
++  'participants',
++  'split',
++];
++
++export class LedgerValidationError extends Error {
++  constructor(message, options = {}) {
++    super(message, options);
++    this.name = 'LedgerValidationError';
++  }
++}
++
++export function loadLedger(path) {
++  return parseLedgerJson(readFileSync(path, 'utf8'), String(path));
++}
++
++export function saveLedger(path, ledger) {
++  writeFileSync(path, stringifyLedger(ledger), 'utf8');
++}
++
++export function parseLedgerJson(jsonText, source = 'ledger') {
++  if (typeof jsonText !== 'string') {
++    throw new LedgerValidationError('Ledger JSON input must be a string.');
++  }
++
++  let parsed;
++  try {
++    parsed = JSON.parse(jsonText);
++  } catch (cause) {
++    throw new LedgerValidationError(
++      `Malformed JSON in ${source}: ${cause.message}`,
++      { cause },
++    );
++  }
++
++  return validateLedger(parsed);
++}
++
++export function parseLedger(jsonText, source = 'ledger') {
++  return parseLedgerJson(jsonText, source);
++}
++
++export function stringifyLedger(ledger) {
++  return `${JSON.stringify(validateLedger(ledger), null, 2)}\n`;
++}
++
++export function createEmptyLedger() {
++  return {
++    version: LEDGER_VERSION,
++    participants: [],
++    expenses: [],
++  };
++}
++
++export function validateLedger(ledger) {
++  assertPlainObject(ledger, 'Ledger');
++  assertExactFields(ledger, LEDGER_FIELDS, 'Ledger');
++
++  if (ledger.version !== LEDGER_VERSION) {
++    throw new LedgerValidationError(
++      `Unsupported ledger version: ${String(ledger.version)}.`,
++    );
++  }
++
++  if (!Array.isArray(ledger.participants)) {
++    throw new LedgerValidationError('Ledger participants must be an array.');
++  }
++
++  const participants = ledger.participants.map((name, index) =>
++    validateParticipantName(name, `Ledger participant at index ${index}`),
++  );
++  const participantSet = new Set();
++  for (const name of participants) {
++    if (participantSet.has(name)) {
++      throw new LedgerValidationError(`Duplicate participant: ${name}.`);
++    }
++    participantSet.add(name);
++  }
++
++  if (!Array.isArray(ledger.expenses)) {
++    throw new LedgerValidationError('Ledger expenses must be an array.');
++  }
++
++  const expenses = ledger.expenses.map((expense, index) =>
++    validateExpense(expense, index, participantSet),
++  );
++
++  return {
++    version: LEDGER_VERSION,
++    participants,
++    expenses,
++  };
++}
++
++function validateExpense(expense, index, participantSet) {
++  const label = `Expense at index ${index}`;
++  assertPlainObject(expense, label);
++  assertExactFields(expense, EXPENSE_FIELDS, label);
++
++  const payer = validateParticipantName(expense.payer, `${label} payer`);
++  if (!participantSet.has(payer)) {
++    throw new LedgerValidationError(`${label} has unknown payer: ${payer}.`);
++  }
++
++  if (
++    !Number.isSafeInteger(expense.amountMinor) ||
++    expense.amountMinor <= 0
++  ) {
++    throw new LedgerValidationError(
++      `${label} amountMinor must be a positive safe integer.`,
++    );
++  }
++
++  if (typeof expense.description !== 'string') {
++    throw new LedgerValidationError(`${label} description must be a string.`);
++  }
++
++  if (!Array.isArray(expense.participants)) {
++    throw new LedgerValidationError(`${label} participants must be an array.`);
++  }
++  if (expense.participants.length === 0) {
++    throw new LedgerValidationError(
++      `${label} participants must not be empty.`,
++    );
++  }
++
++  const expenseParticipants = expense.participants.map((name, participantIndex) =>
++    validateParticipantName(
++      name,
++      `${label} participant at index ${participantIndex}`,
++    ),
++  );
++  const seenExpenseParticipants = new Set();
++  for (const name of expenseParticipants) {
++    if (!participantSet.has(name)) {
++      throw new LedgerValidationError(
++        `${label} has unknown participant: ${name}.`,
++      );
++    }
++    if (seenExpenseParticipants.has(name)) {
++      throw new LedgerValidationError(
++        `${label} has duplicate participant: ${name}.`,
++      );
++    }
++    seenExpenseParticipants.add(name);
++  }
++
++  if (expense.split !== 'equal') {
++    throw new LedgerValidationError(
++      `${label} has unsupported split: ${String(expense.split)}.`,
++    );
++  }
++
++  return {
++    payer,
++    amountMinor: expense.amountMinor,
++    description: expense.description,
++    participants: expenseParticipants,
++    split: 'equal',
++  };
++}
++
++function validateParticipantName(name, label) {
++  if (typeof name !== 'string' || name.length === 0) {
++    throw new LedgerValidationError(`${label} must be a non-empty string.`);
++  }
++  return name;
++}
++
++function assertPlainObject(value, label) {
++  if (
++    value === null ||
++    typeof value !== 'object' ||
++    Array.isArray(value) ||
++    ![Object.prototype, null].includes(Object.getPrototypeOf(value))
++  ) {
++    throw new LedgerValidationError(`${label} must be a JSON object.`);
++  }
++}
++
++function assertExactFields(value, fields, label) {
++  for (const field of fields) {
++    if (!Object.hasOwn(value, field)) {
++      throw new LedgerValidationError(`${label} is missing field: ${field}.`);
++    }
++  }
++
++  for (const field of Object.keys(value)) {
++    if (!fields.includes(field)) {
++      throw new LedgerValidationError(
++        `${label} has unsupported field: ${field}.`,
++      );
++    }
++  }
++}
+diff --git a/test/ledger.test.js b/test/ledger.test.js
+new file mode 100644
+index 0000000..ffc84ef
+--- /dev/null
++++ b/test/ledger.test.js
+@@ -0,0 +1,187 @@
++import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import assert from 'node:assert/strict';
++import test from 'node:test';
++
++import {
++  LedgerValidationError,
++  createEmptyLedger,
++  loadLedger,
++  parseLedgerJson,
++  saveLedger,
++  stringifyLedger,
++  validateLedger,
++} from '../src/ledger.js';
++
++test('validates and loads valid v1 ledgers', () => {
++  const ledger = {
++    version: 1,
++    participants: ['Alice', 'Bob', 'Casey'],
++    expenses: [
++      {
++        payer: 'Alice',
++        amountMinor: 1001,
++        description: 'Groceries',
++        participants: ['Alice', 'Bob', 'Casey'],
++        split: 'equal',
++      },
++      {
++        payer: 'Bob',
++        amountMinor: 500,
++        description: 'Taxi',
++        participants: ['Bob', 'Casey'],
++        split: 'equal',
++      },
++    ],
++  };
++
++  assert.deepEqual(validateLedger(ledger), ledger);
++
++  const dir = mkdtempSync(join(tmpdir(), 'trimr-ledger-'));
++  try {
++    const path = join(dir, 'ledger.json');
++    saveLedger(path, ledger);
++    assert.deepEqual(loadLedger(path), ledger);
++  } finally {
++    rmSync(dir, { recursive: true, force: true });
++  }
++});
++
++test('creates an empty v1 ledger shape', () => {
++  assert.deepEqual(createEmptyLedger(), {
++    version: 1,
++    participants: [],
++    expenses: [],
++  });
++});
++
++test('rejects malformed JSON', () => {
++  assert.throws(
++    () => parseLedgerJson('{"version": 1,', 'broken-ledger.json'),
++    (error) =>
++      error instanceof LedgerValidationError &&
++      error.message.startsWith('Malformed JSON in broken-ledger.json:'),
++  );
++});
++
++test('rejects unsupported ledger versions', () => {
++  assert.throws(
++    () =>
++      validateLedger({
++        version: 2,
++        participants: [],
++        expenses: [],
++      }),
++    /Unsupported ledger version: 2\./,
++  );
++});
++
++test('rejects expenses with unknown payers or participants', () => {
++  const baseLedger = {
++    version: 1,
++    participants: ['Alice', 'Bob'],
++    expenses: [],
++  };
++
++  assert.throws(
++    () =>
++      validateLedger({
++        ...baseLedger,
++        expenses: [
++          {
++            payer: 'Casey',
++            amountMinor: 1200,
++            description: 'Snacks',
++            participants: ['Alice', 'Bob'],
++            split: 'equal',
++          },
++        ],
++      }),
++    /Expense at index 0 has unknown payer: Casey\./,
++  );
++
++  assert.throws(
++    () =>
++      validateLedger({
++        ...baseLedger,
++        expenses: [
++          {
++            payer: 'Alice',
++            amountMinor: 1200,
++            description: 'Snacks',
++            participants: ['Alice', 'Casey'],
++            split: 'equal',
++          },
++        ],
++      }),
++    /Expense at index 0 has unknown participant: Casey\./,
++  );
++});
++
++test('rejects unsupported split methods', () => {
++  assert.throws(
++    () =>
++      validateLedger({
++        version: 1,
++        participants: ['Alice', 'Bob'],
++        expenses: [
++          {
++            payer: 'Alice',
++            amountMinor: 1200,
++            description: 'Snacks',
++            participants: ['Alice', 'Bob'],
++            split: 'percentage',
++          },
++        ],
++      }),
++    /Expense at index 0 has unsupported split: percentage\./,
++  );
++});
++
++test('saves deterministic JSON output', () => {
++  const ledger = {
++    expenses: [
++      {
++        split: 'equal',
++        participants: ['Bob', 'Alice'],
++        description: 'Dinner',
++        amountMinor: 2501,
++        payer: 'Bob',
++      },
++    ],
++    participants: ['Alice', 'Bob'],
++    version: 1,
++  };
++  const expected = `{
++  "version": 1,
++  "participants": [
++    "Alice",
++    "Bob"
++  ],
++  "expenses": [
++    {
++      "payer": "Bob",
++      "amountMinor": 2501,
++      "description": "Dinner",
++      "participants": [
++        "Bob",
++        "Alice"
++      ],
++      "split": "equal"
++    }
++  ]
++}
++`;
++
++  assert.equal(stringifyLedger(ledger), expected);
++
++  const dir = mkdtempSync(join(tmpdir(), 'trimr-ledger-'));
++  try {
++    const path = join(dir, 'ledger.json');
++    saveLedger(path, ledger);
++    assert.equal(readFileSync(path, 'utf8'), expected);
++  } finally {
++    rmSync(dir, { recursive: true, force: true });
++  }
++});

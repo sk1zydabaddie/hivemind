@@ -1,0 +1,50 @@
+﻿{
+  "tasks": [
+    {
+      "task_id": "T-001",
+      "title": "Implement strict JSON ledger storage helpers",
+      "allowed_files": [
+        "src/ledger.js",
+        "test/ledger.test.js"
+      ],
+      "lease": {
+        "held": true,
+        "files": [
+          "src/ledger.js",
+          "test/ledger.test.js"
+        ]
+      },
+      "worktree": "present",
+      "patch": {
+        "bundle": "present",
+        "submitted": true,
+        "analyzed": true,
+        "accepted": true,
+        "verdict": "accept",
+        "reason": "all changes are within scope",
+        "submitted_at": "2026-06-18T22:44:49.149Z",
+        "analyzed_at": "2026-06-18T22:46:17.215Z"
+      },
+      "queued": true,
+      "integrated": true
+    }
+  ],
+  "leases": {
+    "src/ledger.js": "T-001",
+    "test/ledger.test.js": "T-001"
+  },
+  "integration": {
+    "queue": [
+      "T-001"
+    ],
+    "status": {
+      "branch": "integration/20260618-224617216Z",
+      "applied": [
+        "T-001"
+      ],
+      "tests": "pass",
+      "report": "gate results:\n- T-001: accept (all changes are within scope)\ntest command: node --test test/ledger.test.js\ntest exit code: 0\nstdout:\nTAP version 13\n# Subtest: validates and loads valid v1 ledgers\nok 1 - validates and loads valid v1 ledgers\n  ---\n  duration_ms: 5.6713\n  type: 'test'\n  ...\n# Subtest: creates an empty v1 ledger shape\nok 2 - creates an empty v1 ledger shape\n  ---\n  duration_ms: 0.2352\n  type: 'test'\n  ...\n# Subtest: rejects malformed JSON\nok 3 - rejects malformed JSON\n  ---\n  duration_ms: 0.4536\n  type: 'test'\n  ...\n# Subtest: rejects unsupported ledger versions\nok 4 - rejects unsupported ledger versions\n  ---\n  duration_ms: 0.1606\n  type: 'test'\n  ...\n# Subtest: rejects expenses with unknown payers or participants\nok 5 - rejects expenses with unknown payers or participants\n  ---\n  duration_ms: 0.2331\n  type: 'test'\n  ...\n# Subtest: rejects unsupported split methods\nok 6 - rejects unsupported split methods\n  ---\n  duration_ms: 0.1511\n  type: 'test'\n  ...\n# Subtest: saves deterministic JSON output\nok 7 - saves deterministic JSON output\n  ---\n  duration_ms: 2.1966\n  type: 'test'\n  ...\n1..7\n# tests 7\n# suites 0\n# pass 7\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 124.2799\nstderr:\n\n"
+    }
+  },
+  "replans": []
+}
