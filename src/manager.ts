@@ -17,7 +17,7 @@ import { loadTentativePlan } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { adapterOutputIndicatesThrottle, recordQuotaUsage } from "./resource-ledger.js";
 import { inferTaskTier } from "./routing.js";
-import { runTask, type RunResult, type RunStartResult } from "./run.js";
+import { markRunFailed, runTask, type RunFailureMarkResult, type RunResult, type RunStartResult } from "./run.js";
 import { latestTaskRunState } from "./run-state.js";
 import { runScout, type ScoutResult } from "./scout.js";
 import { requireActiveSpecRatified, type SpecResult } from "./spec.js";
@@ -1112,7 +1112,39 @@ async function waitForTaskRunCompletion(repoRoot: string, taskId: string): Promi
     await delay(500);
   }
 
-  return { ok: false, reason: `timed out waiting for task.completed/task.failed for ${taskId} after ${timeoutMs}ms` };
+  const reason = `timed out waiting for task.completed/task.failed for ${taskId} after ${timeoutMs}ms`;
+  return recordRunWaitTimeout(repoRoot, taskId, reason);
+}
+
+async function recordRunWaitTimeout(repoRoot: string, taskId: string, reason: string): Promise<{ ok: true; value: RunResult } | { ok: false; reason: string }> {
+  const marked = await routeMutatingAction<RunFailureMarkResult>(
+    repoRoot,
+    "/run/mark-failed",
+    { task_id: taskId, reason, source: "manager_wait_timeout" },
+    () => markRunFailed(repoRoot, taskId, reason, { source: "manager_wait_timeout" })
+  );
+  if (!marked.ok) {
+    return { ok: false, reason: `${reason}; failed to record durable task.failed event: ${marked.reason}` };
+  }
+
+  const events = await readEvents(repoRoot);
+  if (!events.ok) {
+    return events;
+  }
+  const state = latestTaskRunState(events.value, taskId);
+  if (state.state === "completed") {
+    const result = await runResultFromCompletedEvent(repoRoot, taskId, state.completed);
+    if (!result.ok) {
+      return result;
+    }
+    return { ok: true, value: result.value };
+  }
+  if (state.state === "failed") {
+    const eventReason = typeof state.failed.data.reason === "string" ? state.failed.data.reason : reason;
+    return { ok: false, reason: `task ${taskId} worker run failed: ${eventReason}` };
+  }
+
+  return { ok: false, reason: `${reason}; durable task.failed event was not observed after timeout reconciliation` };
 }
 
 async function runResultFromCompletedEvent(

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path, { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +11,7 @@ import test from "node:test";
 
 import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
+import { latestTaskRunState } from "../src/run-state.js";
 import {
   executeManagerAction,
   runAutonomousManagerLoop,
@@ -737,6 +740,103 @@ test("manager executor drives deterministic task actions through shadow integrat
     assert.equal(events.value.some((event) => event.type === "task.completed" && event.task_id === "T-001"), true);
     assert.equal(events.value.some((event) => event.type === "integration.queued" && event.task_id === "T-001"), true);
     assert.equal(events.value.at(-1)?.type, "integration.passed");
+  });
+});
+
+test("manager observes delayed daemon worker completion from the event trail after a quick run start", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const sessionResult = await startManagerSession(repo, "Observe delayed daemon completion", { proposedAction: testProposal() });
+    assert.equal(sessionResult.ok, true);
+    if (!sessionResult.ok) {
+      return;
+    }
+
+    const simulatedBlockingFetchFailureMs = 100;
+    const daemon = await startRunLifecycleDaemon(repo, {
+      taskId: "T-DELAY",
+      completionDelayMs: simulatedBlockingFetchFailureMs + 650
+    });
+    try {
+      await withProcessEnv({ HIVEMIND_DAEMON_URL: daemon.url, HIVEMIND_RUN_WAIT_TIMEOUT_MS: "5000" }, async () => {
+        const startedAt = Date.now();
+        const result = await executeManagerAction(repo, sessionResult.value.session_id, { type: "run_worker", task_id: "T-DELAY", tool: "fake-delayed" });
+        const elapsedMs = Date.now() - startedAt;
+
+        assert.equal(result.ok, true);
+        if (!result.ok) {
+          return;
+        }
+        assert.equal(result.value.result.ok, true);
+        if (!result.value.result.ok) {
+          return;
+        }
+        const runResult = result.value.result.value as { task_id: string; changed_files: number };
+        assert.equal(runResult.task_id, "T-DELAY");
+        assert.equal(runResult.changed_files, 1);
+        assert.equal(daemon.runRequests, 1);
+        assert.equal(daemon.markFailedRequests, 0);
+        assert.ok(elapsedMs >= simulatedBlockingFetchFailureMs, `manager returned before simulated blocking timeout: ${elapsedMs}ms`);
+      });
+    } finally {
+      await daemon.close();
+    }
+
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    const started = events.value.find((event) => event.type === "task.started" && event.task_id === "T-DELAY");
+    const completed = events.value.find((event) => event.type === "task.completed" && event.task_id === "T-DELAY");
+    assert.notEqual(started, undefined);
+    assert.notEqual(completed, undefined);
+    assert.ok(events.value.indexOf(started!) < events.value.indexOf(completed!));
+    assert.equal(latestTaskRunState(events.value, "T-DELAY").state, "completed");
+  });
+});
+
+test("manager timeout records durable task.failed for daemon-started runs that never complete", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const sessionResult = await startManagerSession(repo, "Timeout a daemon-started run", { proposedAction: testProposal() });
+    assert.equal(sessionResult.ok, true);
+    if (!sessionResult.ok) {
+      return;
+    }
+
+    const daemon = await startRunLifecycleDaemon(repo, { taskId: "T-HANG" });
+    try {
+      await withProcessEnv({ HIVEMIND_DAEMON_URL: daemon.url, HIVEMIND_RUN_WAIT_TIMEOUT_MS: "50" }, async () => {
+        const result = await executeManagerAction(repo, sessionResult.value.session_id, { type: "run_worker", task_id: "T-HANG", tool: "fake-hanging" });
+
+        assert.equal(result.ok, true);
+        if (!result.ok) {
+          return;
+        }
+        assert.equal(result.value.result.ok, false);
+        if (result.value.result.ok) {
+          return;
+        }
+        assert.match(result.value.result.reason, /task T-HANG worker run failed: timed out waiting for task\.completed\/task\.failed/);
+        assert.equal(daemon.runRequests, 1);
+        assert.equal(daemon.markFailedRequests, 1);
+      });
+    } finally {
+      await daemon.close();
+    }
+
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    const state = latestTaskRunState(events.value, "T-HANG");
+    assert.equal(state.state, "failed");
+    if (state.state === "failed") {
+      assert.match(String(state.failed.data.reason), /timed out waiting for task\.completed\/task\.failed/);
+      assert.equal(state.failed.data.source, "manager_wait_timeout");
+    }
   });
 });
 
@@ -1532,6 +1632,145 @@ async function stopDaemon(daemon: DaemonProcess): Promise<void> {
     daemon.child.once("exit", () => resolve());
     daemon.child.kill();
   });
+}
+
+interface RunLifecycleDaemon {
+  url: string;
+  readonly runRequests: number;
+  readonly markFailedRequests: number;
+  close: () => Promise<void>;
+}
+
+async function startRunLifecycleDaemon(repo: string, options: { taskId: string; completionDelayMs?: number }): Promise<RunLifecycleDaemon> {
+  let runRequests = 0;
+  let markFailedRequests = 0;
+  const server = createServer(async (request, response) => {
+    try {
+      if (request.method === "GET" && request.url === "/health") {
+        sendJson(response, 200, { ok: true, repo_root: repo });
+        return;
+      }
+      if (request.method === "POST" && request.url === "/run") {
+        runRequests += 1;
+        await readJsonBody(request);
+        const worktree = path.join(repo, ".hivemind", "worktrees", options.taskId);
+        const started = await appendEvent(repo, {
+          type: "task.started",
+          task_id: options.taskId,
+          data: { tool: "fake-delayed", worktree }
+        });
+        assert.equal(started.ok, true);
+        if (options.completionDelayMs !== undefined) {
+          setTimeout(() => {
+            void completeFakeDaemonRun(repo, options.taskId);
+          }, options.completionDelayMs);
+        }
+        sendJson(response, 200, {
+          ok: true,
+          value: {
+            task_id: options.taskId,
+            status: "started",
+            tool: "fake-delayed",
+            worktree
+          }
+        });
+        return;
+      }
+      if (request.method === "POST" && request.url === "/run/mark-failed") {
+        markFailedRequests += 1;
+        const payload = await readJsonBody(request);
+        const reason = typeof payload.reason === "string" ? payload.reason : "test timeout";
+        const failed = await appendEvent(repo, {
+          type: "task.failed",
+          task_id: options.taskId,
+          data: {
+            reason,
+            ...(payload.source === undefined ? {} : { source: payload.source })
+          }
+        });
+        assert.equal(failed.ok, true);
+        sendJson(response, 200, { ok: true, value: { task_id: options.taskId, status: "failed", reason } });
+        return;
+      }
+      sendJson(response, 404, { ok: false, reason: "not found" });
+    } catch (error: unknown) {
+      sendJson(response, 500, { ok: false, reason: error instanceof Error ? error.message : "fake daemon failure" });
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const address = server.address() as AddressInfo;
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    get runRequests() {
+      return runRequests;
+    },
+    get markFailedRequests() {
+      return markFailedRequests;
+    },
+    close: () => closeServer(server)
+  };
+}
+
+async function completeFakeDaemonRun(repo: string, taskId: string): Promise<void> {
+  const patchDir = path.join(repo, ".hivemind", "patches", taskId);
+  await mkdir(patchDir, { recursive: true });
+  const diffPath = path.join(patchDir, "diff.patch");
+  await writeFile(diffPath, "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n # Fixture\n+changed by delayed daemon\n");
+  const completed = await appendEvent(repo, {
+    type: "task.completed",
+    task_id: taskId,
+    data: {
+      task_id: taskId,
+      status: "completed",
+      tool: "fake-delayed",
+      diff_path: diffPath,
+      tool_exit: 0,
+      changed_files: 1
+    }
+  });
+  assert.equal(completed.ok, true);
+}
+
+async function readJsonBody(request: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  if (chunks.length === 0) {
+    return {};
+  }
+  const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+  return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+}
+
+function sendJson(response: ServerResponse, statusCode: number, body: unknown): void {
+  response.writeHead(statusCode, { "content-type": "application/json" });
+  response.end(JSON.stringify(body));
+}
+
+function closeServer(server: Server): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.close((error) => (error === undefined ? resolve() : reject(error)));
+  });
+}
+
+async function withProcessEnv(updates: Record<string, string>, run: () => Promise<void>): Promise<void> {
+  const previous = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(updates)) {
+    previous.set(key, process.env[key]);
+    process.env[key] = value;
+  }
+  try {
+    await run();
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
 }
 
 function readLine(child: ChildProcessWithoutNullStreams): Promise<string> {

@@ -11,7 +11,7 @@ import { requestLeaseForContract, releaseLease } from "./lease.js";
 import { findGitRoot } from "./repo.js";
 import { evaluatePlanThrash } from "./plan.js";
 import { readQuotaLedger } from "./resource-ledger.js";
-import { startRunTaskJob } from "./run.js";
+import { markRunFailed, startRunTaskJob } from "./run.js";
 import { runScout } from "./scout.js";
 import { getStatus } from "./status.js";
 import { submitTask } from "./submit.js";
@@ -207,6 +207,19 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
         onEvent: (event) => eventBus.publishEvent(event),
         onOutput: (record) => eventBus.publishTaskOutput(record)
       });
+    };
+  }
+  if (request.method === "POST" && request.url === "/run/mark-failed") {
+    return async (payload) => {
+      const taskId = readTaskId(payload);
+      if (!taskId.ok) {
+        return taskId;
+      }
+      const reason = readRequiredString(payload, "reason");
+      if (!reason.ok) {
+        return reason;
+      }
+      return markRunFailed(repoRoot, taskId.value, reason.value, payload.source === undefined ? {} : { source: payload.source });
     };
   }
   if (request.method === "POST" && request.url === "/scout/run") {

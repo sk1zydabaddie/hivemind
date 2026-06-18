@@ -7,13 +7,14 @@ import { loadConfig, type RunCeiling } from "./config.js";
 import { loadAndValidateContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { captureWorktreeDiff } from "./diff-capture.js";
-import { appendEvent, type HivemindEvent, type HivemindEventInput } from "./events.js";
+import { appendEvent, readEvents, type HivemindEvent, type HivemindEventInput } from "./events.js";
 import { verifyLeaseCoverage } from "./lease.js";
 import { appendTaskOutput, type TaskOutputRecord, type TaskOutputInput } from "./output-stream.js";
 import { requireTaskDependenciesIntegrated } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { requirePassedWriteIntent } from "./intent.js";
 import { routeTaskProvider } from "./routing.js";
+import { latestTaskRunState } from "./run-state.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { createTaskWorktree } from "./worktree.js";
 
@@ -34,6 +35,12 @@ export interface RunStartResult {
   status: "started";
   tool: string;
   worktree: string;
+}
+
+export interface RunFailureMarkResult {
+  task_id: string;
+  status: "failed" | "already_completed";
+  reason?: string;
 }
 
 export interface RunTaskOptions {
@@ -120,6 +127,39 @@ export async function startRunTaskJob(
       worktree: prepared.value.worktree
     }
   };
+}
+
+export async function markRunFailed(
+  repoRoot: string,
+  taskId: string,
+  reason: string,
+  data: Record<string, unknown> = {}
+): Promise<{ ok: true; value: RunFailureMarkResult } | { ok: false; reason: string }> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) {
+    return events;
+  }
+  const state = latestTaskRunState(events.value, taskId);
+  if (state.state === "completed") {
+    return { ok: true, value: { task_id: taskId, status: "already_completed" } };
+  }
+  if (state.state === "failed") {
+    const existingReason = typeof state.failed.data.reason === "string" ? state.failed.data.reason : undefined;
+    return { ok: true, value: { task_id: taskId, status: "failed", ...(existingReason === undefined ? {} : { reason: existingReason }) } };
+  }
+
+  const event = await appendEvent(repoRoot, {
+    type: "task.failed",
+    task_id: taskId,
+    data: {
+      reason,
+      ...data
+    }
+  });
+  if (!event.ok) {
+    return event;
+  }
+  return { ok: true, value: { task_id: taskId, status: "failed", reason } };
 }
 
 async function prepareRunTask(
@@ -289,6 +329,15 @@ async function finishPreparedRun(
     tool_exit: invokeResult.value.exitCode,
     changed_files: diffResult.value.changedFiles
   };
+  const terminal = await readEvents(repoRoot);
+  if (!terminal.ok) {
+    return terminal;
+  }
+  const terminalState = latestTaskRunState(terminal.value, prepared.taskId);
+  if (terminalState.state === "failed") {
+    const reason = typeof terminalState.failed.data.reason === "string" ? terminalState.failed.data.reason : "worker run already marked failed";
+    return { ok: false, reason: `task ${prepared.taskId} already has terminal task.failed event: ${reason}` };
+  }
   const completed = await emitRunEvent(
     repoRoot,
     {
