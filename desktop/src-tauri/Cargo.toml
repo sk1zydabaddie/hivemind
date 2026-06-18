@@ -1,0 +1,12 @@
+[package]
+name = "hivemind_desktop"
+version = "0.0.0"
+description = "Read-only desktop monitor for Hivemind AI daemon state."
+authors = ["Hivemind AI"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }

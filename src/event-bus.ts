@@ -33,7 +33,8 @@ export class EventBus {
     response.writeHead(200, {
       "content-type": "text/event-stream; charset=utf-8",
       "cache-control": "no-cache, no-transform",
-      connection: "keep-alive"
+      connection: "keep-alive",
+      ...readOnlyCorsHeaders(request)
     });
     response.write(": hivemind event stream\n\n");
 
@@ -59,7 +60,8 @@ export class EventBus {
     response.writeHead(200, {
       "content-type": "text/event-stream; charset=utf-8",
       "cache-control": "no-cache, no-transform",
-      connection: "keep-alive"
+      connection: "keep-alive",
+      ...readOnlyCorsHeaders(request)
     });
     response.write(": hivemind task output stream\n\n");
 
@@ -134,4 +136,28 @@ export class EventBus {
 
 function eventKey(event: HivemindEvent): string {
   return JSON.stringify(event);
+}
+
+function readOnlyCorsHeaders(request: IncomingMessage): Record<string, string> {
+  const origin = request.headers.origin;
+  if (origin === undefined) {
+    return {};
+  }
+  if (!isAllowedReadOnlyOrigin(origin)) {
+    return {};
+  }
+  return {
+    "access-control-allow-origin": origin,
+    vary: "origin"
+  };
+}
+
+function isAllowedReadOnlyOrigin(origin: string): boolean {
+  return (
+    origin === "http://localhost:1420" ||
+    origin === "http://127.0.0.1:1420" ||
+    origin === "http://tauri.localhost" ||
+    origin === "https://tauri.localhost" ||
+    origin === "tauri://localhost"
+  );
 }

@@ -66,6 +66,18 @@ test("releaseLease removes only the task's leases and frees paths", async () => 
     assert.deepEqual(released, { ok: true, value: { task_id: "T-001", released: ["README.md", "src/feature.ts"] } });
     assert.equal(nextGrant.ok, true);
     assert.deepEqual(await readActive(repo), { "README.md": "T-002", "src/other.ts": "T-002" });
+
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.deepEqual(
+      events.value.map((event) => event.type),
+      ["lease.approved", "lease.approved", "lease.released", "lease.approved"]
+    );
+    assert.equal(events.value[2].task_id, "T-001");
+    assert.deepEqual(events.value[2].data.released, ["README.md", "src/feature.ts"]);
   });
 });
 

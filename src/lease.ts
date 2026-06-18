@@ -210,7 +210,7 @@ export async function releaseLease(repoRoot: string, taskId: string): Promise<Le
     return taskIdResult;
   }
 
-  return withLeaseLock(repoRoot, async () => {
+  const result = await withLeaseLock(repoRoot, async () => {
     const storeResult = await readActiveLeases(repoRoot);
     if (!storeResult.ok) {
       return storeResult;
@@ -231,6 +231,21 @@ export async function releaseLease(repoRoot: string, taskId: string): Promise<Le
     }
     return { ok: true, value: { task_id: taskId, released } };
   });
+
+  if (!result.ok) {
+    return result;
+  }
+
+  const eventResult = await appendEvent(repoRoot, {
+    type: "lease.released",
+    task_id: taskId,
+    data: { released: result.value.released }
+  });
+  if (!eventResult.ok) {
+    return { ok: false, reason: `failed to append lease.released event: ${eventResult.reason}` };
+  }
+
+  return result;
 }
 
 export async function readActiveLeases(repoRoot: string): Promise<{ ok: true; store: LeaseStore } | { ok: false; reason: string }> {

@@ -1508,6 +1508,7 @@ Events:
 - lease.requested
 - lease.approved
 - lease.rejected
+- lease.released
 - patch.submitted
 - patch.accepted
 - patch.rejected

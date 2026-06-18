@@ -446,8 +446,8 @@ Generative/judgment sub-tasks use BEHAVIORAL human-judged acceptance tests, not 
 - **Depends on:** M6.1.
 - **Read first:** Overview § *Full Application UI* (Task Board, Agent Monitor, Lease View).
 - **Goal:** Live views of tasks, agents, leases, quota, and checkpointed state.
-- **Behavior — exact:** A UI (or rich TUI) renders current tasks/states, active leases, per-provider quota from the ledger, and which tasks are checkpointed. Read-only view over daemon state.
-- **Acceptance test (binary):** During the M2.6 demo run, the board reflects task/lease/quota state changes live.
+- **Behavior — exact:** A Tauri desktop UI renders current tasks/states, active leases, quota/resource events, integration status, and selected per-task worker output. It is a thin read-only presentation layer over the daemon: it consumes `GET /events/stream` for authoritative history-replay-then-live state/control events and `GET /tasks/<id>/output/stream` for selected task output on demand. The UI contains no Hivemind logic, no gate logic, no state authority, and no action controls; Hivemind core does not depend on the desktop shell.
+- **Acceptance test (binary):** During a run, the desktop board reflects task/lease/quota/integration state changes live; selecting a task shows that task's output stream live; opening the app mid-run shows current state from history replay before live updates; and the renderer has no Hivemind action controls.
 
 ### M6.3 — Redirect-first correction loop
 - **Depends on:** M5.3, M6.1, M2.3.

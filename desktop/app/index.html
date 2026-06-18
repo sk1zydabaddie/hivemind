@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hivemind AI</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>Hivemind AI</h1>
+          <p>Read-only daemon monitor</p>
+        </div>
+        <form id="connection-form" class="connection-form">
+          <label for="daemon-url">Daemon URL</label>
+          <input id="daemon-url" name="daemon-url" value="http://127.0.0.1:8765" autocomplete="off" />
+          <button type="submit">Reconnect Viewer</button>
+          <span id="connection-state" class="connection-state">disconnected</span>
+        </form>
+      </header>
+
+      <section class="summary-grid" aria-label="Run summary">
+        <article class="summary-panel">
+          <h2>Tasks</h2>
+          <div id="task-counts" class="metric-row"></div>
+        </article>
+        <article class="summary-panel">
+          <h2>Leases</h2>
+          <div id="lease-summary" class="metric-row"></div>
+        </article>
+        <article class="summary-panel">
+          <h2>Quota</h2>
+          <div id="quota-summary" class="metric-row"></div>
+        </article>
+        <article class="summary-panel">
+          <h2>Integration</h2>
+          <div id="integration-summary" class="metric-row"></div>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <section class="board-panel" aria-label="Live task board">
+          <div class="panel-heading">
+            <h2>Task Board</h2>
+            <span id="event-count" class="muted"></span>
+          </div>
+          <div id="task-board" class="task-board"></div>
+        </section>
+
+        <aside class="side-panel" aria-label="State details">
+          <section class="detail-section">
+            <h2>Active Leases</h2>
+            <div id="lease-list" class="detail-list"></div>
+          </section>
+          <section class="detail-section">
+            <h2>Agent Monitor</h2>
+            <div id="agent-summary" class="agent-summary"></div>
+            <pre id="task-output" class="task-output" aria-live="polite"></pre>
+          </section>
+          <section class="detail-section">
+            <h2>Recent Events</h2>
+            <div id="recent-events" class="detail-list"></div>
+          </section>
+        </aside>
+      </section>
+    </main>
+    <script type="module" src="./main.mjs"></script>
+  </body>
+</html>
