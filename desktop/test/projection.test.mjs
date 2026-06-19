@@ -44,6 +44,25 @@ test("lease release events remove active lease display state", () => {
   assert.deepEqual(state.tasks["T-001"].lease_files, []);
 });
 
+test("task projection carries display-only execution group metadata", () => {
+  const state = createBoardProjection();
+  applyEventMessage(state, {
+    kind: "event",
+    source: "history",
+    event: makeEvent("task.created", "T-004", {
+      title: "Wire people commands",
+      depends_on: ["T-001", "T-002"],
+      execution_group: "G-2",
+      group_mode: "sequence"
+    })
+  });
+
+  const [row] = taskRows(state);
+  assert.equal(row.execution_group, "G-2");
+  assert.equal(row.group_mode, "sequence");
+  assert.deepEqual(row.depends_on, ["T-001", "T-002"]);
+});
+
 test("task output projection only records the selected task stream", () => {
   const state = createBoardProjection();
   selectTask(state, "T-001");

@@ -54,6 +54,7 @@ function connect(rawDaemonUrl) {
     const message = parseMessage(event.data);
     if (message) {
       applyEventMessage(projection, message);
+      openDefaultOutputStream();
       render();
     }
   };
@@ -86,6 +87,16 @@ function closeStreams() {
   if (outputSource) {
     outputSource.close();
     outputSource = null;
+  }
+}
+
+function openDefaultOutputStream() {
+  if (projection.selectedTaskId || outputSource) {
+    return;
+  }
+  const candidate = taskRows(projection).find((task) => task.state === "running") ?? taskRows(projection)[0];
+  if (candidate) {
+    openOutputStream(candidate.task_id);
   }
 }
 
@@ -124,31 +135,16 @@ function renderTaskBoard() {
     els.taskBoard.innerHTML = `<div class="empty empty-ledger">No task events have arrived yet.</div>`;
     return;
   }
-  els.taskBoard.innerHTML = rows
-    .map((task) => {
-      const selected = task.task_id === projection.selectedTaskId ? " selected" : "";
-      const phases = swarmPhases(task);
-      return `
-        <article class="task-lane${selected}" data-task-id="${escapeAttr(task.task_id)}" tabindex="0">
-          <div class="lane-head">
-            <div class="task-main">
-              <strong>${escapeHtml(task.task_id)}</strong>
-              <span>${escapeHtml(task.title)}</span>
-            </div>
-            <span class="state state-${escapeAttr(task.state)}">${escapeHtml(task.state)}</span>
-          </div>
-          <div class="swarm-rail" aria-label="${escapeAttr(task.task_id)} grouped phase state">
-            ${phases.map((phase) => phaseMarkup(phase)).join("")}
-          </div>
-          <div class="lane-foot">
-            <span>${escapeHtml(task.agent ?? "unassigned")}</span>
-            <span>${task.lease_files.length} leased</span>
-            <span>${escapeHtml(task.patch.verdict ?? (task.patch.submitted ? "submitted" : "no patch"))}</span>
-            <span>${escapeHtml(task.integration)}</span>
-          </div>
-        </article>
-      `;
-    })
+  const groups = rows.reduce((groupMap, task) => {
+    const key = task.execution_group ?? "ungrouped";
+    if (!groupMap.has(key)) {
+      groupMap.set(key, []);
+    }
+    groupMap.get(key).push(task);
+    return groupMap;
+  }, new Map());
+  els.taskBoard.innerHTML = Array.from(groups.entries())
+    .map(([groupId, tasks]) => groupMarkup(groupId, tasks))
     .join("");
 
   for (const row of els.taskBoard.querySelectorAll("[data-task-id]")) {
@@ -165,16 +161,21 @@ function renderTaskBoard() {
 function renderLeases() {
   const rows = leaseRows(projection);
   els.leaseList.innerHTML = rows.length === 0
-    ? `<div class="empty">No active lease approvals in the event stream.</div>`
-    : rows.map((row) => `<div class="detail-row"><span>${escapeHtml(row.filePath)}</span><strong>${escapeHtml(row.taskId)}</strong></div>`).join("");
+    ? `<div class="empty panel-empty">No active lease approvals in the event stream.</div>`
+    : rows.map((row) => `
+      <div class="detail-row lease-row">
+        <span><i aria-hidden="true"></i>${escapeHtml(row.filePath)}</span>
+        <strong>${escapeHtml(row.taskId)}</strong>
+      </div>
+    `).join("");
 }
 
 function renderAgentMonitor() {
   const selected = projection.selectedTaskId ? projection.tasks[projection.selectedTaskId] : null;
   if (!selected) {
-    els.agentSummary.innerHTML = `<div class="empty">Select a task to subscribe to its output stream.</div>`;
+    els.agentSummary.innerHTML = `<div class="empty monitor-empty">Select a Swarm Ledger lane to open its live worker stream and gate detail.</div>`;
     els.selectedTaskGates.innerHTML = "";
-    els.taskOutput.textContent = "";
+    els.taskOutput.textContent = "No task selected.\n\nWorker stdout/stderr appears here only after you choose a lane. Output is observable chatter; gates and state remain authoritative in the event trail.";
     return;
   }
   els.agentSummary.innerHTML = `
@@ -191,10 +192,10 @@ function renderAgentMonitor() {
 
 function renderEvents() {
   els.recentEvents.innerHTML = projection.recentEvents.length === 0
-    ? `<div class="empty">No events yet.</div>`
+    ? `<div class="empty panel-empty">No events yet.</div>`
     : projection.recentEvents
         .slice(0, 12)
-        .map((event) => `<div class="detail-row"><span>${escapeHtml(event.type)}</span><strong>${escapeHtml(event.task_id ?? "system")}</strong></div>`)
+        .map((event) => `<div class="detail-row event-row"><span>${escapeHtml(event.type)}</span><strong>${escapeHtml(event.task_id ?? "system")}</strong></div>`)
         .join("");
 }
 
@@ -209,6 +210,59 @@ function swarmPhases(task) {
     { key: "verified", label: "Verified", status: verificationStatus(task) },
     { key: "integrated", label: "Integrated", status: integrationStatus(task) }
   ];
+}
+
+function groupMarkup(groupId, tasks) {
+  const modes = new Set(tasks.map((task) => task.group_mode).filter(Boolean));
+  const explicitMode = modes.values().next().value;
+  const mode = explicitMode ?? (tasks.length > 1 && groupId !== "ungrouped" ? "parallel" : "sequence");
+  const activeCount = tasks.filter((task) => task.state === "running").length;
+  const label = groupId === "ungrouped" ? "Ungrouped" : groupId;
+  return `
+    <section class="task-group group-${escapeAttr(mode)}">
+      <div class="group-heading">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(mode)}${activeCount > 0 ? ` / ${activeCount} active` : ""}</strong>
+      </div>
+      <div class="group-lanes">
+        ${tasks.map((task) => taskLaneMarkup(task)).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function taskLaneMarkup(task) {
+  const selected = task.task_id === projection.selectedTaskId ? " selected" : "";
+  const phases = swarmPhases(task);
+  const phaseKey = currentPhaseKey(phases);
+  return `
+    <article class="task-lane lane-${escapeAttr(task.state)}${selected}" data-task-id="${escapeAttr(task.task_id)}" data-active-phase="${escapeAttr(phaseKey)}" tabindex="0">
+      <div class="lane-head">
+        <div class="task-main">
+          <strong>${escapeHtml(task.task_id)}</strong>
+          <span>${escapeHtml(task.title)}</span>
+        </div>
+        <span class="state state-${escapeAttr(task.state)}">${escapeHtml(task.state)}</span>
+      </div>
+      <div class="swarm-rail" aria-label="${escapeAttr(task.task_id)} grouped phase state">
+        ${phases.map((phase) => phaseMarkup(phase)).join("")}
+      </div>
+      <div class="lane-foot">
+        <span>${escapeHtml(task.agent ?? "unassigned")}</span>
+        <span>${task.lease_files.length} leased</span>
+        <span>${escapeHtml(task.patch.verdict ?? (task.patch.submitted ? "submitted" : "no patch"))}</span>
+        <span>${task.depends_on.length > 0 ? `after ${task.depends_on.join(", ")}` : task.integration}</span>
+      </div>
+    </article>
+  `;
+}
+
+function currentPhaseKey(phases) {
+  const active = phases.find((phase) => phase.status === "active");
+  if (active) {
+    return active.key;
+  }
+  return phases.every((phase) => phase.status === "complete") ? "integrated" : "scoped";
 }
 
 function phaseMarkup(phase) {

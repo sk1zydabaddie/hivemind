@@ -54,6 +54,9 @@ export function applyEventMessage(projection, message) {
       if (task) {
         task.state = "planned";
         task.title = readString(event.data.title) ?? readString(event.data.goal) ?? task.title;
+        task.execution_group = readString(event.data.execution_group) ?? task.execution_group;
+        task.group_mode = readString(event.data.group_mode) ?? task.group_mode;
+        task.depends_on = readStringArray(event.data.depends_on) ?? task.depends_on;
       }
       break;
     case "task.assigned":
@@ -233,7 +236,10 @@ function ensureTask(projection, taskId) {
       integration: "not queued",
       issue: null,
       last_event: null,
-      last_event_at: null
+      last_event_at: null,
+      execution_group: null,
+      group_mode: null,
+      depends_on: []
     };
   }
   return projection.tasks[taskId];

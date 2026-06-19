@@ -170,7 +170,7 @@ It is the project-local build ledger for Hivemind AI.
 | Subtask | Status | Notes |
 | --- | --- | --- |
 | M6.1 - Event bus + streamed worker logs | Complete | Implemented in this commit. |
-| M6.2 - Live task board + agent monitor | Complete | Tauri desktop read-only daemon view implemented, running-app verified, and visually polished. Latest verification showed history replay, live task/lease/output updates, live integration status reaching `passed`, and the polished grouped Swarm Ledger in wide/compact screenshots. |
+| M6.2 - Live task board + agent monitor | Complete | Tauri desktop read-only daemon view implemented, running-app verified, and visually polished. Latest verification showed history replay, live task/lease/output updates, live integration status reaching `passed`, and the polished grouped Swarm Ledger. The follow-up polish iteration used a no-paid multi-task fake-worker fixture to capture in-flight swarm evidence (`docs/evidence/m6/m6-2-polish-swarm-wide.png`, `docs/evidence/m6/m6-2-polish-swarm-compact.png`, `docs/evidence/m6/m6-2-polish-swarm-tall.png`) with parallel `G-1` lanes running, sequenced `G-2` lanes mixed across states, active lease tethers, quota/integration instruments, and selected-task output visible. |
 | M6.3 - Redirect-first correction loop | Not started | Pause/cancel last resort. |
 | M6.4 - Task checkpoint/snapshot | Not started | Provider-neutral state. |
 | M6.5 - Quota-wall recovery | Not started | Predictive and reactive recovery. |
