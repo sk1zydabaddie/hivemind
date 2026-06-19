@@ -24,6 +24,7 @@ const els = {
   taskBoard: document.querySelector("#task-board"),
   leaseList: document.querySelector("#lease-list"),
   agentSummary: document.querySelector("#agent-summary"),
+  selectedTaskGates: document.querySelector("#selected-task-gates"),
   taskOutput: document.querySelector("#task-output"),
   recentEvents: document.querySelector("#recent-events")
 };
@@ -120,23 +121,31 @@ function renderSummary() {
 function renderTaskBoard() {
   const rows = taskRows(projection);
   if (rows.length === 0) {
-    els.taskBoard.innerHTML = `<div class="empty">No task events have arrived yet.</div>`;
+    els.taskBoard.innerHTML = `<div class="empty empty-ledger">No task events have arrived yet.</div>`;
     return;
   }
   els.taskBoard.innerHTML = rows
     .map((task) => {
       const selected = task.task_id === projection.selectedTaskId ? " selected" : "";
+      const phases = swarmPhases(task);
       return `
-        <article class="task-row${selected}" data-task-id="${escapeAttr(task.task_id)}" tabindex="0">
-          <div class="task-main">
-            <strong>${escapeHtml(task.task_id)}</strong>
-            <span>${escapeHtml(task.title)}</span>
+        <article class="task-lane${selected}" data-task-id="${escapeAttr(task.task_id)}" tabindex="0">
+          <div class="lane-head">
+            <div class="task-main">
+              <strong>${escapeHtml(task.task_id)}</strong>
+              <span>${escapeHtml(task.title)}</span>
+            </div>
+            <span class="state state-${escapeAttr(task.state)}">${escapeHtml(task.state)}</span>
           </div>
-          <span class="state state-${escapeAttr(task.state)}">${escapeHtml(task.state)}</span>
-          <span>${escapeHtml(task.agent ?? "unassigned")}</span>
-          <span>${task.lease_files.length} leased</span>
-          <span>${escapeHtml(task.patch.verdict ?? (task.patch.submitted ? "submitted" : "no patch"))}</span>
-          <span>${escapeHtml(task.integration)}</span>
+          <div class="swarm-rail" aria-label="${escapeAttr(task.task_id)} grouped phase state">
+            ${phases.map((phase) => phaseMarkup(phase)).join("")}
+          </div>
+          <div class="lane-foot">
+            <span>${escapeHtml(task.agent ?? "unassigned")}</span>
+            <span>${task.lease_files.length} leased</span>
+            <span>${escapeHtml(task.patch.verdict ?? (task.patch.submitted ? "submitted" : "no patch"))}</span>
+            <span>${escapeHtml(task.integration)}</span>
+          </div>
         </article>
       `;
     })
@@ -164,6 +173,7 @@ function renderAgentMonitor() {
   const selected = projection.selectedTaskId ? projection.tasks[projection.selectedTaskId] : null;
   if (!selected) {
     els.agentSummary.innerHTML = `<div class="empty">Select a task to subscribe to its output stream.</div>`;
+    els.selectedTaskGates.innerHTML = "";
     els.taskOutput.textContent = "";
     return;
   }
@@ -173,6 +183,7 @@ function renderAgentMonitor() {
     <div class="detail-row"><span>state</span><strong>${escapeHtml(selected.state)}</strong></div>
     <div class="detail-row"><span>worktree</span><strong>${escapeHtml(selected.worktree ?? "not reported")}</strong></div>
   `;
+  els.selectedTaskGates.innerHTML = gateDetailMarkup(selected);
   els.taskOutput.textContent = projection.selectedOutput
     .map((record) => `[${record.ts}] ${record.stream}: ${record.text}`)
     .join("");
@@ -189,6 +200,91 @@ function renderEvents() {
 
 function metric(label, value) {
   return `<span class="metric"><strong>${escapeHtml(value)}</strong><small>${escapeHtml(label)}</small></span>`;
+}
+
+function swarmPhases(task) {
+  return [
+    { key: "scoped", label: "Scoped", status: task.lease_files.length > 0 || beyond(task.state, "planned") ? "complete" : "active" },
+    { key: "running", label: "Running", status: phaseStatus(task.state, ["running"], ["submitted", "accepted", "integrated"]) },
+    { key: "verified", label: "Verified", status: verificationStatus(task) },
+    { key: "integrated", label: "Integrated", status: integrationStatus(task) }
+  ];
+}
+
+function phaseMarkup(phase) {
+  return `
+    <span class="phase phase-${escapeAttr(phase.status)}" data-phase="${escapeAttr(phase.key)}">
+      <span class="phase-track"></span>
+      <span class="phase-node" aria-hidden="true"></span>
+      <span class="phase-label">${escapeHtml(phase.label)}</span>
+    </span>
+  `;
+}
+
+function phaseStatus(state, activeStates, completeStates) {
+  if (state === "rejected" || state === "blocked") {
+    return "failed";
+  }
+  if (completeStates.includes(state)) {
+    return "complete";
+  }
+  if (activeStates.includes(state)) {
+    return "active";
+  }
+  return "pending";
+}
+
+function verificationStatus(task) {
+  if (task.state === "rejected" || task.state === "blocked") {
+    return "failed";
+  }
+  if (task.patch.verdict === "accept" || task.state === "integrated") {
+    return "complete";
+  }
+  if (task.patch.submitted || task.state === "submitted") {
+    return "active";
+  }
+  return "pending";
+}
+
+function integrationStatus(task) {
+  if (task.state === "blocked") {
+    return "failed";
+  }
+  if (task.state === "integrated" || task.integration === "passed") {
+    return "complete";
+  }
+  if (task.integration === "queued") {
+    return "active";
+  }
+  return "pending";
+}
+
+function beyond(state, baseline) {
+  const order = ["planned", "running", "submitted", "accepted", "integrated"];
+  return order.indexOf(state) > order.indexOf(baseline);
+}
+
+function gateDetailMarkup(task) {
+  const gates = [
+    ["contract", "task.created", "complete"],
+    ["lease", task.lease_files.length > 0 ? `${task.lease_files.length} files held` : "waiting", task.lease_files.length > 0 ? "complete" : "pending"],
+    ["run", task.state === "running" ? "active" : task.worktree ? "completed" : "waiting", task.state === "running" ? "active" : task.worktree ? "complete" : "pending"],
+    ["submit", task.patch.submitted ? `${task.patch.changed_files ?? "?"} files` : "waiting", task.patch.submitted ? "complete" : "pending"],
+    ["analyze", task.patch.verdict ?? "waiting", task.patch.verdict === "reject" || task.patch.verdict === "escalate" ? "failed" : task.patch.analyzed ? "complete" : "pending"],
+    ["integrate", task.integration, task.integration === "passed" ? "complete" : task.integration === "queued" ? "active" : "pending"]
+  ];
+  return `
+    <div class="gate-heading">Gate detail</div>
+    <div class="gate-grid">
+      ${gates.map(([label, value, status]) => `
+        <div class="gate-chip gate-${escapeAttr(status)}">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+        </div>
+      `).join("")}
+    </div>
+  `;
 }
 
 function setConnectionState(value) {

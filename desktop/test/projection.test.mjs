@@ -58,6 +58,16 @@ test("desktop shell contains no Hivemind action controls", async () => {
   assert.doesNotMatch(html, /approve|redirect|ratify|integrate|lease request|run worker/i);
 });
 
+test("desktop renderer keeps the Swarm Ledger grouped into four phases", async () => {
+  const html = await readFile(new URL("../app/index.html", import.meta.url), "utf8");
+  const main = await readFile(new URL("../app/main.mjs", import.meta.url), "utf8");
+  assert.match(html, /Swarm Ledger/);
+  for (const phase of ["Scoped", "Running", "Verified", "Integrated"]) {
+    assert.match(main, new RegExp(`label: "${phase}"`));
+  }
+  assert.doesNotMatch(main, /contract.*lease.*intent.*run.*submit.*analyze.*queue.*integrate/s);
+});
+
 function makeEvent(type, task_id, data) {
   return {
     ts: "2026-06-18T00:00:00.000Z",

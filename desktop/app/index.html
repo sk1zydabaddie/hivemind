@@ -9,9 +9,10 @@
   <body>
     <main class="shell">
       <header class="topbar">
-        <div>
+        <div class="brand-block">
+          <span class="eyebrow">Safety control plane</span>
           <h1>Hivemind AI</h1>
-          <p>Read-only daemon monitor</p>
+          <p>Read-only supervision console for deterministic agent work.</p>
         </div>
         <form id="connection-form" class="connection-form">
           <label for="daemon-url">Daemon URL</label>
@@ -43,7 +44,10 @@
       <section class="workspace">
         <section class="board-panel" aria-label="Live task board">
           <div class="panel-heading">
-            <h2>Task Board</h2>
+            <div>
+              <span class="eyebrow">Signature view</span>
+              <h2>Swarm Ledger</h2>
+            </div>
             <span id="event-count" class="muted"></span>
           </div>
           <div id="task-board" class="task-board"></div>
@@ -57,6 +61,7 @@
           <section class="detail-section">
             <h2>Agent Monitor</h2>
             <div id="agent-summary" class="agent-summary"></div>
+            <div id="selected-task-gates" class="gate-detail"></div>
             <pre id="task-output" class="task-output" aria-live="polite"></pre>
           </section>
           <section class="detail-section">
