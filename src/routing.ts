@@ -21,6 +21,10 @@ export interface RouteDecision {
   profile: AdapterProfile;
 }
 
+export interface RouteTaskProviderOptions {
+  excludeTools?: string[];
+}
+
 interface ProviderCandidate {
   tool: string;
   profile: AdapterProfile;
@@ -55,15 +59,20 @@ export async function routeTaskProvider(
   repoRoot: string,
   contract: TaskContract,
   config: HivemindConfig,
-  requestedTool?: string
+  requestedTool?: string,
+  options: RouteTaskProviderOptions = {}
 ): Promise<{ ok: true; value: RouteDecision } | { ok: false; reason: string }> {
   const taskTier = inferTaskTier(contract, config);
   const ledgerResult = await readQuotaLedger(repoRoot);
   if (!ledgerResult.ok) {
     return ledgerResult;
   }
+  const excluded = new Set(options.excludeTools ?? []);
 
   if (requestedTool !== undefined) {
+    if (excluded.has(requestedTool)) {
+      return { ok: false, reason: `provider "${requestedTool}" is excluded from this routing decision` };
+    }
     const profileResult = await loadAdapterProfile(repoRoot, requestedTool);
     if (!profileResult.ok) {
       return profileResult;
@@ -88,7 +97,7 @@ export async function routeTaskProvider(
   if (!candidatesResult.ok) {
     return candidatesResult;
   }
-  const eligible = candidatesResult.value.filter((candidate) => checkTierEligibility(taskTier, candidate).ok);
+  const eligible = candidatesResult.value.filter((candidate) => !excluded.has(candidate.tool) && checkTierEligibility(taskTier, candidate).ok);
   if (eligible.length === 0) {
     return { ok: false, reason: `no eligible provider for ${taskTier} task tier` };
   }

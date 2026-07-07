@@ -24,6 +24,7 @@ export interface InvokeAgentResult {
   exitCode: number;
   logPath: string;
   wallTimeMs: number;
+  throttled: boolean;
 }
 
 export interface AdapterStreamChunk {
@@ -87,18 +88,19 @@ export async function invokeAgent(
   const wallTimeMs = Date.now() - startedAt;
   const logPath = path.join(worktreePath, "agent.log");
   await writeAgentLog(logPath, profileResult.profile.tool, processResult.value);
+  const throttled = adapterOutputIndicatesThrottle(processResult.value.stdout, processResult.value.stderr, processResult.value.exitCode);
   const ledgerResult = await recordQuotaUsage(repoRoot, {
     provider: profileResult.profile.tool,
     input_text: prompt,
     output_text: `${processResult.value.stdout}\n${processResult.value.stderr}`,
     wall_time_ms: wallTimeMs,
-    throttled: adapterOutputIndicatesThrottle(processResult.value.stdout, processResult.value.stderr, processResult.value.exitCode)
+    throttled
   });
   if (!ledgerResult.ok) {
     return { ok: false, reason: ledgerResult.reason };
   }
 
-  return { ok: true, value: { exitCode: processResult.value.exitCode, logPath, wallTimeMs } };
+  return { ok: true, value: { exitCode: processResult.value.exitCode, logPath, wallTimeMs, throttled } };
 }
 
 export async function loadAdapterProfile(

@@ -3,8 +3,9 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { invokeAgent } from "./adapter.js";
 import { writeFileAtomic } from "./atomic.js";
-import { loadConfig, type RunCeiling } from "./config.js";
-import { loadAndValidateContract } from "./contract.js";
+import { checkpointTask, loadTaskCheckpointResumeState } from "./checkpoint.js";
+import { loadConfig, type HivemindConfig, type RunCeiling } from "./config.js";
+import { loadAndValidateContract, type TaskContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { captureWorktreeDiff } from "./diff-capture.js";
 import { appendEvent, readEvents, type HivemindEvent, type HivemindEventInput } from "./events.js";
@@ -13,6 +14,7 @@ import { appendTaskOutput, type TaskOutputRecord, type TaskOutputInput } from ".
 import { requireTaskDependenciesIntegrated } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { requirePassedWriteIntent } from "./intent.js";
+import { readQuotaLedger } from "./resource-ledger.js";
 import { routeTaskProvider } from "./routing.js";
 import { latestTaskRunState } from "./run-state.js";
 import { requireActiveSpecRatified } from "./spec.js";
@@ -45,6 +47,7 @@ export interface RunFailureMarkResult {
 
 export interface RunTaskOptions {
   allowDangerousAdapter?: boolean;
+  predictiveQuotaRecovery?: boolean;
   onEvent?: (event: HivemindEvent) => void;
   onOutput?: (record: TaskOutputRecord) => void;
 }
@@ -54,6 +57,8 @@ interface PreparedRun {
   tool: string;
   worktree: string;
   baseCommit: string;
+  contract: TaskContract;
+  config: HivemindConfig;
   ceiling: RunCeiling | undefined;
   allowDangerousAdapter?: boolean;
   onEvent?: (event: HivemindEvent) => void;
@@ -205,6 +210,7 @@ async function prepareRunTask(
   if (!routeResult.ok) {
     return routeResult;
   }
+  let selectedTool = routeResult.value.tool;
 
   const ceiling = configResult.config.resource_policy?.run_ceiling;
   const preflightResult = checkRunCeilingPreflight(ceiling, routeResult.value.profile);
@@ -222,12 +228,28 @@ async function prepareRunTask(
     return cleanResult;
   }
 
+  if (options.predictiveQuotaRecovery !== false && (await providerHasObservedQuotaWall(repoRoot, selectedTool))) {
+    const predictive = await checkpointAndRerouteTask(repoRoot, {
+      taskId,
+      fromTool: selectedTool,
+      excludeTools: [selectedTool],
+      contract: contractResult.contract,
+      config: configResult.config,
+      ceiling,
+      mode: "predictive",
+      onEvent: options.onEvent
+    });
+    if (predictive.ok) {
+      selectedTool = predictive.value.tool;
+    }
+  }
+
   const acceptedEvent = await emitRunEvent(
     repoRoot,
     {
       type: "task.run_accepted",
       task_id: taskId,
-      data: { tool: routeResult.value.tool, worktree: worktreeResult.value.worktree }
+      data: { tool: selectedTool, worktree: worktreeResult.value.worktree }
     },
     options.onEvent
   );
@@ -240,7 +262,7 @@ async function prepareRunTask(
     {
       type: "task.started",
       task_id: taskId,
-      data: { tool: routeResult.value.tool, worktree: worktreeResult.value.worktree }
+      data: { tool: selectedTool, worktree: worktreeResult.value.worktree }
     },
     options.onEvent
   );
@@ -252,9 +274,11 @@ async function prepareRunTask(
     ok: true,
     value: {
       taskId,
-      tool: routeResult.value.tool,
+      tool: selectedTool,
       worktree: worktreeResult.value.worktree,
       baseCommit: contractResult.contract.base_commit,
+      contract: contractResult.contract,
+      config: configResult.config,
       ceiling,
       allowDangerousAdapter: options.allowDangerousAdapter,
       onEvent: options.onEvent,
@@ -267,6 +291,54 @@ async function finishPreparedRun(
   repoRoot: string,
   prepared: PreparedRun
 ): Promise<{ ok: true; value: RunResult } | { ok: false; reason: string }> {
+  const exhaustedTools: string[] = [];
+  let active = prepared;
+  while (true) {
+    const attempt = await finishPreparedRunAttempt(repoRoot, active);
+    if (!attempt.ok && attempt.throttled) {
+      exhaustedTools.push(active.tool);
+      const reroute = await checkpointAndRerouteTask(repoRoot, {
+        taskId: active.taskId,
+        fromTool: active.tool,
+        excludeTools: exhaustedTools,
+        contract: active.contract,
+        config: active.config,
+        ceiling: active.ceiling,
+        mode: "reactive",
+        onEvent: active.onEvent
+      });
+      if (!reroute.ok) {
+        const reason = `${attempt.reason}; quota-wall recovery failed: ${reroute.reason}`;
+        await emitRunFailure(repoRoot, active, reason, attempt.toolExit, attempt.diffPath, attempt.changedFiles);
+        return { ok: false, reason };
+      }
+      const startedEvent = await emitRunEvent(
+        repoRoot,
+        {
+          type: "task.started",
+          task_id: active.taskId,
+          data: { tool: reroute.value.tool, worktree: active.worktree, resumed_from_checkpoint: reroute.value.snapshot_path }
+        },
+        active.onEvent
+      );
+      if (!startedEvent.ok) {
+        await emitRunFailure(repoRoot, active, startedEvent.reason, attempt.toolExit, attempt.diffPath, attempt.changedFiles);
+        return startedEvent;
+      }
+      active = { ...active, tool: reroute.value.tool };
+      continue;
+    }
+    return attempt.ok ? { ok: true, value: attempt.value } : { ok: false, reason: attempt.reason };
+  }
+}
+
+async function finishPreparedRunAttempt(
+  repoRoot: string,
+  prepared: PreparedRun
+): Promise<
+  | { ok: true; value: RunResult }
+  | { ok: false; reason: string; throttled?: boolean; toolExit?: number; diffPath?: string; changedFiles?: number }
+> {
   const streamOutputWrites: Array<Promise<{ ok: true } | { ok: false; reason: string }>> = [];
   let streamOutputTail: Promise<{ ok: true } | { ok: false; reason: string }> = Promise.resolve({ ok: true });
   const invokeResult = await invokeAgent(repoRoot, prepared.taskId, prepared.tool, {
@@ -298,6 +370,15 @@ async function finishPreparedRun(
   if (!invokeResult.ok) {
     await emitRunFailure(repoRoot, prepared, invokeResult.reason);
     return invokeResult;
+  }
+
+  if (invokeResult.value.throttled) {
+    return {
+      ok: false,
+      reason: `worker ${prepared.tool} hit a quota wall`,
+      throttled: true,
+      toolExit: invokeResult.value.exitCode
+    };
   }
 
   const postRunResult = checkRunCeilingPostRun(prepared.ceiling, invokeResult.value.wallTimeMs);
@@ -348,6 +429,84 @@ async function finishPreparedRun(
     prepared.onEvent
   );
   return completed.ok ? { ok: true, value } : completed;
+}
+
+interface RerouteInput {
+  taskId: string;
+  fromTool: string;
+  excludeTools: string[];
+  contract: TaskContract;
+  config: HivemindConfig;
+  ceiling: RunCeiling | undefined;
+  mode: "predictive" | "reactive";
+  onEvent?: (event: HivemindEvent) => void;
+}
+
+async function checkpointAndRerouteTask(
+  repoRoot: string,
+  input: RerouteInput
+): Promise<{ ok: true; value: { tool: string; snapshot_path: string } } | { ok: false; reason: string }> {
+  const checkpoint = await checkpointTask(repoRoot, input.taskId);
+  if (!checkpoint.ok) {
+    return checkpoint;
+  }
+  const resumeState = await loadTaskCheckpointResumeState(repoRoot, input.taskId);
+  if (!resumeState.ok) {
+    return resumeState;
+  }
+  const route = await routeTaskProvider(repoRoot, input.contract, input.config, undefined, { excludeTools: input.excludeTools });
+  if (!route.ok) {
+    return route;
+  }
+  const ceiling = checkRunCeilingPreflight(input.ceiling, route.value.profile);
+  if (!ceiling.ok) {
+    return ceiling;
+  }
+  const rerouted = await emitRunEvent(
+    repoRoot,
+    {
+      type: "task.rerouted",
+      task_id: input.taskId,
+      data: {
+        mode: input.mode,
+        from_tool: input.fromTool,
+        to_tool: route.value.tool,
+        snapshot_path: checkpoint.value.snapshot_path,
+        context_pack_ref: resumeState.value.context_pack.path,
+        task_knowledge_ref: resumeState.value.task_knowledge.path
+      }
+    },
+    input.onEvent
+  );
+  if (!rerouted.ok) {
+    return rerouted;
+  }
+  const resumed = await emitRunEvent(
+    repoRoot,
+    {
+      type: "task.resumed",
+      task_id: input.taskId,
+      data: {
+        tool: route.value.tool,
+        snapshot_path: checkpoint.value.snapshot_path,
+        source: "quota-wall-recovery"
+      }
+    },
+    input.onEvent
+  );
+  if (!resumed.ok) {
+    return resumed;
+  }
+  return { ok: true, value: { tool: route.value.tool, snapshot_path: checkpoint.value.snapshot_path } };
+}
+
+async function providerHasObservedQuotaWall(repoRoot: string, tool: string): Promise<boolean> {
+  const ledger = await readQuotaLedger(repoRoot);
+  if (!ledger.ok) {
+    return false;
+  }
+  const entry = ledger.value[tool];
+  return entry?.observed_limit !== null && entry?.observed_limit !== undefined && entry.unmetered !== true;
 }
 
 async function emitRunEvent(

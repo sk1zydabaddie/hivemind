@@ -12,7 +12,8 @@ import { checkWriteIntent } from "../src/intent.js";
 import { requestLease, requestLeaseForContract } from "../src/lease.js";
 import { runTask } from "../src/run.js";
 import { analyzeTask } from "../src/analyze.js";
-import { appendEvent } from "../src/events.js";
+import { appendEvent, readEvents } from "../src/events.js";
+import { recordQuotaUsage } from "../src/resource-ledger.js";
 import { submitTask } from "../src/submit.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
@@ -290,6 +291,99 @@ test("CLI run auto-routes to the cheapest Low-tier provider", async () => {
     const diff = await readFile(parsed.diff_path, "utf8");
     assert.match(diff, /\+changed by local auto route/);
     assert.doesNotMatch(diff, /strong auto route/);
+  });
+});
+
+test("runTask reacts to a quota wall by checkpointing and resuming on another provider", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const primaryAgent = await writeAgent(repo, "quota-wall-primary-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'partial work before quota wall\\n');",
+      "console.error('429 too many requests');",
+      "process.exit(1);"
+    ]);
+    const secondaryAgent = await writeAgent(repo, "quota-wall-secondary-agent.mjs", [
+      "const { readFile, appendFile } = await import('node:fs/promises');",
+      "const current = await readFile('README.md', 'utf8');",
+      "if (!current.includes('partial work before quota wall')) process.exit(9);",
+      "await appendFile('README.md', 'resumed work after quota wall\\n');"
+    ]);
+    await prepareLintedPlanWithTasks(repo, [planTask("T-001", "README.md")]);
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writeProfile(repo, "primary", primaryAgent, undefined, false, "strong", 1);
+    await writeProfile(repo, "secondary", secondaryAgent, undefined, false, "strong", 2);
+    await grantLease(repo, "T-001", ["README.md"]);
+
+    const result = await runTask(repo, "T-001", "primary", { predictiveQuotaRecovery: false });
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.value.tool, "secondary");
+    assert.equal(result.value.tool_exit, 0);
+    const diff = await readFile(result.value.diff_path, "utf8");
+    assert.match(diff, /\+partial work before quota wall/);
+    assert.match(diff, /\+resumed work after quota wall/);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.equal(events.value.some((event) => event.type === "task.checkpointed" && event.task_id === "T-001"), true);
+    const rerouted = events.value.find((event) => event.type === "task.rerouted" && event.task_id === "T-001");
+    assert.notEqual(rerouted, undefined);
+    assert.equal(rerouted?.data.mode, "reactive");
+    assert.equal(rerouted?.data.from_tool, "primary");
+    assert.equal(rerouted?.data.to_tool, "secondary");
+    assert.equal("provider_session" in (rerouted?.data ?? {}), false);
+    assert.equal(events.value.some((event) => event.type === "task.resumed" && event.task_id === "T-001"), true);
+    assert.equal(events.value.some((event) => event.type === "task.failed" && event.task_id === "T-001"), false);
+  });
+});
+
+test("runTask predictive quota reroute is non-authoritative and only causes an unnecessary provider switch", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const primaryAgent = await writeAgent(repo, "predictive-primary-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'primary would have completed\\n');"
+    ]);
+    const secondaryAgent = await writeAgent(repo, "predictive-secondary-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'secondary completed after predictive reroute\\n');"
+    ]);
+    await prepareLintedPlanWithTasks(repo, [planTask("T-001", "README.md")]);
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writeProfile(repo, "primary", primaryAgent, undefined, false, "strong", 1);
+    await writeProfile(repo, "secondary", secondaryAgent, undefined, false, "strong", 2);
+    await recordQuotaUsage(repo, {
+      provider: "primary",
+      input_text: "previous prompt",
+      output_text: "429 too many requests",
+      wall_time_ms: 1,
+      throttled: true
+    });
+    await grantLease(repo, "T-001", ["README.md"]);
+
+    const result = await runTask(repo, "T-001", "primary");
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.value.tool, "secondary");
+    const diff = await readFile(result.value.diff_path, "utf8");
+    assert.match(diff, /\+secondary completed after predictive reroute/);
+    assert.doesNotMatch(diff, /primary would have completed/);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    const rerouted = events.value.find((event) => event.type === "task.rerouted" && event.task_id === "T-001");
+    assert.notEqual(rerouted, undefined);
+    assert.equal(rerouted?.data.mode, "predictive");
+    assert.equal(events.value.some((event) => event.type === "task.failed" && event.task_id === "T-001"), false);
   });
 });
 
