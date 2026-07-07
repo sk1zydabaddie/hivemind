@@ -239,6 +239,17 @@ export async function loadTaskCheckpointResumeState(repoRoot: string, taskId: st
       reason: `checkpoint partial_diff base ${snapshot.partial_diff.base_commit} does not match contract base ${contract.base_commit}`
     };
   }
+  const liveDiffResult = await captureWorktreeDiff(path.join(repoRoot, snapshot.partial_diff.worktree_ref), contract.base_commit, { excludeUntracked: [agentLogPath] });
+  if (!liveDiffResult.ok) {
+    return liveDiffResult;
+  }
+  const liveDiffHash = sha256(liveDiffResult.value.diff);
+  if (liveDiffHash !== snapshot.partial_diff.diff_hash) {
+    return {
+      ok: false,
+      reason: `worktree diverged from checkpoint: live diff hash != snapshot diff hash for ${taskId}`
+    };
+  }
 
   const leaseResult = await verifyLeaseCoverage(repoRoot, taskId, contract.allowed_files, {
     baseCommit: contract.base_commit,

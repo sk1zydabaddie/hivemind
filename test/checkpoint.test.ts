@@ -103,6 +103,42 @@ test("resume state re-derives lease coverage from the authoritative store instea
   });
 });
 
+test("resume state fails closed when the live worktree diff diverges from the checkpoint", async () => {
+  await withCheckpointFixture(async ({ repo, taskId }) => {
+    const worktreeReadme = path.join(repo, ".hivemind", "worktrees", taskId, "README.md");
+    await writeFile(worktreeReadme, "# Fixture\n\npartial work captured by checkpoint\n");
+    const checkpoint = await checkpointTask(repo, taskId);
+    assert.equal(checkpoint.ok, true);
+
+    await writeFile(worktreeReadme, "# Fixture\n\npartial work changed after checkpoint\n");
+    const resume = await loadTaskCheckpointResumeState(repo, taskId);
+
+    assert.equal(resume.ok, false);
+    if (resume.ok) {
+      return;
+    }
+    assert.equal(resume.reason, `worktree diverged from checkpoint: live diff hash != snapshot diff hash for ${taskId}`);
+  });
+});
+
+test("resume state fails closed when the task worktree is cleaned after checkpoint", async () => {
+  await withCheckpointFixture(async ({ repo, taskId }) => {
+    const worktree = path.join(repo, ".hivemind", "worktrees", taskId);
+    await writeFile(path.join(worktree, "README.md"), "# Fixture\n\npartial work captured before reset\n");
+    const checkpoint = await checkpointTask(repo, taskId);
+    assert.equal(checkpoint.ok, true);
+
+    await git(worktree, ["restore", "--worktree", "README.md"]);
+    const resume = await loadTaskCheckpointResumeState(repo, taskId);
+
+    assert.equal(resume.ok, false);
+    if (resume.ok) {
+      return;
+    }
+    assert.equal(resume.reason, `worktree diverged from checkpoint: live diff hash != snapshot diff hash for ${taskId}`);
+  });
+});
+
 test("checkpoint references context and knowledge durability instead of copying bodies that can diverge", async () => {
   await withCheckpointFixture(async ({ repo, taskId, baseCommit }) => {
     await writeContextPack(repo, {
