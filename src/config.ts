@@ -24,6 +24,7 @@ export interface ResourcePolicy {
 export interface ManagerAutonomyPolicy {
   tier2_actions?: string[];
   cost_threshold?: ManagerCostThreshold;
+  redirect_limit?: number;
 }
 
 export interface ManagerCostThreshold {
@@ -185,6 +186,9 @@ function validateManagerAutonomyPolicy(value: unknown, problems: string[]): void
   if ("cost_threshold" in value) {
     validateManagerCostThreshold(value.cost_threshold, problems);
   }
+  if ("redirect_limit" in value && (!Number.isSafeInteger(value.redirect_limit) || typeof value.redirect_limit !== "number" || value.redirect_limit < 1)) {
+    problems.push("manager_autonomy.redirect_limit must be a positive safe integer");
+  }
 }
 
 function validateManagerCostThreshold(value: unknown, problems: string[]): void {
@@ -224,7 +228,8 @@ function normalizeManagerAutonomyPolicy(value: unknown): ManagerAutonomyPolicy {
   }
   return {
     ...("tier2_actions" in value ? { tier2_actions: normalizeStringArray(value.tier2_actions) } : {}),
-    ...("cost_threshold" in value ? { cost_threshold: normalizeManagerCostThreshold(value.cost_threshold) } : {})
+    ...("cost_threshold" in value ? { cost_threshold: normalizeManagerCostThreshold(value.cost_threshold) } : {}),
+    ...("redirect_limit" in value && typeof value.redirect_limit === "number" ? { redirect_limit: value.redirect_limit } : {})
   };
 }
 

@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { PassThrough, type Writable } from "node:stream";
 import { readEvents, type HivemindEvent } from "./events.js";
 import { readTaskOutput, type TaskOutputRecord } from "./output-stream.js";
 
@@ -16,6 +17,7 @@ export interface EventBusErrorMessage {
 
 type Subscriber = (message: EventBusMessage) => void;
 type OutputSubscriber = (message: TaskOutputBusMessage) => void;
+const ssePadding = " ".repeat(1024);
 
 export interface TaskOutputBusMessage {
   kind: "output";
@@ -33,65 +35,105 @@ export class EventBus {
     response.writeHead(200, {
       "content-type": "text/event-stream; charset=utf-8",
       "cache-control": "no-cache, no-transform",
-      connection: "keep-alive",
       ...readOnlyCorsHeaders(request)
     });
-    response.write(": hivemind event stream\n\n");
-
+    const body = new PassThrough();
+    body.pipe(response);
     const history = await readEvents(repoRoot);
     if (!history.ok) {
-      this.writeMessage(response, { kind: "error", reason: history.reason });
-      response.end();
+      this.writeBody(body, `: hivemind event stream ${ssePadding}\r\n\r\n`);
+      this.writeMessage(body, { kind: "error", reason: history.reason });
+      body.end();
       return;
     }
 
-    for (const [index, event] of history.value.entries()) {
-      this.writeMessage(response, { kind: "event", source: "history", seq: index + 1, event });
-    }
+    this.writeBody(
+      body,
+      [
+        `: hivemind event stream ${ssePadding}`,
+        ...history.value.map((event, index) => this.formatMessage({ kind: "event", source: "history", seq: index + 1, event }))
+      ].join("\r\n\r\n") + "\r\n\r\n"
+    );
 
-    const subscriber: Subscriber = (message) => this.writeMessage(response, message);
+    const subscriber: Subscriber = (message) => this.writeMessage(body, message);
     this.subscribers.add(subscriber);
-    request.on("close", () => {
-      this.subscribers.delete(subscriber);
+    const closed = new Promise<void>((resolve) => {
+      request.on("aborted", () => {
+        this.subscribers.delete(subscriber);
+        body.destroy();
+        resolve();
+      });
     });
+
+    const catchUp = await readEvents(repoRoot);
+    if (catchUp.ok) {
+      for (const [index, event] of catchUp.value.slice(history.value.length).entries()) {
+        const key = eventKey(event);
+        if (this.publishedEventKeys.has(key)) {
+          continue;
+        }
+        this.publishedEventKeys.add(key);
+        this.writeMessage(body, { kind: "event", source: "live", seq: history.value.length + index + 1, event });
+      }
+    }
+    await closed;
   }
 
   async streamTaskOutput(repoRoot: string, taskId: string, request: IncomingMessage, response: ServerResponse): Promise<void> {
     response.writeHead(200, {
       "content-type": "text/event-stream; charset=utf-8",
       "cache-control": "no-cache, no-transform",
-      connection: "keep-alive",
       ...readOnlyCorsHeaders(request)
     });
-    response.write(": hivemind task output stream\n\n");
-
+    const body = new PassThrough();
+    body.pipe(response);
     const history = await readTaskOutput(repoRoot, taskId);
     if (!history.ok) {
-      this.writeMessage(response, { kind: "error", reason: history.reason });
-      response.end();
+      this.writeBody(body, `: hivemind task output stream ${ssePadding}\r\n\r\n`);
+      this.writeMessage(body, { kind: "error", reason: history.reason });
+      body.end();
       return;
     }
 
-    for (const [index, record] of history.value.entries()) {
-      this.writeMessage(response, { kind: "output", source: "history", seq: index + 1, record });
-    }
+    this.writeBody(
+      body,
+      [
+        `: hivemind task output stream ${ssePadding}`,
+        ...history.value.map((record, index) => this.formatMessage({ kind: "output", source: "history", seq: index + 1, record }))
+      ].join("\r\n\r\n") + "\r\n\r\n"
+    );
 
-    const subscriber: OutputSubscriber = (message) => this.writeMessage(response, message);
+    const subscriber: OutputSubscriber = (message) => this.writeMessage(body, message);
     let subscribers = this.outputSubscribers.get(taskId);
     if (subscribers === undefined) {
       subscribers = new Set<OutputSubscriber>();
       this.outputSubscribers.set(taskId, subscribers);
     }
     subscribers.add(subscriber);
-    request.on("close", () => {
-      subscribers?.delete(subscriber);
-      if (subscribers?.size === 0) {
-        this.outputSubscribers.delete(taskId);
-      }
+    const closed = new Promise<void>((resolve) => {
+      request.on("aborted", () => {
+        subscribers?.delete(subscriber);
+        if (subscribers?.size === 0) {
+          this.outputSubscribers.delete(taskId);
+        }
+        body.destroy();
+        resolve();
+      });
     });
+
+    const catchUp = await readTaskOutput(repoRoot, taskId);
+    if (catchUp.ok) {
+      for (const [index, record] of catchUp.value.slice(history.value.length).entries()) {
+        this.writeMessage(body, { kind: "output", source: "live", seq: history.value.length + index + 1, record });
+      }
+    }
+    await closed;
   }
 
   publishEvent(event: HivemindEvent): void {
+    if (this.subscribers.size === 0) {
+      return;
+    }
     this.publishedEventKeys.add(eventKey(event));
     this.publish({ kind: "event", source: "live", event });
   }
@@ -108,6 +150,9 @@ export class EventBus {
   }
 
   async publishNewDurableEvents(repoRoot: string, previousCount: number): Promise<void> {
+    if (this.subscribers.size === 0) {
+      return;
+    }
     const events = await readEvents(repoRoot);
     if (!events.ok) {
       return;
@@ -129,8 +174,18 @@ export class EventBus {
     }
   }
 
-  private writeMessage(response: ServerResponse, message: EventBusMessage | TaskOutputBusMessage | EventBusErrorMessage): void {
-    response.write(`data: ${JSON.stringify(message)}\n\n`);
+  private writeMessage(body: Writable, message: EventBusMessage | TaskOutputBusMessage | EventBusErrorMessage): void {
+    this.writeBody(body, `${this.formatMessage(message)}\r\n\r\n`);
+  }
+
+  private formatMessage(message: EventBusMessage | TaskOutputBusMessage | EventBusErrorMessage): string {
+    return `data: ${JSON.stringify(message)}\r\n: ${ssePadding}`;
+  }
+
+  private writeBody(target: Writable, body: string): void {
+    if (!target.destroyed && !target.writableEnded) {
+      target.write(body);
+    }
   }
 }
 

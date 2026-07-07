@@ -453,8 +453,8 @@ Generative/judgment sub-tasks use BEHAVIORAL human-judged acceptance tests, not 
 - **Depends on:** M5.3, M6.1, M2.3.
 - **Read first:** Overview § *Real-Time Supervision* (redirect-first; pause/cancel last resort).
 - **Goal:** Correct a drifting worker at a safe boundary instead of killing it.
-- **Behavior — exact:** At a write-intent/checkpoint boundary, if a worker drifts, the orchestrator injects a correction and lets it continue; pause/cancel is the last resort. Deterministic gates remain the safety; this is about not wasting work.
-- **Acceptance test (binary):** A worker heading out of scope is redirected at the next boundary and completes in-scope, without a full cancel/restart.
+- **Behavior — exact:** At the existing write-intent/checkpoint boundary, if a worker drifts, the deterministic write-intent gate refuses the out-of-scope intent and the orchestrator acts as a coach: it proposes a drift-specific correction, records `task.revision_requested`/`task.redirected`, and lets the worker continue by re-declaring intent. The redirect path reuses the existing `revision_requested → in_progress` lifecycle and does not add or replace any safety gate. Deterministic gates remain the referee; redirect is UX/efficiency only. Redirect attempts are bounded; repeated write-intent rejections escalate to re-plan rather than looping forever. `task.cancelled` is last resort only for wedged/no-progress workers.
+- **Acceptance test (BEHAVIORAL, human-judged — NOT binary):** On a real drift, the orchestrator (an LLM, not a fixed template) emits a correction specific to what the worker actually did wrong and useful for getting back in scope, and the worker completes in-scope without a full cancel/restart. A human judges whether the correction is substantive rather than a generic nudge. Separately verify the deterministic floors with binary tests: the write-intent gate refuses the out-of-scope intent before redirect; the redirect bound is enforced and terminates; repeated redirects escalate to re-plan; terminate/cancel is not used before redirect/re-plan.
 
 ### M6.4 — Task checkpoint/snapshot
 - **Depends on:** M4.1.

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { writeJsonAtomic } from "./atomic.js";
+import { appendEvent } from "./events.js";
 import { canonicalizeConcreteFileScope } from "./file-scope.js";
 import { readJsonFile } from "./json.js";
 import { readActiveLeases } from "./lease.js";
@@ -66,9 +67,26 @@ export async function checkWriteIntent(repoRoot: string, taskId: string, rawInte
   if (!validation.ok) {
     return validation;
   }
+  const submitted = await appendEvent(repoRoot, {
+    type: "write_intent.submitted",
+    task_id: taskId,
+    data: {
+      intended_files: validation.value.intended_files,
+      intended_symbols: validation.value.intended_symbols,
+      possible_risks: validation.value.possible_risks,
+      will_not_change: validation.value.will_not_change
+    }
+  });
+  if (!submitted.ok) {
+    return submitted;
+  }
 
   const pathsResult = await canonicalizeConcreteFileScope(repoRoot, validation.value.intended_files, "intended");
   if (!pathsResult.ok) {
+    const rejected = await appendIntentRejected(repoRoot, taskId, validation.value, pathsResult.reason);
+    if (!rejected.ok) {
+      return rejected;
+    }
     return pathsResult;
   }
 
@@ -81,12 +99,14 @@ export async function checkWriteIntent(repoRoot: string, taskId: string, rawInte
     .map((filePath) => ({ filePath, holder: storeResult.store[filePath] }))
     .filter((entry) => entry.holder !== taskId);
   if (conflicts.length > 0) {
-    return {
-      ok: false,
-      reason: `write intent rejected: ${conflicts
-        .map((entry) => `${entry.filePath} ${entry.holder === undefined ? "is not leased" : `held by ${entry.holder}`}`)
-        .join("; ")}`
-    };
+    const reason = `write intent rejected: ${conflicts
+      .map((entry) => `${entry.filePath} ${entry.holder === undefined ? "is not leased" : `held by ${entry.holder}`}`)
+      .join("; ")}`;
+    const rejected = await appendIntentRejected(repoRoot, taskId, validation.value, reason);
+    if (!rejected.ok) {
+      return rejected;
+    }
+    return { ok: false, reason };
   }
 
   const approved: StoredWriteIntentPass = {
@@ -97,7 +117,32 @@ export async function checkWriteIntent(repoRoot: string, taskId: string, rawInte
     approved_at: new Date().toISOString()
   };
   await writeJsonAtomic(passedIntentPath(repoRoot, taskId), approved);
+  const approvedEvent = await appendEvent(repoRoot, {
+    type: "write_intent.approved",
+    task_id: taskId,
+    data: {
+      intended_files: pathsResult.paths
+    }
+  });
+  if (!approvedEvent.ok) {
+    return approvedEvent;
+  }
   return { ok: true, value: { task_id: taskId, verdict: "pass", intended_files: pathsResult.paths } };
+}
+
+async function appendIntentRejected(repoRoot: string, taskId: string, intent: WriteIntent, reason: string): Promise<IntentResult<void>> {
+  const event = await appendEvent(repoRoot, {
+    type: "write_intent.rejected",
+    task_id: taskId,
+    data: {
+      reason,
+      intended_files: intent.intended_files,
+      intended_symbols: intent.intended_symbols,
+      possible_risks: intent.possible_risks,
+      will_not_change: intent.will_not_change
+    }
+  });
+  return event.ok ? { ok: true, value: undefined } : event;
 }
 
 export async function requirePassedWriteIntent(repoRoot: string, taskId: string): Promise<IntentResult<StoredWriteIntentPass>> {

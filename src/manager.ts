@@ -13,7 +13,7 @@ import { enqueueIntegrationPatch, integrateShadow, type EnqueueIntegrationPatchR
 import { checkWriteIntent, type WriteIntentPass } from "./intent.js";
 import { extractJsonObject } from "./json.js";
 import { requestLeaseForContract, type LeaseGrantResult } from "./lease.js";
-import { loadTentativePlan } from "./plan.js";
+import { evaluatePlanThrash, loadTentativePlan } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { adapterOutputIndicatesThrottle, recordQuotaUsage } from "./resource-ledger.js";
 import { inferTaskTier } from "./routing.js";
@@ -24,6 +24,7 @@ import { requireActiveSpecRatified, type SpecResult } from "./spec.js";
 import { loadSpecDocument } from "./spec-format.js";
 import { getStatus, type HivemindStatus } from "./status.js";
 import { submitTask, type SubmitResult } from "./submit.js";
+import { recordRedirectFirstCorrection, type RedirectCorrectionRecord } from "./supervision.js";
 import { createTaskWorktree, type WorktreeResult } from "./worktree.js";
 
 interface ManagerSession {
@@ -71,6 +72,7 @@ interface ManagerExecutedAction {
   id: string;
   ts: string;
   type: ManagerAction["type"];
+  task_id?: string;
   result: ManagerActionExecutionRecord;
 }
 
@@ -131,12 +133,20 @@ export interface ManagerAutonomousLoopResult {
   steps: Array<{
     index: number;
     action_type: ManagerAction["type"];
-    tier: "autonomous" | "human_approval" | "gate_rejection";
+    tier: "autonomous" | "human_approval" | "gate_rejection" | "redirect";
     result?: ManagerActionExecutionRecord;
     pause?: ManagerPendingAction;
     stop?: ManagerStopAdvice;
+    redirect?: ManagerRedirectStep;
   }>;
   final_status: HivemindStatus;
+}
+
+interface ManagerRedirectStep {
+  attempt: number;
+  max_attempts: number;
+  correction: string;
+  event_types: ["task.revision_requested", "task.redirected"];
 }
 
 interface ManagerStopAdvice {
@@ -368,6 +378,56 @@ export async function generateManagerProposal(
   };
 }
 
+async function generateRedirectCorrection(
+  repoRoot: string,
+  tool: string,
+  action: Extract<ManagerAction, { type: "check_write_intent" }>,
+  rejectionReason: string
+): Promise<SpecResult<string>> {
+  const profileResult = await loadAdapterProfile(repoRoot, tool);
+  if (!profileResult.ok) {
+    return profileResult;
+  }
+  const dangerousArgs = findDangerousAdapterArgs(profileResult.profile.invoke);
+  if (dangerousArgs.length > 0) {
+    return {
+      ok: false,
+      reason: `manager adapter profile "${tool}" contains dangerous invocation flags (${dangerousArgs.join(", ")}); redirect corrections must use a non-dangerous profile`
+    };
+  }
+
+  const prompt = await buildRedirectCorrectionPrompt(repoRoot, action, rejectionReason);
+  if (!prompt.ok) {
+    return prompt;
+  }
+
+  const startedAt = Date.now();
+  const processResult = await runAdapterProcess(profileResult.profile, repoRoot, prompt.value);
+  if (!processResult.ok) {
+    return processResult;
+  }
+  const wallTimeMs = Date.now() - startedAt;
+  const ledgerResult = await recordQuotaUsage(repoRoot, {
+    provider: profileResult.profile.tool,
+    input_text: prompt.value,
+    output_text: `${processResult.value.stdout}\n${processResult.value.stderr}`,
+    wall_time_ms: wallTimeMs,
+    throttled: adapterOutputIndicatesThrottle(processResult.value.stdout, processResult.value.stderr, processResult.value.exitCode)
+  });
+  if (!ledgerResult.ok) {
+    return { ok: false, reason: ledgerResult.reason };
+  }
+  if (processResult.value.exitCode !== 0) {
+    return { ok: false, reason: `redirect correction adapter "${tool}" exited ${processResult.value.exitCode}` };
+  }
+
+  const correction = parseRedirectCorrection(processResult.value.stdout);
+  if (!correction.ok) {
+    return correction;
+  }
+  return { ok: true, value: correction.value };
+}
+
 async function buildManagerProposalPrompt(repoRoot: string, message: string, specId: string, tool: string): Promise<SpecResult<string>> {
   const spec = await loadSpecDocument(repoRoot, specId);
   if (!spec.ok) {
@@ -379,6 +439,10 @@ async function buildManagerProposalPrompt(repoRoot: string, message: string, spe
   }
   const plan = await loadTentativePlan(repoRoot, specId);
   const adapters = await listAdapterTools(repoRoot);
+  const events = await readEvents(repoRoot);
+  if (!events.ok) {
+    return events;
+  }
 
   return {
     ok: true,
@@ -445,6 +509,9 @@ async function buildManagerProposalPrompt(repoRoot: string, message: string, spe
       "Durable status JSON:",
       JSON.stringify(status.value, null, 2),
       "",
+      "Recent durable event trail JSON:",
+      JSON.stringify(events.value.slice(-30), null, 2),
+      "",
       "Tentative plan JSON or missing state:",
       plan.ok ? JSON.stringify(plan.value, null, 2) : JSON.stringify({ missing: true, reason: plan.reason }, null, 2),
       "",
@@ -452,6 +519,83 @@ async function buildManagerProposalPrompt(repoRoot: string, message: string, spe
       JSON.stringify(adapters, null, 2)
     ].join("\n")
   };
+}
+
+async function buildRedirectCorrectionPrompt(
+  repoRoot: string,
+  action: Extract<ManagerAction, { type: "check_write_intent" }>,
+  rejectionReason: string
+): Promise<SpecResult<string>> {
+  const contract = await loadAndValidateContract(repoRoot, action.task_id);
+  if (!contract.ok) {
+    return { ok: false, reason: contract.reason };
+  }
+  const status = await getStatus(repoRoot);
+  if (!status.ok) {
+    return status;
+  }
+  const events = await readEvents(repoRoot);
+  if (!events.ok) {
+    return events;
+  }
+
+  return {
+    ok: true,
+    value: [
+      "You are the Hivemind orchestrator acting as a COACH, not the safety referee.",
+      "A deterministic write-intent gate has already refused the worker's out-of-scope intent.",
+      "Your job is to propose a useful, drift-specific correction so the worker can re-declare an in-scope intent.",
+      "",
+      "Return exactly one JSON object and no prose outside it:",
+      "{ \"correction\": \"specific coaching message for the worker\" }",
+      "",
+      "Hard rules:",
+      "- Do not approve the intent, widen scope, change leases, change config, or claim a gate passed.",
+      "- Do not tell the worker to touch files outside the contract.",
+      "- Name the offending file(s) and point back to the allowed lease/scope when possible.",
+      "- Be concrete enough that a worker can continue without a full cancel/restart.",
+      "",
+      `Task: ${action.task_id}`,
+      `Deterministic rejection reason: ${rejectionReason}`,
+      "",
+      "Rejected write-intent JSON:",
+      JSON.stringify(action.intent, null, 2),
+      "",
+      "Task contract JSON:",
+      JSON.stringify(contract.contract, null, 2),
+      "",
+      "Current durable status JSON:",
+      JSON.stringify(status.value, null, 2),
+      "",
+      "Recent durable event trail JSON:",
+      JSON.stringify(events.value.filter((event) => event.task_id === action.task_id).slice(-20), null, 2)
+    ].join("\n")
+  };
+}
+
+function parseRedirectCorrection(stdout: string): SpecResult<string> {
+  const extracted = extractJsonObject(stdout, "redirect correction");
+  if (!extracted.ok) {
+    return extracted;
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(extracted.value);
+  } catch {
+    return { ok: false, reason: "redirect correction output was not valid JSON" };
+  }
+  if (!isRecord(raw)) {
+    return { ok: false, reason: "redirect correction must be a JSON object" };
+  }
+  const allowedKeys = new Set(["correction"]);
+  const unsupported = Object.keys(raw).filter((key) => !allowedKeys.has(key));
+  if (unsupported.length > 0) {
+    return { ok: false, reason: `redirect correction contains unsupported proof/control fields: ${unsupported.join(", ")}` };
+  }
+  if (typeof raw.correction !== "string" || raw.correction.trim() === "") {
+    return { ok: false, reason: "redirect correction requires a non-empty correction" };
+  }
+  return { ok: true, value: raw.correction.trim() };
 }
 
 async function listAdapterTools(repoRoot: string): Promise<string[]> {
@@ -564,6 +708,7 @@ interface ManagerAutonomyRuntimePolicy {
     estimated_requests: number;
     wall_time_ms?: number;
   };
+  redirectLimit: number;
 }
 
 async function loadManagerAutonomyPolicy(repoRoot: string): Promise<SpecResult<ManagerAutonomyRuntimePolicy>> {
@@ -587,7 +732,8 @@ async function loadManagerAutonomyPolicy(repoRoot: string): Promise<SpecResult<M
         ...("wall_time_ms" in (config.config.manager_autonomy?.cost_threshold ?? {})
           ? { wall_time_ms: config.config.manager_autonomy?.cost_threshold?.wall_time_ms }
           : {})
-      }
+      },
+      redirectLimit: config.config.manager_autonomy?.redirect_limit ?? 2
     }
   };
 }
@@ -685,6 +831,81 @@ function buildGateRejectionAdvice(action: ManagerAction, reason: string): Manage
   };
 }
 
+function isRedirectableWriteIntentRejection(action: ManagerAction, result: ManagerActionExecutionRecord): action is Extract<ManagerAction, { type: "check_write_intent" }> {
+  return action.type === "check_write_intent" && result.ok === false && result.reason.startsWith("write intent rejected:");
+}
+
+async function handleWriteIntentRedirect(
+  repoRoot: string,
+  session: ManagerSession,
+  action: Extract<ManagerAction, { type: "check_write_intent" }>,
+  rejectionReason: string,
+  tool: string,
+  policy: ManagerAutonomyRuntimePolicy
+): Promise<SpecResult<{ kind: "redirected"; step: ManagerRedirectStep } | { kind: "replan"; stop: ManagerStopAdvice }>> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) {
+    return events;
+  }
+  const priorRedirects = events.value.filter((event) => event.type === "task.redirected" && event.task_id === action.task_id).length;
+  if (priorRedirects >= policy.redirectLimit) {
+    const replan = await routeMutatingAction(repoRoot, "/plan/thrash", { spec_id: session.spec_id, task_id: action.task_id, budget: 1 }, () =>
+      evaluatePlanThrash(repoRoot, session.spec_id, action.task_id, 1)
+    );
+    if (!replan.ok) {
+      return replan;
+    }
+    return {
+      ok: true,
+      value: {
+        kind: "replan",
+        stop: {
+          reason: `redirect limit exhausted for ${action.task_id}; re-plan status ${String(replan.value.status)}`,
+          diagnosis:
+            "Repeated write-intent rejections are treated as planning thrash, not a reason to coach forever or cancel immediately.",
+          options: [
+            "Re-scope the task so the needed file is explicitly accounted for.",
+            "Split or re-sequence the task if the worker is reaching across dependency boundaries.",
+            "Escalate to the human/spec owner if the existing scope is correct and the worker keeps ignoring it."
+          ],
+          recommendation: "Stop the loop and handle the re-plan record before retrying this task."
+        }
+      }
+    };
+  }
+
+  const correction = await generateRedirectCorrection(repoRoot, tool, action, rejectionReason);
+  if (!correction.ok) {
+    return correction;
+  }
+  const attempt = priorRedirects + 1;
+  const record: RedirectCorrectionRecord = {
+    task_id: action.task_id,
+    attempt,
+    max_attempts: policy.redirectLimit,
+    correction: correction.value,
+    reason: "write-intent drift corrected before worker edit",
+    rejected_intent: action.intent,
+    rejection_reason: rejectionReason
+  };
+  const recorded = await routeMutatingAction(repoRoot, "/supervision/redirect", { ...record }, () => recordRedirectFirstCorrection(repoRoot, record));
+  if (!recorded.ok) {
+    return recorded;
+  }
+  return {
+    ok: true,
+    value: {
+      kind: "redirected",
+      step: {
+        attempt,
+        max_attempts: policy.redirectLimit,
+        correction: correction.value,
+        event_types: ["task.revision_requested", "task.redirected"]
+      }
+    }
+  };
+}
+
 function buildReactiveProposalMessage(session: ManagerSession): string {
   const last = session.executed_actions.at(-1);
   if (last === undefined) {
@@ -696,6 +917,7 @@ function buildReactiveProposalMessage(session: ManagerSession): string {
     `Last result JSON: ${JSON.stringify(last.result)}`,
     "Run pipeline rule: run_worker returning started means only that the daemon accepted the worker job. Do not propose submit_patch until durable state has a task.completed event and a patch bundle.",
     "Patch pipeline rule: enqueue_patch is allowed only after a real submit_patch event and a real analyze_patch accepted event. If a task has a patch bundle but submitted/analyzed/accepted are not all true, propose submit_patch or analyze_patch as the next missing step.",
+    "Redirect rule: if the last action was check_write_intent and durable events include task.redirected, propose a corrected in-scope check_write_intent. Do not repeat the rejected intent.",
     "If the task is done or blocked awaiting human action, return an empty actions array.",
     "Do not propose any action that changes config, provider tier metadata, safety rules, approval policy, or deterministic gates to get around a rejection."
   ].join("\n");
@@ -709,7 +931,7 @@ function appendProposalToSession(session: ManagerSession, proposal: ManagerPropo
       ...session.turns,
       {
         role: "manager",
-        content: `proposed next action: ${proposal.actions[0]?.type ?? "none"} — ${proposal.reason}`
+        content: `proposed next action: ${proposal.actions[0]?.type ?? "none"} - ${proposal.reason}`
       }
     ]
   };
@@ -939,6 +1161,46 @@ export async function continueAutonomousManagerLoop(
       return result;
     }
     if (!result.value.result.ok) {
+      if (isRedirectableWriteIntentRejection(action, result.value.result)) {
+        const redirect = await handleWriteIntentRedirect(repoRoot, session.value, action, result.value.result.reason, options.tool, policy.value);
+        if (!redirect.ok) {
+          return redirect;
+        }
+        const status = await getStatus(repoRoot);
+        if (!status.ok) {
+          return status;
+        }
+        if (redirect.value.kind === "redirected") {
+          steps.push({
+            index,
+            action_type: action.type,
+            tier: "redirect",
+            result: result.value.result,
+            redirect: redirect.value.step
+          });
+          nextProposal = undefined;
+          continue;
+        }
+        return {
+          ok: true,
+          value: {
+            session_id: sessionId,
+            session_path: managerSessionRelativePath(sessionId),
+            status: "stopped",
+            steps: [
+              ...steps,
+              {
+                index,
+                action_type: action.type,
+                tier: "gate_rejection",
+                result: result.value.result,
+                stop: redirect.value.stop
+              }
+            ],
+            final_status: status.value
+          }
+        };
+      }
       const stop = buildGateRejectionAdvice(action, result.value.result.reason);
       const status = await getStatus(repoRoot);
       if (!status.ok) {
@@ -1225,6 +1487,7 @@ function appendActionToSession(session: ManagerSession, action: ManagerAction, r
     id: randomUUID(),
     ts: new Date().toISOString(),
     type: action.type,
+    ...("task_id" in action ? { task_id: action.task_id } : {}),
     result
   };
   return {

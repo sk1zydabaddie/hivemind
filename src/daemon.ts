@@ -15,6 +15,7 @@ import { markRunFailed, startRunTaskJob } from "./run.js";
 import { runScout } from "./scout.js";
 import { getStatus } from "./status.js";
 import { submitTask } from "./submit.js";
+import { recordRedirectFirstCorrection } from "./supervision.js";
 import { validateRequestedTaskId } from "./task-id.js";
 import { createTaskWorktree, removeTaskWorktree } from "./worktree.js";
 
@@ -178,6 +179,45 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
         return taskId;
       }
       return isRecord(payload.intent) ? checkWriteIntent(repoRoot, taskId.value, payload.intent) : { ok: false, reason: "intent must be a JSON object" };
+    };
+  }
+  if (request.method === "POST" && request.url === "/supervision/redirect") {
+    return async (payload) => {
+      const taskId = readTaskId(payload);
+      if (!taskId.ok) {
+        return taskId;
+      }
+      const correction = readRequiredString(payload, "correction");
+      if (!correction.ok) {
+        return correction;
+      }
+      const reason = readRequiredString(payload, "reason");
+      if (!reason.ok) {
+        return reason;
+      }
+      const rejectionReason = readRequiredString(payload, "rejection_reason");
+      if (!rejectionReason.ok) {
+        return rejectionReason;
+      }
+      const attempt = readOptionalPositiveInteger(payload, "attempt");
+      if (!attempt.ok || attempt.value === undefined) {
+        return attempt.ok ? { ok: false, reason: "attempt must be a positive integer" } : attempt;
+      }
+      const maxAttempts = readOptionalPositiveInteger(payload, "max_attempts");
+      if (!maxAttempts.ok || maxAttempts.value === undefined) {
+        return maxAttempts.ok ? { ok: false, reason: "max_attempts must be a positive integer" } : maxAttempts;
+      }
+      return isRecord(payload.rejected_intent)
+        ? recordRedirectFirstCorrection(repoRoot, {
+            task_id: taskId.value,
+            correction: correction.value,
+            reason: reason.value,
+            rejection_reason: rejectionReason.value,
+            rejected_intent: payload.rejected_intent,
+            attempt: attempt.value,
+            max_attempts: maxAttempts.value
+          })
+        : { ok: false, reason: "rejected_intent must be a JSON object" };
     };
   }
   if (request.method === "POST" && request.url === "/worktree/create") {
@@ -407,8 +447,12 @@ function readOptionalPositiveInteger(payload: DaemonPayload, field: string): { o
 }
 
 function writeJson(response: ServerResponse, statusCode: number, value: unknown): void {
-  response.writeHead(statusCode, { "content-type": "application/json" });
-  response.end(`${JSON.stringify(value, null, 2)}\n`);
+  const payload = `${JSON.stringify(value, null, 2)}\n`;
+  response.writeHead(statusCode, {
+    "content-type": "application/json",
+    "content-length": Buffer.byteLength(payload)
+  });
+  response.end(payload);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

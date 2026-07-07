@@ -323,6 +323,9 @@ function eventFailureReason(event: HivemindEvent): string[] {
   if (event.type === "lease.rejected") {
     return [readReason(event.data, "lease rejected")];
   }
+  if (event.type === "write_intent.rejected") {
+    return [readReason(event.data, "write intent rejected")];
+  }
   if (event.type === "task.blocked") {
     return [readReason(event.data, "task blocked")];
   }

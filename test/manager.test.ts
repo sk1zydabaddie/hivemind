@@ -430,6 +430,121 @@ test("manager autonomous loop hard-stops on gate rejection without retrying or c
   });
 });
 
+test("manager autonomous loop redirects out-of-scope write intent before worker restart", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await setConfigManagerAutonomy(repo, { redirect_limit: 2 });
+    const agentPath = await writeAgent(repo, "redirect-worker-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'worker stayed in scope after redirect\\n');"
+    ]);
+    await writeProfile(repo, "strong-worker", agentPath, "strong", 1);
+    const contract = managerContract("T-REDIRECT", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, contract);
+    await writeRedirectAwareManagerProfile(repo, "T-REDIRECT", contract, "strong-worker");
+
+    const result = await runAutonomousManagerLoop(repo, "Drive redirect-first correction", {
+      tool: "manager",
+      approvedActions: new Set(["run_worker"]),
+      maxSteps: 12
+    });
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.value.status, "completed");
+    assert.deepEqual(result.value.steps.map((step) => step.action_type), [
+      "create_task_contract",
+      "request_lease",
+      "check_write_intent",
+      "check_write_intent",
+      "create_worktree",
+      "run_worker",
+      "submit_patch",
+      "analyze_patch"
+    ]);
+    assert.equal(result.value.steps[2].tier, "redirect");
+    assert.equal(result.value.steps[2].result?.ok, false);
+    assert.match(result.value.steps[2].redirect?.correction ?? "", /src\/schema\.ts/);
+    assert.match(result.value.steps[2].redirect?.correction ?? "", /README\.md/);
+    assert.equal(result.value.steps.slice(3).every((step) => step.result?.ok === true), true);
+
+    const events = await readRequiredEvents(repo);
+    assertEventOrder(
+      events.map((event) => event.type),
+      [
+        "write_intent.rejected",
+        "task.revision_requested",
+        "task.redirected",
+        "write_intent.approved",
+        "task.completed",
+        "patch.submitted",
+        "patch.accepted"
+      ]
+    );
+    const redirect = events.find((event) => event.type === "task.redirected" && event.task_id === "T-REDIRECT");
+    assert.match(String(redirect?.data.correction), /src\/schema\.ts/);
+    assert.match(String(redirect?.data.correction), /README\.md/);
+    assert.equal(events.some((event) => event.type === "task.cancelled"), false);
+    assert.deepEqual(await managerReactiveCalls(repo), [
+      "initial",
+      "after_create_task_contract_ok",
+      "after_request_lease_ok",
+      "correction_prompt_specific",
+      "after_check_write_intent_rejected_redirected",
+      "after_check_write_intent_ok",
+      "after_create_worktree_ok",
+      "after_run_worker_ok",
+      "after_submit_patch_ok",
+      "after_analyze_patch_ok"
+    ]);
+    assert.match(
+      normalizeNewlines(await readFile(path.join(repo, ".hivemind", "worktrees", "T-REDIRECT", "README.md"), "utf8")),
+      /worker stayed in scope after redirect/
+    );
+    assert.match(
+      normalizeNewlines(await readFile(path.join(repo, ".hivemind", "patches", "T-REDIRECT", "diff.patch"), "utf8")),
+      /worker stayed in scope after redirect/
+    );
+  });
+});
+
+test("manager redirect bound escalates repeated intent drift to re-plan without cancellation", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await setConfigManagerAutonomy(repo, { redirect_limit: 1 });
+    const contract = managerContract("T-THRASH", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, contract);
+    await writeRedirectAwareManagerProfile(repo, "T-THRASH", contract, "strong-worker", { repeatBadIntentAfterRedirect: true });
+
+    const result = await runAutonomousManagerLoop(repo, "Drive bounded redirect thrash", {
+      tool: "manager",
+      approvedActions: new Set(["run_worker"]),
+      maxSteps: 10
+    });
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.value.status, "stopped");
+    assert.deepEqual(result.value.steps.map((step) => step.action_type), ["create_task_contract", "request_lease", "check_write_intent", "check_write_intent"]);
+    assert.equal(result.value.steps[2].tier, "redirect");
+    const finalStep = result.value.steps.at(-1);
+    assert.equal(finalStep?.tier, "gate_rejection");
+    assert.match(finalStep?.stop?.reason ?? "", /redirect limit exhausted/);
+    assert.match(finalStep?.stop?.recommendation ?? "", /re-plan/);
+
+    const events = await readRequiredEvents(repo);
+    assert.equal(events.filter((event) => event.type === "write_intent.rejected" && event.task_id === "T-THRASH").length, 2);
+    assert.equal(events.filter((event) => event.type === "task.redirected" && event.task_id === "T-THRASH").length, 1);
+    assert.equal(events.some((event) => event.type === "replan.triggered" && event.task_id === "T-THRASH"), true);
+    assert.equal(events.some((event) => event.type === "task.blocked" && event.task_id === "T-THRASH"), true);
+    assert.equal(events.some((event) => event.type === "task.cancelled"), false);
+  });
+});
+
 test("manager autonomous loop stops on non-zero worker exit and does not enqueue", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
@@ -1389,6 +1504,18 @@ async function setConfigTestCommand(repo: string, testCommand: string): Promise<
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
+async function setConfigManagerAutonomy(repo: string, managerAutonomy: Record<string, unknown>): Promise<void> {
+  const configPath = path.join(repo, ".hivemind", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+  config.manager_autonomy = {
+    ...((typeof config.manager_autonomy === "object" && config.manager_autonomy !== null && !Array.isArray(config.manager_autonomy)
+      ? config.manager_autonomy
+      : {}) as Record<string, unknown>),
+    ...managerAutonomy
+  };
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
 async function writeAgent(repo: string, fileName: string, lines: string[]): Promise<string> {
   const agentsDir = path.join(repo, "fake-agents");
   await mkdir(agentsDir, { recursive: true });
@@ -1440,6 +1567,72 @@ async function writeReactiveManagerProposalProfile(repo: string, proposals: Reco
         prompt_arg: "stdin",
         verified_on: "2026-06-16",
         context_window: 1024,
+        routing_tier: "strong",
+        cost_rank: 1
+      },
+      null,
+      2
+    )}\n`
+  );
+}
+
+async function writeRedirectAwareManagerProfile(
+  repo: string,
+  taskId: string,
+  contract: Record<string, unknown>,
+  workerTool: string,
+  options: { repeatBadIntentAfterRedirect?: boolean } = {}
+): Promise<void> {
+  const badIntent = intentFor(taskId, ["src/schema.ts"]);
+  const correctedIntent = intentFor(taskId, ["README.md"]);
+  const proposals = {
+    initial: proposalFor([{ type: "create_task_contract", contract }]),
+    after_create_task_contract_ok: proposalFor([{ type: "request_lease", task_id: taskId }]),
+    after_request_lease_ok: proposalFor([{ type: "check_write_intent", task_id: taskId, intent: badIntent }]),
+    after_check_write_intent_ok: proposalFor([{ type: "create_worktree", task_id: taskId }]),
+    after_create_worktree_ok: proposalFor([{ type: "run_worker", task_id: taskId, tool: workerTool }], ["run_worker"]),
+    after_run_worker_ok: proposalFor([{ type: "submit_patch", task_id: taskId }]),
+    after_submit_patch_ok: proposalFor([{ type: "analyze_patch", task_id: taskId }]),
+    after_analyze_patch_ok: proposalFor([])
+  };
+  const correctedProposal = proposalFor([
+    { type: "check_write_intent", task_id: taskId, intent: options.repeatBadIntentAfterRedirect === true ? badIntent : correctedIntent }
+  ]);
+  const agentPath = await writeAgent(repo, "manager-redirect-aware-agent.mjs", [
+    "const { appendFile } = await import('node:fs/promises');",
+    "let input = '';",
+    "for await (const chunk of process.stdin) input += chunk;",
+    `const taskId = ${JSON.stringify(taskId)};`,
+    `const proposals = ${JSON.stringify(proposals)};`,
+    `const correctedProposal = ${JSON.stringify(correctedProposal)};`,
+    "if (input.includes('A deterministic write-intent gate has already refused')) {",
+    "  const specific = input.includes('src/schema.ts') && input.includes('README.md');",
+    "  await appendFile('.hivemind/manager-reactive-calls.log', specific ? 'correction_prompt_specific\\n' : 'correction_prompt_generic\\n');",
+    "  console.log(JSON.stringify({ correction: 'Do not edit src/schema.ts; it is outside this task lease. Use README.md only for this task, re-declare write-intent for README.md, and continue without widening scope.' }));",
+    "  process.exit(0);",
+    "}",
+    "const match = input.match(/Last manager observation: action ([a-z_]+) returned (ok|rejected)/);",
+    "const key = match ? `after_${match[1]}_${match[2]}` : 'initial';",
+    "if (key === 'after_check_write_intent_rejected') {",
+    "  const redirected = input.includes('task.redirected') && input.includes('Do not edit src/schema.ts') && input.includes('README.md');",
+    "  await appendFile('.hivemind/manager-reactive-calls.log', redirected ? 'after_check_write_intent_rejected_redirected\\n' : 'after_check_write_intent_rejected_unredirected\\n');",
+    "  console.log(JSON.stringify(redirected ? correctedProposal : { reason: 'No redirect evidence.', human_approval_required_for: [], actions: [] }));",
+    "  process.exit(0);",
+    "}",
+    "await appendFile('.hivemind/manager-reactive-calls.log', `${key}\\n`);",
+    "console.log(JSON.stringify(proposals[key] ?? { reason: 'No follow-up action.', human_approval_required_for: [], actions: [] }));"
+  ]);
+  const adaptersDir = path.join(repo, ".hivemind", "adapters");
+  await mkdir(adaptersDir, { recursive: true });
+  await writeFile(
+    path.join(adaptersDir, "manager.profile.json"),
+    `${JSON.stringify(
+      {
+        tool: "manager",
+        invoke: ["node", agentPath],
+        prompt_arg: "stdin",
+        verified_on: "2026-06-16",
+        context_window: 2048,
         routing_tier: "strong",
         cost_rank: 1
       },
@@ -1744,8 +1937,12 @@ async function readJsonBody(request: IncomingMessage): Promise<Record<string, un
 }
 
 function sendJson(response: ServerResponse, statusCode: number, body: unknown): void {
-  response.writeHead(statusCode, { "content-type": "application/json" });
-  response.end(JSON.stringify(body));
+  const payload = JSON.stringify(body);
+  response.writeHead(statusCode, {
+    "content-type": "application/json",
+    "content-length": Buffer.byteLength(payload)
+  });
+  response.end(payload);
 }
 
 function closeServer(server: Server): Promise<void> {

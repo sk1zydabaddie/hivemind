@@ -96,30 +96,33 @@ test("MCP tool calls fail closed without a configured daemon", async () => {
 test("MCP tools route through daemon and match the core task/worktree/patch/status flow", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await setConfigTestCommand(repo, "node -e \"process.exit(0)\"");
+    const contract = buildContract("T-OK", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, contract);
     const daemon = await startDaemon(repo);
-    const server = await startHttpMcp(repo, { HIVEMIND_DAEMON_URL: daemon.url });
-    const client = new Client({ name: "hivemind-core-tools-test", version: "0.0.0" }, { capabilities: {} });
-    const transport = new StreamableHTTPClientTransport(new URL(server.url));
     try {
-      await client.connect(transport);
-
-      const contract = buildContract("T-OK", baseCommit, ["README.md"]);
-      await prepareLintedPlan(repo, contract);
-      const created = await callStructured(client, "hivemind.create_task_contract", { contract });
+      const created = await withStdioMcpClient(repo, daemon.url, "hivemind-core-tools-test", (client) =>
+        callStructured(client, "hivemind.create_task_contract", { contract })
+      );
       assert.equal(created.task_id, "T-OK");
       assert.equal(created.contract_path, ".hivemind/tasks/T-OK.contract.json");
       await execFileAsync(process.execPath, [cliPath, "contract", "T-OK", "--validate"], { cwd: repo, windowsHide: true });
 
-      const lease = await callStructured(client, "hivemind.request_lease", { task_id: "T-OK" });
+      const lease = await withStdioMcpClient(repo, daemon.url, "hivemind-core-lease-test", (client) =>
+        callStructured(client, "hivemind.request_lease", { task_id: "T-OK" })
+      );
       assert.deepEqual(lease.granted, ["README.md"]);
 
-      const worktree = await callStructured(client, "hivemind.create_worktree", { task_id: "T-OK" });
+      const worktree = await withStdioMcpClient(repo, daemon.url, "hivemind-core-worktree-test", (client) =>
+        callStructured(client, "hivemind.create_worktree", { task_id: "T-OK" })
+      );
       assert.equal(worktree.branch, "hivemind/T-OK");
       assert.equal(typeof worktree.worktree, "string");
       await writeFile(path.join(String(worktree.worktree), "README.md"), "# Fixture\nMCP accepted edit\n");
       await markRunCompleted(repo, "T-OK", String(worktree.worktree), baseCommit);
 
-      const submitted = await callStructured(client, "hivemind.submit_patch", { task_id: "T-OK" });
+      const submitted = await withStdioMcpClient(repo, daemon.url, "hivemind-core-submit-test", (client) =>
+        callStructured(client, "hivemind.submit_patch", { task_id: "T-OK" })
+      );
       assert.equal(submitted.task_id, "T-OK");
       assert.deepEqual(submitted.files, [
         "diff.patch",
@@ -133,7 +136,9 @@ test("MCP tools route through daemon and match the core task/worktree/patch/stat
 
       const eventsBeforeAnalyze = await readEvents(repo);
       assert.equal(eventsBeforeAnalyze.ok, true);
-      const accepted = await callStructured(client, "hivemind.analyze_patch", { task_id: "T-OK" });
+      const accepted = await withStdioMcpClient(repo, daemon.url, "hivemind-core-analyze-test", (client) =>
+        callStructured(client, "hivemind.analyze_patch", { task_id: "T-OK" })
+      );
       const eventsAfterAnalyze = await readEvents(repo);
       assert.equal(eventsAfterAnalyze.ok, true);
       assert.equal(accepted.verdict, "accept");
@@ -143,11 +148,15 @@ test("MCP tools route through daemon and match the core task/worktree/patch/stat
       assert.equal(eventsAfterAnalyze.value.length, eventsBeforeAnalyze.value.length);
 
       await writeQueue(repo, ["T-OK"]);
-      const integration = await callStructured(client, "hivemind.integrate_shadow", {});
+      const integration = await withStdioMcpClient(repo, daemon.url, "hivemind-core-integrate-test", (client) =>
+        callStructured(client, "hivemind.integrate_shadow", {})
+      );
       assert.equal(integration.tests, "pass");
       assert.deepEqual(integration.applied, ["T-OK"]);
 
-      const status = await callStructured(client, "hivemind.get_status", {});
+      const status = await withStdioMcpClient(repo, daemon.url, "hivemind-core-status-test", (client) =>
+        callStructured(client, "hivemind.get_status", {})
+      );
       assert.equal(Array.isArray(status.tasks), true);
       const tasks = status.tasks as Array<{
         task_id?: unknown;
@@ -161,8 +170,6 @@ test("MCP tools route through daemon and match the core task/worktree/patch/stat
       assert.equal(task?.patch?.verdict, "accept");
       assert.equal(task?.integrated, true);
     } finally {
-      await client.close();
-      await stopHttpMcp(server);
       await stopProcess(daemon);
     }
   });
@@ -212,27 +219,25 @@ test("draft active spec blocks daemon-routed lease and MCP task creation", async
 
 test("MCP analyze_patch rejects out-of-scope patch bundles", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
+    await prepareLintedPlan(repo, buildContract("T-OUT", baseCommit, ["README.md"]));
     const daemon = await startDaemon(repo);
-    const server = await startHttpMcp(repo, { HIVEMIND_DAEMON_URL: daemon.url });
-    const client = new Client({ name: "hivemind-reject-test", version: "0.0.0" }, { capabilities: {} });
-    const transport = new StreamableHTTPClientTransport(new URL(server.url));
     try {
-      await client.connect(transport);
-      await prepareLintedPlan(repo, buildContract("T-OUT", baseCommit, ["README.md"]));
-      await callStructured(client, "hivemind.create_task_contract", {
-        contract: buildContract("T-OUT", baseCommit, ["README.md"])
-      });
+      await withStdioMcpClient(repo, daemon.url, "hivemind-reject-create-test", (client) =>
+        callStructured(client, "hivemind.create_task_contract", {
+          contract: buildContract("T-OUT", baseCommit, ["README.md"])
+        })
+      );
       await writePatchFromRootEdit(repo, "T-OUT", baseCommit, async () => {
         await writeFile(path.join(repo, "outside.txt"), "outside change\n");
       });
 
-      const rejected = await callStructured(client, "hivemind.analyze_patch", { task_id: "T-OUT" });
+      const rejected = await withStdioMcpClient(repo, daemon.url, "hivemind-reject-analyze-test", (client) =>
+        callStructured(client, "hivemind.analyze_patch", { task_id: "T-OUT" })
+      );
 
       assert.equal(rejected.verdict, "reject");
       assert.match(String(rejected.reason), /outside allowed_files|not allowed|outside/i);
     } finally {
-      await client.close();
-      await stopHttpMcp(server);
       await stopProcess(daemon);
     }
   });
@@ -240,34 +245,32 @@ test("MCP analyze_patch rejects out-of-scope patch bundles", async () => {
 
 test("MCP create_task_contract rejects invalid input and duplicate task ids", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
+    await prepareLintedPlan(repo, buildContract("T-DUP", baseCommit, ["README.md"]));
     const daemon = await startDaemon(repo);
-    const server = await startHttpMcp(repo, { HIVEMIND_DAEMON_URL: daemon.url });
-    const client = new Client({ name: "hivemind-contract-test", version: "0.0.0" }, { capabilities: {} });
-    const transport = new StreamableHTTPClientTransport(new URL(server.url));
     try {
-      await client.connect(transport);
-      const invalid = await client.callTool({
-        name: "hivemind.create_task_contract",
-        arguments: { contract: { task_id: "bad/id", base_commit: baseCommit, allowed_files: ["README.md"] } }
+      await withStdioMcpClient(repo, daemon.url, "hivemind-contract-invalid-test", async (client) => {
+        const invalid = await client.callTool({
+          name: "hivemind.create_task_contract",
+          arguments: { contract: { task_id: "bad/id", base_commit: baseCommit, allowed_files: ["README.md"] } }
+        });
+        assert.equal(invalid.isError, true);
       });
-      assert.equal(invalid.isError, true);
       assert.equal(await exists(path.join(repo, ".hivemind", "tasks", "bad", "id.contract.json")), false);
 
-      await prepareLintedPlan(repo, buildContract("T-DUP", baseCommit, ["README.md"]));
-      await callStructured(client, "hivemind.create_task_contract", {
-        contract: buildContract("T-DUP", baseCommit, ["README.md"])
-      });
-      const duplicate = await client.callTool({
-        name: "hivemind.create_task_contract",
-        arguments: { contract: buildContract("T-DUP", baseCommit, ["README.md"]) }
-      });
+      await withStdioMcpClient(repo, daemon.url, "hivemind-contract-test", async (client) => {
+        await callStructured(client, "hivemind.create_task_contract", {
+          contract: buildContract("T-DUP", baseCommit, ["README.md"])
+        });
+        const duplicate = await client.callTool({
+          name: "hivemind.create_task_contract",
+          arguments: { contract: buildContract("T-DUP", baseCommit, ["README.md"]) }
+        });
 
-      assert.equal(duplicate.isError, true);
-      const content = (duplicate.content as Array<{ type?: unknown; text?: unknown }>)[0];
-      assert.match(String(content?.type === "text" ? content.text : ""), /contract already exists/);
+        assert.equal(duplicate.isError, true);
+        const content = (duplicate.content as Array<{ type?: unknown; text?: unknown }>)[0];
+        assert.match(String(content?.type === "text" ? content.text : ""), /contract already exists/);
+      });
     } finally {
-      await client.close();
-      await stopHttpMcp(server);
       await stopProcess(daemon);
     }
   });
@@ -301,23 +304,19 @@ test("MCP create_task_contract inherits the lint-passed plan precondition", asyn
     );
 
     const daemon = await startDaemon(repo);
-    const server = await startHttpMcp(repo, { HIVEMIND_DAEMON_URL: daemon.url });
-    const client = new Client({ name: "hivemind-mcp-lint-floor-test", version: "0.0.0" }, { capabilities: {} });
-    const transport = new StreamableHTTPClientTransport(new URL(server.url));
     try {
-      await client.connect(transport);
-      const result = await client.callTool({
-        name: "hivemind.create_task_contract",
-        arguments: { contract: bypass }
-      });
+      await withStdioMcpClient(repo, daemon.url, "hivemind-mcp-lint-floor-test", async (client) => {
+        const result = await client.callTool({
+          name: "hivemind.create_task_contract",
+          arguments: { contract: bypass }
+        });
 
-      assert.equal(result.isError, true);
-      const content = (result.content as Array<{ type?: unknown; text?: unknown }>)[0];
-      assert.match(String(content?.type === "text" ? content.text : ""), /current lint-passed tentative plan/);
+        assert.equal(result.isError, true);
+        const content = (result.content as Array<{ type?: unknown; text?: unknown }>)[0];
+        assert.match(String(content?.type === "text" ? content.text : ""), /current lint-passed tentative plan/);
+      });
       assert.equal(await exists(path.join(repo, ".hivemind", "tasks", "T-BYPASS.contract.json")), false);
     } finally {
-      await client.close();
-      await stopHttpMcp(server);
       await stopProcess(daemon);
     }
   });
@@ -333,28 +332,26 @@ test("MCP create_task_contract refuses a dependent task until dependencies are e
     ]);
 
     const daemon = await startDaemon(repo);
-    const server = await startHttpMcp(repo, { HIVEMIND_DAEMON_URL: daemon.url });
-    const client = new Client({ name: "hivemind-mcp-dependency-floor-test", version: "0.0.0" }, { capabilities: {} });
-    const transport = new StreamableHTTPClientTransport(new URL(server.url));
     try {
-      await client.connect(transport);
-      const blocked = await client.callTool({
-        name: "hivemind.create_task_contract",
-        arguments: { contract: dependent }
-      });
+      await withStdioMcpClient(repo, daemon.url, "hivemind-mcp-dependency-block-test", async (client) => {
+        const blocked = await client.callTool({
+          name: "hivemind.create_task_contract",
+          arguments: { contract: dependent }
+        });
 
-      assert.equal(blocked.isError, true);
-      const blockedContent = (blocked.content as Array<{ type?: unknown; text?: unknown }>)[0];
-      assert.match(String(blockedContent?.type === "text" ? blockedContent.text : ""), /task T-DEP depends_on not integrated: T-BASE/);
+        assert.equal(blocked.isError, true);
+        const blockedContent = (blocked.content as Array<{ type?: unknown; text?: unknown }>)[0];
+        assert.match(String(blockedContent?.type === "text" ? blockedContent.text : ""), /task T-DEP depends_on not integrated: T-BASE/);
+      });
       assert.equal(await exists(path.join(repo, ".hivemind", "tasks", "T-DEP.contract.json")), false);
 
       await appendIntegratedDependencyEvents(repo, "T-BASE");
-      const allowed = await callStructured(client, "hivemind.create_task_contract", { contract: dependent });
-      assert.equal(allowed.task_id, "T-DEP");
+      await withStdioMcpClient(repo, daemon.url, "hivemind-mcp-dependency-allowed-test", async (client) => {
+        const allowed = await callStructured(client, "hivemind.create_task_contract", { contract: dependent });
+        assert.equal(allowed.task_id, "T-DEP");
+      });
       assert.equal(await exists(path.join(repo, ".hivemind", "tasks", "T-DEP.contract.json")), true);
     } finally {
-      await client.close();
-      await stopHttpMcp(server);
       await stopProcess(daemon);
     }
   });
@@ -627,6 +624,23 @@ async function appendIntegratedDependencyEvents(repo: string, taskId: string): P
     task_id: null,
     data: { applied: [taskId], tests: "pass" }
   });
+}
+
+async function withStdioMcpClient<T>(repo: string, daemonUrl: string, name: string, run: (client: Client) => Promise<T>): Promise<T> {
+  const client = new Client({ name, version: "0.0.0" }, { capabilities: {} });
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [cliPath, "mcp", "--stdio"],
+    cwd: repo,
+    env: { ...process.env, HIVEMIND_DAEMON_URL: daemonUrl },
+    stderr: "pipe"
+  });
+  try {
+    await client.connect(transport);
+    return await run(client);
+  } finally {
+    await client.close();
+  }
 }
 
 async function callStructured(client: Client, name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {

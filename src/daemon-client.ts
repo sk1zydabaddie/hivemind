@@ -93,7 +93,7 @@ async function resolveDaemonAddress(repoRoot: string): Promise<{ ok: true; value
 async function requestJson<T>(url: string, init: RequestInit): Promise<{ ok: true; value: T } | { ok: false; reason: string }> {
   let response: Response;
   try {
-    response = await fetch(url, init);
+    response = await fetch(url, withConnectionClose(init));
   } catch (error: unknown) {
     return { ok: false, reason: `daemon request failed: ${error instanceof Error ? error.message : "unknown error"}` };
   }
@@ -109,6 +109,12 @@ async function requestJson<T>(url: string, init: RequestInit): Promise<{ ok: tru
     return { ok: false, reason: readReason(parsed) };
   }
   return { ok: true, value: parsed as T };
+}
+
+function withConnectionClose(init: RequestInit): RequestInit {
+  const headers = new Headers(init.headers);
+  headers.set("connection", "close");
+  return { ...init, headers };
 }
 
 async function sameRepoRoot(left: string, right: string): Promise<boolean> {
