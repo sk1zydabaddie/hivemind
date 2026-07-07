@@ -1370,6 +1370,11 @@ async function waitForTaskRunCompletion(repoRoot: string, taskId: string): Promi
       const reason = typeof state.failed.data.reason === "string" ? state.failed.data.reason : "worker run failed";
       return { ok: false, reason: `task ${taskId} worker run failed: ${reason}` };
     }
+    const quotaPause = latestQuotaPauseAfterLatestStart(events.value, taskId);
+    if (quotaPause !== null) {
+      const rerouteReason = typeof quotaPause.data.reroute_reason === "string" ? quotaPause.data.reroute_reason : "no eligible provider available";
+      return { ok: false, reason: `task ${taskId} quota paused awaiting reset: ${rerouteReason}` };
+    }
 
     await delay(500);
   }
@@ -1407,6 +1412,32 @@ async function recordRunWaitTimeout(repoRoot: string, taskId: string, reason: st
   }
 
   return { ok: false, reason: `${reason}; durable task.failed event was not observed after timeout reconciliation` };
+}
+
+function latestQuotaPauseAfterLatestStart(events: HivemindEvent[], taskId: string): HivemindEvent | null {
+  let latestStartSeen = false;
+  let pause: HivemindEvent | null = null;
+  for (const event of events) {
+    if (event.task_id !== taskId) {
+      continue;
+    }
+    if (event.type === "task.started") {
+      latestStartSeen = true;
+      pause = null;
+      continue;
+    }
+    if (!latestStartSeen) {
+      continue;
+    }
+    if (event.type === "task.paused" && event.data.reason === "quota_exhausted") {
+      pause = event;
+      continue;
+    }
+    if (event.type === "task.completed" || event.type === "task.failed") {
+      pause = null;
+    }
+  }
+  return pause;
 }
 
 async function runResultFromCompletedEvent(

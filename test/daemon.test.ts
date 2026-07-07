@@ -275,6 +275,41 @@ test("daemon startup marks started runs without completion as failed", async () 
   });
 });
 
+test("daemon startup preserves quota-paused runs instead of marking them failed", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const started = await appendEvent(repo, {
+      type: "task.started",
+      task_id: "T-PAUSE",
+      data: { tool: "fake-stream", worktree: path.join(repo, ".hivemind", "worktrees", "T-PAUSE") }
+    });
+    assert.equal(started.ok, true);
+    const paused = await appendEvent(repo, {
+      type: "task.paused",
+      task_id: "T-PAUSE",
+      data: {
+        reason: "quota_exhausted",
+        source: "quota-wall-recovery",
+        snapshot_path: ".hivemind/resource/checkpoints/T-PAUSE.snapshot.json",
+        awaiting: "quota_reset_or_provider_available"
+      }
+    });
+    assert.equal(paused.ok, true);
+
+    const daemon = await startDaemon(repo);
+    try {
+      const events = await readEvents(repo);
+      assert.equal(events.ok, true);
+      if (!events.ok) {
+        return;
+      }
+      assert.equal(events.value.some((event) => event.type === "task.paused" && event.task_id === "T-PAUSE"), true);
+      assert.equal(events.value.some((event) => event.type === "task.failed" && event.task_id === "T-PAUSE"), false);
+    } finally {
+      await stopDaemon(daemon);
+    }
+  });
+});
+
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
   const repo = await mkdtemp(path.join(tmpdir(), "hivemind-daemon-test-"));
   try {

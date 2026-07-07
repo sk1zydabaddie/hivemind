@@ -342,6 +342,101 @@ test("runTask reacts to a quota wall by checkpointing and resuming on another pr
   });
 });
 
+test("runTask pauses and preserves a checkpoint when no eligible quota-wall provider remains", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const primaryAgent = await writeAgent(repo, "quota-wall-no-provider-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'partial work before no-provider quota pause\\n');",
+      "console.error('429 too many requests');",
+      "process.exit(1);"
+    ]);
+    await prepareLintedPlanWithTasks(repo, [planTask("T-001", "README.md")]);
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writeProfile(repo, "primary", primaryAgent, undefined, false, "strong", 1);
+    await grantLease(repo, "T-001", ["README.md"]);
+
+    const result = await runTask(repo, "T-001", "primary", { predictiveQuotaRecovery: false });
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.match(result.reason, /task paused awaiting quota reset/);
+    const checkpointPath = path.join(repo, ".hivemind", "resource", "checkpoints", "T-001.snapshot.json");
+    assert.equal((await stat(checkpointPath)).isFile(), true);
+    assert.match(await readFile(path.join(repo, ".hivemind", "worktrees", "T-001", "README.md"), "utf8"), /partial work before no-provider quota pause/);
+    await assertMissing(path.join(repo, ".hivemind", "patches", "T-001", "diff.patch"));
+
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.equal(events.value.some((event) => event.type === "task.checkpointed" && event.task_id === "T-001"), true);
+    const paused = events.value.find((event) => event.type === "task.paused" && event.task_id === "T-001");
+    assert.notEqual(paused, undefined);
+    assert.equal(paused?.data.reason, "quota_exhausted");
+    assert.equal(paused?.data.source, "quota-wall-recovery");
+    assert.equal(paused?.data.snapshot_path, ".hivemind/resource/checkpoints/T-001.snapshot.json");
+    assert.deepEqual(paused?.data.providers_walled, ["primary"]);
+    assert.equal(events.value.some((event) => event.type === "task.failed" && event.task_id === "T-001"), false);
+    assert.equal(events.value.some((event) => event.type === "task.completed" && event.task_id === "T-001"), false);
+  });
+});
+
+test("runTask resumes a quota-paused task from its preserved checkpoint when a provider becomes eligible", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const primaryAgent = await writeAgent(repo, "quota-pause-primary-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'partial work preserved across quota pause\\n');",
+      "console.error('429 too many requests');",
+      "process.exit(1);"
+    ]);
+    const secondaryAgent = await writeAgent(repo, "quota-pause-secondary-agent.mjs", [
+      "const { readFile, appendFile } = await import('node:fs/promises');",
+      "const current = await readFile('README.md', 'utf8');",
+      "if (!current.includes('partial work preserved across quota pause')) process.exit(9);",
+      "await appendFile('README.md', 'continued after quota reset\\n');"
+    ]);
+    await prepareLintedPlanWithTasks(repo, [planTask("T-001", "README.md")]);
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writeProfile(repo, "primary", primaryAgent, undefined, false, "strong", 1);
+    await grantLease(repo, "T-001", ["README.md"]);
+
+    const paused = await runTask(repo, "T-001", "primary", { predictiveQuotaRecovery: false });
+    assert.equal(paused.ok, false);
+    if (paused.ok) {
+      return;
+    }
+    assert.match(paused.reason, /task paused awaiting quota reset/);
+    const checkpointPath = path.join(repo, ".hivemind", "resource", "checkpoints", "T-001.snapshot.json");
+    const checkpointBefore = await readFile(checkpointPath, "utf8");
+
+    await writeProfile(repo, "secondary", secondaryAgent, undefined, false, "strong", 2);
+    const resumed = await runTask(repo, "T-001", "secondary", { predictiveQuotaRecovery: false });
+
+    assert.equal(resumed.ok, true);
+    if (!resumed.ok) {
+      return;
+    }
+    assert.equal(resumed.value.tool, "secondary");
+    assert.equal(resumed.value.changed_files, 1);
+    const diff = await readFile(resumed.value.diff_path, "utf8");
+    assert.match(diff, /\+partial work preserved across quota pause/);
+    assert.match(diff, /\+continued after quota reset/);
+    assert.equal(await readFile(checkpointPath, "utf8"), checkpointBefore);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.equal(events.value.some((event) => event.type === "task.paused" && event.task_id === "T-001"), true);
+    assert.equal(events.value.some((event) => event.type === "task.resumed" && event.task_id === "T-001" && event.data.source === "quota-reset-resume"), true);
+    assert.equal(events.value.some((event) => event.type === "task.failed" && event.task_id === "T-001"), false);
+    assert.equal(events.value.some((event) => event.type === "task.completed" && event.task_id === "T-001"), true);
+  });
+});
+
 test("runTask predictive quota reroute is non-authoritative and only causes an unnecessary provider switch", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     const primaryAgent = await writeAgent(repo, "predictive-primary-agent.mjs", [

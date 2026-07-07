@@ -22,6 +22,7 @@ import { createTaskWorktree } from "./worktree.js";
 
 const execFileAsync = promisify(execFile);
 const agentLogPath = "agent.log";
+const quotaExhaustedPauseReason = "quota_exhausted";
 
 export interface RunResult {
   task_id: string;
@@ -223,9 +224,32 @@ async function prepareRunTask(
     return worktreeResult;
   }
 
-  const cleanResult = await verifyRunWorktreeClean(worktreeResult.value.worktree, taskId);
-  if (!cleanResult.ok) {
-    return cleanResult;
+  const quotaPauseResume = await loadQuotaPauseResumeState(repoRoot, taskId);
+  if (!quotaPauseResume.ok) {
+    return quotaPauseResume;
+  }
+  if (quotaPauseResume.value === null) {
+    const cleanResult = await verifyRunWorktreeClean(worktreeResult.value.worktree, taskId);
+    if (!cleanResult.ok) {
+      return cleanResult;
+    }
+  } else {
+    const resumedEvent = await emitRunEvent(
+      repoRoot,
+      {
+        type: "task.resumed",
+        task_id: taskId,
+        data: {
+          tool: selectedTool,
+          snapshot_path: quotaPauseResume.value.snapshot_path,
+          source: "quota-reset-resume"
+        }
+      },
+      options.onEvent
+    );
+    if (!resumedEvent.ok) {
+      return resumedEvent;
+    }
   }
 
   if (options.predictiveQuotaRecovery !== false && (await providerHasObservedQuotaWall(repoRoot, selectedTool))) {
@@ -240,6 +264,12 @@ async function prepareRunTask(
       onEvent: options.onEvent
     });
     if (predictive.ok) {
+      if (predictive.value.status === "paused") {
+        return {
+          ok: false,
+          reason: `task paused awaiting quota reset: ${predictive.value.reason}`
+        };
+      }
       selectedTool = predictive.value.tool;
     }
   }
@@ -310,6 +340,10 @@ async function finishPreparedRun(
       if (!reroute.ok) {
         const reason = `${attempt.reason}; quota-wall recovery failed: ${reroute.reason}`;
         await emitRunFailure(repoRoot, active, reason, attempt.toolExit, attempt.diffPath, attempt.changedFiles);
+        return { ok: false, reason };
+      }
+      if (reroute.value.status === "paused") {
+        const reason = `${attempt.reason}; task paused awaiting quota reset: ${reroute.value.reason}`;
         return { ok: false, reason };
       }
       const startedEvent = await emitRunEvent(
@@ -445,7 +479,11 @@ interface RerouteInput {
 async function checkpointAndRerouteTask(
   repoRoot: string,
   input: RerouteInput
-): Promise<{ ok: true; value: { tool: string; snapshot_path: string } } | { ok: false; reason: string }> {
+): Promise<
+  | { ok: true; value: { status: "rerouted"; tool: string; snapshot_path: string } }
+  | { ok: true; value: { status: "paused"; snapshot_path: string; reason: string } }
+  | { ok: false; reason: string }
+> {
   const checkpoint = await checkpointTask(repoRoot, input.taskId);
   if (!checkpoint.ok) {
     return checkpoint;
@@ -456,7 +494,29 @@ async function checkpointAndRerouteTask(
   }
   const route = await routeTaskProvider(repoRoot, input.contract, input.config, undefined, { excludeTools: input.excludeTools });
   if (!route.ok) {
-    return route;
+    const paused = await emitRunEvent(
+      repoRoot,
+      {
+        type: "task.paused",
+        task_id: input.taskId,
+        data: {
+          reason: quotaExhaustedPauseReason,
+          source: "quota-wall-recovery",
+          mode: input.mode,
+          from_tool: input.fromTool,
+          exhausted_tools: input.excludeTools,
+          providers_walled: input.excludeTools,
+          snapshot_path: checkpoint.value.snapshot_path,
+          reroute_reason: route.reason,
+          awaiting: "quota_reset_or_provider_available"
+        }
+      },
+      input.onEvent
+    );
+    if (!paused.ok) {
+      return paused;
+    }
+    return { ok: true, value: { status: "paused", snapshot_path: checkpoint.value.snapshot_path, reason: route.reason } };
   }
   const ceiling = checkRunCeilingPreflight(input.ceiling, route.value.profile);
   if (!ceiling.ok) {
@@ -497,7 +557,42 @@ async function checkpointAndRerouteTask(
   if (!resumed.ok) {
     return resumed;
   }
-  return { ok: true, value: { tool: route.value.tool, snapshot_path: checkpoint.value.snapshot_path } };
+  return { ok: true, value: { status: "rerouted", tool: route.value.tool, snapshot_path: checkpoint.value.snapshot_path } };
+}
+
+async function loadQuotaPauseResumeState(
+  repoRoot: string,
+  taskId: string
+): Promise<{ ok: true; value: null | { snapshot_path: string } } | { ok: false; reason: string }> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) {
+    return events;
+  }
+
+  let pause: HivemindEvent | null = null;
+  for (const event of events.value) {
+    if (event.task_id !== taskId) {
+      continue;
+    }
+    if (event.type === "task.paused" && event.data.reason === quotaExhaustedPauseReason) {
+      pause = event;
+      continue;
+    }
+    if (pause !== null && (event.type === "task.started" || event.type === "task.completed" || event.type === "task.failed")) {
+      pause = null;
+    }
+  }
+
+  if (pause === null) {
+    return { ok: true, value: null };
+  }
+
+  const resumeState = await loadTaskCheckpointResumeState(repoRoot, taskId);
+  if (!resumeState.ok) {
+    return resumeState;
+  }
+  const snapshotPath = typeof pause.data.snapshot_path === "string" ? pause.data.snapshot_path : `.hivemind/resource/checkpoints/${taskId}.snapshot.json`;
+  return { ok: true, value: { snapshot_path: snapshotPath } };
 }
 
 async function providerHasObservedQuotaWall(repoRoot: string, tool: string): Promise<boolean> {

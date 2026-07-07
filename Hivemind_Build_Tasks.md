@@ -467,8 +467,8 @@ Generative/judgment sub-tasks use BEHAVIORAL human-judged acceptance tests, not 
 - **Depends on:** M4.5, M4.6, M6.4.
 - **Read first:** § *Resource & Continuity Manager* → *Quota-wall recovery & continuity*.
 - **Goal:** Survive a provider quota wall by pausing and resuming on another provider with no lost work.
-- **Behavior — exact:** Predictive: when the ledger nears a wall, checkpoint and reroute before failure. Reactive: on a 429, fall back and resume from the checkpoint on any available provider. The reactive path is always correct; predictive is best-effort.
-- **Acceptance test (binary):** A simulated quota wall mid-task results in a checkpoint + resume on another provider, and the completed work is preserved (no restart from zero).
+- **Behavior — exact:** Predictive: when the ledger nears a wall, checkpoint and reroute before failure. Reactive: on a 429, fall back and resume from the checkpoint on any available provider. If no eligible provider remains, checkpoint and emit a quota pause awaiting reset rather than `task.failed`; the task stays in progress and the checkpoint remains resumable later. The reactive path is always correct; predictive is best-effort.
+- **Acceptance test (binary):** A simulated quota wall mid-task results in a checkpoint + resume on another provider, and the completed work is preserved (no restart from zero). If no eligible provider remains, the same wall checkpoints and emits quota-paused state, not failure; later provider availability resumes from the checkpoint with no lost work.
 
 ### M6.6 — Context budget + working-set + orchestrator re-hydrate
 - **Depends on:** M6.4, M4.7.

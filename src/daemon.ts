@@ -347,6 +347,10 @@ function startedWithoutTerminal(events: HivemindEvent[]): string[] {
     }
     if (event.type === "task.completed" || event.type === "task.failed") {
       running.delete(event.task_id);
+      continue;
+    }
+    if (event.type === "task.paused" && event.data.reason === "quota_exhausted") {
+      running.delete(event.task_id);
     }
   }
   return [...running].sort((left, right) => left.localeCompare(right));

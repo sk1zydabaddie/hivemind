@@ -955,6 +955,46 @@ test("manager timeout records durable task.failed for daemon-started runs that n
   });
 });
 
+test("manager observes quota pause without marking a daemon-started run failed", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const sessionResult = await startManagerSession(repo, "Observe quota pause", { proposedAction: testProposal() });
+    assert.equal(sessionResult.ok, true);
+    if (!sessionResult.ok) {
+      return;
+    }
+
+    const daemon = await startRunLifecycleDaemon(repo, { taskId: "T-PAUSE", quotaPauseAfterStart: true });
+    try {
+      await withProcessEnv({ HIVEMIND_DAEMON_URL: daemon.url, HIVEMIND_RUN_WAIT_TIMEOUT_MS: "5000" }, async () => {
+        const result = await executeManagerAction(repo, sessionResult.value.session_id, { type: "run_worker", task_id: "T-PAUSE", tool: "fake-paused" });
+
+        assert.equal(result.ok, true);
+        if (!result.ok) {
+          return;
+        }
+        assert.equal(result.value.result.ok, false);
+        if (result.value.result.ok) {
+          return;
+        }
+        assert.match(result.value.result.reason, /task T-PAUSE quota paused awaiting reset/);
+        assert.equal(daemon.runRequests, 1);
+        assert.equal(daemon.markFailedRequests, 0);
+      });
+    } finally {
+      await daemon.close();
+    }
+
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.equal(events.value.some((event) => event.type === "task.paused" && event.task_id === "T-PAUSE"), true);
+    assert.equal(events.value.some((event) => event.type === "task.failed" && event.task_id === "T-PAUSE"), false);
+  });
+});
+
 test("manager submit_patch refuses a bundle without task.completed evidence", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
@@ -1834,7 +1874,7 @@ interface RunLifecycleDaemon {
   close: () => Promise<void>;
 }
 
-async function startRunLifecycleDaemon(repo: string, options: { taskId: string; completionDelayMs?: number }): Promise<RunLifecycleDaemon> {
+async function startRunLifecycleDaemon(repo: string, options: { taskId: string; completionDelayMs?: number; quotaPauseAfterStart?: boolean }): Promise<RunLifecycleDaemon> {
   let runRequests = 0;
   let markFailedRequests = 0;
   const server = createServer(async (request, response) => {
@@ -1853,6 +1893,20 @@ async function startRunLifecycleDaemon(repo: string, options: { taskId: string; 
           data: { tool: "fake-delayed", worktree }
         });
         assert.equal(started.ok, true);
+        if (options.quotaPauseAfterStart === true) {
+          const paused = await appendEvent(repo, {
+            type: "task.paused",
+            task_id: options.taskId,
+            data: {
+              reason: "quota_exhausted",
+              source: "quota-wall-recovery",
+              snapshot_path: `.hivemind/resource/checkpoints/${options.taskId}.snapshot.json`,
+              reroute_reason: "no eligible provider for strong task tier",
+              awaiting: "quota_reset_or_provider_available"
+            }
+          });
+          assert.equal(paused.ok, true);
+        }
         if (options.completionDelayMs !== undefined) {
           setTimeout(() => {
             void completeFakeDaemonRun(repo, options.taskId);
