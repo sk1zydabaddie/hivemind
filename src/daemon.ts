@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { analyzeTask } from "./analyze.js";
+import { checkpointTask } from "./checkpoint.js";
 import { createTaskContract } from "./contract.js";
 import { removeDaemonState, writeDaemonState } from "./daemon-state.js";
 import { EventBus } from "./event-bus.js";
@@ -151,6 +152,12 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
   }
   if (request.method === "POST" && request.url === "/resource/quota") {
     return async () => readQuotaLedger(repoRoot);
+  }
+  if (request.method === "POST" && request.url === "/checkpoint/task") {
+    return async (payload) => {
+      const taskId = readTaskId(payload);
+      return taskId.ok ? checkpointTask(repoRoot, taskId.value) : taskId;
+    };
   }
   if (request.method === "POST" && request.url === "/plan/thrash") {
     return async (payload) => {

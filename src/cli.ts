@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { analyzeCommand } from "./analyze.js";
+import { checkpointCommand } from "./checkpoint.js";
 import { daemonCommand } from "./daemon.js";
 import { integrateCommand } from "./integrate.js";
 import { intentCommand } from "./intent.js";
@@ -68,6 +69,10 @@ async function main(argv: string[]): Promise<number> {
   if (command === "cache") {
     const { cacheCommand } = await import("./cache.js");
     return cacheCommand(process.cwd(), rest);
+  }
+
+  if (command === "checkpoint") {
+    return checkpointCommand(process.cwd(), rest);
   }
 
   if (command === "quota") {
