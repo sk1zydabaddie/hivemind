@@ -474,8 +474,8 @@ Generative/judgment sub-tasks use BEHAVIORAL human-judged acceptance tests, not 
 - **Depends on:** M6.4, M4.7.
 - **Read first:** Overview § *Context & Working-Set Management* (stateless over durable store; the hard lane rule).
 - **Goal:** Treat context-window pressure as a managed budget; rebuild the orchestrator from the store on demand.
-- **Behavior — exact (C2):** Meter assembled context size; near the limit, checkpoint + distill to durable state + re-hydrate lean. The orchestrator reads authoritative state from `.hivemind/` (never trusts a summary for authoritative state); `orchestrator.snapshot.json` lets it tear down and rebuild.
-- **Acceptance test (binary):** Forcing context pressure triggers a checkpoint + lean re-hydrate; the orchestrator reconstructs correct state (active leases, task states) from disk, not from a summary.
+- **Behavior — exact (C2):** Meter assembled context size; near the limit, checkpoint + distill to durable state + re-hydrate lean. The orchestrator reads authoritative state from `.hivemind/` (never trusts a summary for authoritative state); `orchestrator.snapshot.json` lets it tear down and rebuild. The snapshot is a working-set manifest (refs/retrieval instructions), not an authoritative copy of leases, task state, patch state, or integration state.
+- **Acceptance test (binary):** Forcing context pressure triggers a checkpoint + lean re-hydrate; the orchestrator reconstructs correct state (active leases, task states) from disk, not from a summary. A stale-summary divergence fixture must prove the lean prompt follows current `.hivemind/` state, and the snapshot must not contain authoritative state copies that could drift.
 
 ### M6.7 — Partial-failure degradation
 - **Depends on:** M4.1, M6.1.

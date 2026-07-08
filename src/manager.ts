@@ -12,6 +12,7 @@ import { readEvents, type HivemindEvent } from "./events.js";
 import { enqueueIntegrationPatch, integrateShadow, type EnqueueIntegrationPatchResult, type IntegrationStatus } from "./integrate.js";
 import { checkWriteIntent, type WriteIntentPass } from "./intent.js";
 import { extractJsonObject } from "./json.js";
+import { applyOrchestratorContextBudget } from "./orchestrator-context.js";
 import { requestLeaseForContract, type LeaseGrantResult } from "./lease.js";
 import { evaluatePlanThrash, loadTentativePlan } from "./plan.js";
 import { findGitRoot } from "./repo.js";
@@ -339,7 +340,7 @@ export async function generateManagerProposal(
     };
   }
 
-  const prompt = await buildManagerProposalPrompt(repoRoot, message, resolvedSpecId, tool);
+  const prompt = await buildManagerProposalPrompt(repoRoot, message, resolvedSpecId, tool, profileResult.profile.context_window);
   if (!prompt.ok) {
     return prompt;
   }
@@ -428,7 +429,28 @@ async function generateRedirectCorrection(
   return { ok: true, value: correction.value };
 }
 
-async function buildManagerProposalPrompt(repoRoot: string, message: string, specId: string, tool: string): Promise<SpecResult<string>> {
+async function buildManagerProposalPrompt(repoRoot: string, message: string, specId: string, tool: string, contextWindowTokens: number): Promise<SpecResult<string>> {
+  const fullPrompt = await buildFullManagerProposalPrompt(repoRoot, message, specId, tool);
+  if (!fullPrompt.ok) {
+    return fullPrompt;
+  }
+  const leanPrompt = await buildLeanManagerProposalPrompt(repoRoot, message, specId, tool);
+  if (!leanPrompt.ok) {
+    return leanPrompt;
+  }
+  const budgeted = await applyOrchestratorContextBudget({
+    repoRoot,
+    tool,
+    specId,
+    userMessage: message,
+    fullPrompt: fullPrompt.value,
+    leanPrompt: leanPrompt.value,
+    contextWindowTokens
+  });
+  return budgeted.ok ? { ok: true, value: budgeted.value.prompt } : budgeted;
+}
+
+async function buildFullManagerProposalPrompt(repoRoot: string, message: string, specId: string, tool: string): Promise<SpecResult<string>> {
   const spec = await loadSpecDocument(repoRoot, specId);
   if (!spec.ok) {
     return spec;
@@ -443,6 +465,7 @@ async function buildManagerProposalPrompt(repoRoot: string, message: string, spe
   if (!events.ok) {
     return events;
   }
+  const runStates = taskRunStatesForPrompt(status.value, events.value);
 
   return {
     ok: true,
@@ -509,6 +532,9 @@ async function buildManagerProposalPrompt(repoRoot: string, message: string, spe
       "Durable status JSON:",
       JSON.stringify(status.value, null, 2),
       "",
+      "Durable task run states JSON:",
+      JSON.stringify(runStates, null, 2),
+      "",
       "Recent durable event trail JSON:",
       JSON.stringify(events.value.slice(-30), null, 2),
       "",
@@ -519,6 +545,89 @@ async function buildManagerProposalPrompt(repoRoot: string, message: string, spe
       JSON.stringify(adapters, null, 2)
     ].join("\n")
   };
+}
+
+async function buildLeanManagerProposalPrompt(repoRoot: string, message: string, specId: string, tool: string): Promise<SpecResult<string>> {
+  const spec = await loadSpecDocument(repoRoot, specId);
+  if (!spec.ok) {
+    return spec;
+  }
+  const status = await getStatus(repoRoot);
+  if (!status.ok) {
+    return status;
+  }
+  const plan = await loadTentativePlan(repoRoot, specId);
+  const adapters = await listAdapterTools(repoRoot);
+  const events = await readEvents(repoRoot);
+  if (!events.ok) {
+    return events;
+  }
+  const runStates = taskRunStatesForPrompt(status.value, events.value);
+
+  return {
+    ok: true,
+    value: [
+      "You are the Hivemind manager/orchestrator. You PROPOSE actions; deterministic Hivemind gates DISPOSE.",
+      "Context rehydration mode: lean.",
+      "The previous working set exceeded the metered context budget, so Hivemind checkpointed a working-set manifest and rebuilt this prompt from disk.",
+      "Never trust an orchestrator snapshot or conversation summary for authoritative state. Authoritative state below was freshly read from .hivemind/ for this invocation.",
+      "",
+      "Return exactly one JSON object and no prose outside it:",
+      "{ \"reason\": \"short explanation of the next gated action sequence\", \"human_approval_required_for\": [], \"actions\": [{ \"type\": \"get_status\" }] }",
+      "",
+      "Hard rules:",
+      "- Do not mark anything ratified, approved, accepted, integrated, or passed. You are proposing actions only.",
+      "- Do not output self_approved, ratified, gate_verdict, result, skip_gates, or any other proof-like field.",
+      "- Every state-changing action must be one of the supported action JSON shapes from the non-lean manager contract.",
+      "- A present patch bundle is not submitted, analyzed, or accepted unless status.tasks[].patch.submitted/analyzed/accepted say so.",
+      "- Never propose enqueue_patch unless durable status for that task shows patch.submitted === true, patch.analyzed === true, patch.accepted === true, and patch.verdict === \"accept\".",
+      "- Put run_worker and integrate_shadow in human_approval_required_for whenever those actions appear.",
+      "",
+      `Manager adapter tool: ${tool}`,
+      `User message: ${message}`,
+      "",
+      "Spec ref and title:",
+      JSON.stringify({ spec_id: specId, title: spec.value.title, status: spec.value.status, path: `.hivemind/spec/${specId}.md` }, null, 2),
+      "",
+      "Durable status JSON (freshly read from .hivemind/):",
+      JSON.stringify(status.value, null, 2),
+      "",
+      "Durable task run states JSON (freshly derived from .hivemind/log/events.jsonl):",
+      JSON.stringify(runStates, null, 2),
+      "",
+      "Recent durable event trail JSON (freshly read from .hivemind/log/events.jsonl):",
+      JSON.stringify(events.value.slice(-12), null, 2),
+      "",
+      "Tentative plan ref and task summary from disk:",
+      plan.ok
+        ? JSON.stringify(
+            {
+              path: `.hivemind/plans/${specId}.tentative.json`,
+              base_commit: plan.value.base_commit,
+              task_count: plan.value.tasks.length,
+              tasks: plan.value.tasks.map((task) => ({
+                task_id: task.task_id,
+                title: task.title,
+                depends_on: task.depends_on,
+                acceptance_criterion: task.acceptance_criterion,
+                required_tests: task.required_tests,
+                grounded_scope: task.grounded_scope
+              })),
+              execution_groups: plan.value.execution_groups
+            },
+            null,
+            2
+          )
+        : JSON.stringify({ missing: true, reason: plan.reason }, null, 2),
+      "",
+      "Adapter tools JSON:",
+      JSON.stringify(adapters, null, 2)
+    ].join("\n")
+  };
+}
+
+function taskRunStatesForPrompt(status: HivemindStatus, events: HivemindEvent[]): Record<string, { state: string }> {
+  return Object.fromEntries(status.tasks.map((task) => [task.task_id, { state: latestTaskRunState(events, task.task_id).state }]));
 }
 
 async function buildRedirectCorrectionPrompt(

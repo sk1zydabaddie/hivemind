@@ -11,6 +11,7 @@ import test from "node:test";
 
 import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
+import { requestLease } from "../src/lease.js";
 import { latestTaskRunState } from "../src/run-state.js";
 import {
   executeManagerAction,
@@ -71,6 +72,90 @@ test("manager session shell records a user message against the active ratified s
     assert.equal(session.proposed_action.type, "proposed_actions");
     assert.equal(session.proposed_action.source, "adapter-generated");
     assert.deepEqual(session.proposed_action.actions, [{ type: "get_status" }]);
+  });
+});
+
+test("manager context pressure checkpoints and sends a lean rehydrated prompt", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await writePromptCapturingManagerProfile(repo, 16);
+
+    const result = await startManagerSession(repo, "Build with a deliberately tiny manager context window");
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    const prompt = await readFile(path.join(repo, ".hivemind", "captured-manager-prompt.txt"), "utf8");
+    assert.match(prompt, /Context rehydration mode: lean/);
+    assert.match(prompt, /freshly read from \.hivemind\//);
+    const snapshotPath = path.join(repo, ".hivemind", "resource", "checkpoints", "orchestrator.snapshot.json");
+    const snapshotText = await readFile(snapshotPath, "utf8");
+    const snapshot = JSON.parse(snapshotText) as {
+      kind: string;
+      reason: string;
+      working_set_manifest: { status_ref: { source: string; authority: string } };
+      narrative_notes: { purpose: string };
+    };
+    assert.equal(snapshot.kind, "orchestrator");
+    assert.equal(snapshot.reason, "context_pressure");
+    assert.equal(snapshot.working_set_manifest.status_ref.source, "getStatus(repoRoot)");
+    assert.equal(snapshot.working_set_manifest.status_ref.authority, ".hivemind durable store");
+    assert.equal(snapshot.narrative_notes.purpose, "working notes only; not authoritative state");
+    assert.doesNotMatch(snapshotText, /"tasks"\s*:/);
+    assert.doesNotMatch(snapshotText, /"leases"\s*:/);
+
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.equal(events.value.some((event) => event.type === "orchestrator.checkpointed" && event.task_id === null), true);
+    assert.equal(events.value.some((event) => event.type === "orchestrator.resumed" && event.task_id === null), true);
+  });
+});
+
+test("manager lean rehydrate reads current disk state instead of stale snapshot narrative", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await writeContract(repo, "T-CTX", baseCommit, ["README.md"]);
+    const lease = await requestLease(repo, "T-CTX", ["README.md"]);
+    assert.equal(lease.ok, true);
+    await appendEvent(repo, {
+      type: "task.started",
+      task_id: "T-CTX",
+      data: { tool: "fake-worker", worktree: path.join(repo, ".hivemind", "worktrees", "T-CTX") }
+    });
+    await mkdir(path.join(repo, ".hivemind", "resource", "checkpoints"), { recursive: true });
+    await writeFile(
+      path.join(repo, ".hivemind", "resource", "checkpoints", "orchestrator.snapshot.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          kind: "orchestrator",
+          narrative_notes: { distilled_summary: "STALE_SUMMARY active_lease_count=0 task T-CTX state failed" }
+        },
+        null,
+        2
+      )}\n`
+    );
+    await writePromptCapturingManagerProfile(repo, 16);
+
+    const result = await startManagerSession(repo, "Continue from current disk state, not memory");
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    const prompt = await readFile(path.join(repo, ".hivemind", "captured-manager-prompt.txt"), "utf8");
+    assert.doesNotMatch(prompt, /STALE_SUMMARY/);
+    assert.match(prompt, /"T-CTX": \{\s+"state": "running"\s+\}/);
+    assert.match(prompt, /"README\.md": "T-CTX"/);
+    const session = JSON.parse(await readFile(path.join(repo, result.value.session_path), "utf8")) as {
+      working_set: { status: { active_lease_count: number; task_count: number } };
+    };
+    assert.equal(session.working_set.status.active_lease_count, 1);
+    assert.equal(session.working_set.status.task_count, 1);
   });
 });
 
@@ -1763,6 +1848,35 @@ async function writeManagerProposalProfile(
         prompt_arg: "stdin",
         verified_on: "2026-06-16",
         context_window: 1024,
+        routing_tier: "strong",
+        cost_rank: 1
+      },
+      null,
+      2
+    )}\n`
+  );
+}
+
+async function writePromptCapturingManagerProfile(repo: string, contextWindow: number): Promise<void> {
+  const proposal = proposalFor([{ type: "get_status" }]);
+  const agentPath = await writeAgent(repo, "manager-prompt-capture-agent.mjs", [
+    "const { writeFile } = await import('node:fs/promises');",
+    "let input = '';",
+    "for await (const chunk of process.stdin) input += chunk;",
+    "await writeFile('.hivemind/captured-manager-prompt.txt', input);",
+    `console.log(${JSON.stringify(JSON.stringify(proposal))});`
+  ]);
+  const adaptersDir = path.join(repo, ".hivemind", "adapters");
+  await mkdir(adaptersDir, { recursive: true });
+  await writeFile(
+    path.join(adaptersDir, "manager.profile.json"),
+    `${JSON.stringify(
+      {
+        tool: "manager",
+        invoke: ["node", agentPath],
+        prompt_arg: "stdin",
+        verified_on: "2026-06-16",
+        context_window: contextWindow,
         routing_tier: "strong",
         cost_rank: 1
       },
