@@ -9,7 +9,7 @@ import test from "node:test";
 
 import { initProject } from "../src/init.js";
 import { checkWriteIntent } from "../src/intent.js";
-import { requestLease, requestLeaseForContract } from "../src/lease.js";
+import { readActiveLeases, requestLease, requestLeaseForContract } from "../src/lease.js";
 import { runTask } from "../src/run.js";
 import { analyzeTask } from "../src/analyze.js";
 import { appendEvent, readEvents } from "../src/events.js";
@@ -200,6 +200,20 @@ test("runTask captures diff but returns failure when the adapter exits non-zero"
     assert.match(result.reason, /worker fake exited 7/);
     assert.match(result.reason, /1 changed file/);
     assert.match(await readFile(path.join(repo, ".hivemind", "patches", "T-001", "diff.patch"), "utf8"), /\+changed before nonzero exit/);
+    const leases = await readActiveLeases(repo);
+    assert.equal(leases.ok, true);
+    if (!leases.ok) {
+      return;
+    }
+    assert.equal(leases.store["README.md"], undefined);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assertEventOrder(events.value.map((event) => event.type), ["lease.released", "task.failed"]);
+    const failed = events.value.find((event) => event.type === "task.failed" && event.task_id === "T-001");
+    assert.deepEqual(failed?.data.lease_released, ["README.md"]);
   });
 });
 
@@ -225,6 +239,113 @@ test("runTask captures diff but returns failure when the adapter times out", asy
     assert.match(await readFile(path.join(repo, ".hivemind", "patches", "T-001", "diff.patch"), "utf8"), /\+changed before timeout/);
     const log = await readFile(path.join(repo, ".hivemind", "worktrees", "T-001", "agent.log"), "utf8");
     assert.match(log, /timed_out: true/);
+    const leases = await readActiveLeases(repo);
+    assert.equal(leases.ok, true);
+    if (!leases.ok) {
+      return;
+    }
+    assert.equal(leases.store["README.md"], undefined);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assertEventOrder(events.value.map((event) => event.type), ["lease.released", "task.failed"]);
+    const failed = events.value.find((event) => event.type === "task.failed" && event.task_id === "T-001");
+    assert.deepEqual(failed?.data.lease_released, ["README.md"]);
+  });
+});
+
+test("runTask recovers a stale lease lock while surfacing a crashed worker failure", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const agentPath = await writeAgent(repo, "stale-lock-crash-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'changed before stale lock cleanup\\n');",
+      "process.exit(9);"
+    ]);
+    await writeContract(repo, "T-STALE", baseCommit, ["README.md"]);
+    await writeProfile(repo, "fake", agentPath);
+    await grantLease(repo, "T-STALE", ["README.md"]);
+    await writeFile(path.join(repo, ".hivemind", "leases", "active.lock"), "not-a-live-pid\n");
+
+    const result = await runTask(repo, "T-STALE", "fake");
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.match(result.reason, /worker fake exited 9/);
+    await assertMissing(path.join(repo, ".hivemind", "leases", "active.lock"));
+    const leases = await readActiveLeases(repo);
+    assert.equal(leases.ok, true);
+    if (!leases.ok) {
+      return;
+    }
+    assert.equal(leases.store["README.md"], undefined);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assertEventOrder(events.value.map((event) => event.type), ["lease.released", "task.failed"]);
+    const failed = events.value.find((event) => event.type === "task.failed" && event.task_id === "T-STALE");
+    assert.deepEqual(failed?.data.lease_released, ["README.md"]);
+  });
+});
+
+test("runTask partial failure does not collapse a sibling worker", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await mkdir(path.join(repo, "src"), { recursive: true });
+    await writeFile(path.join(repo, "src", "sibling.txt"), "sibling base\n");
+    await git(repo, ["add", "src/sibling.txt"]);
+    await git(repo, ["commit", "-m", "add sibling file"]);
+    const nextBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
+    const failingAgent = await writeAgent(repo, "parallel-failing-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'failed task changed before crash\\n');",
+      "process.exit(5);"
+    ]);
+    const survivingAgent = await writeAgent(repo, "parallel-surviving-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await new Promise((resolve) => setTimeout(resolve, 100));",
+      "await appendFile('src/sibling.txt', 'surviving task completed\\n');"
+    ]);
+    await writeContract(repo, "T-FAIL", nextBase, ["README.md"]);
+    await writeContract(repo, "T-OK", nextBase, ["src/sibling.txt"]);
+    await writeProfile(repo, "failing", failingAgent);
+    await writeProfile(repo, "surviving", survivingAgent);
+    await grantLease(repo, "T-FAIL", ["README.md"]);
+    await grantLease(repo, "T-OK", ["src/sibling.txt"]);
+
+    const [failed, survived] = await Promise.all([runTask(repo, "T-FAIL", "failing"), runTask(repo, "T-OK", "surviving")]);
+
+    assert.equal(failed.ok, false);
+    if (failed.ok) {
+      return;
+    }
+    assert.match(failed.reason, /worker failing exited 5/);
+    assert.equal(survived.ok, true);
+    if (!survived.ok) {
+      return;
+    }
+    assert.equal(survived.value.status, "completed");
+    assert.equal(survived.value.changed_files, 1);
+    assert.match(await readFile(survived.value.diff_path, "utf8"), /\+surviving task completed/);
+    const leases = await readActiveLeases(repo);
+    assert.equal(leases.ok, true);
+    if (!leases.ok) {
+      return;
+    }
+    assert.equal(leases.store["README.md"], undefined);
+    assert.equal(leases.store["src/sibling.txt"], "T-OK");
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.equal(events.value.some((event) => event.type === "task.failed" && event.task_id === "T-FAIL"), true);
+    assert.equal(events.value.some((event) => event.type === "task.completed" && event.task_id === "T-OK"), true);
+    assert.equal(events.value.some((event) => event.task_id === "T-OK" && event.type === "task.failed"), false);
   });
 });
 
@@ -795,6 +916,19 @@ async function cleanupTempRepo(repo: string): Promise<void> {
     // Best-effort cleanup before deleting the temp repo.
   }
   await rm(repo, { recursive: true, force: true });
+}
+
+function assertEventOrder(events: string[], orderedTypes: string[]): void {
+  let cursor = 0;
+  for (const type of events) {
+    if (type === orderedTypes[cursor]) {
+      cursor += 1;
+    }
+    if (cursor === orderedTypes.length) {
+      return;
+    }
+  }
+  assert.fail(`expected event order ${orderedTypes.join(" -> ")} in ${events.join(", ")}`);
 }
 
 async function writeAgent(repo: string, fileName: string, lines: string[]): Promise<string> {

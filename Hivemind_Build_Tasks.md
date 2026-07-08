@@ -482,7 +482,7 @@ Generative/judgment sub-tasks use BEHAVIORAL human-judged acceptance tests, not 
 - **Read first:** § *Robustness Principle* (degrade, don't break), § *Real-Time Supervision*.
 - **Goal:** One worker failing must not collapse the run.
 - **Behavior — exact (C6):** A worker crash/timeout marks only that task failed/blocked, releases its lease, surfaces it, and lets the other tasks proceed. No shared-state corruption.
-- **Acceptance test (binary):** Killing one of two parallel workers leaves the other running to completion; the failed task's lease is released and the failure is surfaced.
+- **Acceptance test (binary):** Killing one of two parallel workers leaves the other running to completion; the failed task's lease is released and the failure is surfaced. Current M5/M6 manager execution is serial, so this acceptance is exercised at the run/daemon primitive layer where independent leased task jobs can be in flight; do not fake manager-level concurrency until the executor explicitly supports it.
 
 ---
 

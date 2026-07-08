@@ -9,7 +9,7 @@ import { loadAndValidateContract, type TaskContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { captureWorktreeDiff } from "./diff-capture.js";
 import { appendEvent, readEvents, type HivemindEvent, type HivemindEventInput } from "./events.js";
-import { verifyLeaseCoverage } from "./lease.js";
+import { releaseLease, verifyLeaseCoverage } from "./lease.js";
 import { appendTaskOutput, type TaskOutputRecord, type TaskOutputInput } from "./output-stream.js";
 import { requireTaskDependenciesIntegrated } from "./plan.js";
 import { findGitRoot } from "./repo.js";
@@ -121,7 +121,10 @@ export async function startRunTaskJob(
   }
 
   void finishPreparedRun(repoRoot, prepared.value).catch(async (error: unknown) => {
-    await emitRunFailure(repoRoot, prepared.value, error instanceof Error ? error.message : "unexpected run failure");
+    const failed = await emitRunFailure(repoRoot, prepared.value, error instanceof Error ? error.message : "unexpected run failure");
+    if (!failed.ok) {
+      console.error(`error: ${failed.reason}`);
+    }
   });
 
   return {
@@ -154,11 +157,17 @@ export async function markRunFailed(
     return { ok: true, value: { task_id: taskId, status: "failed", ...(existingReason === undefined ? {} : { reason: existingReason }) } };
   }
 
+  const released = await releaseLease(repoRoot, taskId);
+  if (!released.ok) {
+    return { ok: false, reason: `failed to release lease for failed task ${taskId}: ${released.reason}` };
+  }
+
   const event = await appendEvent(repoRoot, {
     type: "task.failed",
     task_id: taskId,
     data: {
       reason,
+      lease_released: released.value.released,
       ...data
     }
   });
@@ -339,8 +348,8 @@ async function finishPreparedRun(
       });
       if (!reroute.ok) {
         const reason = `${attempt.reason}; quota-wall recovery failed: ${reroute.reason}`;
-        await emitRunFailure(repoRoot, active, reason, attempt.toolExit, attempt.diffPath, attempt.changedFiles);
-        return { ok: false, reason };
+        const failed = await emitRunFailure(repoRoot, active, reason, attempt.toolExit, attempt.diffPath, attempt.changedFiles);
+        return failed.ok ? { ok: false, reason } : failed;
       }
       if (reroute.value.status === "paused") {
         const reason = `${attempt.reason}; task paused awaiting quota reset: ${reroute.value.reason}`;
@@ -356,8 +365,8 @@ async function finishPreparedRun(
         active.onEvent
       );
       if (!startedEvent.ok) {
-        await emitRunFailure(repoRoot, active, startedEvent.reason, attempt.toolExit, attempt.diffPath, attempt.changedFiles);
-        return startedEvent;
+        const failed = await emitRunFailure(repoRoot, active, startedEvent.reason, attempt.toolExit, attempt.diffPath, attempt.changedFiles);
+        return failed.ok ? startedEvent : failed;
       }
       active = { ...active, tool: reroute.value.tool };
       continue;
@@ -398,12 +407,12 @@ async function finishPreparedRunAttempt(
   const streamOutputResults = await Promise.all(streamOutputWrites);
   const failedStreamOutput = streamOutputResults.find((result) => !result.ok);
   if (failedStreamOutput !== undefined && !failedStreamOutput.ok) {
-    await emitRunFailure(repoRoot, prepared, failedStreamOutput.reason);
-    return failedStreamOutput;
+    const failed = await emitRunFailure(repoRoot, prepared, failedStreamOutput.reason);
+    return failed.ok ? failedStreamOutput : failed;
   }
   if (!invokeResult.ok) {
-    await emitRunFailure(repoRoot, prepared, invokeResult.reason);
-    return invokeResult;
+    const failed = await emitRunFailure(repoRoot, prepared, invokeResult.reason, undefined, undefined, undefined, { releaseLease: false });
+    return failed.ok ? invokeResult : failed;
   }
 
   if (invokeResult.value.throttled) {
@@ -417,23 +426,25 @@ async function finishPreparedRunAttempt(
 
   const postRunResult = checkRunCeilingPostRun(prepared.ceiling, invokeResult.value.wallTimeMs);
   if (!postRunResult.ok) {
-    await emitRunFailure(repoRoot, prepared, postRunResult.reason, invokeResult.value.exitCode);
-    return postRunResult;
+    const failed = await emitRunFailure(repoRoot, prepared, postRunResult.reason, invokeResult.value.exitCode);
+    return failed.ok ? postRunResult : failed;
   }
 
   const diffResult = await captureDiff(repoRoot, prepared.worktree, prepared.taskId, prepared.baseCommit);
   if (!diffResult.ok) {
-    await emitRunFailure(repoRoot, prepared, diffResult.reason, invokeResult.value.exitCode);
-    return diffResult;
+    const failed = await emitRunFailure(repoRoot, prepared, diffResult.reason, invokeResult.value.exitCode);
+    return failed.ok ? diffResult : failed;
   }
 
   if (invokeResult.value.exitCode !== 0) {
     const reason = `worker ${prepared.tool} exited ${invokeResult.value.exitCode}; diff captured at .hivemind/patches/${prepared.taskId}/diff.patch with ${diffResult.value.changedFiles} changed file(s)`;
-    await emitRunFailure(repoRoot, prepared, reason, invokeResult.value.exitCode, diffResult.value.diffPath, diffResult.value.changedFiles);
-    return {
-      ok: false,
-      reason
-    };
+    const failed = await emitRunFailure(repoRoot, prepared, reason, invokeResult.value.exitCode, diffResult.value.diffPath, diffResult.value.changedFiles);
+    return failed.ok
+      ? {
+          ok: false,
+          reason
+        }
+      : failed;
   }
 
   const value: RunResult = {
@@ -636,9 +647,19 @@ async function emitRunFailure(
   reason: string,
   toolExit?: number,
   diffPath?: string,
-  changedFiles?: number
-): Promise<void> {
-  await emitRunEvent(
+  changedFiles?: number,
+  options: { releaseLease?: boolean } = {}
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  let releasedFiles: string[] | undefined;
+  if (options.releaseLease !== false) {
+    const released = await releaseLease(repoRoot, prepared.taskId);
+    if (!released.ok) {
+      return { ok: false, reason: `failed to release lease for failed task ${prepared.taskId}: ${released.reason}` };
+    }
+    releasedFiles = released.value.released;
+  }
+
+  return emitRunEvent(
     repoRoot,
     {
       type: "task.failed",
@@ -646,6 +667,7 @@ async function emitRunFailure(
       data: {
         tool: prepared.tool,
         reason,
+        ...(releasedFiles === undefined ? {} : { lease_released: releasedFiles }),
         ...(toolExit === undefined ? {} : { tool_exit: toolExit }),
         ...(diffPath === undefined ? {} : { diff_path: diffPath }),
         ...(changedFiles === undefined ? {} : { changed_files: changedFiles })

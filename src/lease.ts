@@ -315,6 +315,10 @@ async function withLeaseLock<T>(repoRoot: string, action: () => Promise<LeaseRes
       if (!isNodeError(error, "EEXIST")) {
         throw error;
       }
+      const staleRemoved = await removeStaleLeaseLock(lockPath);
+      if (staleRemoved) {
+        continue;
+      }
       if (Date.now() >= deadline) {
         return { ok: false, reason: "could not acquire lease lock" };
       }
@@ -329,6 +333,34 @@ function activeLeasePath(repoRoot: string): string {
 
 function activeLeaseLockPath(repoRoot: string): string {
   return path.join(repoRoot, ".hivemind", "leases", "active.lock");
+}
+
+async function removeStaleLeaseLock(lockPath: string): Promise<boolean> {
+  let raw: string;
+  try {
+    raw = await readFile(lockPath, "utf8");
+  } catch (error: unknown) {
+    return isNodeError(error, "ENOENT");
+  }
+  const pid = Number.parseInt(raw.trim(), 10);
+  if (Number.isInteger(pid) && pid > 0 && processExists(pid)) {
+    return false;
+  }
+  try {
+    await rm(lockPath, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isRecord(value: unknown): value is LeaseStore {
