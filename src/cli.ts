@@ -10,6 +10,7 @@ import { initProject } from "./init.js";
 import { leaseCommand } from "./lease.js";
 import { managerCommand } from "./manager.js";
 import { quotaCommand } from "./resource-ledger.js";
+import { repoGraphCommand } from "./repo-graph.js";
 import { validateContractCommand } from "./contract.js";
 import { planCommand } from "./plan.js";
 import { specCommand } from "./spec.js";
@@ -77,6 +78,10 @@ async function main(argv: string[]): Promise<number> {
 
   if (command === "quota") {
     return quotaCommand(process.cwd(), rest);
+  }
+
+  if (command === "graph") {
+    return repoGraphCommand(process.cwd(), rest);
   }
 
   if (command === "mcp") {
