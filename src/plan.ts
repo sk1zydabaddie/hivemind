@@ -144,7 +144,11 @@ interface TentativePlanInput {
   execution_groups: TentativePlanExecutionGroup[];
 }
 
-export async function planCommand(cwd: string, args: string[]): Promise<number> {
+export interface PlanCommandOptions {
+  closureCoverageAdvisory?: (repoRoot: string, specId: string) => Promise<unknown | undefined>;
+}
+
+export async function planCommand(cwd: string, args: string[], options: PlanCommandOptions = {}): Promise<number> {
   const parsed = parsePlanArgs(cwd, args);
   if (!parsed.ok) {
     console.error(`error: ${parsed.reason}`);
@@ -174,7 +178,19 @@ export async function planCommand(cwd: string, args: string[]): Promise<number> 
     return 1;
   }
 
-  console.log(JSON.stringify(result.value, null, 2));
+  let output: unknown = result.value;
+  if (parsed.value.action === "ground" && options.closureCoverageAdvisory !== undefined) {
+    try {
+      const advisory = await options.closureCoverageAdvisory(repoRoot, parsed.value.specId);
+      if (advisory !== undefined) {
+        output = { ...result.value, advisories: { closure_coverage: advisory } };
+      }
+    } catch {
+      // Advisory failure must never change grounding's successful result.
+    }
+  }
+
+  console.log(JSON.stringify(output, null, 2));
   return 0;
 }
 

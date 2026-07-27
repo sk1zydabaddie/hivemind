@@ -2,6 +2,7 @@
 
 import { analyzeCommand } from "./analyze.js";
 import { checkpointCommand } from "./checkpoint.js";
+import { evaluateClosureCoverage } from "./closure-coverage.js";
 import { daemonCommand } from "./daemon.js";
 import { integrateCommand } from "./integrate.js";
 import { intentCommand } from "./intent.js";
@@ -36,7 +37,7 @@ async function main(argv: string[]): Promise<number> {
   }
 
   if (command === "plan") {
-    return planCommand(process.cwd(), rest);
+    return planCommand(process.cwd(), rest, { closureCoverageAdvisory: evaluateClosureCoverage });
   }
 
   if (command === "ideate") {
