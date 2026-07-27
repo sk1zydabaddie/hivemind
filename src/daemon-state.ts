@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 import path from "node:path";
 import { writeJsonAtomic } from "./atomic.js";
 import { readJsonFile } from "./json.js";
+import { processIsLiveOrUnknown } from "./process-liveness.js";
 
 export interface DaemonState {
   version: 1;
@@ -44,12 +45,7 @@ export async function removeDaemonState(repoRoot: string): Promise<void> {
 }
 
 export function daemonProcessIsLive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error: unknown) {
-    return isNodeError(error, "EPERM");
-  }
+  return processIsLiveOrUnknown(pid);
 }
 
 function validateDaemonState(value: unknown): { ok: true } | { ok: false; reason: string } {

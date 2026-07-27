@@ -1,15 +1,23 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { once } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
 import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
+import {
+  inspectLeaseLock,
+  removeStaleLeaseLockIfUnchanged,
+  tryRemoveStaleLeaseLock
+} from "../src/lease-lock.js";
 import { releaseLease, requestLease, requestLeaseForContract } from "../src/lease.js";
+import { getProcessLiveness } from "../src/process-liveness.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
 const execFileAsync = promisify(execFile);
@@ -136,6 +144,127 @@ test("concurrent requestLease calls for the same file never both win", async () 
     assert.equal(results.filter((result) => result.ok).length, 1);
     assert.equal(results.filter((result) => !result.ok).length, 1);
     assert.equal(Object.keys(await readActive(repo)).length, 1);
+  });
+});
+
+test("a separate live process holding the lease lock cannot have its lock stolen", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const holder = await startLeaseLockHolder(repo);
+    try {
+      const lockPath = activeLockPath(repo);
+      const heldRecord = await readFile(lockPath, "utf8");
+
+      const contender = await requestLease(repo, "T-CONTENDER", ["README.md"]);
+
+      assert.equal(contender.ok, false);
+      if (contender.ok) {
+        return;
+      }
+      assert.match(contender.reason, /could not acquire lease lock/);
+      assert.equal(await readFile(lockPath, "utf8"), heldRecord);
+      assert.equal(holder.exitCode, null);
+    } finally {
+      await releaseLeaseLockHolder(holder);
+    }
+  });
+});
+
+test("empty and partial lease locks fail closed instead of being cleared", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const lockPath = activeLockPath(repo);
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    for (const raw of ["", '{"version":1']) {
+      await writeFile(lockPath, raw);
+
+      const removed = await tryRemoveStaleLeaseLock(lockPath, {
+        probeLiveness: () => "dead"
+      });
+
+      assert.equal(removed, false);
+      assert.equal(await readFile(lockPath, "utf8"), raw);
+      const inspection = await inspectLeaseLock(lockPath);
+      assert.equal(inspection.status, "uncertain");
+      await rm(lockPath);
+    }
+  });
+});
+
+test("ambiguous process liveness keeps the lease lock held", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const lockPath = activeLockPath(repo);
+    await writeLockRecord(lockPath, process.pid);
+    const permissionDenied = Object.assign(new Error("operation not permitted"), { code: "EPERM" });
+    const liveness = getProcessLiveness(process.pid, () => {
+      throw permissionDenied;
+    });
+
+    const removed = await tryRemoveStaleLeaseLock(lockPath, {
+      probeLiveness: () => liveness
+    });
+
+    assert.equal(liveness, "unknown");
+    assert.equal(removed, false);
+    await stat(lockPath);
+  });
+});
+
+test("a stale cleaner observation cannot remove a newly acquired live lock", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const lockPath = activeLockPath(repo);
+    await writeLockRecord(lockPath, 100_001);
+    const staleInspection = await inspectLeaseLock(lockPath);
+    assert.equal(staleInspection.status, "valid");
+    if (staleInspection.status !== "valid") {
+      return;
+    }
+
+    await rm(lockPath);
+    await writeLockRecord(lockPath, process.pid);
+    const freshRecord = await readFile(lockPath, "utf8");
+
+    const removed = await removeStaleLeaseLockIfUnchanged(lockPath, staleInspection.observation, {
+      probeLiveness: () => "dead"
+    });
+
+    assert.equal(removed, false);
+    assert.equal(await readFile(lockPath, "utf8"), freshRecord);
+  });
+});
+
+test("a lock left by a genuinely dead process is cleared", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const holder = await startLeaseLockHolder(repo);
+    await crashLeaseLockHolder(holder);
+    await stat(activeLockPath(repo));
+
+    const granted = await requestLease(repo, "T-RECOVERED", ["README.md"]);
+
+    assert.equal(granted.ok, true);
+    assert.deepEqual(await readActive(repo), { "README.md": "T-RECOVERED" });
+    await assertMissing(activeLockPath(repo));
+  });
+});
+
+test("disjoint lease invariant survives a crash and concurrent stale-lock recovery", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const holder = await startLeaseLockHolder(repo);
+    await crashLeaseLockHolder(holder);
+    await stat(activeLockPath(repo));
+
+    const [first, second] = await Promise.all([
+      requestLeaseInSeparateProcess(repo, "T-RACE-1", ["README.md"]),
+      requestLeaseInSeparateProcess(repo, "T-RACE-2", ["README.md"])
+    ]);
+
+    const winners = [first, second].filter((result) => result.ok);
+    const losers = [first, second].filter((result) => !result.ok);
+    assert.equal(winners.length, 1);
+    assert.equal(losers.length, 1);
+    const active = await readActive(repo);
+    assert.deepEqual(Object.keys(active), ["README.md"]);
+    assert.equal(active["README.md"], winners[0].ok ? winners[0].value.task_id : "");
+    await assertMissing(activeLockPath(repo));
+    await assertMissing(`${activeLockPath(repo)}.reaper`);
   });
 });
 
@@ -450,4 +579,115 @@ async function assertMissing(filePath: string): Promise<void> {
     assert.equal((error as { code?: string }).code, "ENOENT");
     return true;
   });
+}
+
+function activeLockPath(repo: string): string {
+  return path.join(repo, ".hivemind", "leases", "active.lock");
+}
+
+async function writeLockRecord(lockPath: string, pid: number): Promise<void> {
+  await mkdir(path.dirname(lockPath), { recursive: true });
+  await writeFile(
+    lockPath,
+    `${JSON.stringify({
+      version: 1,
+      lock_id: randomUUID(),
+      pid
+    })}\n`
+  );
+}
+
+async function startLeaseLockHolder(repo: string): Promise<ChildProcessWithoutNullStreams> {
+  const moduleUrl = pathToFileURL(path.resolve(testDir, "../src/lease-lock.js")).href;
+  const script = [
+    `const { withLeaseLock } = await import(${JSON.stringify(moduleUrl)});`,
+    `const result = await withLeaseLock(${JSON.stringify(repo)}, async () => {`,
+    `  console.log("LOCKED");`,
+    `  await new Promise((resolve) => process.stdin.once("data", resolve));`,
+    `  return { ok: true, value: null };`,
+    `});`,
+    `if (!result.ok) { console.error(result.reason); }`,
+    `process.exit(result.ok ? 0 : 1);`
+  ].join("\n");
+  const child = spawn(process.execPath, ["--input-type=module", "--eval", script], {
+    stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true
+  });
+  await waitForChildOutput(child, "LOCKED");
+  return child;
+}
+
+async function releaseLeaseLockHolder(child: ChildProcessWithoutNullStreams): Promise<void> {
+  if (child.exitCode !== null) {
+    return;
+  }
+  child.stdin.write("release\n");
+  await once(child, "exit");
+  assert.equal(child.exitCode, 0);
+}
+
+async function crashLeaseLockHolder(child: ChildProcessWithoutNullStreams): Promise<void> {
+  if (child.exitCode !== null) {
+    return;
+  }
+  const killed = child.kill();
+  assert.equal(killed, true);
+  await once(child, "exit");
+}
+
+async function waitForChildOutput(child: ChildProcessWithoutNullStreams, expected: string): Promise<void> {
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  let stdout = "";
+  let stderr = "";
+  const timeout = setTimeout(() => {
+    child.kill();
+  }, 5000);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const onStdout = (chunk: string): void => {
+        stdout += chunk;
+        if (stdout.includes(expected)) {
+          cleanup();
+          resolve();
+        }
+      };
+      const onStderr = (chunk: string): void => {
+        stderr += chunk;
+      };
+      const onExit = (): void => {
+        cleanup();
+        reject(new Error(`lock holder exited before ${expected}; stdout=${stdout}; stderr=${stderr}`));
+      };
+      const cleanup = (): void => {
+        child.stdout.off("data", onStdout);
+        child.stderr.off("data", onStderr);
+        child.off("exit", onExit);
+      };
+      child.stdout.on("data", onStdout);
+      child.stderr.on("data", onStderr);
+      child.once("exit", onExit);
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function requestLeaseInSeparateProcess(
+  repo: string,
+  taskId: string,
+  files: string[]
+): Promise<{ ok: true; value: { task_id: string; granted: string[] } } | { ok: false; reason: string }> {
+  const moduleUrl = pathToFileURL(path.resolve(testDir, "../src/lease.js")).href;
+  const script = [
+    `const { requestLease } = await import(${JSON.stringify(moduleUrl)});`,
+    `const result = await requestLease(${JSON.stringify(repo)}, ${JSON.stringify(taskId)}, ${JSON.stringify(files)});`,
+    `console.log(JSON.stringify(result));`
+  ].join("\n");
+  const result = await execFileAsync(process.execPath, ["--input-type=module", "--eval", script], {
+    windowsHide: true
+  });
+  return JSON.parse(result.stdout) as
+    | { ok: true; value: { task_id: string; granted: string[] } }
+    | { ok: false; reason: string };
 }

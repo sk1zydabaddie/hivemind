@@ -1,19 +1,16 @@
-import { mkdir, open, readFile, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
 import { writeJsonAtomic } from "./atomic.js";
 import { canonicalizeIntentPath } from "./canonicalize.js";
 import { loadAndValidateContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent } from "./events.js";
 import { canonicalizeConcreteFileScope } from "./file-scope.js";
+import { withLeaseLock } from "./lease-lock.js";
 import { requireTaskDependenciesIntegrated, resolveContractFilesAtBase } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { validateRequestedTaskId } from "./task-id.js";
-
-const lockRetryMs = 25;
-const lockTimeoutMs = 2000;
 
 export interface LeaseGrantResult {
   task_id: string;
@@ -297,70 +294,8 @@ async function writeActiveLeases(repoRoot: string, store: LeaseStore): Promise<v
   await writeJsonAtomic(activeLeasePath(repoRoot), sorted);
 }
 
-async function withLeaseLock<T>(repoRoot: string, action: () => Promise<LeaseResult<T>>): Promise<LeaseResult<T>> {
-  const lockPath = activeLeaseLockPath(repoRoot);
-  await mkdir(path.dirname(lockPath), { recursive: true });
-  const deadline = Date.now() + lockTimeoutMs;
-  while (true) {
-    try {
-      const handle = await open(lockPath, "wx");
-      try {
-        await handle.writeFile(`${process.pid}\n`, "utf8");
-        return await action();
-      } finally {
-        await handle.close();
-        await rm(lockPath, { force: true });
-      }
-    } catch (error: unknown) {
-      if (!isNodeError(error, "EEXIST")) {
-        throw error;
-      }
-      const staleRemoved = await removeStaleLeaseLock(lockPath);
-      if (staleRemoved) {
-        continue;
-      }
-      if (Date.now() >= deadline) {
-        return { ok: false, reason: "could not acquire lease lock" };
-      }
-      await sleep(lockRetryMs);
-    }
-  }
-}
-
 function activeLeasePath(repoRoot: string): string {
   return path.join(repoRoot, ".hivemind", "leases", "active.json");
-}
-
-function activeLeaseLockPath(repoRoot: string): string {
-  return path.join(repoRoot, ".hivemind", "leases", "active.lock");
-}
-
-async function removeStaleLeaseLock(lockPath: string): Promise<boolean> {
-  let raw: string;
-  try {
-    raw = await readFile(lockPath, "utf8");
-  } catch (error: unknown) {
-    return isNodeError(error, "ENOENT");
-  }
-  const pid = Number.parseInt(raw.trim(), 10);
-  if (Number.isInteger(pid) && pid > 0 && processExists(pid)) {
-    return false;
-  }
-  try {
-    await rm(lockPath, { force: true });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function processExists(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function isRecord(value: unknown): value is LeaseStore {

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { once } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { dirname } from "node:path";
@@ -266,7 +268,11 @@ test("runTask recovers a stale lease lock while surfacing a crashed worker failu
     await writeContract(repo, "T-STALE", baseCommit, ["README.md"]);
     await writeProfile(repo, "fake", agentPath);
     await grantLease(repo, "T-STALE", ["README.md"]);
-    await writeFile(path.join(repo, ".hivemind", "leases", "active.lock"), "not-a-live-pid\n");
+    const exitedPid = await createExitedProcessPid();
+    await writeFile(
+      path.join(repo, ".hivemind", "leases", "active.lock"),
+      `${JSON.stringify({ version: 1, lock_id: randomUUID(), pid: exitedPid })}\n`
+    );
 
     const result = await runTask(repo, "T-STALE", "fake");
 
@@ -929,6 +935,17 @@ function assertEventOrder(events: string[], orderedTypes: string[]): void {
     }
   }
   assert.fail(`expected event order ${orderedTypes.join(" -> ")} in ${events.join(", ")}`);
+}
+
+async function createExitedProcessPid(): Promise<number> {
+  const child = spawn(process.execPath, ["--eval", "process.exit(0)"], {
+    stdio: "ignore",
+    windowsHide: true
+  });
+  const pid = child.pid;
+  assert.notEqual(pid, undefined);
+  await once(child, "exit");
+  return pid as number;
 }
 
 async function writeAgent(repo: string, fileName: string, lines: string[]): Promise<string> {

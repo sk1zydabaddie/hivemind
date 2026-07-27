@@ -852,6 +852,8 @@ This guarantee is deliberately bought with parallelism: two tasks that both need
 
 Lease grant is create-aware but still deterministic. Contract `allowed_file_intents` are re-resolved at the contract's `base_commit`: `modify` paths must exist, `create` paths must not exist, and create paths are canonicalized/confined before being reserved in `leases/active.json`. Reserved create path names conflict exactly like existing-file leases, so two tasks cannot both create the same path. Lease-before-run verifies coverage against this create-aware resolved set before invoking a worker.
 
+The file lock guarding `leases/active.json` is fail-closed under crash recovery. A complete PID + unique lock identity is published atomically; stale cleanup is serialized and may remove only the exact unchanged owner record whose process is definitively dead. Empty, malformed, inaccessible, changed, or ambiguously live locks remain held rather than risk stealing a live lock.
+
 Preconditions the invariant depends on (all enforced by code, none by the LLM):
 
 1. Write leases are strictly disjoint at grant time.
