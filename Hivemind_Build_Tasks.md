@@ -1,10 +1,10 @@
 # Hivemind AI — Build Task Contracts (detailed)
 
-This is the **executable, no-ambiguity build plan** derived from `Hivemind_AI_Overview.md` (the design spec). Each sub-task is a self-contained contract you hand to Codex/Claude Code, sized to **one plan prompt + one implementation prompt**, with a single binary acceptance test.
+This is the **executable, no-ambiguity build plan** derived from `Hivemind_AI_Overview.md` (the design spec). Each sub-task is a self-contained contract you hand to Codex/Claude Code, sized to **one plan prompt + one implementation prompt**, with one acceptance criterion governed by C10.
 
 It is written for the **pre-bootstrap reality**: you are hand-orchestrating, the agent's context rots fast, and it cannot hold the whole spec. So each contract states exactly what to create, what not to touch, the precise behavior and data shapes, and how "done" is proven — leaving nothing to interpretation. Read the named spec slice, paste the contract, run its plan, implement, run the acceptance test, move on.
 
-> **Depth note:** M0–M2 (the ~18 sub-tasks you build by hand before the harness assists) are specified at maximum rigor. M3–M7 are thorough but lighter on far-future implementation minutiae that will evolve; tighten them into full contracts as you reach them.
+> **Depth note:** M0–M2 (the ~18 foundational sub-tasks) are specified at maximum rigor. M3–M7 are thorough but lighter on far-future implementation minutiae that will evolve; tighten them into full contracts as you reach them.
 
 ---
 
@@ -64,11 +64,9 @@ In the early build, `allowed_symbols`/`forbidden_symbols` are carried but not en
 
 **C9 — The patch bundle is exactly these 7 files** (C8 `patches/<id>/`). The gate trusts none of the agent-reported `*.json`; it re-derives truth from `diff.patch` applied to `base_commit`.
 
-**C10 — Right-sizing & the split rule.** Every sub-task here is sized to be *context-survivable* per the design spec's canonical discipline — Overview § *Right-sizing tasks: contracts that survive a worker's context*. That means each one is: **self-contained** (this contract + its named spec slice is all the context the agent needs — it never relies on the agent remembering the rest of the spec); defined by **one binary acceptance criterion**; **one-invocation-sized** (small enough to finish well inside one fresh invocation, so the tool's auto-compaction rarely fires mid-task); and depends on prior work only through stated **Depends-on** ordering, never through the agent recalling an earlier task. The **granularity oracle / split rule** is the operative tool while building: *if you cannot state a single binary acceptance check for the unit in front of you, it is too big — split it* into `M_.x.a`, `M_.x.b`, … before handing it off. This is the same discipline Hivemind's own planner will apply to its workers; here you apply it by hand.
+**C10 — Right-sizing & the split rule.** Every sub-task here is sized to be *context-survivable* per the design spec's canonical discipline — Overview § *Right-sizing tasks: contracts that survive a worker's context*. That means each one is: **self-contained** (this contract + its named spec slice is all the context the agent needs — it never relies on the agent remembering the rest of the spec); defined by **one acceptance criterion**; **one-invocation-sized** (small enough to finish well inside one fresh invocation, so the tool's auto-compaction rarely fires mid-task); and depends on prior work only through stated **Depends-on** ordering, never through the agent recalling an earlier task. Acceptance is **binary by default**. A task with a generative/judgment core whose **quality** matters requires a **BEHAVIORAL, human-judged** acceptance criterion, because a binary check can be satisfied by a deterministic stub that skips the generation (the M5.2/3/4 skeleton failure). A generative task may remain binary only when its generated output has a declared deterministic validity check, with M7.6's base-valid characterization tests as the exemplar. The **granularity oracle / split rule** is the operative tool while building: *if you cannot state one acceptance criterion for the unit in front of you, it is too big — split it* into `M_.x.a`, `M_.x.b`, … before handing it off. This is the same discipline Hivemind's own planner will apply to its workers; here you apply it by hand.
 
-Deterministic enforcement is structural: a task contract has exactly one `acceptance_criterion`, and that criterion must be backed by at least one named `required_tests` command. Whether that sentence secretly bundles multiple unrelated tasks is a human ratification/planner-review judgment, not something deterministic lint pretends to prove.
-
-Generative/judgment sub-tasks use BEHAVIORAL human-judged acceptance tests, not binary — a binary test on generative work is satisfiable by a deterministic stub that skips the generation (the M5.2/3/4 skeleton failure). Tasks with a generative core whose QUALITY matters must be human-judged; tasks whose generative output has a deterministic validity check (e.g. M7.6) may stay binary.
+Deterministic enforcement is structural: a task contract has exactly one `acceptance_criterion`, and that criterion must be backed by at least one named `required_tests` command or human-review check. Whether that sentence secretly bundles multiple unrelated tasks is a human ratification/planner-review judgment, not something deterministic lint pretends to prove.
 
 **Gate markers:** **[GATE]** sub-tasks must pass before the next milestone starts. The hardest rule: **M1.5 must be green before any dogfooding (M3).**
 
@@ -266,7 +264,7 @@ Generative/judgment sub-tasks use BEHAVIORAL human-judged acceptance tests, not 
 ---
 
 ## M3 — Dogfood
-*Goal: turn the method on. Self-orchestration waits for M5; **self-protection** starts now — every Hivemind change runs through Hivemind's own gate before it merges. This is a process milestone: one enabling sub-task, then ongoing.*
+*Goal: make self-protection available. M3.1 enables Hivemind to gate its own changes, but mandatory dogfooding is deferred through M7; direct contract-driven development remains the build mechanism.*
 
 ### M3.1 — Self-protection workflow (gate Hivemind's own changes)
 - **Depends on:** M1.6 (the gate must be green — M1.5).
@@ -274,18 +272,19 @@ Generative/judgment sub-tasks use BEHAVIORAL human-judged acceptance tests, not 
 - **Goal:** Route Hivemind's *own* repo changes through `hivemind analyze` before they are allowed to merge.
 - **Create / may edit:** a dev workflow hook (pre-commit/pre-merge script or CI step) that, given a feature contract for the change, runs the gate; a short `CONTRIBUTING`-style note describing the loop.
 - **Must NOT touch:** the gate internals (frozen at M1), the acceptance criteria of M1.5.
-- **Behavior — exact:** For a change to Hivemind itself, write a contract (C7) scoping it, run `hivemind analyze`, and block the merge on a non-`accept` verdict. The human is still the orchestrator (writes the contracts); only the *safety* is automated.
+- **Behavior — exact:** When the self-protection workflow is deliberately used for a Hivemind change, write a contract (C7) scoping it, run `hivemind analyze`, and block the merge on a non-`accept` verdict. The human is still the orchestrator (writes the contracts); only the *safety* is automated.
 - **Out of scope:** auto-decomposition or orchestration (M5); auto-merge.
 - **Acceptance test (binary):** A deliberately out-of-scope change to the Hivemind repo is blocked by its own gate before merge; an in-scope change passes and merges.
 
-### (ongoing) — Build every later feature *through* the harness
-- **Rule:** From here, each sub-task in M4–M7 is itself executed inside a worktree + lease + gate (you hand-orchestrate until M5, then Hivemind orchestrates). No new code; this is the operating discipline that makes the remaining milestones their own proof.
-- **Acceptance test (binary):** Each shipped M4+ feature has an associated contract and a recorded `accept` verdict in `log/events.jsonl`.
+### (optional) — Deliberate self-protection / dogfooding demonstration
+- **Rule:** The protected workflow remains available, but it is not the M4–M7 build mechanism. M4–M7 are built by handing scoped contracts directly to the coding agent. A deliberate self-hosted demonstration may be run after M7 exists; it is evidence about orchestration, not a prerequisite for proving each feature correct.
+- **Rationale:** The current executor is serial and orchestrator actions consume paid calls. Mandatory dogfooding during M7 would be slow and expensive, and would conflate “is M7 built correctly?” with “is Hivemind orchestrating correctly?” The orchestration thesis was already validated on trimr.
+- **Acceptance test (binary, when deliberately demonstrated):** A selected Hivemind change has an associated contract and a recorded `accept` verdict in `log/events.jsonl`.
 
 ---
 
 ## M4 — Daemon + MCP + resource baseline
-*Phase 2. Persistence, the MCP surface, and the resource layer. Each sub-task is still one contract; by now you may be dogfooding (M3), so build each through the harness.*
+*Phase 2. Persistence, the MCP surface, and the resource layer. Each sub-task is one directly assigned, scoped contract; the optional M3 protected workflow remains available but is not mandatory.*
 
 ### M4.1 — `hivemind daemon` (single-writer state owner)
 - **Depends on:** M2 complete.
@@ -487,7 +486,7 @@ Generative/judgment sub-tasks use BEHAVIORAL human-judged acceptance tests, not 
 ---
 
 ## M7 — Depth + learning
-*Phases 6–7. Semantic depth, memory, and the learning flywheel. Build each through the harness.*
+*Phases 6–7. Semantic depth, memory, and the learning flywheel. Build each by handing its scoped contract directly to the coding agent; mandatory dogfooding remains deferred.*
 
 ### M7.1 — Symbol-level graph (tree-sitter)
 - **Depends on:** M2 complete.
@@ -536,7 +535,9 @@ Generative/judgment sub-tasks use BEHAVIORAL human-judged acceptance tests, not 
 - **Read first:** Overview § *Value-Gated Quality Strategy*.
 - **Goal:** Spend extra effort only where value-gated, never blanket.
 - **Behavior — exact:** Offer best-of-N (parallel drafts in disjoint worktrees, keep the shadow-tested winner) and draft-cheap/refine-expensive; gate both to High/Critical or error-prone task types; all spend counts against the M4.6 ceiling; all stays advisory (never bypasses the gate).
-- **Acceptance test (binary):** Best-of-N runs only for a gated task and is skipped for a Low-tier task; the chosen draft is the one that passed shadow tests. The winner selection must be genuinely driven by shadow-test results on real distinct drafts (not a stub that always returns draft 1); a human confirms the N drafts were real alternatives and the selection reflected their actual test outcomes.
+- **Acceptance test — TWO coupled parts:**
+  (a) **BEHAVIORAL, human-judged:** The N drafts are genuinely distinct real alternatives, not a stub that returns draft 1 or N near-identical outputs, and winner selection genuinely reflects their actual shadow-test outcomes. A human reads the drafts and selection rationale and confirms.
+  (b) **DETERMINISTIC, binary regardless of draft quality:** Best-of-N runs only for gated High/Critical/error-prone tasks and is skipped for Low-tier tasks; all spend counts against the M4.6 ceiling; the tier cap is never breached; and best-of-N remains advisory and never bypasses the gate.
 
 ### M7.8 — Verification learns which checks matter
 - **Depends on:** M2.5, M7.1, M7.3.
@@ -549,7 +550,7 @@ Generative/judgment sub-tasks use BEHAVIORAL human-judged acceptance tests, not 
 
 ## Beyond M7
 - **Phase 8 — Native adapters** and **Phase 9 — Cloud/team mode** are productization. Decompose them into the same one-acceptance-test contracts when reached.
-- **Dogfooding (M3 onward)** means every milestone above M2 is itself built through the harness — hand-orchestrated until M5, then orchestrated by Hivemind protecting and building its own construction.
+- **Dogfooding** remains an available deliberate demonstration after M7, not the mechanism used to build M4–M7. When explicitly enabled, it exercises Hivemind's protected workflow against its own repo without replacing each feature's direct contract acceptance.
 
 ## The one rule that makes this work
-Read the spec slice to write the contract; hand Codex the **contract**, not the whole spec; one binary acceptance test per sub-task; ask it to implement *that sub-task*, not "plan the milestone"; never cross a **[GATE]** until it is green. Start at **M0.1**.
+Read the spec slice to write the contract; hand Codex the **contract**, not the whole spec; use one C10 acceptance criterion per sub-task; ask it to implement *that sub-task*, not "plan the milestone"; never cross a **[GATE]** until it is green. Start at **M0.1**.

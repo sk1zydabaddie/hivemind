@@ -2,7 +2,7 @@
 
 ## M3 Self-Protection Loop
 
-Hivemind's protected merge workflow is available, but mandatory dogfooding is deferred until the operator explicitly re-enables it after the MVP feels ready for daily use. Until then, Hivemind changes continue through the current Axiom-gated, scoped-commit workflow.
+Hivemind's protected merge workflow is available, but mandatory dogfooding is deferred through M7. M7 changes continue through the current Axiom-gated, direct scoped-contract workflow. A deliberate self-hosting demonstration may be run after M7 exists; it is not the M7 build mechanism.
 
 When the protected workflow is used for a Hivemind feature or fix:
 

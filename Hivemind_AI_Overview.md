@@ -704,7 +704,7 @@ Planning is the **highest-leverage link in the system.** The deterministic gate 
    - the write scopes of any two tasks marked `parallel_safe` must not overlap — this is the disjoint-lease invariant checked at *plan time* instead of waiting for lease-grant time (the lease manager remains the authoritative grant-time check; this is an earlier, cheaper surfacing of the same rule, **not** the advisory scheduling heuristic);
    - no scope includes a Critical-tier path (per the Blast-Radius config) without an explicit approval flag;
    - the `depends_on` graph is acyclic;
-   - each task declares exactly one structural `acceptance_criterion`, backed by at least one named `required_tests` command; semantic right-sizing ("is this secretly two unrelated tasks?") is caught by human ratification and planner review, not pretended to be machine-provable;
+   - each task declares exactly one structural `acceptance_criterion`, backed by at least one named `required_tests` command or human-review check; semantic right-sizing ("is this secretly two unrelated tasks?") is caught by human ratification and planner review, not pretended to be machine-provable;
    - each task is classified as `deterministic` or `generative`; a generative task whose LLM-judgment output quality matters must use a BEHAVIORAL/human-judged acceptance criterion, not a stubbable binary one, unless the generated output has its own deterministic validity check (for example, a generated characterization test that must pass on the pre-change base);
    - every write scope carries grounding evidence that is valid and fresh — cited paths exist at `base_commit`, derived from the current base (see Grounding evidence below).
 5. **Ratify, risk-scaled.** A trivial single-file plan needs no sign-off; a multi-task or high-blast plan is presented to the user — tasks, scopes, and explicitly *what it will not touch* — for confirmation. Same tiering as the [approval model](#human-approval-model): don't make the user approve trivia; do make them ratify consequential plans.
@@ -2209,15 +2209,17 @@ This demo proves the product.
 
 ## Bootstrapping: Building Hivemind with Hivemind
 
-A fair worry about this whole project: if Hivemind is what makes multi-agent coding safe and effective, how do you build *Hivemind itself* effectively with only today's tools (Codex, Claude Code) — and if you can't, is the self-improvement vision dead on arrival? The MVP scoping above quietly resolves this, because of one fact: **the MVP does not require the manager agent, so it does not require Hivemind to already exist.** A human can build the human-driven safety harness with the tools that exist today. That removes the chicken-and-egg, and it turns into a three-stage path where each stage builds the tool that builds the next:
+A fair worry about this whole project: if Hivemind is what makes multi-agent coding safe and effective, how do you build *Hivemind itself* effectively with only today's tools (Codex, Claude Code) — and if you can't, is the self-improvement vision dead on arrival? The MVP scoping above quietly resolves this, because of one fact: **the MVP does not require the manager agent, so it does not require Hivemind to already exist.** A human can build the human-driven safety harness with the tools that exist today. That removes the chicken-and-egg, and it creates a three-stage capability path:
 
 1. **Hand-orchestrate (stage 0).** Build the MVP the way anyone builds with these tools now — you, driving Codex/Claude Code by hand, in git worktrees, holding the task decomposition in your own head. The MVP is small enough (a CLI, `git`, the diff-scope gate, a shadow-test script) that one person hand-driving one agent can build it. Nothing needs to exist first.
-2. **Dogfood the harness (stage 1).** The moment the MVP works, use it on itself. Now the next layer is built by agents running *inside* Hivemind's own worktree + lease + gate harness — Hivemind protecting the development of Hivemind. Contracts are still hand-written, but the safety is now real and automated. This is the first true proof the thing works, and the most honest possible test, because the codebase under test is the one its author understands best.
-3. **Let it manage its own construction (stage 2+).** Once the manager agent exists (Phase 2+), Hivemind can decompose and supervise its *own* feature work. The self-improvement loop is not a far-future capability bolted on at the end — it is the natural consequence of dogfooding, arriving incrementally: every layer added makes the tool that builds the next layer a little more capable.
+2. **Enable self-protection (stage 1).** Once the MVP works, make the worktree + lease + gate harness available for Hivemind's own repo. Contracts remain hand-written and the protected path is real, but using it for every subsequent feature is a deliberate operating choice rather than a prerequisite for building the remaining milestones.
+3. **Demonstrate self-construction deliberately (stage 2+).** Once the manager agent and the depth/recovery layers exist, Hivemind can decompose and supervise its *own* feature work as a focused demonstration. The self-improvement loop remains a natural capability, but it does not need to be the mechanism used to construct M4–M7.
 
 The key that removes the chicken-and-egg is stage 0: because the human-driven harness is genuinely useful on its own, you are never blocked waiting for the magic — the magic accretes on top of something that already works.
 
-There is a strategic gift in this, too: **Hivemind's own repository is the ideal first test case and first demo.** It is a real, non-trivial, actively-developed multi-agent coding project whose developer knows every corner of it. If the harness cannot safely coordinate two agents improving Hivemind, it will not work on anyone else's repo either — and if it can, the proof and the demo arrive in the same artifact.
+There is a strategic gift in this, too: **Hivemind's own repository is an ideal deliberate self-hosting demo.** It is a real, non-trivial, actively-developed multi-agent coding project whose developer knows every corner of it. That demonstration is most useful after M7 exists, when it measures orchestration as a whole instead of conflating orchestration failures with feature-construction failures.
+
+**Current build-process decision:** mandatory dogfooding remains deferred through M7. M7 is built by handing scoped contracts directly to the coding agent, as M5 and M6 were. The executor is serial and orchestrator actions consume paid calls, so self-hosting the M7 build would be slow and expensive; it would also conflate “is M7 built correctly?” with “is Hivemind orchestrating correctly?” The orchestration thesis was already validated on trimr. Self-hosting remains available as a deliberate post-M7 demonstration, not the M7 build mechanism.
 
 (Framing note: this treats the MVP as an **internal development harness first** — built to build itself, with end-user polish and ergonomics deferred — rather than a day-one shippable product. That choice is what keeps the first build genuinely tiny; if the goal were instead to ship to outside developers immediately, more of the UI and onboarding would move back into the irreducible core.)
 
@@ -2997,9 +2999,9 @@ The [Development Roadmap](#development-roadmap) below lists *what* gets built in
 
 ### The method is the bootstrap
 
-The single fact that makes Hivemind buildable is the one the MVP scoping exposed: **the Phase-1 MVP needs no manager agent, so it does not need Hivemind to already exist.** That dissolves the chicken-and-egg. The build method is therefore the three-stage bootstrap (see [Bootstrapping](#bootstrapping-building-hivemind-with-hivemind)) used as a *development process*, not a feature:
+The single fact that makes Hivemind buildable is the one the MVP scoping exposed: **the Phase-1 MVP needs no manager agent, so it does not need Hivemind to already exist.** That dissolves the chicken-and-egg. The three-stage bootstrap (see [Bootstrapping](#bootstrapping-building-hivemind-with-hivemind)) is a capability path, not a requirement that every later feature build itself:
 
-> Build the smallest trustworthy harness **by hand** → use it to **dogfood** its own next features → let it eventually **manage its own construction.**
+> Build the smallest trustworthy harness **by hand** → make self-protection available → deliberately demonstrate self-construction after the core exists.
 
 Each stage builds the tool that builds the next stage, so capability compounds rather than starting from zero each time. "Build it effectively" stops being a precondition and becomes a *result* of the early milestones.
 
@@ -3012,7 +3014,7 @@ Each milestone is a demonstrable capability plus a **validation gate** that must
 | **M0** | **Tracer bullet.** One command spawns one agent headlessly (`codex exec` / `claude -p`) in one git worktree against a hand-written contract, and captures its diff. No gate yet. | Stage 0 / Phase 1 | A real run on a real tool returns a usable diff. (Front-loaded because tool-integration is the most version-fragile assumption — prove it on day one.) |
 | **M1** | **The gate, airtight.** Implement the diff-scope gate and its adversarial corpus. | Stage 0 / Phase 1 | The full corpus is **rejected**: rename-launder, symlink escape, `../` escape, wrong-base patch, case collision, forbidden-file deletion, mode-bit flip. *No dogfooding until this is green* — once we dogfood, this gate guards Hivemind's own repo. |
 | **M2** | **The MVP.** Worktrees + file leases (disjoint check) + manual shadow integration. | Stage 0 complete / Phase 1 | Two agents edit disjoint scopes in parallel; an out-of-scope patch is rejected; accepted patches integrate only after the project's test command passes. (= the MVP defined earlier.) |
-| **M3** | **Dogfood.** Use Hivemind on Hivemind's own repo to build the next features. | Stage 1 / Phase 1→2 | A real Hivemind feature is shipped *through the harness*. This is the first true proof and the first demo. |
+| **M3** | **Enable self-protection.** Make the protected Hivemind-on-Hivemind workflow available; mandatory dogfooding remains deferred through M7. | Stage 1 / Phase 1→2 | The workflow blocks an out-of-scope Hivemind change and permits an in-scope one when deliberately invoked. |
 | **M4** | **Daemon + MCP + resource baseline.** Persistent state, MCP server, quota ledger + pooling + cache-economics baseline. | Phase 2 | An MCP client drives Hivemind; a run spreads across providers instead of stalling on one limit; cache-hit rate is measured. |
 | **M5** | **The orchestrator.** Discovery & ideation loop, planning loop, grounding — "message one agent, it manages the rest." | Phase 2/3 / Stage 2 begins | A vague wish becomes a ratified spec, then a grounded plan, then executed work, with the human only ratifying. Self-management begins. |
 | **M6** | **Real-time + recovery + context management.** Event loop, redirect-first supervision, quota-wall + context recovery. | Phase 5 | A run survives a provider quota wall *and* an orchestrator context-exhaustion without losing completed work. |
@@ -3036,7 +3038,7 @@ The milestone order is chosen so the things most likely to be *wrong* resolve ea
 | The gate is not actually airtight | The adversarial corpus is a hard gate before dogfooding; the gate operates on a resolved changeset, fails closed. |
 | Scope creep / building the magic too early | MVP discipline: the human-driven harness ships before the orchestrator; the orchestrator is M5, not M0. |
 | The self-improvement loop produces bad work | Human stays in the loop — spec ratification, plan ratification, mutual-best-version convergence — and the deterministic gates bound every agent regardless. |
-| Single-builder bandwidth | The bootstrap compounds leverage: each milestone makes the tool that builds the next more capable, and dogfooding (M3+) puts that leverage to work on Hivemind itself. |
+| Single-builder bandwidth | The bootstrap compounds leverage: each milestone makes the system more capable, and deliberate post-M7 dogfooding can put that leverage to work on Hivemind itself without making self-hosting a construction prerequisite. |
 | Dogfooding on our own repo is uniquely dangerous (the tool under test also enforces safety) | M1's corpus gate must be green before M3; a gate bug can't reach the repo because patch-mode + corpus validation precede trust. |
 | Name/market collision ("Hivemind") | Trademark/domain due-diligence flagged in the name section. |
 
@@ -3054,7 +3056,7 @@ The milestone order is chosen so the things most likely to be *wrong* resolve ea
 2. Build **M0**: a `hivemind run` command that takes a contract, makes a worktree, invokes one tool headlessly, and prints the diff. Verify on a real repo with both Codex and Claude Code; record the actual flags into the first Adapter Profile.
 3. Build **M1**: the diff-scope gate and its adversarial corpus as a pure function with a test suite; do not proceed until every fixture is rejected.
 4. Build **M2**: leases + a second parallel worktree + a manual `hivemind integrate` that runs the test command. Demo two agents editing disjoint scopes safely.
-5. Flip to **M3**: start building Hivemind's *next* feature using Hivemind itself — and let the dogfooding teach you what the document got wrong on contact with reality.
+5. Build and validate the **M3 self-protection workflow**, but keep mandatory dogfooding deferred through M7; use a deliberate post-M7 self-hosting run to evaluate the complete orchestration system.
 
 The honest throughline: stop designing and start at M0. Every remaining "to be measured" assumption resolves the moment that tracer bullet runs, and nothing past this point resolves further on paper.
 

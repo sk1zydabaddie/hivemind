@@ -9,6 +9,7 @@ It is the project-local build ledger for Hivemind AI.
 - Last completed subtask: M6.7 partial-failure degradation plus lease-lock invariant hardening
 - Next subtask: M7.1 symbol-level graph, pending explicit approval
 - Current branch: `master`
+- M7 build-process decision: mandatory dogfooding remains deferred. M7 will be built by handing scoped contracts directly to the coding agent, as M5/M6 were. The current executor is serial and orchestrator actions consume paid calls, so building M7 through Hivemind would be slow and expensive and would conflate feature correctness with orchestration correctness. The orchestration thesis was already validated on trimr; a deliberate self-hosting demonstration remains available after M7 exists.
 - Latest completed implementation commit: this commit - `fix: preserve lease disjointness during stale-lock recovery`
 - Latest hardening checkpoint commit: this commit - `fix async daemon run lifecycle`
 - Latest M6 implementation commit: this commit - `fix: preserve lease disjointness during stale-lock recovery`
@@ -136,7 +137,7 @@ It is the project-local build ledger for Hivemind AI.
 | Subtask | Status | Notes |
 | --- | --- | --- |
 | M3.1 - Self-protection workflow | Complete | Implemented in `23844a4`. Hivemind changes now have a protected merge path that blocks on non-accept `hivemind analyze` verdicts. |
-| Ongoing - Build later features through the harness | Deferred | Protected merge remains available, but mandatory dogfooding is deferred until the operator explicitly re-enables it after the MVP feels ready for daily use. Continue the current Axiom-gated, scoped-commit workflow for M4. |
+| Ongoing - Build later features through the harness | Deferred | Protected merge remains available, but mandatory dogfooding is deferred through M7. Continue the current Axiom-gated, direct scoped-contract workflow. A deliberate self-hosting demonstration may be run after M7 exists; it is not the M7 build mechanism. |
 
 ## M4 - Daemon + MCP + Resource Baseline
 
@@ -191,8 +192,15 @@ It is the project-local build ledger for Hivemind AI.
 | M7.4 - Dreaming/consolidation worker | Not started | Proposals only. |
 | M7.5 - Learned routing policy | Not started | Tier cap still overrides. |
 | M7.6 - Oracle-strengthening | Not started | High/Critical cannot integrate on weak oracle. |
-| M7.7 - Value-gated quality | Not started | Extra spend only where gated. |
+| M7.7 - Value-gated quality | Not started | Generative draft quality is human-judged; routing, ceiling, tier-cap, and gate floors remain deterministic. |
 | M7.8 - Verification learns which checks matter | Not started | Fall back to full suite when uncertain. |
+
+### Known M7 prerequisites and scoping notes
+
+- **M7.4 cadence:** “Periodically” is under-specified. No scheduler or periodic daemon job exists, and the current acceptance proves only a single consolidation run. Decide cadence and triggering when M7.4 is scoped.
+- **M7.6 oracle infrastructure:** Coverage instrumentation, test-impact mapping, and characterization-test generation do not exist yet. M7.6 likely needs a C10 split between deterministic measurement/enforcement and generative test creation.
+- **M7.7 draft execution:** The manager executor is serial, and worktrees currently have one identity per `task_id`. Best-of-N needs executor concurrency plus distinct draft identities/worktrees before true parallel drafts can run.
+- **M7.8 selective verification:** Integration currently runs one global `config.test_command`. M7.8 needs a structured test inventory and impact-to-test execution layer.
 
 ## Update Rules
 
