@@ -9,6 +9,7 @@ import { ideationCommand } from "./ideation.js";
 import { initProject } from "./init.js";
 import { leaseCommand } from "./lease.js";
 import { managerCommand } from "./manager.js";
+import { memoryCommand } from "./memory.js";
 import { quotaCommand } from "./resource-ledger.js";
 import { validateContractCommand } from "./contract.js";
 import { planCommand } from "./plan.js";
@@ -52,6 +53,10 @@ async function main(argv: string[]): Promise<number> {
 
   if (command === "manager") {
     return managerCommand(process.cwd(), rest);
+  }
+
+  if (command === "memory") {
+    return memoryCommand(process.cwd(), rest);
   }
 
   if (command === "worktree") {
