@@ -50,6 +50,7 @@ export interface RunFailureMarkResult {
 export interface RunTaskOptions {
   allowDangerousAdapter?: boolean;
   predictiveQuotaRecovery?: boolean;
+  usageSessionId?: string;
   onEvent?: (event: HivemindEvent) => void;
   onOutput?: (record: TaskOutputRecord) => void;
 }
@@ -63,6 +64,7 @@ interface PreparedRun {
   config: HivemindConfig;
   ceiling: RunCeiling | undefined;
   allowDangerousAdapter?: boolean;
+  usageSessionId?: string;
   onEvent?: (event: HivemindEvent) => void;
   onOutput?: (record: TaskOutputRecord) => void;
 }
@@ -321,6 +323,7 @@ async function prepareRunTask(
       config: configResult.config,
       ceiling,
       allowDangerousAdapter: options.allowDangerousAdapter,
+      usageSessionId: options.usageSessionId,
       onEvent: options.onEvent,
       onOutput: options.onOutput
     }
@@ -387,6 +390,7 @@ async function finishPreparedRunAttempt(
   let streamOutputTail: Promise<{ ok: true } | { ok: false; reason: string }> = Promise.resolve({ ok: true });
   const invokeResult = await invokeAgent(repoRoot, prepared.taskId, prepared.tool, {
     allowDangerousAdapter: prepared.allowDangerousAdapter,
+    usageSessionId: prepared.usageSessionId,
     onStreamChunk: (chunk) => {
       streamOutputTail = streamOutputTail.then((previous) =>
         previous.ok
@@ -412,7 +416,15 @@ async function finishPreparedRunAttempt(
     return failed.ok ? failedStreamOutput : failed;
   }
   if (!invokeResult.ok) {
-    const failed = await emitRunFailure(repoRoot, prepared, invokeResult.reason, undefined, undefined, undefined, { releaseLease: false });
+    const failed = await emitRunFailure(
+      repoRoot,
+      prepared,
+      invokeResult.reason,
+      invokeResult.exitCode,
+      undefined,
+      undefined,
+      { releaseLease: invokeResult.budget_exceeded === true }
+    );
     return failed.ok ? invokeResult : failed;
   }
 
@@ -428,7 +440,11 @@ async function finishPreparedRunAttempt(
     };
   }
 
-  const postRunResult = checkRunCeilingPostRun(prepared.ceiling, invokeResult.value.wallTimeMs);
+  const postRunResult = checkRunCeilingPostRun(
+    prepared.ceiling,
+    invokeResult.value.wallTimeMs,
+    invokeResult.value.effectiveTokens
+  );
   if (!postRunResult.ok) {
     const failed = await emitRunFailure(repoRoot, prepared, postRunResult.reason, invokeResult.value.exitCode);
     return failed.ok ? postRunResult : failed;
@@ -721,6 +737,9 @@ function checkRunCeilingPreflight(
   if (ceiling?.requests !== undefined && ceiling.requests < 1) {
     return { ok: false, reason: `run paused: request ceiling ${ceiling.requests} would be exceeded before invoking ${profile.tool}` };
   }
+  if (ceiling?.tokens !== undefined && ceiling.tokens < 1) {
+    return { ok: false, reason: `run paused: token ceiling ${ceiling.tokens} forbids invoking ${profile.tool}` };
+  }
   if (ceiling?.wall_time_ms !== undefined && profile.timeout_ms !== undefined && profile.timeout_ms > ceiling.wall_time_ms) {
     return {
       ok: false,
@@ -732,10 +751,14 @@ function checkRunCeilingPreflight(
 
 function checkRunCeilingPostRun(
   ceiling: RunCeiling | undefined,
-  wallTimeMs: number
+  wallTimeMs: number,
+  effectiveTokens: number
 ): { ok: true } | { ok: false; reason: string } {
   if (ceiling?.wall_time_ms !== undefined && wallTimeMs > ceiling.wall_time_ms) {
     return { ok: false, reason: `run paused: wall-time ceiling ${ceiling.wall_time_ms}ms exceeded after ${wallTimeMs}ms` };
+  }
+  if (ceiling?.tokens !== undefined && effectiveTokens > ceiling.tokens) {
+    return { ok: false, reason: `run paused: token ceiling ${ceiling.tokens} exceeded after ${effectiveTokens} effective tokens` };
   }
   return { ok: true };
 }

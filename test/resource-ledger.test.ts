@@ -9,7 +9,12 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { initProject } from "../src/init.js";
-import { readQuotaLedger, recordQuotaUsage, type QuotaLedger } from "../src/resource-ledger.js";
+import {
+  checkTokenBudgetPreflight,
+  readQuotaLedger,
+  recordQuotaUsage,
+  type QuotaLedger
+} from "../src/resource-ledger.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -110,6 +115,184 @@ test("quota ledger records provider usage and visible estimate reconciliation wi
       accounting_source: "provider_reported",
       routing_source: "profile_policy"
     });
+  });
+});
+
+test("run token ceiling records usage then stops on provider-reported effective tokens", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await setResourcePolicy(repo, { run_ceiling: { tokens: 10 } });
+
+    const result = await recordQuotaUsage(repo, {
+      provider: "codex",
+      input_text: "small prompt",
+      model_output_text: "small output",
+      wall_time_ms: 25,
+      throttled: false,
+      provider_usage: {
+        status: "captured",
+        parser: "codex-jsonl",
+        usage: {
+          input_tokens: 8,
+          cached_input_tokens: 0,
+          output_tokens: 12,
+          reasoning_tokens: 7,
+          total_tokens: 20
+        }
+      }
+    });
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.equal(result.budget_exceeded, true);
+    assert.match(result.reason, /used 20 effective tokens against run ceiling 10/);
+    const ledger = await readQuotaLedger(repo);
+    assert.equal(ledger.ok, true);
+    if (!ledger.ok) {
+      return;
+    }
+    assert.equal(ledger.value.codex.last_request?.effective_tokens, 20);
+    assert.equal(ledger.value.codex.last_request?.accounting_source, "provider_reported");
+  });
+});
+
+test("run token ceiling falls back to self-measured tokens when provider usage is unavailable", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await setResourcePolicy(repo, { run_ceiling: { tokens: 2 } });
+
+    const result = await recordQuotaUsage(repo, {
+      provider: "opaque-provider",
+      input_text: "12345678",
+      model_output_text: "1234",
+      wall_time_ms: 1,
+      throttled: false,
+      provider_usage: {
+        status: "not_available",
+        parser: null,
+        reason: "provider exposes no usage record"
+      }
+    });
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.equal(result.budget_exceeded, true);
+    assert.match(result.reason, /used 3 effective tokens against run ceiling 2/);
+    const ledger = await readQuotaLedger(repo);
+    assert.equal(ledger.ok, true);
+    if (!ledger.ok) {
+      return;
+    }
+    assert.equal(ledger.value["opaque-provider"].last_request?.effective_tokens, 3);
+    assert.equal(ledger.value["opaque-provider"].last_request?.accounting_source, "self_measured");
+  });
+});
+
+test("manager session token ceiling aggregates providers and refuses the next call after exhaustion", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await setResourcePolicy(repo, { session_ceiling: { tokens: 10 } });
+    const sessionId = "session-budget-test";
+
+    const first = await recordQuotaUsage(repo, {
+      provider: "codex",
+      input_text: "one",
+      model_output_text: "two",
+      wall_time_ms: 1,
+      throttled: false,
+      session_id: sessionId,
+      provider_usage: {
+        status: "captured",
+        parser: "codex-jsonl",
+        usage: {
+          input_tokens: 2,
+          cached_input_tokens: 0,
+          output_tokens: 4,
+          reasoning_tokens: 2,
+          total_tokens: 6
+        }
+      }
+    });
+    assert.equal(first.ok, true);
+
+    const second = await recordQuotaUsage(repo, {
+      provider: "claude",
+      input_text: "three",
+      model_output_text: "four",
+      wall_time_ms: 1,
+      throttled: false,
+      session_id: sessionId,
+      provider_usage: {
+        status: "captured",
+        parser: "claude-json",
+        usage: {
+          input_tokens: 2,
+          cached_input_tokens: 0,
+          output_tokens: 4,
+          reasoning_tokens: null,
+          total_tokens: 6
+        }
+      }
+    });
+    assert.equal(second.ok, false);
+    if (second.ok) {
+      return;
+    }
+    assert.equal(second.budget_exceeded, true);
+    assert.match(second.reason, /used 12 effective tokens against ceiling 10/);
+
+    const preflight = await checkTokenBudgetPreflight(repo, "codex", sessionId);
+    assert.equal(preflight.ok, false);
+    if (preflight.ok) {
+      return;
+    }
+    assert.match(preflight.reason, /used 12 effective tokens with 0 estimated input tokens against ceiling 10/);
+  });
+});
+
+test("provider usage capture state distinguishes not available from expected but unparseable", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const unavailable = await recordQuotaUsage(repo, {
+      provider: "fake",
+      input_text: "",
+      model_output_text: "",
+      wall_time_ms: 1,
+      throttled: false,
+      provider_usage: {
+        status: "not_available",
+        parser: null,
+        reason: "no supported usage channel"
+      }
+    });
+    assert.equal(unavailable.ok, true);
+
+    const unparseable = await recordQuotaUsage(repo, {
+      provider: "fake",
+      input_text: "",
+      model_output_text: "",
+      wall_time_ms: 1,
+      throttled: false,
+      provider_usage: {
+        status: "expected_but_unparseable",
+        parser: "codex-jsonl",
+        reason: "missing usage object"
+      }
+    });
+    assert.equal(unparseable.ok, false);
+    if (unparseable.ok) {
+      return;
+    }
+    assert.match(unparseable.reason, /expected but unparseable/);
+
+    const ledger = await readQuotaLedger(repo);
+    assert.equal(ledger.ok, true);
+    if (!ledger.ok) {
+      return;
+    }
+    assert.equal(ledger.value.fake.provider_usage_capture.not_available_requests, 1);
+    assert.equal(ledger.value.fake.provider_usage_capture.expected_but_unparseable_requests, 1);
+    assert.equal(ledger.value.fake.provider_usage_capture.last_status, "expected_but_unparseable");
   });
 });
 
@@ -348,6 +531,12 @@ async function withTempRepo(run: (context: { repo: string }) => Promise<void>): 
   } finally {
     await rm(repo, { recursive: true, force: true, maxRetries: 3 });
   }
+}
+
+async function setResourcePolicy(repo: string, resourcePolicy: Record<string, unknown>): Promise<void> {
+  const configPath = path.join(repo, ".hivemind", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+  await writeFile(configPath, `${JSON.stringify({ ...config, resource_policy: resourcePolicy }, null, 2)}\n`);
 }
 
 async function startDaemon(repo: string): Promise<DaemonProcess> {

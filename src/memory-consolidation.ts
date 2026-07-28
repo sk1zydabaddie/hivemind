@@ -58,7 +58,7 @@ export async function consolidateMemory(
   const outputLogPath = adapterRunLogPath(repoRoot, "memory-consolidation");
   const startedAt = Date.now();
   try {
-    const processResult = await runAdapterProcess(profile.profile, isolatedCwd, prompt, { outputLogPath });
+    const processResult = await runAdapterProcess(repoRoot, profile.profile, isolatedCwd, prompt, { outputLogPath });
     if (!processResult.ok) {
       return processResult;
     }

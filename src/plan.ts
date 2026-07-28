@@ -322,7 +322,7 @@ export async function generateTentativePlan(
     return prompt;
   }
   const startedAt = Date.now();
-  const processResult = await runAdapterProcess(profileResult.profile, repoRoot, prompt.value, {
+  const processResult = await runAdapterProcess(repoRoot, profileResult.profile, repoRoot, prompt.value, {
     outputLogPath: adapterRunLogPath(repoRoot, `planning-${specId}`)
   });
   if (!processResult.ok) {

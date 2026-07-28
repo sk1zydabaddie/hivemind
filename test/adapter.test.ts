@@ -327,6 +327,7 @@ test("invokeAgent runs stdin adapter inside the task worktree and writes agent.l
     assert.equal(ledger.value.fake.self_measured.requests, 1);
     assert.equal(ledger.value.fake.source, "dual-channel");
     assert.equal(ledger.value.fake.observed_limit, null);
+    assert.equal(ledger.value.fake.provider_usage_capture.last_status, "not_available");
   });
 });
 
@@ -407,11 +408,84 @@ test("invokeAgent meters model stdout separately from stderr chatter and records
     assert.equal(entry.self_measured.output_tokens_estimated, estimateTokens(modelOutput));
     assert.ok(entry.self_measured.output_tokens_estimated < estimateTokens(stderrChatter));
     assert.equal(entry.provider_reported?.total_tokens, 14351);
+    assert.equal(entry.provider_usage_capture.last_status, "captured");
+    assert.equal(entry.last_request?.effective_tokens, 14351);
     assert.equal(entry.reconciliation.provider_reported_total_tokens, 14351);
     assert.equal(entry.reconciliation.accounting_source, "provider_reported");
     assert.equal(entry.reconciliation.absolute_divergence_tokens, 14351 - (
       entry.self_measured.input_tokens_estimated + entry.self_measured.output_tokens_estimated
     ));
+  });
+});
+
+test("invokeAgent records and surfaces provider usage that was expected but unparseable", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-001", baseCommit);
+    const worktree = await createTaskWorktree(repo, "T-001");
+    assert.equal(worktree.ok, true);
+    if (!worktree.ok) {
+      return;
+    }
+
+    await writeFile(path.join(worktree.value.worktree, "unparseable-agent.mjs"), "console.log('not-json-provider-output');\n");
+    await writeProfile(repo, "fake", {
+      tool: "fake",
+      invoke: ["node", "unparseable-agent.mjs"],
+      prompt_arg: "stdin",
+      verified_on: "2026-07-28",
+      context_window: 1024,
+      usage_parser: "codex-jsonl"
+    });
+
+    const result = await invokeAgent(repo, "T-001", "fake");
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.match(result.reason, /provider usage expected but unparseable/);
+    const ledger = await readQuotaLedger(repo);
+    assert.equal(ledger.ok, true);
+    if (!ledger.ok) {
+      return;
+    }
+    assert.equal(ledger.value.fake.self_measured.requests, 1);
+    assert.equal(ledger.value.fake.provider_usage_capture.last_status, "expected_but_unparseable");
+    assert.equal(ledger.value.fake.provider_usage_capture.expected_but_unparseable_requests, 1);
+    assert.equal(ledger.value.fake.last_request?.accounting_source, "self_measured");
+  });
+});
+
+test("invokeAgent refuses before spawning when the manager session token budget is exhausted", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-001", baseCommit);
+    const worktree = await createTaskWorktree(repo, "T-001");
+    assert.equal(worktree.ok, true);
+    if (!worktree.ok) {
+      return;
+    }
+    const markerPath = path.join(worktree.value.worktree, "spawned.txt");
+    await writeFile(
+      path.join(worktree.value.worktree, "budget-agent.mjs"),
+      `await (await import("node:fs/promises")).writeFile(${JSON.stringify(markerPath)}, "spawned");\n`
+    );
+    await writeProfile(repo, "fake", {
+      tool: "fake",
+      invoke: ["node", "budget-agent.mjs"],
+      prompt_arg: "stdin",
+      verified_on: "2026-07-28",
+      context_window: 1024
+    });
+    await setResourcePolicy(repo, { session_ceiling: { tokens: 0 } });
+
+    const result = await invokeAgent(repo, "T-001", "fake", { usageSessionId: "manager-session" });
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.match(result.reason, /manager session manager-session used 0 effective tokens with .* estimated input tokens against ceiling 0/);
+    await assertMissing(markerPath);
   });
 });
 
@@ -704,6 +778,12 @@ async function writeProfile(repo: string, tool: string, profile: unknown, bom = 
   const adaptersDir = path.join(repo, ".hivemind", "adapters");
   await mkdir(adaptersDir, { recursive: true });
   await writeFile(path.join(adaptersDir, `${tool}.profile.json`), `${bom ? "\uFEFF" : ""}${JSON.stringify(profile, null, 2)}\n`);
+}
+
+async function setResourcePolicy(repo: string, resourcePolicy: Record<string, unknown>): Promise<void> {
+  const configPath = path.join(repo, ".hivemind", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+  await writeFile(configPath, `${JSON.stringify({ ...config, resource_policy: resourcePolicy }, null, 2)}\n`);
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {

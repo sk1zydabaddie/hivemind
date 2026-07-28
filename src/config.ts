@@ -19,6 +19,7 @@ export interface HivemindConfig {
 
 export interface ResourcePolicy {
   run_ceiling?: RunCeiling;
+  session_ceiling?: SessionCeiling;
 }
 
 export interface ManagerAutonomyPolicy {
@@ -35,6 +36,11 @@ export interface ManagerCostThreshold {
 export interface RunCeiling {
   requests?: number;
   wall_time_ms?: number;
+  tokens?: number;
+}
+
+export interface SessionCeiling {
+  tokens?: number;
 }
 
 export type LoadConfigResult = { ok: true; config: HivemindConfig } | { ok: false; reason: string };
@@ -161,6 +167,9 @@ function validateResourcePolicy(value: unknown, problems: string[]): void {
   if ("run_ceiling" in value) {
     validateRunCeiling(value.run_ceiling, problems);
   }
+  if ("session_ceiling" in value) {
+    validateSessionCeiling(value.session_ceiling, problems);
+  }
 }
 
 function validateRunCeiling(value: unknown, problems: string[]): void {
@@ -168,10 +177,20 @@ function validateRunCeiling(value: unknown, problems: string[]): void {
     problems.push("resource_policy.run_ceiling must be a JSON object");
     return;
   }
-  for (const field of ["requests", "wall_time_ms"] as const) {
+  for (const field of ["requests", "wall_time_ms", "tokens"] as const) {
     if (field in value && (!Number.isSafeInteger(value[field]) || typeof value[field] !== "number" || value[field] < 0)) {
       problems.push(`resource_policy.run_ceiling.${field} must be a non-negative safe integer`);
     }
+  }
+}
+
+function validateSessionCeiling(value: unknown, problems: string[]): void {
+  if (!isRecord(value)) {
+    problems.push("resource_policy.session_ceiling must be a JSON object");
+    return;
+  }
+  if ("tokens" in value && (!Number.isSafeInteger(value.tokens) || typeof value.tokens !== "number" || value.tokens < 0)) {
+    problems.push("resource_policy.session_ceiling.tokens must be a non-negative safe integer");
   }
 }
 
@@ -208,7 +227,8 @@ function normalizeResourcePolicy(value: unknown): ResourcePolicy {
     return {};
   }
   return {
-    ...("run_ceiling" in value ? { run_ceiling: normalizeRunCeiling(value.run_ceiling) } : {})
+    ...("run_ceiling" in value ? { run_ceiling: normalizeRunCeiling(value.run_ceiling) } : {}),
+    ...("session_ceiling" in value ? { session_ceiling: normalizeSessionCeiling(value.session_ceiling) } : {})
   };
 }
 
@@ -218,7 +238,17 @@ function normalizeRunCeiling(value: unknown): RunCeiling {
   }
   return {
     ...("requests" in value && typeof value.requests === "number" ? { requests: value.requests } : {}),
-    ...("wall_time_ms" in value && typeof value.wall_time_ms === "number" ? { wall_time_ms: value.wall_time_ms } : {})
+    ...("wall_time_ms" in value && typeof value.wall_time_ms === "number" ? { wall_time_ms: value.wall_time_ms } : {}),
+    ...("tokens" in value && typeof value.tokens === "number" ? { tokens: value.tokens } : {})
+  };
+}
+
+function normalizeSessionCeiling(value: unknown): SessionCeiling {
+  if (!isRecord(value)) {
+    return {};
+  }
+  return {
+    ...("tokens" in value && typeof value.tokens === "number" ? { tokens: value.tokens } : {})
   };
 }
 

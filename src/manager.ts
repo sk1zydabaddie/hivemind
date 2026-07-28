@@ -271,14 +271,14 @@ export async function startManagerSession(
     return status;
   }
 
+  const sessionId = randomUUID();
   const proposedAction =
     options.proposedAction === undefined
-      ? await generateManagerProposal(repoRoot, message.trim(), options.tool ?? "manager", spec.value.spec_id)
+      ? await generateManagerProposal(repoRoot, message.trim(), options.tool ?? "manager", spec.value.spec_id, sessionId)
       : ({ ok: true, value: options.proposedAction } as const);
   if (!proposedAction.ok) {
     return proposedAction;
   }
-  const sessionId = randomUUID();
   const session: ManagerSession = {
     version: 1,
     session_id: sessionId,
@@ -323,7 +323,8 @@ export async function generateManagerProposal(
   repoRoot: string,
   message: string,
   tool: string,
-  specId?: string
+  specId?: string,
+  usageSessionId?: string
 ): Promise<SpecResult<ManagerProposedAction>> {
   let resolvedSpecId = specId;
   if (resolvedSpecId === undefined) {
@@ -352,8 +353,9 @@ export async function generateManagerProposal(
   }
 
   const startedAt = Date.now();
-  const processResult = await runAdapterProcess(profileResult.profile, repoRoot, prompt.value, {
-    outputLogPath: adapterRunLogPath(repoRoot, `manager-${resolvedSpecId}`)
+  const processResult = await runAdapterProcess(repoRoot, profileResult.profile, repoRoot, prompt.value, {
+    outputLogPath: adapterRunLogPath(repoRoot, `manager-${resolvedSpecId}`),
+    usageSessionId
   });
   if (!processResult.ok) {
     return processResult;
@@ -385,7 +387,8 @@ async function generateRedirectCorrection(
   repoRoot: string,
   tool: string,
   action: Extract<ManagerAction, { type: "check_write_intent" }>,
-  rejectionReason: string
+  rejectionReason: string,
+  usageSessionId: string
 ): Promise<SpecResult<string>> {
   const profileResult = await loadAdapterProfile(repoRoot, tool);
   if (!profileResult.ok) {
@@ -405,8 +408,9 @@ async function generateRedirectCorrection(
   }
 
   const startedAt = Date.now();
-  const processResult = await runAdapterProcess(profileResult.profile, repoRoot, prompt.value, {
-    outputLogPath: adapterRunLogPath(repoRoot, `redirect-${action.task_id}`)
+  const processResult = await runAdapterProcess(repoRoot, profileResult.profile, repoRoot, prompt.value, {
+    outputLogPath: adapterRunLogPath(repoRoot, `redirect-${action.task_id}`),
+    usageSessionId
   });
   if (!processResult.ok) {
     return processResult;
@@ -981,7 +985,7 @@ async function handleWriteIntentRedirect(
     };
   }
 
-  const correction = await generateRedirectCorrection(repoRoot, tool, action, rejectionReason);
+  const correction = await generateRedirectCorrection(repoRoot, tool, action, rejectionReason, session.session_id);
   if (!correction.ok) {
     return correction;
   }
@@ -1202,7 +1206,13 @@ export async function continueAutonomousManagerLoop(
       await writeJsonAtomic(managerSessionPath(repoRoot, sessionId), { ...session.value, pending_action: undefined });
     } else {
       if (nextProposal === undefined) {
-        const generated = await generateManagerProposal(repoRoot, buildReactiveProposalMessage(session.value), options.tool, session.value.spec_id);
+        const generated = await generateManagerProposal(
+          repoRoot,
+          buildReactiveProposalMessage(session.value),
+          options.tool,
+          session.value.spec_id,
+          session.value.session_id
+        );
         if (!generated.ok) {
           return generated;
         }
@@ -1377,7 +1387,7 @@ export async function executeManagerAction(
     return { ok: false, reason: `manager session ${sessionId} belongs to spec ${sessionResult.value.spec_id}, not active spec ${specResult.value.spec_id}` };
   }
 
-  const result = await executeDeterministicAction(repoRoot, action);
+  const result = await executeDeterministicAction(repoRoot, sessionId, action);
   const nextSession = appendActionToSession(sessionResult.value, action, result);
   const sessionPath = managerSessionPath(repoRoot, sessionId);
   await writeJsonAtomic(sessionPath, nextSession);
@@ -1392,7 +1402,7 @@ export async function executeManagerAction(
   };
 }
 
-async function executeDeterministicAction(repoRoot: string, action: ManagerAction): Promise<ManagerActionExecutionRecord> {
+async function executeDeterministicAction(repoRoot: string, sessionId: string, action: ManagerAction): Promise<ManagerActionExecutionRecord> {
   if (action.type === "get_status") {
     return recordResult(await getStatus(repoRoot));
   }
@@ -1419,8 +1429,17 @@ async function executeDeterministicAction(repoRoot: string, action: ManagerActio
     const started = await routeMutatingAction<RunStartResult | RunResult>(
       repoRoot,
       "/run",
-      { task_id: action.task_id, ...(action.tool === undefined ? {} : { tool: action.tool }), allow_dangerous_adapter: action.allow_dangerous_adapter === true },
-      () => runTask(repoRoot, action.task_id, action.tool, { allowDangerousAdapter: action.allow_dangerous_adapter === true })
+      {
+        task_id: action.task_id,
+        ...(action.tool === undefined ? {} : { tool: action.tool }),
+        allow_dangerous_adapter: action.allow_dangerous_adapter === true,
+        usage_session_id: sessionId
+      },
+      () =>
+        runTask(repoRoot, action.task_id, action.tool, {
+          allowDangerousAdapter: action.allow_dangerous_adapter === true,
+          usageSessionId: sessionId
+        })
     );
     if (!started.ok) {
       return recordResult(started);
@@ -1432,8 +1451,8 @@ async function executeDeterministicAction(repoRoot: string, action: ManagerActio
       await routeMutatingAction<ScoutResult>(
         repoRoot,
         "/scout/run",
-        { task_id: action.task_id, tool: action.tool },
-        () => runScout(repoRoot, action.task_id, action.tool)
+        { task_id: action.task_id, tool: action.tool, usage_session_id: sessionId },
+        () => runScout(repoRoot, action.task_id, action.tool, { usageSessionId: sessionId })
       )
     );
   }

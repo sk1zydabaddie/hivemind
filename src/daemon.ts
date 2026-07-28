@@ -254,8 +254,13 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
       if (!tool.ok) {
         return tool;
       }
+      const usageSessionId = readOptionalString(payload, "usage_session_id");
+      if (!usageSessionId.ok) {
+        return usageSessionId;
+      }
       return startRunTaskJob(repoRoot, taskId.value, tool.value, {
         allowDangerousAdapter: payload.allow_dangerous_adapter === true,
+        ...(usageSessionId.value === undefined ? {} : { usageSessionId: usageSessionId.value }),
         onEvent: (event) => eventBus.publishEvent(event),
         onOutput: (record) => eventBus.publishTaskOutput(record)
       });
@@ -284,7 +289,13 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
       if (!tool.ok) {
         return tool;
       }
-      return runScout(repoRoot, taskId.value, tool.value);
+      const usageSessionId = readOptionalString(payload, "usage_session_id");
+      if (!usageSessionId.ok) {
+        return usageSessionId;
+      }
+      return runScout(repoRoot, taskId.value, tool.value, {
+        ...(usageSessionId.value === undefined ? {} : { usageSessionId: usageSessionId.value })
+      });
     };
   }
   if (request.method === "POST" && request.url === "/submit") {

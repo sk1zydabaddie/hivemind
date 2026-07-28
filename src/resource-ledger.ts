@@ -2,6 +2,7 @@ import { mkdir, open, rm } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { writeJsonAtomic } from "./atomic.js";
+import { loadConfig } from "./config.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
@@ -26,6 +27,48 @@ export interface ProviderReportedTotals extends ProviderReportedUsage {
   self_measured_tokens_for_reported_requests: number;
 }
 
+export type ProviderUsageCapture =
+  | {
+      status: "captured";
+      parser: string | null;
+      usage: ProviderReportedUsage;
+    }
+  | {
+      status: "not_available";
+      parser: string | null;
+      reason: string;
+    }
+  | {
+      status: "expected_but_unparseable";
+      parser: string;
+      reason: string;
+    };
+
+export interface ProviderUsageCaptureSummary {
+  captured_requests: number;
+  not_available_requests: number;
+  expected_but_unparseable_requests: number;
+  last_status: ProviderUsageCapture["status"];
+  last_parser: string | null;
+  last_reason: string | null;
+}
+
+export interface LastQuotaRequest {
+  self_measured_tokens: number;
+  provider_reported_tokens: number | null;
+  effective_tokens: number;
+  accounting_source: "provider_reported" | "self_measured";
+  provider_usage_status: ProviderUsageCapture["status"];
+}
+
+export interface SessionTokenUsage {
+  requests: number;
+  self_measured_tokens: number;
+  provider_reported_tokens: number;
+  provider_reported_requests: number;
+  effective_tokens: number;
+}
+
 export interface UsageReconciliation {
   self_measured_tokens_for_reported_requests: number;
   provider_reported_total_tokens: number | null;
@@ -43,6 +86,9 @@ export interface ObservedLimit extends SelfMeasuredUsage {
 export interface QuotaLedgerEntry {
   self_measured: SelfMeasuredUsage;
   provider_reported: ProviderReportedTotals | null;
+  provider_usage_capture: ProviderUsageCaptureSummary;
+  last_request: LastQuotaRequest | null;
+  session_usage: Record<string, SessionTokenUsage>;
   reconciliation: UsageReconciliation;
   observed_limit: ObservedLimit | null;
   resets_at: string | null;
@@ -59,8 +105,14 @@ export interface QuotaUsageRecord {
   model_output_text: string;
   wall_time_ms: number;
   throttled: boolean;
+  session_id?: string;
+  provider_usage?: ProviderUsageCapture;
   provider_reported?: ProviderReportedUsage | null;
 }
+
+export type RecordQuotaUsageResult =
+  | { ok: true; value: QuotaLedgerEntry }
+  | { ok: false; reason: string; budget_exceeded?: true };
 
 const ledgerLockRetryMs = 25;
 const ledgerLockTimeoutMs = 2000;
@@ -107,7 +159,64 @@ export async function readQuotaLedger(repoRoot: string): Promise<{ ok: true; val
   return normalizeQuotaLedger(raw);
 }
 
-export async function recordQuotaUsage(repoRoot: string, record: QuotaUsageRecord): Promise<{ ok: true; value: QuotaLedgerEntry } | { ok: false; reason: string }> {
+export async function checkTokenBudgetPreflight(
+  repoRoot: string,
+  provider: string,
+  sessionId?: string,
+  estimatedInputTokens = 0
+): Promise<{ ok: true } | { ok: false; reason: string; budget_exceeded: true }> {
+  const normalizedProvider = normalizeProvider(provider);
+  if (normalizedProvider === null) {
+    return { ok: false, reason: "quota provider must be a non-empty identifier", budget_exceeded: true };
+  }
+  if (isUnmeteredProvider(normalizedProvider)) {
+    return { ok: true };
+  }
+  const normalizedSession = normalizeSessionId(sessionId);
+  if (sessionId !== undefined && normalizedSession === null) {
+    return { ok: false, reason: "quota session_id must be a non-empty identifier", budget_exceeded: true };
+  }
+  if (!Number.isSafeInteger(estimatedInputTokens) || estimatedInputTokens < 0) {
+    return { ok: false, reason: "estimated input tokens must be a non-negative safe integer", budget_exceeded: true };
+  }
+  const config = await loadConfig(repoRoot);
+  if (!config.ok) {
+    return { ok: false, reason: config.reason, budget_exceeded: true };
+  }
+  const runTokens = config.config.resource_policy?.run_ceiling?.tokens;
+  if (runTokens === 0) {
+    return {
+      ok: false,
+      reason: `token budget exceeded: run token ceiling 0 forbids invoking metered provider ${normalizedProvider}`,
+      budget_exceeded: true
+    };
+  }
+  if (runTokens !== undefined && estimatedInputTokens >= runTokens) {
+    return {
+      ok: false,
+      reason: `token budget exceeded: estimated input ${estimatedInputTokens} tokens leaves no output budget under run ceiling ${runTokens} for ${normalizedProvider}`,
+      budget_exceeded: true
+    };
+  }
+  const sessionTokens = config.config.resource_policy?.session_ceiling?.tokens;
+  if (sessionTokens === undefined || normalizedSession === null) {
+    return { ok: true };
+  }
+  const ledger = await readQuotaLedger(repoRoot);
+  if (!ledger.ok) {
+    return { ok: false, reason: ledger.reason, budget_exceeded: true };
+  }
+  const used = sessionEffectiveTokens(ledger.value, normalizedSession);
+  return used + estimatedInputTokens >= sessionTokens
+    ? {
+        ok: false,
+        reason: `token budget exceeded: manager session ${normalizedSession} used ${used} effective tokens with ${estimatedInputTokens} estimated input tokens against ceiling ${sessionTokens}`,
+        budget_exceeded: true
+      }
+    : { ok: true };
+}
+
+export async function recordQuotaUsage(repoRoot: string, record: QuotaUsageRecord): Promise<RecordQuotaUsageResult> {
   const provider = normalizeProvider(record.provider);
   if (provider === null) {
     return { ok: false, reason: "quota provider must be a non-empty identifier" };
@@ -115,11 +224,20 @@ export async function recordQuotaUsage(repoRoot: string, record: QuotaUsageRecor
   if (!Number.isSafeInteger(record.wall_time_ms) || record.wall_time_ms < 0) {
     return { ok: false, reason: "quota wall_time_ms must be a non-negative safe integer" };
   }
-  if (record.provider_reported !== undefined && record.provider_reported !== null) {
-    const providerUsage = validateProviderReportedUsage("provider_reported", record.provider_reported);
-    if (!providerUsage.ok) {
-      return providerUsage;
-    }
+  const sessionId = normalizeSessionId(record.session_id);
+  if (record.session_id !== undefined && sessionId === null) {
+    return { ok: false, reason: "quota session_id must be a non-empty identifier" };
+  }
+  if (record.provider_usage !== undefined && record.provider_reported !== undefined) {
+    return { ok: false, reason: "quota usage must provide provider_usage or legacy provider_reported, not both" };
+  }
+  const capture = normalizeUsageCapture(record);
+  if (!capture.ok) {
+    return capture;
+  }
+  const config = await loadConfig(repoRoot);
+  if (!config.ok) {
+    return config;
   }
 
   return withInProcessLedgerQueue(repoRoot, () =>
@@ -138,14 +256,30 @@ export async function recordQuotaUsage(repoRoot: string, record: QuotaUsageRecor
         wall_time_ms: record.wall_time_ms
       };
       const selfMeasured = addUsage(previous.self_measured, measuredThisRequest);
+      const selfMeasuredTokens = measuredThisRequest.input_tokens_estimated + measuredThisRequest.output_tokens_estimated;
+      const reportedThisRequest = capture.value.status === "captured" ? capture.value.usage : null;
       const providerReported = mergeProviderReported(
         previous.provider_reported,
-        record.provider_reported ?? null,
-        measuredThisRequest.input_tokens_estimated + measuredThisRequest.output_tokens_estimated
+        reportedThisRequest,
+        selfMeasuredTokens
       );
+      const effectiveTokens = reportedThisRequest?.total_tokens ?? selfMeasuredTokens;
+      const lastRequest: LastQuotaRequest = {
+        self_measured_tokens: selfMeasuredTokens,
+        provider_reported_tokens: reportedThisRequest?.total_tokens ?? null,
+        effective_tokens: effectiveTokens,
+        accounting_source: reportedThisRequest === null ? "self_measured" : "provider_reported",
+        provider_usage_status: capture.value.status
+      };
       const nextEntry: QuotaLedgerEntry = {
         self_measured: selfMeasured,
         provider_reported: providerReported,
+        provider_usage_capture: addUsageCapture(previous.provider_usage_capture, capture.value),
+        last_request: lastRequest,
+        session_usage:
+          sessionId === null
+            ? previous.session_usage
+            : addSessionUsage(previous.session_usage, sessionId, selfMeasuredTokens, reportedThisRequest?.total_tokens ?? null),
         reconciliation: buildReconciliation(providerReported, record.throttled || previous.observed_limit !== null),
         observed_limit: record.throttled ? { ...selfMeasured, observed_at: now, reason: "throttle" } : previous.observed_limit,
         resets_at: previous.resets_at,
@@ -158,6 +292,33 @@ export async function recordQuotaUsage(repoRoot: string, record: QuotaUsageRecor
         [provider]: nextEntry
       };
       await writeQuotaLedger(repoRoot, nextLedger);
+      if (capture.value.status === "expected_but_unparseable") {
+        return {
+          ok: false,
+          reason: `provider usage expected but unparseable for ${provider} (${capture.value.parser}): ${capture.value.reason}; self-measured fallback recorded`
+        };
+      }
+      if (!nextEntry.unmetered) {
+        const runTokenCeiling = config.config.resource_policy?.run_ceiling?.tokens;
+        if (runTokenCeiling !== undefined && effectiveTokens > runTokenCeiling) {
+          return {
+            ok: false,
+            reason: `token budget exceeded: ${provider} call used ${effectiveTokens} effective tokens against run ceiling ${runTokenCeiling}`,
+            budget_exceeded: true
+          };
+        }
+        const sessionTokenCeiling = config.config.resource_policy?.session_ceiling?.tokens;
+        if (sessionId !== null && sessionTokenCeiling !== undefined) {
+          const sessionTokens = sessionEffectiveTokens(nextLedger, sessionId);
+          if (sessionTokens > sessionTokenCeiling) {
+            return {
+              ok: false,
+              reason: `token budget exceeded: manager session ${sessionId} used ${sessionTokens} effective tokens against ceiling ${sessionTokenCeiling}`,
+              budget_exceeded: true
+            };
+          }
+        }
+      }
       return { ok: true, value: nextEntry };
     })
   );
@@ -179,6 +340,9 @@ function createEmptyEntry(provider: string, updatedAt: string): QuotaLedgerEntry
   return {
     self_measured: selfMeasured,
     provider_reported: null,
+    provider_usage_capture: emptyUsageCapture(),
+    last_request: null,
+    session_usage: {},
     reconciliation: buildReconciliation(null, false),
     observed_limit: null,
     resets_at: null,
@@ -195,6 +359,38 @@ function addUsage(left: SelfMeasuredUsage, right: SelfMeasuredUsage): SelfMeasur
     output_tokens_estimated: left.output_tokens_estimated + right.output_tokens_estimated,
     wall_time_ms: left.wall_time_ms + right.wall_time_ms
   };
+}
+
+function addSessionUsage(
+  sessions: Record<string, SessionTokenUsage>,
+  sessionId: string,
+  selfMeasuredTokens: number,
+  providerReportedTokens: number | null
+): Record<string, SessionTokenUsage> {
+  const previous = sessions[sessionId] ?? {
+    requests: 0,
+    self_measured_tokens: 0,
+    provider_reported_tokens: 0,
+    provider_reported_requests: 0,
+    effective_tokens: 0
+  };
+  return {
+    ...sessions,
+    [sessionId]: {
+      requests: previous.requests + 1,
+      self_measured_tokens: previous.self_measured_tokens + selfMeasuredTokens,
+      provider_reported_tokens: previous.provider_reported_tokens + (providerReportedTokens ?? 0),
+      provider_reported_requests: previous.provider_reported_requests + (providerReportedTokens === null ? 0 : 1),
+      effective_tokens: previous.effective_tokens + (providerReportedTokens ?? selfMeasuredTokens)
+    }
+  };
+}
+
+function sessionEffectiveTokens(ledger: QuotaLedger, sessionId: string): number {
+  return Object.values(ledger).reduce(
+    (sum, entry) => sum + (entry.unmetered ? 0 : (entry.session_usage[sessionId]?.effective_tokens ?? 0)),
+    0
+  );
 }
 
 function emptyUsage(): SelfMeasuredUsage {
@@ -274,6 +470,14 @@ function normalizeProvider(provider: string): string | null {
   return trimmed === "" || /[\u0000-\u001f/\\]/.test(trimmed) ? null : trimmed;
 }
 
+function normalizeSessionId(sessionId: string | undefined): string | null {
+  if (sessionId === undefined) {
+    return null;
+  }
+  const trimmed = sessionId.trim();
+  return trimmed === "" || /[\u0000-\u001f/\\]/u.test(trimmed) ? null : trimmed;
+}
+
 function isUnmeteredProvider(provider: string): boolean {
   const normalized = provider.toLowerCase();
   return normalized === "local" || normalized.startsWith("local-") || normalized === "ollama";
@@ -322,6 +526,18 @@ function normalizeQuotaLedgerEntry(
     }
     providerReported = value.provider_reported as ProviderReportedTotals;
   }
+  const captureResult = normalizeUsageCaptureSummary(provider, value.provider_usage_capture);
+  if (!captureResult.ok) {
+    return captureResult;
+  }
+  const lastRequestResult = normalizeLastRequest(provider, value.last_request);
+  if (!lastRequestResult.ok) {
+    return lastRequestResult;
+  }
+  const sessionUsageResult = normalizeSessionUsage(provider, value.session_usage);
+  if (!sessionUsageResult.ok) {
+    return sessionUsageResult;
+  }
 
   if (value.observed_limit !== null) {
     const observedResult = validateObservedLimit(`${provider}.observed_limit`, value.observed_limit);
@@ -357,6 +573,9 @@ function normalizeQuotaLedgerEntry(
     value: {
       self_measured: selfMeasured,
       provider_reported: providerReported,
+      provider_usage_capture: captureResult.value,
+      last_request: lastRequestResult.value,
+      session_usage: sessionUsageResult.value,
       reconciliation: expectedReconciliation,
       observed_limit: observedLimit,
       resets_at: value.resets_at as string | null,
@@ -365,6 +584,180 @@ function normalizeQuotaLedgerEntry(
       unmetered: value.unmetered as boolean
     }
   };
+}
+
+function normalizeUsageCapture(record: QuotaUsageRecord): { ok: true; value: ProviderUsageCapture } | { ok: false; reason: string } {
+  if (record.provider_usage !== undefined) {
+    const result = validateProviderUsageCapture("provider_usage", record.provider_usage);
+    return result.ok ? { ok: true, value: record.provider_usage } : result;
+  }
+  if (record.provider_reported !== undefined && record.provider_reported !== null) {
+    const result = validateProviderReportedUsage("provider_reported", record.provider_reported);
+    return result.ok
+      ? { ok: true, value: { status: "captured", parser: null, usage: record.provider_reported } }
+      : result;
+  }
+  return {
+    ok: true,
+    value: {
+      status: "not_available",
+      parser: null,
+      reason: "provider usage was not requested or reported"
+    }
+  };
+}
+
+function validateProviderUsageCapture(
+  label: string,
+  value: unknown
+): { ok: true } | { ok: false; reason: string } {
+  if (!isRecord(value)) {
+    return { ok: false, reason: `${label} must be a JSON object` };
+  }
+  if (
+    value.status !== "captured" &&
+    value.status !== "not_available" &&
+    value.status !== "expected_but_unparseable"
+  ) {
+    return { ok: false, reason: `${label}.status is invalid` };
+  }
+  if (value.parser !== null && (typeof value.parser !== "string" || value.parser.trim() === "")) {
+    return { ok: false, reason: `${label}.parser must be a non-empty string or null` };
+  }
+  if (value.status === "captured") {
+    return validateProviderReportedUsage(`${label}.usage`, value.usage);
+  }
+  if (typeof value.reason !== "string" || value.reason.trim() === "") {
+    return { ok: false, reason: `${label}.reason must be a non-empty string` };
+  }
+  if (value.status === "expected_but_unparseable" && value.parser === null) {
+    return { ok: false, reason: `${label}.parser must identify the expected parser` };
+  }
+  return { ok: true };
+}
+
+function emptyUsageCapture(): ProviderUsageCaptureSummary {
+  return {
+    captured_requests: 0,
+    not_available_requests: 0,
+    expected_but_unparseable_requests: 0,
+    last_status: "not_available",
+    last_parser: null,
+    last_reason: "no adapter requests recorded"
+  };
+}
+
+function addUsageCapture(
+  previous: ProviderUsageCaptureSummary,
+  current: ProviderUsageCapture
+): ProviderUsageCaptureSummary {
+  return {
+    captured_requests: previous.captured_requests + (current.status === "captured" ? 1 : 0),
+    not_available_requests: previous.not_available_requests + (current.status === "not_available" ? 1 : 0),
+    expected_but_unparseable_requests:
+      previous.expected_but_unparseable_requests + (current.status === "expected_but_unparseable" ? 1 : 0),
+    last_status: current.status,
+    last_parser: current.parser,
+    last_reason: current.status === "captured" ? null : current.reason
+  };
+}
+
+function normalizeUsageCaptureSummary(
+  provider: string,
+  value: unknown
+): { ok: true; value: ProviderUsageCaptureSummary } | { ok: false; reason: string } {
+  if (value === undefined) {
+    return { ok: true, value: emptyUsageCapture() };
+  }
+  if (!isRecord(value)) {
+    return { ok: false, reason: `${provider}.provider_usage_capture must be a JSON object` };
+  }
+  for (const field of ["captured_requests", "not_available_requests", "expected_but_unparseable_requests"] as const) {
+    if (!Number.isSafeInteger(value[field]) || typeof value[field] !== "number" || value[field] < 0) {
+      return { ok: false, reason: `${provider}.provider_usage_capture.${field} must be a non-negative safe integer` };
+    }
+  }
+  if (
+    value.last_status !== "captured" &&
+    value.last_status !== "not_available" &&
+    value.last_status !== "expected_but_unparseable"
+  ) {
+    return { ok: false, reason: `${provider}.provider_usage_capture.last_status is invalid` };
+  }
+  if (value.last_parser !== null && (typeof value.last_parser !== "string" || value.last_parser.trim() === "")) {
+    return { ok: false, reason: `${provider}.provider_usage_capture.last_parser must be a non-empty string or null` };
+  }
+  if (value.last_reason !== null && (typeof value.last_reason !== "string" || value.last_reason.trim() === "")) {
+    return { ok: false, reason: `${provider}.provider_usage_capture.last_reason must be a non-empty string or null` };
+  }
+  return { ok: true, value: value as unknown as ProviderUsageCaptureSummary };
+}
+
+function normalizeLastRequest(
+  provider: string,
+  value: unknown
+): { ok: true; value: LastQuotaRequest | null } | { ok: false; reason: string } {
+  if (value === undefined || value === null) {
+    return { ok: true, value: null };
+  }
+  if (!isRecord(value)) {
+    return { ok: false, reason: `${provider}.last_request must be a JSON object or null` };
+  }
+  for (const field of ["self_measured_tokens", "effective_tokens"] as const) {
+    if (!Number.isSafeInteger(value[field]) || typeof value[field] !== "number" || value[field] < 0) {
+      return { ok: false, reason: `${provider}.last_request.${field} must be a non-negative safe integer` };
+    }
+  }
+  if (
+    value.provider_reported_tokens !== null &&
+    (!Number.isSafeInteger(value.provider_reported_tokens) ||
+      typeof value.provider_reported_tokens !== "number" ||
+      value.provider_reported_tokens < 0)
+  ) {
+    return { ok: false, reason: `${provider}.last_request.provider_reported_tokens must be a non-negative safe integer or null` };
+  }
+  if (value.accounting_source !== "provider_reported" && value.accounting_source !== "self_measured") {
+    return { ok: false, reason: `${provider}.last_request.accounting_source is invalid` };
+  }
+  if (
+    value.provider_usage_status !== "captured" &&
+    value.provider_usage_status !== "not_available" &&
+    value.provider_usage_status !== "expected_but_unparseable"
+  ) {
+    return { ok: false, reason: `${provider}.last_request.provider_usage_status is invalid` };
+  }
+  return { ok: true, value: value as unknown as LastQuotaRequest };
+}
+
+function normalizeSessionUsage(
+  provider: string,
+  value: unknown
+): { ok: true; value: Record<string, SessionTokenUsage> } | { ok: false; reason: string } {
+  if (value === undefined) {
+    return { ok: true, value: {} };
+  }
+  if (!isRecord(value)) {
+    return { ok: false, reason: `${provider}.session_usage must be a JSON object` };
+  }
+  const normalized: Record<string, SessionTokenUsage> = {};
+  for (const [sessionId, usage] of Object.entries(value)) {
+    if (normalizeSessionId(sessionId) === null || !isRecord(usage)) {
+      return { ok: false, reason: `${provider}.session_usage entries must use valid session identifiers and JSON objects` };
+    }
+    for (const field of [
+      "requests",
+      "self_measured_tokens",
+      "provider_reported_tokens",
+      "provider_reported_requests",
+      "effective_tokens"
+    ] as const) {
+      if (!Number.isSafeInteger(usage[field]) || typeof usage[field] !== "number" || usage[field] < 0) {
+        return { ok: false, reason: `${provider}.session_usage.${sessionId}.${field} must be a non-negative safe integer` };
+      }
+    }
+    normalized[sessionId] = usage as unknown as SessionTokenUsage;
+  }
+  return { ok: true, value: normalized };
 }
 
 function validateObservedLimit(label: string, value: unknown): { ok: true } | { ok: false; reason: string } {

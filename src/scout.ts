@@ -64,7 +64,8 @@ export async function scoutCommand(cwd: string, args: string[]): Promise<number>
 export async function runScout(
   repoRoot: string,
   taskId: string,
-  tool: string
+  tool: string,
+  options: { usageSessionId?: string } = {}
 ): Promise<{ ok: true; value: ScoutResult } | { ok: false; reason: string }> {
   const specResult = await requireActiveSpecRatified(repoRoot);
   if (!specResult.ok) {
@@ -105,8 +106,9 @@ export async function runScout(
   }
 
   const startedAt = Date.now();
-  const processResult = await runAdapterProcess(profileResult.profile, sourceRootResult.value, promptResult.value.prompt, {
-    outputLogPath: adapterRunLogPath(repoRoot, `scout-${taskId}`)
+  const processResult = await runAdapterProcess(repoRoot, profileResult.profile, sourceRootResult.value, promptResult.value.prompt, {
+    outputLogPath: adapterRunLogPath(repoRoot, `scout-${taskId}`),
+    usageSessionId: options.usageSessionId
   });
   if (!processResult.ok) {
     return processResult;

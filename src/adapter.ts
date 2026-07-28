@@ -9,8 +9,11 @@ import { readJsonFile } from "./json.js";
 import { assembleAgentPrompt, buildAgentPromptFromContract } from "./prompt-cache.js";
 import {
   adapterOutputIndicatesThrottle,
+  checkTokenBudgetPreflight,
+  estimateTokens,
   recordQuotaUsage,
-  type ProviderReportedUsage
+  type ProviderReportedUsage,
+  type ProviderUsageCapture
 } from "./resource-ledger.js";
 
 export type PromptArgMode = "stdin" | "arg";
@@ -35,6 +38,16 @@ export interface InvokeAgentResult {
   wallTimeMs: number;
   throttled: boolean;
   failureReason: string | null;
+  effectiveTokens: number;
+}
+
+export interface InvokeAgentFailure {
+  ok: false;
+  reason: string;
+  budget_exceeded?: true;
+  exitCode?: number;
+  wallTimeMs?: number;
+  effectiveTokens?: number;
 }
 
 export interface AdapterStreamChunk {
@@ -45,6 +58,7 @@ export interface AdapterStreamChunk {
 export interface InvokeAgentOptions {
   allowDangerousAdapter?: boolean;
   onStreamChunk?: (chunk: AdapterStreamChunk) => void;
+  usageSessionId?: string;
 }
 
 export interface AdapterProcessResult {
@@ -52,7 +66,8 @@ export interface AdapterProcessResult {
   stdout: string;
   stderr: string;
   modelOutput: string;
-  providerUsage: ProviderReportedUsage | null;
+  providerUsageCapture: ProviderUsageCapture;
+  usageSessionId: string | null;
   timedOut: boolean;
   outputLogPath: string | null;
 }
@@ -60,6 +75,7 @@ export interface AdapterProcessResult {
 export interface AdapterProcessOptions {
   onStreamChunk?: (chunk: AdapterStreamChunk) => void;
   outputLogPath?: string;
+  usageSessionId?: string;
 }
 
 export async function invokeAgent(
@@ -67,7 +83,7 @@ export async function invokeAgent(
   taskId: string,
   tool: string,
   options: InvokeAgentOptions = {}
-): Promise<{ ok: true; value: InvokeAgentResult } | { ok: false; reason: string }> {
+): Promise<{ ok: true; value: InvokeAgentResult } | InvokeAgentFailure> {
   const contractResult = await loadAndValidateContract(repoRoot, taskId);
   if (!contractResult.ok) {
     return contractResult;
@@ -98,9 +114,10 @@ export async function invokeAgent(
   const prompt = promptResult.value.full_prompt;
   const startedAt = Date.now();
   const logPath = path.join(worktreePath, "agent.log");
-  const processResult = await runAdapterProcess(profileResult.profile, worktreePath, prompt, {
+  const processResult = await runAdapterProcess(repoRoot, profileResult.profile, worktreePath, prompt, {
     onStreamChunk: options.onStreamChunk,
-    outputLogPath: logPath
+    outputLogPath: logPath,
+    usageSessionId: options.usageSessionId
   });
   if (!processResult.ok) {
     return processResult;
@@ -116,7 +133,21 @@ export async function invokeAgent(
     throttled
   );
   if (!ledgerResult.ok) {
-    return { ok: false, reason: ledgerResult.reason };
+    return {
+      ok: false,
+      reason: ledgerResult.reason,
+      ...(ledgerResult.budget_exceeded === true
+        ? {
+            budget_exceeded: true as const,
+            exitCode: processResult.value.exitCode,
+            wallTimeMs,
+            effectiveTokens:
+              processResult.value.providerUsageCapture.status === "captured"
+                ? processResult.value.providerUsageCapture.usage.total_tokens
+                : estimateTokens(prompt) + estimateTokens(processResult.value.modelOutput)
+          }
+        : {})
+    };
   }
 
   return {
@@ -126,6 +157,7 @@ export async function invokeAgent(
       logPath,
       wallTimeMs,
       throttled,
+      effectiveTokens: ledgerResult.value.last_request?.effective_tokens ?? estimateTokens(prompt) + estimateTokens(processResult.value.modelOutput),
       failureReason:
         processResult.value.exitCode === 0
           ? null
@@ -240,12 +272,17 @@ export function buildAgentPrompt(contract: TaskContract): string {
   return buildAgentPromptFromContract(contract);
 }
 
-export function runAdapterProcess(
+export async function runAdapterProcess(
+  repoRoot: string,
   profile: AdapterProfile,
   cwd: string,
   prompt: string,
   options: AdapterProcessOptions = {}
 ): Promise<{ ok: true; value: AdapterProcessResult } | { ok: false; reason: string }> {
+  const budget = await checkTokenBudgetPreflight(repoRoot, profile.tool, options.usageSessionId, estimateTokens(prompt));
+  if (!budget.ok) {
+    return budget;
+  }
   return new Promise((resolve) => {
     const [command, ...baseArgs] = profile.invoke;
     const args = profile.prompt_arg === "arg" ? [...baseArgs, prompt] : baseArgs;
@@ -291,16 +328,18 @@ export function runAdapterProcess(
       }
       const capturedStderr = Buffer.concat(stderr).toString("utf8");
       const capturedStdout = Buffer.concat(stdout).toString("utf8");
-      const normalized = normalizeAdapterResult(resolveAdapterUsageParser(profile), capturedStdout, capturedStderr);
+      const exitCode = timedOut ? 124 : code ?? 1;
+      const normalized = normalizeAdapterResult(resolveAdapterUsageParser(profile), capturedStdout, capturedStderr, exitCode);
       const result: AdapterProcessResult = {
-        exitCode: timedOut ? 124 : code ?? 1,
+        exitCode,
         stdout: capturedStdout,
         stderr:
           capturedStderr !== "" || stdinError === null
             ? capturedStderr
             : formatErrorDetail(stdinError, "adapter stdin failed"),
         modelOutput: normalized.modelOutput,
-        providerUsage: normalized.providerUsage,
+        providerUsageCapture: normalized.providerUsageCapture,
+        usageSessionId: options.usageSessionId ?? null,
         timedOut,
         outputLogPath: options.outputLogPath ?? null
       };
@@ -327,7 +366,8 @@ export async function recordAdapterUsage(
     model_output_text: result.modelOutput,
     wall_time_ms: wallTimeMs,
     throttled,
-    provider_reported: result.providerUsage
+    ...(result.usageSessionId === null ? {} : { session_id: result.usageSessionId }),
+    provider_usage: result.providerUsageCapture
   });
 }
 
@@ -505,14 +545,36 @@ async function writeAdapterProcessLog(logPath: string, tool: string, result: Ada
 function normalizeAdapterResult(
   parser: AdapterUsageParser | undefined,
   stdout: string,
-  stderr: string
-): { modelOutput: string; providerUsage: ProviderReportedUsage | null } {
+  stderr: string,
+  exitCode: number
+): { modelOutput: string; providerUsageCapture: ProviderUsageCapture } {
   if (parser === undefined) {
-    return { modelOutput: stdout, providerUsage: null };
+    return {
+      modelOutput: stdout,
+      providerUsageCapture: {
+        status: "not_available",
+        parser: null,
+        reason: "adapter profile does not request or expose a supported provider usage format"
+      }
+    };
   }
+  const usage = parseAdapterProviderUsage(parser, stdout, stderr);
   return {
     modelOutput: extractModelOutput(parser, stdout),
-    providerUsage: parseAdapterProviderUsage(parser, stdout, stderr)
+    providerUsageCapture:
+      usage !== null
+        ? { status: "captured", parser, usage }
+        : exitCode === 0
+          ? {
+              status: "expected_but_unparseable",
+              parser,
+              reason: "adapter exited successfully but emitted no parseable provider usage record"
+            }
+          : {
+              status: "not_available",
+              parser,
+              reason: `adapter exited ${exitCode} before a parseable provider usage record was emitted`
+            }
   };
 }
 

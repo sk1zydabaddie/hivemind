@@ -292,7 +292,7 @@ export async function generateIdeationRound(
 
   const prompt = buildIdeationGenerationPrompt(loaded.value, spec.value.markdown, steering);
   const startedAt = Date.now();
-  const processResult = await runAdapterProcess(profileResult.profile, repoRoot, prompt, {
+  const processResult = await runAdapterProcess(repoRoot, profileResult.profile, repoRoot, prompt, {
     outputLogPath: adapterRunLogPath(repoRoot, `ideation-${specId}`)
   });
   if (!processResult.ok) {

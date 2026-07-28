@@ -711,6 +711,45 @@ test("runTask pauses after invocation when actual wall time exceeds the ceiling"
   });
 });
 
+test("runTask stops after invocation when effective token usage exceeds the ceiling", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const agentPath = await writeAgent(repo, "token-ceiling-agent.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'changed before token ceiling stop\\n');",
+      "console.log('provider output');",
+      "console.error('tokens used\\n2,000');"
+    ]);
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writeConfig(repo, { resource_policy: { run_ceiling: { tokens: 1000 } } });
+    await writeProfile(repo, "fake", agentPath, undefined, false, "strong", 10, "codex-text");
+    await grantLease(repo, "T-001", ["README.md"]);
+
+    const result = await runTask(repo, "T-001", "fake");
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.match(result.reason, /token budget exceeded: fake call used 2000 effective tokens against run ceiling 1000/);
+    assert.match(await readFile(path.join(repo, ".hivemind", "worktrees", "T-001", "README.md"), "utf8"), /changed before token ceiling stop/);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.equal(events.value.some((event) => event.type === "task.completed" && event.task_id === "T-001"), false);
+    assert.equal(
+      events.value.some(
+        (event) =>
+          event.type === "task.failed" &&
+          event.task_id === "T-001" &&
+          String(event.data.reason).includes("token budget exceeded")
+      ),
+      true
+    );
+  });
+});
+
 test("CLI run requires explicit approval for dangerous adapter flags", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     const agentPath = await writeAgent(repo, "dangerous-cli-agent.mjs", [
@@ -1075,7 +1114,8 @@ async function writeProfile(
   timeoutMs?: number,
   dangerous = false,
   routingTier = "strong",
-  costRank = 10
+  costRank = 10,
+  usageParser?: "codex-text"
 ): Promise<void> {
   const adaptersDir = path.join(repo, ".hivemind", "adapters");
   await mkdir(adaptersDir, { recursive: true });
@@ -1087,7 +1127,8 @@ async function writeProfile(
     context_window: 1024,
     routing_tier: routingTier,
     cost_rank: costRank,
-    ...(timeoutMs === undefined ? {} : { timeout_ms: timeoutMs })
+    ...(timeoutMs === undefined ? {} : { timeout_ms: timeoutMs }),
+    ...(usageParser === undefined ? {} : { usage_parser: usageParser })
   };
   await writeFile(
     path.join(adaptersDir, `${tool}.profile.json`),

@@ -12,6 +12,7 @@ import test from "node:test";
 import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { requestLease } from "../src/lease.js";
+import { readQuotaLedger } from "../src/resource-ledger.js";
 import { latestTaskRunState } from "../src/run-state.js";
 import {
   executeManagerAction,
@@ -72,6 +73,12 @@ test("manager session shell records a user message against the active ratified s
     assert.equal(session.proposed_action.type, "proposed_actions");
     assert.equal(session.proposed_action.source, "adapter-generated");
     assert.deepEqual(session.proposed_action.actions, [{ type: "get_status" }]);
+    const ledger = await readQuotaLedger(repo);
+    assert.equal(ledger.ok, true);
+    if (!ledger.ok) {
+      return;
+    }
+    assert.equal(ledger.value.manager.session_usage[result.value.session_id]?.requests, 1);
   });
 });
 
@@ -383,6 +390,12 @@ test("manager fake loop drives a user message through gated shadow integration w
 
     const session = await readSession(repo, parsed.session_path);
     assert.equal(session.executed_actions.length, 9);
+    const ledger = await readQuotaLedger(repo);
+    assert.equal(ledger.ok, true);
+    if (!ledger.ok) {
+      return;
+    }
+    assert.equal(ledger.value.fake.session_usage[session.session_id]?.requests, 1);
     const events = await readRequiredEvents(repo);
     assertEventOrder(
       events.map((event) => event.type),
@@ -1587,10 +1600,12 @@ async function readSession(
   repo: string,
   sessionPath: string
 ): Promise<{
+  session_id: string;
   pending_action?: { action: { type: string }; reason: string; recommendation: string };
   executed_actions: Array<{ type: string; result: { ok: boolean; reason?: string } }>;
 }> {
   return JSON.parse(await readFile(path.join(repo, sessionPath), "utf8")) as {
+    session_id: string;
     pending_action?: { action: { type: string }; reason: string; recommendation: string };
     executed_actions: Array<{ type: string; result: { ok: boolean; reason?: string } }>;
   };
