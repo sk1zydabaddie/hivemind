@@ -86,7 +86,9 @@ This probe proves the profile cleared Git/flag/model startup and reached the del
 
 ### Quarantined Git Metadata
 
-`D:\Projects\hivemind-m7-4-accidental-git-metadata-20260727` is a reversible quarantine of an accidental `D:\Projects\.git` directory created by an earlier fixture-setup `git init` run from the parent directory. It contains only standard empty-repository Git metadata. It is not the consolidation fixture, is not the OS temporary working directory used by the adapter, and was not involved in the startup failure. It remains preserved for inspection and was not deleted.
+`D:\Projects\hivemind-m7-4-accidental-git-metadata-20260727` was a reversible quarantine of an accidental `D:\Projects\.git` directory created by an earlier fixture-setup `git init` run from the parent directory. It contained only standard empty-repository Git metadata. It was not the consolidation fixture, was not the OS temporary working directory used by the adapter, and was not involved in the startup failure.
+
+Fixture setup now uses `scripts/create-isolated-fixture-repo.mjs`, which requires one absolute new target directory, creates only that directory, runs every Git command with its verified real path as `cwd`, and verifies that Git reports the same repository top-level. Regression tests prove that missing and pre-existing targets are refused before Git can touch the caller. After that fix passed, the user-approved quarantine was deleted following an exact real-path and parent-directory check.
 
 ## One Approved Paid Behavioral Run
 
@@ -160,4 +162,15 @@ wall_time_ms: 13613
 provider_reported_total_tokens: 14351
 ```
 
-Codex authenticated through the user's ChatGPT login and did not expose a monetary charge, so no dollar amount is available. The proposals above are retained for human behavioral judgment; this document does not promote or grade them.
+Codex authenticated through the user's ChatGPT login and did not expose a monetary charge, so no dollar amount is available.
+
+## Human Behavioral Judgment
+
+The user reviewed the unchanged raw seed and the five proposals and marked M7.4's behavioral acceptance **passed**:
+
+- all three seeded cross-event patterns were found;
+- two additional legitimate insights were produced;
+- evidence citations were accurate and discriminating, including the fifth proposal correctly excluding the timeout event because it had no `changed_files`;
+- the outputs were substantive distillations rather than placeholders or copied conclusions.
+
+One non-blocking reasoning-quality note remains for future prompt tuning: proposal 3 inferred "run both suites" from successful runs that executed both suites, while the stronger causal distinction in the evidence was that the passing tasks also included the required save migration. This is loose causality, not an M7.4 acceptance failure.
