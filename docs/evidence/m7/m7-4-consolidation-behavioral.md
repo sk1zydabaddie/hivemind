@@ -7,13 +7,14 @@
 - Adapter: `codex-consolidator`
 - Model: `gpt-5.5`
 - Sandbox: `read-only`
-- Invocation count permitted: one
-- Retries performed: zero
+- Initial adapter-startup attempts: one failed before reaching the model
+- Paid behavioral invocations after diagnosis: one
+- Retries performed within either attempt: zero
 - Canon files before run: zero
 - Tier-1 events before run: 12
 - Tier-1 `memory.proposed` events before run: zero
 
-The adapter was configured to run in Hivemind's disposable consolidation directory with `--ignore-user-config`, `--ignore-rules`, and `--ephemeral`. The seed contains individual file-level rejections, provider/task outcomes with metrics, and shadow-integration results. It does not state a cross-event lesson in prose.
+The adapter was configured to run in Hivemind's disposable consolidation directory with `--ignore-user-config`, `--ignore-rules`, `--ephemeral`, and a read-only sandbox. The seed contains individual file-level rejections, provider/task outcomes with metrics, and shadow-integration results. It does not state a cross-event lesson in prose.
 
 ## Seeded Tier-1 History (Verbatim)
 
@@ -32,7 +33,13 @@ The adapter was configured to run in Hivemind's disposable consolidation directo
 {"ts":"2026-07-28T03:36:45.824Z","type":"integration.passed","task_id":"T-315","data":{"run_id":"run-2026-07-25-02","task_type":"mission_type_change","changed_files":["src/missions/rewards.ts","src/save/migrations/v5.ts","test/missions/rewards.test.ts","test/save/migrations-v5.test.ts"],"test_commands":["npm run test:missions","npm run test:save"],"test_count":42,"exit_code":0}}
 ```
 
-## One Approved Run
+The exact first 12 event lines remained unchanged through diagnosis and the paid run. Their UTF-8 JSONL SHA-256 is:
+
+```text
+0CFB278F8F2568339103852F0A005811A1E3D9C8297CE4E7C61F867FB5483008
+```
+
+## Initial Adapter-Startup Failure
 
 Command:
 
@@ -48,38 +55,109 @@ outer_wall_time_ms: 540
 error: consolidation adapter "codex-consolidator" exited 1
 ```
 
-The current consolidation path returns only the adapter exit code for a non-zero process. It did not preserve or expose the child process's stdout/stderr, so no more specific provider-side error text is available from this run. No retry was made.
+The original adapter path discarded child stderr, so this first attempt did not expose a provider-side reason. No retry was made.
+
+## Observability Fix And Diagnosis
+
+Commit `d10dc7a` (`fix: preserve adapter failure diagnostics`) made every adapter invocation retain exit code, stdout, stderr, and a durable `.hivemind/log/runs/*.adapter.log` path. It also preserved nested daemon/fetch causes and applied the same diagnostic shape to ideation, planning, manager, redirect, Scout, consolidation, and worker-run failures.
+
+Reproducing startup with an empty `CODEX_HOME` and no provider API keys then surfaced the exact original failure:
+
+```text
+consolidation adapter "codex-consolidator" exited 1; output log:
+D:\Projects\hivemind-m7-4-behavioral-20260727-1\.hivemind\log\runs\2026-07-28T04-09-15-970Z-memory-consolidation-c3a060d4-c1c9-4416-8b53-42f1ed9cf776.adapter.log:
+Not inside a trusted directory and --skip-git-repo-check was not specified.
+```
+
+The consolidation mechanism intentionally launches the read-only adapter in an OS temporary directory, not in the target repository or a task worktree. The profile therefore needed the standard Codex `--skip-git-repo-check` flag. Codex CLI `0.145.0` accepted the remaining profile flags and model.
+
+After adding only that flag, a second no-auth startup probe reported:
+
+```text
+workdir: C:\Users\ethan\AppData\Local\Temp\hivemind-consolidation-mIm13c
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: read-only
+ERROR: 401 Unauthorized: Missing bearer or basic authentication
+```
+
+This probe proves the profile cleared Git/flag/model startup and reached the deliberately absent authentication boundary. It could not consume a paid model call. The 12-event seed hash remained unchanged.
+
+### Quarantined Git Metadata
+
+`D:\Projects\hivemind-m7-4-accidental-git-metadata-20260727` is a reversible quarantine of an accidental `D:\Projects\.git` directory created by an earlier fixture-setup `git init` run from the parent directory. It contains only standard empty-repository Git metadata. It is not the consolidation fixture, is not the OS temporary working directory used by the adapter, and was not involved in the startup failure. It remains preserved for inspection and was not deleted.
+
+## One Approved Paid Behavioral Run
+
+Command:
+
+```text
+node D:\Projects\Hivemind AI\dist\src\cli.js memory consolidate --tool codex-consolidator
+```
+
+Observed process result:
+
+```text
+exit_code: 0
+outer_wall_time_ms: 13909
+source_event_count: 12
+proposal_count: 5
+```
 
 ## Real Proposals (Verbatim)
 
-No proposal JSON was produced.
+The adapter's exact stdout was:
 
 ```json
-[]
+{"proposals":[{"title":"Proposed routing policy: schema migrations must not edit read-only schema files","lesson":"Routing policy proposal: schema_migration tasks should be scoped so workers update only the granted migration file, and any required schema source change should be split into a separate task with an explicit writable lease.","evidence":["events.jsonl#L1","events.jsonl#L2","events.jsonl#L3"]},{"title":"Proposed project decision: mission type changes require save migration coverage","lesson":"Project decision proposal: any mission_type_change that alters persisted mission shape, enum values, or reward fields must include the corresponding save migration and save-fixture tests in the same scoped task.","evidence":["events.jsonl#L8","events.jsonl#L9","events.jsonl#L10","events.jsonl#L11","events.jsonl#L12"]},{"title":"Proposed playbook: validate mission changes with both mission and save test suites","lesson":"Playbook proposal: run both mission-specific tests and save persistence tests for mission_type_change tasks, because failures surfaced in persisted fixture loading and round-tripping even when the changed code was under missions modules.","evidence":["events.jsonl#L8","events.jsonl#L9","events.jsonl#L10","events.jsonl#L11","events.jsonl#L12"]},{"title":"Proposed routing policy: prefer Codex for small CLI command tasks under current adapter settings","lesson":"Routing policy proposal: route small_cli_command tasks to Codex by default unless new evidence changes the pattern, because Codex completed comparable tasks with accepted patches and passing integration while Claude timed out or produced an out-of-scope rejected patch.","evidence":["events.jsonl#L4","events.jsonl#L5","events.jsonl#L6","events.jsonl#L7"]},{"title":"Proposed playbook: constrain small CLI command leases to command and test files","lesson":"Playbook proposal: small_cli_command tasks should receive narrow writable leases covering the command implementation and its focused test, with shared modules and package metadata excluded unless the contract explicitly requires them.","evidence":["events.jsonl#L4","events.jsonl#L5","events.jsonl#L7"]}]}
 ```
 
 After the run:
 
 ```text
-Tier-1 event lines: 12
-memory.proposed events: 0
+Tier-1 event lines: 17
+original seed lines: 12
+memory.proposed events: 5
 canon files: 0
 ```
 
-## Ledger
+No proposal was promoted to canon.
 
-Hivemind's self-metered ledger recorded:
+## Spend And Ledger Reconciliation
+
+The pre-paid-run Hivemind ledger baseline was:
 
 ```json
 {
   "provider": "codex-consolidator",
-  "requests": 1,
-  "input_tokens_estimated": 1507,
-  "output_tokens_estimated": 20,
-  "wall_time_ms": 240,
-  "source": "self-metered",
-  "unmetered": false
+  "requests": 3,
+  "input_tokens_estimated": 4521,
+  "output_tokens_estimated": 2276,
+  "wall_time_ms": 15759
 }
 ```
 
-No provider-reported token count or monetary charge was returned. The behavioral quality criterion remains unverified because the adapter exited before producing proposals.
+The post-run Hivemind ledger was:
+
+```json
+{
+  "provider": "codex-consolidator",
+  "requests": 4,
+  "input_tokens_estimated": 6028,
+  "output_tokens_estimated": 4965,
+  "wall_time_ms": 29372
+}
+```
+
+Paid-run delta:
+
+```text
+requests: 1
+input_tokens_estimated: 1507
+output_tokens_estimated: 2689
+wall_time_ms: 13613
+provider_reported_total_tokens: 14351
+```
+
+Codex authenticated through the user's ChatGPT login and did not expose a monetary charge, so no dollar amount is available. The proposals above are retained for human behavioral judgment; this document does not promote or grade them.
