@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
@@ -12,7 +12,7 @@ import { createTaskContract } from "../src/contract.js";
 import { initProject } from "../src/init.js";
 import { checkWriteIntent } from "../src/intent.js";
 import { requestLeaseForContract } from "../src/lease.js";
-import { createTentativePlan, lintTentativePlan } from "../src/plan.js";
+import { createTentativePlan, groundTentativePlan, lintTentativePlan } from "../src/plan.js";
 import { rebuildRepoGraph, repoGraphArtifactPath, type RepoGraphArtifact } from "../src/repo-graph.js";
 import { runTask } from "../src/run.js";
 import { createRatifiedSpec } from "./support/spec.js";
@@ -140,6 +140,91 @@ test("a spurious closure flag is harmless and cannot alter lint contract lease o
   );
 });
 
+test("multiple entry points use one bulk graph query", async () => {
+  await withTempRepo(
+    {
+      "src/entry.ts": "export const entry = true;\n",
+      "src/second.ts": "export const second = true;\n",
+      "src/third.ts": "export const third = true;\n"
+    },
+    async ({ repo }) => {
+      const entryPoints = ["src/entry.ts", "src/second.ts", "src/third.ts"];
+      await preparePlan(repo, [], [], entryPoints);
+      assert.equal((await groundTentativePlan(repo, specId)).ok, true);
+      assert.equal((await rebuildRepoGraph(repo)).ok, true);
+      assert.deepEqual((await evaluateClosureCoverage(repo, specId))?.flags, []);
+
+      let queryCount = 0;
+      const advisory = await evaluateClosureCoverage(repo, specId, async (queryRepo, requestedFiles) => {
+        queryCount += 1;
+        assert.equal(queryRepo, repo);
+        assert.deepEqual(requestedFiles, entryPoints);
+        return requestedFiles.map((file) => ({
+          available: true as const,
+          file,
+          closure: [],
+          source_fingerprint: "fixture"
+        }));
+      });
+
+      assert.equal(queryCount, 1);
+      assert.deepEqual(advisory?.flags, []);
+    }
+  );
+});
+
+test("broken tree-sitter loading is isolated from non-graph commands and grounding advice", async () => {
+  await withTempRepo(
+    {
+      "src/entry.ts": "export const entry = true;\n"
+    },
+    async ({ repo, baseCommit }) => {
+      await preparePlan(repo);
+      const loaderUrl = await writeBrokenTreeSitterLoader(repo);
+
+      const statusBefore = await runCliWithLoader(repo, loaderUrl, ["status"]);
+      assert.deepEqual(JSON.parse(statusBefore.stdout), {
+        tasks: [],
+        leases: {},
+        integration: { queue: [], status: null },
+        replans: []
+      });
+
+      const grounded = await runCliWithLoader(repo, loaderUrl, ["plan", specId, "--ground"]);
+      const groundedOutput = JSON.parse(grounded.stdout) as {
+        grounding_status: string;
+        advisories?: unknown;
+      };
+      assert.equal(groundedOutput.grounding_status, "grounded");
+      assert.equal(groundedOutput.advisories, undefined);
+      assert.equal(grounded.stderr, "");
+
+      for (const graphArgs of [["graph", "rebuild"], ["graph", "closure", "src/entry.ts"]]) {
+        await assert.rejects(
+          runCliWithLoader(repo, loaderUrl, graphArgs),
+          (error: unknown) => {
+            assert.equal(typeof error, "object");
+            assert.notEqual(error, null);
+            const stderr = String((error as { stderr?: unknown }).stderr ?? "");
+            assert.match(stderr, /error: repo graph unavailable: simulated tree-sitter native binding failure/);
+            return true;
+          }
+        );
+      }
+
+      await prepareTaskExecution(repo, baseCommit);
+      const runResult = await runCliWithLoader(repo, loaderUrl, ["run", taskId, "--tool", "closure-worker"]);
+      const parsedRun = JSON.parse(runResult.stdout) as { status: string; tool_exit: number; changed_files: number };
+      assert.equal(parsedRun.status, "completed");
+      assert.equal(parsedRun.tool_exit, 0);
+      assert.equal(parsedRun.changed_files, 1);
+
+      const statusAfter = await runCliWithLoader(repo, loaderUrl, ["status"]);
+      assert.equal((JSON.parse(statusAfter.stdout) as { tasks: unknown[] }).tasks.length, 1);
+    }
+  );
+});
+
 async function withTempRepo(
   files: Record<string, string>,
   run: (input: { repo: string; baseCommit: string }) => Promise<void>
@@ -164,7 +249,13 @@ async function withTempRepo(
   }
 }
 
-async function preparePlan(repo: string, readOnlyFiles: string[] = [], forbiddenFiles: string[] = []): Promise<void> {
+async function preparePlan(
+  repo: string,
+  readOnlyFiles: string[] = [],
+  forbiddenFiles: string[] = [],
+  allowedFiles: string[] = ["src/entry.ts"]
+): Promise<void> {
+  const allowedFileIntents = Object.fromEntries(allowedFiles.map((file) => [file, "modify"]));
   const plan = await createTentativePlan(repo, specId, {
     tasks: [
       {
@@ -174,8 +265,8 @@ async function preparePlan(repo: string, readOnlyFiles: string[] = [], forbidden
         mode: "write",
         agent_role: "builder",
         draft_scope: {
-          allowed_files: ["src/entry.ts"],
-          allowed_file_intents: { "src/entry.ts": "modify" },
+          allowed_files: allowedFiles,
+          allowed_file_intents: allowedFileIntents,
           read_only_files: readOnlyFiles,
           forbidden_files: forbiddenFiles,
           must_not_change: []
@@ -210,6 +301,21 @@ async function groundWithCli(repo: string): Promise<{
 }
 
 async function lintAndRun(
+  repo: string,
+  baseCommit: string,
+  readOnlyFiles: string[] = [],
+  forbiddenFiles: string[] = []
+): Promise<void> {
+  await prepareTaskExecution(repo, baseCommit, readOnlyFiles, forbiddenFiles);
+  const runResult = await runTask(repo, taskId, "closure-worker");
+  assert.equal(runResult.ok, true, runResult.ok ? undefined : runResult.reason);
+  if (runResult.ok) {
+    assert.equal(runResult.value.tool_exit, 0);
+    assert.equal(runResult.value.changed_files, 1);
+  }
+}
+
+async function prepareTaskExecution(
   repo: string,
   baseCommit: string,
   readOnlyFiles: string[] = [],
@@ -272,12 +378,34 @@ async function lintAndRun(
       2
     )}\n`
   );
-  const runResult = await runTask(repo, taskId, "closure-worker");
-  assert.equal(runResult.ok, true, runResult.ok ? undefined : runResult.reason);
-  if (runResult.ok) {
-    assert.equal(runResult.value.tool_exit, 0);
-    assert.equal(runResult.value.changed_files, 1);
-  }
+}
+
+async function writeBrokenTreeSitterLoader(repo: string): Promise<string> {
+  const loaderPath = path.join(repo, "broken-tree-sitter-loader.mjs");
+  await writeFile(
+    loaderPath,
+    [
+      "export async function resolve(specifier, context, nextResolve) {",
+      '  if (specifier === "tree-sitter" || specifier.startsWith("tree-sitter-")) {',
+      '    throw new Error("simulated tree-sitter native binding failure");',
+      "  }",
+      "  return nextResolve(specifier, context);",
+      "}",
+      ""
+    ].join("\n")
+  );
+  return pathToFileURL(loaderPath).href;
+}
+
+async function runCliWithLoader(
+  repo: string,
+  loaderUrl: string,
+  args: string[]
+): Promise<{ stdout: string; stderr: string }> {
+  return execFileAsync(process.execPath, ["--no-warnings", "--experimental-loader", loaderUrl, cliPath, ...args], {
+    cwd: repo,
+    windowsHide: true
+  });
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {

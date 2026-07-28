@@ -53,6 +53,11 @@ export type DependencyClosureResult =
   | { available: true; file: string; closure: string[]; source_fingerprint: string }
   | { available: false; file: string; closure: []; reason: string };
 
+interface NormalizedQueryFile {
+  requested: string;
+  normalized: string | null;
+}
+
 interface SourceFile {
   path: string;
   content: string;
@@ -130,27 +135,47 @@ export async function rebuildRepoGraph(repoRoot: string): Promise<GraphResult<Re
 }
 
 export async function queryDependencyClosure(repoRoot: string, requestedFile: string): Promise<DependencyClosureResult> {
-  const normalizedFile = normalizeRequestedPath(requestedFile);
-  if (normalizedFile === null) {
-    return unavailable(requestedFile, "repo graph query path must be repo-relative and confined");
+  const results = await queryDependencyClosures(repoRoot, [requestedFile]);
+  return results[0] ?? unavailable(requestedFile, "repo graph query did not produce a result");
+}
+
+export async function queryDependencyClosures(repoRoot: string, requestedFiles: string[]): Promise<DependencyClosureResult[]> {
+  const queryFiles: NormalizedQueryFile[] = requestedFiles.map((requested) => ({
+    requested,
+    normalized: normalizeRequestedPath(requested)
+  }));
+  if (queryFiles.every((file) => file.normalized === null)) {
+    return queryFiles.map((file) => unavailable(file.requested, "repo graph query path must be repo-relative and confined"));
   }
 
   const artifactResult = await readRepoGraphArtifact(repoRoot);
   if (!artifactResult.ok) {
-    return unavailable(normalizedFile, artifactResult.reason);
+    return unavailableQueryResults(queryFiles, artifactResult.reason);
   }
 
   const sourcesResult = await readTrackedSources(repoRoot);
   if (!sourcesResult.ok) {
-    return unavailable(normalizedFile, sourcesResult.reason);
+    return unavailableQueryResults(queryFiles, sourcesResult.reason);
   }
 
   const liveFingerprint = fingerprintSources(sourcesResult.value);
   if (liveFingerprint !== artifactResult.value.source_fingerprint) {
-    return unavailable(normalizedFile, "repo graph is stale: tracked source fingerprint changed");
+    return unavailableQueryResults(queryFiles, "repo graph is stale: tracked source fingerprint changed");
   }
 
   const filesByPath = new Map(artifactResult.value.files.map((file) => [file.path, file]));
+  return queryFiles.map((file) =>
+    file.normalized === null
+      ? unavailable(file.requested, "repo graph query path must be repo-relative and confined")
+      : dependencyClosureFromGraph(file.normalized, filesByPath, artifactResult.value.source_fingerprint)
+  );
+}
+
+function dependencyClosureFromGraph(
+  normalizedFile: string,
+  filesByPath: Map<string, RepoGraphFile>,
+  sourceFingerprint: string
+): DependencyClosureResult {
   if (!filesByPath.has(normalizedFile)) {
     return unavailable(normalizedFile, `repo graph has no supported tracked source file "${normalizedFile}"`);
   }
@@ -177,8 +202,16 @@ export async function queryDependencyClosure(repoRoot: string, requestedFile: st
     available: true,
     file: normalizedFile,
     closure: [...visited].sort(compareText),
-    source_fingerprint: artifactResult.value.source_fingerprint
+    source_fingerprint: sourceFingerprint
   };
+}
+
+function unavailableQueryResults(queryFiles: NormalizedQueryFile[], reason: string): DependencyClosureResult[] {
+  return queryFiles.map((file) =>
+    file.normalized === null
+      ? unavailable(file.requested, "repo graph query path must be repo-relative and confined")
+      : unavailable(file.normalized, reason)
+  );
 }
 
 export function repoGraphArtifactPath(repoRoot: string): string {

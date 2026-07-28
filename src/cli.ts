@@ -2,7 +2,6 @@
 
 import { analyzeCommand } from "./analyze.js";
 import { checkpointCommand } from "./checkpoint.js";
-import { evaluateClosureCoverage } from "./closure-coverage.js";
 import { daemonCommand } from "./daemon.js";
 import { integrateCommand } from "./integrate.js";
 import { intentCommand } from "./intent.js";
@@ -11,7 +10,6 @@ import { initProject } from "./init.js";
 import { leaseCommand } from "./lease.js";
 import { managerCommand } from "./manager.js";
 import { quotaCommand } from "./resource-ledger.js";
-import { repoGraphCommand } from "./repo-graph.js";
 import { validateContractCommand } from "./contract.js";
 import { planCommand } from "./plan.js";
 import { specCommand } from "./spec.js";
@@ -37,7 +35,15 @@ async function main(argv: string[]): Promise<number> {
   }
 
   if (command === "plan") {
-    return planCommand(process.cwd(), rest, { closureCoverageAdvisory: evaluateClosureCoverage });
+    if (rest.length === 2 && rest[1] === "--ground") {
+      try {
+        const { evaluateClosureCoverage } = await import("./closure-coverage.js");
+        return planCommand(process.cwd(), rest, { closureCoverageAdvisory: evaluateClosureCoverage });
+      } catch {
+        return planCommand(process.cwd(), rest);
+      }
+    }
+    return planCommand(process.cwd(), rest);
   }
 
   if (command === "ideate") {
@@ -82,7 +88,14 @@ async function main(argv: string[]): Promise<number> {
   }
 
   if (command === "graph") {
-    return repoGraphCommand(process.cwd(), rest);
+    try {
+      const { repoGraphCommand } = await import("./repo-graph.js");
+      return repoGraphCommand(process.cwd(), rest);
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : "unexpected module-load failure";
+      console.error(`error: repo graph unavailable: ${reason}`);
+      return 1;
+    }
   }
 
   if (command === "mcp") {

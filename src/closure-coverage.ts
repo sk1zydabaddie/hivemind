@@ -1,5 +1,5 @@
 import { loadTentativePlan } from "./plan.js";
-import { queryDependencyClosure } from "./repo-graph.js";
+import { queryDependencyClosures, type DependencyClosureResult } from "./repo-graph.js";
 
 export type ClosureCoverageFlagKind = "dependency_outside_scope" | "forbidden_dependency";
 
@@ -24,35 +24,42 @@ interface PendingFlag {
   kind: ClosureCoverageFlagKind;
 }
 
+type ClosureQuery = (repoRoot: string, entryPoints: string[]) => Promise<DependencyClosureResult[]>;
+
 // M7.2 intentionally uses grounded writable files as entry points. The check is
 // advisory, so adding a separate plan-schema field would add churn without safety.
 export async function evaluateClosureCoverage(
   repoRoot: string,
-  specId: string
+  specId: string,
+  queryClosures: ClosureQuery = queryDependencyClosures
 ): Promise<ClosureCoverageAdvisory | undefined> {
   const loaded = await loadTentativePlan(repoRoot, specId);
   if (!loaded.ok) {
     return undefined;
   }
 
+  const groundedTasks = loaded.value.tasks.filter((task) => task.scope_status === "grounded" && task.grounded_scope !== undefined);
+  const entryPoints = uniqueSorted(groundedTasks.flatMap((task) => task.grounded_scope?.allowed_files ?? []));
+  let closureResults: DependencyClosureResult[];
+  try {
+    closureResults = await queryClosures(repoRoot, entryPoints);
+  } catch {
+    return undefined;
+  }
+  if (closureResults.length !== entryPoints.length) {
+    return undefined;
+  }
+  const closureByEntryPoint = new Map(entryPoints.map((entryPoint, index) => [entryPoint, closureResults[index]]));
+
   let availableQueryCount = 0;
   const pendingFlags = new Map<string, PendingFlag>();
-  for (const task of loaded.value.tasks) {
-    const scope = task.grounded_scope;
-    if (task.scope_status !== "grounded" || scope === undefined) {
-      continue;
-    }
-
+  for (const task of groundedTasks) {
+    const scope = task.grounded_scope!;
     const visibleScope = new Set([...scope.allowed_files, ...scope.read_only_files]);
     const forbiddenScope = new Set(scope.forbidden_files);
     for (const entryPoint of uniqueSorted(scope.allowed_files)) {
-      let closure;
-      try {
-        closure = await queryDependencyClosure(repoRoot, entryPoint);
-      } catch {
-        continue;
-      }
-      if (!closure.available) {
+      const closure = closureByEntryPoint.get(entryPoint);
+      if (closure === undefined || !closure.available) {
         continue;
       }
       availableQueryCount += 1;
