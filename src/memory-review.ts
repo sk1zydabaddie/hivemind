@@ -6,17 +6,6 @@ import type { CanonMemoryEntry } from "./memory-canon.js";
 import { readMemoryProposal } from "./memory-log.js";
 import type { MemoryResult } from "./memory-types.js";
 
-export async function reviewMemoryProposal(
-  _repoRoot: string,
-  _proposalId: string,
-  _review: unknown
-): Promise<MemoryResult<CanonMemoryEntry>> {
-  return {
-    ok: false,
-    reason: "programmatic canon promotion is refused; use the interactive memory review CLI"
-  };
-}
-
 export async function reviewMemoryProposalInteractively(
   repoRoot: string,
   proposalId: string

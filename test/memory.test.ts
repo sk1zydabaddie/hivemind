@@ -11,7 +11,7 @@ import test from "node:test";
 import { initProject } from "../src/init.js";
 import { readCanonMemory } from "../src/memory-canon.js";
 import { proposeMemoryLesson } from "../src/memory-log.js";
-import { reviewMemoryProposal } from "../src/memory-review.js";
+import * as memoryReviewModule from "../src/memory-review.js";
 import { memoryCommand } from "../src/memory.js";
 import { mcpToolDefinitions } from "../src/mcp.js";
 import { buildPlanningGenerationPrompt } from "../src/planning-prompt.js";
@@ -52,15 +52,6 @@ test("memory proposal stays Tier-1 until explicit human review promotes it into 
       assert.match(beforeReview.value, /Human-reviewed project canon:\n\(none\)/);
     }
 
-    const programmaticBypass = await reviewMemoryProposal(repo, proposal.proposal_id, {
-      decision: "approve",
-      evidence_reviewed: true,
-      reviewer: "human"
-    });
-    assert.equal(programmaticBypass.ok, false);
-    if (!programmaticBypass.ok) {
-      assert.match(programmaticBypass.reason, /programmatic canon promotion is refused/);
-    }
     await assertCliRejects(
       repo,
       ["memory", "review", proposal.proposal_id, "--approve"],
@@ -186,6 +177,11 @@ test("planning prompt assembly is structurally canon-only and MCP exposes no pro
     )
     .map(([name]) => name);
   assert.deepEqual(canonWriters, ["memory-review.ts"]);
+  assert.deepEqual(
+    Object.keys(memoryReviewModule).sort(),
+    ["reviewMemoryProposalInteractively"],
+    "memory-review must not expose a programmatic canon-promotion surface"
+  );
   const interactiveReviewCallers = [...sourceByName]
     .filter(([, source]) => source.includes("reviewMemoryProposalInteractively"))
     .map(([name]) => name)
