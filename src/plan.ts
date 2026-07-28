@@ -3,7 +3,13 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { writeJsonAtomic } from "./atomic.js";
-import { findDangerousAdapterArgs, loadAdapterProfile, runAdapterProcess } from "./adapter.js";
+import {
+  adapterRunLogPath,
+  findDangerousAdapterArgs,
+  formatAdapterProcessFailure,
+  loadAdapterProfile,
+  runAdapterProcess
+} from "./adapter.js";
 import { canonicalizeIntentPath } from "./canonicalize.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { loadConfig } from "./config.js";
@@ -316,7 +322,9 @@ export async function generateTentativePlan(
     return prompt;
   }
   const startedAt = Date.now();
-  const processResult = await runAdapterProcess(profileResult.profile, repoRoot, prompt.value);
+  const processResult = await runAdapterProcess(profileResult.profile, repoRoot, prompt.value, {
+    outputLogPath: adapterRunLogPath(repoRoot, `planning-${specId}`)
+  });
   if (!processResult.ok) {
     return processResult;
   }
@@ -332,7 +340,7 @@ export async function generateTentativePlan(
     return { ok: false, reason: ledgerResult.reason };
   }
   if (processResult.value.exitCode !== 0) {
-    return { ok: false, reason: `planning adapter "${tool}" exited ${processResult.value.exitCode}` };
+    return { ok: false, reason: formatAdapterProcessFailure(tool, processResult.value, "planning adapter") };
   }
 
   const proposal = parseGeneratedPlan(processResult.value.stdout);

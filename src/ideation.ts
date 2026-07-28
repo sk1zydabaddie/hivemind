@@ -2,7 +2,13 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic.js";
 import { adapterOutputIndicatesThrottle, recordQuotaUsage } from "./resource-ledger.js";
-import { findDangerousAdapterArgs, loadAdapterProfile, runAdapterProcess } from "./adapter.js";
+import {
+  adapterRunLogPath,
+  findDangerousAdapterArgs,
+  formatAdapterProcessFailure,
+  loadAdapterProfile,
+  runAdapterProcess
+} from "./adapter.js";
 import { extractJsonObject, readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
 import {
@@ -286,7 +292,9 @@ export async function generateIdeationRound(
 
   const prompt = buildIdeationGenerationPrompt(loaded.value, spec.value.markdown, steering);
   const startedAt = Date.now();
-  const processResult = await runAdapterProcess(profileResult.profile, repoRoot, prompt);
+  const processResult = await runAdapterProcess(profileResult.profile, repoRoot, prompt, {
+    outputLogPath: adapterRunLogPath(repoRoot, `ideation-${specId}`)
+  });
   if (!processResult.ok) {
     return processResult;
   }
@@ -303,7 +311,7 @@ export async function generateIdeationRound(
   }
 
   if (processResult.value.exitCode !== 0) {
-    return { ok: false, reason: `ideation adapter "${tool}" exited ${processResult.value.exitCode}` };
+    return { ok: false, reason: formatAdapterProcessFailure(tool, processResult.value, "ideation adapter") };
   }
 
   const proposal = parseGeneratedRound(processResult.value.stdout, loaded.value.rounds.length === 0);

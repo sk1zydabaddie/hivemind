@@ -2,7 +2,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  adapterRunLogPath,
   findDangerousAdapterArgs,
+  formatAdapterProcessFailure,
   loadAdapterProfile,
   runAdapterProcess
 } from "./adapter.js";
@@ -53,9 +55,10 @@ export async function consolidateMemory(
 
   const prompt = buildConsolidationPrompt(evidence);
   const isolatedCwd = await mkdtemp(path.join(tmpdir(), "hivemind-consolidation-"));
+  const outputLogPath = adapterRunLogPath(repoRoot, "memory-consolidation");
   const startedAt = Date.now();
   try {
-    const processResult = await runAdapterProcess(profile.profile, isolatedCwd, prompt);
+    const processResult = await runAdapterProcess(profile.profile, isolatedCwd, prompt, { outputLogPath });
     if (!processResult.ok) {
       return processResult;
     }
@@ -75,7 +78,7 @@ export async function consolidateMemory(
       return ledger;
     }
     if (processResult.value.exitCode !== 0) {
-      return { ok: false, reason: `consolidation adapter "${tool}" exited ${processResult.value.exitCode}` };
+      return { ok: false, reason: formatAdapterProcessFailure(tool, processResult.value, "consolidation adapter") };
     }
 
     const parsed = parseConsolidationOutput(processResult.value.stdout, new Set(evidence.map((item) => item.ref)));

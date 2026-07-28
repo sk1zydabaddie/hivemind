@@ -4,7 +4,13 @@ import { promisify } from "node:util";
 import { adapterOutputIndicatesThrottle, recordQuotaUsage } from "./resource-ledger.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent } from "./events.js";
-import { findDangerousAdapterArgs, loadAdapterProfile, runAdapterProcess } from "./adapter.js";
+import {
+  adapterRunLogPath,
+  findDangerousAdapterArgs,
+  formatAdapterProcessFailure,
+  loadAdapterProfile,
+  runAdapterProcess
+} from "./adapter.js";
 import { findGitRoot } from "./repo.js";
 import { loadAndValidateContract, type TaskContract } from "./contract.js";
 import { readCachedRepoFile, resolveTaskPromptSourceRoot, taskContextReadPaths, type CachedReadResult } from "./prompt-cache.js";
@@ -99,7 +105,9 @@ export async function runScout(
   }
 
   const startedAt = Date.now();
-  const processResult = await runAdapterProcess(profileResult.profile, sourceRootResult.value, promptResult.value.prompt);
+  const processResult = await runAdapterProcess(profileResult.profile, sourceRootResult.value, promptResult.value.prompt, {
+    outputLogPath: adapterRunLogPath(repoRoot, `scout-${taskId}`)
+  });
   if (!processResult.ok) {
     return processResult;
   }
@@ -117,7 +125,7 @@ export async function runScout(
   }
 
   if (processResult.value.exitCode !== 0) {
-    return { ok: false, reason: `Scout adapter "${tool}" exited ${processResult.value.exitCode}` };
+    return { ok: false, reason: formatAdapterProcessFailure(tool, processResult.value, "Scout adapter") };
   }
 
   const cleanAfter = await verifyScoutWorktreeClean(sourceRootResult.value, taskId, "after Scout invocation");

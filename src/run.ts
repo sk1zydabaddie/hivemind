@@ -8,6 +8,7 @@ import { loadConfig, type HivemindConfig, type RunCeiling } from "./config.js";
 import { loadAndValidateContract, type TaskContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { captureWorktreeDiff } from "./diff-capture.js";
+import { formatErrorDetail } from "./error-detail.js";
 import { appendEvent, readEvents, type HivemindEvent, type HivemindEventInput } from "./events.js";
 import { releaseLease, verifyLeaseCoverage } from "./lease.js";
 import { appendTaskOutput, type TaskOutputRecord, type TaskOutputInput } from "./output-stream.js";
@@ -121,7 +122,7 @@ export async function startRunTaskJob(
   }
 
   void finishPreparedRun(repoRoot, prepared.value).catch(async (error: unknown) => {
-    const failed = await emitRunFailure(repoRoot, prepared.value, error instanceof Error ? error.message : "unexpected run failure");
+    const failed = await emitRunFailure(repoRoot, prepared.value, formatErrorDetail(error, "unexpected run failure"));
     if (!failed.ok) {
       console.error(`error: ${failed.reason}`);
     }
@@ -418,7 +419,10 @@ async function finishPreparedRunAttempt(
   if (invokeResult.value.throttled) {
     return {
       ok: false,
-      reason: `worker ${prepared.tool} hit a quota wall`,
+      reason:
+        invokeResult.value.failureReason === null
+          ? `worker ${prepared.tool} hit a quota wall`
+          : `worker ${prepared.tool} hit a quota wall; ${invokeResult.value.failureReason}`,
       throttled: true,
       toolExit: invokeResult.value.exitCode
     };
@@ -437,7 +441,9 @@ async function finishPreparedRunAttempt(
   }
 
   if (invokeResult.value.exitCode !== 0) {
-    const reason = `worker ${prepared.tool} exited ${invokeResult.value.exitCode}; diff captured at .hivemind/patches/${prepared.taskId}/diff.patch with ${diffResult.value.changedFiles} changed file(s)`;
+    const processFailure =
+      invokeResult.value.failureReason ?? `worker "${prepared.tool}" exited ${invokeResult.value.exitCode}`;
+    const reason = `${processFailure}; diff captured at .hivemind/patches/${prepared.taskId}/diff.patch with ${diffResult.value.changedFiles} changed file(s)`;
     const failed = await emitRunFailure(repoRoot, prepared, reason, invokeResult.value.exitCode, diffResult.value.diffPath, diffResult.value.changedFiles);
     return failed.ok
       ? {

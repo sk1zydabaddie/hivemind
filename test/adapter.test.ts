@@ -371,6 +371,9 @@ test("invokeAgent surfaces non-zero adapter exits without crashing", async () =>
       return;
     }
     assert.equal(result.value.exitCode, 7);
+    assert.match(result.value.failureReason ?? "", /worker fake exited 7/u);
+    assert.match(result.value.failureReason ?? "", /planned exit/u);
+    assert.match(result.value.failureReason ?? "", /agent\.log/u);
     const log = await readFile(result.value.logPath, "utf8");
     assert.match(log, /exit_code: 7/);
     assert.match(log, /planned exit/);

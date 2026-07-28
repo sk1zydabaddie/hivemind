@@ -1,6 +1,7 @@
 import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { daemonProcessIsLive, readDaemonState } from "./daemon-state.js";
+import { formatErrorDetail } from "./error-detail.js";
 
 export type DaemonCallResult<T> =
   | { routed: false }
@@ -95,7 +96,7 @@ async function requestJson<T>(url: string, init: RequestInit): Promise<{ ok: tru
   try {
     response = await fetch(url, withConnectionClose(init));
   } catch (error: unknown) {
-    return { ok: false, reason: `daemon request failed: ${error instanceof Error ? error.message : "unknown error"}` };
+    return { ok: false, reason: `daemon request failed: ${formatErrorDetail(error, "unknown error")}` };
   }
 
   let parsed: unknown;

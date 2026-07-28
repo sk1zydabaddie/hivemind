@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -110,6 +110,31 @@ test("consolidation refuses before adapter invocation while the daemon owns shar
   });
 });
 
+test("consolidation preserves non-zero adapter stderr in the surfaced error and durable run log", async () => {
+  await withConsolidationRepo(async (repo) => {
+    await seedRepeatedScopeFailures(repo);
+    await writeConsolidationAdapter(
+      repo,
+      "failing-consolidator",
+      { proposals: [] },
+      { stderr: "startup diagnostic detail", exitCode: 9 }
+    );
+
+    await assertCliRejects(
+      repo,
+      ["memory", "consolidate", "--tool", "failing-consolidator"],
+      /consolidation adapter "failing-consolidator" exited 9.*output log: .*startup diagnostic detail/su
+    );
+
+    const runLogDir = path.join(repo, ".hivemind", "log", "runs");
+    const runLogs = await readdir(runLogDir);
+    assert.equal(runLogs.length, 1);
+    const log = await readFile(path.join(runLogDir, runLogs[0]), "utf8");
+    assert.match(log, /exit_code: 9/u);
+    assert.match(log, /## stderr\s+startup diagnostic detail/su);
+  });
+});
+
 test("consolidation is an on-demand proposal-only adapter surface with no canon or scheduler dependency", async () => {
   assert.deepEqual(Object.keys(consolidationModule), ["consolidateMemory"]);
   const source = await readFile(path.join(projectRoot, "src", "memory-consolidation.ts"), "utf8");
@@ -157,7 +182,12 @@ async function writeConsolidationAdapter(
   repo: string,
   tool: string,
   output: unknown,
-  options: { attemptRelativeCanonWrite?: boolean; markerPath?: string } = {}
+  options: {
+    attemptRelativeCanonWrite?: boolean;
+    markerPath?: string;
+    stderr?: string;
+    exitCode?: number;
+  } = {}
 ): Promise<void> {
   const scriptPath = path.join(repo, `${tool}.mjs`);
   const script = [
@@ -171,7 +201,9 @@ async function writeConsolidationAdapter(
           'await writeFile(".hivemind/canon/forged.memory.json", "{}\\n");'
         ]
       : []),
-    `console.log(${JSON.stringify(JSON.stringify(output))});`
+    `console.log(${JSON.stringify(JSON.stringify(output))});`,
+    ...(options.stderr === undefined ? [] : [`console.error(${JSON.stringify(options.stderr)});`]),
+    ...(options.exitCode === undefined ? [] : [`process.exit(${options.exitCode});`])
   ].join("\n");
   await writeFile(scriptPath, `${script}\n`);
   await writeFile(

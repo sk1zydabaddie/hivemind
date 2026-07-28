@@ -3,7 +3,13 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { analyzeTask } from "./analyze.js";
 import { writeJsonAtomic } from "./atomic.js";
-import { findDangerousAdapterArgs, loadAdapterProfile, runAdapterProcess } from "./adapter.js";
+import {
+  adapterRunLogPath,
+  findDangerousAdapterArgs,
+  formatAdapterProcessFailure,
+  loadAdapterProfile,
+  runAdapterProcess
+} from "./adapter.js";
 import { loadConfig } from "./config.js";
 import { createTaskContract, type CreateTaskContractResult } from "./contract.js";
 import { loadAndValidateContract, normalizeContract, validateContract, type TaskContract } from "./contract.js";
@@ -346,7 +352,9 @@ export async function generateManagerProposal(
   }
 
   const startedAt = Date.now();
-  const processResult = await runAdapterProcess(profileResult.profile, repoRoot, prompt.value);
+  const processResult = await runAdapterProcess(profileResult.profile, repoRoot, prompt.value, {
+    outputLogPath: adapterRunLogPath(repoRoot, `manager-${resolvedSpecId}`)
+  });
   if (!processResult.ok) {
     return processResult;
   }
@@ -362,7 +370,7 @@ export async function generateManagerProposal(
     return { ok: false, reason: ledgerResult.reason };
   }
   if (processResult.value.exitCode !== 0) {
-    return { ok: false, reason: `manager adapter "${tool}" exited ${processResult.value.exitCode}` };
+    return { ok: false, reason: formatAdapterProcessFailure(tool, processResult.value, "manager adapter") };
   }
 
   const proposal = parseGeneratedManagerProposal(processResult.value.stdout);
@@ -403,7 +411,9 @@ async function generateRedirectCorrection(
   }
 
   const startedAt = Date.now();
-  const processResult = await runAdapterProcess(profileResult.profile, repoRoot, prompt.value);
+  const processResult = await runAdapterProcess(profileResult.profile, repoRoot, prompt.value, {
+    outputLogPath: adapterRunLogPath(repoRoot, `redirect-${action.task_id}`)
+  });
   if (!processResult.ok) {
     return processResult;
   }
@@ -419,7 +429,7 @@ async function generateRedirectCorrection(
     return { ok: false, reason: ledgerResult.reason };
   }
   if (processResult.value.exitCode !== 0) {
-    return { ok: false, reason: `redirect correction adapter "${tool}" exited ${processResult.value.exitCode}` };
+    return { ok: false, reason: formatAdapterProcessFailure(tool, processResult.value, "redirect correction adapter") };
   }
 
   const correction = parseRedirectCorrection(processResult.value.stdout);

@@ -1,7 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import path from "node:path";
+import { writeFileAtomic } from "./atomic.js";
 import { loadAndValidateContract, TaskContract } from "./contract.js";
+import { formatErrorDetail } from "./error-detail.js";
 import { readJsonFile } from "./json.js";
 import { assembleAgentPrompt, buildAgentPromptFromContract } from "./prompt-cache.js";
 import { adapterOutputIndicatesThrottle, recordQuotaUsage } from "./resource-ledger.js";
@@ -25,6 +28,7 @@ export interface InvokeAgentResult {
   logPath: string;
   wallTimeMs: number;
   throttled: boolean;
+  failureReason: string | null;
 }
 
 export interface AdapterStreamChunk {
@@ -42,6 +46,12 @@ export interface AdapterProcessResult {
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  outputLogPath: string | null;
+}
+
+export interface AdapterProcessOptions {
+  onStreamChunk?: (chunk: AdapterStreamChunk) => void;
+  outputLogPath?: string;
 }
 
 export async function invokeAgent(
@@ -79,15 +89,15 @@ export async function invokeAgent(
   }
   const prompt = promptResult.value.full_prompt;
   const startedAt = Date.now();
+  const logPath = path.join(worktreePath, "agent.log");
   const processResult = await runAdapterProcess(profileResult.profile, worktreePath, prompt, {
-    onStreamChunk: options.onStreamChunk
+    onStreamChunk: options.onStreamChunk,
+    outputLogPath: logPath
   });
   if (!processResult.ok) {
     return processResult;
   }
   const wallTimeMs = Date.now() - startedAt;
-  const logPath = path.join(worktreePath, "agent.log");
-  await writeAgentLog(logPath, profileResult.profile.tool, processResult.value);
   const throttled = adapterOutputIndicatesThrottle(processResult.value.stdout, processResult.value.stderr, processResult.value.exitCode);
   const ledgerResult = await recordQuotaUsage(repoRoot, {
     provider: profileResult.profile.tool,
@@ -100,7 +110,19 @@ export async function invokeAgent(
     return { ok: false, reason: ledgerResult.reason };
   }
 
-  return { ok: true, value: { exitCode: processResult.value.exitCode, logPath, wallTimeMs, throttled } };
+  return {
+    ok: true,
+    value: {
+      exitCode: processResult.value.exitCode,
+      logPath,
+      wallTimeMs,
+      throttled,
+      failureReason:
+        processResult.value.exitCode === 0
+          ? null
+          : formatAdapterProcessFailure(profileResult.profile.tool, processResult.value, "worker")
+    }
+  };
 }
 
 export async function loadAdapterProfile(
@@ -210,9 +232,9 @@ export function runAdapterProcess(
   profile: AdapterProfile,
   cwd: string,
   prompt: string,
-  options: { onStreamChunk?: (chunk: AdapterStreamChunk) => void } = {}
+  options: AdapterProcessOptions = {}
 ): Promise<{ ok: true; value: AdapterProcessResult } | { ok: false; reason: string }> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const [command, ...baseArgs] = profile.invoke;
     const args = profile.prompt_arg === "arg" ? [...baseArgs, prompt] : baseArgs;
     const child = spawn(command, args, { cwd, windowsHide: true });
@@ -220,6 +242,7 @@ export function runAdapterProcess(
     const stderr: Buffer[] = [];
     let failedToStart = false;
     let timedOut = false;
+    let stdinError: NodeJS.ErrnoException | null = null;
     const timeout =
       profile.timeout_ms === undefined
         ? undefined
@@ -238,16 +261,14 @@ export function runAdapterProcess(
       options.onStreamChunk?.({ stream: "stderr", text: chunk.toString("utf8") });
     });
     child.stdin.on("error", (error: NodeJS.ErrnoException) => {
-      if (!failedToStart) {
-        reject(error);
-      }
+      stdinError = error;
     });
     child.on("error", (error: NodeJS.ErrnoException) => {
       failedToStart = true;
       if (timeout) {
         clearTimeout(timeout);
       }
-      resolve({ ok: false, reason: formatSpawnError(profile.tool, error) });
+      void resolveStartFailure(profile.tool, error, options.outputLogPath, resolve);
     });
     child.on("close", (code) => {
       if (failedToStart) {
@@ -256,15 +277,18 @@ export function runAdapterProcess(
       if (timeout) {
         clearTimeout(timeout);
       }
-      resolve({
-        ok: true,
-        value: {
-          exitCode: timedOut ? 124 : code ?? 1,
-          stdout: Buffer.concat(stdout).toString("utf8"),
-          stderr: Buffer.concat(stderr).toString("utf8"),
-          timedOut
-        }
-      });
+      const capturedStderr = Buffer.concat(stderr).toString("utf8");
+      const result: AdapterProcessResult = {
+        exitCode: timedOut ? 124 : code ?? 1,
+        stdout: Buffer.concat(stdout).toString("utf8"),
+        stderr:
+          capturedStderr !== "" || stdinError === null
+            ? capturedStderr
+            : formatErrorDetail(stdinError, "adapter stdin failed"),
+        timedOut,
+        outputLogPath: options.outputLogPath ?? null
+      };
+      void resolveProcessResult(profile.tool, result, resolve);
     });
 
     if (profile.prompt_arg === "stdin") {
@@ -273,16 +297,84 @@ export function runAdapterProcess(
   });
 }
 
-async function writeAgentLog(
-  logPath: string,
+export function adapterRunLogPath(repoRoot: string, label: string): string {
+  const safeLabel = label.trim().replace(/[^a-zA-Z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "") || "adapter";
+  const timestamp = new Date().toISOString().replace(/[:.]/gu, "-");
+  return path.join(repoRoot, ".hivemind", "log", "runs", `${timestamp}-${safeLabel}-${randomUUID()}.adapter.log`);
+}
+
+export function formatAdapterProcessFailure(
   tool: string,
-  result: AdapterProcessResult
+  result: AdapterProcessResult,
+  role = "adapter"
+): string {
+  const detail = result.stderr.trim() || result.stdout.trim() || "no process output";
+  const log = result.outputLogPath === null ? "" : `; output log: ${result.outputLogPath}`;
+  const subject = role === "worker" ? `${role} ${tool}` : `${role} "${tool}"`;
+  return `${subject} exited ${result.exitCode}${log}: ${detail}`;
+}
+
+async function resolveProcessResult(
+  tool: string,
+  result: AdapterProcessResult,
+  resolve: (value: { ok: true; value: AdapterProcessResult } | { ok: false; reason: string }) => void
 ): Promise<void> {
-  await mkdir(path.dirname(logPath), { recursive: true });
-  await writeFile(
+  if (result.outputLogPath !== null) {
+    try {
+      await writeAdapterProcessLog(result.outputLogPath, tool, result);
+    } catch (error: unknown) {
+      resolve({
+        ok: false,
+        reason: `failed to write adapter output log ${result.outputLogPath}: ${formatErrorDetail(error, "unknown log write error")}`
+      });
+      return;
+    }
+  }
+  resolve({ ok: true, value: result });
+}
+
+async function resolveStartFailure(
+  tool: string,
+  error: NodeJS.ErrnoException,
+  outputLogPath: string | undefined,
+  resolve: (value: { ok: true; value: AdapterProcessResult } | { ok: false; reason: string }) => void
+): Promise<void> {
+  const reason = formatSpawnError(tool, error);
+  if (outputLogPath !== undefined) {
+    try {
+      await writeFileAtomic(
+        outputLogPath,
+        [
+          "# Hivemind Adapter Run Log",
+          `tool: ${tool}`,
+          "exit_code: not-started",
+          "timed_out: false",
+          "",
+          "## stdout",
+          "",
+          "## stderr",
+          reason
+        ].join("\n")
+      );
+    } catch (logError: unknown) {
+      resolve({
+        ok: false,
+        reason: `${reason}; failed to write adapter output log ${outputLogPath}: ${formatErrorDetail(logError, "unknown log write error")}`
+      });
+      return;
+    }
+  }
+  resolve({
+    ok: false,
+    reason: outputLogPath === undefined ? reason : `${reason}; output log: ${outputLogPath}`
+  });
+}
+
+async function writeAdapterProcessLog(logPath: string, tool: string, result: AdapterProcessResult): Promise<void> {
+  await writeFileAtomic(
     logPath,
     [
-      "# Hivemind Agent Log",
+      "# Hivemind Adapter Run Log",
       `tool: ${tool}`,
       `exit_code: ${result.exitCode}`,
       `timed_out: ${result.timedOut}`,
@@ -291,8 +383,7 @@ async function writeAgentLog(
       result.stdout,
       "## stderr",
       result.stderr
-    ].join("\n"),
-    "utf8"
+    ].join("\n")
   );
 }
 
@@ -315,8 +406,7 @@ function terminateProcessTree(pid: number | undefined): void {
 }
 
 function formatSpawnError(tool: string, error: NodeJS.ErrnoException): string {
-  const code = typeof error.code === "string" ? ` (${error.code})` : "";
-  return `failed to start adapter "${tool}"${code}: ${error.message}`;
+  return `failed to start adapter "${tool}": ${formatErrorDetail(error, "unknown spawn error")}`;
 }
 
 async function exists(filePath: string): Promise<boolean> {

@@ -187,6 +187,7 @@ test("runTask captures diff but returns failure when the adapter exits non-zero"
     const agentPath = await writeAgent(repo, "nonzero-agent.mjs", [
       "const { appendFile } = await import('node:fs/promises');",
       "await appendFile('README.md', 'changed before nonzero exit\\n');",
+      "console.error('worker process diagnostic');",
       "process.exit(7);"
     ]);
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
@@ -200,6 +201,8 @@ test("runTask captures diff but returns failure when the adapter exits non-zero"
       return;
     }
     assert.match(result.reason, /worker fake exited 7/);
+    assert.match(result.reason, /worker process diagnostic/);
+    assert.match(result.reason, /agent\.log/);
     assert.match(result.reason, /1 changed file/);
     assert.match(await readFile(path.join(repo, ".hivemind", "patches", "T-001", "diff.patch"), "utf8"), /\+changed before nonzero exit/);
     const leases = await readActiveLeases(repo);

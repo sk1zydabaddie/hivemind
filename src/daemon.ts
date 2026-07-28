@@ -4,6 +4,7 @@ import { analyzeTask } from "./analyze.js";
 import { checkpointTask } from "./checkpoint.js";
 import { createTaskContract } from "./contract.js";
 import { removeDaemonState, writeDaemonState } from "./daemon-state.js";
+import { formatErrorDetail } from "./error-detail.js";
 import { EventBus } from "./event-bus.js";
 import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
 import { enqueueIntegrationPatch, integrateShadow } from "./integrate.js";
@@ -133,7 +134,7 @@ function createDaemonServer(repoRoot: string) {
       await eventBus.publishNewDurableEvents(repoRoot, previousEvents.value.length);
       writeJson(response, result.ok ? 200 : 400, result);
     } catch (error: unknown) {
-      writeJson(response, 500, { ok: false, reason: error instanceof Error ? error.message : "unexpected daemon failure" });
+      writeJson(response, 500, { ok: false, reason: formatErrorDetail(error, "unexpected daemon failure") });
     }
   });
 }
