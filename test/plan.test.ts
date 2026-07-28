@@ -361,6 +361,48 @@ test("plan ground treats unlabeled allowed paths as modify and rejects missing f
   });
 });
 
+test("plan ground refuses Hivemind canon paths and globs before they can enter worker scope", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const planPath = await writePlan(repo, {
+      tasks: [
+        task("T-CANON", {
+          draft_scope: draftScope(
+            [".hivemind/canon/M-fixture.memory.json"],
+            { ".hivemind/canon/M-fixture.memory.json": "create" }
+          )
+        })
+      ],
+      execution_groups: [group("G-1", "parallel", ["T-CANON"])]
+    });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+
+    await assertPlanRejects(
+      repo,
+      ["plan", "S-001", "--ground"],
+      /task T-CANON allowed_files contains protected path ".hivemind\/canon\/M-fixture\.memory\.json"/
+    );
+
+    const globPlanPath = await writePlan(repo, {
+      tasks: [
+        task("T-CANON-GLOB", {
+          draft_scope: draftScope(
+            [".hivemind/canon/**/*.json"],
+            { ".hivemind/canon/**/*.json": "create" }
+          )
+        })
+      ],
+      execution_groups: [group("G-1", "parallel", ["T-CANON-GLOB"])]
+    }, "canon-glob-plan.json");
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", globPlanPath], { cwd: repo, windowsHide: true });
+    await assertPlanRejects(
+      repo,
+      ["plan", "S-001", "--ground"],
+      /task T-CANON-GLOB allowed_files contains protected path ".hivemind\/canon\/\*\*\/\*\.json"/
+    );
+  });
+});
+
 test("plan ground rejects create paths that already exist at base as clobbers", async () => {
   await withTempRepo(async ({ repo }) => {
     await createRatifiedSpec(repo, "S-001");

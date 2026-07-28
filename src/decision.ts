@@ -3,6 +3,7 @@ import { canonicalize } from "./canonicalize.js";
 import type { HivemindConfig } from "./config.js";
 import type { TaskContract } from "./contract.js";
 import { matchesAny } from "./glob.js";
+import { workerProtectedPathReason } from "./worker-protected-paths.js";
 
 export type DecisionVerdict = "pass" | "reject" | "escalate";
 
@@ -41,6 +42,9 @@ export async function decideOp(
   }
 
   const resolvedPath = canonical.resolved;
+  if (workerProtectedPathReason(resolvedPath) !== null) {
+    return "reject";
+  }
   if (!isAllowedPath(resolvedPath, contract, config)) {
     return "reject";
   }

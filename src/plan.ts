@@ -19,6 +19,7 @@ import { adapterOutputIndicatesThrottle, recordQuotaUsage } from "./resource-led
 import { checkPlanningAllowed } from "./spec.js";
 import { loadSpecDocument, type SpecResult, validateRequestedSpecId } from "./spec-format.js";
 import { validateRequestedTaskId } from "./task-id.js";
+import { workerProtectedPathReason, workerProtectedScopeReason } from "./worker-protected-paths.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -1151,6 +1152,13 @@ function resolveScopeEntries(
         return { ok: false, reason: `task ${taskId} ${field} path "${entry}" uses a glob; contract lease scopes must be concrete files` };
       }
       const matches = trackedFiles.filter((file) => globMatches(normalized, file));
+      const protectedMatch = matches.find((file) => workerProtectedPathReason(file) !== null);
+      if (protectedMatch !== undefined) {
+        return {
+          ok: false,
+          reason: `task ${taskId} ${field} glob "${entry}" resolved protected path "${protectedMatch}"`
+        };
+      }
       if (matches.length === 0) {
         return { ok: false, reason: `task ${taskId} ${field} glob "${entry}" matched no tracked files at base` };
       }
@@ -1222,6 +1230,12 @@ function validateGroundingPathSyntax(
   }
   if (normalized.split("/").includes(".git")) {
     return `task ${taskId} ${field} contains invalid path "${original}"`;
+  }
+  const protectedReason = field === "allowed_files"
+    ? workerProtectedScopeReason(normalized)
+    : workerProtectedPathReason(normalized);
+  if (protectedReason !== null) {
+    return `task ${taskId} ${field} contains protected path "${original}": ${protectedReason}`;
   }
   return null;
 }

@@ -134,6 +134,18 @@ test("requestLease rejects invalid task ids and invalid paths before writing", a
   });
 });
 
+test("requestLease refuses Hivemind canon paths regardless of requested scope", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const result = await requestLease(repo, "T-001", [".hivemind/canon/M-fixture.memory.json"]);
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.reason, /lease refused for protected path ".hivemind\/canon\/M-fixture\.memory\.json"/);
+    }
+    await assertMissing(path.join(repo, ".hivemind", "leases", "active.json"));
+  });
+});
+
 test("concurrent requestLease calls for the same file never both win", async () => {
   await withTempRepo(async ({ repo }) => {
     const results = await Promise.all([

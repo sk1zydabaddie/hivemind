@@ -1,36 +1,55 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
+import { createInterface } from "node:readline/promises";
 import { writeJsonAtomic } from "./atomic.js";
 import type { CanonMemoryEntry } from "./memory-canon.js";
 import { readMemoryProposal } from "./memory-log.js";
 import type { MemoryResult } from "./memory-types.js";
 
-export interface HumanMemoryReview {
-  decision: "approve" | "reject";
-  evidence_reviewed: boolean;
-  reviewer: "human";
+export async function reviewMemoryProposal(
+  _repoRoot: string,
+  _proposalId: string,
+  _review: unknown
+): Promise<MemoryResult<CanonMemoryEntry>> {
+  return {
+    ok: false,
+    reason: "programmatic canon promotion is refused; use the interactive memory review CLI"
+  };
 }
 
-export async function reviewMemoryProposal(
+export async function reviewMemoryProposalInteractively(
   repoRoot: string,
-  proposalId: string,
-  review: unknown
+  proposalId: string
 ): Promise<MemoryResult<CanonMemoryEntry>> {
-  if (
-    !isRecord(review) ||
-    review.decision !== "approve" ||
-    review.evidence_reviewed !== true ||
-    review.reviewer !== "human"
-  ) {
-    return {
-      ok: false,
-      reason: "canon promotion requires explicit human approval after reviewing the cited evidence"
-    };
-  }
-
   const proposal = await readMemoryProposal(repoRoot, proposalId);
   if (!proposal.ok) {
     return proposal;
+  }
+  if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) {
+    return {
+      ok: false,
+      reason: "canon promotion requires an interactive TTY human review"
+    };
+  }
+
+  process.stderr.write([
+    `Tier-1 proposal: ${proposal.value.proposal_id}`,
+    `Title: ${proposal.value.title}`,
+    `Lesson: ${proposal.value.lesson}`,
+    "Evidence:",
+    ...proposal.value.evidence.map((item, index) => `  ${index + 1}. ${item}`)
+  ].join("\n") + "\n");
+
+  const expected = `approve ${proposal.value.proposal_id}`;
+  const terminal = createInterface({ input: process.stdin, output: process.stderr, terminal: true });
+  let confirmation: string;
+  try {
+    confirmation = await terminal.question(`Type "${expected}" to confirm review of this proposal and its evidence: `);
+  } finally {
+    terminal.close();
+  }
+  if (confirmation.trim() !== expected) {
+    return { ok: false, reason: "canon promotion was not explicitly confirmed" };
   }
 
   const canonPath = canonEntryPath(repoRoot, proposalId);
@@ -44,6 +63,7 @@ export async function reviewMemoryProposal(
     proposal_id: proposal.value.proposal_id,
     approved_at: new Date().toISOString(),
     approved_by: "human",
+    evidence_acknowledged: [proposal.value.proposal_id],
     title: proposal.value.title,
     lesson: proposal.value.lesson,
     evidence: proposal.value.evidence,
@@ -71,8 +91,4 @@ async function exists(filePath: string): Promise<boolean> {
 
 function isNodeError(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -2,14 +2,14 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { proposeMemoryLesson, type MemoryProposal, type MemoryProposalInput } from "./memory-log.js";
-import { reviewMemoryProposal, type HumanMemoryReview } from "./memory-review.js";
+import { reviewMemoryProposalInteractively } from "./memory-review.js";
 import type { MemoryResult } from "./memory-types.js";
 import type { CanonMemoryEntry } from "./memory-canon.js";
 import { findGitRoot } from "./repo.js";
 
 type MemoryCommandInput =
   | { action: "propose"; inputFile: string }
-  | { action: "review"; proposalId: string; review: HumanMemoryReview };
+  | { action: "review"; proposalId: string };
 
 export async function memoryCommand(cwd: string, args: string[]): Promise<number> {
   const parsed = parseMemoryArgs(cwd, args);
@@ -37,15 +37,15 @@ export async function memoryCommand(cwd: string, args: string[]): Promise<number
         : { ok: false, reason: routed.reason }
       : await proposeMemoryLesson(repoRoot, input.value);
   } else {
-    const routed = await callDaemonIfConfigured<CanonMemoryEntry>(repoRoot, "/memory/review", {
-      proposal_id: parsed.value.proposalId,
-      review: parsed.value.review
-    });
-    result = routed.routed
-      ? routed.ok
-        ? { ok: true, value: routed.value }
-        : { ok: false, reason: routed.reason }
-      : await reviewMemoryProposal(repoRoot, parsed.value.proposalId, parsed.value.review);
+    const daemonProbe = await callDaemonIfConfigured<unknown>(repoRoot, "/status", {});
+    result = daemonProbe.routed
+      ? {
+          ok: false,
+          reason: daemonProbe.ok
+            ? "interactive canon review is local-only; stop the Hivemind daemon before reviewing"
+            : `interactive canon review refused because daemon ownership could not be ruled out: ${daemonProbe.reason}`
+        }
+      : await reviewMemoryProposalInteractively(repoRoot, parsed.value.proposalId);
   }
 
   if (!result.ok) {
@@ -61,18 +61,16 @@ function parseMemoryArgs(cwd: string, args: string[]): MemoryResult<MemoryComman
     return { ok: true, value: { action: "propose", inputFile: path.resolve(cwd, args[1]) } };
   }
   if (
-    args.length === 4 &&
+    args.length === 3 &&
     args[0] === "review" &&
     args[1].trim() !== "" &&
-    args[2] === "--approve" &&
-    args[3] === "--evidence-reviewed"
+    args[2] === "--approve"
   ) {
     return {
       ok: true,
       value: {
         action: "review",
-        proposalId: args[1],
-        review: { decision: "approve", evidence_reviewed: true, reviewer: "human" }
+        proposalId: args[1]
       }
     };
   }
@@ -110,7 +108,7 @@ async function readProposalInput(filePath: string): Promise<MemoryResult<MemoryP
 }
 
 function memoryUsage(): string {
-  return "usage: hivemind memory propose <proposal-json-file> | review <proposal-id> --approve --evidence-reviewed";
+  return "usage: hivemind memory propose <proposal-json-file> | review <proposal-id> --approve";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

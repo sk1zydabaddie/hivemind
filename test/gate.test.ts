@@ -37,6 +37,26 @@ test("runGate rejects an out-of-scope patch and names the file", async () => {
   });
 });
 
+test("runGate rejects Hivemind canon changes even when the contract and config allow them", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const canonFile = ".hivemind/canon/M-fixture.memory.json";
+    await mkdir(path.join(repo, ".hivemind", "canon"), { recursive: true });
+    await writeFile(path.join(repo, canonFile), "{}\n");
+    const patchPath = await writePatch(repo, "canon.patch");
+    await resetRepo(repo, baseCommit);
+
+    const result = await runGate(
+      baseCommit,
+      patchPath,
+      contractFor({ allowed_files: [canonFile], allowed_file_intents: { [canonFile]: "create" } }),
+      { ...configFor(repo), allowed_globs: [".hivemind/canon/**"] }
+    );
+
+    assert.equal(result.verdict, "reject");
+    assert.match(result.reason, /rejected add \.hivemind\/canon\/M-fixture\.memory\.json/);
+  });
+});
+
 test("runGate rejects a patch that does not apply to the declared base", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeFile(path.join(repo, "README.md"), "# Fixture\nsecond base\n");

@@ -8,6 +8,7 @@ export interface CanonMemoryEntry {
   proposal_id: string;
   approved_at: string;
   approved_by: "human";
+  evidence_acknowledged: string[];
   title: string;
   lesson: string;
   evidence: string[];
@@ -73,6 +74,7 @@ function validateCanonMemoryEntry(value: unknown): MemoryResult<CanonMemoryEntry
     "approved_by",
     "canon_id",
     "evidence",
+    "evidence_acknowledged",
     "lesson",
     "proposal_id",
     "source_task_id",
@@ -91,6 +93,9 @@ function validateCanonMemoryEntry(value: unknown): MemoryResult<CanonMemoryEntry
     typeof value.approved_at !== "string" ||
     Number.isNaN(Date.parse(value.approved_at)) ||
     value.approved_by !== "human" ||
+    !Array.isArray(value.evidence_acknowledged) ||
+    value.evidence_acknowledged.length !== 1 ||
+    value.evidence_acknowledged[0] !== value.proposal_id ||
     typeof value.title !== "string" ||
     value.title.trim() === "" ||
     typeof value.lesson !== "string" ||

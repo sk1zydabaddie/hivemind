@@ -11,6 +11,7 @@ import { requireTaskDependenciesIntegrated, resolveContractFilesAtBase } from ".
 import { findGitRoot } from "./repo.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { validateRequestedTaskId } from "./task-id.js";
+import { workerProtectedPathReason } from "./worker-protected-paths.js";
 
 export interface LeaseGrantResult {
   task_id: string;
@@ -120,6 +121,11 @@ export async function verifyLeaseCoverage(
     paths = pathsResult.paths;
   }
 
+  const protectedProblem = protectedLeaseProblem(paths);
+  if (protectedProblem !== null) {
+    return { ok: false, reason: protectedProblem };
+  }
+
   const storeResult = await readActiveLeases(repoRoot);
   if (!storeResult.ok) {
     return storeResult;
@@ -175,6 +181,10 @@ async function requestLeaseValidated(repoRoot: string, taskId: string, files: st
   if (!pathsResult.ok) {
     return pathsResult;
   }
+  const protectedProblem = protectedLeaseProblem(pathsResult.paths);
+  if (protectedProblem !== null) {
+    return { ok: false, reason: protectedProblem };
+  }
 
   return withLeaseLock(repoRoot, async () => {
     const storeResult = await readActiveLeases(repoRoot);
@@ -199,6 +209,16 @@ async function requestLeaseValidated(repoRoot: string, taskId: string, files: st
     await writeActiveLeases(repoRoot, nextStore);
     return { ok: true, value: { task_id: taskId, granted: pathsResult.paths } };
   });
+}
+
+function protectedLeaseProblem(paths: string[]): string | null {
+  for (const filePath of paths) {
+    const reason = workerProtectedPathReason(filePath);
+    if (reason !== null) {
+      return `lease refused for protected path "${filePath}": ${reason}`;
+    }
+  }
+  return null;
 }
 
 export async function releaseLease(repoRoot: string, taskId: string): Promise<LeaseResult<LeaseReleaseResult>> {

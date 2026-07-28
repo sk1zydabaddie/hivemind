@@ -10,7 +10,6 @@ import { enqueueIntegrationPatch, integrateShadow } from "./integrate.js";
 import { checkWriteIntent } from "./intent.js";
 import { requestLeaseForContract, releaseLease } from "./lease.js";
 import { proposeMemoryLesson } from "./memory-log.js";
-import { reviewMemoryProposal } from "./memory-review.js";
 import { findGitRoot } from "./repo.js";
 import { evaluatePlanThrash } from "./plan.js";
 import { readQuotaLedger } from "./resource-ledger.js";
@@ -157,14 +156,6 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
   }
   if (request.method === "POST" && request.url === "/memory/propose") {
     return async (payload) => proposeMemoryLesson(repoRoot, payload.proposal);
-  }
-  if (request.method === "POST" && request.url === "/memory/review") {
-    return async (payload) => {
-      const proposalId = readRequiredString(payload, "proposal_id");
-      return proposalId.ok
-        ? reviewMemoryProposal(repoRoot, proposalId.value, payload.review)
-        : proposalId;
-    };
   }
   if (request.method === "POST" && request.url === "/checkpoint/task") {
     return async (payload) => {

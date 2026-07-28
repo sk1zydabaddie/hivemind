@@ -3,6 +3,7 @@ import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { dirname } from "node:path";
+import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
@@ -11,6 +12,7 @@ import { initProject } from "../src/init.js";
 import { readCanonMemory } from "../src/memory-canon.js";
 import { proposeMemoryLesson } from "../src/memory-log.js";
 import { reviewMemoryProposal } from "../src/memory-review.js";
+import { memoryCommand } from "../src/memory.js";
 import { mcpToolDefinitions } from "../src/mcp.js";
 import { buildPlanningGenerationPrompt } from "../src/planning-prompt.js";
 import { readEvents } from "../src/events.js";
@@ -50,46 +52,31 @@ test("memory proposal stays Tier-1 until explicit human review promotes it into 
       assert.match(beforeReview.value, /Human-reviewed project canon:\n\(none\)/);
     }
 
-    const missingReview = await reviewMemoryProposal(repo, proposal.proposal_id, {
-      decision: "approve",
-      evidence_reviewed: false,
-      reviewer: "human"
-    });
-    assert.equal(missingReview.ok, false);
-    if (!missingReview.ok) {
-      assert.match(missingReview.reason, /explicit human approval/);
-    }
-    const forgedReviewer = await reviewMemoryProposal(repo, proposal.proposal_id, {
+    const programmaticBypass = await reviewMemoryProposal(repo, proposal.proposal_id, {
       decision: "approve",
       evidence_reviewed: true,
-      reviewer: "orchestrator"
+      reviewer: "human"
     });
-    assert.equal(forgedReviewer.ok, false);
-    await assertCliRejects(repo, ["memory", "review", proposal.proposal_id, "--approve"], /usage: hivemind memory/);
+    assert.equal(programmaticBypass.ok, false);
+    if (!programmaticBypass.ok) {
+      assert.match(programmaticBypass.reason, /programmatic canon promotion is refused/);
+    }
+    await assertCliRejects(
+      repo,
+      ["memory", "review", proposal.proposal_id, "--approve"],
+      /canon promotion requires an interactive TTY human review/
+    );
     await assertCliRejects(repo, ["memory", "canon", proposal.proposal_id], /usage: hivemind memory/);
     assert.deepEqual(await readCanonMemory(repo), { ok: true, value: [] });
 
-    const reviewed = await runCli(repo, [
-      "memory",
-      "review",
-      proposal.proposal_id,
-      "--approve",
-      "--evidence-reviewed"
-    ]);
-    const canonEntry = JSON.parse(reviewed.stdout) as {
-      proposal_id: string;
-      approved_by: string;
-      lesson: string;
-    };
-    assert.equal(canonEntry.proposal_id, proposal.proposal_id);
-    assert.equal(canonEntry.approved_by, "human");
-    assert.equal(canonEntry.lesson, lesson);
+    assert.equal(await runInteractiveReview(repo, proposal.proposal_id), 0);
 
     const canon = await readCanonMemory(repo);
     assert.equal(canon.ok, true);
     if (canon.ok) {
       assert.equal(canon.value.length, 1);
       assert.equal(canon.value[0].lesson, lesson);
+      assert.deepEqual(canon.value[0].evidence_acknowledged, [proposal.proposal_id]);
     }
     const afterReview = await planningPrompt(repo);
     assert.equal(afterReview.ok, true);
@@ -131,7 +118,7 @@ test("Tier-1 memory is append-only and exposes no rewrite or delete command", as
   });
 });
 
-test("memory proposal and review mutations route through a live daemon single writer", async () => {
+test("memory proposals route through the daemon while programmatic daemon promotion is absent", async () => {
   await withMemoryRepo(async (repo) => {
     const daemon = await startDaemon(repo);
     try {
@@ -145,19 +132,22 @@ test("memory proposal and review mutations route through a live daemon single wr
       );
       const proposed = await runCli(repo, ["memory", "propose", "daemon-proposal.json"]);
       const proposal = JSON.parse(proposed.stdout) as { proposal_id: string };
-      await runCli(repo, [
-        "memory",
-        "review",
-        proposal.proposal_id,
-        "--approve",
-        "--evidence-reviewed"
-      ]);
-
-      const canon = await readCanonMemory(repo);
-      assert.equal(canon.ok, true);
-      if (canon.ok) {
-        assert.equal(canon.value[0]?.proposal_id, proposal.proposal_id);
-      }
+      const response = await fetch(`${daemon.url}/memory/review`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          proposal_id: proposal.proposal_id,
+          review: { decision: "approve", evidence_reviewed: true, reviewer: "human" }
+        })
+      });
+      assert.equal(response.status, 404);
+      assert.deepEqual(await response.json(), { ok: false, reason: "unknown daemon route" });
+      await assertCliRejects(
+        repo,
+        ["memory", "review", proposal.proposal_id, "--approve"],
+        /interactive canon review is local-only; stop the Hivemind daemon before reviewing/
+      );
+      assert.deepEqual(await readCanonMemory(repo), { ok: true, value: [] });
     } finally {
       await stopDaemon(daemon);
     }
@@ -196,6 +186,13 @@ test("planning prompt assembly is structurally canon-only and MCP exposes no pro
     )
     .map(([name]) => name);
   assert.deepEqual(canonWriters, ["memory-review.ts"]);
+  const interactiveReviewCallers = [...sourceByName]
+    .filter(([, source]) => source.includes("reviewMemoryProposalInteractively"))
+    .map(([name]) => name)
+    .sort();
+  assert.deepEqual(interactiveReviewCallers, ["memory-review.ts", "memory.ts"]);
+  const daemonSource = await readFile(path.join(sourceDir, "daemon.ts"), "utf8");
+  assert.doesNotMatch(daemonSource, /\/memory\/review/u);
   assert.equal(mcpToolDefinitions.some((tool) => /memory|canon|promot/iu.test(tool.name)), false);
 });
 
@@ -231,6 +228,32 @@ async function runCli(repo: string, args: string[]): Promise<{ stdout: string; s
     env: { ...process.env, HIVEMIND_DAEMON_URL: "" },
     windowsHide: true
   });
+}
+
+async function runInteractiveReview(repo: string, proposalId: string): Promise<number> {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  Object.defineProperty(input, "isTTY", { value: true });
+  Object.defineProperty(output, "isTTY", { value: true });
+  output.resume();
+
+  const stdinDescriptor = Object.getOwnPropertyDescriptor(process, "stdin");
+  const stderrDescriptor = Object.getOwnPropertyDescriptor(process, "stderr");
+  const originalLog = console.log;
+  if (stdinDescriptor === undefined || stderrDescriptor === undefined) {
+    throw new Error("process stdio descriptors are unavailable");
+  }
+  Object.defineProperty(process, "stdin", { configurable: true, enumerable: true, get: () => input });
+  Object.defineProperty(process, "stderr", { configurable: true, enumerable: true, get: () => output });
+  console.log = () => {};
+  input.end(`approve ${proposalId}\n`);
+  try {
+    return await memoryCommand(repo, ["review", proposalId, "--approve"]);
+  } finally {
+    Object.defineProperty(process, "stdin", stdinDescriptor);
+    Object.defineProperty(process, "stderr", stderrDescriptor);
+    console.log = originalLog;
+  }
 }
 
 async function assertCliRejects(repo: string, args: string[], pattern: RegExp): Promise<void> {
@@ -285,6 +308,7 @@ function escapeRegExp(value: string): string {
 
 interface DaemonProcess {
   child: ChildProcessWithoutNullStreams;
+  url: string;
 }
 
 async function startDaemon(repo: string): Promise<DaemonProcess> {
@@ -294,9 +318,10 @@ async function startDaemon(repo: string): Promise<DaemonProcess> {
     windowsHide: true
   });
   const line = await readLine(child);
-  const ready = JSON.parse(line) as { event?: string };
+  const ready = JSON.parse(line) as { event?: string; url?: string };
   assert.equal(ready.event, "daemon.ready");
-  return { child };
+  assert.equal(typeof ready.url, "string");
+  return { child, url: String(ready.url) };
 }
 
 async function stopDaemon(daemon: DaemonProcess): Promise<void> {
