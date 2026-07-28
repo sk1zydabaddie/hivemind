@@ -1,7 +1,11 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { writeJsonAtomic } from "./atomic.js";
-import type { HivemindConfig } from "./config.js";
+import {
+  DEFAULT_RUN_TOKEN_CEILING,
+  DEFAULT_SESSION_TOKEN_CEILING,
+  type HivemindConfig
+} from "./config.js";
 import { findGitRoot } from "./repo.js";
 
 const hivemindDirs = ["tasks", "log", "patches", "worktrees", "adapters", "canon"] as const;
@@ -31,7 +35,11 @@ export async function initProject(cwd: string): Promise<number> {
     repo_root: repoRoot,
     test_command: await detectTestCommand(repoRoot),
     allowed_globs: [],
-    forbidden_globs: ["**/*.lock", "**/package.json", "**/.git/**"]
+    forbidden_globs: ["**/*.lock", "**/package.json", "**/.git/**"],
+    resource_policy: {
+      run_ceiling: { tokens: DEFAULT_RUN_TOKEN_CEILING },
+      session_ceiling: { tokens: DEFAULT_SESSION_TOKEN_CEILING }
+    }
   };
 
   await writeJsonAtomic(configPath, config);

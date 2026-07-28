@@ -2,6 +2,9 @@ import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { readJsonFile } from "./json.js";
 
+export const DEFAULT_RUN_TOKEN_CEILING = 150_000;
+export const DEFAULT_SESSION_TOKEN_CEILING = 500_000;
+
 export interface HivemindConfig {
   version: 1;
   stack: "typescript-node";
@@ -121,7 +124,7 @@ export function normalizeConfig(raw: unknown): HivemindConfig {
     ...("medium_globs" in raw ? { medium_globs: normalizeStringArray(raw.medium_globs) } : {}),
     ...("high_globs" in raw ? { high_globs: normalizeStringArray(raw.high_globs) } : {}),
     ...("critical_globs" in raw ? { critical_globs: normalizeStringArray(raw.critical_globs) } : {}),
-    ...("resource_policy" in raw ? { resource_policy: normalizeResourcePolicy(raw.resource_policy) } : {}),
+    resource_policy: normalizeResourcePolicy(raw.resource_policy),
     ...("manager_autonomy" in raw ? { manager_autonomy: normalizeManagerAutonomyPolicy(raw.manager_autonomy) } : {})
   };
 }
@@ -224,31 +227,38 @@ function validateManagerCostThreshold(value: unknown, problems: string[]): void 
 
 function normalizeResourcePolicy(value: unknown): ResourcePolicy {
   if (!isRecord(value)) {
-    return {};
+    return defaultResourcePolicy();
   }
   return {
-    ...("run_ceiling" in value ? { run_ceiling: normalizeRunCeiling(value.run_ceiling) } : {}),
-    ...("session_ceiling" in value ? { session_ceiling: normalizeSessionCeiling(value.session_ceiling) } : {})
+    run_ceiling: normalizeRunCeiling(value.run_ceiling),
+    session_ceiling: normalizeSessionCeiling(value.session_ceiling)
   };
 }
 
 function normalizeRunCeiling(value: unknown): RunCeiling {
   if (!isRecord(value)) {
-    return {};
+    return { tokens: DEFAULT_RUN_TOKEN_CEILING };
   }
   return {
     ...("requests" in value && typeof value.requests === "number" ? { requests: value.requests } : {}),
     ...("wall_time_ms" in value && typeof value.wall_time_ms === "number" ? { wall_time_ms: value.wall_time_ms } : {}),
-    ...("tokens" in value && typeof value.tokens === "number" ? { tokens: value.tokens } : {})
+    tokens: "tokens" in value && typeof value.tokens === "number" ? value.tokens : DEFAULT_RUN_TOKEN_CEILING
   };
 }
 
 function normalizeSessionCeiling(value: unknown): SessionCeiling {
   if (!isRecord(value)) {
-    return {};
+    return { tokens: DEFAULT_SESSION_TOKEN_CEILING };
   }
   return {
-    ...("tokens" in value && typeof value.tokens === "number" ? { tokens: value.tokens } : {})
+    tokens: "tokens" in value && typeof value.tokens === "number" ? value.tokens : DEFAULT_SESSION_TOKEN_CEILING
+  };
+}
+
+function defaultResourcePolicy(): ResourcePolicy {
+  return {
+    run_ceiling: { tokens: DEFAULT_RUN_TOKEN_CEILING },
+    session_ceiling: { tokens: DEFAULT_SESSION_TOKEN_CEILING }
   };
 }
 

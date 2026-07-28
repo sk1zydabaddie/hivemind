@@ -8,6 +8,11 @@ import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 
+import {
+  DEFAULT_RUN_TOKEN_CEILING,
+  DEFAULT_SESSION_TOKEN_CEILING,
+  loadConfig
+} from "../src/config.js";
 import { initProject } from "../src/init.js";
 
 const execFileAsync = promisify(execFile);
@@ -37,6 +42,10 @@ test("init creates the M0.1 .hivemind scaffold inside a git repo", async () => {
       test_command: string;
       allowed_globs: string[];
       forbidden_globs: string[];
+      resource_policy: {
+        run_ceiling: { tokens: number };
+        session_ceiling: { tokens: number };
+      };
     };
 
     assert.deepEqual(config, {
@@ -45,7 +54,57 @@ test("init creates the M0.1 .hivemind scaffold inside a git repo", async () => {
       repo_root: repo.replaceAll("\\", "/"),
       test_command: "npm test",
       allowed_globs: [],
-      forbidden_globs: ["**/*.lock", "**/package.json", "**/.git/**"]
+      forbidden_globs: ["**/*.lock", "**/package.json", "**/.git/**"],
+      resource_policy: {
+        run_ceiling: { tokens: DEFAULT_RUN_TOKEN_CEILING },
+        session_ceiling: { tokens: DEFAULT_SESSION_TOKEN_CEILING }
+      }
+    });
+  });
+});
+
+test("loadConfig applies safe token defaults to legacy config and preserves deliberate overrides", async () => {
+  await withTempDir(async (repo) => {
+    await git(repo, ["init"]);
+    assert.equal(await initProject(repo), 0);
+    const configPath = path.join(repo, ".hivemind", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    delete config.resource_policy;
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+
+    const legacy = await loadConfig(repo);
+
+    assert.equal(legacy.ok, true);
+    if (!legacy.ok) {
+      return;
+    }
+    assert.equal(legacy.config.resource_policy?.run_ceiling?.tokens, DEFAULT_RUN_TOKEN_CEILING);
+    assert.equal(legacy.config.resource_policy?.session_ceiling?.tokens, DEFAULT_SESSION_TOKEN_CEILING);
+
+    await writeFile(
+      configPath,
+      `${JSON.stringify(
+        {
+          ...config,
+          resource_policy: {
+            run_ceiling: { requests: 3, tokens: 200_000 },
+            session_ceiling: { tokens: 2_000_000 }
+          }
+        },
+        null,
+        2
+      )}\n`
+    );
+
+    const overridden = await loadConfig(repo);
+
+    assert.equal(overridden.ok, true);
+    if (!overridden.ok) {
+      return;
+    }
+    assert.deepEqual(overridden.config.resource_policy, {
+      run_ceiling: { requests: 3, tokens: 200_000 },
+      session_ceiling: { tokens: 2_000_000 }
     });
   });
 });
