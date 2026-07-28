@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { callDaemonIfConfigured } from "./daemon-client.js";
+import { consolidateMemory, type MemoryConsolidationResult } from "./memory-consolidation.js";
 import { proposeMemoryLesson, type MemoryProposal, type MemoryProposalInput } from "./memory-log.js";
 import { reviewMemoryProposalInteractively } from "./memory-review.js";
 import type { MemoryResult } from "./memory-types.js";
@@ -9,7 +10,8 @@ import { findGitRoot } from "./repo.js";
 
 type MemoryCommandInput =
   | { action: "propose"; inputFile: string }
-  | { action: "review"; proposalId: string };
+  | { action: "review"; proposalId: string }
+  | { action: "consolidate"; tool: string };
 
 export async function memoryCommand(cwd: string, args: string[]): Promise<number> {
   const parsed = parseMemoryArgs(cwd, args);
@@ -23,7 +25,7 @@ export async function memoryCommand(cwd: string, args: string[]): Promise<number
     return 1;
   }
 
-  let result: MemoryResult<MemoryProposal | CanonMemoryEntry>;
+  let result: MemoryResult<MemoryProposal | CanonMemoryEntry | MemoryConsolidationResult>;
   if (parsed.value.action === "propose") {
     const input = await readProposalInput(parsed.value.inputFile);
     if (!input.ok) {
@@ -36,7 +38,7 @@ export async function memoryCommand(cwd: string, args: string[]): Promise<number
         ? { ok: true, value: routed.value }
         : { ok: false, reason: routed.reason }
       : await proposeMemoryLesson(repoRoot, input.value);
-  } else {
+  } else if (parsed.value.action === "review") {
     const daemonProbe = await callDaemonIfConfigured<unknown>(repoRoot, "/status", {});
     result = daemonProbe.routed
       ? {
@@ -46,6 +48,16 @@ export async function memoryCommand(cwd: string, args: string[]): Promise<number
             : `interactive canon review refused because daemon ownership could not be ruled out: ${daemonProbe.reason}`
         }
       : await reviewMemoryProposalInteractively(repoRoot, parsed.value.proposalId);
+  } else {
+    const daemonProbe = await callDaemonIfConfigured<unknown>(repoRoot, "/status", {});
+    result = daemonProbe.routed
+      ? {
+          ok: false,
+          reason: daemonProbe.ok
+            ? "on-demand memory consolidation is local-only; stop the Hivemind daemon before consolidating"
+            : `memory consolidation refused because daemon ownership could not be ruled out: ${daemonProbe.reason}`
+        }
+      : await consolidateMemory(repoRoot, parsed.value.tool);
   }
 
   if (!result.ok) {
@@ -73,6 +85,14 @@ function parseMemoryArgs(cwd: string, args: string[]): MemoryResult<MemoryComman
         proposalId: args[1]
       }
     };
+  }
+  if (
+    args.length === 3 &&
+    args[0] === "consolidate" &&
+    args[1] === "--tool" &&
+    args[2].trim() !== ""
+  ) {
+    return { ok: true, value: { action: "consolidate", tool: args[2].trim() } };
   }
   return { ok: false, reason: memoryUsage() };
 }
@@ -108,7 +128,7 @@ async function readProposalInput(filePath: string): Promise<MemoryResult<MemoryP
 }
 
 function memoryUsage(): string {
-  return "usage: hivemind memory propose <proposal-json-file> | review <proposal-id> --approve";
+  return "usage: hivemind memory propose <proposal-json-file> | review <proposal-id> --approve | consolidate --tool <tool>";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
