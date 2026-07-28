@@ -294,9 +294,9 @@ test("CLI ideation generator writes an adapter proposal that the recorder must e
     assert.match(spec, /No web UI, accounts, syncing, currencies, or payment processing\./);
 
     const ledger = JSON.parse(await readFile(path.join(repo, ".hivemind", "resource", "ledger.json"), "utf8")) as {
-      "fake-ideator": { used: { requests: number } };
+      "fake-ideator": { self_measured: { requests: number } };
     };
-    assert.equal(ledger["fake-ideator"].used.requests, 1);
+    assert.equal(ledger["fake-ideator"].self_measured.requests, 1);
   });
 });
 

@@ -18,7 +18,7 @@ test("routeTaskProvider never downgrades a Critical task below the strong provid
     await recordQuotaUsage(repo, {
       provider: "strong",
       input_text: "prompt",
-      output_text: "429 too many requests",
+      model_output_text: "429 too many requests",
       wall_time_ms: 1,
       throttled: true
     });

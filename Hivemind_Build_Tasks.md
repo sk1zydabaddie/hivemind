@@ -318,19 +318,19 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
 - **Behavior — exact:** Implement `hivemind.get_status`, `hivemind.create_task_contract`, `hivemind.create_worktree`, `hivemind.request_lease`, `hivemind.submit_patch`, `hivemind.analyze_patch`, `hivemind.integrate_shadow`. Each validates inputs and routes through the daemon; each returns structured JSON. No tool can bypass the gate.
 - **Acceptance test (binary):** Each tool is callable from an MCP client and produces the same effect/verdict as its CLI equivalent; `analyze_patch` returns the gate verdict and cannot be made to accept an out-of-scope patch.
 
-### M4.5 — Quota ledger (self-measured)
+### M4.5 — Quota ledger (self-measured with provider refinement)
 - **Depends on:** M4.1.
 - **Read first:** Overview § *Resource & Continuity Manager* → *The quota ledger* (self-measured primary, provider-reported secondary).
 - **Goal:** Track per-provider capacity primarily by **metering Hivemind's own usage**, calibrated by observed throttles.
-- **Behavior — exact:** Maintain `.hivemind/resource/ledger.json` `{ "<provider>": { "used": {...}, "observed_limit": {...}, "resets_at": "...", "source": "self-metered" } }`. Count requests/tokens/wall-time Hivemind itself sends; a 429/throttle calibrates `observed_limit`; a provider-reported number, if present, only refines the estimate. Works with zero provider cooperation. Local models = unmetered.
+- **Behavior — exact:** Maintain `.hivemind/resource/ledger.json` with separate `self_measured` usage (requests, prompt/output token estimates, wall-time), optional normalized `provider_reported` usage (input, cached input, output, reasoning, total), and visible `reconciliation` (matched estimate/report divergence plus the accounting/routing source). Provider parsing stays inside adapters. Hivemind's own counts remain the zero-cooperation fallback; a 429/throttle calibrates `observed_limit`; a provider report, when present, refines token accounting but is never required for ceilings or quota-wall correctness. Model output metering excludes stderr CLI chatter. Local models = unmetered.
 - **Out of scope:** routing decisions (M4.6), cache metering (M4.7).
-- **Acceptance test (binary):** With no provider-reported quota at all, the ledger still reflects consumption from Hivemind's own counts; injecting a simulated 429 updates `observed_limit`.
+- **Acceptance test (binary):** With no provider-reported quota at all, the ledger still reflects consumption from Hivemind's own counts; injecting a simulated 429 updates `observed_limit`. When normalized provider usage is available, both channels and their divergence are recorded; stderr CLI chatter does not inflate model-output estimates.
 
 ### M4.6 — Pooling + tier-capped routing + ceilings
 - **Depends on:** M4.5, M0.2 (contract tiers).
 - **Read first:** § *Resource & Continuity Manager* → *Multi-provider pooling & routing*.
 - **Goal:** Route tasks across providers by tier × ledger, with a hard tier cap and a run ceiling.
-- **Behavior — exact (C4 for the cap):** Pool all providers; route Low-tier work to cheap/local, High/Critical to the strongest; **a Critical task can never be routed to a weak model to save quota** (hard floor, deterministic). Enforce a per-run ceiling (estimated calls/time); overrun pauses and surfaces, never silently continues.
+- **Behavior — exact (C4 for the cap):** Pool all providers; route Low-tier work to cheap/local, High/Critical to the strongest; **a Critical task can never be routed to a weak model to save quota** (hard floor, deterministic). Enforce the configured per-run request and wall-time ceilings; overrun pauses and surfaces, never silently continues. The current M4.6 ceiling is not a token or dollar ceiling.
 - **Acceptance test (binary):** A Critical task is never assigned to a below-threshold model regardless of quota pressure; exceeding the configured ceiling pauses the run with a surfaced message.
 
 ### M4.7 — Prompt-cache: layered prefix + read cache + metering

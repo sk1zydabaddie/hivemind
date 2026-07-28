@@ -6,23 +6,47 @@ import { callDaemonIfConfigured } from "./daemon-client.js";
 import { readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
 
-export interface QuotaUsageTotals {
+export interface SelfMeasuredUsage {
   requests: number;
   input_tokens_estimated: number;
   output_tokens_estimated: number;
   wall_time_ms: number;
 }
 
-export interface ObservedLimit extends QuotaUsageTotals {
+export interface ProviderReportedUsage {
+  input_tokens: number | null;
+  cached_input_tokens: number | null;
+  output_tokens: number | null;
+  reasoning_tokens: number | null;
+  total_tokens: number;
+}
+
+export interface ProviderReportedTotals extends ProviderReportedUsage {
+  reports: number;
+  self_measured_tokens_for_reported_requests: number;
+}
+
+export interface UsageReconciliation {
+  self_measured_tokens_for_reported_requests: number;
+  provider_reported_total_tokens: number | null;
+  absolute_divergence_tokens: number | null;
+  provider_to_self_ratio: number | null;
+  accounting_source: "provider_reported" | "self_measured";
+  routing_source: "observed_limit" | "profile_policy";
+}
+
+export interface ObservedLimit extends SelfMeasuredUsage {
   observed_at: string;
   reason: "throttle";
 }
 
 export interface QuotaLedgerEntry {
-  used: QuotaUsageTotals;
+  self_measured: SelfMeasuredUsage;
+  provider_reported: ProviderReportedTotals | null;
+  reconciliation: UsageReconciliation;
   observed_limit: ObservedLimit | null;
   resets_at: string | null;
-  source: "self-metered";
+  source: "dual-channel";
   updated_at: string;
   unmetered: boolean;
 }
@@ -32,9 +56,10 @@ export type QuotaLedger = Record<string, QuotaLedgerEntry>;
 export interface QuotaUsageRecord {
   provider: string;
   input_text: string;
-  output_text: string;
+  model_output_text: string;
   wall_time_ms: number;
   throttled: boolean;
+  provider_reported?: ProviderReportedUsage | null;
 }
 
 const ledgerLockRetryMs = 25;
@@ -79,8 +104,7 @@ export async function readQuotaLedger(repoRoot: string): Promise<{ ok: true; val
     throw error;
   }
 
-  const validation = validateQuotaLedger(raw);
-  return validation.ok ? { ok: true, value: raw as QuotaLedger } : validation;
+  return normalizeQuotaLedger(raw);
 }
 
 export async function recordQuotaUsage(repoRoot: string, record: QuotaUsageRecord): Promise<{ ok: true; value: QuotaLedgerEntry } | { ok: false; reason: string }> {
@@ -90,6 +114,12 @@ export async function recordQuotaUsage(repoRoot: string, record: QuotaUsageRecor
   }
   if (!Number.isSafeInteger(record.wall_time_ms) || record.wall_time_ms < 0) {
     return { ok: false, reason: "quota wall_time_ms must be a non-negative safe integer" };
+  }
+  if (record.provider_reported !== undefined && record.provider_reported !== null) {
+    const providerUsage = validateProviderReportedUsage("provider_reported", record.provider_reported);
+    if (!providerUsage.ok) {
+      return providerUsage;
+    }
   }
 
   return withInProcessLedgerQueue(repoRoot, () =>
@@ -101,17 +131,25 @@ export async function recordQuotaUsage(repoRoot: string, record: QuotaUsageRecor
 
       const now = new Date().toISOString();
       const previous = ledgerResult.value[provider] ?? createEmptyEntry(provider, now);
-      const used = addUsage(previous.used, {
+      const measuredThisRequest: SelfMeasuredUsage = {
         requests: 1,
         input_tokens_estimated: estimateTokens(record.input_text),
-        output_tokens_estimated: estimateTokens(record.output_text),
+        output_tokens_estimated: estimateTokens(record.model_output_text),
         wall_time_ms: record.wall_time_ms
-      });
+      };
+      const selfMeasured = addUsage(previous.self_measured, measuredThisRequest);
+      const providerReported = mergeProviderReported(
+        previous.provider_reported,
+        record.provider_reported ?? null,
+        measuredThisRequest.input_tokens_estimated + measuredThisRequest.output_tokens_estimated
+      );
       const nextEntry: QuotaLedgerEntry = {
-        used,
-        observed_limit: record.throttled ? { ...used, observed_at: now, reason: "throttle" } : previous.observed_limit,
+        self_measured: selfMeasured,
+        provider_reported: providerReported,
+        reconciliation: buildReconciliation(providerReported, record.throttled || previous.observed_limit !== null),
+        observed_limit: record.throttled ? { ...selfMeasured, observed_at: now, reason: "throttle" } : previous.observed_limit,
         resets_at: previous.resets_at,
-        source: "self-metered",
+        source: "dual-channel",
         updated_at: now,
         unmetered: isUnmeteredProvider(provider)
       };
@@ -137,17 +175,20 @@ export function estimateTokens(value: string): number {
 }
 
 function createEmptyEntry(provider: string, updatedAt: string): QuotaLedgerEntry {
+  const selfMeasured = emptyUsage();
   return {
-    used: emptyUsage(),
+    self_measured: selfMeasured,
+    provider_reported: null,
+    reconciliation: buildReconciliation(null, false),
     observed_limit: null,
     resets_at: null,
-    source: "self-metered",
+    source: "dual-channel",
     updated_at: updatedAt,
     unmetered: isUnmeteredProvider(provider)
   };
 }
 
-function addUsage(left: QuotaUsageTotals, right: QuotaUsageTotals): QuotaUsageTotals {
+function addUsage(left: SelfMeasuredUsage, right: SelfMeasuredUsage): SelfMeasuredUsage {
   return {
     requests: left.requests + right.requests,
     input_tokens_estimated: left.input_tokens_estimated + right.input_tokens_estimated,
@@ -156,7 +197,7 @@ function addUsage(left: QuotaUsageTotals, right: QuotaUsageTotals): QuotaUsageTo
   };
 }
 
-function emptyUsage(): QuotaUsageTotals {
+function emptyUsage(): SelfMeasuredUsage {
   return {
     requests: 0,
     input_tokens_estimated: 0,
@@ -238,31 +279,50 @@ function isUnmeteredProvider(provider: string): boolean {
   return normalized === "local" || normalized.startsWith("local-") || normalized === "ollama";
 }
 
-function validateQuotaLedger(value: unknown): { ok: true } | { ok: false; reason: string } {
+function normalizeQuotaLedger(value: unknown): { ok: true; value: QuotaLedger } | { ok: false; reason: string } {
   if (!isRecord(value)) {
     return { ok: false, reason: "quota ledger must be a JSON object" };
   }
+  const normalized: QuotaLedger = {};
   for (const [provider, entry] of Object.entries(value)) {
     const providerResult = normalizeProvider(provider);
     if (providerResult === null) {
       return { ok: false, reason: "quota ledger provider keys must be non-empty identifiers" };
     }
-    const entryResult = validateQuotaLedgerEntry(provider, entry);
+    const entryResult = normalizeQuotaLedgerEntry(provider, entry);
     if (!entryResult.ok) {
       return entryResult;
     }
+    normalized[provider] = entryResult.value;
   }
-  return { ok: true };
+  return { ok: true, value: normalized };
 }
 
-function validateQuotaLedgerEntry(provider: string, value: unknown): { ok: true } | { ok: false; reason: string } {
+function normalizeQuotaLedgerEntry(
+  provider: string,
+  value: unknown
+): { ok: true; value: QuotaLedgerEntry } | { ok: false; reason: string } {
   if (!isRecord(value)) {
     return { ok: false, reason: `quota ledger entry for ${provider} must be a JSON object` };
   }
-  const usedResult = validateUsage(`${provider}.used`, value.used);
-  if (!usedResult.ok) {
-    return usedResult;
+
+  const legacy = !("self_measured" in value) && "used" in value;
+  const selfMeasuredRaw = legacy ? value.used : value.self_measured;
+  const measuredResult = validateUsage(`${provider}.${legacy ? "used" : "self_measured"}`, selfMeasuredRaw);
+  if (!measuredResult.ok) {
+    return measuredResult;
   }
+  const selfMeasured = selfMeasuredRaw as SelfMeasuredUsage;
+
+  let providerReported: ProviderReportedTotals | null = null;
+  if (!legacy && value.provider_reported !== null) {
+    const reportedResult = validateProviderReportedTotals(`${provider}.provider_reported`, value.provider_reported);
+    if (!reportedResult.ok) {
+      return reportedResult;
+    }
+    providerReported = value.provider_reported as ProviderReportedTotals;
+  }
+
   if (value.observed_limit !== null) {
     const observedResult = validateObservedLimit(`${provider}.observed_limit`, value.observed_limit);
     if (!observedResult.ok) {
@@ -272,8 +332,8 @@ function validateQuotaLedgerEntry(provider: string, value: unknown): { ok: true 
   if (value.resets_at !== null && (typeof value.resets_at !== "string" || Number.isNaN(Date.parse(value.resets_at)))) {
     return { ok: false, reason: `${provider}.resets_at must be an ISO timestamp string or null` };
   }
-  if (value.source !== "self-metered") {
-    return { ok: false, reason: `${provider}.source must be self-metered` };
+  if (legacy ? value.source !== "self-metered" : value.source !== "dual-channel") {
+    return { ok: false, reason: `${provider}.source must be ${legacy ? "self-metered" : "dual-channel"}` };
   }
   if (typeof value.updated_at !== "string" || Number.isNaN(Date.parse(value.updated_at))) {
     return { ok: false, reason: `${provider}.updated_at must be an ISO timestamp string` };
@@ -281,7 +341,30 @@ function validateQuotaLedgerEntry(provider: string, value: unknown): { ok: true 
   if (typeof value.unmetered !== "boolean") {
     return { ok: false, reason: `${provider}.unmetered must be a boolean` };
   }
-  return { ok: true };
+  const observedLimit = value.observed_limit as ObservedLimit | null;
+  const expectedReconciliation = buildReconciliation(providerReported, observedLimit !== null);
+  if (!legacy) {
+    const reconciliationResult = validateReconciliation(`${provider}.reconciliation`, value.reconciliation);
+    if (!reconciliationResult.ok) {
+      return reconciliationResult;
+    }
+    if (JSON.stringify(value.reconciliation) !== JSON.stringify(expectedReconciliation)) {
+      return { ok: false, reason: `${provider}.reconciliation must match the recorded usage channels` };
+    }
+  }
+  return {
+    ok: true,
+    value: {
+      self_measured: selfMeasured,
+      provider_reported: providerReported,
+      reconciliation: expectedReconciliation,
+      observed_limit: observedLimit,
+      resets_at: value.resets_at as string | null,
+      source: "dual-channel",
+      updated_at: value.updated_at as string,
+      unmetered: value.unmetered as boolean
+    }
+  };
 }
 
 function validateObservedLimit(label: string, value: unknown): { ok: true } | { ok: false; reason: string } {
@@ -309,6 +392,122 @@ function validateUsage(label: string, value: unknown): { ok: true } | { ok: fals
     const fieldValue = value[field];
     if (!Number.isSafeInteger(fieldValue) || typeof fieldValue !== "number" || fieldValue < 0) {
       return { ok: false, reason: `${label}.${field} must be a non-negative safe integer` };
+    }
+  }
+  return { ok: true };
+}
+
+function mergeProviderReported(
+  previous: ProviderReportedTotals | null,
+  current: ProviderReportedUsage | null,
+  selfMeasuredTokens: number
+): ProviderReportedTotals | null {
+  if (current === null) {
+    return previous;
+  }
+  if (previous === null) {
+    return {
+      reports: 1,
+      input_tokens: current.input_tokens,
+      cached_input_tokens: current.cached_input_tokens,
+      output_tokens: current.output_tokens,
+      reasoning_tokens: current.reasoning_tokens,
+      total_tokens: current.total_tokens,
+      self_measured_tokens_for_reported_requests: selfMeasuredTokens
+    };
+  }
+  return {
+    reports: previous.reports + 1,
+    input_tokens: addNullableReported(previous.input_tokens, current.input_tokens),
+    cached_input_tokens: addNullableReported(previous.cached_input_tokens, current.cached_input_tokens),
+    output_tokens: addNullableReported(previous.output_tokens, current.output_tokens),
+    reasoning_tokens: addNullableReported(previous.reasoning_tokens, current.reasoning_tokens),
+    total_tokens: previous.total_tokens + current.total_tokens,
+    self_measured_tokens_for_reported_requests:
+      previous.self_measured_tokens_for_reported_requests + selfMeasuredTokens
+  };
+}
+
+function addNullableReported(left: number | null, right: number | null): number | null {
+  return left === null || right === null ? null : left + right;
+}
+
+function buildReconciliation(
+  providerReported: ProviderReportedTotals | null,
+  hasObservedLimit: boolean
+): UsageReconciliation {
+  const matchedSelf = providerReported?.self_measured_tokens_for_reported_requests ?? 0;
+  const providerTotal = providerReported?.total_tokens ?? null;
+  return {
+    self_measured_tokens_for_reported_requests: matchedSelf,
+    provider_reported_total_tokens: providerTotal,
+    absolute_divergence_tokens: providerTotal === null ? null : Math.abs(providerTotal - matchedSelf),
+    provider_to_self_ratio: providerTotal === null || matchedSelf === 0 ? null : providerTotal / matchedSelf,
+    accounting_source: providerTotal === null ? "self_measured" : "provider_reported",
+    routing_source: hasObservedLimit ? "observed_limit" : "profile_policy"
+  };
+}
+
+function validateProviderReportedUsage(
+  label: string,
+  value: unknown
+): { ok: true } | { ok: false; reason: string } {
+  if (!isRecord(value)) {
+    return { ok: false, reason: `${label} must be a JSON object` };
+  }
+  for (const field of ["input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens"] as const) {
+    const fieldValue = value[field];
+    if (fieldValue !== null && (!Number.isSafeInteger(fieldValue) || typeof fieldValue !== "number" || fieldValue < 0)) {
+      return { ok: false, reason: `${label}.${field} must be a non-negative safe integer or null` };
+    }
+  }
+  if (!Number.isSafeInteger(value.total_tokens) || typeof value.total_tokens !== "number" || value.total_tokens < 0) {
+    return { ok: false, reason: `${label}.total_tokens must be a non-negative safe integer` };
+  }
+  return { ok: true };
+}
+
+function validateProviderReportedTotals(
+  label: string,
+  value: unknown
+): { ok: true } | { ok: false; reason: string } {
+  const usage = validateProviderReportedUsage(label, value);
+  if (!usage.ok) {
+    return usage;
+  }
+  if (!isRecord(value)) {
+    return { ok: false, reason: `${label} must be a JSON object` };
+  }
+  for (const field of ["reports", "self_measured_tokens_for_reported_requests"] as const) {
+    if (!Number.isSafeInteger(value[field]) || typeof value[field] !== "number" || value[field] < 0) {
+      return { ok: false, reason: `${label}.${field} must be a non-negative safe integer` };
+    }
+  }
+  return { ok: true };
+}
+
+function validateReconciliation(label: string, value: unknown): { ok: true } | { ok: false; reason: string } {
+  if (!isRecord(value)) {
+    return { ok: false, reason: `${label} must be a JSON object` };
+  }
+  if (
+    value.accounting_source !== "provider_reported" &&
+    value.accounting_source !== "self_measured"
+  ) {
+    return { ok: false, reason: `${label}.accounting_source is invalid` };
+  }
+  if (value.routing_source !== "observed_limit" && value.routing_source !== "profile_policy") {
+    return { ok: false, reason: `${label}.routing_source is invalid` };
+  }
+  for (const field of [
+    "self_measured_tokens_for_reported_requests",
+    "provider_reported_total_tokens",
+    "absolute_divergence_tokens",
+    "provider_to_self_ratio"
+  ] as const) {
+    const fieldValue = value[field];
+    if (fieldValue !== null && (typeof fieldValue !== "number" || !Number.isFinite(fieldValue) || fieldValue < 0)) {
+      return { ok: false, reason: `${label}.${field} must be a non-negative finite number or null` };
     }
   }
   return { ok: true };

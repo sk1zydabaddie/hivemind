@@ -7,10 +7,15 @@ import { loadAndValidateContract, TaskContract } from "./contract.js";
 import { formatErrorDetail } from "./error-detail.js";
 import { readJsonFile } from "./json.js";
 import { assembleAgentPrompt, buildAgentPromptFromContract } from "./prompt-cache.js";
-import { adapterOutputIndicatesThrottle, recordQuotaUsage } from "./resource-ledger.js";
+import {
+  adapterOutputIndicatesThrottle,
+  recordQuotaUsage,
+  type ProviderReportedUsage
+} from "./resource-ledger.js";
 
 export type PromptArgMode = "stdin" | "arg";
 export type ProviderRoutingTier = "local" | "cheap" | "standard" | "strong";
+export type AdapterUsageParser = "codex-jsonl" | "codex-text" | "claude-json";
 
 export interface AdapterProfile {
   tool: string;
@@ -21,6 +26,7 @@ export interface AdapterProfile {
   timeout_ms?: number;
   routing_tier?: ProviderRoutingTier;
   cost_rank?: number;
+  usage_parser?: AdapterUsageParser;
 }
 
 export interface InvokeAgentResult {
@@ -45,6 +51,8 @@ export interface AdapterProcessResult {
   exitCode: number;
   stdout: string;
   stderr: string;
+  modelOutput: string;
+  providerUsage: ProviderReportedUsage | null;
   timedOut: boolean;
   outputLogPath: string | null;
 }
@@ -99,13 +107,14 @@ export async function invokeAgent(
   }
   const wallTimeMs = Date.now() - startedAt;
   const throttled = adapterOutputIndicatesThrottle(processResult.value.stdout, processResult.value.stderr, processResult.value.exitCode);
-  const ledgerResult = await recordQuotaUsage(repoRoot, {
-    provider: profileResult.profile.tool,
-    input_text: prompt,
-    output_text: `${processResult.value.stdout}\n${processResult.value.stderr}`,
-    wall_time_ms: wallTimeMs,
+  const ledgerResult = await recordAdapterUsage(
+    repoRoot,
+    profileResult.profile,
+    prompt,
+    processResult.value,
+    wallTimeMs,
     throttled
-  });
+  );
   if (!ledgerResult.ok) {
     return { ok: false, reason: ledgerResult.reason };
   }
@@ -195,6 +204,9 @@ export function validateAdapterProfile(raw: unknown, expectedTool?: string): str
   if ("cost_rank" in raw && (typeof raw.cost_rank !== "number" || !Number.isInteger(raw.cost_rank) || raw.cost_rank <= 0)) {
     problems.push("cost_rank must be a positive integer when provided");
   }
+  if ("usage_parser" in raw && !isAdapterUsageParser(raw.usage_parser)) {
+    problems.push("usage_parser must be one of codex-jsonl, codex-text, claude-json when provided");
+  }
 
   return problems;
 }
@@ -278,13 +290,17 @@ export function runAdapterProcess(
         clearTimeout(timeout);
       }
       const capturedStderr = Buffer.concat(stderr).toString("utf8");
+      const capturedStdout = Buffer.concat(stdout).toString("utf8");
+      const normalized = normalizeAdapterResult(resolveAdapterUsageParser(profile), capturedStdout, capturedStderr);
       const result: AdapterProcessResult = {
         exitCode: timedOut ? 124 : code ?? 1,
-        stdout: Buffer.concat(stdout).toString("utf8"),
+        stdout: capturedStdout,
         stderr:
           capturedStderr !== "" || stdinError === null
             ? capturedStderr
             : formatErrorDetail(stdinError, "adapter stdin failed"),
+        modelOutput: normalized.modelOutput,
+        providerUsage: normalized.providerUsage,
         timedOut,
         outputLogPath: options.outputLogPath ?? null
       };
@@ -295,6 +311,105 @@ export function runAdapterProcess(
       child.stdin.end(prompt);
     }
   });
+}
+
+export async function recordAdapterUsage(
+  repoRoot: string,
+  profile: AdapterProfile,
+  prompt: string,
+  result: AdapterProcessResult,
+  wallTimeMs: number,
+  throttled = adapterOutputIndicatesThrottle(result.stdout, result.stderr, result.exitCode)
+): ReturnType<typeof recordQuotaUsage> {
+  return recordQuotaUsage(repoRoot, {
+    provider: profile.tool,
+    input_text: prompt,
+    model_output_text: result.modelOutput,
+    wall_time_ms: wallTimeMs,
+    throttled,
+    provider_reported: result.providerUsage
+  });
+}
+
+export function parseAdapterProviderUsage(
+  parser: AdapterUsageParser,
+  stdout: string,
+  stderr: string
+): ProviderReportedUsage | null {
+  if (parser === "codex-text") {
+    const matches = [...stripAnsi(`${stdout}\n${stderr}`).matchAll(/tokens used\s*[\r\n]+\s*([\d,]+)/giu)];
+    const total = matches.at(-1)?.[1];
+    return total === undefined ? null : reportedUsage({ total_tokens: parseTokenInteger(total) });
+  }
+
+  if (parser === "claude-json") {
+    const parsed = parseJsonObject(stdout);
+    if (parsed === null) {
+      return null;
+    }
+    const usage = isRecord(parsed.usage) ? parsed.usage : null;
+    if (usage === null) {
+      return null;
+    }
+    const input = tokenField(usage, "input_tokens");
+    const cacheRead = tokenField(usage, "cache_read_input_tokens");
+    const cacheCreation = tokenField(usage, "cache_creation_input_tokens");
+    const output = tokenField(usage, "output_tokens");
+    const cached = sumKnown(cacheRead, cacheCreation);
+    const total = tokenField(usage, "total_tokens") ?? sumKnown(input, cached, output);
+    return total === null
+      ? null
+      : reportedUsage({
+          input_tokens: input,
+          cached_input_tokens: cached,
+          output_tokens: output,
+          reasoning_tokens: tokenField(usage, "reasoning_tokens"),
+          total_tokens: total
+        });
+  }
+
+  const records = parseJsonLines(stdout);
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    const usage = findUsageObject(records[index]);
+    if (usage === null) {
+      continue;
+    }
+    const input = tokenField(usage, "input_tokens");
+    const cached =
+      tokenField(usage, "cached_input_tokens") ??
+      tokenField(isRecord(usage.input_tokens_details) ? usage.input_tokens_details : {}, "cached_tokens");
+    const output = tokenField(usage, "output_tokens");
+    const reasoning =
+      tokenField(usage, "reasoning_tokens") ??
+      tokenField(isRecord(usage.output_tokens_details) ? usage.output_tokens_details : {}, "reasoning_tokens");
+    const total = tokenField(usage, "total_tokens") ?? sumKnown(input, output);
+    if (total !== null) {
+      return reportedUsage({
+        input_tokens: input,
+        cached_input_tokens: cached,
+        output_tokens: output,
+        reasoning_tokens: reasoning,
+        total_tokens: total
+      });
+    }
+  }
+  return null;
+}
+
+export function resolveAdapterUsageParser(profile: AdapterProfile): AdapterUsageParser | undefined {
+  if (profile.usage_parser !== undefined) {
+    return profile.usage_parser;
+  }
+  const invocation = profile.invoke.map((entry) => entry.toLowerCase());
+  const invokesCodex = invocation.some((entry) => /(^|[\\/])codex(?:\.cmd|\.exe)?$/u.test(entry));
+  if (invokesCodex) {
+    return invocation.includes("--json") ? "codex-jsonl" : "codex-text";
+  }
+  const invokesClaude = invocation.some((entry) => /(^|[\\/])claude(?:\.cmd|\.exe)?$/u.test(entry));
+  const outputFormatIndex = invocation.indexOf("--output-format");
+  return invokesClaude && outputFormatIndex >= 0 && invocation[outputFormatIndex + 1] === "json"
+    ? "claude-json"
+    : undefined;
 }
 
 export function adapterRunLogPath(repoRoot: string, label: string): string {
@@ -387,6 +502,104 @@ async function writeAdapterProcessLog(logPath: string, tool: string, result: Ada
   );
 }
 
+function normalizeAdapterResult(
+  parser: AdapterUsageParser | undefined,
+  stdout: string,
+  stderr: string
+): { modelOutput: string; providerUsage: ProviderReportedUsage | null } {
+  if (parser === undefined) {
+    return { modelOutput: stdout, providerUsage: null };
+  }
+  return {
+    modelOutput: extractModelOutput(parser, stdout),
+    providerUsage: parseAdapterProviderUsage(parser, stdout, stderr)
+  };
+}
+
+function extractModelOutput(parser: AdapterUsageParser, stdout: string): string {
+  if (parser === "codex-text") {
+    return stdout;
+  }
+  if (parser === "claude-json") {
+    const parsed = parseJsonObject(stdout);
+    return parsed !== null && typeof parsed.result === "string" ? parsed.result : "";
+  }
+
+  const messages: string[] = [];
+  for (const record of parseJsonLines(stdout)) {
+    if (record.type !== "item.completed" || !isRecord(record.item)) {
+      continue;
+    }
+    if (record.item.type === "agent_message" && typeof record.item.text === "string") {
+      messages.push(record.item.text);
+    }
+  }
+  return messages.join("\n");
+}
+
+function reportedUsage(
+  value: Partial<ProviderReportedUsage> & Pick<ProviderReportedUsage, "total_tokens">
+): ProviderReportedUsage {
+  return {
+    input_tokens: value.input_tokens ?? null,
+    cached_input_tokens: value.cached_input_tokens ?? null,
+    output_tokens: value.output_tokens ?? null,
+    reasoning_tokens: value.reasoning_tokens ?? null,
+    total_tokens: value.total_tokens
+  };
+}
+
+function parseJsonObject(value: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseJsonLines(value: string): Record<string, unknown>[] {
+  const records: Record<string, unknown>[] = [];
+  for (const line of value.split(/\r?\n/u)) {
+    if (line.trim() === "") {
+      continue;
+    }
+    const parsed = parseJsonObject(line);
+    if (parsed !== null) {
+      records.push(parsed);
+    }
+  }
+  return records;
+}
+
+function findUsageObject(record: Record<string, unknown>): Record<string, unknown> | null {
+  if (isRecord(record.usage)) {
+    return record.usage;
+  }
+  if (isRecord(record.response) && isRecord(record.response.usage)) {
+    return record.response.usage;
+  }
+  return null;
+}
+
+function tokenField(value: Record<string, unknown>, field: string): number | null {
+  const candidate = value[field];
+  return typeof candidate === "number" && Number.isSafeInteger(candidate) && candidate >= 0 ? candidate : null;
+}
+
+function sumKnown(...values: Array<number | null>): number | null {
+  const present = values.filter((value): value is number => value !== null);
+  return present.length === 0 ? null : present.reduce((sum, value) => sum + value, 0);
+}
+
+function parseTokenInteger(value: string): number {
+  return Number.parseInt(value.replaceAll(",", ""), 10);
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(/\u001b\[[0-9;]*m/gu, "");
+}
+
 function terminateProcessTree(pid: number | undefined): void {
   if (pid === undefined) {
     return;
@@ -427,6 +640,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isProviderRoutingTier(value: unknown): value is ProviderRoutingTier {
   return value === "local" || value === "cheap" || value === "standard" || value === "strong";
+}
+
+function isAdapterUsageParser(value: unknown): value is AdapterUsageParser {
+  return value === "codex-jsonl" || value === "codex-text" || value === "claude-json";
 }
 
 function isNodeError(error: unknown, code: string): boolean {

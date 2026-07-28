@@ -8,6 +8,7 @@ import {
   findDangerousAdapterArgs,
   formatAdapterProcessFailure,
   loadAdapterProfile,
+  recordAdapterUsage,
   runAdapterProcess
 } from "./adapter.js";
 import { loadConfig } from "./config.js";
@@ -22,7 +23,6 @@ import { applyOrchestratorContextBudget } from "./orchestrator-context.js";
 import { requestLeaseForContract, type LeaseGrantResult } from "./lease.js";
 import { evaluatePlanThrash, loadTentativePlan } from "./plan.js";
 import { findGitRoot } from "./repo.js";
-import { adapterOutputIndicatesThrottle, recordQuotaUsage } from "./resource-ledger.js";
 import { inferTaskTier } from "./routing.js";
 import { markRunFailed, runTask, type RunFailureMarkResult, type RunResult, type RunStartResult } from "./run.js";
 import { latestTaskRunState } from "./run-state.js";
@@ -359,13 +359,7 @@ export async function generateManagerProposal(
     return processResult;
   }
   const wallTimeMs = Date.now() - startedAt;
-  const ledgerResult = await recordQuotaUsage(repoRoot, {
-    provider: profileResult.profile.tool,
-    input_text: prompt.value,
-    output_text: `${processResult.value.stdout}\n${processResult.value.stderr}`,
-    wall_time_ms: wallTimeMs,
-    throttled: adapterOutputIndicatesThrottle(processResult.value.stdout, processResult.value.stderr, processResult.value.exitCode)
-  });
+  const ledgerResult = await recordAdapterUsage(repoRoot, profileResult.profile, prompt.value, processResult.value, wallTimeMs);
   if (!ledgerResult.ok) {
     return { ok: false, reason: ledgerResult.reason };
   }
@@ -418,13 +412,7 @@ async function generateRedirectCorrection(
     return processResult;
   }
   const wallTimeMs = Date.now() - startedAt;
-  const ledgerResult = await recordQuotaUsage(repoRoot, {
-    provider: profileResult.profile.tool,
-    input_text: prompt.value,
-    output_text: `${processResult.value.stdout}\n${processResult.value.stderr}`,
-    wall_time_ms: wallTimeMs,
-    throttled: adapterOutputIndicatesThrottle(processResult.value.stdout, processResult.value.stderr, processResult.value.exitCode)
-  });
+  const ledgerResult = await recordAdapterUsage(repoRoot, profileResult.profile, prompt.value, processResult.value, wallTimeMs);
   if (!ledgerResult.ok) {
     return { ok: false, reason: ledgerResult.reason };
   }

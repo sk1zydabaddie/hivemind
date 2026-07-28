@@ -6,13 +6,13 @@ import {
   findDangerousAdapterArgs,
   formatAdapterProcessFailure,
   loadAdapterProfile,
+  recordAdapterUsage,
   runAdapterProcess
 } from "./adapter.js";
 import { readEvents, type HivemindEvent } from "./events.js";
 import { extractJsonObject } from "./json.js";
 import { proposeMemoryLesson, type MemoryProposal, type MemoryProposalInput } from "./memory-log.js";
 import type { MemoryResult } from "./memory-types.js";
-import { adapterOutputIndicatesThrottle, recordQuotaUsage } from "./resource-ledger.js";
 
 const maximumProposalCount = 8;
 
@@ -63,17 +63,7 @@ export async function consolidateMemory(
       return processResult;
     }
     const wallTimeMs = Date.now() - startedAt;
-    const ledger = await recordQuotaUsage(repoRoot, {
-      provider: profile.profile.tool,
-      input_text: prompt,
-      output_text: `${processResult.value.stdout}\n${processResult.value.stderr}`,
-      wall_time_ms: wallTimeMs,
-      throttled: adapterOutputIndicatesThrottle(
-        processResult.value.stdout,
-        processResult.value.stderr,
-        processResult.value.exitCode
-      )
-    });
+    const ledger = await recordAdapterUsage(repoRoot, profile.profile, prompt, processResult.value, wallTimeMs);
     if (!ledger.ok) {
       return ledger;
     }

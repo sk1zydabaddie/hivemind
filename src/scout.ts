@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
-import { adapterOutputIndicatesThrottle, recordQuotaUsage } from "./resource-ledger.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent } from "./events.js";
 import {
@@ -9,6 +8,7 @@ import {
   findDangerousAdapterArgs,
   formatAdapterProcessFailure,
   loadAdapterProfile,
+  recordAdapterUsage,
   runAdapterProcess
 } from "./adapter.js";
 import { findGitRoot } from "./repo.js";
@@ -113,13 +113,13 @@ export async function runScout(
   }
   const wallTimeMs = Date.now() - startedAt;
 
-  const ledgerResult = await recordQuotaUsage(repoRoot, {
-    provider: profileResult.profile.tool,
-    input_text: promptResult.value.prompt,
-    output_text: `${processResult.value.stdout}\n${processResult.value.stderr}`,
-    wall_time_ms: wallTimeMs,
-    throttled: adapterOutputIndicatesThrottle(processResult.value.stdout, processResult.value.stderr, processResult.value.exitCode)
-  });
+  const ledgerResult = await recordAdapterUsage(
+    repoRoot,
+    profileResult.profile,
+    promptResult.value.prompt,
+    processResult.value,
+    wallTimeMs
+  );
   if (!ledgerResult.ok) {
     return { ok: false, reason: ledgerResult.reason };
   }

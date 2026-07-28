@@ -6,9 +6,17 @@ import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { buildAgentPrompt, findDangerousAdapterArgs, invokeAgent, loadAdapterProfile, validateAdapterProfile } from "../src/adapter.js";
+import {
+  buildAgentPrompt,
+  findDangerousAdapterArgs,
+  invokeAgent,
+  loadAdapterProfile,
+  parseAdapterProviderUsage,
+  resolveAdapterUsageParser,
+  validateAdapterProfile
+} from "../src/adapter.js";
 import { initProject } from "../src/init.js";
-import { readQuotaLedger } from "../src/resource-ledger.js";
+import { estimateTokens, readQuotaLedger } from "../src/resource-ledger.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
@@ -142,6 +150,108 @@ test("validateAdapterProfile rejects invalid routing metadata", () => {
   );
 });
 
+test("validateAdapterProfile rejects unknown provider usage parsers", () => {
+  assert.deepEqual(
+    validateAdapterProfile(
+      {
+        tool: "fake",
+        invoke: ["node", "fake-agent.mjs"],
+        prompt_arg: "stdin",
+        verified_on: "2026-07-27",
+        context_window: 1024,
+        usage_parser: "guess"
+      },
+      "fake"
+    ),
+    ["usage_parser must be one of codex-jsonl, codex-text, claude-json when provided"]
+  );
+});
+
+test("adapter usage parsers normalize Codex text, Codex JSONL, and Claude JSON inside the adapter boundary", () => {
+  assert.deepEqual(
+    parseAdapterProviderUsage("codex-text", "", "\u001b[2mtokens used\u001b[0m\n14,351\n"),
+    {
+      input_tokens: null,
+      cached_input_tokens: null,
+      output_tokens: null,
+      reasoning_tokens: null,
+      total_tokens: 14351
+    }
+  );
+  assert.deepEqual(
+    parseAdapterProviderUsage(
+      "codex-jsonl",
+      [
+        JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "done" } }),
+        JSON.stringify({
+          type: "turn.completed",
+          usage: {
+            input_tokens: 120,
+            cached_input_tokens: 40,
+            output_tokens: 80,
+            output_tokens_details: { reasoning_tokens: 50 },
+            total_tokens: 200
+          }
+        })
+      ].join("\n"),
+      ""
+    ),
+    {
+      input_tokens: 120,
+      cached_input_tokens: 40,
+      output_tokens: 80,
+      reasoning_tokens: 50,
+      total_tokens: 200
+    }
+  );
+  assert.deepEqual(
+    parseAdapterProviderUsage(
+      "claude-json",
+      JSON.stringify({
+        result: "done",
+        usage: {
+          input_tokens: 100,
+          cache_read_input_tokens: 30,
+          cache_creation_input_tokens: 20,
+          output_tokens: 40
+        }
+      }),
+      ""
+    ),
+    {
+      input_tokens: 100,
+      cached_input_tokens: 50,
+      output_tokens: 40,
+      reasoning_tokens: null,
+      total_tokens: 190
+    }
+  );
+});
+
+test("adapter selects provider parsers from tool invocation while unknown tools keep self-metered fallback", () => {
+  const base = {
+    prompt_arg: "stdin" as const,
+    verified_on: "2026-07-27",
+    context_window: 1024
+  };
+  assert.equal(
+    resolveAdapterUsageParser({ ...base, tool: "codex-worker", invoke: ["codex.cmd", "exec", "-"] }),
+    "codex-text"
+  );
+  assert.equal(
+    resolveAdapterUsageParser({ ...base, tool: "codex-planner", invoke: ["codex", "exec", "--json", "-"] }),
+    "codex-jsonl"
+  );
+  assert.equal(
+    resolveAdapterUsageParser({ ...base, tool: "claude", invoke: ["claude.cmd", "-p", "--output-format", "json"] }),
+    "claude-json"
+  );
+  assert.equal(
+    resolveAdapterUsageParser({ ...base, tool: "fake", invoke: ["node", "fake-agent.mjs"] }),
+    undefined
+  );
+});
+
 test("loadAdapterProfile defaults routing metadata when omitted", async () => {
   await withTempRepo(async ({ repo }) => {
     await writeProfile(repo, "fake", {
@@ -214,8 +324,8 @@ test("invokeAgent runs stdin adapter inside the task worktree and writes agent.l
     if (!ledger.ok) {
       return;
     }
-    assert.equal(ledger.value.fake.used.requests, 1);
-    assert.equal(ledger.value.fake.source, "self-metered");
+    assert.equal(ledger.value.fake.self_measured.requests, 1);
+    assert.equal(ledger.value.fake.source, "dual-channel");
     assert.equal(ledger.value.fake.observed_limit, null);
   });
 });
@@ -250,10 +360,58 @@ test("invokeAgent updates observed quota limit on a simulated throttle", async (
     if (!ledger.ok) {
       return;
     }
-    assert.equal(ledger.value.fake.used.requests, 1);
+    assert.equal(ledger.value.fake.self_measured.requests, 1);
     assert.notEqual(ledger.value.fake.observed_limit, null);
     assert.equal(ledger.value.fake.observed_limit?.reason, "throttle");
-    assert.equal(ledger.value.fake.observed_limit?.requests, ledger.value.fake.used.requests);
+    assert.equal(ledger.value.fake.observed_limit?.requests, ledger.value.fake.self_measured.requests);
+    assert.equal(ledger.value.fake.reconciliation.routing_source, "observed_limit");
+  });
+});
+
+test("invokeAgent meters model stdout separately from stderr chatter and records provider reconciliation", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-001", baseCommit);
+    const worktree = await createTaskWorktree(repo, "T-001");
+    assert.equal(worktree.ok, true);
+    if (!worktree.ok) {
+      return;
+    }
+
+    const modelOutput = "scoped model answer";
+    const stderrChatter = `prompt echo ${"x".repeat(4000)}`;
+    await writeFile(
+      path.join(worktree.value.worktree, "codex-shaped-agent.mjs"),
+      [
+        `process.stdout.write(${JSON.stringify(modelOutput)});`,
+        `process.stderr.write(${JSON.stringify(`${stderrChatter}\n\u001b[2mtokens used\u001b[0m\n14,351\n`)});`
+      ].join("\n")
+    );
+    await writeProfile(repo, "fake", {
+      tool: "fake",
+      invoke: ["node", "codex-shaped-agent.mjs"],
+      prompt_arg: "stdin",
+      verified_on: "2026-07-27",
+      context_window: 1024,
+      usage_parser: "codex-text"
+    });
+
+    const result = await invokeAgent(repo, "T-001", "fake");
+
+    assert.equal(result.ok, true);
+    const ledger = await readQuotaLedger(repo);
+    assert.equal(ledger.ok, true);
+    if (!ledger.ok) {
+      return;
+    }
+    const entry = ledger.value.fake;
+    assert.equal(entry.self_measured.output_tokens_estimated, estimateTokens(modelOutput));
+    assert.ok(entry.self_measured.output_tokens_estimated < estimateTokens(stderrChatter));
+    assert.equal(entry.provider_reported?.total_tokens, 14351);
+    assert.equal(entry.reconciliation.provider_reported_total_tokens, 14351);
+    assert.equal(entry.reconciliation.accounting_source, "provider_reported");
+    assert.equal(entry.reconciliation.absolute_divergence_tokens, 14351 - (
+      entry.self_measured.input_tokens_estimated + entry.self_measured.output_tokens_estimated
+    ));
   });
 });
 

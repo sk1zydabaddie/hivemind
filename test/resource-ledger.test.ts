@@ -32,7 +32,7 @@ test("quota ledger reads empty when missing and records self-metered usage atomi
     const first = await recordQuotaUsage(repo, {
       provider: "fake",
       input_text: "12345678",
-      output_text: "1234",
+      model_output_text: "1234",
       wall_time_ms: 25,
       throttled: false
     });
@@ -40,7 +40,7 @@ test("quota ledger reads empty when missing and records self-metered usage atomi
     const second = await recordQuotaUsage(repo, {
       provider: "fake",
       input_text: "1234",
-      output_text: "",
+      model_output_text: "",
       wall_time_ms: 75,
       throttled: false
     });
@@ -51,15 +51,105 @@ test("quota ledger reads empty when missing and records self-metered usage atomi
     if (!ledger.ok) {
       return;
     }
-    assert.equal(ledger.value.fake.source, "self-metered");
-    assert.deepEqual(ledger.value.fake.used, {
+    assert.equal(ledger.value.fake.source, "dual-channel");
+    assert.deepEqual(ledger.value.fake.self_measured, {
       requests: 2,
       input_tokens_estimated: 3,
       output_tokens_estimated: 1,
       wall_time_ms: 100
     });
+    assert.equal(ledger.value.fake.provider_reported, null);
+    assert.deepEqual(ledger.value.fake.reconciliation, {
+      self_measured_tokens_for_reported_requests: 0,
+      provider_reported_total_tokens: null,
+      absolute_divergence_tokens: null,
+      provider_to_self_ratio: null,
+      accounting_source: "self_measured",
+      routing_source: "profile_policy"
+    });
     assert.equal(ledger.value.fake.observed_limit, null);
     assert.equal(await exists(path.join(repo, ".hivemind", "resource", "ledger.json")), true);
+  });
+});
+
+test("quota ledger records provider usage and visible estimate reconciliation without requiring it", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const result = await recordQuotaUsage(repo, {
+      provider: "codex",
+      input_text: "12345678",
+      model_output_text: "1234",
+      wall_time_ms: 25,
+      throttled: false,
+      provider_reported: {
+        input_tokens: 8,
+        cached_input_tokens: 2,
+        output_tokens: 10,
+        reasoning_tokens: 7,
+        total_tokens: 18
+      }
+    });
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.deepEqual(result.value.provider_reported, {
+      reports: 1,
+      input_tokens: 8,
+      cached_input_tokens: 2,
+      output_tokens: 10,
+      reasoning_tokens: 7,
+      total_tokens: 18,
+      self_measured_tokens_for_reported_requests: 3
+    });
+    assert.deepEqual(result.value.reconciliation, {
+      self_measured_tokens_for_reported_requests: 3,
+      provider_reported_total_tokens: 18,
+      absolute_divergence_tokens: 15,
+      provider_to_self_ratio: 6,
+      accounting_source: "provider_reported",
+      routing_source: "profile_policy"
+    });
+  });
+});
+
+test("quota ledger reads legacy self-metered entries through the dual-channel fallback", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await mkdir(path.join(repo, ".hivemind", "resource"), { recursive: true });
+    await writeFile(
+      path.join(repo, ".hivemind", "resource", "ledger.json"),
+      `${JSON.stringify({
+        fake: {
+          used: {
+            requests: 1,
+            input_tokens_estimated: 4,
+            output_tokens_estimated: 2,
+            wall_time_ms: 10
+          },
+          observed_limit: null,
+          resets_at: null,
+          source: "self-metered",
+          updated_at: "2026-07-27T00:00:00.000Z",
+          unmetered: false
+        }
+      })}\n`
+    );
+
+    const ledger = await readQuotaLedger(repo);
+
+    assert.equal(ledger.ok, true);
+    if (!ledger.ok) {
+      return;
+    }
+    assert.deepEqual(ledger.value.fake.self_measured, {
+      requests: 1,
+      input_tokens_estimated: 4,
+      output_tokens_estimated: 2,
+      wall_time_ms: 10
+    });
+    assert.equal(ledger.value.fake.provider_reported, null);
+    assert.equal(ledger.value.fake.source, "dual-channel");
+    assert.equal(ledger.value.fake.reconciliation.accounting_source, "self_measured");
   });
 });
 
@@ -71,7 +161,7 @@ test("quota ledger serializes concurrent self-metered usage records", async () =
         recordQuotaUsage(repo, {
           provider: "fake",
           input_text: `input ${index}`,
-          output_text: `output ${index}`,
+          model_output_text: `output ${index}`,
           wall_time_ms: 1,
           throttled: false
         })
@@ -84,8 +174,8 @@ test("quota ledger serializes concurrent self-metered usage records", async () =
     if (!ledger.ok) {
       return;
     }
-    assert.equal(ledger.value.fake.used.requests, attempts);
-    assert.equal(ledger.value.fake.used.wall_time_ms, attempts);
+    assert.equal(ledger.value.fake.self_measured.requests, attempts);
+    assert.equal(ledger.value.fake.self_measured.wall_time_ms, attempts);
   });
 });
 
@@ -104,7 +194,7 @@ test("quota ledger serializes writers forced to contend behind one lock", async 
           recordQuotaUsage(repo, {
             provider: "fake",
             input_text: `barrier input ${index}`,
-            output_text: `barrier output ${index}`,
+            model_output_text: `barrier output ${index}`,
             wall_time_ms: 1,
             throttled: false
           }).finally(() => {
@@ -126,8 +216,8 @@ test("quota ledger serializes writers forced to contend behind one lock", async 
       if (!ledger.ok) {
         return;
       }
-      assert.equal(ledger.value.fake.used.requests, attempts);
-      assert.equal(ledger.value.fake.used.wall_time_ms, attempts);
+      assert.equal(ledger.value.fake.self_measured.requests, attempts);
+      assert.equal(ledger.value.fake.self_measured.wall_time_ms, attempts);
     } finally {
       await heldLock.close().catch(() => undefined);
       await rm(lockPath, { force: true });
@@ -146,7 +236,7 @@ test("quota ledger lock timeout fails loudly without recording usage", async () 
       const result = await recordQuotaUsage(repo, {
         provider: "fake",
         input_text: "blocked input",
-        output_text: "blocked output",
+        model_output_text: "blocked output",
         wall_time_ms: 1,
         throttled: false
       });
@@ -175,7 +265,7 @@ test("quota ledger fails closed for malformed state and marks local providers un
     const local = await recordQuotaUsage(repo, {
       provider: "local",
       input_text: "local prompt",
-      output_text: "local output",
+      model_output_text: "local output",
       wall_time_ms: 1,
       throttled: false
     });
@@ -189,7 +279,7 @@ test("quota ledger fails closed for malformed state and marks local providers un
     const result = await recordQuotaUsage(repo, {
       provider: "fake",
       input_text: "prompt",
-      output_text: "output",
+      model_output_text: "output",
       wall_time_ms: 1,
       throttled: false
     });
@@ -207,7 +297,7 @@ test("quota CLI and daemon route return the current ledger", async () => {
     await recordQuotaUsage(repo, {
       provider: "fake",
       input_text: "prompt",
-      output_text: "output",
+      model_output_text: "output",
       wall_time_ms: 10,
       throttled: false
     });
@@ -215,7 +305,7 @@ test("quota CLI and daemon route return the current ledger", async () => {
     const direct = await execFileAsync(process.execPath, [cliPath, "quota", "status"], { cwd: repo, windowsHide: true });
     const directLedger = JSON.parse(direct.stdout) as QuotaLedger;
     assert.equal(direct.stderr, "");
-    assert.equal(directLedger.fake.used.requests, 1);
+    assert.equal(directLedger.fake.self_measured.requests, 1);
 
     const daemon = await startDaemon(repo);
     try {

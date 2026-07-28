@@ -57,7 +57,7 @@ test("on-demand consolidation meters one adapter call and appends proposals to T
     const ledger = await readQuotaLedger(repo);
     assert.equal(ledger.ok, true);
     if (ledger.ok) {
-      assert.equal(ledger.value["fake-consolidator"]?.used.requests, 1);
+      assert.equal(ledger.value["fake-consolidator"]?.self_measured.requests, 1);
     }
   });
 });

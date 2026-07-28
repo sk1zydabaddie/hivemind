@@ -584,7 +584,7 @@ test("runTask predictive quota reroute is non-authoritative and only causes an u
     await recordQuotaUsage(repo, {
       provider: "primary",
       input_text: "previous prompt",
-      output_text: "429 too many requests",
+      model_output_text: "429 too many requests",
       wall_time_ms: 1,
       throttled: true
     });
