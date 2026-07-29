@@ -10,7 +10,9 @@ import {
 import type { HivemindConfig } from "./config.js";
 import type { TaskContract } from "./contract.js";
 import { matchesAny, matchesPattern } from "./glob.js";
+import { readPromotedRoutingPolicy } from "./learned-routing.js";
 import { readQuotaLedger, type QuotaLedger } from "./resource-ledger.js";
+import type { RoutingProviderScorecard } from "./routing-policy-schema.js";
 
 export type TaskTier = "low" | "medium" | "high" | "critical";
 
@@ -19,6 +21,11 @@ export interface RouteDecision {
   tool: string;
   provider_tier: ProviderRoutingTier;
   profile: AdapterProfile;
+  learned_policy?: {
+    status: "applied" | "fallback" | "refused_tier_cap";
+    reason: string;
+    source_evidence_hash: string | null;
+  };
 }
 
 export interface RouteTaskProviderOptions {
@@ -104,16 +111,110 @@ export async function routeTaskProvider(
 
   const nonPressured = eligible.filter((candidate) => !candidate.pressured);
   const pool = nonPressured.length > 0 ? nonPressured : eligible;
-  const selected = [...pool].sort((left, right) => compareCandidates(taskTier, left, right))[0];
+  const learned = await chooseWithPromotedPolicy(repoRoot, contract, taskTier, candidatesResult.value, pool);
+  const selected = learned.selected;
   return {
     ok: true,
     value: {
       task_tier: taskTier,
       tool: selected.tool,
       provider_tier: selected.providerTier,
-      profile: selected.profile
+      profile: selected.profile,
+      learned_policy: learned.metadata
     }
   };
+}
+
+async function chooseWithPromotedPolicy(
+  repoRoot: string,
+  contract: TaskContract,
+  taskTier: TaskTier,
+  allCandidates: ProviderCandidate[],
+  eligiblePool: ProviderCandidate[]
+): Promise<{
+  selected: ProviderCandidate;
+  metadata: NonNullable<RouteDecision["learned_policy"]>;
+}> {
+  const fallback = () => [...eligiblePool].sort((left, right) => compareCandidates(taskTier, left, right))[0];
+  const promoted = await readPromotedRoutingPolicy(repoRoot);
+  if (promoted.promoted !== "active" || promoted.active_policy === null) {
+    return {
+      selected: fallback(),
+      metadata: {
+        status: "fallback",
+        reason: promoted.reason ?? "no active learned routing policy",
+        source_evidence_hash: null
+      }
+    };
+  }
+  const scorecard = promoted.active_policy.task_types.find(
+    (entry) => entry.routing_task_type === contract.routing_task_type
+  );
+  if (scorecard === undefined || scorecard.providers.length === 0) {
+    return {
+      selected: fallback(),
+      metadata: {
+        status: "fallback",
+        reason: `active learned routing policy has no weights for ${contract.routing_task_type}`,
+        source_evidence_hash: promoted.active_policy.source_evidence_hash
+      }
+    };
+  }
+  const candidatesByTool = new Map(allCandidates.map((candidate) => [candidate.tool, candidate]));
+  const rankedEvidence = scorecard.providers
+    .filter((entry) => candidatesByTool.has(entry.provider))
+    .sort(compareScorecards);
+  if (rankedEvidence.length === 0) {
+    return {
+      selected: fallback(),
+      metadata: {
+        status: "fallback",
+        reason: `active learned routing policy has no installed provider for ${contract.routing_task_type}`,
+        source_evidence_hash: promoted.active_policy.source_evidence_hash
+      }
+    };
+  }
+  const learnedWinner = candidatesByTool.get(rankedEvidence[0].provider);
+  if (learnedWinner === undefined) {
+    return {
+      selected: fallback(),
+      metadata: {
+        status: "fallback",
+        reason: "active learned routing winner is unavailable",
+        source_evidence_hash: promoted.active_policy.source_evidence_hash
+      }
+    };
+  }
+  const eligibility = checkTierEligibility(taskTier, learnedWinner);
+  if (!eligibility.ok) {
+    return {
+      selected: fallback(),
+      metadata: {
+        status: "refused_tier_cap",
+        reason: `learned policy refused: ${eligibility.reason}`,
+        source_evidence_hash: promoted.active_policy.source_evidence_hash
+      }
+    };
+  }
+
+  const weights = new Map(scorecard.providers.map((entry) => [entry.provider, entry.weight]));
+  const selected = [...eligiblePool].sort((left, right) => {
+    const weightDelta = (weights.get(right.tool) ?? Number.NEGATIVE_INFINITY) -
+      (weights.get(left.tool) ?? Number.NEGATIVE_INFINITY);
+    return weightDelta || compareCandidates(taskTier, left, right);
+  })[0];
+  return {
+    selected,
+    metadata: {
+      status: "applied",
+      reason: `human-promoted ${contract.routing_task_type} weights selected ${selected.tool}`,
+      source_evidence_hash: promoted.active_policy.source_evidence_hash
+    }
+  };
+}
+
+function compareScorecards(left: RoutingProviderScorecard, right: RoutingProviderScorecard): number {
+  return right.weight - left.weight || left.provider.localeCompare(right.provider);
 }
 
 export function inferTaskTier(contract: TaskContract, config: HivemindConfig): TaskTier {

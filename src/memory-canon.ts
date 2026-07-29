@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { isMemoryProposalId, type MemoryResult } from "./memory-types.js";
+import { validateLearnedRoutingPolicy, type LearnedRoutingPolicy } from "./routing-policy-schema.js";
 
 export interface CanonMemoryEntry {
   version: 1;
@@ -13,6 +14,7 @@ export interface CanonMemoryEntry {
   lesson: string;
   evidence: string[];
   source_task_id: string | null;
+  routing_policy: LearnedRoutingPolicy | null;
 }
 
 export async function readCanonMemory(repoRoot: string): Promise<MemoryResult<CanonMemoryEntry[]>> {
@@ -60,7 +62,8 @@ export function formatCanonForPlanning(entries: CanonMemoryEntry[]): string {
     .map((entry) => [
       `[${entry.canon_id}] ${entry.title}`,
       entry.lesson,
-      `Evidence: ${entry.evidence.join(" | ")}`
+      `Evidence: ${entry.evidence.join(" | ")}`,
+      ...(entry.routing_policy === null ? [] : [`Routing policy: ${JSON.stringify(entry.routing_policy)}`])
     ].join("\n"))
     .join("\n\n");
 }
@@ -79,11 +82,15 @@ function validateCanonMemoryEntry(value: unknown): MemoryResult<CanonMemoryEntry
     "proposal_id",
     "source_task_id",
     "title",
-    "version"
+    "version",
+    ...(Object.prototype.hasOwnProperty.call(value, "routing_policy") ? ["routing_policy"] : [])
   ];
-  if (JSON.stringify(Object.keys(value).sort(compareText)) !== JSON.stringify(expectedKeys)) {
+  if (JSON.stringify(Object.keys(value).sort(compareText)) !== JSON.stringify(expectedKeys.sort(compareText))) {
     return { ok: false, reason: "entry fields do not match the canon schema" };
   }
+  const routingPolicy = value.routing_policy === undefined || value.routing_policy === null
+    ? { ok: true as const, value: null }
+    : validateLearnedRoutingPolicy(value.routing_policy);
   if (
     value.version !== 1 ||
     typeof value.canon_id !== "string" ||
@@ -103,11 +110,18 @@ function validateCanonMemoryEntry(value: unknown): MemoryResult<CanonMemoryEntry
     !Array.isArray(value.evidence) ||
     value.evidence.length === 0 ||
     value.evidence.some((item) => typeof item !== "string" || item.trim() === "") ||
-    (value.source_task_id !== null && typeof value.source_task_id !== "string")
+    (value.source_task_id !== null && typeof value.source_task_id !== "string") ||
+    !routingPolicy.ok
   ) {
     return { ok: false, reason: "entry values do not match the canon schema" };
   }
-  return { ok: true, value: value as unknown as CanonMemoryEntry };
+  return {
+    ok: true,
+    value: {
+      ...(value as unknown as Omit<CanonMemoryEntry, "routing_policy">),
+      routing_policy: routingPolicy.ok ? routingPolicy.value : null
+    }
+  };
 }
 
 function compareText(left: string, right: string): number {

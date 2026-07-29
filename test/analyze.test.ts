@@ -258,6 +258,7 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
         task_id: taskId,
         title: "Analyze submitted patch",
         agent_role: "builder",
+        routing_task_type: "other",
         base_commit: baseCommit,
         acceptance_criterion: "Analyze fixture produces one gate verdict.",
         allowed_files: allowedFiles,

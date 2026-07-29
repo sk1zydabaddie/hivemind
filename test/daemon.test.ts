@@ -583,6 +583,7 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
         task_id: taskId,
         title: "Daemon lease test",
         agent_role: "builder",
+        routing_task_type: "other",
         base_commit: baseCommit,
         acceptance_criterion: "Daemon fixture completes one lease operation.",
         allowed_files: allowedFiles,
@@ -644,6 +645,8 @@ function planTask(taskId: string): Record<string, unknown> {
   return {
     task_id: taskId,
     title: "Daemon thrash fixture",
+    task_type: "deterministic",
+    routing_task_type: "other",
     mode: "write",
     agent_role: "builder",
     draft_scope: {

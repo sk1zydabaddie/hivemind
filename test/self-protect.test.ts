@@ -98,6 +98,7 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
         task_id: taskId,
         title: "Self-protected merge",
         agent_role: "builder",
+        routing_task_type: "other",
         base_commit: baseCommit,
         acceptance_criterion: "Self-protection fixture reaches one merge verdict.",
         allowed_files: allowedFiles,

@@ -96,6 +96,7 @@ test("plan propose rejects malformed proposals before writing", async () => {
       ["empty title", { ...validPlan(), tasks: [{ ...task("T-001"), title: "" }] }, /title must be a non-empty string/],
       ["invalid mode", { ...validPlan(), tasks: [{ ...task("T-001"), mode: "edit" }] }, /mode must be read_only, write, or integration/],
       ["invalid role", { ...validPlan(), tasks: [{ ...task("T-001"), agent_role: "driver" }] }, /agent_role must be coordinator, scout, builder, or reviewer/],
+      ["invalid routing task type", { ...validPlan(), tasks: [{ ...task("T-001"), routing_task_type: "small_cli_command" }] }, /routing_task_type must be one of/],
       ["non-string path", { ...validPlan(), tasks: [{ ...task("T-001"), draft_scope: { ...draftScope(["README.md"]), allowed_files: [7] } }] }, /allowed_files\[0\] must be a string/],
       ["unknown dependency", { ...validPlan(), tasks: [{ ...task("T-001"), depends_on: ["T-MISSING"] }] }, /depends_on references unknown task T-MISSING/],
       ["unknown group task", { tasks: [task("T-001")], execution_groups: [group("G-1", "parallel", ["T-MISSING"])] }, /references unknown task T-MISSING/],
@@ -147,15 +148,15 @@ test("plan generator writes an adapter proposal that still goes through ground a
     });
 
     const proposal = JSON.parse(await readFile(path.join(repo, "generated-plan.json"), "utf8")) as {
-      tasks: Array<{ task_id: string; task_type?: string }>;
+      tasks: Array<{ task_id: string; task_type?: string; routing_task_type?: string }>;
     } & Record<string, unknown>;
     assert.deepEqual(Object.keys(proposal).sort(), ["execution_groups", "tasks"]);
     assert.deepEqual(
-      proposal.tasks.map((taskEntry) => [taskEntry.task_id, taskEntry.task_type]),
+      proposal.tasks.map((taskEntry) => [taskEntry.task_id, taskEntry.task_type, taskEntry.routing_task_type]),
       [
-        ["T-AUDIT", "deterministic"],
-        ["T-WRITE", "deterministic"],
-        ["T-INTEGRATE", "deterministic"]
+        ["T-AUDIT", "deterministic", "other"],
+        ["T-WRITE", "deterministic", "other"],
+        ["T-INTEGRATE", "deterministic", "other"]
       ]
     );
 
@@ -163,17 +164,17 @@ test("plan generator writes an adapter proposal that still goes through ground a
       source: string;
       lint_status?: string;
       grounding_status?: string;
-      tasks: Array<{ task_id: string; task_type: string; scope_status: string }>;
+      tasks: Array<{ task_id: string; task_type: string; routing_task_type: string; scope_status: string }>;
     };
     assert.equal(storedBeforeLint.source, "adapter-generated");
     assert.equal(storedBeforeLint.lint_status, undefined);
     assert.equal(storedBeforeLint.grounding_status, undefined);
     assert.deepEqual(
-      storedBeforeLint.tasks.map((taskEntry) => [taskEntry.task_id, taskEntry.task_type, taskEntry.scope_status]),
+      storedBeforeLint.tasks.map((taskEntry) => [taskEntry.task_id, taskEntry.task_type, taskEntry.routing_task_type, taskEntry.scope_status]),
       [
-        ["T-AUDIT", "deterministic", "draft_ungrounded"],
-        ["T-WRITE", "deterministic", "draft_ungrounded"],
-        ["T-INTEGRATE", "deterministic", "draft_ungrounded"]
+        ["T-AUDIT", "deterministic", "other", "draft_ungrounded"],
+        ["T-WRITE", "deterministic", "other", "draft_ungrounded"],
+        ["T-INTEGRATE", "deterministic", "other", "draft_ungrounded"]
       ]
     );
 
@@ -943,6 +944,7 @@ function task(
     task_id: taskId,
     title: `Task ${taskId}`,
     task_type: "deterministic",
+    routing_task_type: "other",
     mode: "write",
     agent_role: "builder",
     draft_scope: draftScope(["README.md"]),
@@ -1028,6 +1030,7 @@ async function writeContract(repo: string, taskId: string, baseCommit: string): 
         task_id: taskId,
         title: "Existing task",
         agent_role: "builder",
+        routing_task_type: "other",
         base_commit: baseCommit,
         acceptance_criterion: "Existing task fixture blocks duplicate planning.",
         allowed_files: ["README.md"],

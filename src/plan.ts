@@ -22,6 +22,7 @@ import { extractJsonObject } from "./json.js";
 import { buildPlanningGenerationPrompt } from "./planning-prompt.js";
 import { assertNoKnownFailedScopeRepeat, evaluateThrashForPlan, type ReplanEvaluationResult } from "./replan.js";
 import { findGitRoot } from "./repo.js";
+import { isRoutingTaskType, type RoutingTaskType, routingTaskTypeExpectation } from "./routing-task-type.js";
 import { checkPlanningAllowed } from "./spec.js";
 import { loadSpecDocument, type SpecResult, validateRequestedSpecId } from "./spec-format.js";
 import { validateRequestedTaskId } from "./task-id.js";
@@ -48,6 +49,7 @@ export interface TentativePlanTask {
   task_id: string;
   title: string;
   task_type: TentativeTaskType;
+  routing_task_type: RoutingTaskType;
   mode: TentativeTaskMode;
   agent_role: AgentRole;
   draft_scope: DraftScope;
@@ -135,6 +137,7 @@ interface TentativePlanInputTask {
   task_id: string;
   title: string;
   task_type: TentativeTaskType;
+  routing_task_type: RoutingTaskType;
   mode: TentativeTaskMode;
   agent_role: AgentRole;
   draft_scope: DraftScope;
@@ -864,6 +867,7 @@ function validateStoredTask(index: number, raw: unknown): SpecResult<TentativePl
       "task_id",
       "title",
       "task_type",
+      "routing_task_type",
       "mode",
       "agent_role",
     "draft_scope",
@@ -932,6 +936,10 @@ function parseStoredTaskBase(index: number, raw: Record<string, unknown>): SpecR
   if (!taskType.ok) {
     return taskType;
   }
+  const routingTaskType = parseRoutingTaskType(index, raw.routing_task_type);
+  if (!routingTaskType.ok) {
+    return routingTaskType;
+  }
   if (!isTaskMode(raw.mode)) {
     return { ok: false, reason: `tasks[${index}].mode must be read_only, write, or integration` };
   }
@@ -982,6 +990,7 @@ function parseStoredTaskBase(index: number, raw: Record<string, unknown>): SpecR
       task_id: raw.task_id,
       title: raw.title.trim(),
       task_type: taskType.value,
+      routing_task_type: routingTaskType.value,
       mode: raw.mode,
       agent_role: raw.agent_role,
       draft_scope: draftScope.value,
@@ -1302,6 +1311,9 @@ function contractPlanMismatches(contract: TaskContract, task: TentativePlanTask,
   if (contract.agent_role !== task.agent_role) {
     mismatches.push("agent_role does not match plan task");
   }
+  if (contract.routing_task_type !== task.routing_task_type) {
+    mismatches.push("routing_task_type does not match plan task");
+  }
   if (contract.acceptance_criterion !== task.acceptance_criterion) {
     mismatches.push("acceptance_criterion does not match plan task");
   }
@@ -1572,6 +1584,7 @@ async function parseTentativeTask(repoRoot: string, index: number, raw: unknown)
       "task_id",
       "title",
       "task_type",
+      "routing_task_type",
       "mode",
       "agent_role",
     "draft_scope",
@@ -1605,6 +1618,10 @@ async function parseTentativeTask(repoRoot: string, index: number, raw: unknown)
   const taskType = parseTaskType(index, raw.task_type);
   if (!taskType.ok) {
     return taskType;
+  }
+  const routingTaskType = parseRoutingTaskType(index, raw.routing_task_type);
+  if (!routingTaskType.ok) {
+    return routingTaskType;
   }
   if (!isTaskMode(raw.mode)) {
     return { ok: false, reason: `tasks[${index}].mode must be read_only, write, or integration` };
@@ -1657,6 +1674,7 @@ async function parseTentativeTask(repoRoot: string, index: number, raw: unknown)
       task_id: raw.task_id,
       title: raw.title.trim(),
       task_type: taskType.value,
+      routing_task_type: routingTaskType.value,
       mode: raw.mode,
       agent_role: raw.agent_role,
       draft_scope: draftScope.value,
@@ -1834,6 +1852,16 @@ function parseTaskType(index: number, value: unknown): SpecResult<TentativeTaskT
     return { ok: true, value };
   }
   return { ok: false, reason: `tasks[${index}].task_type must be generative or deterministic` };
+}
+
+function parseRoutingTaskType(index: number, value: unknown): SpecResult<RoutingTaskType> {
+  if (isRoutingTaskType(value)) {
+    return { ok: true, value };
+  }
+  return {
+    ok: false,
+    reason: `tasks[${index}].routing_task_type must be one of: ${routingTaskTypeExpectation()}`
+  };
 }
 
 function parseOptionalNonEmptyString(index: number, field: string, value: unknown): SpecResult<string | undefined> {

@@ -199,6 +199,7 @@ function contractFor(overrides: Partial<TaskContract> = {}): TaskContract {
     task_id: "T-001",
     title: "Gate fixture",
     agent_role: "builder",
+    routing_task_type: "other",
     base_commit: "abc123",
     acceptance_criterion: "Gate fixture produces one verdict.",
     allowed_files: ["README.md"],

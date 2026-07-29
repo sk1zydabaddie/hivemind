@@ -408,6 +408,7 @@ async function writeContract(repo: string, taskId: string, title: string, baseCo
         task_id: taskId,
         title,
         agent_role: "builder",
+        routing_task_type: "other",
         base_commit: baseCommit,
         acceptance_criterion: "Status fixture reports one task state.",
         allowed_files: allowedFiles,

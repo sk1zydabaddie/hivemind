@@ -308,6 +308,7 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
         task_id: taskId,
         title: "Integrate submitted patch",
         agent_role: "builder",
+        routing_task_type: "integration",
         base_commit: baseCommit,
         acceptance_criterion: "Integration fixture applies one patch set.",
         allowed_files: allowedFiles,

@@ -227,6 +227,7 @@ async function preparePlanAndContract(repo: string, taskId: string, baseCommit: 
         task_id: taskId,
         title: "Checkpoint README task",
         task_type: "deterministic",
+        routing_task_type: "documentation",
         mode: "write",
         agent_role: "builder",
         draft_scope: {
@@ -254,6 +255,7 @@ async function preparePlanAndContract(repo: string, taskId: string, baseCommit: 
     task_id: taskId,
     title: "Checkpoint README task",
     agent_role: "builder",
+    routing_task_type: "documentation",
     base_commit: baseCommit,
     acceptance_criterion: "README.md includes the checkpoint fixture change.",
     allowed_files: ["README.md"],

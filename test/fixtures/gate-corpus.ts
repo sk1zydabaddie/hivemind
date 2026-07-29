@@ -251,6 +251,7 @@ function contractFor(overrides: Partial<TaskContract>): TaskContract {
     task_id: "T-CORPUS",
     title: "Gate corpus fixture",
     agent_role: "builder",
+    routing_task_type: "other",
     base_commit: "unused-by-runGate-call",
     acceptance_criterion: "Gate corpus fixture produces one verdict.",
     allowed_files: ["src/Minimap.tsx"],

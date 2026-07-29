@@ -522,6 +522,7 @@ function buildContract(taskId: string, baseCommit: string, allowedFiles: string[
     task_id: taskId,
     title: "MCP task",
     agent_role: "builder",
+    routing_task_type: "other",
     base_commit: baseCommit,
     acceptance_criterion: "MCP task completes one deterministic check.",
     allowed_files: allowedFiles,
@@ -592,6 +593,8 @@ function planTaskFromContract(contract: Record<string, unknown>, dependsOn: stri
   return {
     task_id: contract.task_id,
     title: contract.title,
+    task_type: "deterministic",
+    routing_task_type: contract.routing_task_type,
     mode: "write",
     agent_role: contract.agent_role,
     draft_scope: {

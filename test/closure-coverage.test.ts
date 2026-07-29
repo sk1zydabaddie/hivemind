@@ -262,6 +262,7 @@ async function preparePlan(
         task_id: taskId,
         title: "Update the entry module",
         task_type: "deterministic",
+        routing_task_type: "other",
         mode: "write",
         agent_role: "builder",
         draft_scope: {
@@ -328,6 +329,7 @@ async function prepareTaskExecution(
     task_id: taskId,
     title: "Update the entry module",
     agent_role: "builder",
+    routing_task_type: "other",
     base_commit: baseCommit,
     acceptance_criterion: "The entry module contains the scoped fixture change.",
     allowed_files: ["src/entry.ts"],

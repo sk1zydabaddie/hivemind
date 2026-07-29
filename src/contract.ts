@@ -7,6 +7,7 @@ import { requireContractFromLintedPlan } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { validateRequestedTaskId, validateTaskId } from "./task-id.js";
+import { isRoutingTaskType, type RoutingTaskType, routingTaskTypeExpectation } from "./routing-task-type.js";
 
 export type AgentRole = "coordinator" | "scout" | "builder" | "reviewer";
 export type AllowedFileIntent = "create" | "modify";
@@ -15,6 +16,7 @@ export interface TaskContract {
   task_id: string;
   title: string;
   agent_role: AgentRole;
+  routing_task_type: RoutingTaskType;
   base_commit: string;
   acceptance_criterion: string;
   allowed_files: string[];
@@ -50,6 +52,7 @@ const allowedContractFields = new Set([
   "task_id",
   "title",
   "agent_role",
+  "routing_task_type",
   "base_commit",
   "acceptance_criterion",
   "allowed_files",
@@ -169,6 +172,7 @@ export async function createTaskContract(
   const eventResult = await appendTaskCreatedIfMissing(repoRoot, contract.task_id, {
     title: contract.title,
     agent_role: contract.agent_role,
+    routing_task_type: contract.routing_task_type,
     base_commit: contract.base_commit,
     acceptance_criterion: contract.acceptance_criterion,
     allowed_files: contract.allowed_files,
@@ -197,6 +201,9 @@ export function validateContract(raw: unknown, expectedTaskId?: string): string[
   requireString(raw, "task_id", problems);
   requireString(raw, "base_commit", problems);
   requireString(raw, "acceptance_criterion", problems);
+  if (!isRoutingTaskType(raw.routing_task_type)) {
+    problems.push(`routing_task_type must be one of: ${routingTaskTypeExpectation()}`);
+  }
 
   for (const key of Object.keys(raw)) {
     if (!allowedContractFields.has(key)) {
@@ -274,6 +281,7 @@ export function normalizeContract(raw: unknown): TaskContract {
     task_id: String(raw.task_id),
     title: typeof raw.title === "string" ? raw.title : "",
     agent_role: isAgentRole(raw.agent_role) ? raw.agent_role : "builder",
+    routing_task_type: raw.routing_task_type as RoutingTaskType,
     base_commit: String(raw.base_commit),
     acceptance_criterion: typeof raw.acceptance_criterion === "string" ? raw.acceptance_criterion.trim() : "",
     allowed_files: allowedFiles,

@@ -41,6 +41,7 @@ export const eventTypes = [
   "integration.failed",
   "memory.proposed",
   "memory.accepted",
+  "routing.observed",
   "approval.required",
   "quota.low",
   "quota.exhausted",

@@ -10,6 +10,7 @@ import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
 import { enqueueIntegrationPatch, integrateShadow } from "./integrate.js";
 import { checkWriteIntent } from "./intent.js";
 import { requestLeaseForContract, releaseLease } from "./lease.js";
+import { proposeLearnedRoutingPolicy } from "./learned-routing.js";
 import { proposeMemoryLesson } from "./memory-log.js";
 import { findGitRoot } from "./repo.js";
 import { evaluatePlanThrash } from "./plan.js";
@@ -157,6 +158,9 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
   }
   if (request.method === "POST" && request.url === "/memory/propose") {
     return async (payload) => proposeMemoryLesson(repoRoot, payload.proposal);
+  }
+  if (request.method === "POST" && request.url === "/routing/derive") {
+    return async () => proposeLearnedRoutingPolicy(repoRoot);
   }
   if (request.method === "POST" && request.url === "/checkpoint/task") {
     return async (payload) => {

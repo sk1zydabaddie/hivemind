@@ -278,6 +278,7 @@ function buildContractTaskContextLayer(contract: TaskContract): string {
     `Task ID: ${contract.task_id}`,
     `Title: ${contract.title}`,
     `Agent role: ${contract.agent_role}`,
+    `Routing task type: ${contract.routing_task_type}`,
     `Base commit: ${contract.base_commit}`,
     "",
     formatList("Allowed files", contract.allowed_files),

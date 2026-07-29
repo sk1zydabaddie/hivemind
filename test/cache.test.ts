@@ -145,6 +145,7 @@ async function writeContract(repo: string, taskId: string, title: string, baseCo
         task_id: taskId,
         title,
         agent_role: "builder",
+        routing_task_type: "other",
         base_commit: baseCommit,
         acceptance_criterion: "Cache fixture contract validates.",
         allowed_files: allowedFiles,

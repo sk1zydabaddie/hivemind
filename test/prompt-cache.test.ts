@@ -199,6 +199,7 @@ function contractFor(overrides: Partial<TaskContract> = {}): TaskContract {
     task_id: "T-001",
     title: "Prompt cache task",
     agent_role: "builder",
+    routing_task_type: "other",
     base_commit: "abc123",
     acceptance_criterion: "Prompt cache fixture assembles one prompt.",
     allowed_files: ["README.md"],

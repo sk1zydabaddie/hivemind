@@ -176,6 +176,7 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
         task_id: taskId,
         title: "Spec gate task",
         agent_role: "builder",
+        routing_task_type: "other",
         base_commit: baseCommit,
         acceptance_criterion: "Spec gate fixture validates one lease path.",
         allowed_files: allowedFiles,

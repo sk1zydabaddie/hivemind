@@ -267,6 +267,7 @@ async function writeContract(
       {
         task_id: taskId,
         title: "Worktree fixture",
+        routing_task_type: "other",
         base_commit: baseCommit,
         acceptance_criterion: "Worktree fixture creates one worktree.",
         allowed_files: allowedFiles,
@@ -283,6 +284,7 @@ function fullContract(taskId: string, baseCommit: string, allowedFiles: string[]
     task_id: taskId,
     title: "Worktree fixture",
     agent_role: "builder",
+    routing_task_type: "other",
     base_commit: baseCommit,
     acceptance_criterion: "Worktree fixture creates one worktree.",
     allowed_files: allowedFiles,
@@ -306,6 +308,8 @@ async function prepareLintedPlan(repo: string, contract: Record<string, unknown>
           {
             task_id: contract.task_id,
             title: contract.title,
+            task_type: "deterministic",
+            routing_task_type: contract.routing_task_type,
             mode: "write",
             agent_role: contract.agent_role,
             draft_scope: {

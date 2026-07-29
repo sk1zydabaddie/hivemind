@@ -175,6 +175,7 @@ function contractFor(overrides: Partial<TaskContract> = {}): TaskContract {
     task_id: "T-001",
     title: "Decision table fixture",
     agent_role: "builder",
+    routing_task_type: "other",
     base_commit: "abc123",
     acceptance_criterion: "Decision fixture evaluates one operation.",
     allowed_files: ["src/allowed.ts"],

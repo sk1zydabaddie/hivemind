@@ -318,6 +318,7 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
       {
         task_id: taskId,
         title: "Submit fixture",
+        routing_task_type: "other",
         base_commit: baseCommit,
         acceptance_criterion: "Submit fixture assembles one patch bundle.",
         allowed_files: allowedFiles,

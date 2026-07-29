@@ -497,6 +497,7 @@ async function writeContract(
         task_id: taskId,
         title: "Lease files",
         agent_role: "builder",
+        routing_task_type: "other",
         base_commit: baseCommit,
         acceptance_criterion: "Lease fixture grants one concrete scope.",
         allowed_files: allowedFiles,
@@ -537,6 +538,8 @@ function planTask(taskId: string, allowedFile: string, dependsOn: string[] = [])
   return {
     task_id: taskId,
     title: `Plan-backed ${taskId}`,
+    task_type: "deterministic",
+    routing_task_type: "other",
     mode: "write",
     agent_role: "builder",
     draft_scope: {

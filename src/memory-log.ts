@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
 import { isMemoryProposalId, type MemoryResult } from "./memory-types.js";
+import { validateLearnedRoutingPolicy, type LearnedRoutingPolicy } from "./routing-policy-schema.js";
 
 export interface MemoryProposalInput {
   title: string;
   lesson: string;
   evidence: string[];
   task_id?: string;
+  routing_policy?: LearnedRoutingPolicy;
 }
 
 export interface MemoryProposal {
@@ -17,6 +19,7 @@ export interface MemoryProposal {
   lesson: string;
   evidence: string[];
   task_id: string | null;
+  routing_policy: LearnedRoutingPolicy | null;
 }
 
 export async function proposeMemoryLesson(
@@ -37,7 +40,8 @@ export async function proposeMemoryLesson(
       proposal_id: proposalId,
       title: parsed.value.title,
       lesson: parsed.value.lesson,
-      evidence: parsed.value.evidence
+      evidence: parsed.value.evidence,
+      ...(parsed.value.routing_policy === null ? {} : { routing_policy: parsed.value.routing_policy })
     }
   });
   if (!appended.ok) {
@@ -77,7 +81,7 @@ export async function readMemoryProposal(
 
 function validateMemoryProposalInput(
   input: unknown
-): MemoryResult<{ title: string; lesson: string; evidence: string[]; task_id: string | null }> {
+): MemoryResult<{ title: string; lesson: string; evidence: string[]; task_id: string | null; routing_policy: LearnedRoutingPolicy | null }> {
   if (!isRecord(input)) {
     return { ok: false, reason: "memory proposal must be a JSON object" };
   }
@@ -102,13 +106,20 @@ function validateMemoryProposalInput(
   if (input.task_id !== undefined && (typeof input.task_id !== "string" || input.task_id.trim() === "")) {
     return { ok: false, reason: "memory proposal task_id must be a non-empty string when provided" };
   }
+  const routingPolicy = input.routing_policy === undefined
+    ? { ok: true as const, value: null }
+    : validateLearnedRoutingPolicy(input.routing_policy);
+  if (!routingPolicy.ok) {
+    return { ok: false, reason: `memory proposal routing_policy is invalid: ${routingPolicy.reason}` };
+  }
   return {
     ok: true,
     value: {
       title,
       lesson,
       evidence,
-      task_id: input.task_id?.trim() ?? null
+      task_id: input.task_id?.trim() ?? null,
+      routing_policy: routingPolicy.value
     }
   };
 }
@@ -122,6 +133,9 @@ function parseMemoryProposalEvent(event: HivemindEvent): MemoryResult<MemoryProp
   const title = event.data.title;
   const lesson = event.data.lesson;
   const evidence = event.data.evidence;
+  const routingPolicy = event.data.routing_policy === undefined
+    ? { ok: true as const, value: null }
+    : validateLearnedRoutingPolicy(event.data.routing_policy);
   if (
     event.type !== "memory.proposed" ||
     typeof proposalId !== "string" ||
@@ -133,7 +147,8 @@ function parseMemoryProposalEvent(event: HivemindEvent): MemoryResult<MemoryProp
     lesson.trim() === "" ||
     !Array.isArray(evidence) ||
     evidence.length === 0 ||
-    evidence.some((item) => typeof item !== "string" || item.trim() === "")
+    evidence.some((item) => typeof item !== "string" || item.trim() === "") ||
+    !routingPolicy.ok
   ) {
     return { ok: false, reason: "memory.proposed event has invalid proposal data" };
   }
@@ -146,7 +161,8 @@ function parseMemoryProposalEvent(event: HivemindEvent): MemoryResult<MemoryProp
       title: title.trim(),
       lesson: lesson.trim(),
       evidence: evidence.map((item) => String(item).trim()),
-      task_id: event.task_id
+      task_id: event.task_id,
+      routing_policy: routingPolicy.ok ? routingPolicy.value : null
     }
   };
 }
@@ -154,7 +170,7 @@ function parseMemoryProposalEvent(event: HivemindEvent): MemoryResult<MemoryProp
 function proposalFromEvent(
   event: HivemindEvent,
   proposalId: string,
-  input: { title: string; lesson: string; evidence: string[]; task_id: string | null }
+  input: { title: string; lesson: string; evidence: string[]; task_id: string | null; routing_policy: LearnedRoutingPolicy | null }
 ): MemoryProposal {
   return {
     version: 1,
@@ -163,6 +179,7 @@ function proposalFromEvent(
     title: input.title,
     lesson: input.lesson,
     evidence: input.evidence,
-    task_id: input.task_id
+    task_id: input.task_id,
+    routing_policy: input.routing_policy
   };
 }

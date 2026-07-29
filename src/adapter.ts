@@ -36,9 +36,13 @@ export interface InvokeAgentResult {
   exitCode: number;
   logPath: string;
   wallTimeMs: number;
+  timedOut: boolean;
   throttled: boolean;
   failureReason: string | null;
   effectiveTokens: number;
+  selfMeasuredTokens: number;
+  providerReportedTokens: number | null;
+  accountingSource: "provider_reported" | "self_measured";
 }
 
 export interface InvokeAgentFailure {
@@ -156,8 +160,12 @@ export async function invokeAgent(
       exitCode: processResult.value.exitCode,
       logPath,
       wallTimeMs,
+      timedOut: processResult.value.timedOut,
       throttled,
       effectiveTokens: ledgerResult.value.last_request?.effective_tokens ?? estimateTokens(prompt) + estimateTokens(processResult.value.modelOutput),
+      selfMeasuredTokens: ledgerResult.value.last_request?.self_measured_tokens ?? estimateTokens(prompt) + estimateTokens(processResult.value.modelOutput),
+      providerReportedTokens: ledgerResult.value.last_request?.provider_reported_tokens ?? null,
+      accountingSource: ledgerResult.value.last_request?.accounting_source ?? "self_measured",
       failureReason:
         processResult.value.exitCode === 0
           ? null

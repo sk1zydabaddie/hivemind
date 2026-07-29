@@ -8,6 +8,7 @@ import { intentCommand } from "./intent.js";
 import { ideationCommand } from "./ideation.js";
 import { initProject } from "./init.js";
 import { leaseCommand } from "./lease.js";
+import { routingCommand } from "./learned-routing.js";
 import { managerCommand } from "./manager.js";
 import { memoryCommand } from "./memory.js";
 import { quotaCommand } from "./resource-ledger.js";
@@ -57,6 +58,10 @@ async function main(argv: string[]): Promise<number> {
 
   if (command === "memory") {
     return memoryCommand(process.cwd(), rest);
+  }
+
+  if (command === "routing") {
+    return routingCommand(process.cwd(), rest);
   }
 
   if (command === "worktree") {

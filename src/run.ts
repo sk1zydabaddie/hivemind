@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { promisify } from "node:util";
-import { invokeAgent } from "./adapter.js";
+import { invokeAgent, type InvokeAgentResult } from "./adapter.js";
 import { writeFileAtomic } from "./atomic.js";
 import { checkpointTask, loadTaskCheckpointResumeState } from "./checkpoint.js";
 import { loadConfig, type HivemindConfig, type RunCeiling } from "./config.js";
@@ -11,6 +12,7 @@ import { captureWorktreeDiff } from "./diff-capture.js";
 import { formatErrorDetail } from "./error-detail.js";
 import { appendEvent, readEvents, type HivemindEvent, type HivemindEventInput } from "./events.js";
 import { releaseLease, verifyLeaseCoverage } from "./lease.js";
+import { appendRoutingObservation, diffByteSize } from "./learned-routing.js";
 import { appendTaskOutput, type TaskOutputRecord, type TaskOutputInput } from "./output-stream.js";
 import { requireTaskDependenciesIntegrated } from "./plan.js";
 import { findGitRoot } from "./repo.js";
@@ -56,6 +58,7 @@ export interface RunTaskOptions {
 }
 
 interface PreparedRun {
+  runId: string;
   taskId: string;
   tool: string;
   worktree: string;
@@ -63,6 +66,7 @@ interface PreparedRun {
   contract: TaskContract;
   config: HivemindConfig;
   ceiling: RunCeiling | undefined;
+  handoffFrom: string | null;
   allowDangerousAdapter?: boolean;
   usageSessionId?: string;
   onEvent?: (event: HivemindEvent) => void;
@@ -286,12 +290,18 @@ async function prepareRunTask(
     }
   }
 
+  const runId = randomUUID();
   const acceptedEvent = await emitRunEvent(
     repoRoot,
     {
       type: "task.run_accepted",
       task_id: taskId,
-      data: { tool: selectedTool, worktree: worktreeResult.value.worktree }
+      data: {
+        run_id: runId,
+        tool: selectedTool,
+        routing_task_type: contractResult.contract.routing_task_type,
+        worktree: worktreeResult.value.worktree
+      }
     },
     options.onEvent
   );
@@ -304,7 +314,12 @@ async function prepareRunTask(
     {
       type: "task.started",
       task_id: taskId,
-      data: { tool: selectedTool, worktree: worktreeResult.value.worktree }
+      data: {
+        run_id: runId,
+        tool: selectedTool,
+        routing_task_type: contractResult.contract.routing_task_type,
+        worktree: worktreeResult.value.worktree
+      }
     },
     options.onEvent
   );
@@ -315,6 +330,7 @@ async function prepareRunTask(
   return {
     ok: true,
     value: {
+      runId,
       taskId,
       tool: selectedTool,
       worktree: worktreeResult.value.worktree,
@@ -322,6 +338,7 @@ async function prepareRunTask(
       contract: contractResult.contract,
       config: configResult.config,
       ceiling,
+      handoffFrom: null,
       allowDangerousAdapter: options.allowDangerousAdapter,
       usageSessionId: options.usageSessionId,
       onEvent: options.onEvent,
@@ -359,12 +376,19 @@ async function finishPreparedRun(
         const reason = `${attempt.reason}; task paused awaiting quota reset: ${reroute.value.reason}`;
         return { ok: false, reason };
       }
+      const rerouteRunId = randomUUID();
       const startedEvent = await emitRunEvent(
         repoRoot,
         {
           type: "task.started",
           task_id: active.taskId,
-          data: { tool: reroute.value.tool, worktree: active.worktree, resumed_from_checkpoint: reroute.value.snapshot_path }
+          data: {
+            run_id: rerouteRunId,
+            tool: reroute.value.tool,
+            routing_task_type: active.contract.routing_task_type,
+            worktree: active.worktree,
+            resumed_from_checkpoint: reroute.value.snapshot_path
+          }
         },
         active.onEvent
       );
@@ -372,7 +396,12 @@ async function finishPreparedRun(
         const failed = await emitRunFailure(repoRoot, active, startedEvent.reason, attempt.toolExit, attempt.diffPath, attempt.changedFiles);
         return failed.ok ? startedEvent : failed;
       }
-      active = { ...active, tool: reroute.value.tool };
+      active = {
+        ...active,
+        runId: rerouteRunId,
+        handoffFrom: active.tool,
+        tool: reroute.value.tool
+      };
       continue;
     }
     return attempt.ok ? { ok: true, value: attempt.value } : { ok: false, reason: attempt.reason };
@@ -429,6 +458,7 @@ async function finishPreparedRunAttempt(
   }
 
   if (invokeResult.value.throttled) {
+    await recordRoutingObservationBestEffort(repoRoot, prepared, invokeResult.value, 0);
     return {
       ok: false,
       reason:
@@ -446,17 +476,25 @@ async function finishPreparedRunAttempt(
     invokeResult.value.effectiveTokens
   );
   if (!postRunResult.ok) {
+    await recordRoutingObservationBestEffort(repoRoot, prepared, invokeResult.value, 0);
     const failed = await emitRunFailure(repoRoot, prepared, postRunResult.reason, invokeResult.value.exitCode);
     return failed.ok ? postRunResult : failed;
   }
 
   const diffResult = await captureDiff(repoRoot, prepared.worktree, prepared.taskId, prepared.baseCommit);
   if (!diffResult.ok) {
+    await recordRoutingObservationBestEffort(repoRoot, prepared, invokeResult.value, 0);
     const failed = await emitRunFailure(repoRoot, prepared, diffResult.reason, invokeResult.value.exitCode);
     return failed.ok ? diffResult : failed;
   }
 
   if (invokeResult.value.exitCode !== 0) {
+    await recordRoutingObservationBestEffort(
+      repoRoot,
+      prepared,
+      invokeResult.value,
+      await diffByteSize(diffResult.value.diffPath)
+    );
     const processFailure =
       invokeResult.value.failureReason ?? `worker "${prepared.tool}" exited ${invokeResult.value.exitCode}`;
     const reason = `${processFailure}; diff captured at .hivemind/patches/${prepared.taskId}/diff.patch with ${diffResult.value.changedFiles} changed file(s)`;
@@ -477,6 +515,12 @@ async function finishPreparedRunAttempt(
     tool_exit: invokeResult.value.exitCode,
     changed_files: diffResult.value.changedFiles
   };
+  await recordRoutingObservationBestEffort(
+    repoRoot,
+    prepared,
+    invokeResult.value,
+    await diffByteSize(diffResult.value.diffPath)
+  );
   const terminal = await readEvents(repoRoot);
   if (!terminal.ok) {
     return terminal;
@@ -491,7 +535,11 @@ async function finishPreparedRunAttempt(
     {
       type: "task.completed",
       task_id: prepared.taskId,
-      data: { ...value }
+      data: {
+        ...value,
+        run_id: prepared.runId,
+        routing_task_type: prepared.contract.routing_task_type
+      }
     },
     prepared.onEvent
   );
@@ -687,7 +735,9 @@ async function emitRunFailure(
       type: "task.failed",
       task_id: prepared.taskId,
       data: {
+        run_id: prepared.runId,
         tool: prepared.tool,
+        routing_task_type: prepared.contract.routing_task_type,
         reason,
         ...(releasedFiles === undefined ? {} : { lease_released: releasedFiles }),
         ...(toolExit === undefined ? {} : { tool_exit: toolExit }),
@@ -697,6 +747,33 @@ async function emitRunFailure(
     },
     prepared.onEvent
   );
+}
+
+async function recordRoutingObservationBestEffort(
+  repoRoot: string,
+  prepared: PreparedRun,
+  result: InvokeAgentResult,
+  diffBytes: number
+): Promise<void> {
+  const recorded = await appendRoutingObservation(repoRoot, prepared.taskId, {
+    version: 1,
+    run_id: prepared.runId,
+    provider: prepared.tool,
+    routing_task_type: prepared.contract.routing_task_type,
+    request_count: 1,
+    wall_time_ms: result.wallTimeMs,
+    self_measured_tokens: result.selfMeasuredTokens,
+    provider_reported_tokens: result.providerReportedTokens,
+    effective_tokens: result.effectiveTokens,
+    cost_source: result.accountingSource,
+    diff_bytes: diffBytes,
+    exit_code: result.exitCode,
+    timed_out: result.timedOut,
+    handoff_from: prepared.handoffFrom
+  });
+  if (!recorded.ok) {
+    console.error(`warning: routing observation was not recorded for ${prepared.taskId}: ${recorded.reason}`);
+  }
 }
 
 function parseRunArgs(

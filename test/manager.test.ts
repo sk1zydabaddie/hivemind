@@ -901,6 +901,7 @@ test("manager executor drives deterministic task actions through shadow integrat
       task_id: "T-001",
       title: "Manager executor fixture",
       agent_role: "builder",
+      routing_task_type: "other",
       base_commit: baseCommit,
       acceptance_criterion: "Manager executor fixture passes shadow integration.",
       allowed_files: ["README.md"],
@@ -1449,6 +1450,7 @@ function managerContract(taskId: string, baseCommit: string, allowedFiles: strin
     task_id: taskId,
     title: "Manager loop fixture",
     agent_role: "builder",
+    routing_task_type: "other",
     base_commit: baseCommit,
     acceptance_criterion: "Manager loop fixture completes one deterministic flow.",
     allowed_files: allowedFiles,
@@ -1516,6 +1518,8 @@ function planTaskFromContract(contract: Record<string, unknown>, dependsOn: stri
   return {
     task_id: contract.task_id,
     title: contract.title,
+    task_type: "deterministic",
+    routing_task_type: contract.routing_task_type,
     mode: "write",
     agent_role: contract.agent_role,
     draft_scope: {
@@ -1911,6 +1915,7 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
         task_id: taskId,
         title: "Manager executor fixture",
         agent_role: "builder",
+        routing_task_type: "other",
         base_commit: baseCommit,
         acceptance_criterion: "Manager executor fixture reaches one deterministic result.",
         allowed_files: allowedFiles,

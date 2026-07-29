@@ -49,6 +49,18 @@ test("runTask captures an untracked worker-created file in diff.patch", async ()
     assert.match(diff, /diff --git a\/new-file\.txt b\/new-file\.txt/);
     assert.match(diff, /\+created by fake agent/);
     assert.doesNotMatch(diff, /agent\.log/);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (events.ok) {
+      const observation = events.value.find((event) => event.type === "routing.observed" && event.task_id === "T-001");
+      assert.notEqual(observation, undefined);
+      assert.equal(observation?.data.provider, "fake");
+      assert.equal(observation?.data.routing_task_type, "other");
+      assert.equal(observation?.data.request_count, 1);
+      assert.equal(typeof observation?.data.run_id, "string");
+      assert.equal(Number(observation?.data.diff_bytes) > 0, true);
+      assert.equal(observation?.data.cost_source, "self_measured");
+    }
   });
 });
 
@@ -1014,6 +1026,7 @@ async function writeContract(
         task_id: taskId,
         title: "Run fake adapter and capture diff",
         agent_role: "builder",
+        routing_task_type: "other",
         base_commit: baseCommit,
         acceptance_criterion: "Run fake adapter and capture one diff.",
         allowed_files: allowedFiles,
@@ -1054,6 +1067,8 @@ function planTask(taskId: string, allowedFile: string, dependsOn: string[] = [])
   return {
     task_id: taskId,
     title: `Plan-backed ${taskId}`,
+    task_type: "deterministic",
+    routing_task_type: "other",
     mode: "write",
     agent_role: "builder",
     draft_scope: {

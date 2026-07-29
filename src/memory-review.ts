@@ -26,7 +26,10 @@ export async function reviewMemoryProposalInteractively(
     `Title: ${proposal.value.title}`,
     `Lesson: ${proposal.value.lesson}`,
     "Evidence:",
-    ...proposal.value.evidence.map((item, index) => `  ${index + 1}. ${item}`)
+    ...proposal.value.evidence.map((item, index) => `  ${index + 1}. ${item}`),
+    ...(proposal.value.routing_policy === null
+      ? []
+      : ["Structured routing policy:", JSON.stringify(proposal.value.routing_policy, null, 2)])
   ].join("\n") + "\n");
 
   const expected = `approve ${proposal.value.proposal_id}`;
@@ -56,7 +59,8 @@ export async function reviewMemoryProposalInteractively(
     title: proposal.value.title,
     lesson: proposal.value.lesson,
     evidence: proposal.value.evidence,
-    source_task_id: proposal.value.task_id
+    source_task_id: proposal.value.task_id,
+    routing_policy: proposal.value.routing_policy
   };
   await writeJsonAtomic(canonPath, entry);
   return { ok: true, value: entry };
