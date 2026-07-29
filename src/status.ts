@@ -2,9 +2,11 @@ import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { loadAndValidateContract } from "./contract.js";
 import { readEvents, type HivemindEvent } from "./events.js";
-import { integratedTaskIdsFromEvents } from "./integration-state.js";
-import type { IntegrationStatus } from "./integrate.js";
-import { loadIntegrationQueue } from "./integrate.js";
+import {
+  integratedTaskIdsFromEvents,
+  loadIntegrationQueue,
+  type IntegrationStatus
+} from "./integration-state.js";
 import { readJsonFile } from "./json.js";
 import { readActiveLeases, type LeaseStore } from "./lease.js";
 import { listReplanStatuses, type ReplanStatus } from "./replan.js";

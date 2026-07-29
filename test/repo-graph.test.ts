@@ -110,7 +110,7 @@ test("missing or stale repo graph degrades to unavailable without affecting leas
 
 test("graph access is structurally isolated to verification selection and its integration caller", async () => {
   const sourceDir = path.join(projectRoot, "src");
-  const moduleNames = [
+  const guaranteeModuleNames = [
     "analyze.ts",
     "canonicalize.ts",
     "changeset.ts",
@@ -118,6 +118,7 @@ test("graph access is structurally isolated to verification selection and its in
     "contract.ts",
     "decision.ts",
     "gate.ts",
+    "integrate.ts",
     "integration-state.ts",
     "intent.ts",
     "lease-lock.ts",
@@ -140,17 +141,19 @@ test("graph access is structurally isolated to verification selection and its in
     dependencyMap.set(repoPath, relativeSourceImports(repoPath, source));
   }
 
-  for (const moduleName of moduleNames) {
+  for (const moduleName of guaranteeModuleNames) {
     assert.equal(
       dependencyMap.get(`src/${moduleName}`)?.includes("src/repo-graph.ts"),
       false,
       `src/${moduleName} must not import advisory repo-graph.ts`
     );
-    assert.equal(
-      dependencyMap.get(`src/${moduleName}`)?.includes("src/verification.ts"),
-      false,
-      `src/${moduleName} must not invoke graph-aware verification selection`
-    );
+    if (moduleName !== "integrate.ts") {
+      assert.equal(
+        dependencyMap.get(`src/${moduleName}`)?.includes("src/verification.ts"),
+        false,
+        `src/${moduleName} must not invoke graph-aware verification selection`
+      );
+    }
   }
   const graphImporters = [...dependencyMap]
     .filter(([, imports]) => imports.includes("src/repo-graph.ts"))
@@ -162,6 +165,20 @@ test("graph access is structurally isolated to verification selection and its in
     .map(([name]) => name)
     .sort();
   assert.deepEqual(verificationImporters, ["src/integrate.ts"]);
+
+  for (const moduleName of guaranteeModuleNames) {
+    const entry = `src/${moduleName}`;
+    const paths = importPathsToTarget(entry, "src/repo-graph.ts", dependencyMap);
+    assert.deepEqual(
+      paths,
+      moduleName === "integrate.ts"
+        ? [["src/integrate.ts", "src/verification.ts", "src/repo-graph.ts"]]
+        : [],
+      moduleName === "integrate.ts"
+        ? "shadow integration may reach the graph only through the named fail-safe verification selector"
+        : `${entry} must not reach advisory repo-graph.ts directly or transitively`
+    );
+  }
 });
 
 async function withGraphRepo(run: (repo: string) => Promise<void>): Promise<void> {
@@ -221,6 +238,28 @@ function relativeSourceImports(repoPath: string, source: string): string[] {
     }
   }
   return [...imports];
+}
+
+function importPathsToTarget(
+  start: string,
+  target: string,
+  dependencyMap: Map<string, string[]>
+): string[][] {
+  const paths: string[][] = [];
+  const visit = (current: string, pathToCurrent: string[], seen: Set<string>): void => {
+    if (current === target) {
+      paths.push(pathToCurrent);
+      return;
+    }
+    for (const dependency of dependencyMap.get(current) ?? []) {
+      if (seen.has(dependency)) {
+        continue;
+      }
+      visit(dependency, [...pathToCurrent, dependency], new Set([...seen, dependency]));
+    }
+  };
+  visit(start, [start], new Set([start]));
+  return paths.sort((left, right) => left.join("\0").localeCompare(right.join("\0")));
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {

@@ -211,6 +211,14 @@ function checkCoverageFromGraph(
   if (pending.length !== check.entry_files.length) {
     return { ok: false, reason: `verification check "${check.id}" has an invalid entry file` };
   }
+  for (const entryFile of pending) {
+    if (!filesByPath.has(entryFile)) {
+      return {
+        ok: false,
+        reason: `verification check "${check.id}" declares missing or unresolvable entry file "${entryFile}"`
+      };
+    }
+  }
   const seen = new Set<string>();
   while (pending.length > 0) {
     const current = pending.pop()!;

@@ -3,7 +3,7 @@ import { mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { loadAndValidateContract, type TaskContract } from "./contract.js";
 import { readEvents, type HivemindEvent } from "./events.js";
-import { loadIntegrationQueue, type IntegrationStatus } from "./integrate.js";
+import { loadIntegrationQueue, type IntegrationStatus } from "./integration-state.js";
 import { readJsonFile } from "./json.js";
 import { readActiveLeases, type LeaseStore } from "./lease.js";
 import { findGitRoot } from "./repo.js";

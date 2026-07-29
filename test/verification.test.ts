@@ -55,6 +55,86 @@ test("localized verification runs fewer checks and still catches the regression"
   });
 });
 
+test("KNOWN LIMITATION: an implicit CLI contract can fail outside the graph-selected subset", async () => {
+  await withVerificationRepo(async ({ repo, worktree, config }) => {
+    const baseMath = [
+      "export const add = (a, b) => a + b;",
+      "export const cliLabel = 'stable';",
+      ""
+    ].join("\n");
+    const brokenMath = baseMath.replace("cliLabel = 'stable'", "cliLabel = 'broken'");
+    const cliContractTest = [
+      "import test from 'node:test';",
+      "import assert from 'node:assert/strict';",
+      "import { execFileSync } from 'node:child_process';",
+      "test('math CLI label', () => {",
+      "  const script = \"import('./src/math.js').then(module => process.stdout.write(module.cliLabel))\";",
+      "  const output = execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' }).trim();",
+      "  assert.equal(output, 'stable');",
+      "});",
+      ""
+    ].join("\n");
+    await writeFile(path.join(repo, "src", "math.js"), baseMath);
+    await writeFile(path.join(repo, "test", "cli-contract.test.js"), cliContractTest);
+    await git(repo, ["add", "."]);
+    await git(repo, ["commit", "-m", "add implicit CLI contract"]);
+    assert.equal((await rebuildRepoGraph(repo)).ok, true);
+    await writeFile(path.join(worktree, "src", "math.js"), brokenMath);
+    await writeFile(path.join(worktree, "test", "cli-contract.test.js"), cliContractTest);
+
+    const limitationConfig: HivemindConfig = {
+      ...config,
+      test_command: [
+        "node --test test/math.test.js",
+        "node --test test/text.test.js",
+        "node test/cli-contract.test.js"
+      ].join(" && "),
+      verification: {
+        checks: [
+          ...config.verification!.checks,
+          {
+            id: "cli-contract",
+            command: "node test/cli-contract.test.js",
+            entry_files: ["test/cli-contract.test.js"]
+          }
+        ]
+      }
+    };
+    const narrowed = await runVerification(
+      repo,
+      worktree,
+      limitationConfig,
+      ["T-LOW"],
+      ["src/math.js"]
+    );
+    assert.equal(narrowed.ok, true);
+    if (!narrowed.ok) {
+      return;
+    }
+    assert.equal(narrowed.value.audit.mode, "subset");
+    assert.deepEqual(narrowed.value.audit.selected_checks.map((check) => check.id), ["math"]);
+    assert.deepEqual(
+      narrowed.value.audit.skipped_checks.map((check) => check.id),
+      ["text", "cli-contract"]
+    );
+    assert.equal(narrowed.value.tests, "pass");
+    const runtimeContractValue = await execFileAsync(
+      process.execPath,
+      ["-e", "import('./src/math.js').then(module => process.stdout.write(module.cliLabel))"],
+      { cwd: worktree, windowsHide: true }
+    );
+    assert.equal(runtimeContractValue.stdout, "broken");
+    await assert.rejects(
+      execAsync("node test/cli-contract.test.js", { cwd: worktree, windowsHide: true }),
+      (error: unknown) => typeof error === "object" && error !== null && "code" in error && error.code === 1
+    );
+    await assert.rejects(
+      execAsync(limitationConfig.test_command, { cwd: worktree, windowsHide: true }),
+      (error: unknown) => typeof error === "object" && error !== null && "code" in error && error.code === 1
+    );
+  });
+});
+
 test("verification falls back to the full suite for graph uncertainty, blind spots, and high tiers", async () => {
   await withVerificationRepo(async ({ repo, config }) => {
     const localized = await selectVerificationChecks(repo, config, ["T-LOW"], ["src/math.js"]);
@@ -76,6 +156,21 @@ test("verification falls back to the full suite for graph uncertainty, blind spo
       ["src/math.js"]
     );
     assertFull(disabled, /disabled/);
+
+    const missingEntry = await selectVerificationChecks(
+      repo,
+      {
+        ...config,
+        verification: {
+          checks: config.verification!.checks.map((check) => check.id === "math"
+            ? { ...check, entry_files: ["test/missing.test.js"] }
+            : check)
+        }
+      },
+      ["T-LOW"],
+      ["src/math.js"]
+    );
+    assertFull(missingEntry, /declares missing or unresolvable entry file/);
 
     const high = await selectVerificationChecks(
       repo,

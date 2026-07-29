@@ -7,25 +7,20 @@ import { writeJsonAtomic } from "./atomic.js";
 import { loadConfig } from "./config.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent, readEvents } from "./events.js";
-import { readJsonFile } from "./json.js";
+import {
+  loadIntegrationQueue,
+  type IntegrationQueueEntry,
+  type IntegrationStatus
+} from "./integration-state.js";
 import { requireTaskDependenciesIntegrated } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { validateRequestedTaskId } from "./task-id.js";
 import { runVerification, type VerificationRunResult } from "./verification.js";
 
+export type { IntegrationQueueEntry, IntegrationStatus } from "./integration-state.js";
+
 const execFileAsync = promisify(execFile);
-
-export interface IntegrationStatus {
-  branch: string;
-  applied: string[];
-  tests: "pass" | "fail";
-  report: string;
-}
-
-export interface IntegrationQueueEntry {
-  task_id: string;
-}
 
 export interface EnqueueIntegrationPatchResult {
   task_id: string;
@@ -167,45 +162,6 @@ export async function integrateShadow(
   }
 
   return outcome ?? { ok: false, reason: "shadow integration did not produce a result" };
-}
-
-export async function loadIntegrationQueue(
-  repoRoot: string
-): Promise<{ ok: true; value: IntegrationQueueEntry[] } | { ok: false; reason: string }> {
-  const queuePath = path.join(repoRoot, ".hivemind", "integration", "queue.json");
-  let raw: unknown;
-  try {
-    raw = await readJsonFile(queuePath);
-  } catch (error: unknown) {
-    if (isNodeError(error, "ENOENT")) {
-      return { ok: false, reason: "integration queue not found: .hivemind/integration/queue.json" };
-    }
-    if (error instanceof SyntaxError) {
-      return { ok: false, reason: "invalid JSON in .hivemind/integration/queue.json" };
-    }
-    throw error;
-  }
-
-  if (!Array.isArray(raw)) {
-    return { ok: false, reason: "integration queue must be an array" };
-  }
-
-  const entries: IntegrationQueueEntry[] = [];
-  const problems: string[] = [];
-  for (const [index, entry] of raw.entries()) {
-    if (!isRecord(entry) || typeof entry.task_id !== "string") {
-      problems.push(`queue[${index}].task_id must be a string`);
-      continue;
-    }
-    const taskIdResult = validateRequestedTaskId(entry.task_id);
-    if (!taskIdResult.ok) {
-      problems.push(`queue[${index}].${taskIdResult.reason}`);
-      continue;
-    }
-    entries.push({ task_id: entry.task_id });
-  }
-
-  return problems.length === 0 ? { ok: true, value: entries } : { ok: false, reason: problems.join("; ") };
 }
 
 export async function enqueueIntegrationPatch(
@@ -453,10 +409,6 @@ async function requireDependenciesIfPlanBacked(repoRoot: string, taskId: string)
 
 function integrationTimestamp(): string {
   return new Date().toISOString().replace(/[-:.]/g, "").replace("T", "-").replace("Z", "Z");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isNodeError(error: unknown, code: string): boolean {
