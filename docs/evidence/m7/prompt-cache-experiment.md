@@ -67,7 +67,7 @@ After the paid-call limit was reached, the isolated harness was corrected so the
 }
 ```
 
-No further provider call was made. A valid stable-key cold/warm pair still requires two separately approved calls.
+No further provider call was made. The stable-key cold/warm pair will not be run because the production CLI cannot expose the tested cache-only control.
 
 ## Statelessness Finding
 
@@ -80,6 +80,18 @@ If a supported cache-only override becomes available, its safe namespace should 
 ## Economic Result
 
 The measured incremental saving from a stable key is unknown because no valid stable-key provider pair ran. The current eight-task estimate therefore remains approximately 1.1M-1.7M manager tokens before worker calls. No lower evidence-based number can be stated.
+
+## Final Decision
+
+Status: `WON'T DO` unless a future shipped Codex CLI exposes a supported cache-only override.
+
+The premise that fresh Codex sessions never cache is false: A2 observed 4,480 cached input tokens out of 13,539, a 33.1% partial hit. The statelessness question is also settled: `prompt_cache_key` only affects cache routing/matching and does not itself resume or replay a transcript.
+
+The optimization is nevertheless not adoptable today. Hivemind would have to vendor a patched Codex build solely for a cost optimization, or use `codex exec resume` and accept Codex-owned conversation history. The former creates an unjustified provider-CLI maintenance fork; the latter violates M6.6.
+
+No replacement experiment calls will be made. Production adapters remain on fresh ephemeral sessions. The cost action is to reduce orchestrator call count, because the observed approximately 14K-19K harness floor is provider-owned and repeats per action.
+
+If upstream exposes cache-only affinity later, the design remains exact-provenance scoped: provider, model, Codex build, adapter/tool schema, repository identity, governing instructions/configuration, and a hash of the stable rendered prefix.
 
 ## Sources
 
