@@ -106,7 +106,7 @@ test("integrateShadow records failed tests, exits through fail status, and clean
     }
     assert.equal(result.value.tests, "fail");
     assert.deepEqual(result.value.applied, ["T-001"]);
-    assert.match(result.value.report, /test exit code: 7/);
+    assert.match(result.value.report, /check full-suite exit code: 7/);
     assert.equal(await branchExists(repo, result.value.branch), false);
     const events = await readEvents(repo);
     assert.equal(events.ok, true);

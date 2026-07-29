@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -108,7 +108,7 @@ test("missing or stale repo graph degrades to unavailable without affecting leas
   });
 });
 
-test("guarantee-enforcing modules have no direct or transitive import path to the advisory repo graph", async () => {
+test("graph access is structurally isolated to verification selection and its integration caller", async () => {
   const sourceDir = path.join(projectRoot, "src");
   const moduleNames = [
     "analyze.ts",
@@ -118,7 +118,6 @@ test("guarantee-enforcing modules have no direct or transitive import path to th
     "contract.ts",
     "decision.ts",
     "gate.ts",
-    "integrate.ts",
     "integration-state.ts",
     "intent.ts",
     "lease-lock.ts",
@@ -130,7 +129,11 @@ test("guarantee-enforcing modules have no direct or transitive import path to th
     "submit.ts",
     "worktree.ts"
   ];
-  const allModules = await gitStdout(projectRoot, ["ls-files", "src/*.ts"]);
+  const allModules = (await readdir(sourceDir))
+    .filter((name) => name.endsWith(".ts"))
+    .map((name) => `src/${name}`)
+    .sort()
+    .join("\n");
   const dependencyMap = new Map<string, string[]>();
   for (const repoPath of allModules.split(/\r?\n/u).filter(Boolean)) {
     const source = await readFile(path.join(projectRoot, ...repoPath.split("/")), "utf8");
@@ -138,13 +141,27 @@ test("guarantee-enforcing modules have no direct or transitive import path to th
   }
 
   for (const moduleName of moduleNames) {
-    const entry = `src/${moduleName}`;
     assert.equal(
-      reachesModule(entry, "src/repo-graph.ts", dependencyMap),
+      dependencyMap.get(`src/${moduleName}`)?.includes("src/repo-graph.ts"),
       false,
-      `${entry} must not depend directly or transitively on advisory repo-graph.ts`
+      `src/${moduleName} must not import advisory repo-graph.ts`
+    );
+    assert.equal(
+      dependencyMap.get(`src/${moduleName}`)?.includes("src/verification.ts"),
+      false,
+      `src/${moduleName} must not invoke graph-aware verification selection`
     );
   }
+  const graphImporters = [...dependencyMap]
+    .filter(([, imports]) => imports.includes("src/repo-graph.ts"))
+    .map(([name]) => name)
+    .sort();
+  assert.deepEqual(graphImporters, ["src/cli.ts", "src/closure-coverage.ts", "src/verification.ts"]);
+  const verificationImporters = [...dependencyMap]
+    .filter(([, imports]) => imports.includes("src/verification.ts"))
+    .map(([name]) => name)
+    .sort();
+  assert.deepEqual(verificationImporters, ["src/integrate.ts"]);
 });
 
 async function withGraphRepo(run: (repo: string) => Promise<void>): Promise<void> {
@@ -204,23 +221,6 @@ function relativeSourceImports(repoPath: string, source: string): string[] {
     }
   }
   return [...imports];
-}
-
-function reachesModule(entry: string, target: string, dependencies: Map<string, string[]>): boolean {
-  const seen = new Set<string>();
-  const pending = [entry];
-  while (pending.length > 0) {
-    const current = pending.pop()!;
-    if (current === target) {
-      return true;
-    }
-    if (seen.has(current)) {
-      continue;
-    }
-    seen.add(current);
-    pending.push(...(dependencies.get(current) ?? []));
-  }
-  return false;
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {

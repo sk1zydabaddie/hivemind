@@ -10,7 +10,7 @@ import { writeJsonAtomic } from "./atomic.js";
 import { findGitRoot } from "./repo.js";
 
 const execFileAsync = promisify(execFile);
-const graphVersion = 1;
+const graphVersion = 2;
 const sourceExtensions = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"] as const;
 
 export type RepoSymbolKind = "function" | "class" | "interface" | "type" | "enum" | "namespace" | "variable" | "method";
@@ -36,7 +36,7 @@ export interface RepoGraphFile {
 }
 
 export interface RepoGraphArtifact {
-  version: 1;
+  version: 2;
   source_fingerprint: string;
   files: RepoGraphFile[];
 }
@@ -52,6 +52,10 @@ export interface RepoGraphBuildResult {
 export type DependencyClosureResult =
   | { available: true; file: string; closure: string[]; source_fingerprint: string }
   | { available: false; file: string; closure: []; reason: string };
+
+export type VerifiedRepoGraphResult =
+  | { ok: true; value: RepoGraphArtifact }
+  | { ok: false; reason: string };
 
 interface NormalizedQueryFile {
   requested: string;
@@ -148,27 +152,32 @@ export async function queryDependencyClosures(repoRoot: string, requestedFiles: 
     return queryFiles.map((file) => unavailable(file.requested, "repo graph query path must be repo-relative and confined"));
   }
 
-  const artifactResult = await readRepoGraphArtifact(repoRoot);
-  if (!artifactResult.ok) {
-    return unavailableQueryResults(queryFiles, artifactResult.reason);
+  const graphResult = await loadVerifiedRepoGraph(repoRoot);
+  if (!graphResult.ok) {
+    return unavailableQueryResults(queryFiles, graphResult.reason);
   }
 
-  const sourcesResult = await readTrackedSources(repoRoot);
-  if (!sourcesResult.ok) {
-    return unavailableQueryResults(queryFiles, sourcesResult.reason);
-  }
-
-  const liveFingerprint = fingerprintSources(sourcesResult.value);
-  if (liveFingerprint !== artifactResult.value.source_fingerprint) {
-    return unavailableQueryResults(queryFiles, "repo graph is stale: tracked source fingerprint changed");
-  }
-
-  const filesByPath = new Map(artifactResult.value.files.map((file) => [file.path, file]));
+  const filesByPath = new Map(graphResult.value.files.map((file) => [file.path, file]));
   return queryFiles.map((file) =>
     file.normalized === null
       ? unavailable(file.requested, "repo graph query path must be repo-relative and confined")
-      : dependencyClosureFromGraph(file.normalized, filesByPath, artifactResult.value.source_fingerprint)
+      : dependencyClosureFromGraph(file.normalized, filesByPath, graphResult.value.source_fingerprint)
   );
+}
+
+export async function loadVerifiedRepoGraph(repoRoot: string): Promise<VerifiedRepoGraphResult> {
+  const artifactResult = await readRepoGraphArtifact(repoRoot);
+  if (!artifactResult.ok) {
+    return artifactResult;
+  }
+  const sourcesResult = await readTrackedSources(repoRoot);
+  if (!sourcesResult.ok) {
+    return sourcesResult;
+  }
+  if (fingerprintSources(sourcesResult.value) !== artifactResult.value.source_fingerprint) {
+    return { ok: false, reason: "repo graph is stale: tracked source fingerprint changed" };
+  }
+  return artifactResult;
 }
 
 function dependencyClosureFromGraph(
@@ -336,9 +345,13 @@ function collectDependencies(root: Parser.SyntaxNode, sourcePath: string, knownP
     const argumentsNode = node.childForFieldName("arguments");
     const source = argumentsNode?.namedChildren[0] ?? null;
     if (callable?.type === "identifier" && callable.text === "require") {
-      addDependency(dependencies, source, "require", sourcePath, knownPaths);
+      if (!addDependency(dependencies, source, "require", sourcePath, knownPaths)) {
+        dependencies.push({ specifier: "<computed>", kind: "require", target: null });
+      }
     } else if (callable?.type === "import") {
-      addDependency(dependencies, source, "dynamic_import", sourcePath, knownPaths);
+      if (!addDependency(dependencies, source, "dynamic_import", sourcePath, knownPaths)) {
+        dependencies.push({ specifier: "<computed>", kind: "dynamic_import", target: null });
+      }
     }
   });
 
@@ -356,16 +369,17 @@ function addDependency(
   kind: RepoDependencyKind,
   sourcePath: string,
   knownPaths: Set<string>
-): void {
+): boolean {
   const specifier = sourceNode ? stringNodeValue(sourceNode) : null;
   if (specifier === null) {
-    return;
+    return false;
   }
   dependencies.push({
     specifier,
     kind,
     target: resolveLocalDependency(sourcePath, specifier, knownPaths)
   });
+  return true;
 }
 
 function resolveLocalDependency(sourcePath: string, specifier: string, knownPaths: Set<string>): string | null {

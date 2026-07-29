@@ -1,4 +1,4 @@
-import { exec, execFile } from "node:child_process";
+import { execFile } from "node:child_process";
 import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -12,8 +12,8 @@ import { requireTaskDependenciesIntegrated } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { validateRequestedTaskId } from "./task-id.js";
+import { runVerification, type VerificationRunResult } from "./verification.js";
 
-const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
 export interface IntegrationStatus {
@@ -121,7 +121,7 @@ export async function integrateShadow(
             branch,
             applied: accepted.slice(0, accepted.indexOf(taskId)),
             tests: "fail",
-            report: buildReport(gateResult.value, configResult.config.test_command, null, applyError)
+            report: buildReport(gateResult.value, null, applyError)
           };
           await writeIntegrationStatus(repoRoot, status);
           const eventResult = await appendIntegrationEvent(repoRoot, status);
@@ -131,16 +131,31 @@ export async function integrateShadow(
       }
 
       if (outcome === null) {
-        const testResult = await runTestCommand(worktreePath, configResult.config.test_command);
-        status = {
-          branch,
-          applied: accepted,
-          tests: testResult.exitCode === 0 ? "pass" : "fail",
-          report: buildReport(gateResult.value, configResult.config.test_command, testResult, null)
-        };
-        await writeIntegrationStatus(repoRoot, status);
-        const eventResult = await appendIntegrationEvent(repoRoot, status);
-        outcome = eventResult.ok ? { ok: true, value: status } : eventResult;
+        const changedFilesResult = await git(worktreePath, ["diff", "--cached", "--name-only", "-z"]);
+        if (!changedFilesResult.ok) {
+          outcome = { ok: false, reason: `failed to identify shadow changes: ${changedFilesResult.reason}` };
+        } else {
+          const verification = await runVerification(
+            repoRoot,
+            worktreePath,
+            configResult.config,
+            accepted,
+            changedFilesResult.stdout.split("\0").filter(Boolean)
+          );
+          if (!verification.ok) {
+            outcome = verification;
+          } else {
+            status = {
+              branch,
+              applied: accepted,
+              tests: verification.value.tests,
+              report: buildReport(gateResult.value, verification.value, null)
+            };
+            await writeIntegrationStatus(repoRoot, status);
+            const eventResult = await appendIntegrationEvent(repoRoot, status);
+            outcome = eventResult.ok ? { ok: true, value: status } : eventResult;
+          }
+        }
       }
     }
   } finally {
@@ -274,41 +289,30 @@ async function gateQueue(repoRoot: string, queue: IntegrationQueueEntry[]): Prom
   return { ok: true, value: summaries };
 }
 
-async function runTestCommand(
-  cwd: string,
-  command: string
-): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  try {
-    const result = await execAsync(command, { cwd, windowsHide: true, maxBuffer: 1024 * 1024 * 32 });
-    return { exitCode: 0, stdout: result.stdout, stderr: result.stderr };
-  } catch (error: unknown) {
-    return {
-      exitCode: typeof error === "object" && error !== null && "code" in error && typeof error.code === "number" ? error.code : 1,
-      stdout: typeof error === "object" && error !== null && "stdout" in error ? String(error.stdout) : "",
-      stderr: typeof error === "object" && error !== null && "stderr" in error ? String(error.stderr) : ""
-    };
-  }
-}
-
 function buildReport(
   gateSummaries: GateSummary[],
-  testCommand: string,
-  testResult: { exitCode: number; stdout: string; stderr: string } | null,
+  verification: VerificationRunResult | null,
   applyError: string | null
 ): string {
   const lines = [
     "gate results:",
-    ...gateSummaries.map((summary) => `- ${summary.taskId}: ${summary.verdict} (${summary.reason})`),
-    `test command: ${testCommand}`
+    ...gateSummaries.map((summary) => `- ${summary.taskId}: ${summary.verdict} (${summary.reason})`)
   ];
 
   if (applyError !== null) {
     lines.push(`apply: fail (${applyError})`);
   }
-  if (testResult !== null) {
-    lines.push(`test exit code: ${testResult.exitCode}`);
-    lines.push(`stdout:\n${trimReportOutput(testResult.stdout)}`);
-    lines.push(`stderr:\n${trimReportOutput(testResult.stderr)}`);
+  if (verification !== null) {
+    lines.push(`verification mode: ${verification.audit.mode}`);
+    lines.push(`verification reason: ${verification.audit.reason}`);
+    lines.push(`selected checks: ${verification.audit.selected_checks.map((check) => check.id).join(", ")}`);
+    lines.push(`skipped checks: ${verification.audit.skipped_checks.map((check) => check.id).join(", ") || "(none)"}`);
+    for (const check of verification.checks) {
+      lines.push(`check ${check.id}: ${check.command}`);
+      lines.push(`check ${check.id} exit code: ${check.exit_code}`);
+      lines.push(`stdout:\n${trimReportOutput(check.stdout)}`);
+      lines.push(`stderr:\n${trimReportOutput(check.stderr)}`);
+    }
   }
 
   return `${lines.join("\n")}\n`;

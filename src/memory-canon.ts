@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { isMemoryProposalId, type MemoryResult } from "./memory-types.js";
 import { validateLearnedRoutingPolicy, type LearnedRoutingPolicy } from "./routing-policy-schema.js";
+import { validateVerificationPolicy, type VerificationPolicy } from "./verification-policy-schema.js";
 
 export interface CanonMemoryEntry {
   version: 1;
@@ -15,6 +16,7 @@ export interface CanonMemoryEntry {
   evidence: string[];
   source_task_id: string | null;
   routing_policy: LearnedRoutingPolicy | null;
+  verification_policy: VerificationPolicy | null;
 }
 
 export async function readCanonMemory(repoRoot: string): Promise<MemoryResult<CanonMemoryEntry[]>> {
@@ -63,7 +65,8 @@ export function formatCanonForPlanning(entries: CanonMemoryEntry[]): string {
       `[${entry.canon_id}] ${entry.title}`,
       entry.lesson,
       `Evidence: ${entry.evidence.join(" | ")}`,
-      ...(entry.routing_policy === null ? [] : [`Routing policy: ${JSON.stringify(entry.routing_policy)}`])
+      ...(entry.routing_policy === null ? [] : [`Routing policy: ${JSON.stringify(entry.routing_policy)}`]),
+      ...(entry.verification_policy === null ? [] : [`Verification policy: ${JSON.stringify(entry.verification_policy)}`])
     ].join("\n"))
     .join("\n\n");
 }
@@ -83,7 +86,8 @@ function validateCanonMemoryEntry(value: unknown): MemoryResult<CanonMemoryEntry
     "source_task_id",
     "title",
     "version",
-    ...(Object.prototype.hasOwnProperty.call(value, "routing_policy") ? ["routing_policy"] : [])
+    ...(Object.prototype.hasOwnProperty.call(value, "routing_policy") ? ["routing_policy"] : []),
+    ...(Object.prototype.hasOwnProperty.call(value, "verification_policy") ? ["verification_policy"] : [])
   ];
   if (JSON.stringify(Object.keys(value).sort(compareText)) !== JSON.stringify(expectedKeys.sort(compareText))) {
     return { ok: false, reason: "entry fields do not match the canon schema" };
@@ -91,6 +95,9 @@ function validateCanonMemoryEntry(value: unknown): MemoryResult<CanonMemoryEntry
   const routingPolicy = value.routing_policy === undefined || value.routing_policy === null
     ? { ok: true as const, value: null }
     : validateLearnedRoutingPolicy(value.routing_policy);
+  const verificationPolicy = value.verification_policy === undefined || value.verification_policy === null
+    ? { ok: true as const, value: null }
+    : validateVerificationPolicy(value.verification_policy);
   if (
     value.version !== 1 ||
     typeof value.canon_id !== "string" ||
@@ -111,15 +118,17 @@ function validateCanonMemoryEntry(value: unknown): MemoryResult<CanonMemoryEntry
     value.evidence.length === 0 ||
     value.evidence.some((item) => typeof item !== "string" || item.trim() === "") ||
     (value.source_task_id !== null && typeof value.source_task_id !== "string") ||
-    !routingPolicy.ok
+    !routingPolicy.ok ||
+    !verificationPolicy.ok
   ) {
     return { ok: false, reason: "entry values do not match the canon schema" };
   }
   return {
     ok: true,
     value: {
-      ...(value as unknown as Omit<CanonMemoryEntry, "routing_policy">),
-      routing_policy: routingPolicy.ok ? routingPolicy.value : null
+      ...(value as unknown as Omit<CanonMemoryEntry, "routing_policy" | "verification_policy">),
+      routing_policy: routingPolicy.ok ? routingPolicy.value : null,
+      verification_policy: verificationPolicy.ok ? verificationPolicy.value : null
     }
   };
 }

@@ -18,6 +18,18 @@ export interface HivemindConfig {
   critical_globs?: string[];
   resource_policy?: ResourcePolicy;
   manager_autonomy?: ManagerAutonomyPolicy;
+  verification?: VerificationConfig;
+}
+
+export interface VerificationConfig {
+  graph_enabled?: boolean;
+  checks: VerificationCheckConfig[];
+}
+
+export interface VerificationCheckConfig {
+  id: string;
+  command: string;
+  entry_files: string[];
 }
 
 export interface ResourcePolicy {
@@ -104,6 +116,9 @@ export function validateConfig(raw: unknown): string[] {
   if ("manager_autonomy" in raw) {
     validateManagerAutonomyPolicy(raw.manager_autonomy, problems);
   }
+  if ("verification" in raw) {
+    validateVerificationConfig(raw.verification, problems);
+  }
 
   return problems;
 }
@@ -125,7 +140,8 @@ export function normalizeConfig(raw: unknown): HivemindConfig {
     ...("high_globs" in raw ? { high_globs: normalizeStringArray(raw.high_globs) } : {}),
     ...("critical_globs" in raw ? { critical_globs: normalizeStringArray(raw.critical_globs) } : {}),
     resource_policy: normalizeResourcePolicy(raw.resource_policy),
-    ...("manager_autonomy" in raw ? { manager_autonomy: normalizeManagerAutonomyPolicy(raw.manager_autonomy) } : {})
+    ...("manager_autonomy" in raw ? { manager_autonomy: normalizeManagerAutonomyPolicy(raw.manager_autonomy) } : {}),
+    ...("verification" in raw ? { verification: normalizeVerificationConfig(raw.verification) } : {})
   };
 }
 
@@ -225,6 +241,45 @@ function validateManagerCostThreshold(value: unknown, problems: string[]): void 
   }
 }
 
+function validateVerificationConfig(value: unknown, problems: string[]): void {
+  if (!isRecord(value)) {
+    problems.push("verification must be a JSON object");
+    return;
+  }
+  if ("graph_enabled" in value && typeof value.graph_enabled !== "boolean") {
+    problems.push("verification.graph_enabled must be a boolean");
+  }
+  if (!Array.isArray(value.checks) || value.checks.length === 0) {
+    problems.push("verification.checks must be a non-empty array");
+    return;
+  }
+  const ids = new Set<string>();
+  for (const [index, check] of value.checks.entries()) {
+    if (!isRecord(check)) {
+      problems.push(`verification.checks[${index}] must be a JSON object`);
+      continue;
+    }
+    const id = typeof check.id === "string" ? check.id.trim() : "";
+    if (id === "") {
+      problems.push(`verification.checks[${index}].id must be a non-empty string`);
+    } else if (ids.has(id)) {
+      problems.push(`verification.checks contains duplicate id "${id}"`);
+    } else {
+      ids.add(id);
+    }
+    if (typeof check.command !== "string" || check.command.trim() === "") {
+      problems.push(`verification.checks[${index}].command must be a non-empty string`);
+    }
+    if (
+      !Array.isArray(check.entry_files) ||
+      check.entry_files.length === 0 ||
+      check.entry_files.some((entry) => typeof entry !== "string" || entry.trim() === "")
+    ) {
+      problems.push(`verification.checks[${index}].entry_files must be a non-empty array of non-empty strings`);
+    }
+  }
+}
+
 function normalizeResourcePolicy(value: unknown): ResourcePolicy {
   if (!isRecord(value)) {
     return defaultResourcePolicy();
@@ -280,6 +335,20 @@ function normalizeManagerCostThreshold(value: unknown): ManagerCostThreshold {
   return {
     ...("estimated_requests" in value && typeof value.estimated_requests === "number" ? { estimated_requests: value.estimated_requests } : {}),
     ...("wall_time_ms" in value && typeof value.wall_time_ms === "number" ? { wall_time_ms: value.wall_time_ms } : {})
+  };
+}
+
+function normalizeVerificationConfig(value: unknown): VerificationConfig {
+  if (!isRecord(value) || !Array.isArray(value.checks)) {
+    return { checks: [] };
+  }
+  return {
+    ...("graph_enabled" in value && typeof value.graph_enabled === "boolean" ? { graph_enabled: value.graph_enabled } : {}),
+    checks: value.checks.filter(isRecord).map((check) => ({
+      id: typeof check.id === "string" ? check.id.trim() : "",
+      command: typeof check.command === "string" ? check.command.trim() : "",
+      entry_files: normalizeStringArray(check.entry_files).map((entry) => entry.trim())
+    }))
   };
 }
 

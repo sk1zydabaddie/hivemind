@@ -39,6 +39,7 @@ export const eventTypes = [
   "integration.started",
   "integration.passed",
   "integration.failed",
+  "verification.completed",
   "memory.proposed",
   "memory.accepted",
   "routing.observed",

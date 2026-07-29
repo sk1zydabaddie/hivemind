@@ -1126,6 +1126,12 @@ Checks:
 
 The system should learn which tests matter for which files.
 
+Selective verification is a fail-safe optimization, not permission to weaken the oracle. `config.test_command` remains the full-suite default. An optional structured verification inventory names checks by stable id, command, and JS/TS entry files. For Low/Medium changes only, the engine may run fewer checks when the current rebuildable repo graph proves that every changed file is exercised by at least one inventoried check. Missing, disabled, stale, invalid, or unloadable graph state; unsupported/non-JS/TS paths; unresolved or dynamic dependencies; unknown files; incomplete inventory; and any High/Critical task all select the full suite. Uncertainty always runs more, never fewer.
+
+M7.8 is the sole narrow exception to M7.1's "guarantee paths do not read the graph" boundary: `integrate.ts` may call the isolated verification selector, which lazy-loads the graph and can only choose between a confidently resolved subset and the safe full-suite default. Lease, intent, analyze, scope, dependency, routing-tier, and integration-state decisions remain structurally unable to import the graph or verification selector. The graph never changes what may integrate; it only proposes which checks to execute, and failure to obtain a confident proposal restores the full suite.
+
+Historical check associations come only from human-promoted Tier-2 canon, never raw Tier-1 log claims. Canon associations are add-only during selection: they may cause extra checks to run, but cannot remove a graph-selected check or establish permission to narrow by themselves. Each run appends `verification.completed` with the changed/impact files, selected and skipped checks, selection reason, graph fingerprint, canon ids, commands, and exit codes so narrowed verification remains inspectable from the durable trail.
+
 Example:
 
 ```
@@ -1518,6 +1524,7 @@ Events:
 - integration.started
 - integration.failed
 - integration.passed
+- verification.completed
 - memory.proposed
 - memory.accepted
 - approval.required
