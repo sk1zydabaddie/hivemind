@@ -10,6 +10,7 @@ import test from "node:test";
 import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { enqueueIntegrationPatch, integrateShadow, type IntegrationStatus } from "../src/integrate.js";
+import { rebuildRepoGraph } from "../src/repo-graph.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -49,6 +50,7 @@ test("integrateShadow applies accepted queued patches together, runs tests, repo
     assert.match(result.value.report, /T-001: accept/);
     assert.match(result.value.report, /T-002: accept/);
     assert.match(result.value.report, /T-003: reject/);
+    assert.match(result.value.report, /structural oracle: unknown \(advisory; runtime coverage not measured\)/);
     assert.deepEqual(await readStatus(repo), result.value);
     assert.equal(await branchExists(repo, result.value.branch), false);
     assert.equal(normalizeNewlines(await readFile(path.join(repo, "README.md"), "utf8")), "# Fixture\n");
@@ -60,9 +62,64 @@ test("integrateShadow applies accepted queued patches together, runs tests, repo
     if (!events.ok) {
       return;
     }
+    const verificationEvent = events.value.find((event) => event.type === "verification.completed");
+    assert.equal(verificationEvent?.data.structural_oracle !== undefined, true);
+    assert.equal(
+      (verificationEvent?.data.structural_oracle as { status?: string } | undefined)?.status,
+      "unknown"
+    );
     assert.equal(events.value.at(-1)?.type, "integration.passed");
     assert.equal(events.value.at(-1)?.task_id, null);
     assert.deepEqual(events.value.at(-1)?.data.applied, ["T-001", "T-002"]);
+  });
+});
+
+test("an uncovered structural oracle is durably surfaced but does not block shadow integration", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await mkdir(path.join(repo, "test"), { recursive: true });
+    await writeFile(
+      path.join(repo, "src", "consumer.ts"),
+      "import { feature } from './feature.js'; export const consumed = feature;\n"
+    );
+    await writeFile(
+      path.join(repo, "test", "feature.test.ts"),
+      "import { feature } from '../src/feature.js'; export const observed = feature;\n"
+    );
+    await git(repo, ["add", "src/consumer.ts", "test/feature.test.ts"]);
+    await git(repo, ["commit", "-m", "add structural oracle fixture"]);
+    const integrationBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
+    await setStructuredVerificationConfig(repo);
+    assert.equal((await rebuildRepoGraph(repo)).ok, true);
+    await writeContract(repo, "T-STRUCTURAL", integrationBase, ["src/feature.ts"]);
+    await writePatchFromEdit(repo, "T-STRUCTURAL", integrationBase, async () => {
+      await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = 'changed';\n");
+    });
+    assert.equal((await rebuildRepoGraph(repo)).ok, true);
+    await writeQueue(repo, ["T-STRUCTURAL"]);
+
+    const result = await integrateShadow(repo);
+
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.value.tests, "pass");
+    assert.match(result.value.report, /structural oracle: uncovered \(advisory; runtime coverage not measured\)/);
+    assert.match(result.value.report, /structurally uncovered impact files: src\/consumer\.ts/);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    const verificationEvent = events.value.find((event) => event.type === "verification.completed");
+    const structural = verificationEvent?.data.structural_oracle as
+      | { status?: string; uncovered_impact_files?: string[]; advisory_only?: boolean }
+      | undefined;
+    assert.equal(structural?.status, "uncovered");
+    assert.deepEqual(structural?.uncovered_impact_files, ["src/consumer.ts"]);
+    assert.equal(structural?.advisory_only, true);
+    assert.equal(events.value.at(-1)?.type, "integration.passed");
+    assert.deepEqual(events.value.at(-1)?.data.applied, ["T-STRUCTURAL"]);
   });
 });
 
@@ -295,6 +352,22 @@ async function setConfigTestCommand(repo: string, testCommand: string): Promise<
   const configPath = path.join(repo, ".hivemind", "config.json");
   const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
   config.test_command = testCommand;
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+async function setStructuredVerificationConfig(repo: string): Promise<void> {
+  const configPath = path.join(repo, ".hivemind", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+  config.test_command = "node -e \"process.exit(0)\"";
+  config.verification = {
+    checks: [
+      {
+        id: "feature",
+        command: "node -e \"process.exit(0)\"",
+        entry_files: ["test/feature.test.ts"]
+      }
+    ]
+  };
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 

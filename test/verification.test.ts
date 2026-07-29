@@ -47,11 +47,68 @@ test("localized verification runs fewer checks and still catches the regression"
       const audit = events.value.at(-1);
       assert.equal(audit?.type, "verification.completed");
       assert.equal(audit?.data.mode, "subset");
+      assert.deepEqual(audit?.data.structural_oracle, result.value.audit.structural_oracle);
+      assert.deepEqual(result.value.audit.structural_oracle, {
+        kind: "structural",
+        status: "covered",
+        advisory_only: true,
+        runtime_coverage: "not_measured",
+        graph_fingerprint: result.value.audit.graph_fingerprint,
+        impact_files: ["src/math.js", "test/math.test.js"],
+        covered_impact_files: ["src/math.js", "test/math.test.js"],
+        uncovered_impact_files: [],
+        unknown_impact_files: [],
+        check_associations: [
+          { impact_file: "src/math.js", check_ids: ["math"] },
+          { impact_file: "test/math.test.js", check_ids: ["math"] }
+        ],
+        unknown_reasons: [],
+        limitations: [
+          "verification inventory entry_files are operator-declared; Hivemind does not prove that each command executes them"
+        ]
+      });
       assert.deepEqual(audit?.data.skipped_checks, [
         { id: "text", reason: "outside the resolved impact set" }
       ]);
       assert.equal(audit?.data.tests, "fail");
     }
+  });
+});
+
+test("structural oracle measurement reports exact covered and uncovered impact files", async () => {
+  await withVerificationRepo(async ({ repo, config }) => {
+    const covered = await selectVerificationChecks(repo, config, ["T-LOW"], ["src/math.js"]);
+    assert.equal(covered.structural_oracle.status, "covered");
+    assert.deepEqual(covered.structural_oracle.covered_impact_files, ["src/math.js", "test/math.test.js"]);
+    assert.deepEqual(covered.structural_oracle.uncovered_impact_files, []);
+    assert.deepEqual(covered.structural_oracle.unknown_impact_files, []);
+
+    await writeFile(
+      path.join(repo, "src", "consumer.js"),
+      "import { add } from './math.js'; export const computed = add(1, 2);\n"
+    );
+    await git(repo, ["add", "src/consumer.js"]);
+    await git(repo, ["commit", "-m", "add uncovered math consumer"]);
+    assert.equal((await rebuildRepoGraph(repo)).ok, true);
+
+    const uncovered = await selectVerificationChecks(repo, config, ["T-LOW"], ["src/math.js"]);
+    assert.equal(uncovered.structural_oracle.status, "uncovered");
+    assert.deepEqual(uncovered.structural_oracle.impact_files, [
+      "src/consumer.js",
+      "src/math.js",
+      "test/math.test.js"
+    ]);
+    assert.deepEqual(uncovered.structural_oracle.covered_impact_files, [
+      "src/math.js",
+      "test/math.test.js"
+    ]);
+    assert.deepEqual(uncovered.structural_oracle.uncovered_impact_files, ["src/consumer.js"]);
+    assert.deepEqual(uncovered.structural_oracle.unknown_impact_files, []);
+    assert.deepEqual(uncovered.structural_oracle.check_associations, [
+      { impact_file: "src/consumer.js", check_ids: [] },
+      { impact_file: "src/math.js", check_ids: ["math"] },
+      { impact_file: "test/math.test.js", check_ids: ["math"] }
+    ]);
   });
 });
 
@@ -140,14 +197,21 @@ test("verification falls back to the full suite for graph uncertainty, blind spo
     const localized = await selectVerificationChecks(repo, config, ["T-LOW"], ["src/math.js"]);
     assert.equal(localized.mode, "subset");
 
+    const empty = await selectVerificationChecks(repo, config, ["T-LOW"], []);
+    assertFull(empty, /empty or unavailable/);
+    assertUnknownStructural(empty, [], /empty or unavailable/);
+
     const nonSource = await selectVerificationChecks(repo, config, ["T-LOW"], ["README.md"]);
     assertFull(nonSource, /non-JS\/TS/);
+    assertUnknownStructural(nonSource, ["README.md"], /non-JS\/TS/);
 
     const unknownSource = await selectVerificationChecks(repo, config, ["T-LOW"], ["src/missing.js"]);
     assertFull(unknownSource, /cannot resolve changed file/);
+    assertUnknownStructural(unknownSource, ["src/missing.js"], /cannot resolve changed file/);
 
     const invalidPath = await selectVerificationChecks(repo, config, ["T-LOW"], ["../outside.js"]);
     assertFull(invalidPath, /invalid or unconfined/);
+    assertUnknownStructural(invalidPath, [], /invalid or unconfined/);
 
     const disabled = await selectVerificationChecks(
       repo,
@@ -156,6 +220,16 @@ test("verification falls back to the full suite for graph uncertainty, blind spo
       ["src/math.js"]
     );
     assertFull(disabled, /disabled/);
+    assertUnknownStructural(disabled, ["src/math.js"], /disabled/);
+
+    const missingInventory = await selectVerificationChecks(
+      repo,
+      { ...config, verification: { checks: [] } },
+      ["T-LOW"],
+      ["src/math.js"]
+    );
+    assertFull(missingInventory, /inventory is missing/);
+    assertUnknownStructural(missingInventory, ["src/math.js"], /inventory is missing/);
 
     const missingEntry = await selectVerificationChecks(
       repo,
@@ -171,6 +245,11 @@ test("verification falls back to the full suite for graph uncertainty, blind spo
       ["src/math.js"]
     );
     assertFull(missingEntry, /declares missing or unresolvable entry file/);
+    assertUnknownStructural(
+      missingEntry,
+      ["src/math.js", "test/math.test.js"],
+      /declares missing or unresolvable entry file/
+    );
 
     const high = await selectVerificationChecks(
       repo,
@@ -179,6 +258,9 @@ test("verification falls back to the full suite for graph uncertainty, blind spo
       ["src/math.js"]
     );
     assertFull(high, /high tier/);
+    assert.equal(high.structural_oracle.status, "covered");
+    assert.equal(high.structural_oracle.kind, "structural");
+    assert.equal(high.structural_oracle.runtime_coverage, "not_measured");
 
     const critical = await selectVerificationChecks(
       repo,
@@ -187,20 +269,26 @@ test("verification falls back to the full suite for graph uncertainty, blind spo
       ["src/math.js"]
     );
     assertFull(critical, /critical tier/);
+    assert.equal(critical.structural_oracle.status, "covered");
+    assert.equal(critical.structural_oracle.kind, "structural");
+    assert.equal(critical.structural_oracle.runtime_coverage, "not_measured");
 
     await rm(repoGraphArtifactPath(repo));
     const missing = await selectVerificationChecks(repo, config, ["T-LOW"], ["src/math.js"]);
     assertFull(missing, /graph unavailable.*missing/);
+    assertUnknownStructural(missing, ["src/math.js"], /graph unavailable.*missing/);
 
     assert.equal((await rebuildRepoGraph(repo)).ok, true);
     await writeFile(repoGraphArtifactPath(repo), "{not-json}\n");
     const invalid = await selectVerificationChecks(repo, config, ["T-LOW"], ["src/math.js"]);
     assertFull(invalid, /graph unavailable.*unreadable/);
+    assertUnknownStructural(invalid, ["src/math.js"], /graph unavailable.*unreadable/);
 
     assert.equal((await rebuildRepoGraph(repo)).ok, true);
     await writeFile(path.join(repo, "src", "math.js"), "export const add = (a, b) => a + b + 1;\n");
     const stale = await selectVerificationChecks(repo, config, ["T-LOW"], ["src/math.js"]);
     assertFull(stale, /graph unavailable.*stale/);
+    assertUnknownStructural(stale, ["src/math.js"], /graph unavailable.*stale/);
   });
 });
 
@@ -216,6 +304,7 @@ test("unresolved and dynamic imports force the full suite", async () => {
 
     const dynamic = await selectVerificationChecks(repo, config, ["T-LOW"], ["src/math.js"]);
     assertFull(dynamic, /dynamic import/);
+    assertUnknownStructural(dynamic, ["src/math.js"], /dynamic import/);
 
     await writeFile(
       path.join(repo, "test", "math.test.js"),
@@ -227,6 +316,7 @@ test("unresolved and dynamic imports force the full suite", async () => {
 
     const unresolved = await selectVerificationChecks(repo, config, ["T-LOW"], ["src/math.js"]);
     assertFull(unresolved, /unresolved import/);
+    assertUnknownStructural(unresolved, ["src/math.js"], /unresolved import/);
   });
 });
 
@@ -386,6 +476,22 @@ function assertFull(audit: Awaited<ReturnType<typeof selectVerificationChecks>>,
   assert.match(audit.reason, reason);
   assert.deepEqual(audit.selected_checks.map((check) => check.id), ["full-suite"]);
   assert.deepEqual(audit.skipped_checks, []);
+}
+
+function assertUnknownStructural(
+  audit: Awaited<ReturnType<typeof selectVerificationChecks>>,
+  expectedFiles: string[],
+  reason: RegExp
+): void {
+  assert.equal(audit.structural_oracle.kind, "structural");
+  assert.equal(audit.structural_oracle.status, "unknown");
+  assert.equal(audit.structural_oracle.advisory_only, true);
+  assert.equal(audit.structural_oracle.runtime_coverage, "not_measured");
+  assert.deepEqual(audit.structural_oracle.covered_impact_files, []);
+  assert.deepEqual(audit.structural_oracle.uncovered_impact_files, []);
+  assert.deepEqual(audit.structural_oracle.unknown_impact_files, expectedFiles);
+  assert.equal(audit.structural_oracle.unknown_reasons.length, 1);
+  assert.match(audit.structural_oracle.unknown_reasons[0], reason);
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {

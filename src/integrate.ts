@@ -261,6 +261,11 @@ function buildReport(
   if (verification !== null) {
     lines.push(`verification mode: ${verification.audit.mode}`);
     lines.push(`verification reason: ${verification.audit.reason}`);
+    lines.push(`structural oracle: ${verification.audit.structural_oracle.status} (advisory; runtime coverage not measured)`);
+    lines.push(`structurally covered impact files: ${verification.audit.structural_oracle.covered_impact_files.join(", ") || "(none)"}`);
+    lines.push(`structurally uncovered impact files: ${verification.audit.structural_oracle.uncovered_impact_files.join(", ") || "(none)"}`);
+    lines.push(`structurally unknown impact files: ${verification.audit.structural_oracle.unknown_impact_files.join(", ") || "(none)"}`);
+    lines.push(`structural oracle unknown reasons: ${verification.audit.structural_oracle.unknown_reasons.join("; ") || "(none)"}`);
     lines.push(`selected checks: ${verification.audit.selected_checks.map((check) => check.id).join(", ")}`);
     lines.push(`skipped checks: ${verification.audit.skipped_checks.map((check) => check.id).join(", ") || "(none)"}`);
     for (const check of verification.checks) {

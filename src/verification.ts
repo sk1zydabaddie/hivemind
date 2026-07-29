@@ -11,6 +11,8 @@ import type { RepoGraphArtifact, RepoGraphFile } from "./repo-graph.js";
 
 const execAsync = promisify(exec);
 const supportedExtensions = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"]);
+const structuralOracleLimitation =
+  "verification inventory entry_files are operator-declared; Hivemind does not prove that each command executes them";
 
 export interface VerificationCheckResult {
   id: string;
@@ -29,6 +31,22 @@ export interface VerificationAudit {
   skipped_checks: Array<{ id: string; reason: string }>;
   graph_fingerprint: string | null;
   canon_ids: string[];
+  structural_oracle: StructuralOracleMeasurement;
+}
+
+export interface StructuralOracleMeasurement {
+  kind: "structural";
+  status: "covered" | "uncovered" | "unknown";
+  advisory_only: true;
+  runtime_coverage: "not_measured";
+  graph_fingerprint: string | null;
+  impact_files: string[];
+  covered_impact_files: string[];
+  uncovered_impact_files: string[];
+  unknown_impact_files: string[];
+  check_associations: Array<{ impact_file: string; check_ids: string[] }>;
+  unknown_reasons: string[];
+  limitations: string[];
 }
 
 export interface VerificationRunResult {
@@ -81,55 +99,94 @@ export async function selectVerificationChecks(
   changedFiles: string[]
 ): Promise<VerificationAudit> {
   if (changedFiles.some((file) => normalizeRepoPath(file) === null)) {
-    return fullSuiteAudit(config, [], "change set contains an invalid or unconfined path");
+    const reason = "change set contains an invalid or unconfined path";
+    return fullSuiteAudit(config, [], reason, unknownStructuralOracle([], reason));
   }
   const normalizedChanges = normalizePaths(changedFiles);
-  const full = (reason: string): VerificationAudit => fullSuiteAudit(config, normalizedChanges, reason);
+  const unknownFull = (reason: string): VerificationAudit =>
+    fullSuiteAudit(config, normalizedChanges, reason, unknownStructuralOracle(normalizedChanges, reason));
   if (normalizedChanges.length === 0) {
-    return full("change set is empty or unavailable");
+    return unknownFull("change set is empty or unavailable");
   }
   if (normalizedChanges.some((file) => !isSupportedSource(file))) {
-    return full("change set includes a non-JS/TS file that the repo graph cannot resolve");
+    return unknownFull("change set includes a non-JS/TS file that the repo graph cannot resolve");
   }
   if (config.verification?.graph_enabled === false) {
-    return full("repo graph is disabled for verification");
+    return unknownFull("repo graph is disabled for verification");
   }
   const inventory = config.verification?.checks ?? [];
   if (inventory.length === 0) {
-    return full("structured verification inventory is missing");
+    return unknownFull("structured verification inventory is missing");
   }
 
   const tierResult = await maximumTaskTier(repoRoot, taskIds, config);
-  if (!tierResult.ok) {
-    return full(`task tier is uncertain: ${tierResult.reason}`);
-  }
-  if (tierResult.value === "high" || tierResult.value === "critical") {
-    return full(`${tierResult.value} tier always requires the full suite`);
-  }
+  const tierFullReason = !tierResult.ok
+    ? `task tier is uncertain: ${tierResult.reason}`
+    : tierResult.value === "high" || tierResult.value === "critical"
+      ? `${tierResult.value} tier always requires the full suite`
+      : null;
 
   const graphResult = await loadGraphFailSafe(repoRoot);
   if (!graphResult.ok) {
-    return full(`repo graph unavailable: ${graphResult.reason}`);
+    const measurementReason = `repo graph unavailable: ${graphResult.reason}`;
+    return fullSuiteAudit(
+      config,
+      normalizedChanges,
+      tierFullReason ?? measurementReason,
+      unknownStructuralOracle(normalizedChanges, measurementReason)
+    );
   }
   const filesByPath = new Map(graphResult.value.files.map((file) => [file.path, file]));
   const graphProblem = graphUncertaintyReason(graphResult.value);
   if (graphProblem !== null) {
-    return full(graphProblem);
+    return fullSuiteAudit(
+      config,
+      normalizedChanges,
+      tierFullReason ?? graphProblem,
+      unknownStructuralOracle(normalizedChanges, graphProblem, graphResult.value.source_fingerprint)
+    );
   }
   for (const changedFile of normalizedChanges) {
     if (!filesByPath.has(changedFile)) {
-      return full(`repo graph cannot resolve changed file "${changedFile}"`);
+      const reason = `repo graph cannot resolve changed file "${changedFile}"`;
+      return fullSuiteAudit(
+        config,
+        normalizedChanges,
+        tierFullReason ?? reason,
+        unknownStructuralOracle(normalizedChanges, reason, graphResult.value.source_fingerprint)
+      );
     }
   }
 
-  const graphSelections = new Map<string, Set<string>>();
   const impactSet = reverseImpactSet(normalizedChanges, graphResult.value);
+  const checkClosures = new Map<string, Set<string>>();
   for (const check of inventory) {
     const checkCoverage = checkCoverageFromGraph(check, filesByPath);
     if (!checkCoverage.ok) {
-      return full(checkCoverage.reason);
+      return fullSuiteAudit(
+        config,
+        normalizedChanges,
+        tierFullReason ?? checkCoverage.reason,
+        unknownStructuralOracle([...impactSet], checkCoverage.reason, graphResult.value.source_fingerprint)
+      );
     }
-    for (const file of checkCoverage.value) {
+    checkClosures.set(check.id, checkCoverage.value);
+  }
+  const structuralOracle = measureStructuralOracle(
+    impactSet,
+    inventory,
+    checkClosures,
+    graphResult.value.source_fingerprint
+  );
+  const full = (reason: string): VerificationAudit =>
+    fullSuiteAudit(config, normalizedChanges, reason, structuralOracle);
+  if (tierFullReason !== null) {
+    return full(tierFullReason);
+  }
+
+  const graphSelections = new Map<string, Set<string>>();
+  for (const check of inventory) {
+    for (const file of checkClosures.get(check.id) ?? []) {
       if (normalizedChanges.includes(file)) {
         addSelection(graphSelections, check.id, `graph:${file}`);
       }
@@ -185,11 +242,17 @@ export async function selectVerificationChecks(
       .filter((check) => !selectedIds.has(check.id))
       .map((check) => ({ id: check.id, reason: "outside the resolved impact set" })),
     graph_fingerprint: graphResult.value.source_fingerprint,
-    canon_ids: canonIds.sort(compareText)
+    canon_ids: canonIds.sort(compareText),
+    structural_oracle: structuralOracle
   };
 }
 
-function fullSuiteAudit(config: HivemindConfig, changedFiles: string[], reason: string): VerificationAudit {
+function fullSuiteAudit(
+  config: HivemindConfig,
+  changedFiles: string[],
+  reason: string,
+  structuralOracle: StructuralOracleMeasurement
+): VerificationAudit {
   return {
     mode: "full",
     reason,
@@ -198,7 +261,62 @@ function fullSuiteAudit(config: HivemindConfig, changedFiles: string[], reason: 
     selected_checks: [{ id: "full-suite", command: config.test_command, sources: ["fail-safe"] }],
     skipped_checks: [],
     graph_fingerprint: null,
-    canon_ids: []
+    canon_ids: [],
+    structural_oracle: structuralOracle
+  };
+}
+
+function measureStructuralOracle(
+  impactSet: Set<string>,
+  inventory: VerificationCheckConfig[],
+  checkClosures: Map<string, Set<string>>,
+  graphFingerprint: string
+): StructuralOracleMeasurement {
+  const impactFiles = [...impactSet].sort(compareText);
+  const associations = impactFiles.map((impactFile) => ({
+    impact_file: impactFile,
+    check_ids: inventory
+      .filter((check) => checkClosures.get(check.id)?.has(impactFile) === true)
+      .map((check) => check.id)
+      .sort(compareText)
+  }));
+  const covered = associations.filter((entry) => entry.check_ids.length > 0).map((entry) => entry.impact_file);
+  const uncovered = associations.filter((entry) => entry.check_ids.length === 0).map((entry) => entry.impact_file);
+  return {
+    kind: "structural",
+    status: uncovered.length === 0 ? "covered" : "uncovered",
+    advisory_only: true,
+    runtime_coverage: "not_measured",
+    graph_fingerprint: graphFingerprint,
+    impact_files: impactFiles,
+    covered_impact_files: covered,
+    uncovered_impact_files: uncovered,
+    unknown_impact_files: [],
+    check_associations: associations,
+    unknown_reasons: [],
+    limitations: [structuralOracleLimitation]
+  };
+}
+
+function unknownStructuralOracle(
+  impactFiles: string[],
+  reason: string,
+  graphFingerprint: string | null = null
+): StructuralOracleMeasurement {
+  const normalizedImpactFiles = normalizePaths(impactFiles);
+  return {
+    kind: "structural",
+    status: "unknown",
+    advisory_only: true,
+    runtime_coverage: "not_measured",
+    graph_fingerprint: graphFingerprint,
+    impact_files: normalizedImpactFiles,
+    covered_impact_files: [],
+    uncovered_impact_files: [],
+    unknown_impact_files: normalizedImpactFiles,
+    check_associations: [],
+    unknown_reasons: [reason],
+    limitations: [structuralOracleLimitation]
   };
 }
 
