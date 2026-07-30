@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { dirname } from "node:path";
 import { PassThrough } from "node:stream";
@@ -20,7 +20,49 @@ import { createRatifiedSpec } from "./support/spec.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(testDir, "../..");
 const cliPath = path.resolve(testDir, "../src/cli.js");
+
+test("promoted value-quality policy has exactly one shared authority reader", async () => {
+  const sourceDir = path.join(projectRoot, "src");
+  const sourceNames = (await readdir(sourceDir)).filter((name) => name.endsWith(".ts")).sort();
+  const sourceByName = new Map<string, string>();
+  for (const name of sourceNames) {
+    sourceByName.set(name, await readFile(path.join(sourceDir, name), "utf8"));
+  }
+
+  const learnedRoutingSource = sourceByName.get("learned-routing.ts") ?? "";
+  assert.match(
+    learnedRoutingSource,
+    /export async function readPromotedValueQualityPolicy[\s\S]*?return readPromotedEvidencePolicy\(/u,
+    "the value-quality reader must delegate to M7.5's shared promoted-evidence reader"
+  );
+
+  const canonPolicyReaders = [...sourceByName]
+    .filter(([, source]) =>
+      /import \{[^}]*readCanonMemory[^}]*\} from "\.\/memory-canon\.js"/su.test(source) &&
+      /entry\.value_quality_policy/u.test(source)
+    )
+    .map(([name]) => name);
+  assert.deepEqual(
+    canonPolicyReaders,
+    ["learned-routing.ts"],
+    "no second source module may read promoted value-quality policy directly from canon"
+  );
+
+  const promotedReaderCallers = [...sourceByName]
+    .filter(([, source]) => source.includes("readPromotedValueQualityPolicy"))
+    .map(([name]) => name)
+    .sort();
+  assert.deepEqual(
+    promotedReaderCallers,
+    ["learned-routing.ts", "value-quality.ts"],
+    "only the shared reader definition and value-quality admission primitive may reference the authority reader"
+  );
+
+  const valueQualitySource = sourceByName.get("value-quality.ts") ?? "";
+  assert.doesNotMatch(valueQualitySource, /readCanonMemory|memory-canon/u);
+});
 
 test("value-quality admission applies the tier floor and only promoted current Medium policy has authority", async () => {
   await withValueQualityRepo(async ({ repo, baseCommit }) => {
