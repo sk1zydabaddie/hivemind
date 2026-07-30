@@ -27,9 +27,31 @@ export interface SpeculativeDraftOutput {
   text: string;
 }
 
+export interface SpeculativeDraftProvenance {
+  source: "adapter";
+  tool: string;
+  provider_tier: "local" | "cheap" | "standard" | "strong";
+  profile_verified_on: string;
+  usage_session_id: string;
+  exit_code: number | null;
+  wall_time_ms: number;
+  effective_tokens: number | null;
+  accounting_source: "provider_reported" | "self_measured" | null;
+  provider_usage_status: "captured" | "not_available" | "expected_but_unparseable" | null;
+}
+
 export type SpeculativeDraftProducerResult =
-  | { status: "completed"; output?: SpeculativeDraftOutput[] }
-  | { status: "crashed" | "timed_out"; reason: string; output?: SpeculativeDraftOutput[] };
+  | {
+      status: "completed";
+      output?: SpeculativeDraftOutput[];
+      provenance?: SpeculativeDraftProvenance;
+    }
+  | {
+      status: "crashed" | "timed_out";
+      reason: string;
+      output?: SpeculativeDraftOutput[];
+      provenance?: SpeculativeDraftProvenance;
+    };
 
 export type SpeculativeDraftProducer = (
   checkoutPath: string
@@ -78,6 +100,7 @@ export interface SpeculativeDraftArtifact {
   checkout_instance_id: string;
   checkout_path_sha256: string;
   base_commit: string;
+  provenance: SpeculativeDraftProvenance | null;
   gate: DraftGateEvidence;
   shadow: DraftShadowEvidence;
 }
@@ -94,6 +117,7 @@ interface CheckoutExecution {
   output: SpeculativeDraftOutput[];
   checkoutInstanceId: string;
   checkoutPathSha256: string;
+  provenance: SpeculativeDraftProvenance | null;
   gate: DraftGateEvidence;
   shadow: DraftShadowEvidence;
 }
@@ -205,6 +229,7 @@ export async function disposeSpeculativeDraft(
     checkout_instance_id: execution.checkoutInstanceId,
     checkout_path_sha256: execution.checkoutPathSha256,
     base_commit: baseCommit.value,
+    provenance: execution.provenance,
     gate: execution.gate,
     shadow: execution.shadow
   };
@@ -269,12 +294,19 @@ async function executeInDetachedCheckout(
           checkoutInstanceId,
           checkoutPathSha256,
           `draft producer changed detached checkout HEAD from canonical base ${baseCommit} to ${headAfterProducer.trim()}`,
-          produced.output ?? []
+          produced.output ?? [],
+          produced.provenance ?? null
         );
       }
       const captured = await captureWorktreeDiff(checkoutPath, baseCommit);
       if (!captured.ok) {
-        return indeterminateExecution(checkoutInstanceId, checkoutPathSha256, captured.reason, produced.output ?? []);
+        return indeterminateExecution(
+          checkoutInstanceId,
+          checkoutPathSha256,
+          captured.reason,
+          produced.output ?? [],
+          produced.provenance ?? null
+        );
       }
       await writeFile(patchPath, captured.value.diff, "utf8");
       const files = await changedFiles(checkoutPath, baseCommit);
@@ -287,6 +319,7 @@ async function executeInDetachedCheckout(
           output: produced.output ?? [],
           checkoutInstanceId,
           checkoutPathSha256,
+          provenance: produced.provenance ?? null,
           gate: notRunGate(`draft producer ${produced.status}`),
           shadow: notRunShadow(`draft producer ${produced.status}`)
         };
@@ -300,6 +333,7 @@ async function executeInDetachedCheckout(
           output: produced.output ?? [],
           checkoutInstanceId,
           checkoutPathSha256,
+          provenance: produced.provenance ?? null,
           gate: notRunGate("empty drafts are ineligible"),
           shadow: notRunShadow("empty drafts are ineligible")
         };
@@ -321,6 +355,7 @@ async function executeInDetachedCheckout(
           output: produced.output ?? [],
           checkoutInstanceId,
           checkoutPathSha256,
+          provenance: produced.provenance ?? null,
           gate,
           shadow: notRunShadow("scope gate did not accept the draft")
         };
@@ -361,6 +396,7 @@ async function executeInDetachedCheckout(
         output: produced.output ?? [],
         checkoutInstanceId,
         checkoutPathSha256,
+        provenance: produced.provenance ?? null,
         gate,
         shadow
       };
@@ -408,6 +444,7 @@ async function writeDraftArtifact(
     diff_sha256: diffSha256,
     changed_files: execution.changedFiles,
     outcome: execution.outcome,
+    provenance: execution.provenance,
     advisory_only: true
   });
   await writeJsonAtomic(path.join(tempArtifactPath, "gate-result.json"), execution.gate);
@@ -479,7 +516,41 @@ function validateProducerResult(value: SpeculativeDraftProducerResult): Speculat
       }
     }
   }
+  if (value.provenance !== undefined) {
+    validateProducerProvenance(value.provenance);
+  }
   return value;
+}
+
+function validateProducerProvenance(value: SpeculativeDraftProvenance): void {
+  if (
+    value.source !== "adapter" ||
+    typeof value.tool !== "string" ||
+    value.tool.trim() === "" ||
+    (value.provider_tier !== "local" &&
+      value.provider_tier !== "cheap" &&
+      value.provider_tier !== "standard" &&
+      value.provider_tier !== "strong") ||
+    typeof value.profile_verified_on !== "string" ||
+    value.profile_verified_on.trim() === "" ||
+    typeof value.usage_session_id !== "string" ||
+    value.usage_session_id.trim() === "" ||
+    (value.exit_code !== null &&
+      (!Number.isSafeInteger(value.exit_code) || Number(value.exit_code) < 0)) ||
+    !Number.isSafeInteger(value.wall_time_ms) ||
+    value.wall_time_ms < 0 ||
+    (value.effective_tokens !== null &&
+      (!Number.isSafeInteger(value.effective_tokens) || value.effective_tokens < 0)) ||
+    (value.accounting_source !== null &&
+      value.accounting_source !== "provider_reported" &&
+      value.accounting_source !== "self_measured") ||
+    (value.provider_usage_status !== null &&
+      value.provider_usage_status !== "captured" &&
+      value.provider_usage_status !== "not_available" &&
+      value.provider_usage_status !== "expected_but_unparseable")
+  ) {
+    throw new Error("draft producer provenance is invalid");
+  }
 }
 
 function validateDraftNumber(admitted: AdmittedValueQualityRun, draftNumber: number): string | null {
@@ -509,7 +580,8 @@ function indeterminateExecution(
   checkoutInstanceId: string,
   checkoutPathSha256: string,
   reason: string,
-  output: SpeculativeDraftOutput[] = []
+  output: SpeculativeDraftOutput[] = [],
+  provenance: SpeculativeDraftProvenance | null = null
 ): CheckoutExecution {
   return {
     outcome: "indeterminate",
@@ -519,6 +591,7 @@ function indeterminateExecution(
     output,
     checkoutInstanceId,
     checkoutPathSha256,
+    provenance,
     gate: notRunGate(reason),
     shadow: notRunShadow(reason)
   };
