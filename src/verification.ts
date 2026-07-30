@@ -82,6 +82,7 @@ export async function runVerification(
     type: "verification.completed",
     task_id: null,
     data: {
+      task_ids: [...taskIds],
       ...audit,
       runtime_coverage: runtimeCoverage,
       results: checks.map((check) => ({

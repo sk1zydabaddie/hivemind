@@ -22,6 +22,30 @@ export interface ResolvedChangesetCheckouts {
 
 export type ApplyPatchResult = { ok: true } | { ok: false; reason: string };
 
+export async function withDetachedCheckout<T>(
+  repoRoot: string,
+  baseCommit: string,
+  callback: (checkoutPath: string) => Promise<T>
+): Promise<{ ok: true; value: T } | { ok: false; reason: string }> {
+  const tempRoot = await mkdtemp(path.join(tmpdir(), "hivemind-checkout-"));
+  const checkoutPath = path.join(tempRoot, "checkout");
+  let worktreeCreated = false;
+
+  try {
+    const worktreeResult = await addDetachedWorktree(repoRoot, checkoutPath, baseCommit);
+    if (!worktreeResult.ok) {
+      return worktreeResult;
+    }
+    worktreeCreated = true;
+    return { ok: true, value: await callback(checkoutPath) };
+  } finally {
+    if (worktreeCreated) {
+      await removeDetachedWorktree(repoRoot, checkoutPath);
+    }
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+}
+
 export async function resolveChangeset(
   repoRoot: string,
   baseCommit: string,
@@ -46,12 +70,12 @@ export async function withResolvedChangesetCheckouts<T>(
   const appliedCheckoutPath = path.join(tempRoot, "applied");
 
   try {
-    const baseWorktreeResult = await git(repoRoot, ["worktree", "add", "--detach", baseCheckoutPath, baseCommit]);
+    const baseWorktreeResult = await addDetachedWorktree(repoRoot, baseCheckoutPath, baseCommit);
     if (!baseWorktreeResult.ok) {
       return { ok: false, reason: baseWorktreeResult.reason };
     }
 
-    const appliedWorktreeResult = await git(repoRoot, ["worktree", "add", "--detach", appliedCheckoutPath, baseCommit]);
+    const appliedWorktreeResult = await addDetachedWorktree(repoRoot, appliedCheckoutPath, baseCommit);
     if (!appliedWorktreeResult.ok) {
       return { ok: false, reason: appliedWorktreeResult.reason };
     }
@@ -70,8 +94,8 @@ export async function withResolvedChangesetCheckouts<T>(
       })
     };
   } finally {
-    await git(repoRoot, ["worktree", "remove", "--force", baseCheckoutPath]);
-    await git(repoRoot, ["worktree", "remove", "--force", appliedCheckoutPath]);
+    await removeDetachedWorktree(repoRoot, baseCheckoutPath);
+    await removeDetachedWorktree(repoRoot, appliedCheckoutPath);
     await rm(tempRoot, { recursive: true, force: true });
   }
 }
@@ -191,6 +215,21 @@ async function git(cwd: string, args: string[]): Promise<{ ok: true; stdout: str
     const stdout = typeof error === "object" && error !== null && "stdout" in error ? String(error.stdout).trim() : "";
     return { ok: false, reason: stderr || stdout || "git command failed" };
   }
+}
+
+function addDetachedWorktree(
+  repoRoot: string,
+  checkoutPath: string,
+  baseCommit: string
+): Promise<{ ok: true; stdout: string } | { ok: false; reason: string }> {
+  return git(repoRoot, ["worktree", "add", "--detach", checkoutPath, baseCommit]);
+}
+
+function removeDetachedWorktree(
+  repoRoot: string,
+  checkoutPath: string
+): Promise<{ ok: true; stdout: string } | { ok: false; reason: string }> {
+  return git(repoRoot, ["worktree", "remove", "--force", checkoutPath]);
 }
 
 function normalizeGitPath(value: string): string {

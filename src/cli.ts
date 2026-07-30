@@ -19,6 +19,7 @@ import { runCommand } from "./run.js";
 import { scoutCommand } from "./scout.js";
 import { statusCommand } from "./status.js";
 import { submitCommand } from "./submit.js";
+import { verifyCommand } from "./verify.js";
 import { worktreeCommand } from "./worktree.js";
 
 async function main(argv: string[]): Promise<number> {
@@ -127,6 +128,10 @@ async function main(argv: string[]): Promise<number> {
 
   if (command === "status") {
     return statusCommand(process.cwd(), rest);
+  }
+
+  if (command === "verify") {
+    return verifyCommand(process.cwd(), rest);
   }
 
   if (command === "submit") {

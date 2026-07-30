@@ -46,6 +46,7 @@ test("localized verification runs fewer checks and still catches the regression"
     if (events.ok) {
       const audit = events.value.at(-1);
       assert.equal(audit?.type, "verification.completed");
+      assert.deepEqual(audit?.data.task_ids, ["T-LOW"]);
       assert.equal(audit?.data.mode, "subset");
       assert.deepEqual(audit?.data.structural_oracle, result.value.audit.structural_oracle);
       assert.deepEqual(result.value.audit.structural_oracle, {
