@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { isMemoryProposalId, type MemoryResult } from "./memory-types.js";
 import { validateLearnedRoutingPolicy, type LearnedRoutingPolicy } from "./routing-policy-schema.js";
+import { validateValueQualityPolicy, type ValueQualityPolicy } from "./value-quality-policy-schema.js";
 import { validateVerificationPolicy, type VerificationPolicy } from "./verification-policy-schema.js";
 
 export interface CanonMemoryEntry {
@@ -16,6 +17,7 @@ export interface CanonMemoryEntry {
   evidence: string[];
   source_task_id: string | null;
   routing_policy: LearnedRoutingPolicy | null;
+  value_quality_policy: ValueQualityPolicy | null;
   verification_policy: VerificationPolicy | null;
 }
 
@@ -66,6 +68,7 @@ export function formatCanonForPlanning(entries: CanonMemoryEntry[]): string {
       entry.lesson,
       `Evidence: ${entry.evidence.join(" | ")}`,
       ...(entry.routing_policy === null ? [] : [`Routing policy: ${JSON.stringify(entry.routing_policy)}`]),
+      ...(entry.value_quality_policy === null ? [] : [`Value-quality policy: ${JSON.stringify(entry.value_quality_policy)}`]),
       ...(entry.verification_policy === null ? [] : [`Verification policy: ${JSON.stringify(entry.verification_policy)}`])
     ].join("\n"))
     .join("\n\n");
@@ -87,6 +90,7 @@ function validateCanonMemoryEntry(value: unknown): MemoryResult<CanonMemoryEntry
     "title",
     "version",
     ...(Object.prototype.hasOwnProperty.call(value, "routing_policy") ? ["routing_policy"] : []),
+    ...(Object.prototype.hasOwnProperty.call(value, "value_quality_policy") ? ["value_quality_policy"] : []),
     ...(Object.prototype.hasOwnProperty.call(value, "verification_policy") ? ["verification_policy"] : [])
   ];
   if (JSON.stringify(Object.keys(value).sort(compareText)) !== JSON.stringify(expectedKeys.sort(compareText))) {
@@ -98,6 +102,9 @@ function validateCanonMemoryEntry(value: unknown): MemoryResult<CanonMemoryEntry
   const verificationPolicy = value.verification_policy === undefined || value.verification_policy === null
     ? { ok: true as const, value: null }
     : validateVerificationPolicy(value.verification_policy);
+  const valueQualityPolicy = value.value_quality_policy === undefined || value.value_quality_policy === null
+    ? { ok: true as const, value: null }
+    : validateValueQualityPolicy(value.value_quality_policy);
   if (
     value.version !== 1 ||
     typeof value.canon_id !== "string" ||
@@ -119,6 +126,7 @@ function validateCanonMemoryEntry(value: unknown): MemoryResult<CanonMemoryEntry
     value.evidence.some((item) => typeof item !== "string" || item.trim() === "") ||
     (value.source_task_id !== null && typeof value.source_task_id !== "string") ||
     !routingPolicy.ok ||
+    !valueQualityPolicy.ok ||
     !verificationPolicy.ok
   ) {
     return { ok: false, reason: "entry values do not match the canon schema" };
@@ -126,8 +134,9 @@ function validateCanonMemoryEntry(value: unknown): MemoryResult<CanonMemoryEntry
   return {
     ok: true,
     value: {
-      ...(value as unknown as Omit<CanonMemoryEntry, "routing_policy" | "verification_policy">),
+      ...(value as unknown as Omit<CanonMemoryEntry, "routing_policy" | "value_quality_policy" | "verification_policy">),
       routing_policy: routingPolicy.ok ? routingPolicy.value : null,
+      value_quality_policy: valueQualityPolicy.ok ? valueQualityPolicy.value : null,
       verification_policy: verificationPolicy.ok ? verificationPolicy.value : null
     }
   };

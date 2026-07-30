@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
 import { isMemoryProposalId, type MemoryResult } from "./memory-types.js";
 import { validateLearnedRoutingPolicy, type LearnedRoutingPolicy } from "./routing-policy-schema.js";
+import { validateValueQualityPolicy, type ValueQualityPolicy } from "./value-quality-policy-schema.js";
 import { validateVerificationPolicy, type VerificationPolicy } from "./verification-policy-schema.js";
 
 export interface MemoryProposalInput {
@@ -10,6 +11,7 @@ export interface MemoryProposalInput {
   evidence: string[];
   task_id?: string;
   routing_policy?: LearnedRoutingPolicy;
+  value_quality_policy?: ValueQualityPolicy;
   verification_policy?: VerificationPolicy;
 }
 
@@ -22,6 +24,7 @@ export interface MemoryProposal {
   evidence: string[];
   task_id: string | null;
   routing_policy: LearnedRoutingPolicy | null;
+  value_quality_policy: ValueQualityPolicy | null;
   verification_policy: VerificationPolicy | null;
 }
 
@@ -45,6 +48,7 @@ export async function proposeMemoryLesson(
       lesson: parsed.value.lesson,
       evidence: parsed.value.evidence,
       ...(parsed.value.routing_policy === null ? {} : { routing_policy: parsed.value.routing_policy }),
+      ...(parsed.value.value_quality_policy === null ? {} : { value_quality_policy: parsed.value.value_quality_policy }),
       ...(parsed.value.verification_policy === null ? {} : { verification_policy: parsed.value.verification_policy })
     }
   });
@@ -91,6 +95,7 @@ function validateMemoryProposalInput(
   evidence: string[];
   task_id: string | null;
   routing_policy: LearnedRoutingPolicy | null;
+  value_quality_policy: ValueQualityPolicy | null;
   verification_policy: VerificationPolicy | null;
 }> {
   if (!isRecord(input)) {
@@ -129,6 +134,12 @@ function validateMemoryProposalInput(
   if (!verificationPolicy.ok) {
     return { ok: false, reason: `memory proposal verification_policy is invalid: ${verificationPolicy.reason}` };
   }
+  const valueQualityPolicy = input.value_quality_policy === undefined
+    ? { ok: true as const, value: null }
+    : validateValueQualityPolicy(input.value_quality_policy);
+  if (!valueQualityPolicy.ok) {
+    return { ok: false, reason: `memory proposal value_quality_policy is invalid: ${valueQualityPolicy.reason}` };
+  }
   return {
     ok: true,
     value: {
@@ -137,6 +148,7 @@ function validateMemoryProposalInput(
       evidence,
       task_id: input.task_id?.trim() ?? null,
       routing_policy: routingPolicy.value,
+      value_quality_policy: valueQualityPolicy.value,
       verification_policy: verificationPolicy.value
     }
   };
@@ -157,6 +169,9 @@ function parseMemoryProposalEvent(event: HivemindEvent): MemoryResult<MemoryProp
   const verificationPolicy = event.data.verification_policy === undefined
     ? { ok: true as const, value: null }
     : validateVerificationPolicy(event.data.verification_policy);
+  const valueQualityPolicy = event.data.value_quality_policy === undefined
+    ? { ok: true as const, value: null }
+    : validateValueQualityPolicy(event.data.value_quality_policy);
   if (
     event.type !== "memory.proposed" ||
     typeof proposalId !== "string" ||
@@ -170,6 +185,7 @@ function parseMemoryProposalEvent(event: HivemindEvent): MemoryResult<MemoryProp
     evidence.length === 0 ||
     evidence.some((item) => typeof item !== "string" || item.trim() === "") ||
     !routingPolicy.ok ||
+    !valueQualityPolicy.ok ||
     !verificationPolicy.ok
   ) {
     return { ok: false, reason: "memory.proposed event has invalid proposal data" };
@@ -185,6 +201,7 @@ function parseMemoryProposalEvent(event: HivemindEvent): MemoryResult<MemoryProp
       evidence: evidence.map((item) => String(item).trim()),
       task_id: event.task_id,
       routing_policy: routingPolicy.ok ? routingPolicy.value : null,
+      value_quality_policy: valueQualityPolicy.ok ? valueQualityPolicy.value : null,
       verification_policy: verificationPolicy.ok ? verificationPolicy.value : null
     }
   };
@@ -199,6 +216,7 @@ function proposalFromEvent(
     evidence: string[];
     task_id: string | null;
     routing_policy: LearnedRoutingPolicy | null;
+    value_quality_policy: ValueQualityPolicy | null;
     verification_policy: VerificationPolicy | null;
   }
 ): MemoryProposal {
@@ -211,6 +229,7 @@ function proposalFromEvent(
     evidence: input.evidence,
     task_id: input.task_id,
     routing_policy: input.routing_policy,
+    value_quality_policy: input.value_quality_policy,
     verification_policy: input.verification_policy
   };
 }

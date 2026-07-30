@@ -3,7 +3,7 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
-import { readCanonMemory } from "./memory-canon.js";
+import { readCanonMemory, type CanonMemoryEntry } from "./memory-canon.js";
 import { proposeMemoryLesson, type MemoryProposal } from "./memory-log.js";
 import { findGitRoot } from "./repo.js";
 import {
@@ -13,6 +13,7 @@ import {
   type RoutingTaskTypeScorecard
 } from "./routing-policy-schema.js";
 import { isRoutingTaskType, type RoutingTaskType } from "./routing-task-type.js";
+import type { ValueQualityPolicy } from "./value-quality-policy-schema.js";
 
 export interface RoutingObservation {
   version: 1;
@@ -31,13 +32,22 @@ export interface RoutingObservation {
   handoff_from: string | null;
 }
 
-export interface RoutingPolicyStatus {
+interface EvidenceBoundPolicy {
+  source_evidence_hash: string;
+  source_event_count: number;
+}
+
+export interface PromotedEvidencePolicyStatus<Policy extends EvidenceBoundPolicy> {
   current_evidence_hash: string;
   current_evidence_event_count: number;
   promoted: "active" | "absent" | "stale" | "invalid";
-  active_policy: LearnedRoutingPolicy | null;
+  active_policy: Policy | null;
+  active_canon_id: string | null;
   reason: string | null;
 }
+
+export type RoutingPolicyStatus = PromotedEvidencePolicyStatus<LearnedRoutingPolicy>;
+export type ValueQualityPolicyStatus = PromotedEvidencePolicyStatus<ValueQualityPolicy>;
 
 export async function appendRoutingObservation(
   repoRoot: string,
@@ -152,6 +162,29 @@ export async function proposeLearnedRoutingPolicy(
 }
 
 export async function readPromotedRoutingPolicy(repoRoot: string): Promise<RoutingPolicyStatus> {
+  return readPromotedEvidencePolicy(
+    repoRoot,
+    (entry) => entry.routing_policy,
+    "no human-promoted learned routing policy exists",
+    "human-promoted learned routing policy does not match current Tier-1 routing evidence"
+  );
+}
+
+export async function readPromotedValueQualityPolicy(repoRoot: string): Promise<ValueQualityPolicyStatus> {
+  return readPromotedEvidencePolicy(
+    repoRoot,
+    (entry) => entry.value_quality_policy,
+    "no human-promoted value-quality policy exists",
+    "human-promoted value-quality policy does not match current Tier-1 routing evidence"
+  );
+}
+
+async function readPromotedEvidencePolicy<Policy extends EvidenceBoundPolicy>(
+  repoRoot: string,
+  selectPolicy: (entry: CanonMemoryEntry) => Policy | null,
+  absentReason: string,
+  staleReason: string
+): Promise<PromotedEvidencePolicyStatus<Policy>> {
   const events = await readEvents(repoRoot);
   if (!events.ok) {
     return {
@@ -159,6 +192,7 @@ export async function readPromotedRoutingPolicy(repoRoot: string): Promise<Routi
       current_evidence_event_count: 0,
       promoted: "invalid",
       active_policy: null,
+      active_canon_id: null,
       reason: events.reason
     };
   }
@@ -170,39 +204,47 @@ export async function readPromotedRoutingPolicy(repoRoot: string): Promise<Routi
       current_evidence_event_count: identity.count,
       promoted: "invalid",
       active_policy: null,
+      active_canon_id: null,
       reason: canon.reason
     };
   }
   const promoted = canon.value
-    .filter((entry) => entry.routing_policy !== null)
-    .sort((left, right) => right.approved_at.localeCompare(left.approved_at) || compareText(right.canon_id, left.canon_id));
+    .map((entry) => ({ entry, policy: selectPolicy(entry) }))
+    .filter((candidate): candidate is { entry: CanonMemoryEntry; policy: Policy } => candidate.policy !== null)
+    .sort((left, right) =>
+      right.entry.approved_at.localeCompare(left.entry.approved_at) ||
+      compareText(right.entry.canon_id, left.entry.canon_id)
+    );
   if (promoted.length === 0) {
     return {
       current_evidence_hash: identity.hash,
       current_evidence_event_count: identity.count,
       promoted: "absent",
       active_policy: null,
-      reason: "no human-promoted learned routing policy exists"
+      active_canon_id: null,
+      reason: absentReason
     };
   }
-  const current = promoted.find((entry) =>
-    entry.routing_policy?.source_evidence_hash === identity.hash &&
-    entry.routing_policy.source_event_count === identity.count
+  const current = promoted.find(({ policy }) =>
+    policy.source_evidence_hash === identity.hash &&
+    policy.source_event_count === identity.count
   );
-  if (current?.routing_policy === null || current === undefined) {
+  if (current === undefined) {
     return {
       current_evidence_hash: identity.hash,
       current_evidence_event_count: identity.count,
       promoted: "stale",
       active_policy: null,
-      reason: "human-promoted learned routing policy does not match current Tier-1 routing evidence"
+      active_canon_id: null,
+      reason: staleReason
     };
   }
   return {
     current_evidence_hash: identity.hash,
     current_evidence_event_count: identity.count,
     promoted: "active",
-    active_policy: current.routing_policy,
+    active_policy: current.policy,
+    active_canon_id: current.entry.canon_id,
     reason: null
   };
 }

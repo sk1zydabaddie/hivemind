@@ -30,6 +30,9 @@ export async function reviewMemoryProposalInteractively(
     ...(proposal.value.routing_policy === null
       ? []
       : ["Structured routing policy:", JSON.stringify(proposal.value.routing_policy, null, 2)]),
+    ...(proposal.value.value_quality_policy === null
+      ? []
+      : ["Structured value-quality policy:", JSON.stringify(proposal.value.value_quality_policy, null, 2)]),
     ...(proposal.value.verification_policy === null
       ? []
       : ["Structured verification policy:", JSON.stringify(proposal.value.verification_policy, null, 2)])
@@ -64,6 +67,7 @@ export async function reviewMemoryProposalInteractively(
     evidence: proposal.value.evidence,
     source_task_id: proposal.value.task_id,
     routing_policy: proposal.value.routing_policy,
+    value_quality_policy: proposal.value.value_quality_policy,
     verification_policy: proposal.value.verification_policy
   };
   await writeJsonAtomic(canonPath, entry);

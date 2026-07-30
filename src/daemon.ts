@@ -21,6 +21,7 @@ import { getStatus } from "./status.js";
 import { submitTask } from "./submit.js";
 import { recordRedirectFirstCorrection } from "./supervision.js";
 import { validateRequestedTaskId } from "./task-id.js";
+import { admitValueQuality } from "./value-quality.js";
 import { createTaskWorktree, removeTaskWorktree } from "./worktree.js";
 
 interface DaemonOptions {
@@ -161,6 +162,21 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
   }
   if (request.method === "POST" && request.url === "/routing/derive") {
     return async () => proposeLearnedRoutingPolicy(repoRoot);
+  }
+  if (request.method === "POST" && request.url === "/quality/admit") {
+    return async (payload) => {
+      const taskId = readTaskId(payload);
+      if (!taskId.ok) {
+        return taskId;
+      }
+      if (Object.keys(payload).some((key) => key !== "task_id" && key !== "strategy" && key !== "n")) {
+        return { ok: false, reason: "value-quality admission payload contains an unsupported field" };
+      }
+      return admitValueQuality(repoRoot, taskId.value, {
+        strategy: payload.strategy,
+        ...(payload.n === undefined ? {} : { n: payload.n })
+      });
+    };
   }
   if (request.method === "POST" && request.url === "/checkpoint/task") {
     return async (payload) => {

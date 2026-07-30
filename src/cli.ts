@@ -20,6 +20,7 @@ import { scoutCommand } from "./scout.js";
 import { statusCommand } from "./status.js";
 import { submitCommand } from "./submit.js";
 import { verifyCommand } from "./verify.js";
+import { valueQualityCommand } from "./value-quality.js";
 import { worktreeCommand } from "./worktree.js";
 
 async function main(argv: string[]): Promise<number> {
@@ -63,6 +64,10 @@ async function main(argv: string[]): Promise<number> {
 
   if (command === "routing") {
     return routingCommand(process.cwd(), rest);
+  }
+
+  if (command === "quality") {
+    return valueQualityCommand(process.cwd(), rest);
   }
 
   if (command === "worktree") {

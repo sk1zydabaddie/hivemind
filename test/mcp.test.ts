@@ -93,6 +93,48 @@ test("MCP tool calls fail closed without a configured daemon", async () => {
   });
 });
 
+test("MCP cannot bypass Low-tier value-quality admission through the daemon", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const configPath = path.join(repo, ".hivemind", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    config.low_globs = ["README.md"];
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+    const tasksDir = path.join(repo, ".hivemind", "tasks");
+    await mkdir(tasksDir, { recursive: true });
+    await writeFile(
+      path.join(tasksDir, "T-QUALITY.contract.json"),
+      `${JSON.stringify(buildContract("T-QUALITY", baseCommit, ["README.md"]), null, 2)}\n`
+    );
+    const daemon = await startDaemon(repo);
+    try {
+      await withStdioMcpClient(repo, daemon.url, "hivemind-value-quality-floor-test", async (client) => {
+        const result = await client.callTool({
+          name: "hivemind.admit_value_quality",
+          arguments: {
+            task_id: "T-QUALITY",
+            strategy: "best_of_n",
+            n: 2,
+            force: true
+          }
+        });
+        assert.equal(result.isError, true);
+        assert.match(JSON.stringify(result.content), /Low-tier tasks are never admitted/);
+      });
+      const events = await readEvents(repo);
+      assert.equal(events.ok, true);
+      if (events.ok) {
+        assert.equal(events.value.some((event) =>
+          event.type === "quality.admission_decided" &&
+          event.task_id === "T-QUALITY" &&
+          event.data.admitted === false
+        ), true);
+      }
+    } finally {
+      await stopProcess(daemon);
+    }
+  });
+});
+
 test("MCP tools route through daemon and match the core task/worktree/patch/status flow", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await setConfigTestCommand(repo, "node -e \"process.exit(0)\"");

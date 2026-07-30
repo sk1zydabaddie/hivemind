@@ -32,6 +32,7 @@ import { loadSpecDocument } from "./spec-format.js";
 import { getStatus, type HivemindStatus } from "./status.js";
 import { submitTask, type SubmitResult } from "./submit.js";
 import { recordRedirectFirstCorrection, type RedirectCorrectionRecord } from "./supervision.js";
+import { admitValueQuality, type ValueQualityAdmission, type ValueQualityStrategy } from "./value-quality.js";
 import { createTaskWorktree, type WorktreeResult } from "./worktree.js";
 
 interface ManagerSession {
@@ -105,6 +106,7 @@ export type ManagerAction =
   | { type: "submit_patch"; task_id: string }
   | { type: "analyze_patch"; task_id: string }
   | { type: "enqueue_patch"; task_id: string }
+  | { type: "admit_value_quality"; task_id: string; strategy: ValueQualityStrategy; n?: number }
   | { type: "integrate_shadow" };
 
 export interface ManagerSessionResult {
@@ -790,6 +792,9 @@ function parseHumanApprovalList(raw: unknown): SpecResult<ManagerAction["type"][
 
 function validateGeneratedManagerActions(actions: ManagerAction[], approvals: ManagerAction["type"][]): SpecResult<void> {
   for (const action of actions) {
+    if (action.type === "admit_value_quality") {
+      return { ok: false, reason: "autonomous manager must not propose value-quality admission; quality strategies are human-triggered on demand" };
+    }
     if (action.type === "run_worker") {
       if (action.allow_dangerous_adapter === true) {
         return { ok: false, reason: "manager proposal must not set allow_dangerous_adapter" };
@@ -1474,6 +1479,23 @@ async function executeDeterministicAction(repoRoot: string, sessionId: string, a
       )
     );
   }
+  if (action.type === "admit_value_quality") {
+    return recordResult(
+      await routeMutatingAction<ValueQualityAdmission>(
+        repoRoot,
+        "/quality/admit",
+        {
+          task_id: action.task_id,
+          strategy: action.strategy,
+          ...(action.n === undefined ? {} : { n: action.n })
+        },
+        () => admitValueQuality(repoRoot, action.task_id, {
+          strategy: action.strategy,
+          ...(action.n === undefined ? {} : { n: action.n })
+        })
+      )
+    );
+  }
   return recordResult(await routeMutatingAction<IntegrationStatus>(repoRoot, "/integrate/shadow", {}, () => integrateShadow(repoRoot)));
 }
 
@@ -1722,6 +1744,26 @@ function parseManagerAction(raw: unknown): SpecResult<ManagerAction> {
       ? { ok: true, value: { type: "check_write_intent", task_id: raw.task_id, intent: raw.intent } }
       : { ok: false, reason: "check_write_intent action requires only task_id and intent object" };
   }
+  if (raw.type === "admit_value_quality") {
+    const allowedKeys = new Set(["type", "task_id", "strategy", "n"]);
+    if (
+      typeof raw.task_id !== "string" ||
+      (raw.strategy !== "best_of_n" && raw.strategy !== "draft_refine") ||
+      (raw.n !== undefined && !Number.isSafeInteger(raw.n)) ||
+      Object.keys(raw).some((key) => !allowedKeys.has(key))
+    ) {
+      return { ok: false, reason: "admit_value_quality action accepts task_id, strategy, and optional integer n only" };
+    }
+    return {
+      ok: true,
+      value: {
+        type: "admit_value_quality",
+        task_id: raw.task_id,
+        strategy: raw.strategy,
+        ...(raw.n === undefined ? {} : { n: Number(raw.n) })
+      }
+    };
+  }
   if (isTaskActionType(raw.type)) {
     if (typeof raw.task_id !== "string") {
       return { ok: false, reason: `${raw.type} action requires task_id` };
@@ -1765,7 +1807,7 @@ function parseManagerActionList(raw: unknown, label = "fake-manager action file"
 }
 
 function isManagerActionType(value: string): value is ManagerAction["type"] {
-  return value === "get_status" || value === "integrate_shadow" || isTaskActionType(value) || value === "create_task_contract" || value === "check_write_intent";
+  return value === "get_status" || value === "integrate_shadow" || value === "admit_value_quality" || isTaskActionType(value) || value === "create_task_contract" || value === "check_write_intent";
 }
 
 function isTaskActionType(value: string): value is "request_lease" | "create_worktree" | "scout_task" | "run_worker" | "submit_patch" | "analyze_patch" | "enqueue_patch" {

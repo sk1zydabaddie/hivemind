@@ -113,8 +113,9 @@ async function readProposalInput(filePath: string): Promise<MemoryResult<MemoryP
     return { ok: false, reason: "memory proposal file must contain a JSON object" };
   }
   const keys = Object.keys(parsed).sort();
-  if (keys.some((key) => !["evidence", "lesson", "task_id", "title"].includes(key))) {
-    return { ok: false, reason: `unsupported memory proposal field: ${keys.find((key) => !["evidence", "lesson", "task_id", "title"].includes(key))}` };
+  const allowedKeys = ["evidence", "lesson", "routing_policy", "task_id", "title", "value_quality_policy", "verification_policy"];
+  if (keys.some((key) => !allowedKeys.includes(key))) {
+    return { ok: false, reason: `unsupported memory proposal field: ${keys.find((key) => !allowedKeys.includes(key))}` };
   }
   return {
     ok: true,
@@ -122,7 +123,10 @@ async function readProposalInput(filePath: string): Promise<MemoryResult<MemoryP
       title: parsed.title as string,
       lesson: parsed.lesson as string,
       evidence: parsed.evidence as string[],
-      ...(parsed.task_id === undefined ? {} : { task_id: parsed.task_id as string })
+      ...(parsed.task_id === undefined ? {} : { task_id: parsed.task_id as string }),
+      ...(parsed.routing_policy === undefined ? {} : { routing_policy: parsed.routing_policy as MemoryProposalInput["routing_policy"] }),
+      ...(parsed.value_quality_policy === undefined ? {} : { value_quality_policy: parsed.value_quality_policy as MemoryProposalInput["value_quality_policy"] }),
+      ...(parsed.verification_policy === undefined ? {} : { verification_policy: parsed.verification_policy as MemoryProposalInput["verification_policy"] })
     }
   };
 }

@@ -65,6 +65,12 @@ export const mcpToolDefinitions: McpToolDefinition[] = [
     title: "Integrate shadow",
     description: "Run shadow integration for accepted queued patches.",
     readOnly: false
+  },
+  {
+    name: "hivemind.admit_value_quality",
+    title: "Admit value-quality spending",
+    description: "Apply the deterministic value-quality spending admission floor for an explicit task.",
+    readOnly: false
   }
 ];
 
@@ -114,6 +120,19 @@ function createHivemindMcpServer(repoRoot: string): McpServer {
   registerTaskTool(server, repoRoot, "hivemind.submit_patch", "/submit");
   registerTaskTool(server, repoRoot, "hivemind.analyze_patch", "/analyze/verdict");
   registerNoArgTool(server, repoRoot, "hivemind.integrate_shadow", "/integrate/shadow");
+  server.registerTool(
+    "hivemind.admit_value_quality",
+    toolConfig("hivemind.admit_value_quality", {
+      task_id: z.string(),
+      strategy: z.enum(["best_of_n", "draft_refine"]),
+      n: z.number().int().optional()
+    }),
+    async ({ task_id, strategy, n }) => mcpDaemonCall(repoRoot, "/quality/admit", {
+      task_id,
+      strategy,
+      ...(n === undefined ? {} : { n })
+    })
+  );
 
   return server;
 }
