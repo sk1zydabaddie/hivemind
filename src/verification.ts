@@ -52,6 +52,12 @@ export interface VerificationRunResult {
   tests: "pass" | "fail";
 }
 
+export interface QualityDraftVerificationContext {
+  quality_run_id: string;
+  draft_id: string;
+  task_id: string;
+}
+
 export type VerificationResult<T> = { ok: true; value: T } | { ok: false; reason: string };
 
 export async function runVerification(
@@ -59,7 +65,8 @@ export async function runVerification(
   worktreeRoot: string,
   config: HivemindConfig,
   taskIds: string[],
-  changedFiles: string[]
+  changedFiles: string[],
+  qualityDraft?: QualityDraftVerificationContext
 ): Promise<VerificationResult<VerificationRunResult>> {
   const audit = await selectVerificationChecks(repoRoot, config, taskIds, changedFiles);
   const checks: VerificationCheckResult[] = [];
@@ -79,9 +86,16 @@ export async function runVerification(
     tests: checks.every((check) => check.exit_code === 0) ? "pass" : "fail"
   };
   const eventResult = await appendEvent(repoRoot, {
-    type: "verification.completed",
-    task_id: null,
+    type: qualityDraft === undefined ? "verification.completed" : "quality.draft_verified",
+    task_id: qualityDraft?.task_id ?? null,
     data: {
+      ...(qualityDraft === undefined
+        ? {}
+        : {
+            quality_run_id: qualityDraft.quality_run_id,
+            draft_id: qualityDraft.draft_id,
+            advisory_only: true
+          }),
       task_ids: [...taskIds],
       ...audit,
       runtime_coverage: runtimeCoverage,

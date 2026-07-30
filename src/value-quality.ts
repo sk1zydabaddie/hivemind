@@ -8,6 +8,7 @@ import { findGitRoot } from "./repo.js";
 import { checkTokenBudgetPreflight } from "./resource-ledger.js";
 import { inferTaskTier, routeTaskProvider, type RouteDecision, type TaskTier } from "./routing.js";
 import { isRoutingTaskType, type RoutingTaskType } from "./routing-task-type.js";
+import { validateTaskId } from "./task-id.js";
 
 export type ValueQualityStrategy = "best_of_n" | "draft_refine";
 
@@ -31,6 +32,15 @@ export interface ValueQualityCallAuthorization {
   quality_run_id: string;
   task_id: string;
   route: RouteDecision;
+}
+
+export interface AdmittedValueQualityRun {
+  quality_run_id: string;
+  task_id: string;
+  strategy: ValueQualityStrategy;
+  draft_count: number | null;
+  task_tier: TaskTier;
+  routing_task_type: RoutingTaskType;
 }
 
 interface AdmissionRequest {
@@ -68,7 +78,7 @@ export async function admitValueQuality(
     return config;
   }
   const evaluation = await evaluateAdmission(repoRoot, contract.contract.routing_task_type, inferTaskTier(contract.contract, config.config));
-  const qualityRunId = `Q-${randomUUID()}`;
+  const qualityRunId = `Q-${taskId}-${randomUUID()}`;
   const draftCount = parsed.value.strategy === "best_of_n" ? parsed.value.n ?? 2 : null;
   const eventData = {
     version: 1,
@@ -121,20 +131,11 @@ export async function authorizeValueQualityCall(
   qualityRunId: string,
   options: { requestedTool?: string; estimatedInputTokens?: number } = {}
 ): Promise<{ ok: true; value: ValueQualityCallAuthorization } | { ok: false; reason: string }> {
-  if (!isQualityRunId(qualityRunId)) {
-    return { ok: false, reason: "quality_run_id must use the Q-<uuid> format" };
+  const admitted = await loadAdmittedValueQualityRun(repoRoot, qualityRunId);
+  if (!admitted.ok) {
+    return admitted;
   }
-  const eventResult = await readEvents(repoRoot);
-  if (!eventResult.ok) {
-    return eventResult;
-  }
-  const matches = eventResult.value.filter(
-    (event) => event.type === "quality.admission_decided" && event.data.quality_run_id === qualityRunId
-  );
-  if (matches.length !== 1 || !isValidAdmittedDecision(matches[0].task_id, matches[0].data)) {
-    return { ok: false, reason: `quality run is not backed by exactly one admitted durable decision: ${qualityRunId}` };
-  }
-  const taskId = matches[0].task_id as string;
+  const taskId = admitted.value.task_id;
   const contract = await loadAndValidateContract(repoRoot, taskId);
   if (!contract.ok) {
     return contract;
@@ -162,6 +163,41 @@ export async function authorizeValueQualityCall(
       quality_run_id: qualityRunId,
       task_id: taskId,
       route: route.value
+    }
+  };
+}
+
+export async function loadAdmittedValueQualityRun(
+  repoRoot: string,
+  qualityRunId: string
+): Promise<{ ok: true; value: AdmittedValueQualityRun } | { ok: false; reason: string }> {
+  const parsedId = parseQualityRunId(qualityRunId);
+  if (!parsedId.ok) {
+    return parsedId;
+  }
+  const eventResult = await readEvents(repoRoot);
+  if (!eventResult.ok) {
+    return eventResult;
+  }
+  const matches = eventResult.value.filter(
+    (event) => event.type === "quality.admission_decided" && event.data.quality_run_id === qualityRunId
+  );
+  if (matches.length !== 1 || !isValidAdmittedDecision(matches[0].task_id, matches[0].data)) {
+    return { ok: false, reason: `quality run is not backed by exactly one admitted durable decision: ${qualityRunId}` };
+  }
+  const event = matches[0];
+  if (event.task_id !== parsedId.taskId) {
+    return { ok: false, reason: `quality_run_id task identity ${parsedId.taskId} does not match admitted task ${event.task_id}` };
+  }
+  return {
+    ok: true,
+    value: {
+      quality_run_id: qualityRunId,
+      task_id: event.task_id,
+      strategy: event.data.strategy as ValueQualityStrategy,
+      draft_count: event.data.draft_count as number | null,
+      task_tier: event.data.task_tier as TaskTier,
+      routing_task_type: event.data.routing_task_type as RoutingTaskType
     }
   };
 }
@@ -327,8 +363,12 @@ function valueQualityUsage(): string {
   return "usage: hivemind quality admit <task-id> --strategy best-of-n [--n 2|3] | draft-refine";
 }
 
-function isQualityRunId(value: string): boolean {
-  return /^Q-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
+function parseQualityRunId(value: string): { ok: true; taskId: string } | { ok: false; reason: string } {
+  const match = value.match(/^Q-(.+)-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu);
+  if (match === null || validateTaskId(match[1]) !== null) {
+    return { ok: false, reason: "quality_run_id must use the Q-<task-id>-<uuid> format" };
+  }
+  return { ok: true, taskId: match[1] };
 }
 
 function isValidAdmittedDecision(taskId: string | null, data: Record<string, unknown>): boolean {
@@ -337,7 +377,7 @@ function isValidAdmittedDecision(taskId: string | null, data: Record<string, unk
     data.version !== 1 ||
     data.admitted !== true ||
     typeof data.quality_run_id !== "string" ||
-    !isQualityRunId(data.quality_run_id) ||
+    !parseQualityRunId(data.quality_run_id).ok ||
     (data.strategy !== "best_of_n" && data.strategy !== "draft_refine") ||
     typeof data.reason !== "string" ||
     data.reason.trim() === "" ||

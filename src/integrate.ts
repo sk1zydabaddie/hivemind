@@ -4,7 +4,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { analyzeTask } from "./analyze.js";
 import { writeJsonAtomic } from "./atomic.js";
-import { loadConfig } from "./config.js";
+import { loadConfig, type HivemindConfig } from "./config.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent, readEvents } from "./events.js";
 import {
@@ -20,10 +20,12 @@ import { type TaskTier } from "./routing.js";
 import {
   resolveMaximumTaskTier,
   runVerification,
+  type QualityDraftVerificationContext,
   type VerificationRunResult
 } from "./verification.js";
 
 export type { IntegrationQueueEntry, IntegrationStatus } from "./integration-state.js";
+export type { VerificationRunResult } from "./verification.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -31,6 +33,17 @@ export interface EnqueueIntegrationPatchResult {
   task_id: string;
   queue_path: string;
   queue: string[];
+}
+
+export async function runShadowVerification(
+  repoRoot: string,
+  worktreeRoot: string,
+  config: HivemindConfig,
+  taskIds: string[],
+  changedFiles: string[],
+  qualityDraft?: QualityDraftVerificationContext
+) {
+  return runVerification(repoRoot, worktreeRoot, config, taskIds, changedFiles, qualityDraft);
 }
 
 interface GateSummary {
@@ -150,7 +163,7 @@ export async function integrateShadow(
         if (!changedFilesResult.ok) {
           outcome = { ok: false, reason: `failed to identify shadow changes: ${changedFilesResult.reason}` };
         } else {
-          const verification = await runVerification(
+          const verification = await runShadowVerification(
             repoRoot,
             worktreePath,
             configResult.config,
