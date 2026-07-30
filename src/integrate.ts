@@ -16,7 +16,12 @@ import { requireTaskDependenciesIntegrated } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { validateRequestedTaskId } from "./task-id.js";
-import { runVerification, type VerificationRunResult } from "./verification.js";
+import { type TaskTier } from "./routing.js";
+import {
+  resolveMaximumTaskTier,
+  runVerification,
+  type VerificationRunResult
+} from "./verification.js";
 
 export type { IntegrationQueueEntry, IntegrationStatus } from "./integration-state.js";
 
@@ -32,6 +37,21 @@ interface GateSummary {
   taskId: string;
   verdict: "accept" | "reject" | "escalate";
   reason: string;
+}
+
+interface OracleFloorAssessment {
+  coverage_configured: boolean;
+  binding: boolean;
+  task_tier: TaskTier;
+  status: "unconfigured" | "strong" | "weak" | "unknown";
+  decision: "proceed" | "proceed_low_confidence" | "block";
+  diagnostic: string;
+  uncovered_changed_lines: string[];
+  uncovered_impact_files: string[];
+  unknown_files: string[];
+  unknown_reasons: string[];
+  recommendation: string | null;
+  automatic_generation_launched: false;
 }
 
 export async function integrateCommand(cwd: string, args: string[]): Promise<number> {
@@ -140,15 +160,56 @@ export async function integrateShadow(
           if (!verification.ok) {
             outcome = verification;
           } else {
-            status = {
-              branch,
-              applied: accepted,
-              tests: verification.value.tests,
-              report: buildReport(gateResult.value, verification.value, null)
-            };
-            await writeIntegrationStatus(repoRoot, status);
-            const eventResult = await appendIntegrationEvent(repoRoot, status);
-            outcome = eventResult.ok ? { ok: true, value: status } : eventResult;
+            const tierResult = await resolveMaximumTaskTier(repoRoot, accepted, configResult.config);
+            if (!tierResult.ok) {
+              outcome = { ok: false, reason: `oracle floor could not determine task tier: ${tierResult.reason}` };
+            } else {
+              const oracleFloor = assessOracleFloor(verification.value, tierResult.value);
+              const report = buildReport(gateResult.value, verification.value, null, oracleFloor);
+              if (verification.value.tests === "pass" && oracleFloor.decision === "block") {
+                status = {
+                  branch,
+                  applied: accepted,
+                  tests: "blocked",
+                  report
+                };
+                const eventResult = await appendOracleFloorEvent(repoRoot, "integration.blocked", status, oracleFloor);
+                if (!eventResult.ok) {
+                  outcome = eventResult;
+                } else {
+                  await writeIntegrationStatus(repoRoot, status);
+                  outcome = { ok: false, reason: oracleBlockReason(oracleFloor) };
+                }
+              } else {
+                if (verification.value.tests === "pass" && oracleFloor.decision === "proceed_low_confidence") {
+                  const confidenceEvent = await appendOracleFloorEvent(
+                    repoRoot,
+                    "integration.low_confidence",
+                    {
+                      branch,
+                      applied: accepted,
+                      tests: "pass",
+                      report
+                    },
+                    oracleFloor
+                  );
+                  if (!confidenceEvent.ok) {
+                    outcome = confidenceEvent;
+                  }
+                }
+                if (outcome === null) {
+                  status = {
+                    branch,
+                    applied: accepted,
+                    tests: verification.value.tests,
+                    report
+                  };
+                  await writeIntegrationStatus(repoRoot, status);
+                  const eventResult = await appendIntegrationEvent(repoRoot, status);
+                  outcome = eventResult.ok ? { ok: true, value: status } : eventResult;
+                }
+              }
+            }
           }
         }
       }
@@ -248,7 +309,8 @@ async function gateQueue(repoRoot: string, queue: IntegrationQueueEntry[]): Prom
 function buildReport(
   gateSummaries: GateSummary[],
   verification: VerificationRunResult | null,
-  applyError: string | null
+  applyError: string | null,
+  oracleFloor: OracleFloorAssessment | null = null
 ): string {
   const lines = [
     "gate results:",
@@ -268,7 +330,7 @@ function buildReport(
     lines.push(`structurally uncovered impact files: ${verification.audit.structural_oracle.uncovered_impact_files.join(", ") || "(none)"}`);
     lines.push(`structurally unknown impact files: ${verification.audit.structural_oracle.unknown_impact_files.join(", ") || "(none)"}`);
     lines.push(`structural oracle unknown reasons: ${verification.audit.structural_oracle.unknown_reasons.join("; ") || "(none)"}`);
-    lines.push(`runtime changed-line coverage: ${verification.runtime_coverage.status} (advisory)`);
+    lines.push(`runtime changed-line coverage: ${verification.runtime_coverage.status}`);
     lines.push(`runtime coverage coordinate space: ${verification.runtime_coverage.coordinate_space}`);
     lines.push(`runtime coverage applied tree: ${verification.runtime_coverage.applied_tree ?? "(none)"}`);
     lines.push(
@@ -285,8 +347,88 @@ function buildReport(
       lines.push(`stderr:\n${trimReportOutput(check.stderr)}`);
     }
   }
+  if (oracleFloor !== null) {
+    lines.push(`oracle floor task tier: ${oracleFloor.task_tier}`);
+    lines.push(`oracle floor coverage configured: ${oracleFloor.coverage_configured}`);
+    lines.push(`oracle floor binding: ${oracleFloor.binding}`);
+    lines.push(`oracle floor status: ${oracleFloor.status}`);
+    lines.push(`oracle floor decision: ${oracleFloor.decision}`);
+    lines.push(`oracle floor diagnostic: ${oracleFloor.diagnostic}`);
+    lines.push(`oracle floor uncovered changed lines: ${oracleFloor.uncovered_changed_lines.join(", ") || "(none)"}`);
+    lines.push(`oracle floor uncovered impact files: ${oracleFloor.uncovered_impact_files.join(", ") || "(none)"}`);
+    lines.push(`oracle floor unknown files: ${oracleFloor.unknown_files.join(", ") || "(none)"}`);
+    lines.push(`oracle floor unknown reasons: ${oracleFloor.unknown_reasons.join("; ") || "(none)"}`);
+    lines.push(`oracle floor remediation: ${oracleFloor.recommendation ?? "(none)"}`);
+    lines.push("oracle floor automatic characterization launched: false");
+  }
 
   return `${lines.join("\n")}\n`;
+}
+
+function assessOracleFloor(verification: VerificationRunResult, taskTier: TaskTier): OracleFloorAssessment {
+  const runtime = verification.runtime_coverage;
+  const structural = verification.audit.structural_oracle;
+  const highRisk = taskTier === "high" || taskTier === "critical";
+  const uncoveredChangedLines = runtime.uncovered_lines.map((line) => `${line.file}:${line.line}`);
+  const unknownFiles = [...new Set([...runtime.unknown_files, ...structural.unknown_impact_files])].sort();
+  const unknownReasons = [...new Set([...runtime.unknown_reasons, ...structural.unknown_reasons])];
+
+  if (!runtime.configured || runtime.status === "unconfigured") {
+    return {
+      coverage_configured: false,
+      binding: false,
+      task_tier: taskTier,
+      status: "unconfigured",
+      decision: "proceed",
+      diagnostic: "coverage is not configured; the structural oracle remains advisory and the M7.6d floor does not bind",
+      uncovered_changed_lines: [],
+      uncovered_impact_files: structural.uncovered_impact_files,
+      unknown_files: unknownFiles,
+      unknown_reasons: unknownReasons,
+      recommendation: null,
+      automatic_generation_launched: false
+    };
+  }
+
+  const status =
+    runtime.status === "weak" || structural.status === "uncovered"
+      ? "weak"
+      : runtime.status === "unknown" || structural.status === "unknown"
+        ? "unknown"
+        : "strong";
+  const diagnostic =
+    status === "weak"
+      ? "configured oracle evidence was measured, but coverage is thin"
+      : status === "unknown"
+        ? "configured oracle evidence could not be measured with confidence"
+        : "configured runtime changed-line coverage is complete and every graph-resolved impact file has an exercising check";
+  return {
+    coverage_configured: true,
+    binding: highRisk,
+    task_tier: taskTier,
+    status,
+    decision: status === "strong" ? "proceed" : highRisk ? "block" : "proceed_low_confidence",
+    diagnostic,
+    uncovered_changed_lines: uncoveredChangedLines,
+    uncovered_impact_files: structural.uncovered_impact_files,
+    unknown_files: unknownFiles,
+    unknown_reasons: unknownReasons,
+    recommendation: status === "strong" ? null : "hivemind verify characterize ...",
+    automatic_generation_launched: false
+  };
+}
+
+function oracleBlockReason(assessment: OracleFloorAssessment): string {
+  const details = [
+    `oracle floor blocked shadow integration: configured coverage is ${assessment.status} for ${assessment.task_tier} tier`,
+    assessment.diagnostic,
+    `uncovered changed lines: ${assessment.uncovered_changed_lines.join(", ") || "(none)"}`,
+    `uncovered impact files: ${assessment.uncovered_impact_files.join(", ") || "(none)"}`,
+    `unknown files: ${assessment.unknown_files.join(", ") || "(none)"}`,
+    `unknown reasons: ${assessment.unknown_reasons.join("; ") || "(none)"}`,
+    `recommended remediation: ${assessment.recommendation}`
+  ];
+  return details.join("; ");
 }
 
 function trimReportOutput(value: string): string {
@@ -311,6 +453,26 @@ async function appendIntegrationEvent(repoRoot: string, status: IntegrationStatu
     }
   });
   return eventResult.ok ? { ok: true } : { ok: false, reason: `failed to append ${eventType} event: ${eventResult.reason}` };
+}
+
+async function appendOracleFloorEvent(
+  repoRoot: string,
+  type: "integration.blocked" | "integration.low_confidence",
+  status: IntegrationStatus,
+  oracleFloor: OracleFloorAssessment
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const eventResult = await appendEvent(repoRoot, {
+    type,
+    task_id: null,
+    data: {
+      branch: status.branch,
+      applied: status.applied,
+      tests: status.tests,
+      report: status.report,
+      oracle_floor: oracleFloor
+    }
+  });
+  return eventResult.ok ? { ok: true } : { ok: false, reason: `failed to append ${type} event: ${eventResult.reason}` };
 }
 
 async function cleanupShadow(repoRoot: string, worktreePath: string, branch: string, worktreeCreated: boolean): Promise<string[]> {

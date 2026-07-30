@@ -175,6 +175,40 @@ test("MCP tools route through daemon and match the core task/worktree/patch/stat
   });
 });
 
+test("MCP cannot bypass the configured High oracle floor at integration", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await setUnknownCoverageConfig(repo);
+    const contract = buildContract("T-MCP-FLOOR", baseCommit, ["README.md"]);
+    await writeContractFile(repo, contract);
+    await writePatchFromRootEdit(repo, "T-MCP-FLOOR", baseCommit, async () => {
+      await writeFile(path.join(repo, "README.md"), "# Fixture\nMCP floor attempt\n");
+    });
+    await writeQueue(repo, ["T-MCP-FLOOR"]);
+    const daemon = await startDaemon(repo);
+    try {
+      await withStdioMcpClient(repo, daemon.url, "hivemind-mcp-oracle-floor-test", async (client) => {
+        const result = await client.callTool({
+          name: "hivemind.integrate_shadow",
+          arguments: {}
+        });
+        assert.equal(result.isError, true);
+        const text = String((result.content as Array<{ type?: unknown; text?: unknown }>)[0]?.text ?? "");
+        assert.match(text, /configured coverage is unknown for high tier/);
+        assert.match(text, /hivemind verify characterize \.\.\./);
+      });
+    } finally {
+      await stopProcess(daemon);
+    }
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.equal(events.value.at(-1)?.type, "integration.blocked");
+    assert.equal(events.value.some((event) => event.type === "integration.passed"), false);
+  });
+});
+
 test("draft active spec blocks daemon-routed lease and MCP task creation", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContractFile(repo, buildContract("T-DRAFT", baseCommit, ["README.md"]));
@@ -658,6 +692,27 @@ async function setConfigTestCommand(repo: string, testCommand: string): Promise<
   const configPath = path.join(repo, ".hivemind", "config.json");
   const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
   config.test_command = testCommand;
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+async function setUnknownCoverageConfig(repo: string): Promise<void> {
+  const configPath = path.join(repo, ".hivemind", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+  config.test_command = "node -e \"process.exit(0)\"";
+  config.verification = {
+    checks: [
+      {
+        id: "full",
+        command: "node -e \"process.exit(0)\"",
+        entry_files: ["README.md"]
+      }
+    ],
+    coverage: {
+      command: "node -e \"process.exit(0)\"",
+      report_path: "coverage/lcov.info",
+      format: "lcov"
+    }
+  };
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 

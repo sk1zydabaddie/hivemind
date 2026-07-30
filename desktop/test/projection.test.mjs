@@ -44,6 +44,27 @@ test("lease release events remove active lease display state", () => {
   assert.deepEqual(state.tasks["T-001"].lease_files, []);
 });
 
+test("integration oracle events surface blocked and low-confidence states", () => {
+  const blocked = createBoardProjection();
+  applyEventMessage(blocked, {
+    kind: "event",
+    source: "live",
+    event: makeEvent("integration.blocked", null, { tests: "blocked", report: "configured coverage is weak" })
+  });
+  assert.equal(blocked.integration.status, "blocked");
+  assert.equal(blocked.integration.tests, "blocked");
+  assert.equal(blocked.integration.report, "configured coverage is weak");
+
+  const lowConfidence = createBoardProjection();
+  applyEventMessage(lowConfidence, {
+    kind: "event",
+    source: "live",
+    event: makeEvent("integration.low_confidence", null, { report: "low-tier coverage is unknown" })
+  });
+  assert.equal(lowConfidence.integration.status, "low-confidence");
+  assert.equal(lowConfidence.integration.report, "low-tier coverage is unknown");
+});
+
 test("task projection carries display-only execution group metadata", () => {
   const state = createBoardProjection();
   applyEventMessage(state, {

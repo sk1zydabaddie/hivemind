@@ -128,12 +128,14 @@ test("an uncovered structural oracle is durably surfaced but does not block shad
     assert.equal(structural?.status, "uncovered");
     assert.deepEqual(structural?.uncovered_impact_files, ["src/consumer.ts"]);
     assert.equal(structural?.advisory_only, true);
+    assert.match(result.value.report, /oracle floor coverage configured: false/);
+    assert.match(result.value.report, /oracle floor decision: proceed/);
     assert.equal(events.value.at(-1)?.type, "integration.passed");
     assert.deepEqual(events.value.at(-1)?.data.applied, ["T-STRUCTURAL"]);
   });
 });
 
-test("weak configured runtime coverage is durably surfaced but remains advisory in M7.6b", async () => {
+test("configured weak coverage blocks Critical integration with durable diagnostics and no pass event", async () => {
   await withTempRepo(async ({ repo }) => {
     await mkdir(path.join(repo, "test"), { recursive: true });
     await writeFile(
@@ -154,6 +156,7 @@ test("weak configured runtime coverage is durably surfaced but remains advisory 
     await git(repo, ["commit", "-m", "add runtime coverage fixture"]);
     const integrationBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
     await setRuntimeCoverageConfig(repo);
+    await setTierGlobs(repo, { critical_globs: ["src/feature.ts"] });
     assert.equal((await rebuildRepoGraph(repo)).ok, true);
     await writeContract(repo, "T-RUNTIME", integrationBase, ["src/feature.ts"]);
     await writePatchFromEdit(repo, "T-RUNTIME", integrationBase, async () => {
@@ -163,13 +166,14 @@ test("weak configured runtime coverage is durably surfaced but remains advisory 
 
     const result = await integrateShadow(repo);
 
-    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
-    if (!result.ok) {
+    assert.equal(result.ok, false);
+    if (result.ok) {
       return;
     }
-    assert.equal(result.value.tests, "pass");
-    assert.match(result.value.report, /runtime changed-line coverage: weak \(advisory\)/);
-    assert.match(result.value.report, /runtime coverage ratio: 0\/1/);
+    assert.match(result.reason, /configured coverage is weak for critical tier/);
+    assert.match(result.reason, /measured, but coverage is thin/);
+    assert.match(result.reason, /uncovered changed lines: src\/feature\.ts:1/);
+    assert.match(result.reason, /hivemind verify characterize \.\.\./);
     const events = await readEvents(repo);
     assert.equal(events.ok, true);
     if (!events.ok) {
@@ -183,11 +187,20 @@ test("weak configured runtime coverage is durably surfaced but remains advisory 
     assert.equal(runtime?.advisory_only, true);
     assert.equal(runtime?.hit_changed_lines, 0);
     assert.equal(runtime?.executable_changed_lines, 1);
-    assert.equal(events.value.at(-1)?.type, "integration.passed");
+    assert.equal(events.value.at(-1)?.type, "integration.blocked");
+    assert.equal(events.value.some((event) => event.type === "integration.passed"), false);
+    const blocked = events.value.at(-1)?.data.oracle_floor as
+      | { status?: string; decision?: string; automatic_generation_launched?: boolean }
+      | undefined;
+    assert.equal(blocked?.status, "weak");
+    assert.equal(blocked?.decision, "block");
+    assert.equal(blocked?.automatic_generation_launched, false);
+    const status = await readStatus(repo);
+    assert.equal(status.tests, "blocked");
   });
 });
 
-test("unknown configured runtime coverage is durably surfaced without blocking in M7.6b", async () => {
+test("configured unknown coverage blocks High integration with a distinct could-not-measure diagnostic", async () => {
   await withTempRepo(async ({ repo }) => {
     await mkdir(path.join(repo, "test"), { recursive: true });
     await writeFile(
@@ -207,13 +220,13 @@ test("unknown configured runtime coverage is durably surfaced without blocking i
 
     const result = await integrateShadow(repo);
 
-    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
-    if (!result.ok) {
+    assert.equal(result.ok, false);
+    if (result.ok) {
       return;
     }
-    assert.equal(result.value.tests, "pass");
-    assert.match(result.value.report, /runtime changed-line coverage: unknown \(advisory\)/);
-    assert.match(result.value.report, /coverage command did not produce fresh report/);
+    assert.match(result.reason, /configured coverage is unknown for high tier/);
+    assert.match(result.reason, /could not be measured with confidence/);
+    assert.match(result.reason, /coverage command did not produce fresh report/);
     const events = await readEvents(repo);
     assert.equal(events.ok, true);
     if (!events.ok) {
@@ -224,7 +237,210 @@ test("unknown configured runtime coverage is durably surfaced without blocking i
       (verificationEvent?.data.runtime_coverage as { status?: string } | undefined)?.status,
       "unknown"
     );
+    assert.equal(events.value.at(-1)?.type, "integration.blocked");
+    assert.equal(events.value.some((event) => event.type === "integration.passed"), false);
+    assert.equal(
+      (events.value.at(-1)?.data.oracle_floor as { status?: string } | undefined)?.status,
+      "unknown"
+    );
+  });
+});
+
+test("configured strong runtime and structural evidence permits High integration", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await writeCoverageFixture(repo, 1);
+    const integrationBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
+    await setRuntimeCoverageConfig(repo);
+    await writeContract(repo, "T-STRONG", integrationBase, ["src/feature.ts"]);
+    await writePatchFromEdit(repo, "T-STRONG", integrationBase, async () => {
+      await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = 'changed';\n");
+    });
+    assert.equal((await rebuildRepoGraph(repo)).ok, true);
+    await writeQueue(repo, ["T-STRONG"]);
+
+    const result = await integrateShadow(repo);
+
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.value.tests, "pass");
+    assert.match(result.value.report, /oracle floor task tier: high/);
+    assert.match(result.value.report, /oracle floor status: strong/);
+    assert.match(result.value.report, /oracle floor decision: proceed/);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
     assert.equal(events.value.at(-1)?.type, "integration.passed");
+    assert.equal(events.value.some((event) => event.type === "integration.blocked"), false);
+  });
+});
+
+test("configured weak and unknown evidence proceeds for Low and Medium with durable low-confidence events", async (context) => {
+  await context.test("Low weak", async () => {
+    await withTempRepo(async ({ repo }) => {
+      await writeCoverageFixture(repo, 0);
+      const integrationBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
+      await setRuntimeCoverageConfig(repo);
+      await setTierGlobs(repo, { low_globs: ["src/feature.ts"] });
+      await writeContract(repo, "T-LOW", integrationBase, ["src/feature.ts"]);
+      await writePatchFromEdit(repo, "T-LOW", integrationBase, async () => {
+        await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = 'changed';\n");
+      });
+      assert.equal((await rebuildRepoGraph(repo)).ok, true);
+      await writeQueue(repo, ["T-LOW"]);
+
+      const result = await integrateShadow(repo);
+
+      assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+      if (!result.ok) {
+        return;
+      }
+      assert.equal(result.value.tests, "pass");
+      const events = await readEvents(repo);
+      assert.equal(events.ok, true);
+      if (!events.ok) {
+        return;
+      }
+      const lowConfidence = events.value.find((event) => event.type === "integration.low_confidence");
+      assert.equal((lowConfidence?.data.oracle_floor as { task_tier?: string; status?: string } | undefined)?.task_tier, "low");
+      assert.equal((lowConfidence?.data.oracle_floor as { task_tier?: string; status?: string } | undefined)?.status, "weak");
+      assert.equal(events.value.at(-1)?.type, "integration.passed");
+    });
+  });
+
+  await context.test("Medium unknown", async () => {
+    await withTempRepo(async ({ repo }) => {
+      await mkdir(path.join(repo, "test"), { recursive: true });
+      await writeFile(
+        path.join(repo, "test", "feature.test.ts"),
+        "import { feature } from '../src/feature.js'; export const observed = feature;\n"
+      );
+      await git(repo, ["add", "test/feature.test.ts"]);
+      await git(repo, ["commit", "-m", "add medium coverage fixture"]);
+      const integrationBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
+      await setRuntimeCoverageConfig(repo, "node -e \"process.exit(0)\"");
+      await setTierGlobs(repo, { medium_globs: ["src/feature.ts"] });
+      await writeContract(repo, "T-MEDIUM", integrationBase, ["src/feature.ts"]);
+      await writePatchFromEdit(repo, "T-MEDIUM", integrationBase, async () => {
+        await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = 'changed';\n");
+      });
+      assert.equal((await rebuildRepoGraph(repo)).ok, true);
+      await writeQueue(repo, ["T-MEDIUM"]);
+
+      const result = await integrateShadow(repo);
+
+      assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+      if (!result.ok) {
+        return;
+      }
+      const events = await readEvents(repo);
+      assert.equal(events.ok, true);
+      if (!events.ok) {
+        return;
+      }
+      const lowConfidence = events.value.find((event) => event.type === "integration.low_confidence");
+      assert.equal((lowConfidence?.data.oracle_floor as { task_tier?: string; status?: string } | undefined)?.task_tier, "medium");
+      assert.equal((lowConfidence?.data.oracle_floor as { task_tier?: string; status?: string } | undefined)?.status, "unknown");
+      assert.equal(events.value.at(-1)?.type, "integration.passed");
+    });
+  });
+});
+
+test("structural-only evidence never upgrades configured High coverage to strong", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await mkdir(path.join(repo, "test"), { recursive: true });
+    await writeFile(
+      path.join(repo, "src", "consumer.ts"),
+      "import { feature } from './feature.js'; export const consumed = feature;\n"
+    );
+    await writeFile(
+      path.join(repo, "test", "feature.test.ts"),
+      "import { feature } from '../src/feature.js'; export const observed = feature;\n"
+    );
+    await writeFile(
+      path.join(repo, "write-coverage.mjs"),
+      [
+        "import { mkdir, writeFile } from 'node:fs/promises';",
+        "import path from 'node:path';",
+        "await mkdir('coverage', { recursive: true });",
+        "const source = path.resolve('src/feature.ts').replaceAll('\\\\', '/');",
+        "await writeFile('coverage/lcov.info', `SF:${source}\\nDA:1,1\\nend_of_record\\n`);"
+      ].join("\n")
+    );
+    await git(repo, ["add", "src/consumer.ts", "test/feature.test.ts", "write-coverage.mjs"]);
+    await git(repo, ["commit", "-m", "add structural gap fixture"]);
+    const integrationBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
+    await setRuntimeCoverageConfig(repo);
+    await writeContract(repo, "T-STRUCTURAL-FLOOR", integrationBase, ["src/feature.ts"]);
+    await writePatchFromEdit(repo, "T-STRUCTURAL-FLOOR", integrationBase, async () => {
+      await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = 'changed';\n");
+    });
+    assert.equal((await rebuildRepoGraph(repo)).ok, true);
+    await writeQueue(repo, ["T-STRUCTURAL-FLOOR"]);
+
+    const result = await integrateShadow(repo);
+
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      return;
+    }
+    assert.match(result.reason, /configured coverage is weak for high tier/);
+    assert.match(result.reason, /uncovered impact files: src\/consumer\.ts/);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    const verification = events.value.find((event) => event.type === "verification.completed");
+    assert.equal((verification?.data.runtime_coverage as { status?: string } | undefined)?.status, "strong");
+    assert.equal((verification?.data.structural_oracle as { status?: string } | undefined)?.status, "uncovered");
+    assert.equal(events.value.at(-1)?.type, "integration.blocked");
+  });
+});
+
+test("CLI cannot bypass the configured High oracle floor", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await writeCoverageFixture(repo, 0);
+    const integrationBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
+    await setRuntimeCoverageConfig(repo);
+    await setOracleBypassClaims(repo);
+    await writeContract(repo, "T-CLI-FLOOR", integrationBase, ["src/feature.ts"]);
+    await writePatchFromEdit(repo, "T-CLI-FLOOR", integrationBase, async () => {
+      await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = 'changed';\n");
+    });
+    assert.equal((await rebuildRepoGraph(repo)).ok, true);
+    await writeQueue(repo, ["T-CLI-FLOOR"]);
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [cliPath, "integrate", "--shadow", "--force"], { cwd: repo, windowsHide: true }),
+      (error: unknown) => {
+        assert.match(String((error as { stderr?: string }).stderr), /usage: hivemind integrate --shadow/);
+        return true;
+      }
+    );
+    await assert.rejects(
+      execFileAsync(process.execPath, [cliPath, "integrate", "--shadow"], {
+        cwd: repo,
+        env: { ...process.env, HIVEMIND_ORACLE_OVERRIDE: "1" },
+        windowsHide: true
+      }),
+      (error: unknown) => {
+        assert.equal((error as { code?: number }).code, 1);
+        assert.match(String((error as { stderr?: string }).stderr), /oracle floor blocked shadow integration/);
+        assert.match(String((error as { stderr?: string }).stderr), /hivemind verify characterize \.\.\./);
+        return true;
+      }
+    );
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.equal(events.value.at(-1)?.type, "integration.blocked");
+    assert.equal(events.value.some((event) => event.type === "integration.passed"), false);
   });
 });
 
@@ -505,6 +721,49 @@ async function setRuntimeCoverageConfig(repo: string, command = "node write-cove
     }
   };
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+async function setTierGlobs(
+  repo: string,
+  tiers: { low_globs?: string[]; medium_globs?: string[]; high_globs?: string[]; critical_globs?: string[] }
+): Promise<void> {
+  const configPath = path.join(repo, ".hivemind", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+  Object.assign(config, tiers);
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+async function setOracleBypassClaims(repo: string): Promise<void> {
+  const configPath = path.join(repo, ".hivemind", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as {
+    verification?: Record<string, unknown>;
+  };
+  config.verification = {
+    ...(config.verification ?? {}),
+    oracle_override: true,
+    force_integration: true
+  };
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+async function writeCoverageFixture(repo: string, hits: number): Promise<void> {
+  await mkdir(path.join(repo, "test"), { recursive: true });
+  await writeFile(
+    path.join(repo, "test", "feature.test.ts"),
+    "import { feature } from '../src/feature.js'; export const observed = feature;\n"
+  );
+  await writeFile(
+    path.join(repo, "write-coverage.mjs"),
+    [
+      "import { mkdir, writeFile } from 'node:fs/promises';",
+      "import path from 'node:path';",
+      "await mkdir('coverage', { recursive: true });",
+      "const source = path.resolve('src/feature.ts').replaceAll('\\\\', '/');",
+      `await writeFile('coverage/lcov.info', \`SF:\${source}\\nDA:1,${hits}\\nend_of_record\\n\`);`
+    ].join("\n")
+  );
+  await git(repo, ["add", "test/feature.test.ts", "write-coverage.mjs"]);
+  await git(repo, ["commit", "-m", `add ${hits === 0 ? "weak" : "strong"} coverage fixture`]);
 }
 
 async function writeContract(repo: string, taskId: string, baseCommit: string, allowedFiles: string[]): Promise<void> {

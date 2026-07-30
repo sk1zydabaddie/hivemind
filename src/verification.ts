@@ -124,7 +124,7 @@ export async function selectVerificationChecks(
     return unknownFull("structured verification inventory is missing");
   }
 
-  const tierResult = await maximumTaskTier(repoRoot, taskIds, config);
+  const tierResult = await resolveMaximumTaskTier(repoRoot, taskIds, config);
   const tierFullReason = !tierResult.ok
     ? `task tier is uncertain: ${tierResult.reason}`
     : tierResult.value === "high" || tierResult.value === "critical"
@@ -410,7 +410,7 @@ function reverseImpactSet(changedFiles: string[], graph: RepoGraphArtifact): Set
   return impact;
 }
 
-async function maximumTaskTier(
+export async function resolveMaximumTaskTier(
   repoRoot: string,
   taskIds: string[],
   config: HivemindConfig

@@ -489,7 +489,7 @@ function isIntegrationStatus(value: unknown): value is IntegrationStatus {
     typeof value.branch === "string" &&
     Array.isArray(value.applied) &&
     value.applied.every((entry) => typeof entry === "string") &&
-    (value.tests === "pass" || value.tests === "fail") &&
+    (value.tests === "pass" || value.tests === "fail" || value.tests === "blocked") &&
     typeof value.report === "string"
   );
 }

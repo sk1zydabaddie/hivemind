@@ -191,6 +191,18 @@ test("getStatus reports integrated only from event-backed submitted accepted int
       return;
     }
     assert.equal(task(eventBacked.value, "T-001").integrated, true);
+
+    await appendEvent(repo, {
+      type: "integration.blocked",
+      task_id: null,
+      data: { applied: ["T-001"], tests: "blocked", report: "configured oracle evidence is weak" }
+    });
+    const blocked = await getStatus(repo);
+    assert.equal(blocked.ok, true);
+    if (!blocked.ok) {
+      return;
+    }
+    assert.equal(task(blocked.value, "T-001").integrated, false);
   });
 });
 

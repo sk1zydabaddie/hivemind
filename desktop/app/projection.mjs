@@ -157,6 +157,17 @@ export function applyEventMessage(projection, message) {
       projection.integration.report = readString(event.data.report) ?? projection.integration.report;
       projection.integration.lastEvent = event;
       break;
+    case "integration.blocked":
+      projection.integration.status = "blocked";
+      projection.integration.tests = readString(event.data.tests) ?? projection.integration.tests;
+      projection.integration.report = readString(event.data.report) ?? projection.integration.report;
+      projection.integration.lastEvent = event;
+      break;
+    case "integration.low_confidence":
+      projection.integration.status = "low-confidence";
+      projection.integration.report = readString(event.data.report) ?? projection.integration.report;
+      projection.integration.lastEvent = event;
+      break;
     case "quota.low":
     case "quota.exhausted":
       projection.quota.status = event.type === "quota.low" ? "low" : "exhausted";

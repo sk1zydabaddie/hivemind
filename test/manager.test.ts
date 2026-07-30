@@ -957,6 +957,47 @@ test("manager executor drives deterministic task actions through shadow integrat
   });
 });
 
+test("manager cannot bypass the configured High oracle floor at integration", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await setUnknownCoverageConfig(repo);
+    await writeContract(repo, "T-MANAGER-FLOOR", baseCommit, ["README.md"]);
+    await writeAcceptedPatchBundle(repo, "T-MANAGER-FLOOR", baseCommit, async () => {
+      await writeFile(path.join(repo, "README.md"), "# Fixture\nmanager floor attempt\n");
+    });
+    await mkdir(path.join(repo, ".hivemind", "integration"), { recursive: true });
+    await writeFile(
+      path.join(repo, ".hivemind", "integration", "queue.json"),
+      `${JSON.stringify([{ task_id: "T-MANAGER-FLOOR" }], null, 2)}\n`
+    );
+    const sessionResult = await startManagerSession(repo, "Attempt blocked integration", { proposedAction: testProposal() });
+    assert.equal(sessionResult.ok, true);
+    if (!sessionResult.ok) {
+      return;
+    }
+
+    const result = await executeManagerAction(repo, sessionResult.value.session_id, { type: "integrate_shadow" });
+
+    assert.equal(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.value.result.ok, false);
+    if (result.value.result.ok) {
+      return;
+    }
+    assert.match(result.value.result.reason, /configured coverage is unknown for high tier/);
+    assert.match(result.value.result.reason, /hivemind verify characterize \.\.\./);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    assert.equal(events.value.at(-1)?.type, "integration.blocked");
+    assert.equal(events.value.some((event) => event.type === "integration.passed"), false);
+  });
+});
+
 test("manager observes delayed daemon worker completion from the event trail after a quick run start", async () => {
   await withTempRepo(async ({ repo }) => {
     await createRatifiedSpec(repo, "S-001");
@@ -1645,6 +1686,27 @@ async function setConfigTestCommand(repo: string, testCommand: string): Promise<
   const configPath = path.join(repo, ".hivemind", "config.json");
   const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
   config.test_command = testCommand;
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+async function setUnknownCoverageConfig(repo: string): Promise<void> {
+  const configPath = path.join(repo, ".hivemind", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+  config.test_command = "node -e \"process.exit(0)\"";
+  config.verification = {
+    checks: [
+      {
+        id: "full",
+        command: "node -e \"process.exit(0)\"",
+        entry_files: ["README.md"]
+      }
+    ],
+    coverage: {
+      command: "node -e \"process.exit(0)\"",
+      report_path: "coverage/lcov.info",
+      format: "lcov"
+    }
+  };
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 

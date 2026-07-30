@@ -6,7 +6,7 @@ import { validateRequestedTaskId } from "./task-id.js";
 export interface IntegrationStatus {
   branch: string;
   applied: string[];
-  tests: "pass" | "fail";
+  tests: "pass" | "fail" | "blocked";
   report: string;
 }
 
@@ -61,7 +61,7 @@ export function integratedTaskIdsFromEvents(events: HivemindEvent[]): Set<string
       continue;
     }
 
-    if (event.type === "integration.failed") {
+    if (event.type === "integration.failed" || event.type === "integration.blocked") {
       for (const taskId of eventAppliedTaskIds(event)) {
         integrated.delete(taskId);
       }
