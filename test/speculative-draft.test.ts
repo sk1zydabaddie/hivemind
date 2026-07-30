@@ -18,6 +18,7 @@ import test from "node:test";
 
 import { readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
+import { selectQualityWinner } from "../src/quality-selection.js";
 import {
   disposeSpeculativeDraft,
   type SpeculativeDraftOutcome,
@@ -28,6 +29,287 @@ import { admitValueQuality } from "../src/value-quality.js";
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(testDir, "../..");
+
+test("winner selection re-derives eligibility and applies the recorded minimal-change rule", async () => {
+  await withSpeculativeRepo(async ({ repo }) => {
+    const admission = await admitValueQuality(repo, "T-001", { strategy: "best_of_n", n: 2 });
+    assert.equal(admission.ok, true, admission.ok ? undefined : admission.reason);
+    if (!admission.ok) {
+      return;
+    }
+    const canonicalBefore = await canonicalIdentity(repo);
+    const canonicalEventsBefore = await canonicalEvents(repo);
+    const first = await disposeSpeculativeDraft(
+      repo,
+      { quality_run_id: admission.value.quality_run_id, draft_id: "D-001" },
+      successfulProducer(
+        [],
+        [
+          "const candidate = 'first';",
+          "const normalized = candidate.trim();",
+          "export const value = normalized;",
+          ""
+        ].join("\n")
+      )
+    );
+    const second = await disposeSpeculativeDraft(
+      repo,
+      { quality_run_id: admission.value.quality_run_id, draft_id: "D-002" },
+      successfulProducer([], "export const value = 'second';\n")
+    );
+    assert.equal(first.ok, true, first.ok ? undefined : first.reason);
+    assert.equal(second.ok, true, second.ok ? undefined : second.reason);
+
+    const selected = await selectQualityWinner(repo, admission.value.quality_run_id);
+    assert.equal(selected.ok, true, selected.ok ? undefined : selected.reason);
+    if (!selected.ok) {
+      return;
+    }
+    assert.equal(selected.value.selection_rule.id, "minimal_verified_change_surface_v1");
+    assert.deepEqual(selected.value.selection_rule.order, [
+      "fewest changed files",
+      "fewest changed patch lines",
+      "smallest UTF-8 patch byte length",
+      "lexical draft_id"
+    ]);
+    assert.deepEqual(selected.value.eligible_draft_ids, ["D-002", "D-001"]);
+    assert.equal(selected.value.selected_draft_id, "D-002");
+    assert.equal(selected.value.candidates.every((candidate) => candidate.eligible), true);
+    assert.ok(
+      selected.value.candidates.find((candidate) => candidate.draft_id === "D-002")!
+        .changed_line_count <
+      selected.value.candidates.find((candidate) => candidate.draft_id === "D-001")!
+        .changed_line_count
+    );
+    assert.equal(selected.value.advisory_only, true);
+    assert.equal(selected.value.automatic_adoption, false);
+
+    const selectionPath = path.join(
+      repo,
+      ".hivemind",
+      "resource",
+      "quality-runs",
+      admission.value.quality_run_id,
+      "selection.json"
+    );
+    assert.deepEqual(JSON.parse(await readFile(selectionPath, "utf8")), selected.value);
+    const immutableHash = createHash("sha256").update(await readFile(selectionPath)).digest("hex");
+    const repeated = await selectQualityWinner(repo, admission.value.quality_run_id);
+    assert.equal(repeated.ok, false);
+    if (!repeated.ok) {
+      assert.match(repeated.reason, /immutable quality selection already exists/);
+    }
+    assert.equal(
+      createHash("sha256").update(await readFile(selectionPath)).digest("hex"),
+      immutableHash
+    );
+
+    assert.deepEqual(await canonicalIdentity(repo), canonicalBefore);
+    assert.deepEqual(await canonicalEvents(repo), canonicalEventsBefore);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true, events.ok ? undefined : events.reason);
+    if (events.ok) {
+      const selectionEvents = events.value.filter(
+        (event) => event.type === "quality.selection_decided"
+      );
+      assert.equal(selectionEvents.length, 1);
+      assert.equal(selectionEvents[0].data.selected_draft_id, "D-002");
+      assert.deepEqual(selectionEvents[0].data.selection_rule, selected.value.selection_rule);
+      assert.deepEqual(selectionEvents[0].data.candidates, selected.value.candidates);
+      assert.equal(
+        events.value.some((event) =>
+          event.type === "task.completed" ||
+          event.type === "patch.accepted" ||
+          event.type === "integration.queued" ||
+          event.type === "integration.passed"
+        ),
+        false
+      );
+    }
+  });
+});
+
+test("empty and shadow-failed drafts produce an immutable no-winner decision", async () => {
+  await withSpeculativeRepo(async ({ repo }) => {
+    const admission = await admitValueQuality(repo, "T-001", { strategy: "best_of_n", n: 2 });
+    assert.equal(admission.ok, true, admission.ok ? undefined : admission.reason);
+    if (!admission.ok) {
+      return;
+    }
+    const empty = await disposeSpeculativeDraft(
+      repo,
+      { quality_run_id: admission.value.quality_run_id, draft_id: "D-001" },
+      async () => ({ status: "completed" })
+    );
+    const failed = await disposeSpeculativeDraft(
+      repo,
+      { quality_run_id: admission.value.quality_run_id, draft_id: "D-002" },
+      successfulProducer([], "export const value = ;\n")
+    );
+    assert.equal(empty.ok, true, empty.ok ? undefined : empty.reason);
+    assert.equal(failed.ok, true, failed.ok ? undefined : failed.reason);
+    if (empty.ok) {
+      assert.equal(empty.value.outcome, "empty");
+    }
+    if (failed.ok) {
+      assert.equal(failed.value.outcome, "shadow_failed");
+    }
+
+    const selected = await selectQualityWinner(repo, admission.value.quality_run_id);
+    assert.equal(selected.ok, true, selected.ok ? undefined : selected.reason);
+    if (!selected.ok) {
+      return;
+    }
+    assert.deepEqual(selected.value.eligible_draft_ids, []);
+    assert.equal(selected.value.selected_draft_id, null);
+    assert.equal(selected.value.selected_draft_artifact, null);
+    assert.match(selected.value.no_winner_reason ?? "", /no draft had a non-empty patch/);
+    assert.deepEqual(
+      selected.value.candidates.map((candidate) => ({
+        draft_id: candidate.draft_id,
+        eligible: candidate.eligible,
+        gate: candidate.gate_status,
+        shadow: candidate.shadow_status
+      })),
+      [
+        { draft_id: "D-001", eligible: false, gate: "not_run", shadow: "not_run" },
+        { draft_id: "D-002", eligible: false, gate: "accept", shadow: "fail" }
+      ]
+    );
+  });
+});
+
+test("indeterminate shadow evidence overrides an eligible manifest and cannot win", async () => {
+  await withSpeculativeRepo(async ({ repo }) => {
+    const admission = await admitValueQuality(repo, "T-001", { strategy: "best_of_n", n: 2 });
+    assert.equal(admission.ok, true, admission.ok ? undefined : admission.reason);
+    if (!admission.ok) {
+      return;
+    }
+    const valid = await disposeSpeculativeDraft(
+      repo,
+      { quality_run_id: admission.value.quality_run_id, draft_id: "D-001" },
+      successfulProducer([], "export const value = 'valid-before-uncertainty';\n")
+    );
+    const empty = await disposeSpeculativeDraft(
+      repo,
+      { quality_run_id: admission.value.quality_run_id, draft_id: "D-002" },
+      async () => ({ status: "completed" })
+    );
+    assert.equal(valid.ok, true, valid.ok ? undefined : valid.reason);
+    assert.equal(empty.ok, true, empty.ok ? undefined : empty.reason);
+    const shadowPath = path.join(
+      repo,
+      ".hivemind",
+      "resource",
+      "quality-runs",
+      admission.value.quality_run_id,
+      "drafts",
+      "D-001",
+      "shadow-result.json"
+    );
+    await writeFile(
+      shadowPath,
+      `${JSON.stringify({
+        disposer: "runVerification",
+        status: "indeterminate",
+        reason: "fixture could not establish verification identity",
+        result: null
+      }, null, 2)}\n`
+    );
+
+    const selected = await selectQualityWinner(repo, admission.value.quality_run_id);
+    assert.equal(selected.ok, true, selected.ok ? undefined : selected.reason);
+    if (!selected.ok) {
+      return;
+    }
+    assert.equal(selected.value.selected_draft_id, null);
+    assert.equal(selected.value.candidates[0].outcome, "eligible");
+    assert.equal(selected.value.candidates[0].shadow_status, "indeterminate");
+    assert.equal(selected.value.candidates[0].eligible, false);
+    assert.match(selected.value.candidates[0].eligibility_reason, /shadow verification indeterminate/);
+  });
+});
+
+test("rejected, escalated, and indeterminate drafts cannot enter the winner set", async () => {
+  await withSpeculativeRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, baseCommit, {
+      allowed_files: ["src/value.js", "package.json"],
+      allowed_file_intents: {
+        "src/value.js": "modify",
+        "package.json": "modify"
+      }
+    });
+    const admission = await admitValueQuality(repo, "T-001", { strategy: "best_of_n", n: 3 });
+    assert.equal(admission.ok, true, admission.ok ? undefined : admission.reason);
+    if (!admission.ok) {
+      return;
+    }
+
+    const rejected = await disposeSpeculativeDraft(
+      repo,
+      { quality_run_id: admission.value.quality_run_id, draft_id: "D-001" },
+      async (checkoutPath) => {
+        await writeFile(path.join(checkoutPath, "README.md"), "# outside scope\n");
+        return { status: "completed" };
+      }
+    );
+    const escalated = await disposeSpeculativeDraft(
+      repo,
+      { quality_run_id: admission.value.quality_run_id, draft_id: "D-002" },
+      async (checkoutPath) => {
+        await writeFile(
+          path.join(checkoutPath, "package.json"),
+          "{\"name\":\"changed-manifest\",\"type\":\"module\"}\n"
+        );
+        return { status: "completed" };
+      }
+    );
+    const indeterminate = await disposeSpeculativeDraft(
+      repo,
+      { quality_run_id: admission.value.quality_run_id, draft_id: "D-003" },
+      async (checkoutPath) => {
+        await writeFile(path.join(checkoutPath, "src", "value.js"), "export const value = 'committed';\n");
+        await git(checkoutPath, ["add", "src/value.js"]);
+        await git(checkoutPath, ["commit", "-m", "identity divergence"]);
+        return { status: "completed" };
+      }
+    );
+    assert.equal(rejected.ok, true, rejected.ok ? undefined : rejected.reason);
+    assert.equal(escalated.ok, true, escalated.ok ? undefined : escalated.reason);
+    assert.equal(indeterminate.ok, true, indeterminate.ok ? undefined : indeterminate.reason);
+    if (rejected.ok) {
+      assert.equal(rejected.value.gate.status, "reject");
+    }
+    if (escalated.ok) {
+      assert.equal(escalated.value.gate.status, "escalate");
+    }
+    if (indeterminate.ok) {
+      assert.equal(indeterminate.value.outcome, "indeterminate");
+    }
+
+    const selected = await selectQualityWinner(repo, admission.value.quality_run_id);
+    assert.equal(selected.ok, true, selected.ok ? undefined : selected.reason);
+    if (!selected.ok) {
+      return;
+    }
+    assert.equal(selected.value.selected_draft_id, null);
+    assert.deepEqual(selected.value.eligible_draft_ids, []);
+    assert.deepEqual(
+      selected.value.candidates.map((candidate) => [
+        candidate.draft_id,
+        candidate.gate_status,
+        candidate.shadow_status,
+        candidate.eligible
+      ]),
+      [
+        ["D-001", "reject", "not_run", false],
+        ["D-002", "escalate", "not_run", false],
+        ["D-003", "not_run", "not_run", false]
+      ]
+    );
+  });
+});
 
 test("two same-scope drafts use distinct detached checkouts and immutable advisory artifacts without canonical mutation", async () => {
   await withSpeculativeRepo(async ({ repo }) => {
@@ -229,6 +511,27 @@ test("speculative draft disposal structurally reuses gate and verification witho
   assert.doesNotMatch(source, /from "\.\/adapter|runAdapterProcess|invokeAgent|recordAdapterUsage/u);
 });
 
+test("quality selection is deterministic, local-only, and structurally unable to adopt a winner", async () => {
+  const source = await readFile(path.join(projectRoot, "src", "quality-selection.ts"), "utf8");
+  const cli = await readFile(path.join(projectRoot, "src", "cli.ts"), "utf8");
+  assert.match(source, /loadAdmittedValueQualityRun/u);
+  assert.match(source, /writeImmutableJsonArtifact/u);
+  assert.match(source, /quality\.selection_decided/u);
+  assert.doesNotMatch(
+    source,
+    /from "\.\/adapter|runAdapterProcess|invokeAgent|recordAdapterUsage|from "\.\/lease|requestLease|submitTask|analyzeTask|enqueue|integrateShadow/u
+  );
+  assert.match(cli, /rest\[0\] === "select"/u);
+  for (const file of ["manager.ts", "daemon.ts", "mcp.ts", "integrate.ts"]) {
+    const contents = await readFile(path.join(projectRoot, "src", file), "utf8");
+    assert.doesNotMatch(
+      contents,
+      /selectQualityWinner|qualitySelectionCommand|quality\.selection_decided/u,
+      `${file} must not launch or treat advisory winner selection as canonical`
+    );
+  }
+});
+
 async function withSpeculativeRepo(
   run: (fixture: { repo: string; baseCommit: string }) => Promise<void>
 ): Promise<void> {
@@ -287,7 +590,14 @@ async function configureRepo(repo: string): Promise<void> {
   );
 }
 
-async function writeContract(repo: string, baseCommit: string): Promise<void> {
+async function writeContract(
+  repo: string,
+  baseCommit: string,
+  overrides: {
+    allowed_files?: string[];
+    allowed_file_intents?: Record<string, "create" | "modify">;
+  } = {}
+): Promise<void> {
   await writeFile(
     path.join(repo, ".hivemind", "tasks", "T-001.contract.json"),
     `${JSON.stringify({
@@ -297,8 +607,8 @@ async function writeContract(repo: string, baseCommit: string): Promise<void> {
       routing_task_type: "refactor",
       base_commit: baseCommit,
       acceptance_criterion: "The value module remains syntactically valid.",
-      allowed_files: ["src/value.js"],
-      allowed_file_intents: { "src/value.js": "modify" },
+      allowed_files: overrides.allowed_files ?? ["src/value.js"],
+      allowed_file_intents: overrides.allowed_file_intents ?? { "src/value.js": "modify" },
       read_only_files: [],
       forbidden_files: [],
       allowed_symbols: [],

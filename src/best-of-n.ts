@@ -1,5 +1,5 @@
-import { createHash, randomUUID } from "node:crypto";
-import { link, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   buildAgentPrompt,
@@ -10,6 +10,7 @@ import {
   type AdapterProcessResult
 } from "./adapter.js";
 import { loadAndValidateContract, type TaskContract } from "./contract.js";
+import { writeImmutableJsonArtifact } from "./immutable-artifact.js";
 import { findGitRoot } from "./repo.js";
 import { estimateTokens } from "./resource-ledger.js";
 import {
@@ -246,7 +247,7 @@ export async function generateBestOfN(
     priorDrafts
   );
   try {
-    await writeImmutableJson(
+    await writeImmutableJsonArtifact(
       path.join(
         repoRoot,
         ".hivemind",
@@ -467,24 +468,6 @@ function ensureCapturedOutput(
   }
   if (result.stderr !== "") {
     output.push({ stream: "stderr", text: result.stderr });
-  }
-}
-
-async function writeImmutableJson(filePath: string, value: unknown): Promise<void> {
-  const tempPath = path.join(
-    path.dirname(filePath),
-    `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`
-  );
-  await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  try {
-    await link(tempPath, filePath);
-  } catch (error: unknown) {
-    if (isNodeError(error, "EEXIST")) {
-      throw new Error(`immutable quality-run artifact already exists: ${filePath}`);
-    }
-    throw error;
-  } finally {
-    await rm(tempPath, { force: true });
   }
 }
 

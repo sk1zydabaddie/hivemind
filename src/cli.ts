@@ -71,6 +71,10 @@ async function main(argv: string[]): Promise<number> {
       const { bestOfNCommand } = await import("./best-of-n.js");
       return bestOfNCommand(process.cwd(), rest);
     }
+    if (rest[0] === "select") {
+      const { qualitySelectionCommand } = await import("./quality-selection.js");
+      return qualitySelectionCommand(process.cwd(), rest);
+    }
     return valueQualityCommand(process.cwd(), rest);
   }
 
