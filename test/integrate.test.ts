@@ -50,7 +50,10 @@ test("integrateShadow applies accepted queued patches together, runs tests, repo
     assert.match(result.value.report, /T-001: accept/);
     assert.match(result.value.report, /T-002: accept/);
     assert.match(result.value.report, /T-003: reject/);
-    assert.match(result.value.report, /structural oracle: unknown \(advisory; runtime coverage not measured\)/);
+    assert.match(
+      result.value.report,
+      /structural oracle: unknown \(advisory; structural evidence is not runtime coverage\)/
+    );
     assert.deepEqual(await readStatus(repo), result.value);
     assert.equal(await branchExists(repo, result.value.branch), false);
     assert.equal(normalizeNewlines(await readFile(path.join(repo, "README.md"), "utf8")), "# Fixture\n");
@@ -67,6 +70,10 @@ test("integrateShadow applies accepted queued patches together, runs tests, repo
     assert.equal(
       (verificationEvent?.data.structural_oracle as { status?: string } | undefined)?.status,
       "unknown"
+    );
+    assert.equal(
+      (verificationEvent?.data.runtime_coverage as { status?: string } | undefined)?.status,
+      "unconfigured"
     );
     assert.equal(events.value.at(-1)?.type, "integration.passed");
     assert.equal(events.value.at(-1)?.task_id, null);
@@ -104,7 +111,10 @@ test("an uncovered structural oracle is durably surfaced but does not block shad
       return;
     }
     assert.equal(result.value.tests, "pass");
-    assert.match(result.value.report, /structural oracle: uncovered \(advisory; runtime coverage not measured\)/);
+    assert.match(
+      result.value.report,
+      /structural oracle: uncovered \(advisory; structural evidence is not runtime coverage\)/
+    );
     assert.match(result.value.report, /structurally uncovered impact files: src\/consumer\.ts/);
     const events = await readEvents(repo);
     assert.equal(events.ok, true);
@@ -120,6 +130,101 @@ test("an uncovered structural oracle is durably surfaced but does not block shad
     assert.equal(structural?.advisory_only, true);
     assert.equal(events.value.at(-1)?.type, "integration.passed");
     assert.deepEqual(events.value.at(-1)?.data.applied, ["T-STRUCTURAL"]);
+  });
+});
+
+test("weak configured runtime coverage is durably surfaced but remains advisory in M7.6b", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await mkdir(path.join(repo, "test"), { recursive: true });
+    await writeFile(
+      path.join(repo, "test", "feature.test.ts"),
+      "import { feature } from '../src/feature.js'; export const observed = feature;\n"
+    );
+    await writeFile(
+      path.join(repo, "write-coverage.mjs"),
+      [
+        "import { mkdir, writeFile } from 'node:fs/promises';",
+        "import path from 'node:path';",
+        "await mkdir('coverage', { recursive: true });",
+        "const source = path.resolve('src/feature.ts').replaceAll('\\\\', '/');",
+        "await writeFile('coverage/lcov.info', `SF:${source}\\nDA:1,0\\nend_of_record\\n`);"
+      ].join("\n")
+    );
+    await git(repo, ["add", "test/feature.test.ts", "write-coverage.mjs"]);
+    await git(repo, ["commit", "-m", "add runtime coverage fixture"]);
+    const integrationBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
+    await setRuntimeCoverageConfig(repo);
+    assert.equal((await rebuildRepoGraph(repo)).ok, true);
+    await writeContract(repo, "T-RUNTIME", integrationBase, ["src/feature.ts"]);
+    await writePatchFromEdit(repo, "T-RUNTIME", integrationBase, async () => {
+      await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = 'changed';\n");
+    });
+    await writeQueue(repo, ["T-RUNTIME"]);
+
+    const result = await integrateShadow(repo);
+
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.value.tests, "pass");
+    assert.match(result.value.report, /runtime changed-line coverage: weak \(advisory\)/);
+    assert.match(result.value.report, /runtime coverage ratio: 0\/1/);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    const verificationEvent = events.value.find((event) => event.type === "verification.completed");
+    const runtime = verificationEvent?.data.runtime_coverage as
+      | { status?: string; advisory_only?: boolean; hit_changed_lines?: number; executable_changed_lines?: number }
+      | undefined;
+    assert.equal(runtime?.status, "weak");
+    assert.equal(runtime?.advisory_only, true);
+    assert.equal(runtime?.hit_changed_lines, 0);
+    assert.equal(runtime?.executable_changed_lines, 1);
+    assert.equal(events.value.at(-1)?.type, "integration.passed");
+  });
+});
+
+test("unknown configured runtime coverage is durably surfaced without blocking in M7.6b", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await mkdir(path.join(repo, "test"), { recursive: true });
+    await writeFile(
+      path.join(repo, "test", "feature.test.ts"),
+      "import { feature } from '../src/feature.js'; export const observed = feature;\n"
+    );
+    await git(repo, ["add", "test/feature.test.ts"]);
+    await git(repo, ["commit", "-m", "add unknown coverage fixture"]);
+    const integrationBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
+    await setRuntimeCoverageConfig(repo, "node -e \"process.exit(0)\"");
+    assert.equal((await rebuildRepoGraph(repo)).ok, true);
+    await writeContract(repo, "T-004", integrationBase, ["src/feature.ts"]);
+    await writePatchFromEdit(repo, "T-004", integrationBase, async () => {
+      await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = 'changed';\n");
+    });
+    await writeQueue(repo, ["T-004"]);
+
+    const result = await integrateShadow(repo);
+
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    if (!result.ok) {
+      return;
+    }
+    assert.equal(result.value.tests, "pass");
+    assert.match(result.value.report, /runtime changed-line coverage: unknown \(advisory\)/);
+    assert.match(result.value.report, /coverage command did not produce fresh report/);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) {
+      return;
+    }
+    const verificationEvent = events.value.find((event) => event.type === "verification.completed");
+    assert.equal(
+      (verificationEvent?.data.runtime_coverage as { status?: string } | undefined)?.status,
+      "unknown"
+    );
+    assert.equal(events.value.at(-1)?.type, "integration.passed");
   });
 });
 
@@ -367,6 +472,27 @@ async function setStructuredVerificationConfig(repo: string): Promise<void> {
         entry_files: ["test/feature.test.ts"]
       }
     ]
+  };
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+async function setRuntimeCoverageConfig(repo: string, command = "node write-coverage.mjs"): Promise<void> {
+  const configPath = path.join(repo, ".hivemind", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+  config.test_command = "node -e \"process.exit(0)\"";
+  config.verification = {
+    checks: [
+      {
+        id: "feature",
+        command: "node -e \"process.exit(0)\"",
+        entry_files: ["test/feature.test.ts"]
+      }
+    ],
+    coverage: {
+      command,
+      report_path: "coverage/lcov.info",
+      format: "lcov"
+    }
   };
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 }

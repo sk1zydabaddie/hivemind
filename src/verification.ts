@@ -8,6 +8,10 @@ import { matchesPattern } from "./glob.js";
 import { readCanonMemory } from "./memory-canon.js";
 import { inferTaskTier, type TaskTier } from "./routing.js";
 import type { RepoGraphArtifact, RepoGraphFile } from "./repo-graph.js";
+import {
+  measureRuntimeCoverage,
+  type RuntimeCoverageMeasurement
+} from "./runtime-coverage.js";
 
 const execAsync = promisify(exec);
 const supportedExtensions = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"]);
@@ -52,6 +56,7 @@ export interface StructuralOracleMeasurement {
 export interface VerificationRunResult {
   audit: VerificationAudit;
   checks: VerificationCheckResult[];
+  runtime_coverage: RuntimeCoverageMeasurement;
   tests: "pass" | "fail";
 }
 
@@ -69,9 +74,16 @@ export async function runVerification(
   for (const check of audit.selected_checks) {
     checks.push(await runCheck(worktreeRoot, check.id, check.command));
   }
+  const runtimeCoverage = await measureRuntimeCoverage(
+    worktreeRoot,
+    changedFiles,
+    config.verification?.coverage,
+    (command) => runCheck(worktreeRoot, "coverage", command)
+  );
   const result: VerificationRunResult = {
     audit,
     checks,
+    runtime_coverage: runtimeCoverage,
     tests: checks.every((check) => check.exit_code === 0) ? "pass" : "fail"
   };
   const eventResult = await appendEvent(repoRoot, {
@@ -79,6 +91,7 @@ export async function runVerification(
     task_id: null,
     data: {
       ...audit,
+      runtime_coverage: runtimeCoverage,
       results: checks.map((check) => ({
         id: check.id,
         command: check.command,

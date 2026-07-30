@@ -24,12 +24,19 @@ export interface HivemindConfig {
 export interface VerificationConfig {
   graph_enabled?: boolean;
   checks: VerificationCheckConfig[];
+  coverage?: VerificationCoverageConfig;
 }
 
 export interface VerificationCheckConfig {
   id: string;
   command: string;
   entry_files: string[];
+}
+
+export interface VerificationCoverageConfig {
+  command: string;
+  report_path: string;
+  format: "lcov";
 }
 
 export interface ResourcePolicy {
@@ -249,6 +256,9 @@ function validateVerificationConfig(value: unknown, problems: string[]): void {
   if ("graph_enabled" in value && typeof value.graph_enabled !== "boolean") {
     problems.push("verification.graph_enabled must be a boolean");
   }
+  if ("coverage" in value) {
+    validateVerificationCoverageConfig(value.coverage, problems);
+  }
   if (!Array.isArray(value.checks) || value.checks.length === 0) {
     problems.push("verification.checks must be a non-empty array");
     return;
@@ -277,6 +287,22 @@ function validateVerificationConfig(value: unknown, problems: string[]): void {
     ) {
       problems.push(`verification.checks[${index}].entry_files must be a non-empty array of non-empty strings`);
     }
+  }
+}
+
+function validateVerificationCoverageConfig(value: unknown, problems: string[]): void {
+  if (!isRecord(value)) {
+    problems.push("verification.coverage must be a JSON object");
+    return;
+  }
+  if (typeof value.command !== "string" || value.command.trim() === "") {
+    problems.push("verification.coverage.command must be a non-empty string");
+  }
+  if (typeof value.report_path !== "string" || normalizeRepoRelativePath(value.report_path) === null) {
+    problems.push("verification.coverage.report_path must be a confined repository-relative path");
+  }
+  if (value.format !== "lcov") {
+    problems.push('verification.coverage.format must be "lcov"');
   }
 }
 
@@ -344,6 +370,17 @@ function normalizeVerificationConfig(value: unknown): VerificationConfig {
   }
   return {
     ...("graph_enabled" in value && typeof value.graph_enabled === "boolean" ? { graph_enabled: value.graph_enabled } : {}),
+    ...("coverage" in value && isRecord(value.coverage)
+      ? {
+          coverage: {
+            command: typeof value.coverage.command === "string" ? value.coverage.command.trim() : "",
+            report_path: typeof value.coverage.report_path === "string"
+              ? normalizeRepoRelativePath(value.coverage.report_path) ?? ""
+              : "",
+            format: "lcov" as const
+          }
+        }
+      : {}),
     checks: value.checks.filter(isRecord).map((check) => ({
       id: typeof check.id === "string" ? check.id.trim() : "",
       command: typeof check.command === "string" ? check.command.trim() : "",
@@ -354,6 +391,24 @@ function normalizeVerificationConfig(value: unknown): VerificationConfig {
 
 function normalizeStringArray(value: unknown): string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : [];
+}
+
+function normalizeRepoRelativePath(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim().replace(/\\/gu, "/").replace(/^\.\//u, "");
+  const segments = normalized.split("/");
+  const canonical = path.posix.normalize(normalized);
+  return normalized === "" ||
+    segments.includes("..") ||
+    canonical === "." ||
+    canonical === ".." ||
+    canonical.startsWith("../") ||
+    path.posix.isAbsolute(canonical) ||
+    /^[A-Za-z]:\//u.test(canonical)
+    ? null
+    : canonical;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

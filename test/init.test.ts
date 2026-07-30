@@ -109,6 +109,62 @@ test("loadConfig applies safe token defaults to legacy config and preserves deli
   });
 });
 
+test("loadConfig validates and normalizes opt-in LCOV configuration", async () => {
+  await withTempDir(async (repo) => {
+    await git(repo, ["init"]);
+    assert.equal(await initProject(repo), 0);
+    const configPath = path.join(repo, ".hivemind", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    await writeFile(
+      configPath,
+      `${JSON.stringify({
+        ...config,
+        verification: {
+          checks: [{ id: "unit", command: "npm test", entry_files: ["test/unit.test.ts"] }],
+          coverage: {
+            command: " npm run coverage ",
+            report_path: ".\\coverage\\lcov.info",
+            format: "lcov"
+          }
+        }
+      }, null, 2)}\n`
+    );
+
+    const loaded = await loadConfig(repo);
+
+    assert.equal(loaded.ok, true);
+    if (!loaded.ok) {
+      return;
+    }
+    assert.deepEqual(loaded.config.verification?.coverage, {
+      command: "npm run coverage",
+      report_path: "coverage/lcov.info",
+      format: "lcov"
+    });
+
+    await writeFile(
+      configPath,
+      `${JSON.stringify({
+        ...config,
+        verification: {
+          checks: [{ id: "unit", command: "npm test", entry_files: ["test/unit.test.ts"] }],
+          coverage: {
+            command: "npm run coverage",
+            report_path: "../outside.info",
+            format: "json"
+          }
+        }
+      }, null, 2)}\n`
+    );
+    const invalid = await loadConfig(repo);
+    assert.equal(invalid.ok, false);
+    if (!invalid.ok) {
+      assert.match(invalid.reason, /report_path must be a confined repository-relative path/);
+      assert.match(invalid.reason, /format must be "lcov"/);
+    }
+  });
+});
+
 test("init fails outside a git repo", async () => {
   await withTempDir(async (dir) => {
     const code = await initProject(dir);
