@@ -1,6 +1,5 @@
-import { exec } from "node:child_process";
 import path from "node:path";
-import { promisify } from "node:util";
+import { runNamedCheck, type NamedCheckResult } from "./check-runner.js";
 import type { HivemindConfig, VerificationCheckConfig } from "./config.js";
 import { loadAndValidateContract } from "./contract.js";
 import { appendEvent } from "./events.js";
@@ -13,18 +12,11 @@ import {
   type RuntimeCoverageMeasurement
 } from "./runtime-coverage.js";
 
-const execAsync = promisify(exec);
 const supportedExtensions = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"]);
 const structuralOracleLimitation =
   "verification inventory entry_files are operator-declared; Hivemind does not prove that each command executes them";
 
-export interface VerificationCheckResult {
-  id: string;
-  command: string;
-  exit_code: number;
-  stdout: string;
-  stderr: string;
-}
+export type VerificationCheckResult = NamedCheckResult;
 
 export interface VerificationAudit {
   mode: "full" | "subset";
@@ -72,13 +64,13 @@ export async function runVerification(
   const audit = await selectVerificationChecks(repoRoot, config, taskIds, changedFiles);
   const checks: VerificationCheckResult[] = [];
   for (const check of audit.selected_checks) {
-    checks.push(await runCheck(worktreeRoot, check.id, check.command));
+    checks.push(await runNamedCheck(worktreeRoot, check.id, check.command));
   }
   const runtimeCoverage = await measureRuntimeCoverage(
     worktreeRoot,
     changedFiles,
     config.verification?.coverage,
-    (command) => runCheck(worktreeRoot, "coverage", command)
+    (command) => runNamedCheck(worktreeRoot, "coverage", command)
   );
   const result: VerificationRunResult = {
     audit,
@@ -443,21 +435,6 @@ async function loadGraphFailSafe(repoRoot: string): Promise<VerificationResult<R
     return graph.loadVerifiedRepoGraph(repoRoot);
   } catch (error: unknown) {
     return { ok: false, reason: errorMessage(error) };
-  }
-}
-
-async function runCheck(cwd: string, id: string, command: string): Promise<VerificationCheckResult> {
-  try {
-    const result = await execAsync(command, { cwd, windowsHide: true, maxBuffer: 1024 * 1024 * 32 });
-    return { id, command, exit_code: 0, stdout: result.stdout, stderr: result.stderr };
-  } catch (error: unknown) {
-    return {
-      id,
-      command,
-      exit_code: typeof error === "object" && error !== null && "code" in error && typeof error.code === "number" ? error.code : 1,
-      stdout: typeof error === "object" && error !== null && "stdout" in error ? String(error.stdout) : "",
-      stderr: typeof error === "object" && error !== null && "stderr" in error ? String(error.stderr) : ""
-    };
   }
 }
 

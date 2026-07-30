@@ -3,6 +3,7 @@ import path from "node:path";
 import { writeJsonAtomic } from "./atomic.js";
 import { appendTaskCreatedIfMissing } from "./events.js";
 import { readJsonFile } from "./json.js";
+import { normalizeRepoPathPattern, validateRepoRelativePathOrGlob } from "./path-pattern.js";
 import { requireContractFromLintedPlan } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { requireActiveSpecRatified } from "./spec.js";
@@ -319,23 +320,6 @@ function requireString(raw: Record<string, unknown>, field: string, problems: st
   }
 }
 
-function validateRepoRelativePathOrGlob(value: string): string | null {
-  if (value.trim() === "") {
-    return "entry must not be empty";
-  }
-  if (path.isAbsolute(value)) {
-    return "absolute paths are not allowed";
-  }
-  const parts = value.replaceAll("\\", "/").split("/");
-  if (parts.includes("..")) {
-    return ".. traversal is not allowed";
-  }
-  if (parts.includes(".git")) {
-    return ".git paths are not allowed";
-  }
-  return null;
-}
-
 function validateAllowedFileIntentKeys(allowedFiles: unknown, rawIntents: unknown): string | null {
   if (rawIntents === undefined || !isRecord(rawIntents) || !Array.isArray(allowedFiles)) {
     return null;
@@ -354,7 +338,7 @@ function validateAllowedFileIntentKeys(allowedFiles: unknown, rawIntents: unknow
 }
 
 function normalizePathKey(value: string): string {
-  return value.replaceAll("\\", "/").replace(/^\.\/+/u, "").trim();
+  return normalizeRepoPathPattern(value);
 }
 
 function normalizeStringArray(value: unknown): string[] {

@@ -20,6 +20,8 @@ export interface ResolvedChangesetCheckouts {
   appliedCheckoutPath: string;
 }
 
+export type ApplyPatchResult = { ok: true } | { ok: false; reason: string };
+
 export async function resolveChangeset(
   repoRoot: string,
   baseCommit: string,
@@ -54,16 +56,9 @@ export async function withResolvedChangesetCheckouts<T>(
       return { ok: false, reason: appliedWorktreeResult.reason };
     }
 
-    if (!(await isEmptyPatch(patchPath))) {
-      const checkResult = await git(appliedCheckoutPath, ["apply", "--check", "--index", patchPath]);
-      if (!checkResult.ok) {
-        return { ok: false, reason: patchDoesNotApplyReason };
-      }
-
-      const applyResult = await git(appliedCheckoutPath, ["apply", "--index", patchPath]);
-      if (!applyResult.ok) {
-        return { ok: false, reason: patchDoesNotApplyReason };
-      }
+    const patchResult = await applyPatchToCheckout(appliedCheckoutPath, patchPath);
+    if (!patchResult.ok) {
+      return patchResult;
     }
 
     return {
@@ -79,6 +74,20 @@ export async function withResolvedChangesetCheckouts<T>(
     await git(repoRoot, ["worktree", "remove", "--force", appliedCheckoutPath]);
     await rm(tempRoot, { recursive: true, force: true });
   }
+}
+
+export async function applyPatchToCheckout(checkoutPath: string, patchPath: string): Promise<ApplyPatchResult> {
+  if (await isEmptyPatch(patchPath)) {
+    return { ok: true };
+  }
+
+  const checkResult = await git(checkoutPath, ["apply", "--check", "--index", patchPath]);
+  if (!checkResult.ok) {
+    return { ok: false, reason: patchDoesNotApplyReason };
+  }
+
+  const applyResult = await git(checkoutPath, ["apply", "--index", patchPath]);
+  return applyResult.ok ? { ok: true } : { ok: false, reason: patchDoesNotApplyReason };
 }
 
 async function isEmptyPatch(patchPath: string): Promise<boolean> {

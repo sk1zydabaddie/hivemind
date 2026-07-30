@@ -165,6 +165,68 @@ test("loadConfig validates and normalizes opt-in LCOV configuration", async () =
   });
 });
 
+test("loadConfig validates repository-authored characterization test paths", async () => {
+  await withTempDir(async (repo) => {
+    await git(repo, ["init"]);
+    assert.equal(await initProject(repo), 0);
+    const configPath = path.join(repo, ".hivemind", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    const checks = [{ id: "unit", command: "npm test", entry_files: ["test/unit.test.ts"] }];
+    await writeFile(
+      configPath,
+      `${JSON.stringify({
+        ...config,
+        verification: {
+          checks,
+          test_paths: [".\\test\\**\\*.test.ts", "test/**/*.test.ts", "src/parser.spec.ts"]
+        }
+      }, null, 2)}\n`
+    );
+
+    const loaded = await loadConfig(repo);
+
+    assert.equal(loaded.ok, true);
+    if (!loaded.ok) {
+      return;
+    }
+    assert.deepEqual(loaded.config.verification?.test_paths, [
+      "test/**/*.test.ts",
+      "src/parser.spec.ts"
+    ]);
+
+    for (const testPaths of [["../test/**"], [path.resolve(repo, "test", "**")], ["src/**"], ["**/*.ts"]]) {
+      await writeFile(
+        configPath,
+        `${JSON.stringify({
+          ...config,
+          verification: { checks, test_paths: testPaths }
+        }, null, 2)}\n`
+      );
+      const invalid = await loadConfig(repo);
+      assert.equal(invalid.ok, false);
+      if (!invalid.ok) {
+        assert.match(
+          invalid.reason,
+          /verification\.test_paths\[0\] (?:is invalid|must be confined)/
+        );
+      }
+    }
+
+    await writeFile(
+      configPath,
+      `${JSON.stringify({
+        ...config,
+        verification: { checks, test_paths: [] }
+      }, null, 2)}\n`
+    );
+    const empty = await loadConfig(repo);
+    assert.equal(empty.ok, true);
+    if (empty.ok) {
+      assert.deepEqual(empty.config.verification?.test_paths, []);
+    }
+  });
+});
+
 test("init fails outside a git repo", async () => {
   await withTempDir(async (dir) => {
     const code = await initProject(dir);

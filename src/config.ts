@@ -1,6 +1,7 @@
 import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { readJsonFile } from "./json.js";
+import { normalizeRepoPathPattern, validateRepoRelativePathOrGlob } from "./path-pattern.js";
 
 export const DEFAULT_RUN_TOKEN_CEILING = 150_000;
 export const DEFAULT_SESSION_TOKEN_CEILING = 500_000;
@@ -25,6 +26,7 @@ export interface VerificationConfig {
   graph_enabled?: boolean;
   checks: VerificationCheckConfig[];
   coverage?: VerificationCoverageConfig;
+  test_paths?: string[];
 }
 
 export interface VerificationCheckConfig {
@@ -259,6 +261,9 @@ function validateVerificationConfig(value: unknown, problems: string[]): void {
   if ("coverage" in value) {
     validateVerificationCoverageConfig(value.coverage, problems);
   }
+  if ("test_paths" in value) {
+    validateVerificationTestPaths(value.test_paths, problems);
+  }
   if (!Array.isArray(value.checks) || value.checks.length === 0) {
     problems.push("verification.checks must be a non-empty array");
     return;
@@ -303,6 +308,25 @@ function validateVerificationCoverageConfig(value: unknown, problems: string[]):
   }
   if (value.format !== "lcov") {
     problems.push('verification.coverage.format must be "lcov"');
+  }
+}
+
+function validateVerificationTestPaths(value: unknown, problems: string[]): void {
+  if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string")) {
+    problems.push("verification.test_paths must be an array of strings");
+    return;
+  }
+  for (const [index, pattern] of value.entries()) {
+    const pathProblem = validateRepoRelativePathOrGlob(pattern);
+    if (pathProblem !== null) {
+      problems.push(`verification.test_paths[${index}] is invalid: ${pathProblem}`);
+      continue;
+    }
+    if (!isExplicitTestPathPattern(pattern)) {
+      problems.push(
+        `verification.test_paths[${index}] must be confined to an explicit test/spec directory or *.test.*/*.spec.* file pattern`
+      );
+    }
   }
 }
 
@@ -370,6 +394,15 @@ function normalizeVerificationConfig(value: unknown): VerificationConfig {
   }
   return {
     ...("graph_enabled" in value && typeof value.graph_enabled === "boolean" ? { graph_enabled: value.graph_enabled } : {}),
+    ...("test_paths" in value && Array.isArray(value.test_paths)
+      ? {
+          test_paths: [...new Set(
+            value.test_paths
+              .filter((entry): entry is string => typeof entry === "string")
+              .map(normalizeRepoPathPattern)
+          )]
+        }
+      : {}),
     ...("coverage" in value && isRecord(value.coverage)
       ? {
           coverage: {
@@ -391,6 +424,20 @@ function normalizeVerificationConfig(value: unknown): VerificationConfig {
 
 function normalizeStringArray(value: unknown): string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : [];
+}
+
+function isExplicitTestPathPattern(value: string): boolean {
+  const normalized = normalizeRepoPathPattern(value).toLowerCase();
+  const parts = normalized.split("/");
+  const hasTestDirectory = parts.some((part) =>
+    part === "test" ||
+    part === "tests" ||
+    part === "__tests__" ||
+    part === "spec" ||
+    part === "specs"
+  );
+  const fileName = parts.at(-1) ?? "";
+  return hasTestDirectory || /\.(?:test|spec)(?:\.|$)/u.test(fileName);
 }
 
 function normalizeRepoRelativePath(value: unknown): string | null {

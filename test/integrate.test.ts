@@ -22,7 +22,7 @@ test("integrateShadow applies accepted queued patches together, runs tests, repo
     await git(repo, ["add", "verify-shadow.mjs"]);
     await git(repo, ["commit", "-m", "add verifier"]);
     const integrationBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
-    await setConfigTestCommand(repo, "node verify-shadow.mjs");
+    await setConfigTestCommand(repo, "node verify-shadow.mjs", []);
 
     await writeContract(repo, "T-001", integrationBase, ["README.md"]);
     await writeContract(repo, "T-002", integrationBase, ["src/feature.ts"]);
@@ -453,10 +453,20 @@ async function writeVerifier(repo: string): Promise<void> {
   );
 }
 
-async function setConfigTestCommand(repo: string, testCommand: string): Promise<void> {
+async function setConfigTestCommand(
+  repo: string,
+  testCommand: string,
+  characterizationTestPaths?: string[]
+): Promise<void> {
   const configPath = path.join(repo, ".hivemind", "config.json");
   const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
   config.test_command = testCommand;
+  if (characterizationTestPaths !== undefined) {
+    config.verification = {
+      checks: [{ id: "shadow", command: testCommand, entry_files: ["verify-shadow.mjs"] }],
+      test_paths: characterizationTestPaths
+    };
+  }
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
