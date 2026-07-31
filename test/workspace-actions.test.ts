@@ -418,6 +418,17 @@ test("workspace inspection presents authoritative plan detail and daemon-derived
       task_id: null,
       data: { proposal_id: "MEM-001", title: "Prefer project-bound daemon discovery" }
     });
+    const candidateRoot = path.join(repo, ".hivemind", "resource", "oracle-candidates", "C-001");
+    await mkdir(candidateRoot, { recursive: true });
+    await writeFile(path.join(candidateRoot, "manifest.json"), `${JSON.stringify({
+      candidate_id: "C-001",
+      task_id: "T-001",
+      check_id: "unit"
+    }, null, 2)}\n`);
+    await writeFile(path.join(candidateRoot, "validation.json"), `${JSON.stringify({
+      classification: "valid_characterization",
+      reason: "existing selector behavior captured"
+    }, null, 2)}\n`);
 
     const result = await executeWorkspaceAction(repo, {
       type: "status.inspect",
@@ -431,6 +442,7 @@ test("workspace inspection presents authoritative plan detail and daemon-derived
       needs_you: Array<{ kind: string; detail: string }>;
       later: Array<{ kind: string }>;
       spend: { calls: number; effective_tokens: number; session_ceiling_tokens: number };
+      swarm: { characterizations: Array<{ candidate_id: string; task_id: string; classification: string; check_id: string }> };
     };
     assert.match(view.plan_review.plan_hash, /^[a-f0-9]{64}$/u);
     assert.equal(view.current_plan.plan_hash, view.plan_review.plan_hash);
@@ -461,6 +473,14 @@ test("workspace inspection presents authoritative plan detail and daemon-derived
     assert.equal(view.spend.calls, 0);
     assert.equal(view.spend.effective_tokens, 0);
     assert.equal(view.spend.session_ceiling_tokens, 500_000);
+    assert.deepEqual(view.swarm.characterizations, [{
+      candidate_id: "C-001",
+      task_id: "T-001",
+      classification: "valid_characterization",
+      reason: "existing selector behavior captured",
+      check_id: "unit",
+      artifact_path: ".hivemind/resource/oracle-candidates/C-001"
+    }]);
 
     const source = await readFile(path.resolve("src/workspace-inspection.ts"), "utf8");
     assert.doesNotMatch(source, /appendEvent|ratifyPlan|queuePlanAmendment|requestTaskRedirect/u);

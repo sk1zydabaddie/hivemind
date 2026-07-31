@@ -125,11 +125,14 @@ describe("read-only event projection", () => {
       }),
       makeEvent("quality.draft_verified", "T-003", {
         quality_run_id: "Q-T-003-demo",
-        draft_id: "D-001"
+        draft_id: "D-001",
+        tests: "pass"
       }),
       makeEvent("quality.draft_disposed", "T-003", {
         quality_run_id: "Q-T-003-demo",
-        draft_id: "D-001"
+        draft_id: "D-001",
+        eligible_for_selection: true,
+        changed_files: ["src/scheduler.ts"]
       }),
       makeEvent("quality.selection_decided", "T-003", {
         quality_run_id: "Q-T-003-demo",
@@ -160,6 +163,50 @@ describe("read-only event projection", () => {
         selected_draft_id: "D-001",
         status: "candidate selected"
       })
+    ]);
+    expect(state.subagents["Q-T-003-demo:D-001"]).toEqual(
+      expect.objectContaining({
+        task_id: "T-003",
+        kind: "quality-draft",
+        state: "done",
+        selected: true,
+        changed_files: ["src/scheduler.ts"]
+      })
+    );
+  });
+
+  test("projects Scouts and records artifact motion only for live durable events", () => {
+    const state = createBoardProjection();
+    for (const event of [
+      makeEvent("task.scouting_started", "T-005", { tool: "codex-scout" }),
+      makeEvent("scout.completed", "T-005", { tool: "codex-scout", cited_files: 4 }),
+      makeEvent("patch.accepted", "T-005", { reason: "scope matched" })
+    ]) {
+      applyEventMessage(state, { kind: "event", source: "history", event });
+    }
+    expect(state.subagents["T-005:scout"]).toEqual(expect.objectContaining({
+      task_id: "T-005",
+      kind: "scout",
+      state: "done",
+      detail: "4 files cited"
+    }));
+    expect(state.artifactMovements).toEqual([]);
+
+    applyEventMessage(state, {
+      kind: "event",
+      source: "live",
+      seq: 42,
+      event: makeEvent("verification.completed", "T-005", { tests: "pass" })
+    });
+    applyEventMessage(state, {
+      kind: "event",
+      source: "live",
+      seq: 43,
+      event: makeEvent("integration.passed", null, { applied: ["T-005"] })
+    });
+    expect(state.artifactMovements.map((movement) => [movement.task_id, movement.stage])).toEqual([
+      ["T-005", "tests"],
+      ["T-005", "merged"]
     ]);
   });
 

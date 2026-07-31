@@ -1,3 +1,5 @@
+import { readdir } from "node:fs/promises";
+import path from "node:path";
 import { loadConfig, type HivemindConfig } from "./config.js";
 import { readEvents, type HivemindEvent } from "./events.js";
 import { inspectLatestManagerSession, type ManagerWorkspaceSession } from "./manager.js";
@@ -11,6 +13,7 @@ import {
 } from "./plan.js";
 import { readQuotaLedger } from "./resource-ledger.js";
 import { inferAllowedFilesTier, type TaskTier } from "./routing.js";
+import { readJsonFile } from "./json.js";
 import { readActiveSpec } from "./spec.js";
 import { getStatus, type HivemindStatus } from "./status.js";
 
@@ -71,6 +74,19 @@ export interface WorkspaceInspection {
     run_ceiling_tokens: number;
     session_ceiling_tokens: number;
   };
+  swarm: {
+    characterizations: WorkspaceCharacterization[];
+    warnings: string[];
+  };
+}
+
+export interface WorkspaceCharacterization {
+  candidate_id: string;
+  task_id: string;
+  classification: "rejected" | "regression_signal" | "valid_characterization" | "indeterminate";
+  reason: string;
+  check_id: string;
+  artifact_path: string;
 }
 
 export async function inspectWorkspace(repoRoot: string): Promise<{ ok: true; value: WorkspaceInspection } | { ok: false; reason: string }> {
@@ -94,6 +110,7 @@ export async function inspectWorkspace(repoRoot: string): Promise<{ ok: true; va
   if (!queues.ok) return queues;
   const ledger = await readQuotaLedger(repoRoot);
   if (!ledger.ok) return ledger;
+  const swarm = await inspectCharacterizations(repoRoot);
   const sessionId = session.value?.session_id ?? null;
   let calls = 0;
   let effectiveTokens = 0;
@@ -122,9 +139,52 @@ export async function inspectWorkspace(repoRoot: string): Promise<{ ok: true; va
         effective_tokens: effectiveTokens,
         run_ceiling_tokens: config.config.resource_policy?.run_ceiling?.tokens ?? 150_000,
         session_ceiling_tokens: config.config.resource_policy?.session_ceiling?.tokens ?? 500_000
-      }
+      },
+      swarm
     }
   };
+}
+
+async function inspectCharacterizations(repoRoot: string): Promise<WorkspaceInspection["swarm"]> {
+  const root = path.join(repoRoot, ".hivemind", "resource", "oracle-candidates");
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch (error: unknown) {
+    return isNodeError(error, "ENOENT")
+      ? { characterizations: [], warnings: [] }
+      : { characterizations: [], warnings: ["Characterization evidence could not be read."] };
+  }
+  const characterizations: WorkspaceCharacterization[] = [];
+  const warnings: string[] = [];
+  for (const entry of entries.filter((candidate) => candidate.isDirectory() && !candidate.name.startsWith(".")).sort((left, right) => left.name.localeCompare(right.name))) {
+    try {
+      const manifest = await readJsonFile(path.join(root, entry.name, "manifest.json"));
+      const validation = await readJsonFile(path.join(root, entry.name, "validation.json"));
+      if (!isRecord(manifest) || !isRecord(validation)) throw new Error("not an object");
+      const classification = validation.classification;
+      if (
+        typeof manifest.candidate_id !== "string" ||
+        typeof manifest.task_id !== "string" ||
+        typeof manifest.check_id !== "string" ||
+        typeof validation.reason !== "string" ||
+        !["rejected", "regression_signal", "valid_characterization", "indeterminate"].includes(String(classification))
+      ) {
+        throw new Error("missing required fields");
+      }
+      characterizations.push({
+        candidate_id: manifest.candidate_id,
+        task_id: manifest.task_id,
+        classification: classification as WorkspaceCharacterization["classification"],
+        reason: validation.reason,
+        check_id: manifest.check_id,
+        artifact_path: `.hivemind/resource/oracle-candidates/${entry.name}`
+      });
+    } catch {
+      warnings.push(`Characterization evidence ${entry.name} is unreadable.`);
+    }
+  }
+  return { characterizations, warnings };
 }
 
 async function inspectPlans(
@@ -346,4 +406,12 @@ function plainActionName(action: string): string {
 
 function compareQueueItems(left: WorkspaceQueueItem, right: WorkspaceQueueItem): number {
   return right.created_at.localeCompare(left.created_at) || left.id.localeCompare(right.id);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNodeError(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

@@ -76,6 +76,17 @@ export interface WorkspaceInspection {
     run_ceiling_tokens: number;
     session_ceiling_tokens: number;
   };
+  swarm: {
+    characterizations: Array<{
+      candidate_id: string;
+      task_id: string;
+      classification: "rejected" | "regression_signal" | "valid_characterization" | "indeterminate";
+      reason: string;
+      check_id: string;
+      artifact_path: string;
+    }>;
+    warnings: string[];
+  };
 }
 
 export type WorkspaceAction = {

@@ -12,6 +12,7 @@ import {
 import { useState } from "react";
 
 import { WorkTab } from "./components/workspace/work-tab";
+import { SwarmTab } from "./components/workspace/swarm-tab";
 import {
   Tabs,
   TabsContent,
@@ -123,10 +124,12 @@ export default function App(): React.JSX.Element {
             />
           </TabsContent>
           <TabsContent value="swarm">
-            <FutureWorkspaceTab
-              icon={<Network size={28} />}
-              title="The whole team, one view"
-              body="The live task view is already available in Work. The full agent tree and relationship view arrives in the dedicated Swarm unit."
+            <SwarmTab
+              projection={workspace.projection}
+              inspection={workspace.inspection}
+              actionError={workspace.actionError}
+              onSelectTask={workspace.selectTaskOutput}
+              onAction={workspace.performAction}
             />
           </TabsContent>
           <TabsContent value="memory">

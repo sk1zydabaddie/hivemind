@@ -23,9 +23,11 @@ describe("React workspace boundary", () => {
     const files = [
       "src/App.tsx",
       "src/components/workspace/work-tab.tsx",
+      "src/components/workspace/swarm-tab.tsx",
       "src/hooks/use-workspace.ts",
       "src/lib/projection.ts",
-      "src/lib/project-session.ts"
+      "src/lib/project-session.ts",
+      "src/lib/swarm-model.ts"
     ];
     const source = (
       await Promise.all(
@@ -130,5 +132,33 @@ describe("React workspace boundary", () => {
     expect(styles).toMatch(/\.work-tab[\s\S]*grid-template-rows:[^;]*minmax\(0, 1fr\) auto/u);
     expect(styles).toMatch(/\.prompt-dock\s*\{/u);
     expect(styles).not.toMatch(/text-overflow:\s*ellipsis/u);
+  });
+
+  test("Swarm controls use only audited actions and motion is event-bound", async () => {
+    const swarm = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "swarm-tab.tsx"),
+      "utf8"
+    );
+    const projection = await readFile(
+      path.join(desktopRoot, "src", "lib", "projection.ts"),
+      "utf8"
+    );
+    const styles = await readFile(path.join(desktopRoot, "src", "styles.css"), "utf8");
+    const audit = await readFile(path.resolve(desktopRoot, "..", "docs", "m8-action-routing-audit.md"), "utf8");
+
+    const actions = [...swarm.matchAll(/type:\s*"([a-z_.]+)"/gu)]
+      .map((match) => match[1])
+      .filter((action) => action.includes("."));
+    expect(new Set(actions)).toEqual(new Set([
+      "change.inspect",
+      "quality.cancel",
+      "task.redirect",
+      "task.stop"
+    ]));
+    for (const action of actions) expect(audit).toContain(`\`${action}\``);
+    expect(swarm).not.toMatch(/runGate|integrateShadow|requestLease|reviewMemoryProposal/u);
+    expect(projection).toMatch(/message\.source === "live"[\s\S]*recordArtifactMovements/u);
+    expect(styles).toMatch(/\.artifact-marker[\s\S]*animation:\s*artifact-travel/u);
+    expect(styles).toMatch(/prefers-reduced-motion[\s\S]*\.artifact-marker\s*\{\s*display:\s*none/u);
   });
 });

@@ -39,6 +39,7 @@ import type {
   WorkspacePlanTask,
   WorkspaceQueueItem
 } from "../../lib/workspace-actions";
+import { plainActionError } from "../../lib/plain-language";
 import { Badge } from "../ui/badge";
 import { ScrollArea } from "../ui/scroll-area";
 
@@ -909,15 +910,6 @@ function plainTaskIssue(issue: string): string {
   if (/oracle|coverage/iu.test(issue)) return "Testing is too thin for this change.";
   if (/write[-_ ]intent|scope/iu.test(issue)) return "The worker tried to change a file outside this task.";
   return issue;
-}
-
-function plainActionError(error: unknown): string {
-  const raw = error instanceof Error ? error.message : String(error ?? "");
-  if (raw === "") return "";
-  if (/has started and its contract is immutable/iu.test(raw)) return "This task is already working and cannot be edited. Guide the worker, or stop and re-plan.";
-  if (/no unhandled rejected write-intent/iu.test(raw)) return "The worker is not waiting at a safe correction point yet.";
-  if (/current lint-passed tentative plan|plan hash|re-ratification/iu.test(raw)) return "The plan changed. Review the latest version before approving it.";
-  return raw.replace(/^error:\s*/iu, "");
 }
 
 function integrationLanguage(status: string): { label: string; tone: string } {
