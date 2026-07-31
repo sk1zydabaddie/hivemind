@@ -10,6 +10,8 @@ import test from "node:test";
 import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { readPendingHumanGuidance } from "../src/human-guidance.js";
+import { startManagerSession } from "../src/manager.js";
+import { proposeMemoryLesson } from "../src/memory-log.js";
 import { executeWorkspaceAction, workspaceActionTypes } from "../src/workspace-actions.js";
 import { loadAdmittedValueQualityRun } from "../src/value-quality.js";
 import { runAdapterProcess, type AdapterProfile } from "../src/adapter.js";
@@ -139,7 +141,7 @@ test("memory review handoff returns only the hardened local TTY command and neve
     if (!result.ok) return;
     assert.deepEqual(result.value, {
       proposal_id: "MEM-001",
-      command: "hivemind memory review MEM-001",
+      command: "hivemind memory review MEM-001 --approve",
       local_interactive_tty_required: true,
       promotion_performed: false
     });
@@ -403,6 +405,16 @@ test("workspace inspection presents authoritative plan detail and daemon-derived
     assert.equal((await createTentativePlan(repo, "S-001", proposal)).ok, true);
     assert.equal((await groundTentativePlan(repo, "S-001")).ok, true);
     assert.equal((await lintTentativePlan(repo, "S-001")).ok, true);
+    const session = await startManagerSession(repo, "Inspect the workspace fixture.", {
+      proposedAction: {
+        type: "proposed_actions",
+        source: "scripted",
+        reason: "The fixture has no next action.",
+        actions: [],
+        human_approval_required_for: []
+      }
+    });
+    assert.equal(session.ok, true);
     await appendEvent(repo, {
       type: "task.failed",
       task_id: "T-009",
@@ -413,11 +425,52 @@ test("workspace inspection presents authoritative plan detail and daemon-derived
       task_id: null,
       data: { plain_reason: "Critical change, line 42 untested." }
     });
-    await appendEvent(repo, {
-      type: "memory.proposed",
-      task_id: null,
-      data: { proposal_id: "MEM-001", title: "Prefer project-bound daemon discovery" }
+    const memoryProposal = await proposeMemoryLesson(repo, {
+      title: "Prefer project-bound daemon discovery",
+      lesson: "Connection discovery must remain tied to the selected project.",
+      evidence: ["T-009 failed after a foreign daemon URL was reused"]
     });
+    assert.equal(memoryProposal.ok, true);
+    const routingProposal = await proposeMemoryLesson(repo, {
+      title: "Prefer the steadier UI provider",
+      lesson: "Measured UI work favors fixture-codex after two clean integrations.",
+      evidence: ["routing observation R-001", "routing observation R-002"],
+      routing_policy: {
+        version: 1,
+        kind: "learned_routing_policy",
+        source_evidence_hash: "b".repeat(64),
+        source_event_count: 2,
+        formula: { effective_throughput: 0.4, merged_diff_per_quota: 0.4, handoff_safety: 0.2 },
+        task_types: [{
+          routing_task_type: "ui",
+          providers: [{
+            provider: "fixture-codex",
+            weight: 0.82,
+            sample_count: 2,
+            request_count: 2,
+            completed_count: 2,
+            accepted_count: 2,
+            integrated_count: 2,
+            failed_count: 0,
+            timeout_count: 0,
+            revision_count: 0,
+            handoff_attempt_count: 0,
+            handoff_success_count: 0,
+            wall_time_ms: 2_000,
+            merged_diff_bytes: 1_800,
+            effective_tokens: 38_000,
+            effective_throughput_bytes_per_second: 0.9,
+            merged_diff_bytes_per_1k_tokens: 47.37,
+            handoff_safety_rate: null,
+            cost_source: "provider_reported",
+            provider_reported_sample_count: 2,
+            self_measured_sample_count: 0,
+            evidence: ["routing observation R-001", "routing observation R-002"]
+          }]
+        }]
+      }
+    });
+    assert.equal(routingProposal.ok, true);
     const candidateRoot = path.join(repo, ".hivemind", "resource", "oracle-candidates", "C-001");
     await mkdir(candidateRoot, { recursive: true });
     await writeFile(path.join(candidateRoot, "manifest.json"), `${JSON.stringify({
@@ -427,8 +480,13 @@ test("workspace inspection presents authoritative plan detail and daemon-derived
     }, null, 2)}\n`);
     await writeFile(path.join(candidateRoot, "validation.json"), `${JSON.stringify({
       classification: "valid_characterization",
-      reason: "existing selector behavior captured"
+      reason: "existing selector behavior captured",
+      attempts: [
+        { tree: "base_with_candidate", runs: [{ exit_code: 0 }] },
+        { tree: "post_change_with_candidate", runs: [{ exit_code: 0 }] }
+      ]
     }, null, 2)}\n`);
+    await writeFile(path.join(candidateRoot, "candidate.patch"), "diff --git a/test/project.test.ts b/test/project.test.ts\n");
 
     const result = await executeWorkspaceAction(repo, {
       type: "status.inspect",
@@ -442,7 +500,9 @@ test("workspace inspection presents authoritative plan detail and daemon-derived
       needs_you: Array<{ kind: string; detail: string }>;
       later: Array<{ kind: string }>;
       spend: { calls: number; effective_tokens: number; session_ceiling_tokens: number };
-      swarm: { characterizations: Array<{ candidate_id: string; task_id: string; classification: string; check_id: string }> };
+      swarm: { characterizations: Array<{ candidate_id: string; task_id: string; classification: string; check_id: string; base_outcome: string; post_change_outcome: string }> };
+      memory: { pending_lessons: Array<{ title: string; lesson: string; evidence: string[]; review_command: string }>; routing_changes: Array<{ title: string; task_types: Array<{ providers: Array<{ weight: number; cost_source: string; evidence: string[] }> }> }>; draft_tests: Array<{ patch: string }>; canon: unknown[]; active_routing: { status: string } };
+      history: { runs: Array<{ session_id: string; stopped_tasks: Array<{ task_id: string }>; calls: number }> };
     };
     assert.match(view.plan_review.plan_hash, /^[a-f0-9]{64}$/u);
     assert.equal(view.current_plan.plan_hash, view.plan_review.plan_hash);
@@ -469,7 +529,7 @@ test("workspace inspection presents authoritative plan detail and daemon-derived
     });
     assert.deepEqual(view.needs_you.map((item) => item.kind).sort(), ["merge_blocked", "plan_review", "task_attention"]);
     assert.equal(view.needs_you.find((item) => item.kind === "merge_blocked")?.detail, "Critical change, line 42 untested.");
-    assert.deepEqual(view.later.map((item) => item.kind), ["memory_review"]);
+    assert.deepEqual(view.later.map((item) => item.kind), ["memory_review", "memory_review"]);
     assert.equal(view.spend.calls, 0);
     assert.equal(view.spend.effective_tokens, 0);
     assert.equal(view.spend.session_ceiling_tokens, 500_000);
@@ -479,8 +539,29 @@ test("workspace inspection presents authoritative plan detail and daemon-derived
       classification: "valid_characterization",
       reason: "existing selector behavior captured",
       check_id: "unit",
-      artifact_path: ".hivemind/resource/oracle-candidates/C-001"
+      artifact_path: ".hivemind/resource/oracle-candidates/C-001",
+      patch: "diff --git a/test/project.test.ts b/test/project.test.ts\n",
+      base_outcome: "pass",
+      post_change_outcome: "pass"
     }]);
+    assert.deepEqual(view.memory.pending_lessons, [{
+      proposal_id: memoryProposal.ok ? memoryProposal.value.proposal_id : "",
+      proposed_at: memoryProposal.ok ? memoryProposal.value.proposed_at : "",
+      title: "Prefer project-bound daemon discovery",
+      lesson: "Connection discovery must remain tied to the selected project.",
+      evidence: ["T-009 failed after a foreign daemon URL was reused"],
+      task_id: null,
+      review_command: memoryProposal.ok ? `hivemind memory review ${memoryProposal.value.proposal_id} --approve` : ""
+    }]);
+    assert.equal(view.memory.draft_tests[0]?.patch.includes("test/project.test.ts"), true);
+    assert.equal(view.memory.routing_changes[0]?.title, "Prefer the steadier UI provider");
+    assert.equal(view.memory.routing_changes[0]?.task_types[0]?.providers[0]?.weight, 0.82);
+    assert.equal(view.memory.routing_changes[0]?.task_types[0]?.providers[0]?.cost_source, "provider_reported");
+    assert.deepEqual(view.memory.routing_changes[0]?.task_types[0]?.providers[0]?.evidence, ["routing observation R-001", "routing observation R-002"]);
+    assert.equal(view.memory.canon.length, 0);
+    assert.equal(view.memory.active_routing.status, "absent");
+    assert.equal(view.history.runs.length, 1);
+    assert.deepEqual(view.history.runs[0]?.stopped_tasks.map((task) => task.task_id), ["T-009"]);
 
     const source = await readFile(path.resolve("src/workspace-inspection.ts"), "utf8");
     assert.doesNotMatch(source, /appendEvent|ratifyPlan|queuePlanAmendment|requestTaskRedirect/u);
@@ -509,6 +590,42 @@ test("React action bridge remains a typed Tauri invocation with no Core authorit
   const source = await readFile(path.resolve("desktop/src/lib/workspace-actions.ts"), "utf8");
   assert.match(source, /invoke<T>\("workspace_action"/u);
   assert.doesNotMatch(source, /fetch\(|runGate|integrateShadow|requestLease|reviewMemoryProposal/u);
+});
+
+test("Memory and History inspection never crosses the selected project boundary", async () => {
+  await withRepo(async (projectA) => {
+    await withRepo(async (projectB) => {
+      const proposed = await proposeMemoryLesson(projectA, {
+        title: "Project A only",
+        lesson: "This evidence belongs only to project A.",
+        evidence: ["project-a-run"]
+      });
+      assert.equal(proposed.ok, true);
+      await createRatifiedSpec(projectA, "S-001");
+      const session = await startManagerSession(projectA, "Record project A history.", {
+        proposedAction: {
+          type: "proposed_actions",
+          source: "scripted",
+          reason: "No action needed.",
+          actions: [],
+          human_approval_required_for: []
+        }
+      });
+      assert.equal(session.ok, true);
+
+      const a = await executeWorkspaceAction(projectA, { type: "status.inspect", payload: {} });
+      const b = await executeWorkspaceAction(projectB, { type: "status.inspect", payload: {} });
+      assert.equal(a.ok, true);
+      assert.equal(b.ok, true);
+      if (!a.ok || !b.ok) return;
+      const aView = a.value as { memory: { pending_lessons: unknown[] }; history: { runs: unknown[] } };
+      const bView = b.value as { memory: { pending_lessons: unknown[] }; history: { runs: unknown[] } };
+      assert.equal(aView.memory.pending_lessons.length, 1);
+      assert.equal(aView.history.runs.length, 1);
+      assert.deepEqual(bView.memory.pending_lessons, []);
+      assert.deepEqual(bView.history.runs, []);
+    });
+  });
 });
 
 async function withRepo(run: (repo: string) => Promise<void>): Promise<void> {

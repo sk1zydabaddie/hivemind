@@ -108,6 +108,12 @@ export interface ManagerWorkspaceSession {
   blocked_reason: string | null;
 }
 
+export interface ManagerWorkspaceHistorySession extends ManagerWorkspaceSession {
+  last_activity_at: string;
+  task_ids: string[];
+  evidence_path: string;
+}
+
 interface ManagerBlockedAction {
   action_type: ManagerAction["type"];
   result: Extract<ManagerActionExecutionRecord, { ok: false }>;
@@ -1852,38 +1858,64 @@ export async function inspectLatestManagerSession(
   repoRoot: string,
   specId: string
 ): Promise<SpecResult<ManagerWorkspaceSession | null>> {
+  const history = await inspectManagerSessionHistory(repoRoot);
+  if (!history.ok) return history;
+  const latest = history.value
+    .filter((session) => session.spec_id === specId)
+    .sort((left, right) =>
+      right.created_at.localeCompare(left.created_at) || right.session_id.localeCompare(left.session_id)
+    )[0];
+  if (latest === undefined) return { ok: true, value: null };
+  const { last_activity_at: _lastActivityAt, task_ids: _taskIds, evidence_path: _evidencePath, ...current } = latest;
+  return { ok: true, value: current };
+}
+
+export async function inspectManagerSessionHistory(
+  repoRoot: string
+): Promise<SpecResult<ManagerWorkspaceHistorySession[]>> {
   let names: string[];
   try {
     names = await readdir(path.join(repoRoot, ".hivemind", "orchestrator", "sessions"));
   } catch (error: unknown) {
-    if (isNodeError(error, "ENOENT")) return { ok: true, value: null };
+    if (isNodeError(error, "ENOENT")) return { ok: true, value: [] };
     throw error;
   }
-  const sessions: ManagerSession[] = [];
+  const sessions: ManagerWorkspaceHistorySession[] = [];
   for (const name of names.filter((entry) => entry.endsWith(".json")).sort()) {
     const sessionId = name.slice(0, -".json".length);
     const loaded = await loadManagerSession(repoRoot, sessionId);
     if (!loaded.ok) return loaded;
-    if (loaded.value.spec_id === specId) sessions.push(loaded.value);
+    sessions.push(presentManagerWorkspaceHistorySession(loaded.value));
   }
-  const latest = sessions.sort((left, right) =>
-    right.created_at.localeCompare(left.created_at) || right.session_id.localeCompare(left.session_id)
-  )[0];
-  if (latest === undefined) return { ok: true, value: null };
-  const pending = latest.pending_action ?? null;
-  const blockedReason = latest.blocked_action?.result.reason ?? null;
   return {
     ok: true,
-    value: {
-      session_id: latest.session_id,
-      spec_id: latest.spec_id,
-      created_at: latest.created_at,
-      status: pending !== null ? "paused" : blockedReason !== null ? "stopped" : latest.proposed_action.actions.length === 0 ? "complete" : "active",
-      tool: latest.proposed_action.tool ?? "manager",
-      call_count: latest.turns.filter((turn) => turn.role === "manager").length,
-      pending_action: pending,
-      blocked_reason: blockedReason
-    }
+    value: sessions.sort((left, right) =>
+      right.created_at.localeCompare(left.created_at) || right.session_id.localeCompare(left.session_id)
+    )
+  };
+}
+
+function presentManagerWorkspaceHistorySession(session: ManagerSession): ManagerWorkspaceHistorySession {
+  const pending = session.pending_action ?? null;
+  const blockedReason = session.blocked_action?.result.reason ?? null;
+  const actionTimes = session.executed_actions
+    .map((action) => action.ts)
+    .filter((value) => !Number.isNaN(Date.parse(value)));
+  const taskIds = session.executed_actions
+    .map((action) => action.task_id)
+    .filter((taskId): taskId is string => typeof taskId === "string");
+  return {
+    session_id: session.session_id,
+    spec_id: session.spec_id,
+    created_at: session.created_at,
+    last_activity_at: [...actionTimes, session.created_at].sort().at(-1) ?? session.created_at,
+    status: pending !== null ? "paused" : blockedReason !== null ? "stopped" : session.proposed_action.actions.length === 0 ? "complete" : "active",
+    tool: session.proposed_action.tool ?? "manager",
+    call_count: session.turns.filter((turn) => turn.role === "manager").length,
+    pending_action: pending,
+    blocked_reason: blockedReason,
+    task_ids: [...new Set(taskIds)].sort(),
+    evidence_path: managerSessionRelativePath(session.session_id)
   };
 }
 

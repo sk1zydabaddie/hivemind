@@ -1,9 +1,14 @@
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { loadConfig, type HivemindConfig } from "./config.js";
 import { readEvents, type HivemindEvent } from "./events.js";
-import { inspectLatestManagerSession, type ManagerWorkspaceSession } from "./manager.js";
-import { readCanonMemory } from "./memory-canon.js";
+import {
+  inspectLatestManagerSession,
+  inspectManagerSessionHistory,
+  type ManagerWorkspaceSession
+} from "./manager.js";
+import { readCanonMemory, type CanonMemoryEntry } from "./memory-canon.js";
+import { readMemoryProposal, type MemoryProposal } from "./memory-log.js";
 import {
   loadCurrentRatifiedPlan,
   loadTentativePlan,
@@ -11,7 +16,10 @@ import {
   type PlanRatificationResult,
   type TentativePlan
 } from "./plan.js";
-import { readQuotaLedger } from "./resource-ledger.js";
+import { readQuotaLedger, type QuotaLedger } from "./resource-ledger.js";
+import { readPromotedRoutingPolicy } from "./learned-routing.js";
+import type { LearnedRoutingPolicy, RoutingProviderScorecard } from "./routing-policy-schema.js";
+import type { ValueQualityPolicy } from "./value-quality-policy-schema.js";
 import { inferAllowedFilesTier, type TaskTier } from "./routing.js";
 import { readJsonFile } from "./json.js";
 import { readActiveSpec } from "./spec.js";
@@ -78,6 +86,8 @@ export interface WorkspaceInspection {
     characterizations: WorkspaceCharacterization[];
     warnings: string[];
   };
+  memory: WorkspaceMemoryInspection;
+  history: WorkspaceHistoryInspection;
 }
 
 export interface WorkspaceCharacterization {
@@ -87,6 +97,92 @@ export interface WorkspaceCharacterization {
   reason: string;
   check_id: string;
   artifact_path: string;
+  patch: string;
+  base_outcome: "pass" | "fail" | "unknown";
+  post_change_outcome: "pass" | "fail" | "unknown";
+}
+
+export interface WorkspaceMemoryProposal {
+  proposal_id: string;
+  proposed_at: string;
+  title: string;
+  lesson: string;
+  evidence: string[];
+  task_id: string | null;
+  review_command: string;
+}
+
+export interface WorkspaceRoutingChange extends WorkspaceMemoryProposal {
+  change_kind: "routing_weights" | "quality_eligibility";
+  task_types: Array<{
+    routing_task_type: string;
+    providers: WorkspaceRoutingProvider[];
+  }>;
+  error_prone_task_types: string[];
+}
+
+export interface WorkspaceRoutingProvider {
+  provider: string;
+  weight: number;
+  sample_count: number;
+  request_count: number;
+  accepted_count: number;
+  integrated_count: number;
+  failed_count: number;
+  timeout_count: number;
+  revision_count: number;
+  merged_diff_bytes: number;
+  effective_tokens: number;
+  merged_diff_bytes_per_1k_tokens: number;
+  handoff_safety_rate: number | null;
+  cost_source: string;
+  evidence: string[];
+}
+
+export interface WorkspaceCanonEntry {
+  canon_id: string;
+  approved_at: string;
+  title: string;
+  lesson: string;
+  evidence: string[];
+}
+
+export interface WorkspaceMemoryInspection {
+  pending_lessons: WorkspaceMemoryProposal[];
+  routing_changes: WorkspaceRoutingChange[];
+  draft_tests: WorkspaceCharacterization[];
+  canon: WorkspaceCanonEntry[];
+  active_routing: {
+    status: "active" | "absent" | "stale" | "invalid";
+    canon_id: string | null;
+    reason: string | null;
+    task_types: WorkspaceRoutingChange["task_types"];
+  };
+  warnings: string[];
+}
+
+export interface WorkspaceHistoryRun {
+  session_id: string;
+  spec_id: string;
+  started_at: string;
+  last_activity_at: string;
+  duration_ms: number;
+  outcome: "active" | "completed" | "needs_attention" | "paused";
+  outcome_detail: string;
+  merged_tasks: string[];
+  stopped_tasks: Array<{ task_id: string; state: "failed" | "blocked" | "cancelled" | "paused"; reason: string }>;
+  calls: number;
+  effective_tokens: number;
+  provider_reported_tokens: number;
+  self_measured_tokens: number;
+  evidence_paths: string[];
+}
+
+export interface WorkspaceHistoryInspection {
+  runs: WorkspaceHistoryRun[];
+  run_ceiling_tokens: number;
+  session_ceiling_tokens: number;
+  warnings: string[];
 }
 
 export async function inspectWorkspace(repoRoot: string): Promise<{ ok: true; value: WorkspaceInspection } | { ok: false; reason: string }> {
@@ -111,6 +207,10 @@ export async function inspectWorkspace(repoRoot: string): Promise<{ ok: true; va
   const ledger = await readQuotaLedger(repoRoot);
   if (!ledger.ok) return ledger;
   const swarm = await inspectCharacterizations(repoRoot);
+  const memory = await inspectMemory(repoRoot, events.value, swarm.characterizations);
+  if (!memory.ok) return memory;
+  const history = await inspectHistory(repoRoot, events.value, ledger.value, config.config);
+  if (!history.ok) return history;
   const sessionId = session.value?.session_id ?? null;
   let calls = 0;
   let effectiveTokens = 0;
@@ -140,7 +240,9 @@ export async function inspectWorkspace(repoRoot: string): Promise<{ ok: true; va
         run_ceiling_tokens: config.config.resource_policy?.run_ceiling?.tokens ?? 150_000,
         session_ceiling_tokens: config.config.resource_policy?.session_ceiling?.tokens ?? 500_000
       },
-      swarm
+      swarm,
+      memory: memory.value,
+      history: history.value
     }
   };
 }
@@ -178,13 +280,239 @@ async function inspectCharacterizations(repoRoot: string): Promise<WorkspaceInsp
         classification: classification as WorkspaceCharacterization["classification"],
         reason: validation.reason,
         check_id: manifest.check_id,
-        artifact_path: `.hivemind/resource/oracle-candidates/${entry.name}`
+        artifact_path: `.hivemind/resource/oracle-candidates/${entry.name}`,
+        patch: await readFile(path.join(root, entry.name, "candidate.patch"), "utf8"),
+        base_outcome: attemptOutcome(validation.attempts, "base_with_candidate"),
+        post_change_outcome: attemptOutcome(validation.attempts, "post_change_with_candidate")
       });
     } catch {
       warnings.push(`Characterization evidence ${entry.name} is unreadable.`);
     }
   }
   return { characterizations, warnings };
+}
+
+async function inspectMemory(
+  repoRoot: string,
+  events: HivemindEvent[],
+  characterizations: WorkspaceCharacterization[]
+): Promise<{ ok: true; value: WorkspaceMemoryInspection } | { ok: false; reason: string }> {
+  const canon = await readCanonMemory(repoRoot);
+  if (!canon.ok) return canon;
+  const promotedIds = new Set(canon.value.map((entry) => entry.proposal_id));
+  const proposals: MemoryProposal[] = [];
+  const warnings: string[] = [];
+  const proposalIds = [...new Set(events
+    .filter((event) => event.type === "memory.proposed" && typeof event.data.proposal_id === "string")
+    .map((event) => String(event.data.proposal_id)))];
+  for (const proposalId of proposalIds) {
+    if (promotedIds.has(proposalId)) continue;
+    const proposal = await readMemoryProposal(repoRoot, proposalId);
+    if (proposal.ok) proposals.push(proposal.value);
+    else warnings.push(`Pending memory ${proposalId} could not be read: ${proposal.reason}`);
+  }
+  const activeRouting = await readPromotedRoutingPolicy(repoRoot);
+  return {
+    ok: true,
+    value: {
+      pending_lessons: proposals.filter((proposal) => proposal.routing_policy === null && proposal.value_quality_policy === null)
+        .map(presentMemoryProposal).sort(compareMemoryItems),
+      routing_changes: proposals.filter((proposal) => proposal.routing_policy !== null || proposal.value_quality_policy !== null)
+        .map((proposal) => proposal.routing_policy !== null
+          ? presentRoutingChange(proposal, proposal.routing_policy)
+          : presentValueQualityChange(proposal, proposal.value_quality_policy as ValueQualityPolicy))
+        .sort(compareMemoryItems),
+      draft_tests: characterizations,
+      canon: canon.value.map(presentCanonEntry).sort((left, right) => right.approved_at.localeCompare(left.approved_at)),
+      active_routing: {
+        status: activeRouting.promoted,
+        canon_id: activeRouting.active_canon_id,
+        reason: activeRouting.reason,
+        task_types: activeRouting.active_policy === null ? [] : presentRoutingTaskTypes(activeRouting.active_policy)
+      },
+      warnings
+    }
+  };
+}
+
+async function inspectHistory(
+  repoRoot: string,
+  events: HivemindEvent[],
+  ledger: QuotaLedger,
+  config: HivemindConfig
+): Promise<{ ok: true; value: WorkspaceHistoryInspection } | { ok: false; reason: string }> {
+  const sessions = await inspectManagerSessionHistory(repoRoot);
+  if (!sessions.ok) return sessions;
+  const ascending = [...sessions.value].sort((left, right) => left.created_at.localeCompare(right.created_at));
+  const runs = ascending.map((session, index) => {
+    const nextStart = ascending[index + 1]?.created_at;
+    const runEvents = events.filter((event) => event.ts >= session.created_at && (nextStart === undefined || event.ts < nextStart));
+    const mergedTasks = mergedTaskIds(runEvents);
+    const stoppedTasks = stoppedTaskStates(runEvents);
+    const usage = sessionUsage(ledger, session.session_id);
+    const lastEventAt = runEvents.at(-1)?.ts ?? session.last_activity_at;
+    const lastActivityAt = lastEventAt > session.last_activity_at ? lastEventAt : session.last_activity_at;
+    const outcome = historyOutcome(session.status, mergedTasks, stoppedTasks);
+    return {
+      session_id: session.session_id,
+      spec_id: session.spec_id,
+      started_at: session.created_at,
+      last_activity_at: lastActivityAt,
+      duration_ms: Math.max(0, Date.parse(lastActivityAt) - Date.parse(session.created_at)),
+      outcome: outcome.state,
+      outcome_detail: outcome.detail,
+      merged_tasks: mergedTasks,
+      stopped_tasks: stoppedTasks,
+      calls: usage.calls,
+      effective_tokens: usage.effectiveTokens,
+      provider_reported_tokens: usage.providerReportedTokens,
+      self_measured_tokens: usage.selfMeasuredTokens,
+      evidence_paths: [session.evidence_path, ".hivemind/log/events.jsonl"]
+    } satisfies WorkspaceHistoryRun;
+  });
+  return {
+    ok: true,
+    value: {
+      runs: runs.reverse(),
+      run_ceiling_tokens: config.resource_policy?.run_ceiling?.tokens ?? 150_000,
+      session_ceiling_tokens: config.resource_policy?.session_ceiling?.tokens ?? 500_000,
+      warnings: []
+    }
+  };
+}
+
+function presentMemoryProposal(proposal: MemoryProposal): WorkspaceMemoryProposal {
+  return {
+    proposal_id: proposal.proposal_id,
+    proposed_at: proposal.proposed_at,
+    title: proposal.title,
+    lesson: proposal.lesson,
+    evidence: [...proposal.evidence],
+    task_id: proposal.task_id,
+    review_command: `hivemind memory review ${proposal.proposal_id} --approve`
+  };
+}
+
+function presentRoutingChange(proposal: MemoryProposal, policy: LearnedRoutingPolicy): WorkspaceRoutingChange {
+  return { ...presentMemoryProposal(proposal), change_kind: "routing_weights", task_types: presentRoutingTaskTypes(policy), error_prone_task_types: [] };
+}
+
+function presentValueQualityChange(proposal: MemoryProposal, policy: ValueQualityPolicy): WorkspaceRoutingChange {
+  return {
+    ...presentMemoryProposal(proposal),
+    change_kind: "quality_eligibility",
+    task_types: [],
+    error_prone_task_types: [...policy.error_prone_routing_task_types]
+  };
+}
+
+function presentRoutingTaskTypes(policy: LearnedRoutingPolicy): WorkspaceRoutingChange["task_types"] {
+  return policy.task_types.map((taskType) => ({
+    routing_task_type: taskType.routing_task_type,
+    providers: taskType.providers.map(presentRoutingProvider)
+  }));
+}
+
+function presentRoutingProvider(provider: RoutingProviderScorecard): WorkspaceRoutingProvider {
+  return {
+    provider: provider.provider,
+    weight: provider.weight,
+    sample_count: provider.sample_count,
+    request_count: provider.request_count,
+    accepted_count: provider.accepted_count,
+    integrated_count: provider.integrated_count,
+    failed_count: provider.failed_count,
+    timeout_count: provider.timeout_count,
+    revision_count: provider.revision_count,
+    merged_diff_bytes: provider.merged_diff_bytes,
+    effective_tokens: provider.effective_tokens,
+    merged_diff_bytes_per_1k_tokens: provider.merged_diff_bytes_per_1k_tokens,
+    handoff_safety_rate: provider.handoff_safety_rate,
+    cost_source: provider.cost_source,
+    evidence: [...provider.evidence]
+  };
+}
+
+function presentCanonEntry(entry: CanonMemoryEntry): WorkspaceCanonEntry {
+  return {
+    canon_id: entry.canon_id,
+    approved_at: entry.approved_at,
+    title: entry.title,
+    lesson: entry.lesson,
+    evidence: [...entry.evidence]
+  };
+}
+
+function attemptOutcome(
+  rawAttempts: unknown,
+  tree: "base_with_candidate" | "post_change_with_candidate"
+): "pass" | "fail" | "unknown" {
+  if (!Array.isArray(rawAttempts)) return "unknown";
+  const attempt = rawAttempts.find((value) => isRecord(value) && value.tree === tree);
+  if (!isRecord(attempt) || !Array.isArray(attempt.runs) || attempt.runs.length === 0) return "unknown";
+  const exitCodes = attempt.runs.map((run) => isRecord(run) ? run.exit_code : null);
+  return exitCodes.every((exitCode) => exitCode === 0) ? "pass" : exitCodes.every((exitCode) => typeof exitCode === "number" && exitCode !== 0) ? "fail" : "unknown";
+}
+
+function mergedTaskIds(events: HivemindEvent[]): string[] {
+  const ids = new Set<string>();
+  for (const event of events) {
+    if (event.type === "task.integrated" && event.task_id !== null) ids.add(event.task_id);
+    if (event.type === "integration.passed" && Array.isArray(event.data.applied)) {
+      for (const value of event.data.applied) if (typeof value === "string") ids.add(value);
+    }
+  }
+  return [...ids].sort();
+}
+
+function stoppedTaskStates(events: HivemindEvent[]): WorkspaceHistoryRun["stopped_tasks"] {
+  const terminal = new Map<string, WorkspaceHistoryRun["stopped_tasks"][number]>();
+  const states = new Map<HivemindEvent["type"], WorkspaceHistoryRun["stopped_tasks"][number]["state"]>([
+    ["task.failed", "failed"],
+    ["task.blocked", "blocked"],
+    ["task.cancelled", "cancelled"],
+    ["task.paused", "paused"]
+  ]);
+  for (const event of events) {
+    const state = states.get(event.type);
+    if (event.task_id !== null && state !== undefined) {
+      terminal.set(event.task_id, { task_id: event.task_id, state, reason: plainEvidence(event) });
+    }
+    if (event.task_id !== null && ["task.started", "task.completed", "task.integrated"].includes(event.type)) terminal.delete(event.task_id);
+  }
+  return [...terminal.values()].sort((left, right) => left.task_id.localeCompare(right.task_id));
+}
+
+function sessionUsage(ledger: QuotaLedger, sessionId: string) {
+  let calls = 0;
+  let effectiveTokens = 0;
+  let providerReportedTokens = 0;
+  let selfMeasuredTokens = 0;
+  for (const entry of Object.values(ledger)) {
+    const usage = entry.session_usage[sessionId];
+    if (usage === undefined || entry.unmetered) continue;
+    calls += usage.requests;
+    effectiveTokens += usage.effective_tokens;
+    providerReportedTokens += usage.provider_reported_tokens;
+    selfMeasuredTokens += usage.self_measured_tokens;
+  }
+  return { calls, effectiveTokens, providerReportedTokens, selfMeasuredTokens };
+}
+
+function historyOutcome(
+  status: ManagerWorkspaceSession["status"],
+  mergedTasks: string[],
+  stoppedTasks: WorkspaceHistoryRun["stopped_tasks"]
+): { state: WorkspaceHistoryRun["outcome"]; detail: string } {
+  if (stoppedTasks.length > 0) return { state: "needs_attention", detail: `${stoppedTasks.length} task${stoppedTasks.length === 1 ? "" : "s"} stopped or paused.` };
+  if (status === "paused") return { state: "paused", detail: "The run is waiting for a decision." };
+  if (status === "active") return { state: "active", detail: "The run is still active." };
+  if (mergedTasks.length > 0) return { state: "completed", detail: `${mergedTasks.length} task${mergedTasks.length === 1 ? "" : "s"} reached merge.` };
+  return { state: "completed", detail: "The run ended without a merged task." };
+}
+
+function compareMemoryItems(left: WorkspaceMemoryProposal, right: WorkspaceMemoryProposal): number {
+  return right.proposed_at.localeCompare(left.proposed_at) || left.proposal_id.localeCompare(right.proposal_id);
 }
 
 async function inspectPlans(

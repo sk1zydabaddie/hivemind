@@ -24,6 +24,8 @@ describe("React workspace boundary", () => {
       "src/App.tsx",
       "src/components/workspace/work-tab.tsx",
       "src/components/workspace/swarm-tab.tsx",
+      "src/components/workspace/memory-tab.tsx",
+      "src/components/workspace/history-tab.tsx",
       "src/hooks/use-workspace.ts",
       "src/lib/projection.ts",
       "src/lib/project-session.ts",
@@ -160,5 +162,25 @@ describe("React workspace boundary", () => {
     expect(projection).toMatch(/message\.source === "live"[\s\S]*recordArtifactMovements/u);
     expect(styles).toMatch(/\.artifact-marker[\s\S]*animation:\s*artifact-travel/u);
     expect(styles).toMatch(/prefers-reduced-motion[\s\S]*\.artifact-marker\s*\{\s*display:\s*none/u);
+  });
+
+  test("Memory and History remain read-only views with no promotion surface", async () => {
+    const memory = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "memory-tab.tsx"),
+      "utf8"
+    );
+    const history = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "history-tab.tsx"),
+      "utf8"
+    );
+    const app = await readFile(path.join(desktopRoot, "src", "App.tsx"), "utf8");
+    const source = `${memory}\n${history}`;
+
+    expect(source).not.toMatch(/onAction|invokeWorkspaceAction|fetch\(|method:\s*["']POST/u);
+    expect(source).not.toMatch(/reviewMemoryProposal|memory\.review_handoff|Promote|Approve/u);
+    expect(memory).toMatch(/The app cannot approve this item/u);
+    expect(memory).toMatch(/Review in a terminal/u);
+    expect(history).toMatch(/read-only project evidence/u);
+    expect(app).not.toMatch(/FutureWorkspaceTab/u);
   });
 });

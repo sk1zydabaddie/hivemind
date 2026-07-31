@@ -1,18 +1,17 @@
 import {
   Activity,
   BrainCircuit,
-  CheckCircle2,
-  Clock3,
   FolderGit2,
   History,
   Network,
-  Radio,
   Wifi
 } from "lucide-react";
 import { useState } from "react";
 
 import { WorkTab } from "./components/workspace/work-tab";
 import { SwarmTab } from "./components/workspace/swarm-tab";
+import { MemoryTab } from "./components/workspace/memory-tab";
+import { HistoryTab } from "./components/workspace/history-tab";
 import {
   Tabs,
   TabsContent,
@@ -133,49 +132,13 @@ export default function App(): React.JSX.Element {
             />
           </TabsContent>
           <TabsContent value="memory">
-            <FutureWorkspaceTab
-              icon={<BrainCircuit size={28} />}
-              title="Reviewed project knowledge"
-              body="Things worth remembering and pending review will live here. This shell does not add a new approval path."
-            />
+            <MemoryTab inspection={workspace.inspection} />
           </TabsContent>
           <TabsContent value="history">
-            <FutureWorkspaceTab
-              icon={<Clock3 size={28} />}
-              title="Runs, evidence, and spend"
-              body="Past project activity remains available while connected. A focused history browser arrives in its own unit."
-            />
+            <HistoryTab inspection={workspace.inspection} />
           </TabsContent>
         </Tabs>
       </main>
     </TooltipProvider>
-  );
-}
-
-function FutureWorkspaceTab({
-  icon,
-  title,
-  body
-}: {
-  icon: React.ReactNode;
-  title: string;
-  body: string;
-}): React.JSX.Element {
-  return (
-    <section className="future-tab">
-      <div className="future-tab-rail" aria-hidden="true">
-        <span>{icon}</span>
-        <i />
-        <CheckCircle2 size={18} />
-      </div>
-      <div>
-        <h2>{title}</h2>
-        <p>{body}</p>
-        <div className="future-tab-status">
-          <Radio size={14} aria-hidden="true" />
-          Project connection remains live while you browse
-        </div>
-      </div>
-    </section>
   );
 }

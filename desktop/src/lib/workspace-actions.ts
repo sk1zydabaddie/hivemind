@@ -84,9 +84,99 @@ export interface WorkspaceInspection {
       reason: string;
       check_id: string;
       artifact_path: string;
+      patch: string;
+      base_outcome: "pass" | "fail" | "unknown";
+      post_change_outcome: "pass" | "fail" | "unknown";
     }>;
     warnings: string[];
   };
+  memory: {
+    pending_lessons: WorkspaceMemoryProposal[];
+    routing_changes: WorkspaceRoutingChange[];
+    draft_tests: WorkspaceCharacterization[];
+    canon: Array<{
+      canon_id: string;
+      approved_at: string;
+      title: string;
+      lesson: string;
+      evidence: string[];
+    }>;
+    active_routing: {
+      status: "active" | "absent" | "stale" | "invalid";
+      canon_id: string | null;
+      reason: string | null;
+      task_types: WorkspaceRoutingTaskType[];
+    };
+    warnings: string[];
+  };
+  history: {
+    runs: WorkspaceHistoryRun[];
+    run_ceiling_tokens: number;
+    session_ceiling_tokens: number;
+    warnings: string[];
+  };
+}
+
+export type WorkspaceCharacterization = WorkspaceInspection["swarm"]["characterizations"][number];
+
+export interface WorkspaceMemoryProposal {
+  proposal_id: string;
+  proposed_at: string;
+  title: string;
+  lesson: string;
+  evidence: string[];
+  task_id: string | null;
+  review_command: string;
+}
+
+export interface WorkspaceRoutingProvider {
+  provider: string;
+  weight: number;
+  sample_count: number;
+  request_count: number;
+  accepted_count: number;
+  integrated_count: number;
+  failed_count: number;
+  timeout_count: number;
+  revision_count: number;
+  merged_diff_bytes: number;
+  effective_tokens: number;
+  merged_diff_bytes_per_1k_tokens: number;
+  handoff_safety_rate: number | null;
+  cost_source: string;
+  evidence: string[];
+}
+
+export interface WorkspaceRoutingTaskType {
+  routing_task_type: string;
+  providers: WorkspaceRoutingProvider[];
+}
+
+export interface WorkspaceRoutingChange extends WorkspaceMemoryProposal {
+  change_kind: "routing_weights" | "quality_eligibility";
+  task_types: WorkspaceRoutingTaskType[];
+  error_prone_task_types: string[];
+}
+
+export interface WorkspaceHistoryRun {
+  session_id: string;
+  spec_id: string;
+  started_at: string;
+  last_activity_at: string;
+  duration_ms: number;
+  outcome: "active" | "completed" | "needs_attention" | "paused";
+  outcome_detail: string;
+  merged_tasks: string[];
+  stopped_tasks: Array<{
+    task_id: string;
+    state: "failed" | "blocked" | "cancelled" | "paused";
+    reason: string;
+  }>;
+  calls: number;
+  effective_tokens: number;
+  provider_reported_tokens: number;
+  self_measured_tokens: number;
+  evidence_paths: string[];
 }
 
 export type WorkspaceAction = {

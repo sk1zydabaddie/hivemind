@@ -95,10 +95,22 @@ function fixtureInspection(taskCount: number): WorkspaceInspection {
         classification: "valid_characterization",
         reason: "existing behavior captured",
         check_id: "unit",
-        artifact_path: ".hivemind/resource/oracle-candidates/C-001"
+        artifact_path: ".hivemind/resource/oracle-candidates/C-001",
+        patch: "diff --git a/test/example.test.ts b/test/example.test.ts\n",
+        base_outcome: "pass",
+        post_change_outcome: "pass"
       }],
       warnings: []
-    }
+    },
+    memory: {
+      pending_lessons: [],
+      routing_changes: [],
+      draft_tests: [],
+      canon: [],
+      active_routing: { status: "absent", canon_id: null, reason: null, task_types: [] },
+      warnings: []
+    },
+    history: { runs: [], run_ceiling_tokens: 150_000, session_ceiling_tokens: 500_000, warnings: [] }
   };
 }
 

@@ -115,7 +115,7 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
   if (raw.type === "memory.review_handoff") {
     const parsed = exactStrings(payload, ["proposal_id"]);
     return parsed.ok
-      ? { ok: true, value: { proposal_id: parsed.value.proposal_id, command: `hivemind memory review ${parsed.value.proposal_id}`, local_interactive_tty_required: true, promotion_performed: false } }
+      ? { ok: true, value: { proposal_id: parsed.value.proposal_id, command: `hivemind memory review ${parsed.value.proposal_id} --approve`, local_interactive_tty_required: true, promotion_performed: false } }
       : parsed;
   }
   return { ok: false, reason: "unsupported workspace action" };

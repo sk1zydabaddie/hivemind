@@ -16,6 +16,7 @@ import { memoryCommand } from "../src/memory.js";
 import { mcpToolDefinitions } from "../src/mcp.js";
 import { buildPlanningGenerationPrompt } from "../src/planning-prompt.js";
 import { readEvents } from "../src/events.js";
+import { executeWorkspaceAction } from "../src/workspace-actions.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -68,6 +69,16 @@ test("memory proposal stays Tier-1 until explicit human review promotes it into 
       assert.equal(canon.value.length, 1);
       assert.equal(canon.value[0].lesson, lesson);
       assert.deepEqual(canon.value[0].evidence_acknowledged, [proposal.proposal_id]);
+    }
+    const workspace = await executeWorkspaceAction(repo, { type: "status.inspect", payload: {} });
+    assert.equal(workspace.ok, true);
+    if (workspace.ok) {
+      const memory = (workspace.value as { memory: { canon: Array<{ canon_id: string; lesson: string }>; pending_lessons: unknown[] } }).memory;
+      assert.deepEqual(memory.canon.map((entry) => ({ canon_id: entry.canon_id, lesson: entry.lesson })), [{
+        canon_id: proposal.proposal_id,
+        lesson
+      }]);
+      assert.equal(memory.pending_lessons.length, 0);
     }
     const afterReview = await planningPrompt(repo);
     assert.equal(afterReview.ok, true);
