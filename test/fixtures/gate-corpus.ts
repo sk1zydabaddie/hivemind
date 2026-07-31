@@ -324,7 +324,7 @@ async function cleanupTempRepo(repo: string): Promise<void> {
 
 async function assertNoChangesetWorktrees(repo: string): Promise<void> {
   const worktrees = await gitStdout(repo, ["worktree", "list", "--porcelain"]);
-  if (/hivemind-changeset-/.test(worktrees)) {
+  if (worktrees.split(/\r?\n/u).filter((line) => line.startsWith("worktree ")).length !== 1) {
     throw new Error(`changeset worktree was not cleaned up for ${repo}`);
   }
 }

@@ -190,7 +190,12 @@ test("runGate cleans up throwaway worktrees on success and failure", async () =>
 
     assert.equal(success.verdict, "accept");
     assert.equal(failure.verdict, "reject");
-    assert.doesNotMatch(await gitStdout(repo, ["worktree", "list", "--porcelain"]), /hivemind-changeset-/);
+    assert.equal(
+      (await gitStdout(repo, ["worktree", "list", "--porcelain"]))
+        .split(/\r?\n/u)
+        .filter((line) => line.startsWith("worktree ")).length,
+      1
+    );
   });
 });
 

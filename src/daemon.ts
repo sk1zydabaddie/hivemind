@@ -12,6 +12,7 @@ import { checkWriteIntent } from "./intent.js";
 import { requestLeaseForContract, releaseLease } from "./lease.js";
 import { proposeLearnedRoutingPolicy } from "./learned-routing.js";
 import { proposeMemoryLesson } from "./memory-log.js";
+import { reconcileProjectTempDirectories } from "./project-temp.js";
 import { findGitRoot } from "./repo.js";
 import { evaluatePlanThrash } from "./plan.js";
 import { readQuotaLedger } from "./resource-ledger.js";
@@ -48,6 +49,7 @@ export async function daemonCommand(cwd: string, args: string[]): Promise<number
     return 1;
   }
 
+  await reconcileProjectTempDirectories(repoRoot);
   const reconcileResult = await reconcileIncompleteRuns(repoRoot);
   if (!reconcileResult.ok) {
     console.error(`error: ${reconcileResult.reason}`);

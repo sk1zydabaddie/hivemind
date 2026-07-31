@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { withProjectTempDirectory } from "./project-temp.js";
 
 const execFileAsync = promisify(execFile);
 const patchDoesNotApplyReason = "patch does not apply to declared base";
@@ -27,23 +27,23 @@ export async function withDetachedCheckout<T>(
   baseCommit: string,
   callback: (checkoutPath: string) => Promise<T>
 ): Promise<{ ok: true; value: T } | { ok: false; reason: string }> {
-  const tempRoot = await mkdtemp(path.join(tmpdir(), "hivemind-checkout-"));
-  const checkoutPath = path.join(tempRoot, "checkout");
-  let worktreeCreated = false;
+  return withProjectTempDirectory(repoRoot, "checkout", async ({ path: tempRoot }) => {
+    const checkoutPath = path.join(tempRoot, "checkout");
+    let worktreeCreated = false;
 
-  try {
-    const worktreeResult = await addDetachedWorktree(repoRoot, checkoutPath, baseCommit);
-    if (!worktreeResult.ok) {
-      return worktreeResult;
+    try {
+      const worktreeResult = await addDetachedWorktree(repoRoot, checkoutPath, baseCommit);
+      if (!worktreeResult.ok) {
+        return worktreeResult;
+      }
+      worktreeCreated = true;
+      return { ok: true, value: await callback(checkoutPath) };
+    } finally {
+      if (worktreeCreated) {
+        await removeDetachedWorktree(repoRoot, checkoutPath);
+      }
     }
-    worktreeCreated = true;
-    return { ok: true, value: await callback(checkoutPath) };
-  } finally {
-    if (worktreeCreated) {
-      await removeDetachedWorktree(repoRoot, checkoutPath);
-    }
-    await rm(tempRoot, { recursive: true, force: true });
-  }
+  });
 }
 
 export async function resolveChangeset(
@@ -65,39 +65,39 @@ export async function withResolvedChangesetCheckouts<T>(
   patchPath: string,
   callback: (context: ResolvedChangesetCheckouts) => Promise<T>
 ): Promise<{ ok: true; value: T } | { ok: false; reason: string }> {
-  const tempRoot = await mkdtemp(path.join(tmpdir(), "hivemind-changeset-"));
-  const baseCheckoutPath = path.join(tempRoot, "base");
-  const appliedCheckoutPath = path.join(tempRoot, "applied");
+  return withProjectTempDirectory(repoRoot, "changeset", async ({ path: tempRoot }) => {
+    const baseCheckoutPath = path.join(tempRoot, "base");
+    const appliedCheckoutPath = path.join(tempRoot, "applied");
 
-  try {
-    const baseWorktreeResult = await addDetachedWorktree(repoRoot, baseCheckoutPath, baseCommit);
-    if (!baseWorktreeResult.ok) {
-      return { ok: false, reason: baseWorktreeResult.reason };
+    try {
+      const baseWorktreeResult = await addDetachedWorktree(repoRoot, baseCheckoutPath, baseCommit);
+      if (!baseWorktreeResult.ok) {
+        return { ok: false, reason: baseWorktreeResult.reason };
+      }
+
+      const appliedWorktreeResult = await addDetachedWorktree(repoRoot, appliedCheckoutPath, baseCommit);
+      if (!appliedWorktreeResult.ok) {
+        return { ok: false, reason: appliedWorktreeResult.reason };
+      }
+
+      const patchResult = await applyPatchToCheckout(appliedCheckoutPath, patchPath);
+      if (!patchResult.ok) {
+        return patchResult;
+      }
+
+      return {
+        ok: true,
+        value: await callback({
+          ops: await readChangesetOps(appliedCheckoutPath),
+          baseCheckoutPath,
+          appliedCheckoutPath
+        })
+      };
+    } finally {
+      await removeDetachedWorktree(repoRoot, baseCheckoutPath);
+      await removeDetachedWorktree(repoRoot, appliedCheckoutPath);
     }
-
-    const appliedWorktreeResult = await addDetachedWorktree(repoRoot, appliedCheckoutPath, baseCommit);
-    if (!appliedWorktreeResult.ok) {
-      return { ok: false, reason: appliedWorktreeResult.reason };
-    }
-
-    const patchResult = await applyPatchToCheckout(appliedCheckoutPath, patchPath);
-    if (!patchResult.ok) {
-      return patchResult;
-    }
-
-    return {
-      ok: true,
-      value: await callback({
-        ops: await readChangesetOps(appliedCheckoutPath),
-        baseCheckoutPath,
-        appliedCheckoutPath
-      })
-    };
-  } finally {
-    await removeDetachedWorktree(repoRoot, baseCheckoutPath);
-    await removeDetachedWorktree(repoRoot, appliedCheckoutPath);
-    await rm(tempRoot, { recursive: true, force: true });
-  }
+  });
 }
 
 export async function applyPatchToCheckout(checkoutPath: string, patchPath: string): Promise<ApplyPatchResult> {

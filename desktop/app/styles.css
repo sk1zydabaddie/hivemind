@@ -91,7 +91,7 @@ input {
 
 .connection-form {
   display: grid;
-  grid-template-columns: auto minmax(260px, 390px) auto auto;
+  grid-template-columns: auto minmax(300px, 440px) auto auto;
   align-items: center;
   gap: 8px;
   padding: 8px;

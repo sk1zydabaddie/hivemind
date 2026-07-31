@@ -7,14 +7,17 @@ import {
   taskRows,
   taskStateCounts
 } from "./projection.mjs";
+import { createProjectSession, createProjectStreamGuard } from "./project-session.mjs";
 
 const projection = createBoardProjection();
 let eventSource = null;
 let outputSource = null;
+let activeDaemonUrl = null;
+const streamGuard = createProjectStreamGuard();
 
 const els = {
   form: document.querySelector("#connection-form"),
-  daemonUrl: document.querySelector("#daemon-url"),
+  projectPath: document.querySelector("#project-path"),
   connectionState: document.querySelector("#connection-state"),
   taskCounts: document.querySelector("#task-counts"),
   leaseSummary: document.querySelector("#lease-summary"),
@@ -29,28 +32,61 @@ const els = {
   recentEvents: document.querySelector("#recent-events")
 };
 
-const initialDaemonUrl = new URLSearchParams(window.location.search).get("daemon") ?? localStorage.getItem("hivemind.daemonUrl") ?? "http://127.0.0.1:8765";
-els.daemonUrl.value = initialDaemonUrl;
+const invoke = window.__TAURI__?.core?.invoke;
+const projectSession = createProjectSession({
+  selectProject: async (projectPath) => {
+    if (typeof invoke !== "function") {
+      throw new Error("Project selection requires the native Hivemind desktop shell.");
+    }
+    return invoke("select_project", { projectPath });
+  },
+  onSwitchStart: resetForProjectSwitch,
+  onConnected: connectVerifiedProject,
+  onError: (error) => {
+    setConnectionState("connection error", error.message);
+    render();
+  }
+});
+const initialProjectPath = new URLSearchParams(window.location.search).get("project") ?? ".";
+els.projectPath.value = initialProjectPath;
 
 els.form.addEventListener("submit", (event) => {
   event.preventDefault();
-  connect(els.daemonUrl.value);
+  void projectSession.switchProject(els.projectPath.value);
 });
 
-connect(initialDaemonUrl);
+window.addEventListener("beforeunload", closeStreams);
+void projectSession.switchProject(initialProjectPath);
 render();
 
-function connect(rawDaemonUrl) {
-  const daemonUrl = normalizeDaemonUrl(rawDaemonUrl);
-  els.daemonUrl.value = daemonUrl;
-  localStorage.setItem("hivemind.daemonUrl", daemonUrl);
-  closeStreams();
-  Object.assign(projection, createBoardProjection());
+function connectVerifiedProject(connection) {
+  activeDaemonUrl = connection.daemon_url;
+  els.projectPath.value = connection.project_root;
+  setConnectionState(connection.status, connection.project_root);
+  connectEventStream();
+}
+
+function connectEventStream() {
+  if (!activeDaemonUrl) {
+    return;
+  }
+  const isCurrentProject = streamGuard.capture();
   setConnectionState("connecting");
-  eventSource = new EventSource(`${daemonUrl}/events/stream`);
-  eventSource.onopen = () => setConnectionState("streaming");
-  eventSource.onerror = () => setConnectionState("stream interrupted");
+  eventSource = new EventSource(`${activeDaemonUrl}/events/stream`);
+  eventSource.onopen = () => {
+    if (isCurrentProject()) {
+      setConnectionState("streaming");
+    }
+  };
+  eventSource.onerror = () => {
+    if (isCurrentProject()) {
+      setConnectionState("stream interrupted");
+    }
+  };
   eventSource.onmessage = (event) => {
+    if (!isCurrentProject()) {
+      return;
+    }
     const message = parseMessage(event.data);
     if (message) {
       applyEventMessage(projection, message);
@@ -61,15 +97,30 @@ function connect(rawDaemonUrl) {
   render();
 }
 
+function resetForProjectSwitch() {
+  streamGuard.advance();
+  closeStreams();
+  activeDaemonUrl = null;
+  Object.assign(projection, createBoardProjection());
+  setConnectionState("selecting project");
+  render();
+}
+
 function openOutputStream(taskId) {
+  if (!activeDaemonUrl) {
+    return;
+  }
   if (outputSource) {
     outputSource.close();
     outputSource = null;
   }
   selectTask(projection, taskId);
-  const daemonUrl = normalizeDaemonUrl(els.daemonUrl.value);
-  outputSource = new EventSource(`${daemonUrl}/tasks/${encodeURIComponent(taskId)}/output/stream`);
+  const isCurrentProject = streamGuard.capture();
+  outputSource = new EventSource(`${activeDaemonUrl}/tasks/${encodeURIComponent(taskId)}/output/stream`);
   outputSource.onmessage = (event) => {
+    if (!isCurrentProject()) {
+      return;
+    }
     const message = parseMessage(event.data);
     if (message) {
       applyOutputMessage(projection, message);
@@ -341,13 +392,10 @@ function gateDetailMarkup(task) {
   `;
 }
 
-function setConnectionState(value) {
+function setConnectionState(value, detail = "") {
   els.connectionState.textContent = value;
   els.connectionState.dataset.state = value;
-}
-
-function normalizeDaemonUrl(value) {
-  return value.trim().replace(/\/+$/u, "") || "http://127.0.0.1:8765";
+  els.connectionState.title = detail;
 }
 
 function parseMessage(raw) {

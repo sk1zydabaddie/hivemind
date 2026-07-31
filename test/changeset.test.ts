@@ -6,7 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { resolveChangeset } from "../src/changeset.js";
+import { resolveChangeset, withDetachedCheckout } from "../src/changeset.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -112,7 +112,19 @@ test("resolveChangeset cleans up throwaway worktrees on success and failure", as
 
     assert.equal(success.ok, true);
     assert.equal(failure.ok, false);
-    assert.doesNotMatch(await gitStdout(repo, ["worktree", "list", "--porcelain"]), /hivemind-changeset-/);
+    assert.equal(worktreeCount(await gitStdout(repo, ["worktree", "list", "--porcelain"])), 1);
+  });
+});
+
+test("detached checkout cleanup holds when the operation throws unexpectedly", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await assert.rejects(
+      withDetachedCheckout(repo, baseCommit, async () => {
+        throw new Error("fixture operation crashed");
+      }),
+      /fixture operation crashed/u
+    );
+    assert.equal(worktreeCount(await gitStdout(repo, ["worktree", "list", "--porcelain"])), 1);
   });
 });
 
@@ -174,6 +186,10 @@ async function makeUntrackedFilesDiffable(repo: string): Promise<void> {
 
 function sortOps<T extends { path: string; op: string }>(ops: T[]): T[] {
   return [...ops].sort((left, right) => `${left.path}:${left.op}`.localeCompare(`${right.path}:${right.op}`));
+}
+
+function worktreeCount(porcelain: string): number {
+  return porcelain.split(/\r?\n/u).filter((line) => line.startsWith("worktree ")).length;
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {

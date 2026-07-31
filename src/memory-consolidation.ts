@@ -1,6 +1,3 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import {
   adapterRunLogPath,
   findDangerousAdapterArgs,
@@ -13,6 +10,7 @@ import { readEvents, type HivemindEvent } from "./events.js";
 import { extractJsonObject } from "./json.js";
 import { proposeMemoryLesson, type MemoryProposal, type MemoryProposalInput } from "./memory-log.js";
 import type { MemoryResult } from "./memory-types.js";
+import { withProjectTempDirectory } from "./project-temp.js";
 
 const maximumProposalCount = 8;
 
@@ -54,10 +52,9 @@ export async function consolidateMemory(
   }
 
   const prompt = buildConsolidationPrompt(evidence);
-  const isolatedCwd = await mkdtemp(path.join(tmpdir(), "hivemind-consolidation-"));
   const outputLogPath = adapterRunLogPath(repoRoot, "memory-consolidation");
   const startedAt = Date.now();
-  try {
+  return withProjectTempDirectory(repoRoot, "consolidation", async ({ path: isolatedCwd }) => {
     const processResult = await runAdapterProcess(repoRoot, profile.profile, isolatedCwd, prompt, { outputLogPath });
     if (!processResult.ok) {
       return processResult;
@@ -93,9 +90,7 @@ export async function consolidateMemory(
         proposals
       }
     };
-  } finally {
-    await rm(isolatedCwd, { recursive: true, force: true });
-  }
+  });
 }
 
 function consolidatableEvidence(events: HivemindEvent[]): ConsolidationEvidence[] {

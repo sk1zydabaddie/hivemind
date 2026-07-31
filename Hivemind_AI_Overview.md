@@ -310,6 +310,8 @@ The UI, CLI, MCP server, and worker adapters do not write shared state directly 
 
 **M8 project binding.** One daemon instance is bound to exactly one repository root. The desktop app may switch between projects by disconnecting from one repo-bound daemon and connecting to another, but it never combines their events, memory, tasks, leases, caches, or artifacts. If the selected project's daemon is absent, the app may start it; the app never stops or kills a daemon on project switch or app close because that could orphan in-flight workers.
 
+Project-derived disposable checkouts and consolidation workspaces are the sole path-location exception. They remain under `%TEMP%` because measured Windows path arithmetic showed that placing detached checkouts below an already-deep repository would add roughly 35 characters to every tracked path while Git `core.longpaths` is unset. This is an inference from measurement, not documented original intent. Each directory is isolated by a stable canonical-repo-root hash, bound to an identity-verified ownership manifest, constrained by a short Windows path budget, and reclaimed only when the shared tri-state liveness primitive proves its owner dead. Unreadable, ambiguous, changed, or foreign ownership fails closed and is retained.
+
 #### Single Source of Truth
 
 There is exactly one authoritative store: the `.hivemind/` directory on disk. Rules that keep it consistent under concurrency:
