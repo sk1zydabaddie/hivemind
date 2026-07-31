@@ -1,0 +1,220 @@
+import { describe, expect, test } from "vitest";
+
+import {
+  applyEventMessage,
+  applyOutputMessage,
+  createBoardProjection,
+  leaseRows,
+  qualityRunRows,
+  selectTask,
+  taskRows
+} from "../src/lib/projection";
+
+describe("read-only event projection", () => {
+  test("replays task, file-scope, patch, and merge events", () => {
+    const state = createBoardProjection();
+    for (const item of [
+      makeEvent("task.created", "T-001", { title: "Create ledger" }),
+      makeEvent("lease.approved", "T-001", {
+        granted: ["src/ledger.js", "test/ledger.test.js"]
+      }),
+      makeEvent("task.started", "T-001", {
+        tool: "codex-worker",
+        worktree: ".hivemind/worktrees/T-001"
+      }),
+      makeEvent("patch.submitted", "T-001", { changed_files: 2 }),
+      makeEvent("patch.accepted", "T-001", {
+        verdict: "accept",
+        reason: "all changes within scope"
+      }),
+      makeEvent("integration.queued", "T-001", { queue: ["T-001"] }),
+      makeEvent("integration.passed", null, {
+        applied: ["T-001"],
+        tests: "pass",
+        report: "4/4"
+      })
+    ]) {
+      applyEventMessage(state, {
+        kind: "event",
+        source: "history",
+        event: item
+      });
+    }
+
+    const rows = taskRows(state);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].state).toBe("integrated");
+    expect(rows[0].patch.submitted).toBe(true);
+    expect(rows[0].patch.verdict).toBe("accept");
+    expect(leaseRows(state)).toEqual([
+      { filePath: "src/ledger.js", taskId: "T-001" },
+      { filePath: "test/ledger.test.js", taskId: "T-001" }
+    ]);
+    expect(state.integration.status).toBe("passed");
+  });
+
+  test("projects paused and bare failed events as distinct task states", () => {
+    const state = createBoardProjection();
+    applyEventMessage(state, {
+      kind: "event",
+      source: "history",
+      event: makeEvent("task.paused", "T-PAUSE", {
+        reason: "quota_exhausted"
+      })
+    });
+    applyEventMessage(state, {
+      kind: "event",
+      source: "live",
+      event: makeEvent("task.failed", "T-FAIL", {
+        reason: "worker process exited 1"
+      })
+    });
+
+    expect(state.tasks["T-PAUSE"].state).toBe("paused");
+    expect(state.tasks["T-FAIL"].state).toBe("failed");
+    expect(state.tasks["T-FAIL"].issue).toBe("worker process exited 1");
+  });
+
+  test("surfaces blocked and low-confidence merge evidence", () => {
+    const blocked = createBoardProjection();
+    applyEventMessage(blocked, {
+      kind: "event",
+      source: "live",
+      event: makeEvent("integration.blocked", null, {
+        tests: "blocked",
+        report: "configured coverage is weak"
+      })
+    });
+    expect(blocked.integration.status).toBe("blocked");
+    expect(blocked.integration.tests).toBe("blocked");
+
+    const lowConfidence = createBoardProjection();
+    applyEventMessage(lowConfidence, {
+      kind: "event",
+      source: "live",
+      event: makeEvent("integration.low_confidence", null, {
+        report: "low-tier coverage is unknown"
+      })
+    });
+    expect(lowConfidence.integration.status).toBe("low-confidence");
+  });
+
+  test("projects routing observations and quality runs outside recent events", () => {
+    const state = createBoardProjection();
+    applyEventMessage(state, {
+      kind: "event",
+      source: "history",
+      event: makeEvent("routing.observed", "T-002", {
+        provider: "codex",
+        routing_task_type: "integration",
+        effective_tokens: 19_160,
+        accounting_source: "provider_reported",
+        wall_time_ms: 2_100
+      })
+    });
+    for (const event of [
+      makeEvent("quality.admission_decided", "T-003", {
+        quality_run_id: "Q-T-003-demo",
+        strategy: "best_of_n",
+        admitted: true,
+        reason: "High task"
+      }),
+      makeEvent("quality.draft_started", "T-003", {
+        quality_run_id: "Q-T-003-demo",
+        draft_id: "D-001"
+      }),
+      makeEvent("quality.draft_verified", "T-003", {
+        quality_run_id: "Q-T-003-demo",
+        draft_id: "D-001"
+      }),
+      makeEvent("quality.draft_disposed", "T-003", {
+        quality_run_id: "Q-T-003-demo",
+        draft_id: "D-001"
+      }),
+      makeEvent("quality.selection_decided", "T-003", {
+        quality_run_id: "Q-T-003-demo",
+        selected_draft_id: "D-001"
+      })
+    ]) {
+      applyEventMessage(state, {
+        kind: "event",
+        source: "history",
+        event
+      });
+    }
+
+    expect(state.routingObservations).toEqual([
+      expect.objectContaining({
+        task_id: "T-002",
+        provider: "codex",
+        routing_task_type: "integration",
+        effective_tokens: 19_160
+      })
+    ]);
+    expect(qualityRunRows(state)).toEqual([
+      expect.objectContaining({
+        quality_run_id: "Q-T-003-demo",
+        drafts_started: 1,
+        drafts_verified: 1,
+        drafts_disposed: 1,
+        selected_draft_id: "D-001",
+        status: "candidate selected"
+      })
+    ]);
+  });
+
+  test("keeps execution groups and selected-task output presentation-only", () => {
+    const state = createBoardProjection();
+    applyEventMessage(state, {
+      kind: "event",
+      source: "history",
+      event: makeEvent("task.created", "T-004", {
+        title: "Wire people commands",
+        depends_on: ["T-001", "T-002"],
+        execution_group: "G-2",
+        group_mode: "sequence"
+      })
+    });
+    selectTask(state, "T-004");
+    applyOutputMessage(state, {
+      kind: "output",
+      source: "live",
+      record: output("T-003", "stdout", "other")
+    });
+    applyOutputMessage(state, {
+      kind: "output",
+      source: "live",
+      record: output("T-004", "stdout", "hello")
+    });
+
+    const [row] = taskRows(state);
+    expect(row.execution_group).toBe("G-2");
+    expect(row.group_mode).toBe("sequence");
+    expect(row.depends_on).toEqual(["T-001", "T-002"]);
+    expect(state.selectedOutput).toHaveLength(1);
+    expect(state.selectedOutput[0].text).toBe("hello");
+  });
+});
+
+function makeEvent(
+  type: string,
+  task_id: string | null,
+  data: Record<string, unknown>
+) {
+  return {
+    ts: "2026-07-30T12:34:56.000Z",
+    type,
+    task_id,
+    data
+  };
+}
+
+function output(task_id: string, stream: string, text: string) {
+  return {
+    ts: "2026-07-30T12:34:56.000Z",
+    task_id,
+    tool: "codex-worker",
+    stream,
+    text
+  };
+}

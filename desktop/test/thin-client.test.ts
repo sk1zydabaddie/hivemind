@@ -1,0 +1,90 @@
+import { access, readFile } from "node:fs/promises";
+import path from "node:path";
+
+import { describe, expect, test } from "vitest";
+
+const desktopRoot = path.resolve(import.meta.dirname, "..");
+
+describe("React workspace boundary", () => {
+  test("uses the same read-only streams and only the project-selection command", async () => {
+    const hook = await readFile(
+      path.join(desktopRoot, "src", "hooks", "use-workspace.ts"),
+      "utf8"
+    );
+    expect(hook).toMatch(/invoke\("select_project", \{ projectPath: selectedPath \}\)/u);
+    expect(hook).toMatch(/\/events\/stream/u);
+    expect(hook).toMatch(/\/tasks\/\$\{encodeURIComponent\(taskId\)\}\/output\/stream/u);
+    expect(hook).not.toMatch(/localStorage|sessionStorage|fetch\(|XMLHttpRequest/u);
+    expect(hook).not.toMatch(
+      /approve|ratify|redirect|submit_patch|integrate_shadow|request_lease/u
+    );
+  });
+
+  test("client source cannot import Core authority or contain mutation routes", async () => {
+    const files = [
+      "src/App.tsx",
+      "src/components/workspace/work-tab.tsx",
+      "src/hooks/use-workspace.ts",
+      "src/lib/projection.ts",
+      "src/lib/project-session.ts"
+    ];
+    const source = (
+      await Promise.all(
+        files.map((file) => readFile(path.join(desktopRoot, file), "utf8"))
+      )
+    ).join("\n");
+
+    expect(source).not.toMatch(/from ["'][.]{2,}\/[.]{2,}\/src\//u);
+    expect(source).not.toMatch(
+      /executeManagerAction|runGate|requestLease|integrateShadow|reviewMemoryProposal/u
+    );
+    expect(source).not.toMatch(
+      /\/approve|\/ratify|\/redirect|\/run|\/submit|\/integrate|method:\s*["']POST/u
+    );
+  });
+
+  test("old vanilla renderer is gone and one shadcn-style token path remains", async () => {
+    await expect(access(path.join(desktopRoot, "app", "main.mjs"))).rejects.toThrow();
+    const config = await readFile(
+      path.join(desktopRoot, "components.json"),
+      "utf8"
+    );
+    const styles = await readFile(
+      path.join(desktopRoot, "src", "styles.css"),
+      "utf8"
+    );
+    const app = await readFile(path.join(desktopRoot, "src", "App.tsx"), "utf8");
+
+    expect(config).toMatch(/ui\.shadcn\.com/u);
+    expect(styles).toMatch(/--field-ivory/u);
+    expect(styles).toMatch(/--meridian/u);
+    expect(styles).toMatch(/prefers-reduced-motion/u);
+    for (const tab of ["Work", "Swarm", "Memory", "History"]) {
+      expect(app).toContain(tab);
+    }
+  });
+
+  test("primary labels use plain language and expose no mutation controls", async () => {
+    const app = await readFile(path.join(desktopRoot, "src", "App.tsx"), "utf8");
+    const work = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"),
+      "utf8"
+    );
+    const visibleSource = `${app}\n${work}`;
+
+    for (const label of [
+      "Blocked before merge",
+      "Thin test coverage",
+      "Files being edited",
+      "Paused for capacity",
+      "Worker stopped",
+      "Provider evidence",
+      "Quality runs"
+    ]) {
+      expect(visibleSource).toContain(label);
+    }
+    expect(visibleSource).not.toMatch(
+      />\s*(Approve|Redirect|Ratify|Integrate|Promote|Run worker)\s*</iu
+    );
+  });
+});

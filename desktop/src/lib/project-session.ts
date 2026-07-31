@@ -1,4 +1,29 @@
-export function createProjectSession({ selectProject, onSwitchStart, onConnected, onError }) {
+export interface ProjectConnection {
+  project_root: string;
+  daemon_url: string;
+  status: "attached" | "started";
+}
+
+interface ProjectSessionOptions {
+  selectProject: (projectPath: string) => Promise<unknown>;
+  onSwitchStart: () => void;
+  onConnected: (connection: ProjectConnection) => void;
+  onError: (error: Error) => void;
+}
+
+export function createProjectSession({
+  selectProject,
+  onSwitchStart,
+  onConnected,
+  onError
+}: ProjectSessionOptions): {
+  switchProject: (
+    projectPath: string
+  ) => Promise<
+    | { ok: true; value: ProjectConnection }
+    | { ok: false; reason?: string; stale?: true }
+  >;
+} {
   let generation = 0;
 
   return {
@@ -12,14 +37,17 @@ export function createProjectSession({ selectProject, onSwitchStart, onConnected
         return { ok: false, reason: error.message };
       }
 
-      let connection;
+      let connection: ProjectConnection;
       try {
-        connection = validateProjectConnection(await selectProject(selectedPath));
+        connection = validateProjectConnection(
+          await selectProject(selectedPath)
+        );
       } catch (error) {
         if (currentGeneration !== generation) {
           return { ok: false, stale: true };
         }
-        const normalized = error instanceof Error ? error : new Error(String(error));
+        const normalized =
+          error instanceof Error ? error : new Error(String(error));
         onError(normalized);
         return { ok: false, reason: normalized.message };
       }
@@ -32,7 +60,10 @@ export function createProjectSession({ selectProject, onSwitchStart, onConnected
   };
 }
 
-export function createProjectStreamGuard() {
+export function createProjectStreamGuard(): {
+  advance: () => void;
+  capture: () => () => boolean;
+} {
   let generation = 0;
   return {
     advance() {
@@ -45,13 +76,23 @@ export function createProjectStreamGuard() {
   };
 }
 
-export function validateProjectConnection(value) {
+export function validateProjectConnection(value: unknown): ProjectConnection {
   if (!value || typeof value !== "object") {
     throw new Error("The desktop shell returned an invalid project connection.");
   }
-  const projectRoot = typeof value.project_root === "string" ? value.project_root.trim() : "";
-  const daemonUrl = typeof value.daemon_url === "string" ? value.daemon_url.trim().replace(/\/+$/u, "") : "";
-  const status = value.status === "attached" || value.status === "started" ? value.status : "";
+  const record = value as Record<string, unknown>;
+  const projectRoot =
+    typeof record.project_root === "string"
+      ? record.project_root.trim()
+      : "";
+  const daemonUrl =
+    typeof record.daemon_url === "string"
+      ? record.daemon_url.trim().replace(/\/+$/u, "")
+      : "";
+  const status =
+    record.status === "attached" || record.status === "started"
+      ? record.status
+      : "";
   if (projectRoot === "" || daemonUrl === "" || status === "") {
     throw new Error("The desktop shell returned an incomplete project connection.");
   }
