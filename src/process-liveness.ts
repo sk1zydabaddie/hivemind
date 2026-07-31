@@ -2,13 +2,15 @@ export type ProcessLiveness = "alive" | "dead" | "unknown";
 
 export type ProcessSignalProbe = (pid: number) => void;
 
+// Implements PL-1 from Hivemind_AI_Overview.md. The Tauri shell carries a
+// deliberate Rust port because it must decide liveness before a daemon exists.
 export function getProcessLiveness(
-  pid: number,
+  pid: number | null | undefined,
   probe: ProcessSignalProbe = (candidatePid) => {
     process.kill(candidatePid, 0);
   }
 ): ProcessLiveness {
-  if (!Number.isInteger(pid) || pid <= 0) {
+  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
     return "unknown";
   }
 

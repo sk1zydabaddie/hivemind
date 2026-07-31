@@ -312,6 +312,8 @@ The UI, CLI, MCP server, and worker adapters do not write shared state directly 
 
 Project-derived disposable checkouts and consolidation workspaces are the sole path-location exception. They remain under `%TEMP%` because measured Windows path arithmetic showed that placing detached checkouts below an already-deep repository would add roughly 35 characters to every tracked path while Git `core.longpaths` is unset. This is an inference from measurement, not documented original intent. Each directory is isolated by a stable canonical-repo-root hash, bound to an identity-verified ownership manifest, constrained by a short Windows path budget, and reclaimed only when the shared tri-state liveness primitive proves its owner dead. Unreadable, ambiguous, changed, or foreign ownership fails closed and is retained.
 
+**PL-1 process-liveness contract.** A process is `Dead` only when the operating system definitively reports no such process (`ESRCH`, or its platform-equivalent definitive absence result). A successful probe is `Alive`. Permission denial (`EPERM` / access denied), a missing or malformed PID, and every other ambiguous probe result are `Unknown`. Every caller treats `Unknown` as alive and refuses destructive cleanup or a competing daemon start. Core TypeScript and the pre-daemon Rust shell necessarily implement this contract separately across the language/process boundary; both ports carry parity tests for the same semantic case table.
+
 #### Single Source of Truth
 
 There is exactly one authoritative store: the `.hivemind/` directory on disk. Rules that keep it consistent under concurrency:

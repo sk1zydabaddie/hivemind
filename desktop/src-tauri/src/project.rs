@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
@@ -21,7 +21,8 @@ pub struct ProjectConnection {
 #[serde(deny_unknown_fields)]
 struct DaemonState {
     version: u8,
-    pid: u32,
+    #[serde(default, deserialize_with = "deserialize_optional_pid")]
+    pid: Option<u32>,
     url: String,
     repo_root: String,
     started_at: String,
@@ -39,6 +40,14 @@ enum ProcessLiveness {
     Alive,
     Dead,
     Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProcessProbeResult {
+    Alive,
+    NoSuchProcess,
+    PermissionDenied,
+    Ambiguous,
 }
 
 #[tauri::command]
@@ -66,7 +75,7 @@ fn connect_project_with<L, H, P>(
 where
     L: FnMut(&Path) -> Result<Option<Child>, String>,
     H: Fn(&str) -> Result<String, String>,
-    P: Fn(u32) -> ProcessLiveness,
+    P: Fn(Option<u32>) -> ProcessLiveness,
 {
     let project_root = canonical_git_root(project_path)?;
     let config_path = project_root.join(".hivemind").join("config.json");
@@ -153,11 +162,22 @@ fn read_daemon_state(project_root: &Path) -> Result<Option<DaemonState>, String>
     };
     let state: DaemonState = serde_json::from_str(&raw)
         .map_err(|error| format!("invalid .hivemind/daemon.json: {error}"))?;
-    if state.version != 1 || state.pid == 0 || state.started_at.trim().is_empty() {
+    if state.version != 1 || state.started_at.trim().is_empty() {
         return Err("invalid .hivemind/daemon.json fields".to_string());
     }
     validate_loopback_url(&state.url)?;
     Ok(Some(state))
+}
+
+fn deserialize_optional_pid<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(value
+        .as_u64()
+        .and_then(|candidate| u32::try_from(candidate).ok())
+        .filter(|candidate| *candidate > 0))
 }
 
 fn validate_state_project(project_root: &Path, state: &DaemonState) -> Result<(), String> {
@@ -332,7 +352,13 @@ fn hide_window(command: &mut Command) {
 fn hide_window(_command: &mut Command) {}
 
 #[cfg(windows)]
-fn process_liveness(pid: u32) -> ProcessLiveness {
+// Implements PL-1 from Hivemind_AI_Overview.md. This is deliberately ported
+// from Core because the shell must decide whether to launch before a daemon
+// exists to answer it.
+fn process_liveness(pid: Option<u32>) -> ProcessLiveness {
+    let Some(candidate_pid) = pid.filter(|candidate| *candidate > 0) else {
+        return ProcessLiveness::Unknown;
+    };
     use windows_sys::Win32::Foundation::{
         CloseHandle, ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER,
     };
@@ -341,46 +367,68 @@ fn process_liveness(pid: u32) -> ProcessLiveness {
     };
 
     unsafe {
-        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, candidate_pid);
         if handle.is_null() {
-            return match std::io::Error::last_os_error()
+            let probe_result = match std::io::Error::last_os_error()
                 .raw_os_error()
                 .map(|value| value as u32)
             {
-                Some(ERROR_INVALID_PARAMETER) => ProcessLiveness::Dead,
-                Some(ERROR_ACCESS_DENIED) | None => ProcessLiveness::Unknown,
-                Some(_) => ProcessLiveness::Unknown,
+                Some(ERROR_INVALID_PARAMETER) => ProcessProbeResult::NoSuchProcess,
+                Some(ERROR_ACCESS_DENIED) => ProcessProbeResult::PermissionDenied,
+                Some(_) | None => ProcessProbeResult::Ambiguous,
             };
+            return classify_process_liveness(Some(candidate_pid), probe_result);
         }
         let mut exit_code = 0_u32;
         let read = GetExitCodeProcess(handle, &mut exit_code);
         CloseHandle(handle);
-        if read == 0 {
-            ProcessLiveness::Unknown
+        let probe_result = if read == 0 {
+            ProcessProbeResult::Ambiguous
         } else if exit_code == 259 {
-            ProcessLiveness::Alive
+            ProcessProbeResult::Alive
         } else {
-            ProcessLiveness::Dead
-        }
+            ProcessProbeResult::NoSuchProcess
+        };
+        classify_process_liveness(Some(candidate_pid), probe_result)
     }
 }
 
 #[cfg(unix)]
-fn process_liveness(pid: u32) -> ProcessLiveness {
-    let result = unsafe { libc::kill(pid as i32, 0) };
+fn process_liveness(pid: Option<u32>) -> ProcessLiveness {
+    let Some(candidate_pid) = pid.filter(|candidate| *candidate > 0) else {
+        return ProcessLiveness::Unknown;
+    };
+    let result = unsafe { libc::kill(candidate_pid as i32, 0) };
     if result == 0 {
-        return ProcessLiveness::Alive;
+        return classify_process_liveness(Some(candidate_pid), ProcessProbeResult::Alive);
     }
-    match std::io::Error::last_os_error().raw_os_error() {
-        Some(libc::ESRCH) => ProcessLiveness::Dead,
-        Some(libc::EPERM) | None => ProcessLiveness::Unknown,
-        Some(_) => ProcessLiveness::Unknown,
-    }
+    let probe_result = match std::io::Error::last_os_error().raw_os_error() {
+        Some(libc::ESRCH) => ProcessProbeResult::NoSuchProcess,
+        Some(libc::EPERM) => ProcessProbeResult::PermissionDenied,
+        Some(_) | None => ProcessProbeResult::Ambiguous,
+    };
+    classify_process_liveness(Some(candidate_pid), probe_result)
 }
 
 #[cfg(not(any(windows, unix)))]
-fn process_liveness(_pid: u32) -> ProcessLiveness {
-    ProcessLiveness::Unknown
+fn process_liveness(pid: Option<u32>) -> ProcessLiveness {
+    classify_process_liveness(pid, ProcessProbeResult::Ambiguous)
+}
+
+fn classify_process_liveness(
+    pid: Option<u32>,
+    probe_result: ProcessProbeResult,
+) -> ProcessLiveness {
+    if pid.is_none() || pid == Some(0) {
+        return ProcessLiveness::Unknown;
+    }
+    match probe_result {
+        ProcessProbeResult::Alive => ProcessLiveness::Alive,
+        ProcessProbeResult::NoSuchProcess => ProcessLiveness::Dead,
+        ProcessProbeResult::PermissionDenied | ProcessProbeResult::Ambiguous => {
+            ProcessLiveness::Unknown
+        }
+    }
 }
 
 #[cfg(test)]
@@ -440,6 +488,47 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.status, "started");
+        cleanup_fixture(&project);
+    }
+
+    #[test]
+    fn stale_dead_daemon_state_starts_one_replacement_without_hanging() {
+        let project = fixture_project("stale-dead");
+        write_state(&project, &project, "http://127.0.0.1:40112", u32::MAX);
+        let launch_count = Arc::new(AtomicUsize::new(0));
+        let launch_count_copy = launch_count.clone();
+        let launched_project = project.clone();
+        let mut launch = move |root: &Path| {
+            assert!(same_path(root, &launched_project));
+            launch_count_copy.fetch_add(1, Ordering::SeqCst);
+            write_state(root, root, "http://127.0.0.1:40113", std::process::id());
+            Ok(None)
+        };
+
+        let result = connect_project_with(
+            project.to_str().unwrap(),
+            &mut launch,
+            &|url| {
+                if url.ends_with(":40113") {
+                    Ok(project.to_string_lossy().into_owned())
+                } else {
+                    Err("connection refused".to_string())
+                }
+            },
+            &|pid| {
+                if pid == Some(u32::MAX) {
+                    ProcessLiveness::Dead
+                } else {
+                    ProcessLiveness::Alive
+                }
+            },
+            Duration::from_millis(20),
+        )
+        .unwrap();
+
+        assert_eq!(result.status, "started");
+        assert_eq!(result.daemon_url, "http://127.0.0.1:40113");
+        assert_eq!(launch_count.load(Ordering::SeqCst), 1);
         cleanup_fixture(&project);
     }
 
@@ -509,10 +598,49 @@ mod tests {
             Command::new("sleep").arg("30").spawn().unwrap()
         };
         let pid = child.id();
-        assert_eq!(process_liveness(pid), ProcessLiveness::Alive);
+        assert_eq!(process_liveness(Some(pid)), ProcessLiveness::Alive);
         drop(child);
-        assert_eq!(process_liveness(pid), ProcessLiveness::Alive);
+        assert_eq!(process_liveness(Some(pid)), ProcessLiveness::Alive);
         terminate_fixture_process(pid);
+    }
+
+    #[test]
+    fn pl_1_process_liveness_cases_stay_fail_closed() {
+        assert_eq!(
+            classify_process_liveness(Some(101), ProcessProbeResult::Alive),
+            ProcessLiveness::Alive
+        );
+        assert_eq!(
+            classify_process_liveness(Some(102), ProcessProbeResult::NoSuchProcess),
+            ProcessLiveness::Dead
+        );
+        assert_eq!(
+            classify_process_liveness(Some(103), ProcessProbeResult::PermissionDenied),
+            ProcessLiveness::Unknown
+        );
+        assert_eq!(
+            classify_process_liveness(Some(104), ProcessProbeResult::Ambiguous),
+            ProcessLiveness::Unknown
+        );
+        assert_eq!(
+            classify_process_liveness(None, ProcessProbeResult::NoSuchProcess),
+            ProcessLiveness::Unknown
+        );
+        assert_eq!(
+            classify_process_liveness(Some(0), ProcessProbeResult::NoSuchProcess),
+            ProcessLiveness::Unknown
+        );
+
+        let missing: DaemonState = serde_json::from_str(
+            r#"{"version":1,"url":"http://127.0.0.1:1","repo_root":"C:\\repo","started_at":"now"}"#,
+        )
+        .unwrap();
+        let malformed: DaemonState = serde_json::from_str(
+            r#"{"version":1,"pid":"not-a-pid","url":"http://127.0.0.1:1","repo_root":"C:\\repo","started_at":"now"}"#,
+        )
+        .unwrap();
+        assert_eq!(process_liveness(missing.pid), ProcessLiveness::Unknown);
+        assert_eq!(process_liveness(malformed.pid), ProcessLiveness::Unknown);
     }
 
     fn fixture_project(label: &str) -> PathBuf {
