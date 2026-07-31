@@ -67,6 +67,10 @@ async function main(argv: string[]): Promise<number> {
   }
 
   if (command === "quality") {
+    if (rest[0] === "draft-refine") {
+      const { draftRefineCommand } = await import("./draft-refine.js");
+      return draftRefineCommand(process.cwd(), rest);
+    }
     if (rest[0] === "best-of-n") {
       const { bestOfNCommand } = await import("./best-of-n.js");
       return bestOfNCommand(process.cwd(), rest);

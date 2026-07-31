@@ -50,6 +50,7 @@ export const eventTypes = [
   "quality.draft_verified",
   "quality.draft_disposed",
   "quality.selection_decided",
+  "quality.refinement_completed",
   "approval.required",
   "quota.low",
   "quota.exhausted",

@@ -30,6 +30,7 @@ export interface RouteDecision {
 
 export interface RouteTaskProviderOptions {
   excludeTools?: string[];
+  preference?: "default" | "cheapest" | "strongest";
 }
 
 interface ProviderCandidate {
@@ -111,6 +112,23 @@ export async function routeTaskProvider(
 
   const nonPressured = eligible.filter((candidate) => !candidate.pressured);
   const pool = nonPressured.length > 0 ? nonPressured : eligible;
+  const preference = options.preference ?? "default";
+  if (preference !== "default") {
+    const selected = [...pool].sort((left, right) =>
+      preference === "cheapest"
+        ? compareCheapest(left, right)
+        : compareStrongest(left, right)
+    )[0];
+    return {
+      ok: true,
+      value: {
+        task_tier: taskTier,
+        tool: selected.tool,
+        provider_tier: selected.providerTier,
+        profile: selected.profile
+      }
+    };
+  }
   const learned = await chooseWithPromotedPolicy(repoRoot, contract, taskTier, candidatesResult.value, pool);
   const selected = learned.selected;
   return {
@@ -314,6 +332,22 @@ function compareCandidates(taskTier: TaskTier, left: ProviderCandidate, right: P
     return right.providerRank - left.providerRank || left.costRank - right.costRank || left.tool.localeCompare(right.tool);
   }
   return left.costRank - right.costRank || left.providerRank - right.providerRank || left.tool.localeCompare(right.tool);
+}
+
+function compareCheapest(left: ProviderCandidate, right: ProviderCandidate): number {
+  return (
+    left.costRank - right.costRank ||
+    left.providerRank - right.providerRank ||
+    left.tool.localeCompare(right.tool)
+  );
+}
+
+function compareStrongest(left: ProviderCandidate, right: ProviderCandidate): number {
+  return (
+    right.providerRank - left.providerRank ||
+    left.costRank - right.costRank ||
+    left.tool.localeCompare(right.tool)
+  );
 }
 
 function isNodeError(error: unknown, code: string): boolean {

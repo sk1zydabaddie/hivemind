@@ -129,7 +129,11 @@ export async function admitValueQuality(
 export async function authorizeValueQualityCall(
   repoRoot: string,
   qualityRunId: string,
-  options: { requestedTool?: string; estimatedInputTokens?: number } = {}
+  options: {
+    requestedTool?: string;
+    estimatedInputTokens?: number;
+    routingPreference?: "default" | "cheapest" | "strongest";
+  } = {}
 ): Promise<{ ok: true; value: ValueQualityCallAuthorization } | { ok: false; reason: string }> {
   const admitted = await loadAdmittedValueQualityRun(repoRoot, qualityRunId);
   if (!admitted.ok) {
@@ -148,7 +152,13 @@ export async function authorizeValueQualityCall(
   if (!evaluation.admitted) {
     return { ok: false, reason: `quality call refused because current admission policy no longer permits ${taskId}: ${evaluation.reason}` };
   }
-  const route = await routeTaskProvider(repoRoot, contract.contract, config.config, options.requestedTool);
+  const route = await routeTaskProvider(
+    repoRoot,
+    contract.contract,
+    config.config,
+    options.requestedTool,
+    { preference: options.routingPreference ?? "default" }
+  );
   if (!route.ok) {
     return route;
   }

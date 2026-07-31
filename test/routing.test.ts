@@ -75,6 +75,54 @@ test("routeTaskProvider routes Low-tier work to the cheapest eligible provider",
   });
 });
 
+test("explicit quality routing preferences choose cheapest and strongest only within the tier floor", async () => {
+  await withTempRepo(async ({ repo, config }) => {
+    config.medium_globs = ["src/medium.ts"];
+    await writeProfile(repo, "standard-cheap", "standard", 1);
+    await writeProfile(repo, "strong-expensive", "strong", 50);
+    const contract = contractFor({ allowed_files: ["src/medium.ts"] });
+
+    const cheapest = await routeTaskProvider(
+      repo,
+      contract,
+      config,
+      undefined,
+      { preference: "cheapest" }
+    );
+    const strongest = await routeTaskProvider(
+      repo,
+      contract,
+      config,
+      undefined,
+      { preference: "strongest" }
+    );
+
+    assert.equal(cheapest.ok, true, cheapest.ok ? undefined : cheapest.reason);
+    assert.equal(strongest.ok, true, strongest.ok ? undefined : strongest.reason);
+    if (cheapest.ok && strongest.ok) {
+      assert.equal(cheapest.value.task_tier, "medium");
+      assert.equal(cheapest.value.tool, "standard-cheap");
+      assert.equal(cheapest.value.provider_tier, "standard");
+      assert.equal(strongest.value.task_tier, "medium");
+      assert.equal(strongest.value.tool, "strong-expensive");
+      assert.equal(strongest.value.provider_tier, "strong");
+    }
+
+    const critical = await routeTaskProvider(
+      repo,
+      contractFor({ allowed_files: ["src/schema.ts"] }),
+      config,
+      undefined,
+      { preference: "cheapest" }
+    );
+    assert.equal(critical.ok, true, critical.ok ? undefined : critical.reason);
+    if (critical.ok) {
+      assert.equal(critical.value.tool, "strong-expensive");
+      assert.equal(critical.value.provider_tier, "strong");
+    }
+  });
+});
+
 test("routeTaskProvider fails closed on malformed auto-route provider metadata", async () => {
   await withTempRepo(async ({ repo, config }) => {
     await writeProfile(repo, "bad", "standard", 1, { routing_tier: "tiny" });

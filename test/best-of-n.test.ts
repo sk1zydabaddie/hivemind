@@ -318,13 +318,15 @@ test("adapter failure is preserved as an immutable draft and detached checkout c
 
 test("best-of-N is on-demand only and structurally reuses admission, routing, adapter, ledger, and M7.7b disposal", async () => {
   const proposer = await readFile(path.join(projectRoot, "src", "best-of-n.ts"), "utf8");
+  const provider = await readFile(path.join(projectRoot, "src", "quality-provider.ts"), "utf8");
   const cli = await readFile(path.join(projectRoot, "src", "cli.ts"), "utf8");
   assert.match(proposer, /await admitValueQuality\(/u);
   assert.match(proposer, /await authorizeValueQualityCall\(/u);
-  assert.match(proposer, /await runAdapterProcess\(/u);
-  assert.match(proposer, /await recordAdapterUsage\(/u);
+  assert.match(proposer, /await runQualityProvider\(/u);
   assert.match(proposer, /await disposeSpeculativeDraft\(/u);
   assert.doesNotMatch(proposer, /runGate|runShadowVerification|from "\.\/lease/u);
+  assert.match(provider, /await runAdapterProcess\(/u);
+  assert.match(provider, /await recordAdapterUsage\(/u);
   assert.match(cli, /rest\[0\] === "best-of-n"/u);
 
   for (const file of ["manager.ts", "daemon.ts", "mcp.ts"]) {

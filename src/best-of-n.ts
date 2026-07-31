@@ -1,23 +1,21 @@
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import {
-  buildAgentPrompt,
-  findDangerousAdapterArgs,
-  formatAdapterProcessFailure,
-  recordAdapterUsage,
-  runAdapterProcess,
-  type AdapterProcessResult
-} from "./adapter.js";
+import { buildAgentPrompt } from "./adapter.js";
 import { loadAndValidateContract, type TaskContract } from "./contract.js";
 import { writeImmutableJsonArtifact } from "./immutable-artifact.js";
+import {
+  measurePatchDistinctness,
+  type PatchDistinctness
+} from "./quality-distinctness.js";
+import {
+  runQualityProvider,
+  validateQualityProviderRoute
+} from "./quality-provider.js";
 import { findGitRoot } from "./repo.js";
 import { estimateTokens } from "./resource-ledger.js";
 import {
   disposeSpeculativeDraft,
-  type SpeculativeDraftArtifact,
-  type SpeculativeDraftOutput,
-  type SpeculativeDraftProvenance
+  type SpeculativeDraftArtifact
 } from "./speculative-draft.js";
 import {
   admitValueQuality,
@@ -33,14 +31,7 @@ export interface BestOfNRequest {
   tool?: string;
 }
 
-export interface DraftDistinctnessPair {
-  left_draft_id: string;
-  right_draft_id: string;
-  exact_patch_match: boolean;
-  changed_line_set_jaccard_similarity: number;
-  shared_changed_lines: number;
-  union_changed_lines: number;
-}
+export type DraftDistinctnessPair = PatchDistinctness;
 
 export interface BestOfNDistinctnessReport {
   version: 1;
@@ -119,103 +110,27 @@ export async function generateBestOfN(
         quality_run_id: qualityRunId
       };
     }
-    const dangerousArgs = findDangerousAdapterArgs(authorization.value.route.profile.invoke);
-    if (dangerousArgs.length > 0) {
+    const routeValidation = validateQualityProviderRoute(authorization.value.route);
+    if (!routeValidation.ok) {
       return {
         ok: false,
-        reason: `draft ${draftId} adapter profile "${authorization.value.route.tool}" contains dangerous invocation flags (${dangerousArgs.join(", ")}); speculative generation requires a confined writable profile`,
+        reason: `draft ${draftId} ${routeValidation.reason}`,
         quality_run_id: qualityRunId
       };
     }
 
-    let stopReason: string | null = null;
     const disposed = await disposeSpeculativeDraft(
       repoRoot,
       { quality_run_id: qualityRunId, draft_id: draftId },
       async (checkoutPath) => {
-        const output: SpeculativeDraftOutput[] = [];
-        const startedAt = Date.now();
-        const processResult = await runAdapterProcess(
+        const execution = await runQualityProvider(
           repoRoot,
-          authorization.value.route.profile,
+          authorization.value.route,
           checkoutPath,
           prompt,
-          {
-            usageSessionId: qualityRunId,
-            onStreamChunk: (chunk) => output.push(chunk)
-          }
+          qualityRunId
         );
-        const wallTimeMs = Date.now() - startedAt;
-        if (!processResult.ok) {
-          stopReason = processResult.reason;
-          return {
-            status: "crashed" as const,
-            reason: processResult.reason,
-            output,
-            provenance: buildUnstartedProvenance(
-              authorization.value.route.tool,
-              authorization.value.route.provider_tier,
-              authorization.value.route.profile.verified_on,
-              qualityRunId,
-              wallTimeMs
-            )
-          };
-        }
-
-        ensureCapturedOutput(output, processResult.value);
-        const ledger = await recordAdapterUsage(
-          repoRoot,
-          authorization.value.route.profile,
-          prompt,
-          processResult.value,
-          wallTimeMs
-        );
-        const provenance = buildProcessProvenance(
-          authorization.value.route.tool,
-          authorization.value.route.provider_tier,
-          authorization.value.route.profile.verified_on,
-          qualityRunId,
-          wallTimeMs,
-          processResult.value,
-          ledger.ok ? ledger.value.last_request : null,
-          prompt
-        );
-        if (!ledger.ok) {
-          stopReason = ledger.reason;
-          return {
-            status: processResult.value.timedOut ? "timed_out" as const : "crashed" as const,
-            reason: ledger.reason,
-            output,
-            provenance
-          };
-        }
-        if (processResult.value.timedOut) {
-          stopReason = `draft adapter "${authorization.value.route.tool}" timed out`;
-          return {
-            status: "timed_out" as const,
-            reason: stopReason,
-            output,
-            provenance
-          };
-        }
-        if (processResult.value.exitCode !== 0) {
-          stopReason = formatAdapterProcessFailure(
-            authorization.value.route.tool,
-            processResult.value,
-            "speculative draft adapter"
-          );
-          return {
-            status: "crashed" as const,
-            reason: stopReason,
-            output,
-            provenance
-          };
-        }
-        return {
-          status: "completed" as const,
-          output,
-          provenance
-        };
+        return execution.producer_result;
       }
     );
     if (!disposed.ok) {
@@ -232,10 +147,14 @@ export async function generateBestOfN(
       gate: disposed.value.gate,
       shadow: disposed.value.shadow
     });
-    if (stopReason !== null) {
+    if (
+      disposed.value.outcome === "producer_crashed" ||
+      disposed.value.outcome === "producer_timed_out" ||
+      disposed.value.outcome === "producer_exception"
+    ) {
       return {
         ok: false,
-        reason: `draft ${draftId} provider execution stopped the quality run: ${stopReason}`,
+        reason: `draft ${draftId} provider execution stopped the quality run: ${disposed.value.reason}`,
         quality_run_id: qualityRunId
       };
     }
@@ -360,18 +279,12 @@ function buildDistinctnessReport(
     for (let rightIndex = leftIndex + 1; rightIndex < drafts.length; rightIndex += 1) {
       const left = drafts[leftIndex];
       const right = drafts[rightIndex];
-      const leftLines = changedLineSet(left.patch);
-      const rightLines = changedLineSet(right.patch);
-      const shared = [...leftLines].filter((line) => rightLines.has(line)).length;
-      const union = new Set([...leftLines, ...rightLines]).size;
-      pairs.push({
-        left_draft_id: left.draft_id,
-        right_draft_id: right.draft_id,
-        exact_patch_match: hashText(left.patch) === hashText(right.patch),
-        changed_line_set_jaccard_similarity: union === 0 ? 1 : shared / union,
-        shared_changed_lines: shared,
-        union_changed_lines: union
-      });
+      pairs.push(measurePatchDistinctness(
+        left.draft_id,
+        left.patch,
+        right.draft_id,
+        right.patch
+      ));
     }
   }
   return {
@@ -384,91 +297,6 @@ function buildDistinctnessReport(
     human_judgment_required: true,
     pairs
   };
-}
-
-function changedLineSet(patch: string): Set<string> {
-  const result = new Set<string>();
-  for (const line of patch.replace(/\r\n/gu, "\n").split("\n")) {
-    if (
-      (line.startsWith("+") && !line.startsWith("+++")) ||
-      (line.startsWith("-") && !line.startsWith("---"))
-    ) {
-      const normalized = line.slice(1).trim().replace(/\s+/gu, " ");
-      if (normalized !== "") {
-        result.add(normalized);
-      }
-    }
-  }
-  return result;
-}
-
-function buildUnstartedProvenance(
-  tool: string,
-  providerTier: SpeculativeDraftProvenance["provider_tier"],
-  verifiedOn: string,
-  sessionId: string,
-  wallTimeMs: number
-): SpeculativeDraftProvenance {
-  return {
-    source: "adapter",
-    tool,
-    provider_tier: providerTier,
-    profile_verified_on: verifiedOn,
-    usage_session_id: sessionId,
-    exit_code: null,
-    wall_time_ms: wallTimeMs,
-    effective_tokens: null,
-    accounting_source: null,
-    provider_usage_status: null
-  };
-}
-
-function buildProcessProvenance(
-  tool: string,
-  providerTier: SpeculativeDraftProvenance["provider_tier"],
-  verifiedOn: string,
-  sessionId: string,
-  wallTimeMs: number,
-  processResult: AdapterProcessResult,
-  lastRequest: {
-    effective_tokens: number;
-    accounting_source: "provider_reported" | "self_measured";
-  } | null,
-  prompt: string
-): SpeculativeDraftProvenance {
-  const providerUsage = processResult.providerUsageCapture.status === "captured"
-    ? processResult.providerUsageCapture.usage.total_tokens
-    : null;
-  const fallbackTokens = estimateTokens(prompt) + estimateTokens(processResult.modelOutput);
-  return {
-    source: "adapter",
-    tool,
-    provider_tier: providerTier,
-    profile_verified_on: verifiedOn,
-    usage_session_id: sessionId,
-    exit_code: processResult.exitCode,
-    wall_time_ms: wallTimeMs,
-    effective_tokens: lastRequest?.effective_tokens ?? providerUsage ?? fallbackTokens,
-    accounting_source:
-      lastRequest?.accounting_source ??
-      (providerUsage === null ? "self_measured" : "provider_reported"),
-    provider_usage_status: processResult.providerUsageCapture.status
-  };
-}
-
-function ensureCapturedOutput(
-  output: SpeculativeDraftOutput[],
-  result: AdapterProcessResult
-): void {
-  if (output.length > 0) {
-    return;
-  }
-  if (result.stdout !== "") {
-    output.push({ stream: "stdout", text: result.stdout });
-  }
-  if (result.stderr !== "") {
-    output.push({ stream: "stderr", text: result.stderr });
-  }
 }
 
 function parseBestOfNRequest(
@@ -542,10 +370,6 @@ function bestOfNUsage(): string {
 
 function formatDraftId(value: number): string {
   return `D-${String(value).padStart(3, "0")}`;
-}
-
-function hashText(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -616,7 +616,7 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
 - **Acceptance test (binary):** An ineligible draft cannot be selected; empty, rejected, escalated, shadow-failed, and indeterminate cases are excluded; an empty eligible set yields an immutable no-winner result; multiple eligible drafts follow the recorded deterministic rule rather than iteration accident; and selection records its rule and all inputs durably while producing no canonical task completion, patch acceptance, queue, or integration state. No provider call occurs.
 
 ### M7.7e — Draft-cheap, refine-expensive
-- **Depends on:** M7.7b.
+- **Depends on:** M7.7b, M7.7d.
 - **Read first:** Overview § *Value-Gated Quality Strategy*; § *Resource & Continuity Manager*.
 - **Goal:** Offer a separate on-demand two-stage strategy that spends one tier-eligible draft call and one tier-eligible critique/refinement call.
 - **Behavior — exact:** Add an explicit on-demand draft/refine command; nothing launches it automatically. The first call uses the cheapest provider that still satisfies the task's tier floor. The second uses the strongest eligible provider and receives the immutable first draft plus its actual gate/shadow evidence, then proposes a refined patch in a separate M7.7b artifact. “Cheap” never permits a tier downgrade; for High/Critical work both stages may require strong-tier providers. Both calls and any selection rationale use one `quality_run_id` ledger session, remain immutable/advisory, pass through the same existing gate/shadow disposal, and never adopt themselves into canonical task state.

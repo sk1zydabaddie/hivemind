@@ -18,8 +18,8 @@ interface QualityRunManifest {
   version: 1;
   quality_run_id: string;
   task_id: string;
-  strategy: "best_of_n";
-  draft_count: number;
+  strategy: "best_of_n" | "draft_refine";
+  draft_count: number | null;
   base_commit: string;
 }
 
@@ -44,7 +44,7 @@ export interface QualitySelectionArtifact {
   version: 1;
   quality_run_id: string;
   task_id: string;
-  strategy: "best_of_n";
+  strategy: "best_of_n" | "draft_refine";
   selection_rule: {
     id: typeof selectionRuleId;
     order: readonly string[];
@@ -71,10 +71,6 @@ export async function selectQualityWinner(
   if (!admitted.ok) {
     return admitted;
   }
-  if (admitted.value.strategy !== "best_of_n" || admitted.value.draft_count === null) {
-    return { ok: false, reason: "quality winner selection requires an admitted best-of-N run" };
-  }
-
   const qualityRoot = path.join(
     repoRoot,
     ".hivemind",
@@ -98,16 +94,19 @@ export async function selectQualityWinner(
     runManifest.value,
     qualityRunId,
     admitted.value.task_id,
+    admitted.value.strategy,
     admitted.value.draft_count
   );
   if (!validatedRun.ok) {
     return validatedRun;
   }
 
-  const draftIds = Array.from(
-    { length: admitted.value.draft_count },
-    (_, index) => `D-${String(index + 1).padStart(3, "0")}`
-  );
+  const draftIds = admitted.value.strategy === "best_of_n"
+    ? Array.from(
+        { length: admitted.value.draft_count ?? 0 },
+        (_, index) => `D-${String(index + 1).padStart(3, "0")}`
+      )
+    : ["D-001", "R-001"];
   const draftDirectoryCheck = await validateDraftDirectories(
     path.join(qualityRoot, "drafts"),
     draftIds
@@ -123,6 +122,7 @@ export async function selectQualityWinner(
       qualityRoot,
       qualityRunId,
       admitted.value.task_id,
+      admitted.value.strategy,
       validatedRun.value.base_commit,
       draftId
     );
@@ -138,7 +138,7 @@ export async function selectQualityWinner(
     version: 1,
     quality_run_id: qualityRunId,
     task_id: admitted.value.task_id,
-    strategy: "best_of_n",
+    strategy: admitted.value.strategy,
     selection_rule: {
       id: selectionRuleId,
       order: selectionOrder,
@@ -169,6 +169,7 @@ export async function selectQualityWinner(
     data: {
       version: 1,
       quality_run_id: qualityRunId,
+      strategy: artifact.strategy,
       selection_artifact: relativePath(repoRoot, selectionPath),
       selection_rule: artifact.selection_rule,
       candidates: artifact.candidates,
@@ -211,6 +212,7 @@ async function loadDraftSelectionInput(
   qualityRoot: string,
   qualityRunId: string,
   taskId: string,
+  strategy: QualitySelectionArtifact["strategy"],
   baseCommit: string,
   draftId: string
 ): Promise<{ ok: true; value: DraftSelectionInput } | { ok: false; reason: string }> {
@@ -235,7 +237,7 @@ async function loadDraftSelectionInput(
     manifest.quality_run_id !== qualityRunId ||
     manifest.draft_id !== draftId ||
     manifest.task_id !== taskId ||
-    manifest.strategy !== "best_of_n" ||
+    manifest.strategy !== strategy ||
     manifest.base_commit !== baseCommit ||
     typeof manifest.outcome !== "string" ||
     changedFiles === null ||
@@ -385,13 +387,14 @@ function validateQualityRunManifest(
   value: Record<string, unknown>,
   qualityRunId: string,
   taskId: string,
-  draftCount: number
+  strategy: QualitySelectionArtifact["strategy"],
+  draftCount: number | null
 ): { ok: true; value: QualityRunManifest } | { ok: false; reason: string } {
   if (
     value.version !== 1 ||
     value.quality_run_id !== qualityRunId ||
     value.task_id !== taskId ||
-    value.strategy !== "best_of_n" ||
+    value.strategy !== strategy ||
     value.draft_count !== draftCount ||
     typeof value.base_commit !== "string" ||
     value.base_commit.trim() === ""

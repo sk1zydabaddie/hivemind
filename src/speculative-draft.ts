@@ -21,6 +21,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 const draftIdPattern = /^D-(00[1-3])$/u;
+const refinementId = "R-001";
 
 export interface SpeculativeDraftOutput {
   stream: "stdout" | "stderr";
@@ -127,17 +128,13 @@ export async function disposeSpeculativeDraft(
   request: SpeculativeDraftRequest,
   producer: SpeculativeDraftProducer
 ): Promise<SpeculativeDraftResult> {
-  const draftNumber = parseDraftId(request.draft_id);
-  if (draftNumber === null) {
-    return { ok: false, reason: "draft_id must use D-001, D-002, or D-003" };
-  }
   const admitted = await loadAdmittedValueQualityRun(repoRoot, request.quality_run_id);
   if (!admitted.ok) {
     return admitted;
   }
-  const draftAllowed = validateDraftNumber(admitted.value, draftNumber);
-  if (draftAllowed !== null) {
-    return { ok: false, reason: draftAllowed };
+  const identityReason = validateDraftIdentity(admitted.value, request.draft_id);
+  if (identityReason !== null) {
+    return { ok: false, reason: identityReason };
   }
   const contract = await loadAndValidateContract(repoRoot, admitted.value.task_id);
   if (!contract.ok) {
@@ -553,12 +550,22 @@ function validateProducerProvenance(value: SpeculativeDraftProvenance): void {
   }
 }
 
-function validateDraftNumber(admitted: AdmittedValueQualityRun, draftNumber: number): string | null {
-  if (admitted.strategy === "best_of_n" && admitted.draft_count !== null && draftNumber > admitted.draft_count) {
-    return `draft ${draftNumber} exceeds admitted best-of-N count ${admitted.draft_count}`;
+function validateDraftIdentity(
+  admitted: AdmittedValueQualityRun,
+  draftId: string
+): string | null {
+  const draftNumber = parseDraftId(draftId);
+  if (admitted.strategy === "best_of_n") {
+    if (draftNumber === null) {
+      return "best-of-N draft_id must use D-001, D-002, or D-003";
+    }
+    if (admitted.draft_count !== null && draftNumber > admitted.draft_count) {
+      return `draft ${draftNumber} exceeds admitted best-of-N count ${admitted.draft_count}`;
+    }
+    return null;
   }
-  if (admitted.strategy === "draft_refine" && draftNumber > 2) {
-    return "draft-refine permits only D-001 and D-002";
+  if (draftId !== "D-001" && draftId !== refinementId) {
+    return "draft-refine artifact identity must use D-001 or R-001";
   }
   return null;
 }
