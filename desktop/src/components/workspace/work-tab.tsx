@@ -13,6 +13,7 @@ import {
   Layers3,
   MessageSquareText,
   PencilLine,
+  Play,
   Plus,
   Route,
   Send,
@@ -128,6 +129,7 @@ export function WorkTab({
     managerSession !== undefined &&
     managerSession.status !== "complete" &&
     managerSession.status !== "stopped";
+  const continuationAvailable = managerSession?.continuation_available === true;
 
   const submitPrompt = async (
     event: React.FormEvent<HTMLFormElement>
@@ -149,9 +151,30 @@ export function WorkTab({
           type: "manager.start",
           payload: { message, tool: "manager" }
         });
-        setFeedback("The request was handed to the manager.");
+        setFeedback("The manager prepared the first step. Continue when you are ready.");
       }
       setComposer("");
+    } catch (error) {
+      setFeedback(plainActionError(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const continueRun = async (): Promise<void> => {
+    if (!managerSession || !continuationAvailable) return;
+    setBusy(true);
+    setFeedback("");
+    try {
+      await onAction({
+        type: "manager.continue",
+        payload: {
+          session_id: managerSession.session_id,
+          tool: managerSession.tool,
+          max_steps: 25
+        }
+      });
+      setFeedback("The run advanced until completion or the next decision that needs you.");
     } catch (error) {
       setFeedback(plainActionError(error));
     } finally {
@@ -261,11 +284,13 @@ export function WorkTab({
       <PromptComposer
         value={composer}
         runActive={runActive}
+        continuationAvailable={continuationAvailable}
         busy={busy}
         feedback={feedback || plainActionError(actionError)}
         spend={inspection?.spend ?? null}
         onChange={setComposer}
         onSubmit={submitPrompt}
+        onContinue={continueRun}
       />
 
       {reviewOpen && plan ? (
@@ -686,19 +711,23 @@ function QualityPanel({ projection }: { projection: BoardProjection }): React.JS
 function PromptComposer({
   value,
   runActive,
+  continuationAvailable,
   busy,
   feedback,
   spend,
   onChange,
-  onSubmit
+  onSubmit,
+  onContinue
 }: {
   value: string;
   runActive: boolean;
+  continuationAvailable: boolean;
   busy: boolean;
   feedback: string;
   spend: WorkspaceInspection["spend"] | null;
   onChange: (value: string) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
+  onContinue: () => Promise<void>;
 }): React.JSX.Element {
   return (
     <footer className="prompt-dock">
@@ -713,7 +742,10 @@ function PromptComposer({
         </div>
         <div className="prompt-note">
           <span>{runActive ? "Guidance is read on the next step and does not change work already in progress." : "Typed text proposes work. Review buttons approve it."}</span>
-          {feedback ? <strong role="status">{feedback}</strong> : null}
+          <span className="prompt-actions">
+            {continuationAvailable ? <button className="button-secondary continue-run" type="button" disabled={busy} onClick={() => void onContinue()}><Play size={13} />Continue run</button> : null}
+            {feedback ? <strong role="status">{feedback}</strong> : null}
+          </span>
         </div>
       </form>
     </footer>

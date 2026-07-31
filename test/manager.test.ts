@@ -26,6 +26,7 @@ import {
 } from "../src/manager.js";
 import { createSpec, type SpecResult } from "../src/spec.js";
 import { getStatus } from "../src/status.js";
+import { executeWorkspaceAction } from "../src/workspace-actions.js";
 import { authorizePlanlessManualTaskIfEligible } from "./support/manual-task.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
@@ -259,6 +260,22 @@ test("manager proposal generation rejects self-approval fields and removed place
     assert.match(oldPlaceholder.reason, /unknown manager action type: await_planning_loop/);
     assert.equal(await exists(path.join(repo, ".hivemind", "orchestrator", "sessions")), false);
   });
+
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await writeManagerProposalProfile(repo, {
+      reason: "A paid proposal must identify exactly one next action.",
+      human_approval_required_for: [],
+      actions: [{ type: "get_status" }, { type: "get_status" }]
+    });
+
+    const multiple = await startManagerSession(repo, "Do not discard paid proposal actions");
+
+    assert.equal(multiple.ok, false);
+    if (multiple.ok) return;
+    assert.match(multiple.reason, /at most one next action/u);
+    assert.equal(await exists(path.join(repo, ".hivemind", "orchestrator", "sessions")), false);
+  });
 });
 
 test("manager chat fails closed for draft or missing specs and records no session", async () => {
@@ -446,6 +463,84 @@ test("manager autonomous loop chains Tier-1 actions after deterministic passes",
     const session = await readSession(repo, result.value.session_path);
     assert.deepEqual(session.executed_actions.map((action) => action.type), ["create_task_contract", "request_lease", "check_write_intent"]);
     assert.equal(await exists(path.join(repo, ".hivemind", "tasks", "T-AUTO.contract.json")), true);
+  });
+});
+
+test("workspace dispatcher consumes the stored first proposal and drives a complete gated loop without the CLI", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await setConfigTestCommand(repo, "node -e \"process.exit(0)\"");
+    const workerPath = await writeAgent(repo, "workspace-loop-worker.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'changed through the workspace dispatcher\\n');"
+    ]);
+    await writeProfile(repo, "workspace-worker", workerPath);
+    const contract = managerContract("T-WORKSPACE", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, contract);
+    await writeReactiveManagerProposalProfile(repo, {
+      initial: proposalFor([{ type: "create_task_contract", contract }]),
+      after_create_task_contract_ok: proposalFor([{ type: "request_lease", task_id: "T-WORKSPACE" }]),
+      after_request_lease_ok: proposalFor([{ type: "check_write_intent", task_id: "T-WORKSPACE", intent: intentFor("T-WORKSPACE", ["README.md"]) }]),
+      after_check_write_intent_ok: proposalFor([{ type: "create_worktree", task_id: "T-WORKSPACE" }]),
+      after_create_worktree_ok: proposalFor([{ type: "run_worker", task_id: "T-WORKSPACE", tool: "workspace-worker" }], ["run_worker"]),
+      after_run_worker_ok: proposalFor([{ type: "submit_patch", task_id: "T-WORKSPACE" }]),
+      after_submit_patch_ok: proposalFor([{ type: "analyze_patch", task_id: "T-WORKSPACE" }]),
+      after_analyze_patch_ok: proposalFor([{ type: "enqueue_patch", task_id: "T-WORKSPACE" }]),
+      after_enqueue_patch_ok: proposalFor([{ type: "integrate_shadow" }], ["integrate_shadow"]),
+      after_integrate_shadow_ok: proposalFor([])
+    });
+
+    const started = await executeWorkspaceAction(repo, {
+      type: "manager.start",
+      payload: { message: "Drive the workspace loop.", tool: "manager" }
+    });
+    assert.equal(started.ok, true, started.ok ? undefined : started.reason);
+    if (!started.ok) return;
+    const sessionId = (started.value as { session_id: string }).session_id;
+    assert.deepEqual(await managerReactiveCalls(repo), ["initial"]);
+
+    let continued = await executeWorkspaceAction(repo, {
+      type: "manager.continue",
+      payload: { session_id: sessionId, tool: "manager", max_steps: 20 }
+    });
+    assert.equal(continued.ok, true, continued.ok ? undefined : continued.reason);
+    if (!continued.ok) return;
+    let loop = continued.value as ManagerAutonomousLoopResult;
+    assert.equal(loop.status, "paused");
+    assert.equal(loop.steps.at(-1)?.action_type, "run_worker");
+    assert.deepEqual((await managerReactiveCalls(repo)).slice(0, 2), ["initial", "after_create_task_contract_ok"]);
+    assert.equal((await managerReactiveCalls(repo)).filter((entry) => entry === "initial").length, 1);
+
+    for (const expectedAction of ["run_worker", "integrate_shadow"] as const) {
+      const pending = loop.steps.at(-1)?.pause;
+      assert.ok(pending);
+      assert.equal(pending.action_type, expectedAction);
+      const approved = await executeWorkspaceAction(repo, {
+        type: "manager.approve_pending",
+        payload: {
+          session_id: sessionId,
+          pending_action_id: pending.pending_action_id,
+          action_type: pending.action_type,
+          subject: pending.subject,
+          expected_state_hash: pending.expected_state_hash
+        }
+      });
+      assert.equal(approved.ok, true, approved.ok ? undefined : approved.reason);
+      continued = await executeWorkspaceAction(repo, {
+        type: "manager.continue",
+        payload: { session_id: sessionId, tool: "manager", max_steps: 20 }
+      });
+      assert.equal(continued.ok, true, continued.ok ? undefined : continued.reason);
+      if (!continued.ok) return;
+      loop = continued.value as ManagerAutonomousLoopResult;
+    }
+
+    assert.equal(loop.status, "completed");
+    assert.equal((await managerReactiveCalls(repo)).filter((entry) => entry === "initial").length, 1);
+    assert.deepEqual(loop.final_status.integration.status?.applied, ["T-WORKSPACE"]);
+    const session = await readSession(repo, `.hivemind/orchestrator/sessions/${sessionId}.json`);
+    assert.equal(session.proposal_state.status, "consumed");
+    assert.equal(session.executed_actions.length, 9);
   });
 });
 
@@ -1764,11 +1859,13 @@ async function readSession(
   sessionPath: string
 ): Promise<{
   session_id: string;
+  proposal_state: { proposal_id: string; status: "pending" | "consumed"; consumed_at?: string };
   pending_action?: { action: { type: string }; reason: string; recommendation: string };
   executed_actions: Array<{ type: string; result: { ok: boolean; reason?: string } }>;
 }> {
   return JSON.parse(await readFile(path.join(repo, sessionPath), "utf8")) as {
     session_id: string;
+    proposal_state: { proposal_id: string; status: "pending" | "consumed"; consumed_at?: string };
     pending_action?: { action: { type: string }; reason: string; recommendation: string };
     executed_actions: Array<{ type: string; result: { ok: boolean; reason?: string } }>;
   };

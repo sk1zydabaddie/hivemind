@@ -64,6 +64,7 @@ export interface WorkspaceInspection {
     tool: string;
     call_count: number;
     blocked_reason: string | null;
+    continuation_available: boolean;
   };
   plan_review: WorkspacePlanReview | null;
   current_plan: WorkspacePlanReview | null;

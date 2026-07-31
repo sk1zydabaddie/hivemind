@@ -114,6 +114,7 @@ describe("React workspace boundary", () => {
     const actions = [...work.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
     expect(new Set(actions)).toEqual(new Set([
       "guidance.record",
+      "manager.continue",
       "manager.start",
       "plan.amend",
       "plan.ratify",

@@ -44,9 +44,16 @@ interface ManagerSession {
   working_set: ManagerWorkingSet;
   turns: ManagerTurn[];
   proposed_action: ManagerProposedAction;
+  proposal_state?: ManagerProposalState;
   pending_action?: ManagerPendingAction;
   blocked_action?: ManagerBlockedAction;
   executed_actions: ManagerExecutedAction[];
+}
+
+interface ManagerProposalState {
+  proposal_id: string;
+  status: "pending" | "consumed";
+  consumed_at?: string;
 }
 
 interface ManagerWorkingSet {
@@ -88,6 +95,7 @@ interface ManagerExecutedAction {
 
 export interface ManagerPendingAction {
   pending_action_id: string;
+  proposal_id: string;
   action: ManagerAction;
   action_type: ManagerAction["type"];
   subject: string;
@@ -106,6 +114,7 @@ export interface ManagerWorkspaceSession {
   call_count: number;
   pending_action: ManagerPendingAction | null;
   blocked_reason: string | null;
+  continuation_available: boolean;
 }
 
 export interface ManagerWorkspaceHistorySession extends ManagerWorkspaceSession {
@@ -331,6 +340,7 @@ export async function startManagerSession(
       { role: "manager", content: proposedAction.value.reason }
     ],
     proposed_action: proposedAction.value,
+    proposal_state: newProposalState(proposedAction.value),
     executed_actions: []
   };
 
@@ -838,6 +848,9 @@ function parseHumanApprovalList(raw: unknown): SpecResult<ManagerAction["type"][
 }
 
 function validateGeneratedManagerActions(actions: ManagerAction[], approvals: ManagerAction["type"][]): SpecResult<void> {
+  if (actions.length > 1) {
+    return { ok: false, reason: "manager proposal must contain at most one next action so no paid proposal output is silently discarded" };
+  }
   for (const action of actions) {
     if (action.type === "admit_value_quality") {
       return { ok: false, reason: "autonomous manager must not propose value-quality admission; quality strategies are human-triggered on demand" };
@@ -1080,10 +1093,17 @@ function buildReactiveProposalMessage(session: ManagerSession): string {
   ].join("\n");
 }
 
+function newProposalState(proposal: ManagerProposedAction): ManagerProposalState {
+  return proposal.actions.length === 0
+    ? { proposal_id: randomUUID(), status: "consumed", consumed_at: new Date().toISOString() }
+    : { proposal_id: randomUUID(), status: "pending" };
+}
+
 function appendProposalToSession(session: ManagerSession, proposal: ManagerProposedAction): ManagerSession {
   return {
     ...session,
     proposed_action: proposal,
+    proposal_state: newProposalState(proposal),
     turns: [
       ...session.turns,
       {
@@ -1201,14 +1221,13 @@ export async function runAutonomousManagerLoop(
   if (!session.ok) {
     return session;
   }
-  return continueAutonomousManagerLoop(repoRoot, session.value.session_id, options, session.value.proposed_action);
+  return continueAutonomousManagerLoop(repoRoot, session.value.session_id, options);
 }
 
 export async function continueAutonomousManagerLoop(
   repoRoot: string,
   sessionId: string,
-  options: AutonomousLoopOptions,
-  initialProposal?: ManagerProposedAction
+  options: AutonomousLoopOptions
 ): Promise<SpecResult<ManagerAutonomousLoopResult>> {
   const policy = await loadManagerAutonomyPolicy(repoRoot);
   if (!policy.ok) {
@@ -1216,7 +1235,6 @@ export async function continueAutonomousManagerLoop(
   }
 
   const steps: ManagerAutonomousLoopResult["steps"] = [];
-  let nextProposal = initialProposal;
   for (let index = 0; index < options.maxSteps; index += 1) {
     const session = await loadManagerSession(repoRoot, sessionId);
     if (!session.ok) {
@@ -1249,6 +1267,7 @@ export async function continueAutonomousManagerLoop(
 
     let action: ManagerAction;
     let classification: ActionClassification;
+    let proposalId: string;
     if (session.value.pending_action !== undefined) {
       const status = await getStatus(repoRoot);
       if (!status.ok) {
@@ -1273,7 +1292,20 @@ export async function continueAutonomousManagerLoop(
         }
       };
     } else {
-      if (nextProposal === undefined) {
+      let nextProposal: ManagerProposedAction;
+      if (session.value.proposal_state?.status === "pending") {
+        if (session.value.proposed_action.actions.length !== 1) {
+          return { ok: false, reason: "pending manager proposal must contain exactly one action" };
+        }
+        nextProposal = session.value.proposed_action;
+        proposalId = session.value.proposal_state.proposal_id;
+      } else {
+        if (session.value.proposal_state === undefined && session.value.proposed_action.actions.length > 0) {
+          return {
+            ok: false,
+            reason: "manager session predates durable proposal tracking; start a new session instead of guessing whether its stored proposal was consumed"
+          };
+        }
         const generated = await generateManagerProposal(
           repoRoot,
           buildReactiveProposalMessage(session.value),
@@ -1287,6 +1319,7 @@ export async function continueAutonomousManagerLoop(
         nextProposal = generated.value;
         sessionForWrite = appendProposalToSession(session.value, nextProposal);
         await writeJsonAtomic(managerSessionPath(repoRoot, sessionId), sessionForWrite);
+        proposalId = sessionForWrite.proposal_state!.proposal_id;
       }
 
       if (nextProposal.actions.length === 0) {
@@ -1313,6 +1346,7 @@ export async function continueAutonomousManagerLoop(
         if (!expectedState.ok) return expectedState;
         const pending: ManagerPendingAction = {
           pending_action_id: randomUUID(),
+          proposal_id: proposalId,
           action,
           action_type: action.type,
           subject: managerActionSubject(action),
@@ -1347,7 +1381,7 @@ export async function continueAutonomousManagerLoop(
       }
     }
 
-    const result = await executeManagerAction(repoRoot, sessionId, action);
+    const result = await executeProposedManagerAction(repoRoot, sessionId, proposalId, action);
     if (!result.ok) {
       return result;
     }
@@ -1369,7 +1403,6 @@ export async function continueAutonomousManagerLoop(
             result: result.value.result,
             redirect: redirect.value.step
           });
-          nextProposal = undefined;
           continue;
         }
         return {
@@ -1424,7 +1457,6 @@ export async function continueAutonomousManagerLoop(
       tier: classification.tier,
       result: result.value.result
     });
-    nextProposal = undefined;
   }
 
   const status = await getStatus(repoRoot);
@@ -1474,14 +1506,47 @@ export async function executeManagerAction(
   return executeAuthorizedManagerAction(repoRoot, sessionResult.value, action);
 }
 
+async function executeProposedManagerAction(
+  repoRoot: string,
+  sessionId: string,
+  proposalId: string,
+  action: ManagerAction
+): Promise<SpecResult<ManagerActionResult>> {
+  const sessionResult = await loadManagerSession(repoRoot, sessionId);
+  if (!sessionResult.ok) return sessionResult;
+  const proposal = requirePendingProposal(sessionResult.value, proposalId, action);
+  if (!proposal.ok) return proposal;
+
+  const specResult = await requireActiveSpecRatified(repoRoot);
+  if (!specResult.ok) return specResult;
+  if (specResult.value.spec_id !== sessionResult.value.spec_id) {
+    return { ok: false, reason: `manager session ${sessionId} belongs to spec ${sessionResult.value.spec_id}, not active spec ${specResult.value.spec_id}` };
+  }
+  const policy = await loadManagerAutonomyPolicy(repoRoot);
+  if (!policy.ok) return policy;
+  const classification = await classifyManagerAction(repoRoot, action, policy.value);
+  if (classification.tier === "human_approval") {
+    return { ok: false, reason: "proposed manager action requires its daemon-issued pending action and exact typed approval" };
+  }
+  return executeAuthorizedManagerAction(repoRoot, sessionResult.value, action, proposalId);
+}
+
 async function executeAuthorizedManagerAction(
   repoRoot: string,
   session: ManagerSession,
-  action: ManagerAction
+  action: ManagerAction,
+  proposalId?: string,
+  clearPendingAction = false
 ): Promise<SpecResult<ManagerActionResult>> {
 
+  if (proposalId !== undefined) {
+    const proposal = requirePendingProposal(session, proposalId, action);
+    if (!proposal.ok) return proposal;
+  }
+
   const result = await executeDeterministicAction(repoRoot, session.session_id, action);
-  const nextSession = appendActionToSession(session, action, result);
+  const recordedSession = appendActionToSession(session, action, result, proposalId);
+  const nextSession = clearPendingAction ? { ...recordedSession, pending_action: undefined } : recordedSession;
   const sessionPath = managerSessionPath(repoRoot, session.session_id);
   await writeJsonAtomic(sessionPath, nextSession);
   return {
@@ -1524,6 +1589,8 @@ export async function approvePendingManagerAction(
   if (!parsedAction.ok || parsedAction.value.type !== pending.action_type || managerActionSubject(parsedAction.value) !== pending.subject) {
     return { ok: false, reason: "manager approval refused: pending action artifact is malformed or inconsistent" };
   }
+  const proposal = requirePendingProposal(session.value, pending.proposal_id, parsedAction.value);
+  if (!proposal.ok) return { ok: false, reason: `manager approval refused: ${proposal.reason}` };
   const status = await getStatus(repoRoot);
   if (!status.ok) return status;
   if (hashDurableState(status.value) !== pending.expected_state_hash) {
@@ -1535,7 +1602,7 @@ export async function approvePendingManagerAction(
   if (classification.tier !== "human_approval") {
     return { ok: false, reason: "manager approval refused: pending action no longer requires human approval" };
   }
-  const result = await executeAuthorizedManagerAction(repoRoot, session.value, parsedAction.value);
+  const result = await executeAuthorizedManagerAction(repoRoot, session.value, parsedAction.value, pending.proposal_id, true);
   if (!result.ok) return result;
   const refreshed = await loadManagerSession(repoRoot, session.value.session_id);
   if (!refreshed.ok) return refreshed;
@@ -1548,7 +1615,6 @@ export async function approvePendingManagerAction(
       };
   await writeJsonAtomic(managerSessionPath(repoRoot, session.value.session_id), {
     ...refreshed.value,
-    pending_action: undefined,
     blocked_action: blockedAction
   });
   const recorded = await appendEvent(repoRoot, {
@@ -1833,7 +1899,29 @@ function recordResult<T>(result: { ok: true; value: T } | { ok: false; reason: s
   return result.ok ? { ok: true, value: result.value } : { ok: false, reason: result.reason };
 }
 
-function appendActionToSession(session: ManagerSession, action: ManagerAction, result: ManagerActionExecutionRecord): ManagerSession {
+function requirePendingProposal(
+  session: ManagerSession,
+  proposalId: string,
+  action: ManagerAction
+): SpecResult<void> {
+  if (session.proposal_state === undefined) {
+    return { ok: false, reason: "manager session has no durable proposal identity; start a new session" };
+  }
+  if (session.proposal_state.proposal_id !== proposalId || session.proposal_state.status !== "pending") {
+    return { ok: false, reason: "manager proposal is not the current unconsumed proposal" };
+  }
+  if (session.proposed_action.actions.length !== 1 || JSON.stringify(session.proposed_action.actions[0]) !== JSON.stringify(action)) {
+    return { ok: false, reason: "manager proposal action does not match the current stored proposal" };
+  }
+  return { ok: true, value: undefined };
+}
+
+function appendActionToSession(
+  session: ManagerSession,
+  action: ManagerAction,
+  result: ManagerActionExecutionRecord,
+  proposalId?: string
+): ManagerSession {
   const actionRecord: ManagerExecutedAction = {
     id: randomUUID(),
     ts: new Date().toISOString(),
@@ -1850,7 +1938,16 @@ function appendActionToSession(session: ManagerSession, action: ManagerAction, r
         content: result.ok ? `executed ${action.type}: ok` : `executed ${action.type}: ${result.reason}`
       }
     ],
-    executed_actions: [...session.executed_actions, actionRecord]
+    executed_actions: [...session.executed_actions, actionRecord],
+    ...(proposalId === undefined
+      ? {}
+      : {
+          proposal_state: {
+            proposal_id: proposalId,
+            status: "consumed" as const,
+            consumed_at: new Date().toISOString()
+          }
+        })
   };
 }
 
@@ -1904,16 +2001,18 @@ function presentManagerWorkspaceHistorySession(session: ManagerSession): Manager
   const taskIds = session.executed_actions
     .map((action) => action.task_id)
     .filter((taskId): taskId is string => typeof taskId === "string");
+  const status = pending !== null ? "paused" : blockedReason !== null ? "stopped" : session.proposed_action.actions.length === 0 ? "complete" : "active";
   return {
     session_id: session.session_id,
     spec_id: session.spec_id,
     created_at: session.created_at,
     last_activity_at: [...actionTimes, session.created_at].sort().at(-1) ?? session.created_at,
-    status: pending !== null ? "paused" : blockedReason !== null ? "stopped" : session.proposed_action.actions.length === 0 ? "complete" : "active",
+    status,
     tool: session.proposed_action.tool ?? "manager",
     call_count: session.turns.filter((turn) => turn.role === "manager").length,
     pending_action: pending,
     blocked_reason: blockedReason,
+    continuation_available: status === "active" && session.proposal_state !== undefined,
     task_ids: [...new Set(taskIds)].sort(),
     evidence_path: managerSessionRelativePath(session.session_id)
   };
@@ -1959,6 +2058,19 @@ function validateManagerSession(value: unknown, sessionId: string): SpecResult<M
   if (!Array.isArray(value.executed_actions)) {
     return { ok: false, reason: "manager session executed_actions must be an array" };
   }
+  if (value.proposal_state !== undefined) {
+    if (!isRecord(value.proposal_state)) return { ok: false, reason: "manager proposal_state must be an object" };
+    const proposalState = value.proposal_state;
+    if (
+      typeof proposalState.proposal_id !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(proposalState.proposal_id) ||
+      (proposalState.status !== "pending" && proposalState.status !== "consumed") ||
+      (proposalState.status === "pending" && proposalState.consumed_at !== undefined) ||
+      (proposalState.status === "consumed" && (typeof proposalState.consumed_at !== "string" || Number.isNaN(Date.parse(proposalState.consumed_at))))
+    ) {
+      return { ok: false, reason: "manager proposal_state is malformed" };
+    }
+  }
   if (value.pending_action !== undefined) {
     if (!isRecord(value.pending_action)) return { ok: false, reason: "manager pending_action must be an object" };
     const pending = value.pending_action;
@@ -1966,6 +2078,7 @@ function validateManagerSession(value: unknown, sessionId: string): SpecResult<M
     if (
       !action.ok ||
       typeof pending.pending_action_id !== "string" ||
+      typeof pending.proposal_id !== "string" ||
       typeof pending.action_type !== "string" ||
       pending.action_type !== action.value.type ||
       typeof pending.subject !== "string" ||
@@ -1977,6 +2090,13 @@ function validateManagerSession(value: unknown, sessionId: string): SpecResult<M
       typeof pending.recommendation !== "string"
     ) {
       return { ok: false, reason: "manager pending_action is malformed or internally inconsistent" };
+    }
+    if (
+      !isRecord(value.proposal_state) ||
+      value.proposal_state.status !== "pending" ||
+      value.proposal_state.proposal_id !== pending.proposal_id
+    ) {
+      return { ok: false, reason: "manager pending_action does not identify the current unconsumed proposal" };
     }
   }
   if (value.blocked_action !== undefined) {
