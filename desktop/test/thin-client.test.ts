@@ -6,7 +6,7 @@ import { describe, expect, test } from "vitest";
 const desktopRoot = path.resolve(import.meta.dirname, "..");
 
 describe("React workspace boundary", () => {
-  test("uses the same read-only streams and only the project-selection command", async () => {
+  test("uses project-bound streams and the audited Tauri action bridge", async () => {
     const hook = await readFile(
       path.join(desktopRoot, "src", "hooks", "use-workspace.ts"),
       "utf8"
@@ -15,9 +15,8 @@ describe("React workspace boundary", () => {
     expect(hook).toMatch(/\/events\/stream/u);
     expect(hook).toMatch(/\/tasks\/\$\{encodeURIComponent\(taskId\)\}\/output\/stream/u);
     expect(hook).not.toMatch(/localStorage|sessionStorage|fetch\(|XMLHttpRequest/u);
-    expect(hook).not.toMatch(
-      /approve|ratify|redirect|submit_patch|integrate_shadow|request_lease/u
-    );
+    expect(hook).toMatch(/invokeWorkspaceAction<WorkspaceInspection>/u);
+    expect(hook).not.toMatch(/submit_patch|integrate_shadow|request_lease|runGate/u);
   });
 
   test("client source cannot import Core authority or contain mutation routes", async () => {
@@ -70,7 +69,7 @@ describe("React workspace boundary", () => {
     }
   });
 
-  test("primary labels use plain language and expose no mutation controls", async () => {
+  test("primary labels use plain language and controls trace to the M8.3 registry", async () => {
     const app = await readFile(path.join(desktopRoot, "src", "App.tsx"), "utf8");
     const work = await readFile(
       path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"),
@@ -84,13 +83,52 @@ describe("React workspace boundary", () => {
       "Files being edited",
       "Paused for capacity",
       "Worker stopped",
-      "Provider evidence",
-      "Quality runs"
+      "Needs you",
+      "Later",
+      "Guidance is read on the next step",
+      "Approve this plan"
     ]) {
       expect(visibleSource).toContain(label);
     }
-    expect(visibleSource).not.toMatch(
-      />\s*(Approve|Redirect|Ratify|Integrate|Promote|Run worker)\s*</iu
-    );
+    for (const forbidden of [
+      "RESOURCE TETHERS",
+      "PROVIDER EVIDENCE",
+      "DURABLE TRAIL",
+      "CANDIDATE WORK",
+      "EXECUTION SET",
+      "LIVE WORKSPACE",
+      "Every agent stays inside a visible, deterministic path to merge"
+    ]) {
+      const escaped = forbidden.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+      expect(visibleSource).not.toMatch(
+        new RegExp(`(?:>|(?:title|body)=")\\s*${escaped}`, "iu")
+      );
+    }
+    expect(visibleSource).not.toMatch(/High-tier oracle floor|fake-metered reported this state/u);
+
+    const audit = await readFile(path.resolve(desktopRoot, "..", "docs", "m8-action-routing-audit.md"), "utf8");
+    const actions = [...work.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
+    expect(new Set(actions)).toEqual(new Set([
+      "guidance.record",
+      "manager.start",
+      "plan.amend",
+      "plan.ratify",
+      "plan.review",
+      "task.redirect"
+    ]));
+    for (const action of actions) expect(audit).toContain(`\`${action}\``);
+    const inspection = await readFile(path.resolve(desktopRoot, "..", "src", "workspace-inspection.ts"), "utf8");
+    expect(inspection).toContain('type: "manager.approve_pending"');
+    expect(work).toMatch(/if \(!item\.action\) return;[\s\S]*await onAction\(item\.action\)/u);
+    expect(audit).toContain("`manager.approve_pending`");
+    expect(work).toMatch(/Guidance is read on the next step and does not change work already in progress/u);
+    expect(work).toMatch(/Nothing starts until you review and approve this exact plan/u);
+  });
+
+  test("prompt stays in the fixed Work layout and text does not truncate mid-word", async () => {
+    const styles = await readFile(path.join(desktopRoot, "src", "styles.css"), "utf8");
+    expect(styles).toMatch(/\.work-tab[\s\S]*grid-template-rows:[^;]*minmax\(0, 1fr\) auto/u);
+    expect(styles).toMatch(/\.prompt-dock\s*\{/u);
+    expect(styles).not.toMatch(/text-overflow:\s*ellipsis/u);
   });
 });

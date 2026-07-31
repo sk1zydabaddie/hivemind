@@ -232,7 +232,7 @@ async function loadSpecSummary(repoRoot: string, specId: string): Promise<SpecRe
   };
 }
 
-async function readActiveSpec(repoRoot: string): Promise<SpecResult<{ spec_id: string }>> {
+export async function readActiveSpec(repoRoot: string): Promise<SpecResult<{ spec_id: string }>> {
   let raw: unknown;
   try {
     raw = await readJsonFile(activeSpecPath(repoRoot));

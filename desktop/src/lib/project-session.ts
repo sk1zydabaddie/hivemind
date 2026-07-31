@@ -105,3 +105,20 @@ export function validateProjectConnection(value: unknown): ProjectConnection {
     status
   };
 }
+
+export function displayProjectPath(projectPath: string): string {
+  const value = String(projectPath ?? "").trim();
+  if (value.startsWith("\\\\?\\UNC\\")) {
+    return `\\\\${value.slice(8)}`;
+  }
+  return value.startsWith("\\\\?\\") ? value.slice(4) : value;
+}
+
+export function projectNameFromPath(projectPath: string): string {
+  const visible = displayProjectPath(projectPath).replace(/[\\/]+$/u, "");
+  if (visible === "" || visible === ".") {
+    return "Select a project";
+  }
+  const parts = visible.split(/[\\/]/u).filter(Boolean);
+  return parts.at(-1) ?? visible;
+}

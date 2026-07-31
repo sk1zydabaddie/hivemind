@@ -3,6 +3,8 @@ import { describe, expect, test } from "vitest";
 import {
   createProjectSession,
   createProjectStreamGuard,
+  displayProjectPath,
+  projectNameFromPath,
   validateProjectConnection
 } from "../src/lib/project-session";
 
@@ -71,5 +73,17 @@ describe("project-bound desktop session", () => {
     const projectB = guard.capture();
     expect(projectA()).toBe(false);
     expect(projectB()).toBe(true);
+  });
+
+  test("project labels never expose Windows device prefixes", () => {
+    expect(displayProjectPath("\\\\?\\C:\\Users\\ethan\\Projects\\Hivemind AI")).toBe(
+      "C:\\Users\\ethan\\Projects\\Hivemind AI"
+    );
+    expect(displayProjectPath("\\\\?\\UNC\\server\\share\\Project")).toBe(
+      "\\\\server\\share\\Project"
+    );
+    expect(projectNameFromPath("\\\\?\\C:\\Users\\ethan\\Projects\\Hivemind AI\\")).toBe(
+      "Hivemind AI"
+    );
   });
 });

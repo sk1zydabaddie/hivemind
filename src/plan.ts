@@ -130,6 +130,7 @@ export interface PlanRatificationResult {
   plan_hash: string;
   plan_path: string;
   task_count: number;
+  plan: TentativePlan;
 }
 
 export interface ManualTaskAuthorizationReview {
@@ -831,7 +832,8 @@ export async function reviewPlanForRatification(
       spec_id: specId,
       plan_hash: planHash,
       plan_path: tentativePlanRelativePath(specId),
-      task_count: plan.value.tasks.length
+      task_count: plan.value.tasks.length,
+      plan: plan.value
     }
   };
 }
@@ -906,7 +908,8 @@ export async function ratifyPlan(
       spec_id: specId,
       plan_hash: expectedHash,
       plan_path: relativePath,
-      task_count: plan.value.tasks.length
+      task_count: plan.value.tasks.length,
+      plan: plan.value
     }
   };
 }

@@ -16,6 +16,11 @@ import {
   createProjectStreamGuard,
   type ProjectConnection
 } from "../lib/project-session";
+import {
+  invokeWorkspaceAction,
+  type WorkspaceAction,
+  type WorkspaceInspection
+} from "../lib/workspace-actions";
 
 interface WorkspaceView {
   projection: BoardProjection;
@@ -23,8 +28,11 @@ interface WorkspaceView {
   connection: ProjectConnection | null;
   connectionState: string;
   connectionDetail: string;
+  inspection: WorkspaceInspection | null;
+  actionError: string;
   switchProject: (projectPath: string) => Promise<void>;
   selectTaskOutput: (taskId: string) => void;
+  performAction: <T>(action: WorkspaceAction) => Promise<T>;
 }
 
 export function useWorkspace(): WorkspaceView {
@@ -34,12 +42,15 @@ export function useWorkspace(): WorkspaceView {
   const [connection, setConnection] = useState<ProjectConnection | null>(null);
   const [connectionState, setConnectionState] = useState("selecting project");
   const [connectionDetail, setConnectionDetail] = useState("");
+  const [inspection, setInspection] = useState<WorkspaceInspection | null>(null);
+  const [actionError, setActionError] = useState("");
   const [revision, setRevision] = useState(0);
   const projectionRef = useRef(createBoardProjection());
   const eventSourceRef = useRef<EventSource | null>(null);
   const outputSourceRef = useRef<EventSource | null>(null);
   const streamGuardRef = useRef(createProjectStreamGuard());
   const connectionRef = useRef<ProjectConnection | null>(null);
+  const inspectionTimerRef = useRef<number | null>(null);
 
   const closeStreams = useCallback(() => {
     eventSourceRef.current?.close();
@@ -51,6 +62,36 @@ export function useWorkspace(): WorkspaceView {
   const render = useCallback(() => {
     setRevision((value) => value + 1);
   }, []);
+
+  const refreshInspection = useCallback(async () => {
+    const currentConnection = connectionRef.current;
+    if (!currentConnection) return;
+    const isCurrentProject = streamGuardRef.current.capture();
+    try {
+      const value = await invokeWorkspaceAction<WorkspaceInspection>(
+        currentConnection.project_root,
+        { type: "status.inspect", payload: {} }
+      );
+      if (isCurrentProject()) {
+        setInspection(value);
+        setActionError("");
+      }
+    } catch (error) {
+      if (isCurrentProject()) {
+        setActionError(error instanceof Error ? error.message : String(error));
+      }
+    }
+  }, []);
+
+  const scheduleInspection = useCallback(() => {
+    if (inspectionTimerRef.current !== null) {
+      window.clearTimeout(inspectionTimerRef.current);
+    }
+    inspectionTimerRef.current = window.setTimeout(() => {
+      inspectionTimerRef.current = null;
+      void refreshInspection();
+    }, 80);
+  }, [refreshInspection]);
 
   const openOutputStream = useCallback(
     (taskId: string) => {
@@ -92,6 +133,7 @@ export function useWorkspace(): WorkspaceView {
       source.onopen = () => {
         if (isCurrentProject()) {
           setConnectionState("live");
+          void refreshInspection();
         }
       };
       source.onerror = () => {
@@ -108,6 +150,7 @@ export function useWorkspace(): WorkspaceView {
           return;
         }
         applyEventMessage(projectionRef.current, message);
+        scheduleInspection();
         if (
           projectionRef.current.selectedTaskId === null &&
           outputSourceRef.current === null
@@ -124,7 +167,7 @@ export function useWorkspace(): WorkspaceView {
       };
       render();
     },
-    [openOutputStream, render]
+    [openOutputStream, refreshInspection, render, scheduleInspection]
   );
 
   const session = useMemo(
@@ -137,6 +180,8 @@ export function useWorkspace(): WorkspaceView {
           closeStreams();
           connectionRef.current = null;
           setConnection(null);
+          setInspection(null);
+          setActionError("");
           projectionRef.current = createBoardProjection();
           setConnectionState("selecting project");
           setConnectionDetail("");
@@ -173,8 +218,36 @@ export function useWorkspace(): WorkspaceView {
 
   useEffect(() => {
     void session.switchProject(initialPath);
-    return closeStreams;
+    return () => {
+      closeStreams();
+      if (inspectionTimerRef.current !== null) {
+        window.clearTimeout(inspectionTimerRef.current);
+      }
+    };
   }, [closeStreams, initialPath, session]);
+
+  const performAction = useCallback(
+    async <T,>(action: WorkspaceAction): Promise<T> => {
+      const currentConnection = connectionRef.current;
+      if (!currentConnection) {
+        throw new Error("Connect to a project before taking an action.");
+      }
+      setActionError("");
+      try {
+        const result = await invokeWorkspaceAction<T>(
+          currentConnection.project_root,
+          action
+        );
+        await refreshInspection();
+        return result;
+      } catch (error) {
+        const normalized = error instanceof Error ? error : new Error(String(error));
+        setActionError(normalized.message);
+        throw normalized;
+      }
+    },
+    [refreshInspection]
+  );
 
   return {
     projection: projectionRef.current,
@@ -182,8 +255,11 @@ export function useWorkspace(): WorkspaceView {
     connection,
     connectionState,
     connectionDetail,
+    inspection,
+    actionError,
     switchProject,
-    selectTaskOutput: openOutputStream
+    selectTaskOutput: openOutputStream,
+    performAction
   };
 }
 

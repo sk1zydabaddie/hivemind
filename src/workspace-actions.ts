@@ -8,9 +8,9 @@ import { approvePendingManagerAction, continueAutonomousManagerLoop, startManage
 import { authorizeManualTask, queuePlanAmendment, ratifyPlan, reviewManualTaskForAuthorization, reviewPlanForRatification } from "./plan.js";
 import { cancelQualityRun } from "./quality-control.js";
 import { findGitRoot } from "./repo.js";
-import { getStatus } from "./status.js";
 import { requestTaskRedirect } from "./supervision.js";
 import { requestTaskStop } from "./task-control.js";
+import { inspectWorkspace } from "./workspace-inspection.js";
 
 export const workspaceActionTypes = [
   "manager.start",
@@ -82,7 +82,7 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
   if (raw.type === "quality.cancel") return cancelQualityRun(repoRoot, payload);
   if (raw.type === "status.inspect") {
     if (Object.keys(payload).length > 0) return { ok: false, reason: "status.inspect takes no fields" };
-    return getStatus(repoRoot);
+    return inspectWorkspace(repoRoot);
   }
   if (raw.type === "change.inspect") {
     const parsed = exactStrings(payload, ["task_id"]);

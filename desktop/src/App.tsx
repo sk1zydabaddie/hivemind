@@ -7,9 +7,9 @@ import {
   History,
   Network,
   Radio,
-  ShieldCheck
+  Wifi
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { WorkTab } from "./components/workspace/work-tab";
 import {
@@ -20,19 +20,28 @@ import {
 } from "./components/ui/tabs";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { useWorkspace } from "./hooks/use-workspace";
+import {
+  displayProjectPath,
+  projectNameFromPath
+} from "./lib/project-session";
 
 export default function App(): React.JSX.Element {
   const workspace = useWorkspace();
-  const [projectInput, setProjectInput] = useState(workspace.projectPath);
+  const [projectInput, setProjectInput] = useState("");
 
-  useEffect(() => {
-    setProjectInput(workspace.projectPath);
-  }, [workspace.projectPath]);
-
-  const submitProject = (event: React.FormEvent<HTMLFormElement>): void => {
+  const submitProject = async (
+    event: React.FormEvent<HTMLFormElement>
+  ): Promise<void> => {
     event.preventDefault();
-    void workspace.switchProject(projectInput);
+    if (projectInput.trim() === "") return;
+    await workspace.switchProject(projectInput);
+    setProjectInput("");
   };
+
+  const visibleProjectPath = displayProjectPath(
+    workspace.connection?.project_root ?? workspace.projectPath
+  );
+  const projectName = projectNameFromPath(visibleProjectPath);
 
   return (
     <TooltipProvider delayDuration={180}>
@@ -42,20 +51,19 @@ export default function App(): React.JSX.Element {
             <span className="brand-mark" aria-hidden="true">
               <Network size={22} />
             </span>
-            <div>
-              <p>Deterministic agent workspace</p>
-              <h1>Hivemind</h1>
-            </div>
+            <h1>Hivemind</h1>
           </div>
           <form className="project-switcher" onSubmit={submitProject}>
-            <label htmlFor="project-path">
-              <FolderGit2 size={14} aria-hidden="true" />
-              Project
-            </label>
+            <span className="project-identity" title={visibleProjectPath}>
+              <FolderGit2 size={15} aria-hidden="true" />
+              <strong>{projectName}</strong>
+            </span>
             <input
               id="project-path"
               value={projectInput}
               onChange={(event) => setProjectInput(event.target.value)}
+              aria-label="Open another project"
+              placeholder="Paste another project path"
               autoComplete="off"
               spellCheck={false}
             />
@@ -71,9 +79,9 @@ export default function App(): React.JSX.Element {
             <span>
               <strong>{workspace.connectionState}</strong>
               <small>
-                {workspace.connection?.project_root ??
-                  workspace.connectionDetail ??
-                  "Waiting for a project-bound daemon"}
+                {workspace.connectionState === "live"
+                  ? "Project updates are live"
+                  : workspace.connectionDetail || "Waiting for the project"}
               </small>
             </span>
           </div>
@@ -99,22 +107,24 @@ export default function App(): React.JSX.Element {
                 History
               </TabsTrigger>
             </TabsList>
-            <div className="read-only-mark">
-              <ShieldCheck size={14} aria-hidden="true" />
-              Observation only
+            <div className="workspace-presence">
+              <Wifi size={14} aria-hidden="true" />
+              {projectName}
             </div>
           </div>
 
           <TabsContent value="work">
             <WorkTab
               projection={workspace.projection}
+              inspection={workspace.inspection}
+              actionError={workspace.actionError}
               onSelectTask={workspace.selectTaskOutput}
+              onAction={workspace.performAction}
             />
           </TabsContent>
           <TabsContent value="swarm">
             <FutureWorkspaceTab
               icon={<Network size={28} />}
-              eyebrow="Swarm"
               title="The whole team, one view"
               body="The live task view is already available in Work. The full agent tree and relationship view arrives in the dedicated Swarm unit."
             />
@@ -122,7 +132,6 @@ export default function App(): React.JSX.Element {
           <TabsContent value="memory">
             <FutureWorkspaceTab
               icon={<BrainCircuit size={28} />}
-              eyebrow="Memory"
               title="Reviewed project knowledge"
               body="Things worth remembering and pending review will live here. This shell does not add a new approval path."
             />
@@ -130,9 +139,8 @@ export default function App(): React.JSX.Element {
           <TabsContent value="history">
             <FutureWorkspaceTab
               icon={<Clock3 size={28} />}
-              eyebrow="History"
               title="Runs, evidence, and spend"
-              body="Past activity remains available through the live durable trail today. A focused history browser arrives in its own unit."
+              body="Past project activity remains available while connected. A focused history browser arrives in its own unit."
             />
           </TabsContent>
         </Tabs>
@@ -143,12 +151,10 @@ export default function App(): React.JSX.Element {
 
 function FutureWorkspaceTab({
   icon,
-  eyebrow,
   title,
   body
 }: {
   icon: React.ReactNode;
-  eyebrow: string;
   title: string;
   body: string;
 }): React.JSX.Element {
@@ -160,7 +166,6 @@ function FutureWorkspaceTab({
         <CheckCircle2 size={18} />
       </div>
       <div>
-        <p className="eyebrow">{eyebrow}</p>
         <h2>{title}</h2>
         <p>{body}</p>
         <div className="future-tab-status">

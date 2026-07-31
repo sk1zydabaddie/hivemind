@@ -97,6 +97,17 @@ export interface ManagerPendingAction {
   recommendation: string;
 }
 
+export interface ManagerWorkspaceSession {
+  session_id: string;
+  spec_id: string;
+  created_at: string;
+  status: "active" | "paused" | "stopped" | "complete";
+  tool: string;
+  call_count: number;
+  pending_action: ManagerPendingAction | null;
+  blocked_reason: string | null;
+}
+
 interface ManagerBlockedAction {
   action_type: ManagerAction["type"];
   result: Extract<ManagerActionExecutionRecord, { ok: false }>;
@@ -1834,6 +1845,45 @@ function appendActionToSession(session: ManagerSession, action: ManagerAction, r
       }
     ],
     executed_actions: [...session.executed_actions, actionRecord]
+  };
+}
+
+export async function inspectLatestManagerSession(
+  repoRoot: string,
+  specId: string
+): Promise<SpecResult<ManagerWorkspaceSession | null>> {
+  let names: string[];
+  try {
+    names = await readdir(path.join(repoRoot, ".hivemind", "orchestrator", "sessions"));
+  } catch (error: unknown) {
+    if (isNodeError(error, "ENOENT")) return { ok: true, value: null };
+    throw error;
+  }
+  const sessions: ManagerSession[] = [];
+  for (const name of names.filter((entry) => entry.endsWith(".json")).sort()) {
+    const sessionId = name.slice(0, -".json".length);
+    const loaded = await loadManagerSession(repoRoot, sessionId);
+    if (!loaded.ok) return loaded;
+    if (loaded.value.spec_id === specId) sessions.push(loaded.value);
+  }
+  const latest = sessions.sort((left, right) =>
+    right.created_at.localeCompare(left.created_at) || right.session_id.localeCompare(left.session_id)
+  )[0];
+  if (latest === undefined) return { ok: true, value: null };
+  const pending = latest.pending_action ?? null;
+  const blockedReason = latest.blocked_action?.result.reason ?? null;
+  return {
+    ok: true,
+    value: {
+      session_id: latest.session_id,
+      spec_id: latest.spec_id,
+      created_at: latest.created_at,
+      status: pending !== null ? "paused" : blockedReason !== null ? "stopped" : latest.proposed_action.actions.length === 0 ? "complete" : "active",
+      tool: latest.proposed_action.tool ?? "manager",
+      call_count: latest.turns.filter((turn) => turn.role === "manager").length,
+      pending_action: pending,
+      blocked_reason: blockedReason
+    }
   };
 }
 

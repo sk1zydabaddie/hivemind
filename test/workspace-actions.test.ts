@@ -13,6 +13,7 @@ import { readPendingHumanGuidance } from "../src/human-guidance.js";
 import { executeWorkspaceAction, workspaceActionTypes } from "../src/workspace-actions.js";
 import { loadAdmittedValueQualityRun } from "../src/value-quality.js";
 import { runAdapterProcess, type AdapterProfile } from "../src/adapter.js";
+import { createTentativePlan, groundTentativePlan, lintTentativePlan } from "../src/plan.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
 const execFileAsync = promisify(execFile);
@@ -369,6 +370,100 @@ test("the daemon workspace route calls the shared dispatcher and rejects crafted
       daemon.child.kill("SIGTERM");
       await once(daemon.child, "exit");
     }
+  });
+});
+
+test("workspace inspection presents authoritative plan detail and daemon-derived queues without adding authority", async () => {
+  await withRepo(async (repo) => {
+    await createRatifiedSpec(repo, "S-001");
+    const proposal = {
+      tasks: [{
+        task_id: "T-001",
+        title: "Tighten the project selector",
+        task_type: "deterministic",
+        routing_task_type: "ui",
+        mode: "write",
+        agent_role: "builder",
+        draft_scope: {
+          allowed_files: ["README.md"],
+          read_only_files: [],
+          forbidden_files: [],
+          must_not_change: []
+        },
+        depends_on: [],
+        parallel_safe: false,
+        acceptance_criterion: "The project selector stays project-bound.",
+        deterministic_validity_check: "npm test",
+        required_tests: ["npm test"],
+        patch_requirements: ["Keep the change scoped."],
+        critical_path_approved: false
+      }],
+      execution_groups: [{ group_id: "G-1", mode: "sequence", task_ids: ["T-001"] }]
+    };
+    assert.equal((await createTentativePlan(repo, "S-001", proposal)).ok, true);
+    assert.equal((await groundTentativePlan(repo, "S-001")).ok, true);
+    assert.equal((await lintTentativePlan(repo, "S-001")).ok, true);
+    await appendEvent(repo, {
+      type: "task.failed",
+      task_id: "T-009",
+      data: { reason: "fixture worker exited" }
+    });
+    await appendEvent(repo, {
+      type: "integration.blocked",
+      task_id: null,
+      data: { plain_reason: "Critical change, line 42 untested." }
+    });
+    await appendEvent(repo, {
+      type: "memory.proposed",
+      task_id: null,
+      data: { proposal_id: "MEM-001", title: "Prefer project-bound daemon discovery" }
+    });
+
+    const result = await executeWorkspaceAction(repo, {
+      type: "status.inspect",
+      payload: {}
+    });
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    if (!result.ok) return;
+    const view = result.value as {
+      plan_review: { plan_hash: string; tasks: Array<Record<string, unknown>> };
+      current_plan: { plan_hash: string };
+      needs_you: Array<{ kind: string; detail: string }>;
+      later: Array<{ kind: string }>;
+      spend: { calls: number; effective_tokens: number; session_ceiling_tokens: number };
+    };
+    assert.match(view.plan_review.plan_hash, /^[a-f0-9]{64}$/u);
+    assert.equal(view.current_plan.plan_hash, view.plan_review.plan_hash);
+    assert.deepEqual(view.plan_review.tasks[0], {
+      task_id: "T-001",
+      title: "Tighten the project selector",
+      tier: "high",
+      task_type: "deterministic",
+      routing_task_type: "ui",
+      mode: "write",
+      agent_role: "builder",
+      scope: ["README.md"],
+      allowed_file_intents: {},
+      read_only_scope: [],
+      forbidden_scope: [],
+      must_not_change: [],
+      depends_on: [],
+      parallel_safe: false,
+      acceptance_criterion: "The project selector stays project-bound.",
+      deterministic_validity_check: "npm test",
+      required_tests: ["npm test"],
+      patch_requirements: ["Keep the change scoped."],
+      critical_path_approved: false
+    });
+    assert.deepEqual(view.needs_you.map((item) => item.kind).sort(), ["merge_blocked", "plan_review", "task_attention"]);
+    assert.equal(view.needs_you.find((item) => item.kind === "merge_blocked")?.detail, "Critical change, line 42 untested.");
+    assert.deepEqual(view.later.map((item) => item.kind), ["memory_review"]);
+    assert.equal(view.spend.calls, 0);
+    assert.equal(view.spend.effective_tokens, 0);
+    assert.equal(view.spend.session_ceiling_tokens, 500_000);
+
+    const source = await readFile(path.resolve("src/workspace-inspection.ts"), "utf8");
+    assert.doesNotMatch(source, /appendEvent|ratifyPlan|queuePlanAmendment|requestTaskRedirect/u);
   });
 });
 

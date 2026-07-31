@@ -236,8 +236,12 @@ function compareScorecards(left: RoutingProviderScorecard, right: RoutingProvide
 }
 
 export function inferTaskTier(contract: TaskContract, config: HivemindConfig): TaskTier {
+  return inferAllowedFilesTier(contract.allowed_files, config);
+}
+
+export function inferAllowedFilesTier(allowedFiles: string[], config: HivemindConfig): TaskTier {
   let result: TaskTier = "low";
-  for (const scope of contract.allowed_files) {
+  for (const scope of allowedFiles) {
     const scopeTier = inferScopeTier(scope, config);
     if (taskTierRank[scopeTier] > taskTierRank[result]) {
       result = scopeTier;
