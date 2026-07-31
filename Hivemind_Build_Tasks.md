@@ -4,7 +4,7 @@ This is the **executable, no-ambiguity build plan** derived from `Hivemind_AI_Ov
 
 It is written for the **pre-bootstrap reality**: you are hand-orchestrating, the agent's context rots fast, and it cannot hold the whole spec. So each contract states exactly what to create, what not to touch, the precise behavior and data shapes, and how "done" is proven — leaving nothing to interpretation. Read the named spec slice, paste the contract, run its plan, implement, run the acceptance test, move on.
 
-> **Depth note:** M0–M2 (the ~18 foundational sub-tasks) are specified at maximum rigor. M3–M7 are thorough but lighter on far-future implementation minutiae that will evolve; tighten them into full contracts as you reach them.
+> **Depth note:** M0–M2 (the ~18 foundational sub-tasks) are specified at maximum rigor. M3–M8 are thorough but lighter on later implementation minutiae that will evolve; tighten them into full contracts as you reach them.
 
 ---
 
@@ -633,9 +633,99 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
 
 ---
 
-## Beyond M7
-- **Phase 8 — Native adapters** and **Phase 9 — Cloud/team mode** are productization. Decompose them into the same one-acceptance-test contracts when reached.
-- **Dogfooding** remains an available deliberate demonstration after M7, not the mechanism used to build M4–M7. When explicitly enabled, it exercises Hivemind's protected workflow against its own repo without replacing each feature's direct contract acceptance.
+## M8 — Workspace UI
+*Turn the verified read-only Tauri monitor into the prompt-first local workspace. Build the rough functional outline first; iterate visually only after the full workspace exists.*
+
+**M8 workspace rules (all six contracts):**
+
+- **Plain language first.** The main UI must let a user run the loop without learning Hivemind vocabulary. Internal terms such as lease, canon, oracle, Tier-2, and write-intent belong in detail views or decision explanations, not primary labels.
+- **Chat steers; buttons authorize.** Free text is advisory input to a proposal and can never satisfy a gate, grant approval, ratify a plan, promote memory, authorize spend, or integrate a change. Authorization is always an explicit typed structured action.
+- **Thin client, one truth.** The desktop holds ephemeral render state only. Authoritative state remains under the selected project's `.hivemind/`; the UI renders daemon-published state and invokes the same Core primitives as the CLI. No gate, lifecycle, routing, promotion, or integration truth is reimplemented in React.
+- **Project confinement.** A workspace shows exactly one selected repository at a time. State, memory, caches, adapter profiles, temporary project material, and daemon identity must never merge across projects. Cross-project memory is permanently out of scope.
+
+### M8.1 (U1) — Project isolation + daemon lifecycle
+- **Depends on:** M4.1, M6.1, M6.2.
+- **Read first:** Overview § *Hivemind Core Daemon* and *Single Source of Truth*; § *Project Memory Log*; § *Full Application UI*.
+- **Goal:** Make the selected repository the top-level workspace boundary and let the desktop attach to or start its repo-bound daemon without requiring a terminal.
+- **Behavior — exact:**
+  - Select one initialized git repository, canonicalize its root, and bind every stream/read/action to that exact root. Switching projects closes only the old UI streams and clears ephemeral render state before loading the new project; it never merges histories, tasks, memory, leases, caches, or artifacts.
+  - A daemon health response and `.hivemind/daemon.json` must both identify the exact selected repo. A daemon for another root is never reused. If no live matching daemon exists, the Tauri shell starts one in the selected repo on an available loopback port and waits for health; app launch opens no terminal.
+  - The app never stops or kills a daemon on project switch or app close. Start-if-absent is the only lifecycle authority added here.
+  - The pre-M8 audit found that durable Hivemind state, caches, ledger data, and adapter profiles are repo-local, but project-derived disposable checkouts/consolidation workspaces currently use `%TEMP%\hivemind-*`, and the vanilla desktop persists a daemon URL in WebView `localStorage`. Close both contamination paths: project-derived temporary material lives under a repo-local `.hivemind/resource/tmp/` boundary with verified cleanup/reconciliation, and the workspace stores no project pointer or daemon URL in global WebView storage. Provider-owned credentials/settings may remain user-level, but they are not Hivemind project state and must never substitute for repo-local adapter profiles.
+  - Memory remains two-tier within one project only. No global cache, shared canon, user-profile database, or UI aggregation may become a cross-project memory/oracle tier.
+- **Acceptance test (binary):** With projects A and B containing distinct events, canon, tasks, and adapters, switching selects only the matching repo-bound daemon and makes no A state readable in B; the app starts a missing daemon with no terminal; all project-derived runtime material is repo-confined; and closing/switching the app leaves every running daemon alive.
+
+### M8.2 (U2) — React + shadcn workspace shell
+- **Depends on:** M8.1.
+- **Read first:** Overview § *Full Application UI*; M6.2's thin-renderer contract and current desktop evidence.
+- **Goal:** Replace the vanilla renderer with a React + shadcn/ui shell containing Work, Swarm, Memory, and History tabs.
+- **Behavior — exact:**
+  - Keep the existing Tauri shell and replace the vanilla DOM renderer with one React application using shadcn/ui. Optimize the first outline for one approximately 16:9 desktop window.
+  - Establish one shared token layer for color, typography, spacing, state colors, focus, and reduced motion. Later M8 tabs consume these tokens rather than defining parallel themes.
+  - Port the current read-only task/group, lease, quota, integration, event, and selected-task output rendering over the same daemon SSE history-replay-then-live and per-task output streams.
+  - Add the four tab destinations and navigation, but no Hivemind mutation controls in this unit. React state is disposable presentation state; current/actionable truth comes from the selected daemon.
+  - Remove the old vanilla renderer and its tests once parity is proven. No compatibility renderer, duplicate projection path, or stale localStorage daemon selector remains.
+- **Acceptance test (binary):** The native Tauri app opens the React/shadcn four-tab shell and reproduces the current board's live read-only task/lease/quota/integration/output behavior from the same daemon streams, while structural tests show no Core authority in the client and the old vanilla renderer no longer exists.
+
+### M8.3 (U3) — Shared action layer + gate-routing audit
+- **Depends on:** M8.1, M8.2.
+- **Read first:** Overview § *Single Source of Truth*, § *Task Lifecycle*, § *Real-Time Supervision*; M5 manager action executor; M6.3 supervision; M7.3 promotion gate; M7.6d oracle floor; M7.7 value-quality admission.
+- **Goal:** Establish one typed UI action surface that reaches the same Core primitives as the CLI and prove the workspace is never a softer door.
+- **Behavior — exact:**
+  - Publish an auditable action registry before exposing controls. It covers: start/continue manager work; record orchestrator guidance; ratify a ready plan; add/queue a plan amendment; approve a pending manager action; redirect or stop a task; inspect a change; explicitly request characterization or quality work; cancel a quality run; and hand off memory review. Each entry names its Core primitive, authorization shape, daemon route or local-only handoff, required durable evidence, and refusal states.
+  - Reuse existing primitives directly where they exist: manager session/loop execution, `executeManagerAction()` and its underlying gates, M6.3 revision/redirect lifecycle, M7.6e characterization generation + M7.6c disposal, M7.7 admission/generation/cancellation evidence, patch/status readers, and `reviewMemoryProposalInteractively()` for canon.
+  - The audit currently identifies missing shared primitives for plan ratification, durable human guidance, safe plan amendment, human-requested revision/stop, and quality-run cancellation. Add each missing capability once in deterministic Core with a CLI path first, then route the UI to that same primitive. No UI control exists until its shared primitive and refusal tests exist. Plan ratification becomes a real floor: executable task contracts cannot be created from an unratified plan.
+  - Separate guidance from authority structurally. Guidance accepts narrative text and target context only, appends durable advisory evidence, and cannot import/call the approval executor. An approval request carries a daemon-issued pending action id, explicit typed action, subject, and expected durable state; the daemon re-derives eligibility before invoking the primitive. Caller-supplied claims such as `approved`, `human`, `force`, tier, verdict, or gate proof carry no authority.
+  - Canon promotion remains a local interactive TTY handoff, not a daemon or React promotion API. Read-only actions may fetch evidence, but they cannot mutate it.
+  - Add UI-path bypass coverage for every exposed gated action. Existing dependency, lease, scope, write-intent, tier, ceiling, oracle, promotion, and integration floors remain unchanged and authoritative.
+- **Acceptance test (binary):** The action registry covers every control rendered by M8; each mutation reaches the same tested primitive as its CLI equivalent; UI-path attempts cannot admit an ineligible task, breach a tier/token ceiling, mutate a running contract, promote canon programmatically, integrate configured High/Critical weak-oracle work, or authorize anything through free text; and no control is exposed for an action without a shared primitive.
+
+### M8.4 (U4) — Work tab
+- **Depends on:** M8.3.
+- **Read first:** Overview § *Primary Manager Agent*, § *Task Lifecycle*, § *Real-Time Supervision*, § *Context & Working-Set Management*.
+- **Goal:** Make one prompt-first surface sufficient to start, steer, approve, and understand a run in plain language.
+- **Behavior — exact:**
+  - Anchor the prompt at bottom-center at all times. Show a plain-language activity stream above it; when action is required, a single attention card displaces the top of the stream without covering the prompt.
+  - Maintain two daemon-derived queues: **Needs you** contains typed decisions that block progress; **Later** contains review backlog and never interrupts the current flow. The renderer does not infer which queue an item belongs to.
+  - Show a persistent spend indicator with provider-call count and effective tokens against the active run/session ceilings.
+  - When a plan is ready, show a prominent persistent dismissible banner. Clicking opens full-screen plan review; it never hijacks the screen. U3's plan-ratification floor prevents task execution until the explicit structured ratify action succeeds.
+  - Orchestrator steering writes a durable human-guidance record that is assembled into the stateless orchestrator's next proposal. It does not mutate an in-flight action or launch an extra provider turn.
+  - Mid-run plan amendments are add-only for active work. New tasks and queued changes to not-yet-started tasks still pass proposal, grounding, lint, ratification, contract, dependency, and lease floors. Editing a running task is refused because its contract is immutable; the available choices are redirect or cancel-and-replan.
+  - Worker steering uses the M6.3 `revision_requested -> in_progress` correction path at its safe boundary with human-authored guidance. It never approves an out-of-scope intent. Scout/characterization/quality draft sub-agents are not steerable; cancel the quality run and explicitly restart with new guidance.
+  - Present internal failures in plain language, with optional details: for example "blocked before merge," "thin test coverage," "see what's untested," and "write a test."
+- **Acceptance test (binary):** In a no-paid run, guidance appears in the orchestrator's next already-scheduled proposal without changing in-flight state; a running-task plan edit is refused while an add-only task amendment follows the normal floors; a human worker correction travels through M6.3 and still requires a valid redeclared intent; plan execution waits for typed ratification; spend/Needs-you/Later remain live; and no chat text authorizes an action.
+
+### M8.5 (U5) — Swarm tab
+- **Depends on:** M8.3.
+- **Read first:** Overview § *Real-Time Supervision*, § *Task Lifecycle*, § *Full Application UI* (Agent Monitor); M7.7 speculative-draft identities.
+- **Goal:** Show the whole active agent hierarchy and make trouble, output, and change movement inspectable at a glance.
+- **Behavior — exact:**
+  - Render an agent tree with orchestrator root, execution groups, tasks, and observed sub-agents such as Scout, characterization, and quality drafts. Fit the whole swarm in one desktop view with scroll-to-zoom and click-to-inspect.
+  - Use plain group labels such as "2 at once" and "in order." Color encodes daemon-published healthy, needs-you, and waiting states; the UI does not derive action eligibility from color.
+  - The inspector shows current work, provider/agent, live task-specific output, relevant change evidence, and the U3-audited actions **Redirect**, **Stop**, and **See change**. It exposes no renderer-local mutation.
+  - Visualize a change moving through scope check, tests, and merge on the tree edges only when matching durable events arrive. There is no ambient motion; reduced-motion replaces travel with an immediate state change and brief non-motion emphasis.
+  - Planned parallelism and actual simultaneous activity must not be conflated. A group may say "2 at once" as plan structure, while active indicators come only from real task/run events.
+- **Acceptance test (binary):** A representative nine-task no-paid fixture shows all mixed-state tasks and sub-agents on one screen, the needs-you node is visually findable without reading every label, selection tails that agent's live output, real gate/test/merge events alone drive artifact movement, reduced-motion removes travel, and every inspector action routes through U3.
+
+### M8.6 (U6) — Memory + History tabs
+- **Depends on:** M8.3, M8.4, M7.3, M7.5, M7.6e, M7.7.
+- **Read first:** Overview § *Project Memory Log*, § *Dreaming / Consolidation Worker*, § *Agent Scorecards*; M7.3's hardened promotion boundary.
+- **Goal:** Make review backlog and durable run evidence understandable without creating another memory or promotion authority.
+- **Behavior — exact:**
+  - The Memory tab expands the **Later** queue into project-local reviewed canon, pending things to remember, proposed routing/value-quality changes, and draft characterization/quality evidence. Items show their evidence and consequences in plain language.
+  - Tier-1 memory/routing/value-quality/verification proposals may reach canon only through the existing `reviewMemoryProposalInteractively()` door. The UI may open/focus that real interactive CLI review, but it cannot submit the confirmation, emulate a TTY, call a daemon promotion route, or construct a human-shaped payload. If no real TTY review is available, promotion remains unavailable.
+  - Draft-test and quality artifacts are reviewable evidence, not self-applying code. If retained as project guidance, they first become an evidence-cited Tier-1 proposal and then use the same interactive canon door. This records reviewed guidance/associations only; applying a test patch or adopting a quality winner still requires its separately scoped canonical write path and is not invented here.
+  - The History tab reads past runs, durable events, gate/verification evidence, and resource-ledger spend. It is read-only and project-scoped.
+  - Neither tab reads or aggregates another project's `.hivemind/`, raw provider session state, or a global memory store.
+- **Acceptance test (binary):** Project-local canon/proposals/routing/draft evidence and past-run spend are visible; a real interactive exact-id CLI review can promote an eligible proposal and the UI then observes the resulting canon event/state; non-TTY, headless, daemon, React, and crafted-payload attempts cannot promote; draft artifacts cannot apply themselves; History performs no mutation; and switching projects exposes none of the prior project's memory or history.
+
+**M8 sizing decision:** M8.1 and M8.3 require an implementation pass plus an adversarial verification round because their failure modes are project contamination and gate bypass. M8.2, M8.4, M8.5, and M8.6 are scoped for one initial implementation pass each, with visual iteration after the rough workspace exists. No unit currently requires another contract split, but U3 must not absorb visual/tab work and U4/U5/U6 must not invent missing primitives.
+
+---
+
+## Beyond M8
+- **Native adapters** and **cloud/team mode** remain future productization. Their old Overview phase numbers are roadmap labels, not M8 Workspace contract numbers; decompose them into the same one-acceptance-test contracts when reached.
+- **Dogfooding** remains an available deliberate demonstration after M8, not the mechanism used to build M4–M8. When explicitly enabled, it exercises Hivemind's protected workflow against its own repo without replacing each feature's direct contract acceptance.
 
 ## The one rule that makes this work
 Read the spec slice to write the contract; hand Codex the **contract**, not the whole spec; use one C10 acceptance criterion per sub-task; ask it to implement *that sub-task*, not "plan the milestone"; never cross a **[GATE]** until it is green. Start at **M0.1**.

@@ -308,6 +308,8 @@ The daemon is the **coordinator**, but it is not a second copy of the truth. The
 
 The UI, CLI, MCP server, and worker adapters do not write shared state directly — they route mutations through the daemon, which is the only process that writes `.hivemind/` shared state.
 
+**M8 project binding.** One daemon instance is bound to exactly one repository root. The desktop app may switch between projects by disconnecting from one repo-bound daemon and connecting to another, but it never combines their events, memory, tasks, leases, caches, or artifacts. If the selected project's daemon is absent, the app may start it; the app never stops or kills a daemon on project switch or app close because that could orphan in-flight workers.
+
 #### Single Source of Truth
 
 There is exactly one authoritative store: the `.hivemind/` directory on disk. Rules that keep it consistent under concurrency:
@@ -1164,6 +1166,8 @@ Derived signals come from Tier 1 objectively, not from agent narration — e.g. 
 
 Two of those canon kinds — **routing policy** and **repo playbooks** — are what make the learning flywheel compound across categories rather than just preventing harm. Routing policy is the learned output of the Resource & Continuity Manager's waste accounting (component 14); a playbook is a learned, pre-grounded task shape that tightens future [grounding](#2-task-planner) and carries senior-developer knowledge that usually lives only in one person's head. Both are powerful *because* they shape future runs — which is exactly why they go through the same human-review gate as any other canon. The flywheel is "get better at *this* repo over time," not "accumulate unreviewed beliefs."
 
+**Project-confinement decision (M8).** Memory is permanently project-local. The earlier long-term idea of a third cross-project memory/oracle tier is out of scope and must not be reintroduced through a global cache, shared canon, user-profile database, or UI aggregation. Task evidence and reviewed canon stay under the selected repository's `.hivemind/`; learning across repositories is deliberately sacrificed to prevent project leakage.
+
 Early builds ship Tier 1 only. Tier 2 promotion and any consolidation are deferred (see roadmap Phase 7); until then Hivemind records evidence and surfaces it, but does not feed self-generated "facts" back into planning.
 
 ### 13. Dreaming / Consolidation Worker (Phase 7)
@@ -1311,7 +1315,17 @@ Adapters
 
 ## Full Application UI
 
-The full app should have these main pages.
+M8 turns the verified read-only Tauri monitor into the local Hivemind workspace. V1 uses React + shadcn/ui inside the existing Tauri shell and organizes the product into four tabs: **Work**, **Swarm**, **Memory**, and **History**. The longer page inventory below remains product direction; M8 folds the minimum useful parts into those four tabs rather than building every page separately.
+
+Three rules govern the workspace:
+
+1. **Plain language first.** A user can run the loop without learning Hivemind vocabulary. Terms such as lease, canon, oracle, Tier-2, and write-intent appear only in detail views or when the underlying decision genuinely requires them. The primary UI says "blocked before merge," "thin test coverage," "see what's untested," and "write a test."
+2. **Chat steers; buttons authorize.** Free text is advisory guidance to a proposal. It never satisfies a gate, grants approval, ratifies a plan, promotes memory, integrates a patch, changes a tier, or authorizes spend. Approvals are explicit typed structured actions disposed by deterministic Core primitives.
+3. **Thin client, one truth.** React holds ephemeral render state only. Authoritative project state remains under the selected repo's `.hivemind/`; actionable eligibility and current status come from the daemon. The UI contains no gate, routing, integration, promotion, or lifecycle truth of its own and invokes the same Core primitives as the CLI.
+
+M8 is intentionally a rough working workspace before a second polish pass. Functional completeness, safety-path reuse, and project isolation take priority over visual elaboration.
+
+The full app should have these main pages or equivalent workspace surfaces.
 
 ### 1. Project Home
 
