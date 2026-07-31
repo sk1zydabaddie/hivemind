@@ -13,6 +13,7 @@ import { requestLeaseForContract, releaseLease } from "./lease.js";
 import { proposeLearnedRoutingPolicy } from "./learned-routing.js";
 import { proposeMemoryLesson } from "./memory-log.js";
 import { reconcileProjectTempDirectories } from "./project-temp.js";
+import { preflightQualityCancellationReconciliation, reconcileQualityCancellationsOnStartup } from "./quality-control.js";
 import { findGitRoot } from "./repo.js";
 import { evaluatePlanThrash } from "./plan.js";
 import { readQuotaLedger } from "./resource-ledger.js";
@@ -22,7 +23,7 @@ import { getStatus } from "./status.js";
 import { submitTask } from "./submit.js";
 import { requestTaskRedirect } from "./supervision.js";
 import { validateRequestedTaskId } from "./task-id.js";
-import { finalizeTaskCancellation } from "./task-control.js";
+import { reconcileTaskCancellationOnStartup } from "./task-control.js";
 import { admitValueQuality } from "./value-quality.js";
 import { createTaskWorktree, removeTaskWorktree } from "./worktree.js";
 import { executeWorkspaceAction } from "./workspace-actions.js";
@@ -51,11 +52,25 @@ export async function daemonCommand(cwd: string, args: string[]): Promise<number
     return 1;
   }
 
-  await reconcileProjectTempDirectories(repoRoot);
+  const qualityPreflight = await preflightQualityCancellationReconciliation(repoRoot);
+  if (!qualityPreflight.ok) {
+    console.error(`error: ${qualityPreflight.reason}`);
+    return 1;
+  }
+  if (!qualityPreflight.value.blocked) {
+    await reconcileProjectTempDirectories(repoRoot);
+  }
   const reconcileResult = await reconcileIncompleteRuns(repoRoot);
   if (!reconcileResult.ok) {
     console.error(`error: ${reconcileResult.reason}`);
     return 1;
+  }
+  if (!qualityPreflight.value.blocked) {
+    const qualityReconcile = await reconcileQualityCancellationsOnStartup(repoRoot);
+    if (!qualityReconcile.ok) {
+      console.error(`error: ${qualityReconcile.reason}`);
+      return 1;
+    }
   }
 
   const server = createDaemonServer(repoRoot);
@@ -330,7 +345,7 @@ async function reconcileIncompleteRuns(repoRoot: string): Promise<{ ok: true } |
   for (const taskId of tasksNeedingStartupReconciliation(events.value)) {
     const cancelRequested = events.value.some((event) => event.type === "task.cancel_requested" && event.task_id === taskId);
     if (cancelRequested) {
-      const cancelled = await finalizeTaskCancellation(repoRoot, taskId);
+      const cancelled = await reconcileTaskCancellationOnStartup(repoRoot, taskId);
       if (!cancelled.ok) return cancelled;
       continue;
     }

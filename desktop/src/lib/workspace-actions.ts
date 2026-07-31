@@ -7,6 +7,8 @@ export type WorkspaceAction = {
     | "guidance.record"
     | "plan.review"
     | "plan.ratify"
+    | "manual_task.review"
+    | "manual_task.authorize"
     | "plan.amend"
     | "manager.approve_pending"
     | "task.redirect"

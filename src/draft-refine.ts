@@ -323,7 +323,8 @@ async function runStage(
         route,
         checkoutPath,
         prompt,
-        qualityRunId
+        qualityRunId,
+        draftId
       );
       modelOutput = execution.model_output;
       return execution.producer_result;

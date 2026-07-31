@@ -26,6 +26,7 @@ import {
 } from "../src/manager.js";
 import { createSpec, type SpecResult } from "../src/spec.js";
 import { getStatus } from "../src/status.js";
+import { authorizePlanlessManualTaskIfEligible } from "./support/manual-task.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
 const execFileAsync = promisify(execFile);
@@ -2117,6 +2118,7 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
       2
     )}\n`
   );
+  await authorizePlanlessManualTaskIfEligible(repo, taskId);
 }
 
 async function writeAcceptedPatchBundle(repo: string, taskId: string, baseCommit: string, edit: () => Promise<void>): Promise<void> {

@@ -128,7 +128,8 @@ export async function generateBestOfN(
           authorization.value.route,
           checkoutPath,
           prompt,
-          qualityRunId
+          qualityRunId,
+          draftId
         );
         return execution.producer_result;
       }

@@ -5,7 +5,7 @@ import { generateCharacterizationCandidate } from "./characterization-generator.
 import { generateDraftRefine } from "./draft-refine.js";
 import { recordHumanGuidance } from "./human-guidance.js";
 import { approvePendingManagerAction, continueAutonomousManagerLoop, startManagerSession } from "./manager.js";
-import { queuePlanAmendment, ratifyPlan, reviewPlanForRatification } from "./plan.js";
+import { authorizeManualTask, queuePlanAmendment, ratifyPlan, reviewManualTaskForAuthorization, reviewPlanForRatification } from "./plan.js";
 import { cancelQualityRun } from "./quality-control.js";
 import { findGitRoot } from "./repo.js";
 import { getStatus } from "./status.js";
@@ -18,6 +18,8 @@ export const workspaceActionTypes = [
   "guidance.record",
   "plan.review",
   "plan.ratify",
+  "manual_task.review",
+  "manual_task.authorize",
   "plan.amend",
   "manager.approve_pending",
   "task.redirect",
@@ -52,6 +54,16 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
   if (raw.type === "plan.ratify") {
     const parsed = exactStrings(payload, ["spec_id", "expected_plan_hash"]);
     return parsed.ok ? ratifyPlan(repoRoot, parsed.value.spec_id, parsed.value.expected_plan_hash) : parsed;
+  }
+  if (raw.type === "manual_task.review") {
+    const parsed = exactStrings(payload, ["spec_id", "task_id"]);
+    return parsed.ok ? reviewManualTaskForAuthorization(repoRoot, parsed.value.spec_id, parsed.value.task_id) : parsed;
+  }
+  if (raw.type === "manual_task.authorize") {
+    const parsed = exactStrings(payload, ["spec_id", "task_id", "expected_contract_hash"]);
+    return parsed.ok
+      ? authorizeManualTask(repoRoot, parsed.value.spec_id, parsed.value.task_id, parsed.value.expected_contract_hash)
+      : parsed;
   }
   if (raw.type === "plan.amend") {
     if (typeof payload.spec_id !== "string" || !isRecord(payload.amendment) || Object.keys(payload).some((key) => key !== "spec_id" && key !== "amendment")) {

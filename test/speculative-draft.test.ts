@@ -16,9 +16,14 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { readEvents } from "../src/events.js";
+import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
-import { cancelQualityRun, qualityRunCancelled } from "../src/quality-control.js";
+import {
+  cancelQualityRun,
+  preflightQualityCancellationReconciliation,
+  qualityRunCancelled,
+  reconcileQualityCancellationsOnStartup
+} from "../src/quality-control.js";
 import { selectQualityWinner } from "../src/quality-selection.js";
 import {
   disposeSpeculativeDraft,
@@ -542,6 +547,90 @@ test("an in-flight quality cancellation becomes terminal only after its detached
         .map((event) => event.type);
       assert.ok(types.indexOf("quality.cancel_requested") < types.indexOf("quality.draft_disposed"));
       assert.ok(types.indexOf("quality.draft_disposed") < types.indexOf("quality.cancelled"));
+    }
+  });
+});
+
+test("quality cancellation timeout reaches a terminal retryable failure instead of remaining open", async () => {
+  await withSpeculativeRepo(async ({ repo }) => {
+    const admission = await admitValueQuality(repo, "T-001", { strategy: "best_of_n", n: 2 });
+    assert.equal(admission.ok, true, admission.ok ? undefined : admission.reason);
+    if (!admission.ok) return;
+    await appendEvent(repo, {
+      type: "quality.draft_started",
+      task_id: "T-001",
+      data: { quality_run_id: admission.value.quality_run_id, draft_id: "D-001" }
+    });
+
+    const cancellation = await cancelQualityRun(
+      repo,
+      { quality_run_id: admission.value.quality_run_id, reason: "Bound the cancellation." },
+      { waitMs: 5 }
+    );
+    assert.equal(cancellation.ok, false);
+    if (!cancellation.ok) assert.match(cancellation.reason, /remains retryable/u);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (events.ok) {
+      const qualityEvents = events.value.filter((event) => event.data.quality_run_id === admission.value.quality_run_id);
+      assert.equal(qualityEvents.at(-1)?.type, "quality.cancel_failed");
+      assert.equal(qualityEvents.at(-1)?.data.terminal, true);
+      assert.equal(qualityEvents.some((event) => event.type === "quality.cancelled"), false);
+    }
+  });
+});
+
+test("quality restart reconciliation does not reclaim an ambiguously-live draft", async () => {
+  await withSpeculativeRepo(async ({ repo }) => {
+    const admission = await admitValueQuality(repo, "T-001", { strategy: "best_of_n", n: 2 });
+    assert.equal(admission.ok, true, admission.ok ? undefined : admission.reason);
+    if (!admission.ok) return;
+    await appendEvent(repo, { type: "quality.draft_started", task_id: "T-001", data: { quality_run_id: admission.value.quality_run_id, draft_id: "D-001" } });
+    await appendEvent(repo, {
+      type: "quality.worker_process_started",
+      task_id: "T-001",
+      data: { quality_run_id: admission.value.quality_run_id, draft_id: "D-001", pid: 4242, process_instance_id: "unknown-quality-worker" }
+    });
+    await appendEvent(repo, { type: "quality.cancel_requested", task_id: "T-001", data: { quality_run_id: admission.value.quality_run_id, reason: "daemon crashed" } });
+
+    const preflight = await preflightQualityCancellationReconciliation(repo, { probeLiveness: () => "unknown" });
+    assert.equal(preflight.ok, true);
+    if (preflight.ok) assert.equal(preflight.value.blocked, true);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (events.ok) {
+      const qualityEvents = events.value.filter((event) => event.data.quality_run_id === admission.value.quality_run_id);
+      assert.equal(qualityEvents.at(-1)?.type, "quality.cancel_failed");
+      assert.equal(qualityEvents.some((event) => event.type === "quality.draft_disposed"), false);
+      assert.equal(qualityEvents.some((event) => event.type === "quality.cancelled"), false);
+    }
+  });
+});
+
+test("quality restart reconciliation disposes a provably-dead draft and reaches quality.cancelled", async () => {
+  await withSpeculativeRepo(async ({ repo }) => {
+    const admission = await admitValueQuality(repo, "T-001", { strategy: "best_of_n", n: 2 });
+    assert.equal(admission.ok, true, admission.ok ? undefined : admission.reason);
+    if (!admission.ok) return;
+    await appendEvent(repo, { type: "quality.draft_started", task_id: "T-001", data: { quality_run_id: admission.value.quality_run_id, draft_id: "D-001" } });
+    await appendEvent(repo, {
+      type: "quality.worker_process_started",
+      task_id: "T-001",
+      data: { quality_run_id: admission.value.quality_run_id, draft_id: "D-001", pid: 4343, process_instance_id: "dead-quality-worker" }
+    });
+    await appendEvent(repo, { type: "quality.cancel_requested", task_id: "T-001", data: { quality_run_id: admission.value.quality_run_id, reason: "daemon crashed" } });
+
+    const preflight = await preflightQualityCancellationReconciliation(repo, { probeLiveness: () => "dead" });
+    assert.equal(preflight.ok, true);
+    if (preflight.ok) assert.equal(preflight.value.blocked, false);
+    const reconciled = await reconcileQualityCancellationsOnStartup(repo, { probeLiveness: () => "dead" });
+    assert.equal(reconciled.ok, true, reconciled.ok ? undefined : reconciled.reason);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (events.ok) {
+      const qualityEvents = events.value.filter((event) => event.data.quality_run_id === admission.value.quality_run_id);
+      assert.equal(qualityEvents.at(-2)?.type, "quality.draft_disposed");
+      assert.equal(qualityEvents.at(-1)?.type, "quality.cancelled");
     }
   });
 });

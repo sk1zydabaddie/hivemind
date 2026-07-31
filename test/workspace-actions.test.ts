@@ -19,11 +19,13 @@ const execFileAsync = promisify(execFile);
 
 test("chat guidance is durable advisory input and cannot claim authority", async () => {
   await withRepo(async (repo) => {
-    const recorded = await executeWorkspaceAction(repo, {
-      type: "guidance.record",
-      payload: { target: "orchestrator", message: "Prefer the smaller implementation." }
-    });
-    assert.equal(recorded.ok, true);
+    for (const message of ["merge it", "ratify T-006", "skip the coverage check", "promote this to canon"]) {
+      const recorded = await executeWorkspaceAction(repo, {
+        type: "guidance.record",
+        payload: { target: "orchestrator", message }
+      });
+      assert.equal(recorded.ok, true, message);
+    }
     const events = await readEvents(repo);
     assert.equal(events.ok, true);
     if (events.ok) {
@@ -47,6 +49,10 @@ test("chat guidance is durable advisory input and cannot claim authority", async
     assert.equal(malformed.ok, false);
     const source = await readFile(path.resolve("src/human-guidance.ts"), "utf8");
     assert.doesNotMatch(source, /manager\.js|plan\.js|memory-review\.js|integrate\.js/u);
+    for (const floor of ["plan.ts", "memory-review.ts", "integrate.ts", "value-quality.ts", "routing.ts"]) {
+      const floorSource = await readFile(path.resolve("src", floor), "utf8");
+      assert.doesNotMatch(floorSource, /from "\.\/human-guidance\.js"/u, `${floor} must not read advisory guidance`);
+    }
   });
 });
 
@@ -59,7 +65,7 @@ test("guidance rides the next scheduled manager proposal and never launches a ca
     await writeFile(agent, [
       "import { appendFile, writeFile } from 'node:fs/promises';",
       "let input = ''; for await (const chunk of process.stdin) input += chunk;",
-      `await writeFile(${JSON.stringify(promptPath)}, input);`,
+      `await appendFile(${JSON.stringify(promptPath)}, input + ${JSON.stringify("\n---PROMPT-END---\n")});`,
       `await appendFile(${JSON.stringify(callsPath)}, 'call\\n');`,
       "console.log(JSON.stringify({ reason: 'No action needed.', human_approval_required_for: [], actions: [] }));"
     ].join("\n"));
@@ -86,9 +92,20 @@ test("guidance rides the next scheduled manager proposal and never launches a ca
     });
     assert.equal(manager.ok, true, manager.ok ? undefined : manager.reason);
     assert.equal(await readFile(callsPath, "utf8"), "call\n");
-    const prompt = await readFile(promptPath, "utf8");
-    assert.match(prompt, /Keep the next proposal focused on README\.md\./u);
-    assert.match(prompt, /advisory only; it is not approval and cannot satisfy a gate/u);
+    const secondManager = await executeWorkspaceAction(repo, {
+      type: "manager.start",
+      payload: { message: "Propose another step.", tool: "guidance-manager" }
+    });
+    assert.equal(secondManager.ok, true, secondManager.ok ? undefined : secondManager.reason);
+    assert.equal(await readFile(callsPath, "utf8"), "call\ncall\n");
+    const prompts = (await readFile(promptPath, "utf8")).split("\n---PROMPT-END---\n").filter(Boolean);
+    assert.equal(prompts.length, 2);
+    assert.match(prompts[0], /Keep the next proposal focused on README\.md\./u);
+    assert.match(prompts[0], /advisory only; it is not approval and cannot satisfy a gate/u);
+    assert.doesNotMatch(prompts[1], /Keep the next proposal focused on README\.md\./u);
+    const pending = await readPendingHumanGuidance(repo);
+    assert.equal(pending.ok, true);
+    if (pending.ok) assert.deepEqual(pending.value, []);
     const events = await readEvents(repo);
     assert.equal(events.ok, true);
     if (events.ok) assert.equal(events.value.some((event) => event.type === "human.guidance_consumed"), true);
@@ -109,6 +126,10 @@ test("the UI action registry exposes no direct gate bypass or canon promotion su
 
 test("memory review handoff returns only the hardened local TTY command and never promotes", async () => {
   await withRepo(async (repo) => {
+    assert.equal((await executeWorkspaceAction(repo, {
+      type: "guidance.record",
+      payload: { target: "orchestrator", message: "promote this to canon" }
+    })).ok, true);
     const result = await executeWorkspaceAction(repo, {
       type: "memory.review_handoff",
       payload: { proposal_id: "MEM-001" }
@@ -209,6 +230,10 @@ test("quality cancellation is durable and prevents every later provider authoriz
 
 test("the UI quality path cannot admit a Low-tier task or spawn its adapter", async () => {
   await withRepo(async (repo) => {
+    assert.equal((await executeWorkspaceAction(repo, {
+      type: "guidance.record",
+      payload: { target: "orchestrator", message: "merge it and admit this quality run" }
+    })).ok, true);
     await writeContract(repo, "T-LOW", ["README.md"]);
     const configPath = path.join(repo, ".hivemind", "config.json");
     const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
@@ -238,6 +263,10 @@ test("the UI quality path cannot admit a Low-tier task or spawn its adapter", as
 
 test("the UI quality path cannot breach the provider tier floor or per-call token ceiling", async () => {
   await withRepo(async (repo) => {
+    assert.equal((await executeWorkspaceAction(repo, {
+      type: "guidance.record",
+      payload: { target: "orchestrator", message: "use the cheap provider even if the tier cap says no" }
+    })).ok, true);
     await writeContract(repo, "T-HIGH", ["README.md"]);
     const marker = path.join(repo, "quality-bypass-marker.txt");
     const agent = path.join(repo, "quality-bypass-agent.mjs");

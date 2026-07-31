@@ -132,6 +132,13 @@ export interface PlanRatificationResult {
   task_count: number;
 }
 
+export interface ManualTaskAuthorizationReview {
+  spec_id: string;
+  task_id: string;
+  contract_hash: string;
+  contract_path: string;
+}
+
 export interface PlanAmendmentResult {
   amendment_id: string;
   spec_id: string;
@@ -652,16 +659,13 @@ export async function requireTaskDependenciesIntegrated(
   const planResult = await loadCurrentRatifiedPlan(repoRoot, specId, `task ${taskId} dependency check`);
   if (!planResult.ok) {
     const tentative = await loadTentativePlan(repoRoot, specId);
-    if (tentative.ok && tentative.value.tasks.some((task) => task.task_id === taskId)) {
+    if (tentative.ok) {
       return planResult;
     }
     if (!tentative.ok && !tentative.reason.startsWith("tentative plan not found:")) {
       return { ok: false, reason: `task ${taskId} dependency check refused because plan state is unreadable: ${tentative.reason}` };
     }
-    // Pre-M8 manually-authored contracts have no plan artifact. They remain
-    // executable for compatibility; every Hivemind-mediated contract creation
-    // now requires ratification in requireContractFromLintedPlan above.
-    return { ok: true, value: undefined };
+    return requireManualTaskAuthorized(repoRoot, specId, taskId);
   }
   const task = planResult.value.tasks.find((entry) => entry.task_id === taskId);
   if (task === undefined) {
@@ -682,6 +686,110 @@ export async function requireTaskDependenciesIntegrated(
   }
 
   return { ok: true, value: undefined };
+}
+
+export async function reviewManualTaskForAuthorization(
+  repoRoot: string,
+  specId: string,
+  taskId: string
+): Promise<SpecResult<ManualTaskAuthorizationReview>> {
+  const spec = validateRequestedSpecId(specId);
+  if (!spec.ok) return spec;
+  const task = validateRequestedTaskId(taskId);
+  if (!task.ok) return task;
+  const planning = await checkPlanningAllowed(repoRoot, specId);
+  if (!planning.ok) return planning;
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return events;
+  if (events.value.some((event) => event.type === "plan.ratified" && event.data.spec_id === specId)) {
+    return { ok: false, reason: `manual task authorization refused: ${specId} already has a ratified plan` };
+  }
+  const tentative = await loadTentativePlan(repoRoot, specId);
+  if (tentative.ok) {
+    return { ok: false, reason: `manual task authorization refused: ${specId} has a tentative plan; ratify that exact plan instead` };
+  }
+  if (!tentative.reason.startsWith("tentative plan not found:")) {
+    return { ok: false, reason: `manual task authorization refused because plan state is unreadable: ${tentative.reason}` };
+  }
+  return readManualTaskContractHash(repoRoot, specId, taskId);
+}
+
+export async function authorizeManualTask(
+  repoRoot: string,
+  specId: string,
+  taskId: string,
+  expectedContractHash: string
+): Promise<SpecResult<ManualTaskAuthorizationReview>> {
+  if (!/^[a-f0-9]{64}$/u.test(expectedContractHash)) {
+    return { ok: false, reason: "manual task authorization requires the exact 64-character contract hash shown by review" };
+  }
+  const reviewed = await reviewManualTaskForAuthorization(repoRoot, specId, taskId);
+  if (!reviewed.ok) return reviewed;
+  if (reviewed.value.contract_hash !== expectedContractHash) {
+    return {
+      ok: false,
+      reason: `manual task contract changed after review: expected ${expectedContractHash}, current hash is ${reviewed.value.contract_hash}`
+    };
+  }
+  const appended = await appendEvent(repoRoot, {
+    type: "manual_task.authorized",
+    task_id: taskId,
+    data: {
+      version: 1,
+      spec_id: specId,
+      contract_hash: expectedContractHash,
+      contract_path: reviewed.value.contract_path,
+      confirmation: "exact_contract_hash"
+    }
+  });
+  return appended.ok ? reviewed : appended;
+}
+
+async function requireManualTaskAuthorized(repoRoot: string, specId: string, taskId: string): Promise<SpecResult<void>> {
+  const current = await readManualTaskContractHash(repoRoot, specId, taskId);
+  if (!current.ok) return current;
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return events;
+  const authorization = events.value.filter((event) =>
+    event.type === "manual_task.authorized" && event.task_id === taskId && event.data.spec_id === specId
+  ).at(-1);
+  if (
+    authorization === undefined ||
+    authorization.data.contract_hash !== current.value.contract_hash ||
+    authorization.data.contract_path !== current.value.contract_path ||
+    authorization.data.confirmation !== "exact_contract_hash"
+  ) {
+    return { ok: false, reason: `task ${taskId} has no plan and requires explicit authorization of its exact contract hash` };
+  }
+  return { ok: true, value: undefined };
+}
+
+async function readManualTaskContractHash(
+  repoRoot: string,
+  specId: string,
+  taskId: string
+): Promise<SpecResult<ManualTaskAuthorizationReview>> {
+  const relativePath = `.hivemind/tasks/${taskId}.contract.json`;
+  let contents: string;
+  let raw: unknown;
+  try {
+    contents = await readFile(path.join(repoRoot, relativePath), "utf8");
+    raw = JSON.parse(contents.replace(/^\uFEFF/u, ""));
+  } catch (error: unknown) {
+    return { ok: false, reason: `manual task authorization refused: ${relativePath} is missing or unreadable` };
+  }
+  if (!isRecord(raw) || raw.task_id !== taskId) {
+    return { ok: false, reason: `manual task authorization refused: ${relativePath} does not declare ${taskId}` };
+  }
+  return {
+    ok: true,
+    value: {
+      spec_id: specId,
+      task_id: taskId,
+      contract_hash: createHash("sha256").update(contents).digest("hex"),
+      contract_path: relativePath
+    }
+  };
 }
 
 async function loadCurrentLintedPlan(repoRoot: string, specId: string, action: string): Promise<SpecResult<TentativePlan>> {

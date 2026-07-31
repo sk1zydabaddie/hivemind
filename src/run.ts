@@ -20,7 +20,7 @@ import { requirePassedWriteIntent } from "./intent.js";
 import { readQuotaLedger } from "./resource-ledger.js";
 import { routeTaskProvider } from "./routing.js";
 import { latestTaskRunState } from "./run-state.js";
-import { finalizeTaskCancellation, taskCancellationRequested } from "./task-control.js";
+import { taskCancellationRequested } from "./task-control.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { createTaskWorktree } from "./worktree.js";
 
@@ -418,10 +418,30 @@ async function finishPreparedRunAttempt(
 > {
   const streamOutputWrites: Array<Promise<{ ok: true } | { ok: false; reason: string }>> = [];
   let streamOutputTail: Promise<{ ok: true } | { ok: false; reason: string }> = Promise.resolve({ ok: true });
+  const workerProcessIdentities: Array<{ pid: number; process_instance_id: string }> = [];
   const invokeResult = await invokeAgent(repoRoot, prepared.taskId, prepared.tool, {
     allowDangerousAdapter: prepared.allowDangerousAdapter,
     usageSessionId: prepared.usageSessionId,
     shouldCancel: () => taskCancellationRequested(repoRoot, prepared.taskId),
+    onProcessStart: async (identity) => {
+      const recorded = await emitRunEvent(
+        repoRoot,
+        {
+          type: "task.worker_process_started",
+          task_id: prepared.taskId,
+          data: {
+            version: 1,
+            run_id: prepared.runId,
+            tool: prepared.tool,
+            pid: identity.pid,
+            process_instance_id: identity.process_instance_id
+          }
+        },
+        prepared.onEvent
+      );
+      if (recorded.ok) workerProcessIdentities.push(identity);
+      return recorded.ok ? { ok: true as const } : recorded;
+    },
     onStreamChunk: (chunk) => {
       streamOutputTail = streamOutputTail.then((previous) =>
         previous.ok
@@ -440,6 +460,25 @@ async function finishPreparedRunAttempt(
       streamOutputWrites.push(streamOutputTail);
     }
   });
+  const workerProcessIdentity = workerProcessIdentities.at(-1);
+  if (workerProcessIdentity !== undefined) {
+    const stopped = await emitRunEvent(
+      repoRoot,
+      {
+        type: "task.worker_process_stopped",
+        task_id: prepared.taskId,
+        data: {
+          version: 1,
+          run_id: prepared.runId,
+          pid: workerProcessIdentity.pid,
+          process_instance_id: workerProcessIdentity.process_instance_id,
+          adapter_result: invokeResult.ok ? "closed" : "failed_after_start"
+        }
+      },
+      prepared.onEvent
+    );
+    if (!stopped.ok) return stopped;
+  }
   const streamOutputResults = await Promise.all(streamOutputWrites);
   const failedStreamOutput = streamOutputResults.find((result) => !result.ok);
   if (failedStreamOutput !== undefined && !failedStreamOutput.ok) {
@@ -460,10 +499,13 @@ async function finishPreparedRunAttempt(
   }
 
   if (invokeResult.value.cancelled === true || await taskCancellationRequested(repoRoot, prepared.taskId)) {
-    const finalized = await finalizeTaskCancellation(repoRoot, prepared.taskId);
-    return finalized.ok
-      ? { ok: false, reason: `task ${prepared.taskId} cancelled by durable human request`, toolExit: invokeResult.value.exitCode }
-      : { ok: false, reason: finalized.reason, toolExit: invokeResult.value.exitCode };
+    const terminal = await readEvents(repoRoot);
+    if (!terminal.ok) return terminal;
+    const stopState = latestTaskRunState(terminal.value, prepared.taskId);
+    const reason = stopState.state === "failed" && stopState.failed.data.stop_attempt === true && typeof stopState.failed.data.reason === "string"
+      ? stopState.failed.data.reason
+      : `task ${prepared.taskId} cancelled by durable human request`;
+    return { ok: false, reason, toolExit: invokeResult.value.exitCode };
   }
 
   if (invokeResult.value.throttled) {

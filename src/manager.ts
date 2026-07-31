@@ -572,7 +572,7 @@ async function buildFullManagerProposalPrompt(repoRoot: string, message: string,
       JSON.stringify(runStates, null, 2),
       "",
       "Recent durable event trail JSON:",
-      JSON.stringify(events.value.slice(-30), null, 2),
+      JSON.stringify(managerContextEvents(events.value).slice(-30), null, 2),
       "",
       "Tentative plan JSON or missing state:",
       plan.ok ? JSON.stringify(plan.value, null, 2) : JSON.stringify({ missing: true, reason: plan.reason }, null, 2),
@@ -632,7 +632,7 @@ async function buildLeanManagerProposalPrompt(repoRoot: string, message: string,
       JSON.stringify(runStates, null, 2),
       "",
       "Recent durable event trail JSON (freshly read from .hivemind/log/events.jsonl):",
-      JSON.stringify(events.value.slice(-12), null, 2),
+      JSON.stringify(managerContextEvents(events.value).slice(-12), null, 2),
       "",
       "Tentative plan ref and task summary from disk:",
       plan.ok
@@ -2101,6 +2101,10 @@ function parseAutoLoopOptions(args: string[]): SpecResult<{ maxSteps: number }> 
     return { ok: false, reason: `unknown autonomous manager option: ${flag ?? ""}` };
   }
   return { ok: true, value: { maxSteps } };
+}
+
+function managerContextEvents(events: HivemindEvent[]): HivemindEvent[] {
+  return events.filter((event) => event.type !== "human.guidance_recorded" && event.type !== "human.guidance_consumed");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

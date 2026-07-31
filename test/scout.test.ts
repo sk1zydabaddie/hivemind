@@ -15,6 +15,7 @@ import { runTask } from "../src/run.js";
 import { runScout } from "../src/scout.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
+import { authorizePlanlessManualTaskIfEligible } from "./support/manual-task.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -264,6 +265,7 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
     path.join(repo, ".hivemind", "tasks", `${taskId}.contract.json`),
     `${JSON.stringify(contractFor(taskId, baseCommit, allowedFiles), null, 2)}\n`
   );
+  await authorizePlanlessManualTaskIfEligible(repo, taskId);
 }
 
 async function writeProfile(repo: string, tool: string, agentPath: string, dangerous = false): Promise<void> {

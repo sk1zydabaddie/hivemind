@@ -13,6 +13,7 @@ import { checkWriteIntent } from "../src/intent.js";
 import { readActiveLeases, requestLeaseForContract } from "../src/lease.js";
 import { appendTaskOutput, readTaskOutput } from "../src/output-stream.js";
 import { createRatifiedSpec } from "./support/spec.js";
+import { authorizePlanlessManualTaskIfEligible } from "./support/manual-task.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -599,6 +600,7 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
       2
     )}\n`
   );
+  await authorizePlanlessManualTaskIfEligible(repo, taskId);
 }
 
 async function writeStreamingProfile(repo: string, tool: string): Promise<void> {

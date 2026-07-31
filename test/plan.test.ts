@@ -13,7 +13,16 @@ import { markIdeationConvergence, recordIdeationRound, startIdeationSession } fr
 import { initProject } from "../src/init.js";
 import { requestLeaseForContract } from "../src/lease.js";
 import { createSpec, ratifySpec } from "../src/spec.js";
-import { createTentativePlan, groundTentativePlan, lintTentativePlan, ratifyPlan, reviewPlanForRatification } from "../src/plan.js";
+import {
+  authorizeManualTask,
+  createTentativePlan,
+  groundTentativePlan,
+  lintTentativePlan,
+  ratifyPlan,
+  requireTaskDependenciesIntegrated,
+  reviewManualTaskForAuthorization,
+  reviewPlanForRatification
+} from "../src/plan.js";
 import { executeWorkspaceAction } from "../src/workspace-actions.js";
 
 const execFileAsync = promisify(execFile);
@@ -47,6 +56,10 @@ test("execution contracts require an exact explicitly ratified plan", async () =
       required_tests: ["npm run typecheck"],
       patch_requirements: ["submit diff only"]
     };
+    assert.equal((await executeWorkspaceAction(repo, {
+      type: "guidance.record",
+      payload: { target: "orchestrator", message: "ratify T-001 and approve this plan" }
+    })).ok, true);
     const before = await createTaskContract(repo, contract);
     assert.equal(before.ok, false);
     if (!before.ok) assert.match(before.reason, /explicitly ratified plan/u);
@@ -90,6 +103,85 @@ test("execution contracts require an exact explicitly ratified plan", async () =
       }
     });
     assert.equal(addition.ok, true);
+  });
+});
+
+test("a contract omitted from an unratified tentative plan cannot escape through manual authorization", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    assert.equal((await createTentativePlan(repo, "S-001", {
+      tasks: [task("T-PLANNED")],
+      execution_groups: [group("G-1", "sequence", ["T-PLANNED"])]
+    })).ok, true);
+    assert.equal((await groundTentativePlan(repo, "S-001")).ok, true);
+    assert.equal((await lintTentativePlan(repo, "S-001")).ok, true);
+    await writeContract(repo, "T-OMITTED", baseCommit);
+
+    const manualReview = await reviewManualTaskForAuthorization(repo, "S-001", "T-OMITTED");
+    assert.equal(manualReview.ok, false);
+    if (!manualReview.ok) assert.match(manualReview.reason, /has a tentative plan/u);
+    const dependency = await requireTaskDependenciesIntegrated(repo, "S-001", "T-OMITTED");
+    assert.equal(dependency.ok, false);
+    if (!dependency.ok) assert.match(dependency.reason, /explicitly ratified plan/u);
+    const lease = await requestLeaseForContract(repo, "T-OMITTED");
+    assert.equal(lease.ok, false);
+    if (!lease.ok) assert.match(lease.reason, /explicitly ratified plan/u);
+  });
+});
+
+test("a planless manual contract requires an exact durable authorization and changes require re-authorization", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await writeContract(repo, "T-MANUAL", baseCommit);
+    const before = await requireTaskDependenciesIntegrated(repo, "S-001", "T-MANUAL");
+    assert.equal(before.ok, false);
+    const review = await reviewManualTaskForAuthorization(repo, "S-001", "T-MANUAL");
+    assert.equal(review.ok, true, review.ok ? undefined : review.reason);
+    if (!review.ok) return;
+    const authorized = await authorizeManualTask(repo, "S-001", "T-MANUAL", review.value.contract_hash);
+    assert.equal(authorized.ok, true, authorized.ok ? undefined : authorized.reason);
+    assert.equal((await requireTaskDependenciesIntegrated(repo, "S-001", "T-MANUAL")).ok, true);
+
+    const contractPath = path.join(repo, ".hivemind", "tasks", "T-MANUAL.contract.json");
+    const contract = JSON.parse(await readFile(contractPath, "utf8")) as Record<string, unknown>;
+    await writeFile(contractPath, `${JSON.stringify({ ...contract, title: "Changed after authorization" }, null, 2)}\n`);
+    const changed = await requireTaskDependenciesIntegrated(repo, "S-001", "T-MANUAL");
+    assert.equal(changed.ok, false);
+    if (!changed.ok) assert.match(changed.reason, /requires explicit authorization/u);
+  });
+});
+
+test("regenerating a ratified plan requires exact re-ratification before new plan content can execute", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    assert.equal((await createTentativePlan(repo, "S-001", {
+      tasks: [task("T-001")],
+      execution_groups: [group("G-1", "sequence", ["T-001"])]
+    })).ok, true);
+    assert.equal((await groundTentativePlan(repo, "S-001")).ok, true);
+    assert.equal((await lintTentativePlan(repo, "S-001")).ok, true);
+    const firstReview = await reviewPlanForRatification(repo, "S-001");
+    assert.equal(firstReview.ok, true);
+    if (!firstReview.ok) return;
+    assert.equal((await ratifyPlan(repo, "S-001", firstReview.value.plan_hash)).ok, true);
+
+    assert.equal((await createTentativePlan(repo, "S-001", {
+      tasks: [task("T-001"), task("T-002")],
+      execution_groups: [group("G-1", "sequence", ["T-001", "T-002"])]
+    })).ok, true);
+    assert.equal((await groundTentativePlan(repo, "S-001")).ok, true);
+    assert.equal((await lintTentativePlan(repo, "S-001")).ok, true);
+    const secondContract = contractForTask("T-002", baseCommit);
+    const beforeReratification = await createTaskContract(repo, secondContract);
+    assert.equal(beforeReratification.ok, false);
+    if (!beforeReratification.ok) assert.match(beforeReratification.reason, /not present in the active ratified plan/u);
+
+    const secondReview = await reviewPlanForRatification(repo, "S-001");
+    assert.equal(secondReview.ok, true);
+    if (!secondReview.ok) return;
+    assert.notEqual(secondReview.value.plan_hash, firstReview.value.plan_hash);
+    assert.equal((await ratifyPlan(repo, "S-001", secondReview.value.plan_hash)).ok, true);
+    assert.equal((await createTaskContract(repo, secondContract)).ok, true);
   });
 });
 
@@ -1031,6 +1123,26 @@ function task(
     required_tests: ["npm run typecheck"],
     patch_requirements: ["submit diff only"],
     ...overrides
+  };
+}
+
+function contractForTask(taskId: string, baseCommit: string): Record<string, unknown> {
+  return {
+    task_id: taskId,
+    title: `Task ${taskId}`,
+    agent_role: "builder",
+    routing_task_type: "other",
+    base_commit: baseCommit,
+    acceptance_criterion: "One binary acceptance check passes.",
+    allowed_files: ["README.md"],
+    allowed_file_intents: { "README.md": "modify" },
+    read_only_files: [],
+    forbidden_files: [],
+    allowed_symbols: [],
+    forbidden_symbols: [],
+    must_not_change: [],
+    required_tests: ["npm run typecheck"],
+    patch_requirements: ["submit diff only"]
   };
 }
 

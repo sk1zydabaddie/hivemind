@@ -6,6 +6,7 @@ import {
   type AdapterProcessResult
 } from "./adapter.js";
 import { estimateTokens } from "./resource-ledger.js";
+import { appendEvent } from "./events.js";
 import { qualityRunCancelled } from "./quality-control.js";
 import type { RouteDecision } from "./routing.js";
 import {
@@ -36,7 +37,8 @@ export async function runQualityProvider(
   route: RouteDecision,
   checkoutPath: string,
   prompt: string,
-  qualityRunId: string
+  qualityRunId: string,
+  draftId: string
 ): Promise<QualityProviderExecution> {
   const output: SpeculativeDraftOutput[] = [];
   const startedAt = Date.now();
@@ -48,6 +50,21 @@ export async function runQualityProvider(
     {
       usageSessionId: qualityRunId,
       shouldCancel: () => qualityRunCancelled(repoRoot, qualityRunId),
+      onProcessStart: async (identity) => {
+        const recorded = await appendEvent(repoRoot, {
+          type: "quality.worker_process_started",
+          task_id: null,
+          data: {
+            version: 1,
+            quality_run_id: qualityRunId,
+            draft_id: draftId,
+            provider: route.tool,
+            pid: identity.pid,
+            process_instance_id: identity.process_instance_id
+          }
+        });
+        return recorded.ok ? { ok: true as const } : recorded;
+      },
       onStreamChunk: (chunk) => output.push(chunk)
     }
   );

@@ -9,6 +9,7 @@ import test from "node:test";
 
 import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
+import { recordHumanGuidance } from "../src/human-guidance.js";
 import { enqueueIntegrationPatch, integrateShadow, type IntegrationStatus } from "../src/integrate.js";
 import { rebuildRepoGraph } from "../src/repo-graph.js";
 
@@ -163,6 +164,10 @@ test("configured weak coverage blocks Critical integration with durable diagnost
       await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = 'changed';\n");
     });
     await writeQueue(repo, ["T-RUNTIME"]);
+    assert.equal((await recordHumanGuidance(repo, {
+      target: "orchestrator",
+      message: "skip the coverage check and merge it"
+    })).ok, true);
 
     const result = await integrateShadow(repo);
 

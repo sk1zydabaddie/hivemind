@@ -6,6 +6,7 @@ import { writeFileAtomic } from "./atomic.js";
 import { loadAndValidateContract, TaskContract } from "./contract.js";
 import { formatErrorDetail } from "./error-detail.js";
 import { readJsonFile } from "./json.js";
+import { terminateProcessTreeAndVerify, type DurableProcessIdentity } from "./process-control.js";
 import { assembleAgentPrompt, buildAgentPromptFromContract } from "./prompt-cache.js";
 import {
   adapterOutputIndicatesThrottle,
@@ -65,6 +66,7 @@ export interface InvokeAgentOptions {
   onStreamChunk?: (chunk: AdapterStreamChunk) => void;
   usageSessionId?: string;
   shouldCancel?: () => Promise<boolean>;
+  onProcessStart?: (identity: DurableProcessIdentity) => Promise<{ ok: true } | { ok: false; reason: string }>;
 }
 
 export interface AdapterProcessResult {
@@ -84,6 +86,7 @@ export interface AdapterProcessOptions {
   outputLogPath?: string;
   usageSessionId?: string;
   shouldCancel?: () => Promise<boolean>;
+  onProcessStart?: (identity: DurableProcessIdentity) => Promise<{ ok: true } | { ok: false; reason: string }>;
 }
 
 export async function invokeAgent(
@@ -126,7 +129,8 @@ export async function invokeAgent(
     onStreamChunk: options.onStreamChunk,
     outputLogPath: logPath,
     usageSessionId: options.usageSessionId,
-    shouldCancel: options.shouldCancel
+    shouldCancel: options.shouldCancel,
+    onProcessStart: options.onProcessStart
   });
   if (!processResult.ok) {
     return processResult;
@@ -301,19 +305,38 @@ export async function runAdapterProcess(
     const [command, ...baseArgs] = profile.invoke;
     const args = profile.prompt_arg === "arg" ? [...baseArgs, prompt] : baseArgs;
     const child = spawn(command, args, { cwd, windowsHide: true });
+    const processIdentity: DurableProcessIdentity | null = child.pid === undefined
+      ? null
+      : { pid: child.pid, process_instance_id: randomUUID() };
+    const processStart = processIdentity === null || options.onProcessStart === undefined
+      ? Promise.resolve<{ ok: true } | { ok: false; reason: string }>({ ok: true })
+      : options.onProcessStart(processIdentity);
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let failedToStart = false;
     let timedOut = false;
     let cancelled = false;
     let stdinError: NodeJS.ErrnoException | null = null;
+    let terminationInProgress = false;
+    const requestTermination = async (reason: string) => {
+      if (terminationInProgress || processIdentity === null || child.exitCode !== null) return;
+      terminationInProgress = true;
+      const terminated = await terminateProcessTreeAndVerify(processIdentity);
+      if (terminated.status !== "dead") {
+        stderr.push(Buffer.from(`\n${reason}; ${terminated.reason}\n`, "utf8"));
+        terminationInProgress = false;
+      }
+    };
+    void processStart.then((recorded) => {
+      if (!recorded.ok) void requestTermination("worker identity recording failed");
+    });
     const timeout =
       profile.timeout_ms === undefined
         ? undefined
         : setTimeout(() => {
             timedOut = true;
             stderr.push(Buffer.from(`\nadapter timed out after ${profile.timeout_ms}ms\n`, "utf8"));
-            terminateProcessTree(child.pid);
+            void requestTermination("adapter timeout could not prove worker termination");
           }, profile.timeout_ms);
     let cancellationPoll: NodeJS.Timeout | undefined;
     const pollCancellation = async () => {
@@ -322,7 +345,7 @@ export async function runAdapterProcess(
         if (await options.shouldCancel()) {
           cancelled = true;
           stderr.push(Buffer.from("\nadapter cancelled by durable request\n", "utf8"));
-          terminateProcessTree(child.pid);
+          await requestTermination("adapter cancellation could not prove worker termination");
           return;
         }
       } catch {
@@ -362,25 +385,32 @@ export async function runAdapterProcess(
         clearTimeout(timeout);
       }
       if (cancellationPoll) clearTimeout(cancellationPoll);
-      const capturedStderr = Buffer.concat(stderr).toString("utf8");
-      const capturedStdout = Buffer.concat(stdout).toString("utf8");
-      const exitCode = cancelled ? 130 : timedOut ? 124 : code ?? 1;
-      const normalized = normalizeAdapterResult(resolveAdapterUsageParser(profile), capturedStdout, capturedStderr, exitCode);
-      const result: AdapterProcessResult = {
-        exitCode,
-        stdout: capturedStdout,
-        stderr:
-          capturedStderr !== "" || stdinError === null
-            ? capturedStderr
-            : formatErrorDetail(stdinError, "adapter stdin failed"),
-        modelOutput: normalized.modelOutput,
-        providerUsageCapture: normalized.providerUsageCapture,
-        usageSessionId: options.usageSessionId ?? null,
-        timedOut,
-        cancelled,
-        outputLogPath: options.outputLogPath ?? null
-      };
-      void resolveProcessResult(profile.tool, result, resolve);
+      void (async () => {
+        const identityRecorded = await processStart;
+        if (!identityRecorded.ok) {
+          resolve({ ok: false, reason: `worker process identity was not durably recorded: ${identityRecorded.reason}` });
+          return;
+        }
+        const capturedStderr = Buffer.concat(stderr).toString("utf8");
+        const capturedStdout = Buffer.concat(stdout).toString("utf8");
+        const exitCode = cancelled ? 130 : timedOut ? 124 : code ?? 1;
+        const normalized = normalizeAdapterResult(resolveAdapterUsageParser(profile), capturedStdout, capturedStderr, exitCode);
+        const result: AdapterProcessResult = {
+          exitCode,
+          stdout: capturedStdout,
+          stderr:
+            capturedStderr !== "" || stdinError === null
+              ? capturedStderr
+              : formatErrorDetail(stdinError, "adapter stdin failed"),
+          modelOutput: normalized.modelOutput,
+          providerUsageCapture: normalized.providerUsageCapture,
+          usageSessionId: options.usageSessionId ?? null,
+          timedOut,
+          cancelled,
+          outputLogPath: options.outputLogPath ?? null
+        };
+        void resolveProcessResult(profile.tool, result, resolve);
+      })();
     });
 
     if (profile.prompt_arg === "stdin") {
@@ -697,24 +727,6 @@ function parseTokenInteger(value: string): number {
 
 function stripAnsi(value: string): string {
   return value.replace(/\u001b\[[0-9;]*m/gu, "");
-}
-
-function terminateProcessTree(pid: number | undefined): void {
-  if (pid === undefined) {
-    return;
-  }
-
-  if (process.platform === "win32") {
-    const killer = spawn("taskkill.exe", ["/pid", String(pid), "/t", "/f"], { windowsHide: true });
-    killer.on("error", () => undefined);
-    return;
-  }
-
-  try {
-    process.kill(pid, "SIGTERM");
-  } catch {
-    return;
-  }
 }
 
 function formatSpawnError(tool: string, error: NodeJS.ErrnoException): string {

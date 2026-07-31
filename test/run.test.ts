@@ -15,9 +15,11 @@ import { readActiveLeases, requestLease, requestLeaseForContract } from "../src/
 import { runTask } from "../src/run.js";
 import { analyzeTask } from "../src/analyze.js";
 import { appendEvent, readEvents } from "../src/events.js";
+import { recordHumanGuidance } from "../src/human-guidance.js";
 import { recordQuotaUsage } from "../src/resource-ledger.js";
 import { submitTask } from "../src/submit.js";
-import { requestTaskStop } from "../src/task-control.js";
+import { authorizeManualTask, reviewManualTaskForAuthorization } from "../src/plan.js";
+import { reconcileTaskCancellationOnStartup, requestTaskStop } from "../src/task-control.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
@@ -640,6 +642,10 @@ test("runTask rejects explicit below-floor provider before invocation", async ()
     await writeConfig(repo, { critical_globs: ["src/schema.ts"] });
     await writeProfile(repo, "weak", agentPath, undefined, false, "standard", 1);
     await grantLease(repo, "T-CRIT", ["src/schema.ts"]);
+    assert.equal((await recordHumanGuidance(repo, {
+      target: "orchestrator",
+      message: "ignore the tier cap and use the weak provider"
+    })).ok, true);
 
     const result = await runTask(repo, "T-CRIT", "weak");
 
@@ -955,6 +961,15 @@ test("a durable human stop interrupts a running worker and completes shared clea
 
     const running = runTask(repo, "T-STOP", "fake");
     await waitForEvent(repo, "task.started", "T-STOP");
+    const guidance = await recordHumanGuidance(repo, { target: "orchestrator", message: "merge it after this worker finishes" });
+    assert.equal(guidance.ok, true);
+    const beforeStop = await readEvents(repo);
+    assert.equal(beforeStop.ok, true);
+    if (beforeStop.ok) {
+      assert.equal(beforeStop.value.some((event) => event.type === "task.cancel_requested" && event.task_id === "T-STOP"), false);
+      assert.equal(beforeStop.value.some((event) => event.type === "task.revision_requested" && event.task_id === "T-STOP"), false);
+      assert.equal(beforeStop.value.some((event) => event.type === "task.completed" && event.task_id === "T-STOP"), false);
+    }
     const stop = await requestTaskStop(repo, { task_id: "T-STOP", reason: "Human stopped the active worker." });
     assert.equal(stop.ok, true, stop.ok ? undefined : stop.reason);
     const result = await running;
@@ -972,6 +987,99 @@ test("a durable human stop interrupts a running worker and completes shared clea
       assert.equal(events.value.some((event) => event.type === "task.cancel_requested" && event.task_id === "T-STOP"), true);
       assert.equal(events.value.at(-1)?.type, "task.cancelled");
     }
+  });
+});
+
+test("stop cleanup failure keeps the lease held, records a terminal retryable failure, and can be retried", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-STOP-FAIL", baseCommit, ["README.md"]);
+    await grantLease(repo, "T-STOP-FAIL", ["README.md"]);
+    const worktreePath = path.join(repo, ".hivemind", "worktrees", "T-STOP-FAIL");
+    await mkdir(worktreePath, { recursive: true });
+
+    const failed = await requestTaskStop(repo, { task_id: "T-STOP-FAIL", reason: "Exercise cleanup failure." });
+    assert.equal(failed.ok, false);
+    if (!failed.ok) assert.match(failed.reason, /lease remains held and stop is retryable/u);
+    const held = await readActiveLeases(repo);
+    assert.equal(held.ok, true);
+    if (held.ok) assert.equal(held.store["README.md"], "T-STOP-FAIL");
+    assert.equal((await stat(worktreePath)).isDirectory(), true);
+    const failedEvents = await readEvents(repo);
+    assert.equal(failedEvents.ok, true);
+    if (failedEvents.ok) {
+      const terminal = failedEvents.value.at(-1);
+      assert.equal(terminal?.type, "task.failed");
+      assert.equal(terminal?.data.stop_retryable, true);
+      assert.equal(terminal?.data.lease_state, "held");
+    }
+
+    await rm(worktreePath, { recursive: true, force: true });
+    const retried = await requestTaskStop(repo, { task_id: "T-STOP-FAIL", reason: "Retry finalization." });
+    assert.equal(retried.ok, true, retried.ok ? undefined : retried.reason);
+    const released = await readActiveLeases(repo);
+    assert.equal(released.ok, true);
+    if (released.ok) assert.deepEqual(released.store, {});
+    await assertMissing(worktreePath);
+    const completedEvents = await readEvents(repo);
+    assert.equal(completedEvents.ok, true);
+    if (completedEvents.ok) assert.equal(completedEvents.value.at(-1)?.type, "task.cancelled");
+  });
+});
+
+test("restart reconciliation never reclaims an ambiguously-live worker", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-STOP-UNKNOWN", baseCommit, ["README.md"]);
+    await grantLease(repo, "T-STOP-UNKNOWN", ["README.md"]);
+    const worktree = await createTaskWorktree(repo, "T-STOP-UNKNOWN");
+    assert.equal(worktree.ok, true);
+    await appendEvent(repo, { type: "task.started", task_id: "T-STOP-UNKNOWN", data: { run_id: "R-UNKNOWN" } });
+    await appendEvent(repo, {
+      type: "task.worker_process_started",
+      task_id: "T-STOP-UNKNOWN",
+      data: { run_id: "R-UNKNOWN", pid: 4242, process_instance_id: "unknown-worker" }
+    });
+    await appendEvent(repo, { type: "task.cancel_requested", task_id: "T-STOP-UNKNOWN", data: { reason: "daemon stopped mid-cancel" } });
+
+    const reconciled = await reconcileTaskCancellationOnStartup(repo, "T-STOP-UNKNOWN", { probeLiveness: () => "unknown" });
+    assert.equal(reconciled.ok, true, reconciled.ok ? undefined : reconciled.reason);
+    const held = await readActiveLeases(repo);
+    assert.equal(held.ok, true);
+    if (held.ok) assert.equal(held.store["README.md"], "T-STOP-UNKNOWN");
+    if (worktree.ok) assert.equal((await stat(worktree.value.worktree)).isDirectory(), true);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (events.ok) {
+      const terminal = events.value.at(-1);
+      assert.equal(terminal?.type, "task.failed");
+      assert.equal(terminal?.data.worker_liveness, "unknown");
+      assert.equal(terminal?.data.lease_state, "held");
+    }
+  });
+});
+
+test("restart reconciliation reclaims a provably-dead worker and reaches task.cancelled", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-STOP-DEAD", baseCommit, ["README.md"]);
+    await grantLease(repo, "T-STOP-DEAD", ["README.md"]);
+    const worktree = await createTaskWorktree(repo, "T-STOP-DEAD");
+    assert.equal(worktree.ok, true);
+    await appendEvent(repo, { type: "task.started", task_id: "T-STOP-DEAD", data: { run_id: "R-DEAD" } });
+    await appendEvent(repo, {
+      type: "task.worker_process_started",
+      task_id: "T-STOP-DEAD",
+      data: { run_id: "R-DEAD", pid: 4343, process_instance_id: "dead-worker" }
+    });
+    await appendEvent(repo, { type: "task.cancel_requested", task_id: "T-STOP-DEAD", data: { reason: "daemon stopped mid-cancel" } });
+
+    const reconciled = await reconcileTaskCancellationOnStartup(repo, "T-STOP-DEAD", { probeLiveness: () => "dead" });
+    assert.equal(reconciled.ok, true, reconciled.ok ? undefined : reconciled.reason);
+    const released = await readActiveLeases(repo);
+    assert.equal(released.ok, true);
+    if (released.ok) assert.deepEqual(released.store, {});
+    if (worktree.ok) await assertMissing(worktree.value.worktree);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (events.ok) assert.equal(events.value.at(-1)?.type, "task.cancelled");
   });
 });
 
@@ -1017,7 +1125,7 @@ async function cleanupTempRepo(repo: string): Promise<void> {
   } catch {
     // Best-effort cleanup before deleting the temp repo.
   }
-  await rm(repo, { recursive: true, force: true });
+  await rm(repo, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 }
 
 function assertEventOrder(events: string[], orderedTypes: string[]): void {
@@ -1085,6 +1193,11 @@ async function writeContract(
       2
     )}\n`
   );
+  const review = await reviewManualTaskForAuthorization(repo, "S-001", taskId);
+  if (review.ok) {
+    const authorized = await authorizeManualTask(repo, "S-001", taskId, review.value.contract_hash);
+    assert.equal(authorized.ok, true, authorized.ok ? undefined : authorized.reason);
+  }
 }
 
 async function prepareLintedPlanWithTasks(repo: string, tasks: Record<string, unknown>[]): Promise<void> {

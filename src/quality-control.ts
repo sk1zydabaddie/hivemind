@@ -1,4 +1,5 @@
 import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
+import { getProcessLiveness, type ProcessLiveness } from "./process-liveness.js";
 import { parseQualityRunId } from "./value-quality.js";
 
 export interface QualityCancellationResult {
@@ -11,7 +12,8 @@ const cancellationWaitMs = 10_000;
 
 export async function cancelQualityRun(
   repoRoot: string,
-  request: unknown
+  request: unknown,
+  options: { waitMs?: number } = {}
 ): Promise<{ ok: true; value: QualityCancellationResult } | { ok: false; reason: string }> {
   if (!isRecord(request)) return { ok: false, reason: "quality cancellation must be a JSON object" };
   const extra = Object.keys(request).filter((key) => key !== "quality_run_id" && key !== "reason");
@@ -44,7 +46,8 @@ export async function cancelQualityRun(
     });
     if (!requested.ok) return requested;
   }
-  const deadline = Date.now() + cancellationWaitMs;
+  const waitMs = options.waitMs ?? cancellationWaitMs;
+  const deadline = Date.now() + waitMs;
   while (Date.now() <= deadline) {
     const finalized = await finalizeQualityRunCancellation(repoRoot, request.quality_run_id);
     if (finalized.ok && finalized.value) {
@@ -53,7 +56,12 @@ export async function cancelQualityRun(
     if (!finalized.ok) return finalized;
     await delay(100);
   }
-  return { ok: false, reason: `quality cancellation requested but cleanup did not finish within ${cancellationWaitMs}ms` };
+  return recordQualityCancellationFailure(
+    repoRoot,
+    request.quality_run_id,
+    `cleanup did not finish within ${waitMs}ms`,
+    "cancel_timeout"
+  );
 }
 
 export async function qualityRunCancelled(repoRoot: string, qualityRunId: string): Promise<boolean> {
@@ -93,6 +101,138 @@ export async function finalizeQualityRunCancellation(
     }
   });
   return cancelled.ok ? { ok: true, value: true } : cancelled;
+}
+
+export async function preflightQualityCancellationReconciliation(
+  repoRoot: string,
+  options: { probeLiveness?: (pid: number) => ProcessLiveness } = {}
+): Promise<{ ok: true; value: { blocked: boolean } } | { ok: false; reason: string }> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return events;
+  const probe = options.probeLiveness ?? getProcessLiveness;
+  let blocked = false;
+  for (const qualityRunId of openCancelledQualityRuns(events.value)) {
+    const open = openDraftStages(events.value, qualityRunId);
+    if (!open.ok) return open;
+    for (const draftId of open.value) {
+      const identity = qualityWorkerIdentity(events.value, qualityRunId, draftId);
+      const liveness = identity.ok ? probe(identity.value.pid) : "unknown";
+      if (!identity.ok || liveness !== "dead") {
+        blocked = true;
+        const reason = identity.ok
+          ? `daemon restart cannot prove quality worker pid ${identity.value.pid} is dead; liveness is ${liveness}`
+          : identity.reason;
+        const failed = await recordQualityCancellationFailure(repoRoot, qualityRunId, reason, "restart_worker_liveness", liveness);
+        if (!failed.recorded) return failed;
+      }
+    }
+  }
+  return { ok: true, value: { blocked } };
+}
+
+export async function reconcileQualityCancellationsOnStartup(
+  repoRoot: string,
+  options: { probeLiveness?: (pid: number) => ProcessLiveness } = {}
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return events;
+  const probe = options.probeLiveness ?? getProcessLiveness;
+  for (const qualityRunId of openCancelledQualityRuns(events.value)) {
+    const parsed = parseQualityRunId(qualityRunId);
+    if (!parsed.ok) return parsed;
+    const open = openDraftStages(events.value, qualityRunId);
+    if (!open.ok) return open;
+    for (const draftId of open.value) {
+      const identity = qualityWorkerIdentity(events.value, qualityRunId, draftId);
+      if (!identity.ok) return { ok: false, reason: identity.reason };
+      const liveness = probe(identity.value.pid);
+      if (liveness !== "dead") {
+        return { ok: false, reason: `quality cancellation reconciliation refused: worker ${identity.value.pid} is ${liveness}` };
+      }
+      const disposed = await appendEvent(repoRoot, {
+        type: "quality.draft_disposed",
+        task_id: parsed.taskId,
+        data: {
+          version: 1,
+          quality_run_id: qualityRunId,
+          draft_id: draftId,
+          outcome: "producer_cancelled",
+          eligible_for_selection: false,
+          recovered_after_daemon_restart: true,
+          worker_death_proven: true,
+          advisory_only: true
+        }
+      });
+      if (!disposed.ok) return disposed;
+    }
+    const finalized = await finalizeQualityRunCancellation(repoRoot, qualityRunId);
+    if (!finalized.ok) return finalized;
+    if (!finalized.value) return { ok: false, reason: `quality cancellation reconciliation left open draft state for ${qualityRunId}` };
+  }
+  return { ok: true };
+}
+
+function openCancelledQualityRuns(events: HivemindEvent[]): string[] {
+  const requested = new Set<string>();
+  const completed = new Set<string>();
+  for (const event of events) {
+    const id = event.data.quality_run_id;
+    if (typeof id !== "string") continue;
+    if (event.type === "quality.cancel_requested") requested.add(id);
+    if (event.type === "quality.cancelled") completed.add(id);
+  }
+  return [...requested].filter((id) => !completed.has(id)).sort();
+}
+
+function qualityWorkerIdentity(
+  events: HivemindEvent[],
+  qualityRunId: string,
+  draftId: string
+): { ok: true; value: { pid: number; process_instance_id: string } } | { ok: false; reason: string } {
+  const event = [...events].reverse().find((entry) =>
+    entry.type === "quality.worker_process_started" &&
+    entry.data.quality_run_id === qualityRunId &&
+    entry.data.draft_id === draftId
+  );
+  if (
+    event === undefined ||
+    !Number.isSafeInteger(event.data.pid) ||
+    Number(event.data.pid) <= 0 ||
+    typeof event.data.process_instance_id !== "string" ||
+    event.data.process_instance_id.trim() === ""
+  ) {
+    return { ok: false, reason: `quality cancellation cannot establish durable process identity for ${qualityRunId}/${draftId}` };
+  }
+  return { ok: true, value: { pid: Number(event.data.pid), process_instance_id: event.data.process_instance_id } };
+}
+
+async function recordQualityCancellationFailure(
+  repoRoot: string,
+  qualityRunId: string,
+  reason: string,
+  stage: string,
+  liveness: ProcessLiveness = "unknown"
+): Promise<{ ok: false; reason: string; recorded: boolean }> {
+  const parsed = parseQualityRunId(qualityRunId);
+  if (!parsed.ok) return { ...parsed, recorded: false };
+  const event = await appendEvent(repoRoot, {
+    type: "quality.cancel_failed",
+    task_id: parsed.taskId,
+    data: {
+      version: 1,
+      quality_run_id: qualityRunId,
+      reason: `quality cancellation failed at ${stage}: ${reason}`,
+      failure_stage: stage,
+      worker_liveness: liveness,
+      cleanup_complete: false,
+      retryable: true,
+      terminal: true,
+      canonical_state_touched: false
+    }
+  });
+  return event.ok
+    ? { ok: false, reason: `quality cancellation failed at ${stage}: ${reason}; cancellation remains retryable`, recorded: true }
+    : { ...event, recorded: false };
 }
 
 function openDraftStages(
