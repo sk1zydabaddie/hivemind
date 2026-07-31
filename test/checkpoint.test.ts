@@ -12,7 +12,7 @@ import { writeContextPack } from "../src/context-pack.js";
 import { initProject } from "../src/init.js";
 import { checkWriteIntent } from "../src/intent.js";
 import { releaseLease, requestLeaseForContract } from "../src/lease.js";
-import { createTentativePlan, groundTentativePlan, lintTentativePlan } from "../src/plan.js";
+import { createTentativePlan, groundTentativePlan, lintTentativePlan, ratifyPlan, reviewPlanForRatification } from "../src/plan.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { readEvents } from "../src/events.js";
 import { createRatifiedSpec } from "./support/spec.js";
@@ -54,7 +54,7 @@ test("checkpointTask captures provider-neutral task state refs plus the partial 
       partial_diff: { source: string; diff: string; changed_files: number; diff_hash: string };
     };
     assert.equal(snapshot.authoritative_refs.contract_ref.path, `.hivemind/tasks/${taskId}.contract.json`);
-    assert.equal(snapshot.authoritative_refs.plan_ref.path, ".hivemind/plans/S-001.tentative.json");
+    assert.match(snapshot.authoritative_refs.plan_ref.path, /^\.hivemind\/plans\/ratified\/S-001\/[a-f0-9]{64}\.json$/u);
     assert.equal(snapshot.authoritative_refs.plan_ref.task_id, taskId);
     assert.equal(snapshot.authoritative_refs.context_pack_ref.path, `.hivemind/cache/context-packs/${taskId}.json`);
     assert.equal(snapshot.authoritative_refs.task_knowledge_ref.path, `.hivemind/tasks/${taskId}.knowledge.md`);
@@ -251,6 +251,10 @@ async function preparePlanAndContract(repo: string, taskId: string, baseCommit: 
   assert.equal(grounded.ok, true);
   const linted = await lintTentativePlan(repo, "S-001");
   assert.equal(linted.ok, true);
+  const review = await reviewPlanForRatification(repo, "S-001");
+  assert.equal(review.ok, true);
+  if (!review.ok) return;
+  assert.equal((await ratifyPlan(repo, "S-001", review.value.plan_hash)).ok, true);
   const contract = await createTaskContract(repo, {
     task_id: taskId,
     title: "Checkpoint README task",

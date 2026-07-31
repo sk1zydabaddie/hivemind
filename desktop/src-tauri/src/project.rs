@@ -65,6 +65,24 @@ pub async fn select_project(project_path: String) -> Result<ProjectConnection, S
     .map_err(|error| format!("project selection task failed: {error}"))?
 }
 
+#[tauri::command]
+pub async fn workspace_action(
+    project_path: String,
+    action: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let project_root = canonical_git_root(&project_path)?;
+        let state = read_daemon_state(&project_root)?
+            .ok_or_else(|| "selected project's daemon is not running".to_string())?;
+        validate_state_project(&project_root, &state)?;
+        let health_root = query_daemon_health(&state.url)?;
+        validate_health_project(&project_root, &health_root)?;
+        post_workspace_action(&state.url, &action)
+    })
+    .await
+    .map_err(|error| format!("workspace action task failed: {error}"))?
+}
+
 fn connect_project_with<L, H, P>(
     project_path: &str,
     launch: &mut L,
@@ -289,6 +307,40 @@ fn query_daemon_health(url: &str) -> Result<String, String> {
         return Err("daemon health reported not-ok".to_string());
     }
     Ok(health.repo_root)
+}
+
+fn post_workspace_action(url: &str, action: &serde_json::Value) -> Result<serde_json::Value, String> {
+    let endpoint = parse_loopback_url(url)?;
+    let address = endpoint
+        .to_socket_addrs()
+        .map_err(|error| format!("could not resolve daemon address: {error}"))?
+        .find(|candidate| candidate.ip().is_loopback())
+        .ok_or_else(|| "daemon URL did not resolve to loopback".to_string())?;
+    let mut stream = TcpStream::connect_timeout(&address, HEALTH_TIMEOUT)
+        .map_err(|error| format!("daemon action connection failed: {error}"))?;
+    stream.set_read_timeout(Some(Duration::from_secs(30)))
+        .map_err(|error| format!("could not configure daemon action timeout: {error}"))?;
+    stream.set_write_timeout(Some(HEALTH_TIMEOUT))
+        .map_err(|error| format!("could not configure daemon action timeout: {error}"))?;
+    let body = serde_json::to_string(action)
+        .map_err(|error| format!("workspace action is not JSON serializable: {error}"))?;
+    let host = endpoint.split(':').next().unwrap_or("127.0.0.1");
+    stream.write_all(format!(
+        "POST /workspace/action HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+        body.len(), body
+    ).as_bytes()).map_err(|error| format!("daemon action request failed: {error}"))?;
+    let mut response = String::new();
+    stream.read_to_string(&mut response)
+        .map_err(|error| format!("daemon action response failed: {error}"))?;
+    let (headers, body) = response.split_once("\r\n\r\n")
+        .ok_or_else(|| "daemon action returned malformed HTTP".to_string())?;
+    let parsed: serde_json::Value = serde_json::from_str(body)
+        .map_err(|error| format!("daemon action returned invalid JSON: {error}"))?;
+    if !headers.lines().next().unwrap_or("").contains(" 200 ") {
+        let reason = parsed.get("reason").and_then(|value| value.as_str()).unwrap_or("daemon action refused");
+        return Err(reason.to_string());
+    }
+    parsed.get("value").cloned().ok_or_else(|| "daemon action response omitted value".to_string())
 }
 
 fn validate_loopback_url(url: &str) -> Result<(), String> {

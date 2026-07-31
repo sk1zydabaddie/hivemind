@@ -12,7 +12,7 @@ import { createTaskContract } from "../src/contract.js";
 import { initProject } from "../src/init.js";
 import { checkWriteIntent } from "../src/intent.js";
 import { requestLeaseForContract } from "../src/lease.js";
-import { createTentativePlan, groundTentativePlan, lintTentativePlan } from "../src/plan.js";
+import { createTentativePlan, groundTentativePlan, lintTentativePlan, ratifyPlan, reviewPlanForRatification } from "../src/plan.js";
 import { rebuildRepoGraph, repoGraphArtifactPath, type RepoGraphArtifact } from "../src/repo-graph.js";
 import { runTask } from "../src/run.js";
 import { createRatifiedSpec } from "./support/spec.js";
@@ -324,6 +324,10 @@ async function prepareTaskExecution(
 ): Promise<void> {
   const linted = await lintTentativePlan(repo, specId);
   assert.equal(linted.ok, true);
+  const review = await reviewPlanForRatification(repo, specId);
+  assert.equal(review.ok, true);
+  if (!review.ok) return;
+  assert.equal((await ratifyPlan(repo, specId, review.value.plan_hash)).ok, true);
 
   const contract = await createTaskContract(repo, {
     task_id: taskId,

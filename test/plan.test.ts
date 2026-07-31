@@ -8,13 +8,90 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { appendEvent } from "../src/events.js";
+import { createTaskContract } from "../src/contract.js";
 import { markIdeationConvergence, recordIdeationRound, startIdeationSession } from "../src/ideation.js";
 import { initProject } from "../src/init.js";
+import { requestLeaseForContract } from "../src/lease.js";
 import { createSpec, ratifySpec } from "../src/spec.js";
+import { createTentativePlan, groundTentativePlan, lintTentativePlan, ratifyPlan, reviewPlanForRatification } from "../src/plan.js";
+import { executeWorkspaceAction } from "../src/workspace-actions.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
 const cliPath = path.resolve(testDir, "../src/cli.js");
+
+test("execution contracts require an exact explicitly ratified plan", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const proposal = {
+      tasks: [task("T-001")],
+      execution_groups: [group("G-1", "sequence", ["T-001"])]
+    };
+    assert.equal((await createTentativePlan(repo, "S-001", proposal)).ok, true);
+    assert.equal((await groundTentativePlan(repo, "S-001")).ok, true);
+    assert.equal((await lintTentativePlan(repo, "S-001")).ok, true);
+    const contract = {
+      task_id: "T-001",
+      title: "Task T-001",
+      agent_role: "builder",
+      routing_task_type: "other",
+      base_commit: baseCommit,
+      acceptance_criterion: "One binary acceptance check passes.",
+      allowed_files: ["README.md"],
+      allowed_file_intents: { "README.md": "modify" },
+      read_only_files: [],
+      forbidden_files: [],
+      allowed_symbols: [],
+      forbidden_symbols: [],
+      must_not_change: [],
+      required_tests: ["npm run typecheck"],
+      patch_requirements: ["submit diff only"]
+    };
+    const before = await createTaskContract(repo, contract);
+    assert.equal(before.ok, false);
+    if (!before.ok) assert.match(before.reason, /explicitly ratified plan/u);
+    await writeContract(repo, "T-001", baseCommit);
+    const executionBypass = await requestLeaseForContract(repo, "T-001");
+    assert.equal(executionBypass.ok, false);
+    if (!executionBypass.ok) assert.match(executionBypass.reason, /explicitly ratified plan/u);
+    await rm(path.join(repo, ".hivemind", "tasks", "T-001.contract.json"));
+
+    const review = await reviewPlanForRatification(repo, "S-001");
+    assert.equal(review.ok, true);
+    if (!review.ok) return;
+    assert.match(review.value.plan_hash, /^[a-f0-9]{64}$/u);
+    const wrong = await ratifyPlan(repo, "S-001", "0".repeat(64));
+    assert.equal(wrong.ok, false);
+    if (!wrong.ok) assert.match(wrong.reason, /plan changed after review/u);
+    const ratified = await executeWorkspaceAction(repo, {
+      type: "plan.ratify",
+      payload: { spec_id: "S-001", expected_plan_hash: review.value.plan_hash }
+    });
+    assert.equal(ratified.ok, true);
+    const after = await createTaskContract(repo, contract);
+    assert.equal(after.ok, true);
+    await appendEvent(repo, { type: "task.started", task_id: "T-001", data: { run_id: "run-1" } });
+    const edit = await executeWorkspaceAction(repo, {
+      type: "plan.amend",
+      payload: { spec_id: "S-001", amendment: { kind: "edit_task", task: task("T-001", { title: "Changed while running" }) } }
+    });
+    assert.equal(edit.ok, false);
+    if (!edit.ok) assert.match(edit.reason, /has started.*immutable/u);
+
+    const addition = await executeWorkspaceAction(repo, {
+      type: "plan.amend",
+      payload: {
+        spec_id: "S-001",
+        amendment: {
+          kind: "add_task",
+          task: task("T-002", { depends_on: ["T-001"] }),
+          execution_group: { group_id: "G-2", mode: "sequence" }
+        }
+      }
+    });
+    assert.equal(addition.ok, true);
+  });
+});
 
 test("plan propose writes a tentative plan without creating executable task state", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {

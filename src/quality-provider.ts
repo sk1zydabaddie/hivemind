@@ -6,6 +6,7 @@ import {
   type AdapterProcessResult
 } from "./adapter.js";
 import { estimateTokens } from "./resource-ledger.js";
+import { qualityRunCancelled } from "./quality-control.js";
 import type { RouteDecision } from "./routing.js";
 import {
   type SpeculativeDraftOutput,
@@ -46,6 +47,7 @@ export async function runQualityProvider(
     prompt,
     {
       usageSessionId: qualityRunId,
+      shouldCancel: () => qualityRunCancelled(repoRoot, qualityRunId),
       onStreamChunk: (chunk) => output.push(chunk)
     }
   );
@@ -94,6 +96,17 @@ export async function runQualityProvider(
       producer_result: {
         status: "timed_out",
         reason: `quality adapter "${route.tool}" timed out`,
+        output,
+        provenance
+      },
+      model_output: processResult.value.modelOutput
+    };
+  }
+  if (processResult.value.cancelled === true) {
+    return {
+      producer_result: {
+        status: "cancelled",
+        reason: `quality run ${qualityRunId} cancelled by durable human request`,
         output,
         provenance
       },

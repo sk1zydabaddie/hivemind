@@ -17,6 +17,7 @@ import { analyzeTask } from "../src/analyze.js";
 import { appendEvent, readEvents } from "../src/events.js";
 import { recordQuotaUsage } from "../src/resource-ledger.js";
 import { submitTask } from "../src/submit.js";
+import { requestTaskStop } from "../src/task-control.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
@@ -943,6 +944,47 @@ test("runTask allows rerun when only the Hivemind-owned agent.log remains", asyn
   });
 });
 
+test("a durable human stop interrupts a running worker and completes shared cleanup", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const agentPath = await writeAgent(repo, "cancelled-agent.mjs", [
+      "setInterval(() => {}, 1000);"
+    ]);
+    await writeContract(repo, "T-STOP", baseCommit, ["README.md"]);
+    await writeProfile(repo, "fake", agentPath);
+    await grantLease(repo, "T-STOP", ["README.md"]);
+
+    const running = runTask(repo, "T-STOP", "fake");
+    await waitForEvent(repo, "task.started", "T-STOP");
+    const stop = await requestTaskStop(repo, { task_id: "T-STOP", reason: "Human stopped the active worker." });
+    assert.equal(stop.ok, true, stop.ok ? undefined : stop.reason);
+    const result = await running;
+
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.reason, /cancelled by durable human request/u);
+    const leases = await readActiveLeases(repo);
+    assert.equal(leases.ok, true);
+    if (leases.ok) assert.deepEqual(leases.store, {});
+    await assertMissing(path.join(repo, ".hivemind", "worktrees", "T-STOP"));
+    await assertMissing(path.join(repo, ".hivemind", "patches", "T-STOP"));
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (events.ok) {
+      assert.equal(events.value.some((event) => event.type === "task.cancel_requested" && event.task_id === "T-STOP"), true);
+      assert.equal(events.value.at(-1)?.type, "task.cancelled");
+    }
+  });
+});
+
+async function waitForEvent(repo: string, type: string, taskId: string): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() <= deadline) {
+    const events = await readEvents(repo);
+    if (events.ok && events.value.some((event) => event.type === type && event.task_id === taskId)) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.fail(`timed out waiting for ${type} on ${taskId}`);
+}
+
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
   const repo = await mkdtemp(path.join(tmpdir(), "hivemind-run-test-"));
   try {
@@ -1061,6 +1103,8 @@ async function prepareLintedPlanWithTasks(repo: string, tasks: Record<string, un
   await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
   await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
   await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
+  const review = JSON.parse((await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--review"], { cwd: repo, windowsHide: true })).stdout) as { plan_hash: string };
+  await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ratify", review.plan_hash], { cwd: repo, windowsHide: true });
 }
 
 function planTask(taskId: string, allowedFile: string, dependsOn: string[] = []): Record<string, unknown> {

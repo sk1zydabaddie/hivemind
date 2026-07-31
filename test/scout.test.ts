@@ -135,6 +135,7 @@ test("manager fake loop can sequence a Scout task before worker execution", asyn
     await writeProfile(repo, "fake-scout", scoutAgent);
     const contract = contractFor("T-SCOUT", baseCommit, ["README.md"]);
     await prepareLintedPlan(repo, contract);
+    await allowFixtureManagerCalls(repo);
     const actionsPath = path.join(repo, "manager-scout-actions.json");
     await writeFile(
       actionsPath,
@@ -178,6 +179,16 @@ async function withTempRepo(run: (context: { repo: string; baseCommit: string })
   } finally {
     await cleanupTempRepo(repo);
   }
+}
+
+async function allowFixtureManagerCalls(repo: string): Promise<void> {
+  const configPath = path.join(repo, ".hivemind", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+  config.manager_autonomy = {
+    tier2_actions: [],
+    cost_threshold: { estimated_requests: 1 }
+  };
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 function contractFor(taskId: string, baseCommit: string, allowedFiles: string[]): Record<string, unknown> {
@@ -235,6 +246,8 @@ async function prepareLintedPlan(repo: string, contract: Record<string, unknown>
   await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
   await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
   await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
+  const review = JSON.parse((await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--review"], { cwd: repo, windowsHide: true })).stdout) as { plan_hash: string };
+  await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ratify", review.plan_hash], { cwd: repo, windowsHide: true });
 }
 
 async function writeAgent(repo: string, fileName: string, lines: string[]): Promise<string> {

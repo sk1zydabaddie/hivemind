@@ -389,7 +389,7 @@ test("MCP create_task_contract inherits the lint-passed plan precondition", asyn
 
         assert.equal(result.isError, true);
         const content = (result.content as Array<{ type?: unknown; text?: unknown }>)[0];
-        assert.match(String(content?.type === "text" ? content.text : ""), /current lint-passed tentative plan/);
+        assert.match(String(content?.type === "text" ? content.text : ""), /explicitly ratified plan/);
       });
       assert.equal(await exists(path.join(repo, ".hivemind", "tasks", "T-BYPASS.contract.json")), false);
     } finally {
@@ -663,6 +663,8 @@ async function prepareLintedPlanWithTasks(repo: string, tasks: Record<string, un
   await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
   await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
   await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
+  const review = JSON.parse((await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--review"], { cwd: repo, windowsHide: true })).stdout) as { plan_hash: string };
+  await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ratify", review.plan_hash], { cwd: repo, windowsHide: true });
 }
 
 function planTaskFromContract(contract: Record<string, unknown>, dependsOn: string[] = []): Record<string, unknown> {

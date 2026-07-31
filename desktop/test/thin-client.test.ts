@@ -43,6 +43,12 @@ describe("React workspace boundary", () => {
     );
   });
 
+  test("typed actions cross only the Tauri bridge and contain no client-side gate logic", async () => {
+    const actions = await readFile(path.join(desktopRoot, "src", "lib", "workspace-actions.ts"), "utf8");
+    expect(actions).toMatch(/invoke<T>\("workspace_action", \{ projectPath, action \}\)/u);
+    expect(actions).not.toMatch(/fetch\(|runGate|integrateShadow|requestLease|reviewMemoryProposal/u);
+  });
+
   test("old vanilla renderer is gone and one shadcn-style token path remains", async () => {
     await expect(access(path.join(desktopRoot, "app", "main.mjs"))).rejects.toThrow();
     const config = await readFile(

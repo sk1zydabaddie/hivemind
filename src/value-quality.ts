@@ -189,6 +189,12 @@ export async function loadAdmittedValueQualityRun(
   if (!eventResult.ok) {
     return eventResult;
   }
+  if (eventResult.value.some((event) =>
+    (event.type === "quality.cancel_requested" || event.type === "quality.cancelled") &&
+    event.data.quality_run_id === qualityRunId
+  )) {
+    return { ok: false, reason: `quality run is cancelled: ${qualityRunId}` };
+  }
   const matches = eventResult.value.filter(
     (event) => event.type === "quality.admission_decided" && event.data.quality_run_id === qualityRunId
   );
@@ -373,7 +379,7 @@ function valueQualityUsage(): string {
   return "usage: hivemind quality admit <task-id> --strategy best-of-n [--n 2|3] | draft-refine";
 }
 
-function parseQualityRunId(value: string): { ok: true; taskId: string } | { ok: false; reason: string } {
+export function parseQualityRunId(value: string): { ok: true; taskId: string } | { ok: false; reason: string } {
   const match = value.match(/^Q-(.+)-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu);
   if (match === null || validateTaskId(match[1]) !== null) {
     return { ok: false, reason: "quality_run_id must use the Q-<task-id>-<uuid> format" };

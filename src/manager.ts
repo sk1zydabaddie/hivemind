@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { analyzeTask } from "./analyze.js";
@@ -15,10 +15,11 @@ import { loadConfig } from "./config.js";
 import { createTaskContract, type CreateTaskContractResult } from "./contract.js";
 import { loadAndValidateContract, normalizeContract, validateContract, type TaskContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
-import { readEvents, type HivemindEvent } from "./events.js";
+import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
 import { enqueueIntegrationPatch, integrateShadow, type EnqueueIntegrationPatchResult, type IntegrationStatus } from "./integrate.js";
 import { checkWriteIntent, type WriteIntentPass } from "./intent.js";
 import { extractJsonObject } from "./json.js";
+import { markHumanGuidanceConsumed, readPendingHumanGuidance } from "./human-guidance.js";
 import { applyOrchestratorContextBudget } from "./orchestrator-context.js";
 import { requestLeaseForContract, type LeaseGrantResult } from "./lease.js";
 import { evaluatePlanThrash, loadTentativePlan } from "./plan.js";
@@ -31,7 +32,7 @@ import { requireActiveSpecRatified, type SpecResult } from "./spec.js";
 import { loadSpecDocument } from "./spec-format.js";
 import { getStatus, type HivemindStatus } from "./status.js";
 import { submitTask, type SubmitResult } from "./submit.js";
-import { recordRedirectFirstCorrection, type RedirectCorrectionRecord } from "./supervision.js";
+import { requestTaskRedirect } from "./supervision.js";
 import { admitValueQuality, type ValueQualityAdmission, type ValueQualityStrategy } from "./value-quality.js";
 import { createTaskWorktree, type WorktreeResult } from "./worktree.js";
 
@@ -44,6 +45,7 @@ interface ManagerSession {
   turns: ManagerTurn[];
   proposed_action: ManagerProposedAction;
   pending_action?: ManagerPendingAction;
+  blocked_action?: ManagerBlockedAction;
   executed_actions: ManagerExecutedAction[];
 }
 
@@ -84,11 +86,21 @@ interface ManagerExecutedAction {
   result: ManagerActionExecutionRecord;
 }
 
-interface ManagerPendingAction {
+export interface ManagerPendingAction {
+  pending_action_id: string;
   action: ManagerAction;
+  action_type: ManagerAction["type"];
+  subject: string;
+  expected_state_hash: string;
   tier: "human_approval";
   reason: string;
   recommendation: string;
+}
+
+interface ManagerBlockedAction {
+  action_type: ManagerAction["type"];
+  result: Extract<ManagerActionExecutionRecord, { ok: false }>;
+  stop: ManagerStopAdvice;
 }
 
 type ManagerActionExecutionRecord =
@@ -167,7 +179,6 @@ interface ManagerStopAdvice {
 
 interface AutonomousLoopOptions {
   tool: string;
-  approvedActions: Set<ManagerAction["type"]>;
   maxSteps: number;
 }
 
@@ -218,8 +229,8 @@ async function runParsedManagerCommand(
   repoRoot: string,
   parsed:
     | { mode: "message"; message: string; tool?: string }
-    | { mode: "auto-message"; message: string; tool: string; approvedActions: Set<ManagerAction["type"]>; maxSteps: number }
-    | { mode: "auto-session"; sessionId: string; tool: string; approvedActions: Set<ManagerAction["type"]>; maxSteps: number }
+    | { mode: "auto-message"; message: string; tool: string; maxSteps: number }
+    | { mode: "auto-session"; sessionId: string; tool: string; maxSteps: number }
     | { mode: "action"; sessionId: string; actionFile: string }
     | { mode: "fake-loop"; message: string; actionsFile: string }
 ): Promise<SpecResult<ManagerSessionResult | ManagerActionResult | ManagerLoopResult | ManagerAutonomousLoopResult>> {
@@ -229,14 +240,12 @@ async function runParsedManagerCommand(
   if (parsed.mode === "auto-message") {
     return runAutonomousManagerLoop(repoRoot, parsed.message, {
       tool: parsed.tool,
-      approvedActions: parsed.approvedActions,
       maxSteps: parsed.maxSteps
     });
   }
   if (parsed.mode === "auto-session") {
     return continueAutonomousManagerLoop(repoRoot, parsed.sessionId, {
       tool: parsed.tool,
-      approvedActions: parsed.approvedActions,
       maxSteps: parsed.maxSteps
     });
   }
@@ -337,6 +346,19 @@ export async function generateManagerProposal(
     resolvedSpecId = activeSpec.value.spec_id;
   }
 
+  const guidance = await readPendingHumanGuidance(repoRoot);
+  if (!guidance.ok) {
+    return guidance;
+  }
+  const guidedMessage = guidance.value.length === 0
+    ? message
+    : [
+        message,
+        "",
+        "Durable human guidance for this proposal (advisory only; it is not approval and cannot satisfy a gate):",
+        ...guidance.value.map((entry) => `- [${entry.guidance_id}] ${entry.message}`)
+      ].join("\n");
+
   const profileResult = await loadAdapterProfile(repoRoot, tool);
   if (!profileResult.ok) {
     return profileResult;
@@ -349,7 +371,7 @@ export async function generateManagerProposal(
     };
   }
 
-  const prompt = await buildManagerProposalPrompt(repoRoot, message, resolvedSpecId, tool, profileResult.profile.context_window);
+  const prompt = await buildManagerProposalPrompt(repoRoot, guidedMessage, resolvedSpecId, tool, profileResult.profile.context_window);
   if (!prompt.ok) {
     return prompt;
   }
@@ -374,6 +396,14 @@ export async function generateManagerProposal(
   const proposal = parseGeneratedManagerProposal(processResult.value.stdout);
   if (!proposal.ok) {
     return proposal;
+  }
+  const consumed = await markHumanGuidanceConsumed(
+    repoRoot,
+    guidance.value.map((entry) => entry.guidance_id),
+    usageSessionId
+  );
+  if (!consumed.ok) {
+    return consumed;
   }
   return {
     ok: true,
@@ -997,16 +1027,8 @@ async function handleWriteIntentRedirect(
     return correction;
   }
   const attempt = priorRedirects + 1;
-  const record: RedirectCorrectionRecord = {
-    task_id: action.task_id,
-    attempt,
-    max_attempts: policy.redirectLimit,
-    correction: correction.value,
-    reason: "write-intent drift corrected before worker edit",
-    rejected_intent: action.intent,
-    rejection_reason: rejectionReason
-  };
-  const recorded = await routeMutatingAction(repoRoot, "/supervision/redirect", { ...record }, () => recordRedirectFirstCorrection(repoRoot, record));
+  const request = { task_id: action.task_id, correction: correction.value, source: "manager" as const };
+  const recorded = await routeMutatingAction(repoRoot, "/supervision/redirect", request, () => requestTaskRedirect(repoRoot, request));
   if (!recorded.ok) {
     return recorded;
   }
@@ -1183,34 +1205,56 @@ export async function continueAutonomousManagerLoop(
     if (!session.ok) {
       return session;
     }
+    if (session.value.blocked_action !== undefined) {
+      const status = await getStatus(repoRoot);
+      if (!status.ok) return status;
+      return {
+        ok: true,
+        value: {
+          session_id: sessionId,
+          session_path: managerSessionRelativePath(sessionId),
+          status: "stopped",
+          steps: [
+            ...steps,
+            {
+              index,
+              action_type: session.value.blocked_action.action_type,
+              tier: "gate_rejection",
+              result: session.value.blocked_action.result,
+              stop: session.value.blocked_action.stop
+            }
+          ],
+          final_status: status.value
+        }
+      };
+    }
     let sessionForWrite = session.value;
 
     let action: ManagerAction;
     let classification: ActionClassification;
     if (session.value.pending_action !== undefined) {
-      action = session.value.pending_action.action;
-      classification = {
-        tier: "human_approval",
-        reason: session.value.pending_action.reason,
-        recommendation: session.value.pending_action.recommendation
-      };
-      if (!options.approvedActions.has(action.type)) {
-        const status = await getStatus(repoRoot);
-        if (!status.ok) {
-          return status;
-        }
-        return {
-          ok: true,
-          value: {
-            session_id: sessionId,
-            session_path: managerSessionRelativePath(sessionId),
-            status: "paused",
-            steps,
-            final_status: status.value
-          }
-        };
+      const status = await getStatus(repoRoot);
+      if (!status.ok) {
+        return status;
       }
-      await writeJsonAtomic(managerSessionPath(repoRoot, sessionId), { ...session.value, pending_action: undefined });
+      return {
+        ok: true,
+        value: {
+          session_id: sessionId,
+          session_path: managerSessionRelativePath(sessionId),
+          status: "paused",
+          steps: [
+            ...steps,
+            {
+              index,
+              action_type: session.value.pending_action.action_type,
+              tier: "human_approval",
+              pause: session.value.pending_action
+            }
+          ],
+          final_status: status.value
+        }
+      };
     } else {
       if (nextProposal === undefined) {
         const generated = await generateManagerProposal(
@@ -1247,9 +1291,15 @@ export async function continueAutonomousManagerLoop(
 
       action = nextProposal.actions[0];
       classification = await classifyManagerAction(repoRoot, action, policy.value);
-      if (classification.tier === "human_approval" && !options.approvedActions.has(action.type)) {
+      if (classification.tier === "human_approval") {
+        const expectedState = await getStatus(repoRoot);
+        if (!expectedState.ok) return expectedState;
         const pending: ManagerPendingAction = {
+          pending_action_id: randomUUID(),
           action,
+          action_type: action.type,
+          subject: managerActionSubject(action),
+          expected_state_hash: hashDurableState(expectedState.value),
           tier: "human_approval",
           reason: classification.reason,
           recommendation: classification.recommendation
@@ -1394,19 +1444,118 @@ export async function executeManagerAction(
     return { ok: false, reason: `manager session ${sessionId} belongs to spec ${sessionResult.value.spec_id}, not active spec ${specResult.value.spec_id}` };
   }
 
-  const result = await executeDeterministicAction(repoRoot, sessionId, action);
-  const nextSession = appendActionToSession(sessionResult.value, action, result);
-  const sessionPath = managerSessionPath(repoRoot, sessionId);
+  const policy = await loadManagerAutonomyPolicy(repoRoot);
+  if (!policy.ok) return policy;
+  const classification = await classifyManagerAction(repoRoot, action, policy.value);
+  if (classification.tier === "human_approval") {
+    return {
+      ok: false,
+      reason: `manager action requires a daemon-issued pending action and exact typed approval: ${classification.reason}`
+    };
+  }
+
+  return executeAuthorizedManagerAction(repoRoot, sessionResult.value, action);
+}
+
+async function executeAuthorizedManagerAction(
+  repoRoot: string,
+  session: ManagerSession,
+  action: ManagerAction
+): Promise<SpecResult<ManagerActionResult>> {
+
+  const result = await executeDeterministicAction(repoRoot, session.session_id, action);
+  const nextSession = appendActionToSession(session, action, result);
+  const sessionPath = managerSessionPath(repoRoot, session.session_id);
   await writeJsonAtomic(sessionPath, nextSession);
   return {
     ok: true,
     value: {
-      session_id: sessionId,
-      session_path: managerSessionRelativePath(sessionId),
+      session_id: session.session_id,
+      session_path: managerSessionRelativePath(session.session_id),
       action_type: action.type,
       result
     }
   };
+}
+
+export async function approvePendingManagerAction(
+  repoRoot: string,
+  request: unknown
+): Promise<SpecResult<ManagerActionResult>> {
+  if (!isRecord(request)) return { ok: false, reason: "manager approval must be a JSON object" };
+  const allowed = new Set(["session_id", "pending_action_id", "action_type", "subject", "expected_state_hash"]);
+  const extra = Object.keys(request).filter((key) => !allowed.has(key));
+  if (extra.length > 0) return { ok: false, reason: `manager approval contains unsupported authority field: ${extra[0]}` };
+  for (const field of allowed) {
+    if (typeof request[field] !== "string" || String(request[field]).trim() === "") {
+      return { ok: false, reason: `manager approval ${field} must be a non-empty string` };
+    }
+  }
+  const session = await loadManagerSession(repoRoot, request.session_id as string);
+  if (!session.ok) return session;
+  const pending = session.value.pending_action;
+  if (pending === undefined) return { ok: false, reason: "manager approval refused: session has no pending action" };
+  if (
+    pending.pending_action_id !== request.pending_action_id ||
+    pending.action_type !== request.action_type ||
+    pending.subject !== request.subject ||
+    pending.expected_state_hash !== request.expected_state_hash
+  ) {
+    return { ok: false, reason: "manager approval refused: typed action identity does not match the daemon-issued pending action" };
+  }
+  const parsedAction = parseManagerAction(pending.action);
+  if (!parsedAction.ok || parsedAction.value.type !== pending.action_type || managerActionSubject(parsedAction.value) !== pending.subject) {
+    return { ok: false, reason: "manager approval refused: pending action artifact is malformed or inconsistent" };
+  }
+  const status = await getStatus(repoRoot);
+  if (!status.ok) return status;
+  if (hashDurableState(status.value) !== pending.expected_state_hash) {
+    return { ok: false, reason: "manager approval refused: durable state changed after the action was presented; review the refreshed action" };
+  }
+  const policy = await loadManagerAutonomyPolicy(repoRoot);
+  if (!policy.ok) return policy;
+  const classification = await classifyManagerAction(repoRoot, parsedAction.value, policy.value);
+  if (classification.tier !== "human_approval") {
+    return { ok: false, reason: "manager approval refused: pending action no longer requires human approval" };
+  }
+  const result = await executeAuthorizedManagerAction(repoRoot, session.value, parsedAction.value);
+  if (!result.ok) return result;
+  const refreshed = await loadManagerSession(repoRoot, session.value.session_id);
+  if (!refreshed.ok) return refreshed;
+  const blockedAction = result.value.result.ok
+    ? undefined
+    : {
+        action_type: parsedAction.value.type,
+        result: result.value.result,
+        stop: buildGateRejectionAdvice(parsedAction.value, result.value.result.reason)
+      };
+  await writeJsonAtomic(managerSessionPath(repoRoot, session.value.session_id), {
+    ...refreshed.value,
+    pending_action: undefined,
+    blocked_action: blockedAction
+  });
+  const recorded = await appendEvent(repoRoot, {
+    type: "manager.action_approved",
+    task_id: "task_id" in parsedAction.value ? parsedAction.value.task_id : null,
+    data: {
+      version: 1,
+      pending_action_id: pending.pending_action_id,
+      session_id: session.value.session_id,
+      action_type: pending.action_type,
+      subject: pending.subject,
+      expected_state_hash: pending.expected_state_hash,
+      result_ok: result.value.result.ok
+    }
+  });
+  return recorded.ok ? result : recorded;
+}
+
+function hashDurableState(status: HivemindStatus): string {
+  return createHash("sha256").update(JSON.stringify(status)).digest("hex");
+}
+
+function managerActionSubject(action: ManagerAction): string {
+  return "task_id" in action ? action.task_id : action.type;
 }
 
 async function executeDeterministicAction(repoRoot: string, sessionId: string, action: ManagerAction): Promise<ManagerActionExecutionRecord> {
@@ -1519,6 +1668,10 @@ async function waitForTaskRunCompletion(repoRoot: string, taskId: string): Promi
     if (state.state === "failed") {
       const reason = typeof state.failed.data.reason === "string" ? state.failed.data.reason : "worker run failed";
       return { ok: false, reason: `task ${taskId} worker run failed: ${reason}` };
+    }
+    if (state.state === "cancelled") {
+      const reason = typeof state.cancelled.data.reason === "string" ? state.cancelled.data.reason : "human stop requested";
+      return { ok: false, reason: `task ${taskId} was cancelled: ${reason}` };
     }
     const quotaPause = latestQuotaPauseAfterLatestStart(events.value, taskId);
     if (quotaPause !== null) {
@@ -1724,6 +1877,45 @@ function validateManagerSession(value: unknown, sessionId: string): SpecResult<M
   if (!Array.isArray(value.executed_actions)) {
     return { ok: false, reason: "manager session executed_actions must be an array" };
   }
+  if (value.pending_action !== undefined) {
+    if (!isRecord(value.pending_action)) return { ok: false, reason: "manager pending_action must be an object" };
+    const pending = value.pending_action;
+    const action = parseManagerAction(pending.action);
+    if (
+      !action.ok ||
+      typeof pending.pending_action_id !== "string" ||
+      typeof pending.action_type !== "string" ||
+      pending.action_type !== action.value.type ||
+      typeof pending.subject !== "string" ||
+      pending.subject !== managerActionSubject(action.value) ||
+      typeof pending.expected_state_hash !== "string" ||
+      !/^[a-f0-9]{64}$/u.test(pending.expected_state_hash) ||
+      pending.tier !== "human_approval" ||
+      typeof pending.reason !== "string" ||
+      typeof pending.recommendation !== "string"
+    ) {
+      return { ok: false, reason: "manager pending_action is malformed or internally inconsistent" };
+    }
+  }
+  if (value.blocked_action !== undefined) {
+    if (!isRecord(value.blocked_action)) return { ok: false, reason: "manager blocked_action must be an object" };
+    const blocked = value.blocked_action;
+    if (
+      typeof blocked.action_type !== "string" ||
+      !isManagerActionType(blocked.action_type) ||
+      !isRecord(blocked.result) ||
+      blocked.result.ok !== false ||
+      typeof blocked.result.reason !== "string" ||
+      !isRecord(blocked.stop) ||
+      typeof blocked.stop.reason !== "string" ||
+      typeof blocked.stop.diagnosis !== "string" ||
+      !Array.isArray(blocked.stop.options) ||
+      !blocked.stop.options.every((entry) => typeof entry === "string") ||
+      typeof blocked.stop.recommendation !== "string"
+    ) {
+      return { ok: false, reason: "manager blocked_action is malformed or internally inconsistent" };
+    }
+  }
   return { ok: true, value: value as unknown as ManagerSession };
 }
 
@@ -1838,8 +2030,8 @@ function parseManagerArgs(
   args: string[]
 ): SpecResult<
   | { mode: "message"; message: string; tool?: string }
-  | { mode: "auto-message"; message: string; tool: string; approvedActions: Set<ManagerAction["type"]>; maxSteps: number }
-  | { mode: "auto-session"; sessionId: string; tool: string; approvedActions: Set<ManagerAction["type"]>; maxSteps: number }
+  | { mode: "auto-message"; message: string; tool: string; maxSteps: number }
+  | { mode: "auto-session"; sessionId: string; tool: string; maxSteps: number }
   | { mode: "action"; sessionId: string; actionFile: string }
   | { mode: "fake-loop"; message: string; actionsFile: string }
 > {
@@ -1854,7 +2046,6 @@ function parseManagerArgs(
         mode: "auto-message",
         message: args[1],
         tool: args[3],
-        approvedActions: options.value.approvedActions,
         maxSteps: options.value.maxSteps
       }
     };
@@ -1882,7 +2073,6 @@ function parseManagerArgs(
         mode: "auto-session",
         sessionId: args[1],
         tool: args[4],
-        approvedActions: options.value.approvedActions,
         maxSteps: options.value.maxSteps
       }
     };
@@ -1890,30 +2080,15 @@ function parseManagerArgs(
   return {
     ok: false,
     reason:
-      "usage: hivemind manager --message <message> [--tool <tool>] [--fake-manager <actions-json-file>] | --message <message> --tool <tool> --auto-loop [--approve-actions <csv>] [--max-steps <n>] | --session <session_id> --auto-loop --tool <tool> [--approve-actions <csv>] [--max-steps <n>] | --session <session_id> --action <action-json-file>"
+      "usage: hivemind manager --message <message> [--tool <tool>] [--fake-manager <actions-json-file>] | --message <message> --tool <tool> --auto-loop [--max-steps <n>] | --session <session_id> --auto-loop --tool <tool> [--max-steps <n>] | --session <session_id> --action <action-json-file>"
   };
 }
 
-function parseAutoLoopOptions(args: string[]): SpecResult<{ approvedActions: Set<ManagerAction["type"]>; maxSteps: number }> {
-  const approvedActions = new Set<ManagerAction["type"]>();
+function parseAutoLoopOptions(args: string[]): SpecResult<{ maxSteps: number }> {
   let maxSteps = 20;
   for (let index = 0; index < args.length; index += 1) {
     const flag = args[index];
     const value = args[index + 1];
-    if (flag === "--approve-actions" && typeof value === "string") {
-      index += 1;
-      if (value.trim() === "") {
-        continue;
-      }
-      for (const entry of value.split(",")) {
-        const action = entry.trim();
-        if (!isManagerActionType(action)) {
-          return { ok: false, reason: `--approve-actions contains unsupported manager action type: ${action}` };
-        }
-        approvedActions.add(action);
-      }
-      continue;
-    }
     if (flag === "--max-steps" && typeof value === "string") {
       index += 1;
       const parsed = Number(value);
@@ -1925,7 +2100,7 @@ function parseAutoLoopOptions(args: string[]): SpecResult<{ approvedActions: Set
     }
     return { ok: false, reason: `unknown autonomous manager option: ${flag ?? ""}` };
   }
-  return { ok: true, value: { approvedActions, maxSteps } };
+  return { ok: true, value: { maxSteps } };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

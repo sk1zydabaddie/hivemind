@@ -18,6 +18,7 @@ import test from "node:test";
 
 import { readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
+import { cancelQualityRun, qualityRunCancelled } from "../src/quality-control.js";
 import { selectQualityWinner } from "../src/quality-selection.js";
 import {
   disposeSpeculativeDraft,
@@ -496,6 +497,51 @@ test("all ineligible, failed, exceptional, and identity-divergent drafts clean d
       await assertMissing(checkoutPaths[0]);
       await assertOnlyMainCheckoutAndBranch(repo);
       assert.deepEqual(await canonicalIdentity(repo), canonicalBefore, fixture.name);
+    }
+  });
+});
+
+test("an in-flight quality cancellation becomes terminal only after its detached checkout is disposed", async () => {
+  await withSpeculativeRepo(async ({ repo }) => {
+    const admission = await admitValueQuality(repo, "T-001", { strategy: "best_of_n", n: 2 });
+    assert.equal(admission.ok, true, admission.ok ? undefined : admission.reason);
+    if (!admission.ok) return;
+    let checkoutPath = "";
+    let releaseStarted!: () => void;
+    const started = new Promise<void>((resolve) => { releaseStarted = resolve; });
+    const disposal = disposeSpeculativeDraft(
+      repo,
+      { quality_run_id: admission.value.quality_run_id, draft_id: "D-001" },
+      async (checkout) => {
+        checkoutPath = checkout;
+        releaseStarted();
+        while (!(await qualityRunCancelled(repo, admission.value.quality_run_id))) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        await writeFile(path.join(checkout, "src", "value.js"), "export const value = 'cancelled partial';\n");
+        return { status: "cancelled", reason: "durable quality cancellation observed" };
+      }
+    );
+    await started;
+    const cancellation = await cancelQualityRun(repo, {
+      quality_run_id: admission.value.quality_run_id,
+      reason: "Stop the speculative run."
+    });
+    const disposed = await disposal;
+
+    assert.equal(cancellation.ok, true, cancellation.ok ? undefined : cancellation.reason);
+    assert.equal(disposed.ok, true, disposed.ok ? undefined : disposed.reason);
+    if (disposed.ok) assert.equal(disposed.value.outcome, "producer_cancelled");
+    await assertMissing(checkoutPath);
+    await assertOnlyMainCheckoutAndBranch(repo);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (events.ok) {
+      const types = events.value
+        .filter((event) => event.data.quality_run_id === admission.value.quality_run_id)
+        .map((event) => event.type);
+      assert.ok(types.indexOf("quality.cancel_requested") < types.indexOf("quality.draft_disposed"));
+      assert.ok(types.indexOf("quality.draft_disposed") < types.indexOf("quality.cancelled"));
     }
   });
 });

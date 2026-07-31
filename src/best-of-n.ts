@@ -150,6 +150,7 @@ export async function generateBestOfN(
     if (
       disposed.value.outcome === "producer_crashed" ||
       disposed.value.outcome === "producer_timed_out" ||
+      disposed.value.outcome === "producer_cancelled" ||
       disposed.value.outcome === "producer_exception"
     ) {
       return {

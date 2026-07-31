@@ -15,13 +15,17 @@ import { requestLease } from "../src/lease.js";
 import { readQuotaLedger } from "../src/resource-ledger.js";
 import { latestTaskRunState } from "../src/run-state.js";
 import {
+  approvePendingManagerAction,
+  continueAutonomousManagerLoop,
   executeManagerAction,
   runAutonomousManagerLoop,
   startManagerSession,
   type ManagerAction,
+  type ManagerAutonomousLoopResult,
   type ManagerProposedAction
 } from "../src/manager.js";
-import { createSpec } from "../src/spec.js";
+import { createSpec, type SpecResult } from "../src/spec.js";
+import { getStatus } from "../src/status.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
 const execFileAsync = promisify(execFile);
@@ -331,6 +335,7 @@ test("manager executor records a read-only status action in the session", async 
 test("manager fake loop drives a user message through gated shadow integration with no paid provider", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
+    await allowFixtureManagerCalls(repo);
     await setConfigTestCommand(repo, "node -e \"process.exit(0)\"");
     const agentPath = await writeAgent(repo, "manager-loop-agent.mjs", [
       "const { appendFile } = await import('node:fs/promises');",
@@ -420,7 +425,6 @@ test("manager autonomous loop chains Tier-1 actions after deterministic passes",
 
     const result = await runAutonomousManagerLoop(repo, "Drive Tier-1 steps", {
       tool: "manager",
-      approvedActions: new Set(),
       maxSteps: 10
     });
 
@@ -453,7 +457,6 @@ test("manager autonomous loop pauses Tier-2 actions for human approval", async (
 
     const result = await runAutonomousManagerLoop(repo, "Try worker invocation", {
       tool: "manager",
-      approvedActions: new Set(),
       maxSteps: 5
     });
 
@@ -469,6 +472,67 @@ test("manager autonomous loop pauses Tier-2 actions for human approval", async (
     const session = await readSession(repo, result.value.session_path);
     assert.equal(session.executed_actions.length, 0);
     assert.equal(session.pending_action?.action.type, "run_worker");
+  });
+});
+
+test("human-tier manager actions require the exact daemon-issued pending identity on every caller path", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await writeReactiveManagerProposalProfile(repo, {
+      initial: proposalFor([{ type: "run_worker", task_id: "T-PENDING", tool: "fake" }], ["run_worker"])
+    });
+    const loop = await runAutonomousManagerLoop(repo, "Present one exact approval", { tool: "manager", maxSteps: 3 });
+    assert.equal(loop.ok, true);
+    if (!loop.ok) return;
+    const pending = loop.value.steps.at(-1)?.pause;
+    assert.ok(pending);
+
+    const direct = await executeManagerAction(repo, loop.value.session_id, pending!.action);
+    assert.equal(direct.ok, false);
+    if (!direct.ok) assert.match(direct.reason, /daemon-issued pending action and exact typed approval/u);
+
+    const actionPath = path.join(repo, "human-tier-action.json");
+    await writeFile(actionPath, `${JSON.stringify(pending!.action, null, 2)}\n`);
+    await assert.rejects(
+      execFileAsync(process.execPath, [cliPath, "manager", "--session", loop.value.session_id, "--action", actionPath], { cwd: repo, windowsHide: true }),
+      (error: unknown) => {
+        assert.match(String((error as { stderr?: string }).stderr), /daemon-issued pending action and exact typed approval/u);
+        return true;
+      }
+    );
+    await assert.rejects(
+      execFileAsync(process.execPath, [cliPath, "manager", "--session", loop.value.session_id, "--auto-loop", "--tool", "manager", "--approve-actions", "run_worker"], { cwd: repo, windowsHide: true }),
+      (error: unknown) => {
+        assert.match(String((error as { stderr?: string }).stderr), /unknown autonomous manager option: --approve-actions/u);
+        return true;
+      }
+    );
+
+    const forged = await approvePendingManagerAction(repo, {
+      session_id: loop.value.session_id,
+      pending_action_id: pending!.pending_action_id,
+      action_type: pending!.action_type,
+      subject: pending!.subject,
+      expected_state_hash: "0".repeat(64)
+    });
+    assert.equal(forged.ok, false);
+
+    const approved = await approvePendingManagerAction(repo, {
+      session_id: loop.value.session_id,
+      pending_action_id: pending!.pending_action_id,
+      action_type: pending!.action_type,
+      subject: pending!.subject,
+      expected_state_hash: pending!.expected_state_hash
+    });
+    assert.equal(approved.ok, true);
+    if (approved.ok) assert.equal(approved.value.result.ok, false);
+    const continued = await continueAutonomousManagerLoop(repo, loop.value.session_id, { tool: "manager", maxSteps: 3 });
+    assert.equal(continued.ok, true);
+    if (continued.ok) assert.equal(continued.value.status, "stopped");
+    const events = await readRequiredEvents(repo);
+    const approval = events.find((event) => event.type === "manager.action_approved");
+    assert.equal(approval?.data.pending_action_id, pending!.pending_action_id);
+    assert.equal(approval?.data.result_ok, false);
   });
 });
 
@@ -491,11 +555,7 @@ test("manager autonomous loop hard-stops on gate rejection without retrying or c
       after_run_worker_rejected: proposalFor([{ type: "get_status" }])
     });
 
-    const result = await runAutonomousManagerLoop(repo, "Drive until gate rejection", {
-      tool: "manager",
-      approvedActions: new Set(["run_worker"]),
-      maxSteps: 10
-    });
+    const result = await runAutonomousLoopWithTypedApprovals(repo, "Drive until gate rejection", "manager", 10, new Set(["run_worker"]));
 
     assert.equal(result.ok, true);
     if (!result.ok) {
@@ -541,11 +601,7 @@ test("manager autonomous loop redirects out-of-scope write intent before worker 
     await prepareLintedPlan(repo, contract);
     await writeRedirectAwareManagerProfile(repo, "T-REDIRECT", contract, "strong-worker");
 
-    const result = await runAutonomousManagerLoop(repo, "Drive redirect-first correction", {
-      tool: "manager",
-      approvedActions: new Set(["run_worker"]),
-      maxSteps: 12
-    });
+    const result = await runAutonomousLoopWithTypedApprovals(repo, "Drive redirect-first correction", "manager", 12, new Set(["run_worker"]));
 
     assert.equal(result.ok, true);
     if (!result.ok) {
@@ -618,7 +674,6 @@ test("manager redirect bound escalates repeated intent drift to re-plan without 
 
     const result = await runAutonomousManagerLoop(repo, "Drive bounded redirect thrash", {
       tool: "manager",
-      approvedActions: new Set(["run_worker"]),
       maxSteps: 10
     });
 
@@ -662,11 +717,7 @@ test("manager autonomous loop stops on non-zero worker exit and does not enqueue
       after_run_worker_rejected: proposalFor([{ type: "enqueue_patch", task_id: "T-CRASH" }])
     });
 
-    const result = await runAutonomousManagerLoop(repo, "Drive crashing worker", {
-      tool: "manager",
-      approvedActions: new Set(["run_worker"]),
-      maxSteps: 10
-    });
+    const result = await runAutonomousLoopWithTypedApprovals(repo, "Drive crashing worker", "manager", 10, new Set(["run_worker"]));
 
     assert.equal(result.ok, true);
     if (!result.ok) {
@@ -707,11 +758,7 @@ test("manager autonomous loop sees unsubmitted patch state after worker success 
     await prepareLintedPlan(repo, contract);
     await writePatchPipelineAwareManagerProfile(repo, "T-PIPE", "strong-worker");
 
-    const result = await runAutonomousManagerLoop(repo, "Drive worker to submit", {
-      tool: "manager",
-      approvedActions: new Set(["run_worker"]),
-      maxSteps: 10
-    });
+    const result = await runAutonomousLoopWithTypedApprovals(repo, "Drive worker to submit", "manager", 10, new Set(["run_worker"]));
 
     assert.equal(result.ok, true);
     if (!result.ok) {
@@ -786,7 +833,7 @@ test("manager create_task_contract is refused when the current plan fails lint",
         const parsed = JSON.parse(String((error as { stdout?: string }).stdout)) as { status: string; steps: Array<{ result: { ok: boolean; reason?: string } }> };
         assert.equal(parsed.status, "failed");
         assert.equal(parsed.steps[0].result.ok, false);
-        assert.match(parsed.steps[0].result.reason ?? "", /current lint-passed tentative plan/);
+        assert.match(parsed.steps[0].result.reason ?? "", /explicitly ratified plan/);
         return true;
       }
     );
@@ -840,6 +887,7 @@ test("manager create_task_contract refuses a dependent task until dependencies a
 test("manager run_worker refuses to invoke without a passed write-intent", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
+    await allowFixtureManagerCalls(repo);
     const agentPath = await writeAgent(repo, "no-intent-agent.mjs", [
       "const { appendFile } = await import('node:fs/promises');",
       "await appendFile('README.md', 'agent should not run without intent\\n');"
@@ -884,6 +932,7 @@ test("manager run_worker refuses to invoke without a passed write-intent", async
 test("manager executor drives deterministic task actions through shadow integration with no paid provider", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
+    await allowFixtureManagerCalls(repo);
     await setConfigTestCommand(repo, "node -e \"process.exit(0)\"");
     const agentPath = await writeAgent(repo, "manager-fake-agent.mjs", [
       "const { appendFile } = await import('node:fs/promises');",
@@ -960,6 +1009,7 @@ test("manager executor drives deterministic task actions through shadow integrat
 test("manager cannot bypass the configured High oracle floor at integration", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
+    await allowFixtureManagerCalls(repo);
     await setUnknownCoverageConfig(repo);
     await writeContract(repo, "T-MANAGER-FLOOR", baseCommit, ["README.md"]);
     await writeAcceptedPatchBundle(repo, "T-MANAGER-FLOOR", baseCommit, async () => {
@@ -1001,6 +1051,7 @@ test("manager cannot bypass the configured High oracle floor at integration", as
 test("manager observes delayed daemon worker completion from the event trail after a quick run start", async () => {
   await withTempRepo(async ({ repo }) => {
     await createRatifiedSpec(repo, "S-001");
+    await allowFixtureManagerCalls(repo);
     const sessionResult = await startManagerSession(repo, "Observe delayed daemon completion", { proposedAction: testProposal() });
     assert.equal(sessionResult.ok, true);
     if (!sessionResult.ok) {
@@ -1054,6 +1105,7 @@ test("manager observes delayed daemon worker completion from the event trail aft
 test("manager timeout records durable task.failed for daemon-started runs that never complete", async () => {
   await withTempRepo(async ({ repo }) => {
     await createRatifiedSpec(repo, "S-001");
+    await allowFixtureManagerCalls(repo);
     const sessionResult = await startManagerSession(repo, "Timeout a daemon-started run", { proposedAction: testProposal() });
     assert.equal(sessionResult.ok, true);
     if (!sessionResult.ok) {
@@ -1098,6 +1150,7 @@ test("manager timeout records durable task.failed for daemon-started runs that n
 test("manager observes quota pause without marking a daemon-started run failed", async () => {
   await withTempRepo(async ({ repo }) => {
     await createRatifiedSpec(repo, "S-001");
+    await allowFixtureManagerCalls(repo);
     const sessionResult = await startManagerSession(repo, "Observe quota pause", { proposedAction: testProposal() });
     assert.equal(sessionResult.ok, true);
     if (!sessionResult.ok) {
@@ -1189,6 +1242,7 @@ test("manager fake loop rejects malformed action scripts before creating a sessi
 test("manager fake loop stops after a deterministic action failure", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
+    await allowFixtureManagerCalls(repo);
     const contract = managerContract("T-FAIL", baseCommit, ["README.md"]);
     await prepareLintedPlan(repo, contract);
     const actionsPath = path.join(repo, "failing-fake-manager-actions.json");
@@ -1253,6 +1307,7 @@ test("manager fake loop refuses draft specs before creating a session", async ()
 test("manager executor records deterministic failures but fails the CLI closed", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
+    await allowFixtureManagerCalls(repo);
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
     const sessionResult = await startManagerSession(repo, "Try to run without a lease", { proposedAction: testProposal() });
     assert.equal(sessionResult.ok, true);
@@ -1486,6 +1541,66 @@ async function withTempRepo(run: (context: { repo: string; baseCommit: string })
   }
 }
 
+async function runAutonomousLoopWithTypedApprovals(
+  repo: string,
+  message: string,
+  tool: string,
+  maxSteps: number,
+  approvedTypes: Set<ManagerAction["type"]>
+): Promise<SpecResult<ManagerAutonomousLoopResult>> {
+  let result = await runAutonomousManagerLoop(repo, message, { tool, maxSteps });
+  const steps: ManagerAutonomousLoopResult["steps"] = [];
+  for (let approvals = 0; approvals <= maxSteps; approvals += 1) {
+    if (!result.ok) return result;
+    const pendingStep = result.value.steps.at(-1);
+    if (result.value.status !== "paused" || pendingStep?.pause === undefined) {
+      return { ok: true, value: { ...result.value, steps: [...steps, ...result.value.steps] } };
+    }
+    steps.push(...result.value.steps.slice(0, -1));
+    if (!approvedTypes.has(pendingStep.action_type)) {
+      return { ok: true, value: { ...result.value, steps: [...steps, pendingStep] } };
+    }
+    const pending = pendingStep.pause;
+    const approved = await approvePendingManagerAction(repo, {
+      session_id: result.value.session_id,
+      pending_action_id: pending.pending_action_id,
+      action_type: pending.action_type,
+      subject: pending.subject,
+      expected_state_hash: pending.expected_state_hash
+    });
+    if (!approved.ok) return approved;
+    if (!approved.value.result.ok) {
+      const status = await getStatus(repo);
+      if (!status.ok) return status;
+      steps.push({
+        index: steps.length,
+        action_type: approved.value.action_type,
+        tier: "gate_rejection",
+        result: approved.value.result,
+        stop: {
+          reason: approved.value.result.reason,
+          diagnosis: `The deterministic gate rejected ${approved.value.action_type}; this is a Tier 3 hard stop, not a prompt for autonomous retry.`,
+          options: ["Do not change provider tiers, risk config, safety rules, or approval policy inside the autonomous loop to force this action through."],
+          recommendation: "Stop the loop and ask the human which option to take."
+        }
+      });
+      return {
+        ok: true,
+        value: {
+          session_id: result.value.session_id,
+          session_path: result.value.session_path,
+          status: "stopped",
+          steps,
+          final_status: status.value
+        }
+      };
+    }
+    steps.push({ index: steps.length, action_type: approved.value.action_type, tier: "human_approval", result: approved.value.result });
+    result = await continueAutonomousManagerLoop(repo, result.value.session_id, { tool, maxSteps });
+  }
+  return { ok: false, reason: "typed approval fixture exceeded its deterministic approval bound" };
+}
+
 function managerContract(taskId: string, baseCommit: string, allowedFiles: string[]): Record<string, unknown> {
   return {
     task_id: taskId,
@@ -1553,6 +1668,8 @@ async function prepareLintedPlanWithTasks(repo: string, tasks: Record<string, un
   await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
   await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
   await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
+  const review = JSON.parse((await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--review"], { cwd: repo, windowsHide: true })).stdout) as { plan_hash: string };
+  await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ratify", review.plan_hash], { cwd: repo, windowsHide: true });
 }
 
 function planTaskFromContract(contract: Record<string, unknown>, dependsOn: string[] = []): Record<string, unknown> {
@@ -1720,6 +1837,13 @@ async function setConfigManagerAutonomy(repo: string, managerAutonomy: Record<st
     ...managerAutonomy
   };
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+async function allowFixtureManagerCalls(repo: string): Promise<void> {
+  await setConfigManagerAutonomy(repo, {
+    tier2_actions: [],
+    cost_threshold: { estimated_requests: 1 }
+  });
 }
 
 async function writeAgent(repo: string, fileName: string, lines: string[]): Promise<string> {

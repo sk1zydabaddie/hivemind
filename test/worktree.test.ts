@@ -334,6 +334,8 @@ async function prepareLintedPlan(repo: string, contract: Record<string, unknown>
   await execFileAsync("node", [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
   await execFileAsync("node", [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
   await execFileAsync("node", [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
+  const review = JSON.parse((await execFileAsync("node", [cliPath, "plan", "S-001", "--review"], { cwd: repo, windowsHide: true })).stdout) as { plan_hash: string };
+  await execFileAsync("node", [cliPath, "plan", "S-001", "--ratify", review.plan_hash], { cwd: repo, windowsHide: true });
 }
 
 async function restoreTrackedWrites(worktreePath: string): Promise<void> {

@@ -20,10 +20,12 @@ import { markRunFailed, startRunTaskJob } from "./run.js";
 import { runScout } from "./scout.js";
 import { getStatus } from "./status.js";
 import { submitTask } from "./submit.js";
-import { recordRedirectFirstCorrection } from "./supervision.js";
+import { requestTaskRedirect } from "./supervision.js";
 import { validateRequestedTaskId } from "./task-id.js";
+import { finalizeTaskCancellation } from "./task-control.js";
 import { admitValueQuality } from "./value-quality.js";
 import { createTaskWorktree, removeTaskWorktree } from "./worktree.js";
+import { executeWorkspaceAction } from "./workspace-actions.js";
 
 interface DaemonOptions {
   host: string;
@@ -134,7 +136,9 @@ function createDaemonServer(repoRoot: string) {
         return;
       }
 
-      const result = await queue.run(() => handler(payloadResult.value, eventBus));
+      const result = isQueueInterrupt(request, payloadResult.value)
+        ? await handler(payloadResult.value, eventBus)
+        : await queue.run(() => handler(payloadResult.value, eventBus));
       await eventBus.publishNewDurableEvents(repoRoot, previousEvents.value.length);
       writeJson(response, result.ok ? 200 : 400, result);
     } catch (error: unknown) {
@@ -180,6 +184,9 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
       });
     };
   }
+  if (request.method === "POST" && request.url === "/workspace/action") {
+    return async (payload) => executeWorkspaceAction(repoRoot, payload);
+  }
   if (request.method === "POST" && request.url === "/checkpoint/task") {
     return async (payload) => {
       const taskId = readTaskId(payload);
@@ -216,43 +223,7 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
     };
   }
   if (request.method === "POST" && request.url === "/supervision/redirect") {
-    return async (payload) => {
-      const taskId = readTaskId(payload);
-      if (!taskId.ok) {
-        return taskId;
-      }
-      const correction = readRequiredString(payload, "correction");
-      if (!correction.ok) {
-        return correction;
-      }
-      const reason = readRequiredString(payload, "reason");
-      if (!reason.ok) {
-        return reason;
-      }
-      const rejectionReason = readRequiredString(payload, "rejection_reason");
-      if (!rejectionReason.ok) {
-        return rejectionReason;
-      }
-      const attempt = readOptionalPositiveInteger(payload, "attempt");
-      if (!attempt.ok || attempt.value === undefined) {
-        return attempt.ok ? { ok: false, reason: "attempt must be a positive integer" } : attempt;
-      }
-      const maxAttempts = readOptionalPositiveInteger(payload, "max_attempts");
-      if (!maxAttempts.ok || maxAttempts.value === undefined) {
-        return maxAttempts.ok ? { ok: false, reason: "max_attempts must be a positive integer" } : maxAttempts;
-      }
-      return isRecord(payload.rejected_intent)
-        ? recordRedirectFirstCorrection(repoRoot, {
-            task_id: taskId.value,
-            correction: correction.value,
-            reason: reason.value,
-            rejection_reason: rejectionReason.value,
-            rejected_intent: payload.rejected_intent,
-            attempt: attempt.value,
-            max_attempts: maxAttempts.value
-          })
-        : { ok: false, reason: "rejected_intent must be a JSON object" };
-    };
+    return async (payload) => requestTaskRedirect(repoRoot, payload);
   }
   if (request.method === "POST" && request.url === "/worktree/create") {
     return async (payload) => {
@@ -356,7 +327,13 @@ async function reconcileIncompleteRuns(repoRoot: string): Promise<{ ok: true } |
     return events;
   }
 
-  for (const taskId of startedWithoutTerminal(events.value)) {
+  for (const taskId of tasksNeedingStartupReconciliation(events.value)) {
+    const cancelRequested = events.value.some((event) => event.type === "task.cancel_requested" && event.task_id === taskId);
+    if (cancelRequested) {
+      const cancelled = await finalizeTaskCancellation(repoRoot, taskId);
+      if (!cancelled.ok) return cancelled;
+      continue;
+    }
     const append = await appendEvent(repoRoot, {
       type: "task.failed",
       task_id: taskId,
@@ -373,6 +350,23 @@ async function reconcileIncompleteRuns(repoRoot: string): Promise<{ ok: true } |
   return { ok: true };
 }
 
+function tasksNeedingStartupReconciliation(events: HivemindEvent[]): string[] {
+  const tasks = new Set(startedWithoutTerminal(events));
+  const openCancellation = new Set<string>();
+  for (const event of events) {
+    if (event.task_id === null) continue;
+    if (event.type === "task.started") openCancellation.delete(event.task_id);
+    if (event.type === "task.cancel_requested") openCancellation.add(event.task_id);
+    if (event.type === "task.cancelled") openCancellation.delete(event.task_id);
+  }
+  for (const taskId of openCancellation) tasks.add(taskId);
+  return [...tasks].sort((left, right) => left.localeCompare(right));
+}
+
+function isQueueInterrupt(request: IncomingMessage, payload: DaemonPayload): boolean {
+  return request.method === "POST" && request.url === "/workspace/action" && payload.type === "quality.cancel";
+}
+
 function startedWithoutTerminal(events: HivemindEvent[]): string[] {
   const running = new Set<string>();
   for (const event of events) {
@@ -383,7 +377,7 @@ function startedWithoutTerminal(events: HivemindEvent[]): string[] {
       running.add(event.task_id);
       continue;
     }
-    if (event.type === "task.completed" || event.type === "task.failed") {
+    if (event.type === "task.completed" || event.type === "task.failed" || event.type === "task.cancelled") {
       running.delete(event.task_id);
       continue;
     }

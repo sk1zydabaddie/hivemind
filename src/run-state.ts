@@ -4,7 +4,8 @@ export type TaskRunState =
   | { state: "not_started" }
   | { state: "running"; started: HivemindEvent }
   | { state: "completed"; started: HivemindEvent; completed: HivemindEvent }
-  | { state: "failed"; started: HivemindEvent | null; failed: HivemindEvent };
+  | { state: "failed"; started: HivemindEvent | null; failed: HivemindEvent }
+  | { state: "cancelled"; started: HivemindEvent | null; cancelled: HivemindEvent };
 
 export function latestTaskRunState(events: HivemindEvent[], taskId: string): TaskRunState {
   let started: HivemindEvent | null = null;
@@ -19,7 +20,7 @@ export function latestTaskRunState(events: HivemindEvent[], taskId: string): Tas
       terminal = null;
       continue;
     }
-    if (event.type === "task.completed" || event.type === "task.failed") {
+    if (event.type === "task.completed" || event.type === "task.failed" || event.type === "task.cancelled") {
       terminal = event;
     }
   }
@@ -29,6 +30,9 @@ export function latestTaskRunState(events: HivemindEvent[], taskId: string): Tas
   }
   if (terminal?.type === "task.failed") {
     return { state: "failed", started, failed: terminal };
+  }
+  if (terminal?.type === "task.cancelled") {
+    return { state: "cancelled", started, cancelled: terminal };
   }
   if (started !== null) {
     return { state: "running", started };

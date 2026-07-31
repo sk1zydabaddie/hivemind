@@ -111,7 +111,8 @@ export async function createTaskWorktree(
 
 export async function removeTaskWorktree(
   repoRoot: string,
-  taskId: string
+  taskId: string,
+  options: { discardChanges?: boolean } = {}
 ): Promise<{ ok: true; value: WorktreeResult } | { ok: false; reason: string }> {
   const taskIdResult = validateRequestedTaskId(taskId);
   if (!taskIdResult.ok) {
@@ -124,7 +125,12 @@ export async function removeTaskWorktree(
     if (!restoreResult.ok) {
       return restoreResult;
     }
-    const removeResult = await git(repoRoot, ["worktree", "remove", path.join(".hivemind", "worktrees", taskId)]);
+    const removeResult = await git(repoRoot, [
+      "worktree",
+      "remove",
+      ...(options.discardChanges === true ? ["--force"] : []),
+      path.join(".hivemind", "worktrees", taskId)
+    ]);
     if (!removeResult.ok) {
       return { ok: false, reason: removeResult.reason };
     }

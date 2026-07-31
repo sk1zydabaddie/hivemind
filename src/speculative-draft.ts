@@ -18,6 +18,7 @@ import {
   loadAdmittedValueQualityRun,
   type AdmittedValueQualityRun
 } from "./value-quality.js";
+import { finalizeQualityRunCancellation, qualityRunCancelled } from "./quality-control.js";
 
 const execFileAsync = promisify(execFile);
 const draftIdPattern = /^D-(00[1-3])$/u;
@@ -48,7 +49,7 @@ export type SpeculativeDraftProducerResult =
       provenance?: SpeculativeDraftProvenance;
     }
   | {
-      status: "crashed" | "timed_out";
+      status: "crashed" | "timed_out" | "cancelled";
       reason: string;
       output?: SpeculativeDraftOutput[];
       provenance?: SpeculativeDraftProvenance;
@@ -70,6 +71,7 @@ export type SpeculativeDraftOutcome =
   | "shadow_failed"
   | "producer_crashed"
   | "producer_timed_out"
+  | "producer_cancelled"
   | "producer_exception"
   | "indeterminate";
 
@@ -238,9 +240,14 @@ export async function disposeSpeculativeDraft(
       advisory_only: true
     }
   });
-  return disposed.ok
-    ? { ok: true, value: artifact }
-    : { ok: false, reason: `draft artifact was written but quality.draft_disposed could not be appended: ${disposed.reason}` };
+  if (!disposed.ok) {
+    return { ok: false, reason: `draft artifact was written but quality.draft_disposed could not be appended: ${disposed.reason}` };
+  }
+  if (await qualityRunCancelled(repoRoot, request.quality_run_id)) {
+    const finalized = await finalizeQualityRunCancellation(repoRoot, request.quality_run_id);
+    if (!finalized.ok) return finalized;
+  }
+  return { ok: true, value: artifact };
 }
 
 async function executeInDetachedCheckout(
@@ -309,7 +316,11 @@ async function executeInDetachedCheckout(
       const files = await changedFiles(checkoutPath, baseCommit);
       if (produced.status !== "completed") {
         return {
-          outcome: produced.status === "crashed" ? "producer_crashed" as const : "producer_timed_out" as const,
+          outcome: produced.status === "crashed"
+            ? "producer_crashed" as const
+            : produced.status === "cancelled"
+              ? "producer_cancelled" as const
+              : "producer_timed_out" as const,
           reason: produced.reason,
           changedFiles: files,
           diff: captured.value.diff,
@@ -497,7 +508,7 @@ async function ensureQualityRunManifest(
 }
 
 function validateProducerResult(value: SpeculativeDraftProducerResult): SpeculativeDraftProducerResult {
-  if (value.status !== "completed" && value.status !== "crashed" && value.status !== "timed_out") {
+  if (value.status !== "completed" && value.status !== "crashed" && value.status !== "timed_out" && value.status !== "cancelled") {
     throw new Error("draft producer returned an unsupported status");
   }
   if (value.status !== "completed" && (typeof value.reason !== "string" || value.reason.trim() === "")) {

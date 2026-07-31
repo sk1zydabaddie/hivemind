@@ -8,10 +8,10 @@ import { callDaemonIfConfigured } from "./daemon-client.js";
 import { loadAndValidateContract, type TaskContract } from "./contract.js";
 import { contextPackRelativePath, loadContextPackForContract, taskKnowledgeRelativePath } from "./context-pack.js";
 import { captureWorktreeDiff } from "./diff-capture.js";
-import { appendEvent } from "./events.js";
+import { appendEvent, readEvents } from "./events.js";
 import { readJsonFile } from "./json.js";
 import { verifyLeaseCoverage } from "./lease.js";
-import { loadTentativePlan } from "./plan.js";
+import { loadCurrentRatifiedPlan } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { getStatus, type StatusTask } from "./status.js";
 import { requirePassedWriteIntent } from "./intent.js";
@@ -292,14 +292,20 @@ export async function loadTaskCheckpointResumeState(repoRoot: string, taskId: st
 }
 
 async function requirePlanTaskRef(repoRoot: string, specId: string, taskId: string): Promise<CheckpointResult<{ path: string; task_id: string }>> {
-  const plan = await loadTentativePlan(repoRoot, specId);
+  const plan = await loadCurrentRatifiedPlan(repoRoot, specId, "task checkpoint");
   if (!plan.ok) {
     return plan;
   }
   if (!plan.value.tasks.some((task) => task.task_id === taskId)) {
-    return { ok: false, reason: `task ${taskId} is not present in authoritative plan ${planRelativePath(specId)}` };
+    return { ok: false, reason: `task ${taskId} is not present in the active ratified plan` };
   }
-  return { ok: true, value: { path: planRelativePath(specId), task_id: taskId } };
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return events;
+  const event = events.value.filter((entry) => entry.type === "plan.ratified" && entry.data.spec_id === specId).at(-1);
+  if (event === undefined || typeof event.data.plan_path !== "string") {
+    return { ok: false, reason: "active ratified plan has no durable artifact reference" };
+  }
+  return { ok: true, value: { path: event.data.plan_path, task_id: taskId } };
 }
 
 export async function loadTaskCheckpointSnapshot(repoRoot: string, taskId: string): Promise<CheckpointResult<TaskCheckpointSnapshot>> {
@@ -333,10 +339,6 @@ function taskCheckpointPath(repoRoot: string, taskId: string): string {
 
 function contractRelativePath(taskId: string): string {
   return `.hivemind/tasks/${taskId}.contract.json`;
-}
-
-function planRelativePath(specId: string): string {
-  return `.hivemind/plans/${specId}.tentative.json`;
 }
 
 function worktreeRelativePath(taskId: string): string {
@@ -465,8 +467,8 @@ function validatePlanRef(raw: unknown, taskId: string): CheckpointResult<{ path:
   if (extra.length > 0) {
     return { ok: false, reason: `checkpoint plan_ref contains unsupported field: ${extra[0]}` };
   }
-  if (typeof raw.path !== "string" || !/^\.hivemind\/plans\/[^/]+\.tentative\.json$/u.test(raw.path)) {
-    return { ok: false, reason: "checkpoint plan_ref.path must point at a tentative plan" };
+  if (typeof raw.path !== "string" || !/^\.hivemind\/plans\/ratified\/[^/]+\/[a-f0-9]{64}\.json$/u.test(raw.path)) {
+    return { ok: false, reason: "checkpoint plan_ref.path must point at an immutable ratified plan" };
   }
   if (raw.task_id !== taskId) {
     return { ok: false, reason: `checkpoint plan_ref.task_id must be ${taskId}` };

@@ -20,6 +20,7 @@ import { requirePassedWriteIntent } from "./intent.js";
 import { readQuotaLedger } from "./resource-ledger.js";
 import { routeTaskProvider } from "./routing.js";
 import { latestTaskRunState } from "./run-state.js";
+import { finalizeTaskCancellation, taskCancellationRequested } from "./task-control.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { createTaskWorktree } from "./worktree.js";
 
@@ -420,6 +421,7 @@ async function finishPreparedRunAttempt(
   const invokeResult = await invokeAgent(repoRoot, prepared.taskId, prepared.tool, {
     allowDangerousAdapter: prepared.allowDangerousAdapter,
     usageSessionId: prepared.usageSessionId,
+    shouldCancel: () => taskCancellationRequested(repoRoot, prepared.taskId),
     onStreamChunk: (chunk) => {
       streamOutputTail = streamOutputTail.then((previous) =>
         previous.ok
@@ -455,6 +457,13 @@ async function finishPreparedRunAttempt(
       { releaseLease: invokeResult.budget_exceeded === true }
     );
     return failed.ok ? invokeResult : failed;
+  }
+
+  if (invokeResult.value.cancelled === true || await taskCancellationRequested(repoRoot, prepared.taskId)) {
+    const finalized = await finalizeTaskCancellation(repoRoot, prepared.taskId);
+    return finalized.ok
+      ? { ok: false, reason: `task ${prepared.taskId} cancelled by durable human request`, toolExit: invokeResult.value.exitCode }
+      : { ok: false, reason: finalized.reason, toolExit: invokeResult.value.exitCode };
   }
 
   if (invokeResult.value.throttled) {

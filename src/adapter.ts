@@ -43,6 +43,7 @@ export interface InvokeAgentResult {
   selfMeasuredTokens: number;
   providerReportedTokens: number | null;
   accountingSource: "provider_reported" | "self_measured";
+  cancelled?: boolean;
 }
 
 export interface InvokeAgentFailure {
@@ -63,6 +64,7 @@ export interface InvokeAgentOptions {
   allowDangerousAdapter?: boolean;
   onStreamChunk?: (chunk: AdapterStreamChunk) => void;
   usageSessionId?: string;
+  shouldCancel?: () => Promise<boolean>;
 }
 
 export interface AdapterProcessResult {
@@ -73,6 +75,7 @@ export interface AdapterProcessResult {
   providerUsageCapture: ProviderUsageCapture;
   usageSessionId: string | null;
   timedOut: boolean;
+  cancelled?: boolean;
   outputLogPath: string | null;
 }
 
@@ -80,6 +83,7 @@ export interface AdapterProcessOptions {
   onStreamChunk?: (chunk: AdapterStreamChunk) => void;
   outputLogPath?: string;
   usageSessionId?: string;
+  shouldCancel?: () => Promise<boolean>;
 }
 
 export async function invokeAgent(
@@ -121,7 +125,8 @@ export async function invokeAgent(
   const processResult = await runAdapterProcess(repoRoot, profileResult.profile, worktreePath, prompt, {
     onStreamChunk: options.onStreamChunk,
     outputLogPath: logPath,
-    usageSessionId: options.usageSessionId
+    usageSessionId: options.usageSessionId,
+    shouldCancel: options.shouldCancel
   });
   if (!processResult.ok) {
     return processResult;
@@ -166,6 +171,7 @@ export async function invokeAgent(
       selfMeasuredTokens: ledgerResult.value.last_request?.self_measured_tokens ?? estimateTokens(prompt) + estimateTokens(processResult.value.modelOutput),
       providerReportedTokens: ledgerResult.value.last_request?.provider_reported_tokens ?? null,
       accountingSource: ledgerResult.value.last_request?.accounting_source ?? "self_measured",
+      cancelled: processResult.value.cancelled === true,
       failureReason:
         processResult.value.exitCode === 0
           ? null
@@ -299,6 +305,7 @@ export async function runAdapterProcess(
     const stderr: Buffer[] = [];
     let failedToStart = false;
     let timedOut = false;
+    let cancelled = false;
     let stdinError: NodeJS.ErrnoException | null = null;
     const timeout =
       profile.timeout_ms === undefined
@@ -308,6 +315,25 @@ export async function runAdapterProcess(
             stderr.push(Buffer.from(`\nadapter timed out after ${profile.timeout_ms}ms\n`, "utf8"));
             terminateProcessTree(child.pid);
           }, profile.timeout_ms);
+    let cancellationPoll: NodeJS.Timeout | undefined;
+    const pollCancellation = async () => {
+      if (options.shouldCancel === undefined || failedToStart || child.exitCode !== null) return;
+      try {
+        if (await options.shouldCancel()) {
+          cancelled = true;
+          stderr.push(Buffer.from("\nadapter cancelled by durable request\n", "utf8"));
+          terminateProcessTree(child.pid);
+          return;
+        }
+      } catch {
+        // Cancellation observation is advisory to the process; uncertain reads
+        // do not kill work. The authoritative control path remains durable.
+      }
+      cancellationPoll = setTimeout(() => void pollCancellation(), 100);
+    };
+    if (options.shouldCancel !== undefined) {
+      cancellationPoll = setTimeout(() => void pollCancellation(), 100);
+    }
 
     child.stdout.on("data", (chunk: Buffer) => {
       stdout.push(chunk);
@@ -325,6 +351,7 @@ export async function runAdapterProcess(
       if (timeout) {
         clearTimeout(timeout);
       }
+      if (cancellationPoll) clearTimeout(cancellationPoll);
       void resolveStartFailure(profile.tool, error, options.outputLogPath, resolve);
     });
     child.on("close", (code) => {
@@ -334,9 +361,10 @@ export async function runAdapterProcess(
       if (timeout) {
         clearTimeout(timeout);
       }
+      if (cancellationPoll) clearTimeout(cancellationPoll);
       const capturedStderr = Buffer.concat(stderr).toString("utf8");
       const capturedStdout = Buffer.concat(stdout).toString("utf8");
-      const exitCode = timedOut ? 124 : code ?? 1;
+      const exitCode = cancelled ? 130 : timedOut ? 124 : code ?? 1;
       const normalized = normalizeAdapterResult(resolveAdapterUsageParser(profile), capturedStdout, capturedStderr, exitCode);
       const result: AdapterProcessResult = {
         exitCode,
@@ -349,6 +377,7 @@ export async function runAdapterProcess(
         providerUsageCapture: normalized.providerUsageCapture,
         usageSessionId: options.usageSessionId ?? null,
         timedOut,
+        cancelled,
         outputLogPath: options.outputLogPath ?? null
       };
       void resolveProcessResult(profile.tool, result, resolve);

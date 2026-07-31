@@ -1,5 +1,6 @@
+import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { writeJsonAtomic } from "./atomic.js";
@@ -15,7 +16,7 @@ import { canonicalizeIntentPath } from "./canonicalize.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { loadConfig } from "./config.js";
 import { normalizeAllowedFileIntents, type AgentRole, type AllowedFileIntent, type TaskContract } from "./contract.js";
-import { readEvents } from "./events.js";
+import { appendEvent, readEvents } from "./events.js";
 import { matchesAny } from "./glob.js";
 import { integratedTaskIdsFromEvents } from "./integration-state.js";
 import { extractJsonObject } from "./json.js";
@@ -26,6 +27,7 @@ import { isRoutingTaskType, type RoutingTaskType, routingTaskTypeExpectation } f
 import { checkPlanningAllowed } from "./spec.js";
 import { loadSpecDocument, type SpecResult, validateRequestedSpecId } from "./spec-format.js";
 import { validateRequestedTaskId } from "./task-id.js";
+import { latestTaskRunState } from "./run-state.js";
 import { workerProtectedPathReason, workerProtectedScopeReason } from "./worker-protected-paths.js";
 
 const execFileAsync = promisify(execFile);
@@ -123,6 +125,21 @@ export interface PlanLintResult {
   rule_count: number;
 }
 
+export interface PlanRatificationResult {
+  spec_id: string;
+  plan_hash: string;
+  plan_path: string;
+  task_count: number;
+}
+
+export interface PlanAmendmentResult {
+  amendment_id: string;
+  spec_id: string;
+  kind: "add_task" | "edit_task";
+  task_id: string;
+  status: "queued";
+}
+
 export interface GroundingEvidence {
   source: "git-tree";
   base_commit: string;
@@ -183,7 +200,11 @@ export async function planCommand(cwd: string, args: string[], options: PlanComm
             ? await groundTentativePlan(repoRoot, parsed.value.specId)
             : parsed.value.action === "lint"
               ? await lintTentativePlan(repoRoot, parsed.value.specId)
-              : await routeThrashEvaluation(repoRoot, parsed.value.specId, parsed.value.taskId, parsed.value.budget);
+              : parsed.value.action === "review"
+                ? await reviewPlanForRatification(repoRoot, parsed.value.specId)
+                : parsed.value.action === "ratify"
+                  ? await ratifyPlan(repoRoot, parsed.value.specId, parsed.value.expectedHash)
+                  : await routeThrashEvaluation(repoRoot, parsed.value.specId, parsed.value.taskId, parsed.value.budget);
   if (!result.ok) {
     console.error(`error: ${result.reason}`);
     return 1;
@@ -371,6 +392,8 @@ function parsePlanArgs(
   | { action: "generate"; specId: string; tool: string; outPath: string; steering?: string }
   | { action: "ground"; specId: string }
   | { action: "lint"; specId: string }
+  | { action: "review"; specId: string }
+  | { action: "ratify"; specId: string; expectedHash: string }
   | { action: "thrash"; specId: string; taskId: string; budget?: number }
 > {
   const [specId, flag, value, ...rest] = args;
@@ -402,6 +425,12 @@ function parsePlanArgs(
   if (flag === "--lint" && value === undefined && rest.length === 0) {
     return { ok: true, value: { action: "lint", specId } };
   }
+  if (flag === "--review" && value === undefined && rest.length === 0) {
+    return { ok: true, value: { action: "review", specId } };
+  }
+  if (flag === "--ratify" && typeof value === "string" && /^[a-f0-9]{64}$/u.test(value) && rest.length === 0) {
+    return { ok: true, value: { action: "ratify", specId, expectedHash: value } };
+  }
   if (flag === "--thrash" && typeof value === "string") {
     const taskIdResult = validateRequestedTaskId(value);
     if (!taskIdResult.ok) {
@@ -422,7 +451,7 @@ function parsePlanArgs(
 }
 
 function planUsage(): string {
-  return "usage: hivemind plan <spec-id> --check | --propose <plan-json-file> | --generate --tool <tool> --out <plan-json-file> [--steer <steering>] | --ground | --lint | --thrash <task-id> [--budget <n>]";
+  return "usage: hivemind plan <spec-id> --check | --propose <plan-json-file> | --generate --tool <tool> --out <plan-json-file> [--steer <steering>] | --ground | --lint | --review | --ratify <reviewed-plan-hash> | --thrash <task-id> [--budget <n>]";
 }
 
 function parseGeneratedPlan(stdout: string): SpecResult<unknown> {
@@ -592,14 +621,14 @@ export async function requireContractFromLintedPlan(
   specId: string,
   contract: TaskContract
 ): Promise<SpecResult<void>> {
-  const planResult = await loadCurrentLintedPlan(repoRoot, specId, "contract creation");
+  const planResult = await loadCurrentRatifiedPlan(repoRoot, specId, "contract creation");
   if (!planResult.ok) {
     return planResult;
   }
   const plan = planResult.value;
   const task = plan.tasks.find((entry) => entry.task_id === contract.task_id);
   if (task === undefined) {
-    return { ok: false, reason: `contract task ${contract.task_id} is not present in lint-passed plan ${tentativePlanRelativePath(specId)}` };
+    return { ok: false, reason: `contract task ${contract.task_id} is not present in the active ratified plan` };
   }
   if (task.grounded_scope === undefined) {
     return { ok: false, reason: `contract task ${contract.task_id} is not grounded in lint-passed plan` };
@@ -620,13 +649,23 @@ export async function requireTaskDependenciesIntegrated(
   specId: string,
   taskId: string
 ): Promise<SpecResult<void>> {
-  const planResult = await loadCurrentLintedPlan(repoRoot, specId, `task ${taskId} dependency check`);
+  const planResult = await loadCurrentRatifiedPlan(repoRoot, specId, `task ${taskId} dependency check`);
   if (!planResult.ok) {
-    return planResult;
+    const tentative = await loadTentativePlan(repoRoot, specId);
+    if (tentative.ok && tentative.value.tasks.some((task) => task.task_id === taskId)) {
+      return planResult;
+    }
+    if (!tentative.ok && !tentative.reason.startsWith("tentative plan not found:")) {
+      return { ok: false, reason: `task ${taskId} dependency check refused because plan state is unreadable: ${tentative.reason}` };
+    }
+    // Pre-M8 manually-authored contracts have no plan artifact. They remain
+    // executable for compatibility; every Hivemind-mediated contract creation
+    // now requires ratification in requireContractFromLintedPlan above.
+    return { ok: true, value: undefined };
   }
   const task = planResult.value.tasks.find((entry) => entry.task_id === taskId);
   if (task === undefined) {
-    return { ok: false, reason: `task ${taskId} is not present in lint-passed plan ${tentativePlanRelativePath(specId)}` };
+    return { ok: false, reason: `task ${taskId} is not present in the active ratified plan` };
   }
   if (task.depends_on.length === 0) {
     return { ok: true, value: undefined };
@@ -667,6 +706,264 @@ async function loadCurrentLintedPlan(repoRoot: string, specId: string, action: s
     return lintResult;
   }
   return { ok: true, value: plan };
+}
+
+export async function reviewPlanForRatification(
+  repoRoot: string,
+  specId: string
+): Promise<SpecResult<PlanRatificationResult>> {
+  const plan = await loadCurrentLintedPlan(repoRoot, specId, "plan ratification review");
+  if (!plan.ok) {
+    return plan;
+  }
+  const planHash = hashPlan(plan.value);
+  return {
+    ok: true,
+    value: {
+      spec_id: specId,
+      plan_hash: planHash,
+      plan_path: tentativePlanRelativePath(specId),
+      task_count: plan.value.tasks.length
+    }
+  };
+}
+
+export async function ratifyPlan(
+  repoRoot: string,
+  specId: string,
+  expectedHash: string
+): Promise<SpecResult<PlanRatificationResult>> {
+  if (!/^[a-f0-9]{64}$/u.test(expectedHash)) {
+    return { ok: false, reason: "plan ratification requires the exact 64-character hash shown by --review" };
+  }
+  const reviewed = await reviewPlanForRatification(repoRoot, specId);
+  if (!reviewed.ok) {
+    return reviewed;
+  }
+  if (reviewed.value.plan_hash !== expectedHash) {
+    return {
+      ok: false,
+      reason: `plan changed after review: expected ${expectedHash}, current hash is ${reviewed.value.plan_hash}`
+    };
+  }
+  const plan = await loadCurrentLintedPlan(repoRoot, specId, "plan ratification");
+  if (!plan.ok) {
+    return plan;
+  }
+  const relativePath = ratifiedPlanRelativePath(specId, expectedHash);
+  const absolutePath = path.join(repoRoot, relativePath);
+  await mkdir(path.dirname(absolutePath), { recursive: true });
+  try {
+    await writeFile(absolutePath, `${JSON.stringify(plan.value, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+  } catch (error: unknown) {
+    if (!isNodeError(error, "EEXIST")) {
+      throw error;
+    }
+    const existing = await readFile(absolutePath, "utf8");
+    if (hashPlan(JSON.parse(existing) as TentativePlan) !== expectedHash) {
+      return { ok: false, reason: `immutable ratified plan artifact conflicts at ${relativePath}` };
+    }
+  }
+  const events = await readEvents(repoRoot);
+  if (!events.ok) {
+    return events;
+  }
+  const alreadyRecorded = events.value.some((event) =>
+    event.type === "plan.ratified" &&
+    event.data.spec_id === specId &&
+    event.data.plan_hash === expectedHash &&
+    event.data.plan_path === relativePath
+  );
+  if (!alreadyRecorded) {
+    const event = await appendEvent(repoRoot, {
+      type: "plan.ratified",
+      task_id: null,
+      data: {
+        version: 1,
+        spec_id: specId,
+        plan_hash: expectedHash,
+        plan_path: relativePath,
+        base_commit: plan.value.base_commit,
+        task_count: plan.value.tasks.length,
+        confirmation: "exact_plan_hash"
+      }
+    });
+    if (!event.ok) {
+      return event;
+    }
+  }
+  return {
+    ok: true,
+    value: {
+      spec_id: specId,
+      plan_hash: expectedHash,
+      plan_path: relativePath,
+      task_count: plan.value.tasks.length
+    }
+  };
+}
+
+export async function loadCurrentRatifiedPlan(
+  repoRoot: string,
+  specId: string,
+  action = "operation"
+): Promise<SpecResult<TentativePlan>> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) {
+    return events;
+  }
+  const ratification = events.value.filter((event) =>
+    event.type === "plan.ratified" && event.data.spec_id === specId
+  ).at(-1);
+  if (ratification === undefined) {
+    return { ok: false, reason: `${action} requires an explicitly ratified plan` };
+  }
+  const planPath = ratification.data.plan_path;
+  const planHash = ratification.data.plan_hash;
+  if (
+    typeof planPath !== "string" ||
+    typeof planHash !== "string" ||
+    planPath !== ratifiedPlanRelativePath(specId, planHash)
+  ) {
+    return { ok: false, reason: `${action} refused: durable plan ratification metadata is invalid` };
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(path.join(repoRoot, planPath), "utf8"));
+  } catch {
+    return { ok: false, reason: `${action} refused: ratified plan artifact is missing or unreadable` };
+  }
+  const validated = validateStoredTentativePlan(raw, specId);
+  if (!validated.ok) {
+    return { ok: false, reason: `${action} refused: ratified plan artifact is invalid: ${validated.reason}` };
+  }
+  if (hashPlan(validated.value) !== planHash) {
+    return { ok: false, reason: `${action} refused: ratified plan artifact hash does not match durable ratification` };
+  }
+  return validated;
+}
+
+export async function queuePlanAmendment(
+  repoRoot: string,
+  specId: string,
+  request: unknown
+): Promise<SpecResult<PlanAmendmentResult>> {
+  if (!isRecord(request)) {
+    return { ok: false, reason: "plan amendment must be a JSON object" };
+  }
+  const allowed = new Set(["kind", "task", "execution_group"]);
+  const extra = Object.keys(request).filter((key) => !allowed.has(key));
+  if (extra.length > 0) {
+    return { ok: false, reason: `plan amendment contains unsupported field: ${extra[0]}` };
+  }
+  if (request.kind !== "add_task" && request.kind !== "edit_task") {
+    return { ok: false, reason: "plan amendment kind must be add_task or edit_task" };
+  }
+  if (!isRecord(request.task) || typeof request.task.task_id !== "string") {
+    return { ok: false, reason: "plan amendment task must be a task object with task_id" };
+  }
+  const taskId = validateRequestedTaskId(request.task.task_id);
+  if (!taskId.ok) {
+    return taskId;
+  }
+  const taskIdValue = request.task.task_id;
+  const plan = await loadCurrentRatifiedPlan(repoRoot, specId, "plan amendment");
+  if (!plan.ok) {
+    return plan;
+  }
+  const existingIndex = plan.value.tasks.findIndex((task) => task.task_id === taskIdValue);
+  if (request.kind === "add_task" && existingIndex >= 0) {
+    return { ok: false, reason: `add-only amendment refused: task ${taskIdValue} already exists` };
+  }
+  if (request.kind === "edit_task" && existingIndex < 0) {
+    return { ok: false, reason: `task edit refused: task ${taskIdValue} is not in the active ratified plan` };
+  }
+  const events = await readEvents(repoRoot);
+  if (!events.ok) {
+    return events;
+  }
+  if (request.kind === "edit_task" && latestTaskRunState(events.value, taskIdValue).state !== "not_started") {
+    return { ok: false, reason: `task edit refused: ${taskIdValue} has started and its contract is immutable; redirect or cancel and re-plan` };
+  }
+
+  const tasks: Array<Record<string, unknown>> = plan.value.tasks.map(toPlanInputTask);
+  if (existingIndex >= 0) {
+    tasks[existingIndex] = request.task;
+  } else {
+    tasks.push(request.task);
+  }
+  const groups = plan.value.execution_groups.map((group) => ({ ...group, task_ids: [...group.task_ids] }));
+  if (request.kind === "add_task") {
+    if (!isRecord(request.execution_group) || typeof request.execution_group.group_id !== "string") {
+      return { ok: false, reason: "add_task amendment requires an execution_group with group_id and mode" };
+    }
+    const amendmentGroup = request.execution_group;
+    const groupId = amendmentGroup.group_id as string;
+    const group = groups.find((entry) => entry.group_id === groupId);
+    if (group === undefined) {
+      if (request.execution_group.mode !== "parallel" && request.execution_group.mode !== "sequence") {
+        return { ok: false, reason: "new amendment execution_group mode must be parallel or sequence" };
+      }
+      groups.push({ group_id: groupId, mode: request.execution_group.mode, task_ids: [taskIdValue] });
+    } else {
+      group.task_ids.push(taskIdValue);
+    }
+  }
+  const parsed = await parseTentativePlanInput(
+    repoRoot,
+    specId,
+    { tasks, execution_groups: groups },
+    new Set(plan.value.tasks.map((task) => task.task_id))
+  );
+  if (!parsed.ok) {
+    return { ok: false, reason: `plan amendment refused: ${parsed.reason}` };
+  }
+  const amendmentId = `A-${randomUUID()}`;
+  const appended = await appendEvent(repoRoot, {
+    type: "plan.amendment_queued",
+    task_id: taskIdValue,
+    data: {
+      version: 1,
+      amendment_id: amendmentId,
+      spec_id: specId,
+      kind: request.kind,
+      task: parsed.value.tasks.find((task) => task.task_id === taskIdValue) as TentativePlanTask,
+      execution_groups: parsed.value.execution_groups,
+      base_plan_hash: hashPlan(plan.value),
+      status: "queued",
+      authoritative_effect: "none_until_replanned_and_ratified"
+    }
+  });
+  return appended.ok
+    ? { ok: true, value: { amendment_id: amendmentId, spec_id: specId, kind: request.kind, task_id: taskIdValue, status: "queued" } }
+    : appended;
+}
+
+function hashPlan(plan: TentativePlan): string {
+  return createHash("sha256").update(JSON.stringify(plan)).digest("hex");
+}
+
+function toPlanInputTask(task: TentativePlanTask): Record<string, unknown> {
+  return {
+    task_id: task.task_id,
+    title: task.title,
+    task_type: task.task_type,
+    routing_task_type: task.routing_task_type,
+    mode: task.mode,
+    agent_role: task.agent_role,
+    draft_scope: task.draft_scope,
+    depends_on: task.depends_on,
+    parallel_safe: task.parallel_safe,
+    acceptance_criterion: task.acceptance_criterion,
+    ...(task.deterministic_validity_check === undefined ? {} : { deterministic_validity_check: task.deterministic_validity_check }),
+    required_tests: task.required_tests,
+    patch_requirements: task.patch_requirements,
+    critical_path_approved: task.critical_path_approved
+  };
+}
+
+function ratifiedPlanRelativePath(specId: string, planHash: string): string {
+  return `.hivemind/plans/ratified/${specId}/${planHash}.json`;
 }
 
 export async function resolveContractFilesAtBase(
@@ -1512,7 +1809,12 @@ function isBehavioralAcceptanceCriterion(criterion: string): boolean {
   );
 }
 
-async function parseTentativePlanInput(repoRoot: string, specId: string, raw: unknown): Promise<SpecResult<TentativePlanInput>> {
+async function parseTentativePlanInput(
+  repoRoot: string,
+  specId: string,
+  raw: unknown,
+  allowExistingTaskIds: ReadonlySet<string> = new Set()
+): Promise<SpecResult<TentativePlanInput>> {
   const specIdResult = validateRequestedSpecId(specId);
   if (!specIdResult.ok) {
     return specIdResult;
@@ -1537,7 +1839,7 @@ async function parseTentativePlanInput(repoRoot: string, specId: string, raw: un
   const tasks: TentativePlanInputTask[] = [];
   const taskIds = new Set<string>();
   for (const [index, entry] of raw.tasks.entries()) {
-    const task = await parseTentativeTask(repoRoot, index, entry);
+    const task = await parseTentativeTask(repoRoot, index, entry, allowExistingTaskIds);
     if (!task.ok) {
       return task;
     }
@@ -1576,7 +1878,12 @@ async function parseTentativePlanInput(repoRoot: string, specId: string, raw: un
   return { ok: true, value: { tasks, execution_groups: executionGroups } };
 }
 
-async function parseTentativeTask(repoRoot: string, index: number, raw: unknown): Promise<SpecResult<TentativePlanInputTask>> {
+async function parseTentativeTask(
+  repoRoot: string,
+  index: number,
+  raw: unknown,
+  allowExistingTaskIds: ReadonlySet<string>
+): Promise<SpecResult<TentativePlanInputTask>> {
   if (!isRecord(raw)) {
     return { ok: false, reason: `tasks[${index}] must be a JSON object` };
   }
@@ -1608,7 +1915,7 @@ async function parseTentativeTask(repoRoot: string, index: number, raw: unknown)
   if (!taskIdResult.ok) {
     return { ok: false, reason: `tasks[${index}].${taskIdResult.reason}` };
   }
-  if (await exists(path.join(repoRoot, ".hivemind", "tasks", `${raw.task_id}.contract.json`))) {
+  if (!allowExistingTaskIds.has(raw.task_id) && await exists(path.join(repoRoot, ".hivemind", "tasks", `${raw.task_id}.contract.json`))) {
     return { ok: false, reason: `tasks[${index}].task_id collides with existing contract: .hivemind/tasks/${raw.task_id}.contract.json` };
   }
 

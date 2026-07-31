@@ -22,6 +22,7 @@ import { submitCommand } from "./submit.js";
 import { verifyCommand } from "./verify.js";
 import { valueQualityCommand } from "./value-quality.js";
 import { worktreeCommand } from "./worktree.js";
+import { workspaceActionCommand } from "./workspace-actions.js";
 
 async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
@@ -84,6 +85,10 @@ async function main(argv: string[]): Promise<number> {
 
   if (command === "worktree") {
     return worktreeCommand(process.cwd(), rest);
+  }
+
+  if (command === "workspace") {
+    return workspaceActionCommand(process.cwd(), rest);
   }
 
   if (command === "run") {
