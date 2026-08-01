@@ -460,7 +460,7 @@ function GroupInspector({ group }: { group: SwarmGroupNode }): React.JSX.Element
 }
 
 function RootInspector({ tree, inspection }: { tree: SwarmTree; inspection: WorkspaceInspection | null }): React.JSX.Element {
-  return <><p className="agent-current-work">{inspection?.manager_session?.status === "active" ? "Coordinating the next project step from durable state." : "Watching the project and waiting for the next scheduled step."}</p><dl className="agent-facts"><div><dt>Work groups</dt><dd>{tree.groups.length}</dd></div><div><dt>Tasks</dt><dd>{tree.task_count}</dd></div><div><dt>Supporting agents</dt><dd>{tree.subagent_count}</dd></div><div><dt>Session</dt><dd>{inspection?.manager_session?.status ?? "Not running"}</dd></div></dl></>;
+  return <><p className="agent-current-work">{inspection?.manager_session?.status === "active" ? "Coordinating the next project step from the current project records." : "Watching the project and waiting for the next scheduled step."}</p><dl className="agent-facts"><div><dt>Work groups</dt><dd>{tree.groups.length}</dd></div><div><dt>Tasks</dt><dd>{tree.task_count}</dd></div><div><dt>Supporting agents</dt><dd>{tree.subagent_count}</dd></div><div><dt>Session</dt><dd>{inspection?.manager_session?.status ?? "Not running"}</dd></div></dl></>;
 }
 
 function ActionComposer({ mode, value, busy, onChange, onClose, onSubmit }: { mode: Exclude<ActionMode, null>; value: string; busy: boolean; onChange: (value: string) => void; onClose: () => void; onSubmit: () => void }): React.JSX.Element {
@@ -515,13 +515,13 @@ function selectionTitle(selected: ReturnType<typeof resolveSelection>): string {
 }
 
 function taskWorkLabel(task: TaskProjection): string {
-  const labels: Record<string, string> = { planned: "Waiting for its dependencies and turn.", running: "Working inside the approved file boundary.", paused: "Paused until provider capacity returns.", submitted: "Change submitted for checks.", accepted: "Scope checks passed; waiting for project checks.", rejected: "The submitted change needs a revision.", blocked: "This task cannot continue without attention.", failed: "The worker stopped before completing the task.", cancelled: "This task was stopped.", verified: "Project checks passed; this change is ready for explicit adoption.", merged: "The exact verified set is now on the project branch." };
+  const labels: Record<string, string> = { planned: "Waiting for its dependencies and turn.", running: "Working inside the approved file boundary.", paused: "Paused until capacity returns.", submitted: "Change submitted for checks.", accepted: "File checks passed; waiting for project checks.", rejected: "The submitted change needs a revision.", blocked: "This task cannot continue without attention.", failed: "The worker stopped before completing the task.", cancelled: "This task was stopped.", verified: "Project checks passed; this change is ready for explicit adoption.", merged: "The exact verified set is now on the project branch." };
   return labels[task.state] ?? "Current state published by the daemon.";
 }
 
 function stateLabel(state: SwarmTree["state"]): string { return state === "needs-you" ? "Needs you" : capitalize(state); }
 function toneBadge(state: SwarmTree["state"]): "live" | "danger" | "warning" | "good" { return state === "needs-you" ? "danger" : state === "waiting" ? "warning" : state === "done" ? "good" : "live"; }
-function movementLabel(stage: string): string { return stage === "checks" ? "Scope checks passed" : stage === "tests" ? "Tests completed" : stage === "merged" ? "Merged into the project" : "Ready to adopt"; }
+function movementLabel(stage: string): string { return stage === "checks" ? "File checks passed" : stage === "tests" ? "Tests completed" : stage === "merged" ? "Merged into the project" : "Ready to adopt"; }
 function plainSubagentKind(kind: SwarmSubagentNode["kind"]): string { return kind === "quality-draft" ? "Independent draft" : kind === "characterization" ? "Test writer" : "Scout"; }
 function capitalize(value: string): string { return `${value.charAt(0).toUpperCase()}${value.slice(1)}`; }
 function formatClock(value: string): string { const date = new Date(value); return Number.isNaN(date.valueOf()) ? "--:--" : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }); }

@@ -89,7 +89,6 @@ describe("React workspace boundary", () => {
       "Paused for capacity",
       "Worker stopped",
       "Needs you",
-      "Later",
       "Guidance is read on the next step",
       "Approve and start"
     ]) {
@@ -117,6 +116,7 @@ describe("React workspace boundary", () => {
     const audit = await readFile(path.resolve(desktopRoot, "..", "docs", "m8-action-routing-audit.md"), "utf8");
     const actions = [...work.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
     expect(new Set(actions)).toEqual(new Set([
+      "change.inspect",
       "guidance.record",
       "manager.continue",
       "manager.start",
@@ -134,17 +134,21 @@ describe("React workspace boundary", () => {
     expect(inspection).toContain('type: "adoption.execute"');
     expect(audit).toContain("`adoption.review`");
     expect(audit).toContain("`adoption.execute`");
-    expect(work).toMatch(/if \(!item\.action\) return;[\s\S]*await onAction\(item\.action\)/u);
+    expect(work).toMatch(/if \(!item\.action\) return;[\s\S]*await onAction<[^>]+>\(item\.action\)/u);
     expect(work).toMatch(/item\.action\.type === "manager\.retry_blocked"[\s\S]*type: "manager\.continue"/u);
     expect(audit).toContain("`manager.approve_pending`");
     expect(work).toMatch(/Guidance is read on the next step and does not change work already in progress/u);
     expect(work).toMatch(/Nothing starts until you review and approve this exact plan/u);
+    expect(work).not.toMatch(/title="Later"|<h2>Routing<\/h2>|<h2>Draft comparisons<\/h2>/u);
+    expect(work).toMatch(/change_set\.changed_files\.map/u);
+    expect(work).toMatch(/type: "change\.inspect"/u);
   });
 
   test("prompt stays in the fixed Work layout and text does not truncate mid-word", async () => {
     const styles = await readFile(path.join(desktopRoot, "src", "styles.css"), "utf8");
     expect(styles).toMatch(/\.work-tab[\s\S]*grid-template-rows:[^;]*minmax\(0, 1fr\) auto/u);
-    expect(styles).toMatch(/\.prompt-dock\s*\{/u);
+    expect(styles).toMatch(/\.prompt-dock\s*\{[^}]*z-index:\s*20/u);
+    expect(styles).toMatch(/\.work-layout\s*\{[^}]*overflow:\s*hidden/u);
     expect(styles).not.toMatch(/text-overflow:\s*ellipsis/u);
   });
 
@@ -192,6 +196,9 @@ describe("React workspace boundary", () => {
     expect(source).not.toMatch(/reviewMemoryProposal|memory\.review_handoff|Promote|Approve/u);
     expect(memory).toMatch(/The app cannot approve this item/u);
     expect(memory).toMatch(/Review in a terminal/u);
+    expect(memory).toMatch(/<h2>Later<\/h2>/u);
+    expect(memory).toMatch(/title="Routing changes"/u);
+    expect(memory).toMatch(/title="Draft tests"/u);
     expect(history).toMatch(/read-only project evidence/u);
     expect(source).not.toMatch(/Reached merge/iu);
     expect(history).toMatch(/run\.merged_tasks/u);

@@ -18,6 +18,12 @@ export interface WorkspaceQueueItem {
   created_at: string;
   task_id: string | null;
   action: WorkspaceAction | null;
+  change_set?: {
+    verification_id: string;
+    base_branch: string;
+    task_ids: string[];
+    changed_files: string[];
+  };
 }
 
 export interface WorkspacePlanTask {

@@ -35,6 +35,17 @@ test("one exact reviewed verification set advances the base once and retains bot
     assert.equal(manifest.verification.tests, "pass");
     assert.equal(await gitStdout(repo, ["rev-parse", "HEAD"]), baseCommit);
 
+    const awaitingReview = await inspectWorkspace(repo);
+    assert.equal(awaitingReview.ok, true, awaitingReview.ok ? undefined : awaitingReview.reason);
+    if (!awaitingReview.ok) return;
+    const changeSet = awaitingReview.value.needs_you.find((item) => item.kind === "adoption_ready")?.change_set;
+    assert.deepEqual(changeSet, {
+      verification_id: verificationId,
+      base_branch: manifest.base_branch,
+      task_ids: ["T-001"],
+      changed_files: ["README.md"]
+    });
+
     const review = await reviewVerifiedSetAdoption(repo, verificationId);
     assert.equal(review.ok, true, review.ok ? undefined : review.reason);
     if (!review.ok) return;

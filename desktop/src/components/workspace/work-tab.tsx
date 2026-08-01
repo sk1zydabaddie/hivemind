@@ -8,15 +8,14 @@ import {
   CheckCircle2,
   ChevronRight,
   Clock3,
+  FileDiff,
   FileCode2,
   Layers3,
   MessageSquareText,
   PencilLine,
   Play,
   Plus,
-  Route,
   Send,
-  Sparkles,
   TerminalSquare,
   X
 } from "lucide-react";
@@ -24,7 +23,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   leaseRows,
-  qualityRunRows,
   taskRows,
   taskStateCounts,
   type BoardProjection,
@@ -40,6 +38,7 @@ import type {
   WorkspaceQueueItem
 } from "../../lib/workspace-actions";
 import { plainActionError } from "../../lib/plain-language";
+import { groupConsecutiveActivity, summarizeWorkerOutput } from "../../lib/work-presentation";
 import { Badge } from "../ui/badge";
 import { ScrollArea } from "../ui/scroll-area";
 
@@ -111,6 +110,9 @@ export function WorkTab({
   } | null>(null);
   const [redirectOpen, setRedirectOpen] = useState(false);
   const [redirectText, setRedirectText] = useState("");
+  const [changeSetPatch, setChangeSetPatch] = useState<{ verificationId: string; text: string } | null>(null);
+  const [changeSetPatchError, setChangeSetPatchError] = useState("");
+  const [changeSetPatchLoading, setChangeSetPatchLoading] = useState(false);
   const activityEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -223,7 +225,7 @@ export function WorkTab({
     setBusy(true);
     setFeedback("");
     try {
-      await onAction(item.action);
+      const result = await onAction<{ task_ids?: string[] }>(item.action);
       if (item.action.type === "manager.retry_blocked" && managerSession) {
         await onAction({
           type: "manager.continue",
@@ -234,13 +236,41 @@ export function WorkTab({
           }
         });
         setFeedback("The project check is ready for your approval with the refreshed project state.");
+      } else if (item.action.type === "adoption.review") {
+        setFeedback("The exact change set is ready for final authorization.");
+      } else if (item.action.type === "adoption.execute") {
+        const taskCount = result.task_ids?.length ?? item.change_set?.task_ids.length ?? 0;
+        const branch = item.change_set?.base_branch ?? "the project branch";
+        setFeedback(`Adopted ${taskCount} ${taskCount === 1 ? "task" : "tasks"} into ${branch}.`);
       } else {
-        setFeedback("The reviewed action was accepted.");
+        setFeedback(actionSuccessMessage(item.action.type));
       }
     } catch (error) {
       setFeedback(plainActionError(error));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const loadChangeSetPatch = async (item: WorkspaceQueueItem): Promise<void> => {
+    const changeSet = item.change_set;
+    if (!changeSet || changeSetPatch?.verificationId === changeSet.verification_id) return;
+    setChangeSetPatchLoading(true);
+    setChangeSetPatchError("");
+    try {
+      const sections: string[] = [];
+      for (const taskId of changeSet.task_ids) {
+        const result = await onAction<{ task_id: string; diff: string }>({
+          type: "change.inspect",
+          payload: { task_id: taskId }
+        });
+        sections.push(`# ${result.task_id}\n${result.diff.trimEnd()}`);
+      }
+      setChangeSetPatch({ verificationId: changeSet.verification_id, text: sections.join("\n\n") });
+    } catch (error) {
+      setChangeSetPatchError(plainActionError(error));
+    } finally {
+      setChangeSetPatchLoading(false);
     }
   };
 
@@ -262,6 +292,10 @@ export function WorkTab({
             <AttentionCard
               item={attention}
               busy={busy}
+              patch={attention.change_set?.verification_id === changeSetPatch?.verificationId ? changeSetPatch?.text ?? null : null}
+              patchError={changeSetPatchError}
+              patchLoading={changeSetPatchLoading}
+              onLoadPatch={() => void loadChangeSetPatch(attention)}
               onOpen={() => {
                 if (attention.kind === "plan_review") {
                   void openPlanReview();
@@ -302,16 +336,17 @@ export function WorkTab({
             <ActivityStream events={projection.recentEvents} endRef={activityEndRef} />
           </div>
 
-          <TaskDetails
-            task={selected}
-            projection={projection}
-            onRedirect={() => setRedirectOpen(true)}
-          />
+          {selected ? (
+            <TaskDetails
+              task={selected}
+              projection={projection}
+              onRedirect={() => setRedirectOpen(true)}
+            />
+          ) : null}
         </div>
 
         <QueueColumn
           inspection={inspection}
-          projection={projection}
           busy={busy}
           onOpenPlan={() => void openPlanReview()}
           onSelectTask={onSelectTask}
@@ -494,12 +529,20 @@ function RunSummary({
 function AttentionCard({
   item,
   busy,
+  patch,
+  patchError,
+  patchLoading,
+  onLoadPatch,
   onOpen,
   onApprove,
   onDismiss
 }: {
   item: WorkspaceQueueItem;
   busy: boolean;
+  patch: string | null;
+  patchError: string;
+  patchLoading: boolean;
+  onLoadPatch: () => void;
   onOpen: () => void;
   onApprove: () => void;
   onDismiss: () => void;
@@ -510,6 +553,22 @@ function AttentionCard({
       <div>
         <strong>{item.title}</strong>
         <p>{plainPrimaryDetail(item.detail, item.kind)}</p>
+        {item.change_set ? (
+          <div className="adoption-review-detail">
+            <span>Into <strong>{item.change_set.base_branch}</strong></span>
+            <ul aria-label="Files in this change set">
+              {item.change_set.changed_files.map((file) => <li key={file}><code>{file}</code></li>)}
+            </ul>
+            <details onToggle={(event) => {
+              if (event.currentTarget.open) onLoadPatch();
+            }}>
+              <summary><FileDiff size={14} />View exact patch</summary>
+              {patchLoading ? <p>Loading the verified patch...</p> : null}
+              {patchError ? <p role="status">{patchError}</p> : null}
+              {patch ? <pre>{patch}</pre> : null}
+            </details>
+          </div>
+        ) : null}
       </div>
       {item.action ? (
         <button className="button-primary" type="button" disabled={busy} onClick={onApprove}>
@@ -638,20 +697,20 @@ function ActivityStream({
   events: BoardProjection["recentEvents"];
   endRef: React.RefObject<HTMLDivElement | null>;
 }): React.JSX.Element {
-  const chronological = [...events].reverse();
+  const groups = groupConsecutiveActivity(events);
   return (
     <section className="surface activity-stream" aria-labelledby="activity-title">
       <header className="section-heading"><div><h2 id="activity-title">Activity</h2><span>Newest at the bottom</span></div></header>
       <ScrollArea className="activity-scroll">
-        {chronological.length === 0 ? (
+        {groups.length === 0 ? (
           <div className="intentional-empty compact-empty"><Clock3 size={22} /><strong>Quiet for now</strong><span>Project updates will appear here as they happen.</span></div>
         ) : (
           <ol className="activity-list">
-            {chronological.map((event, index) => (
+            {groups.map(({ event, count }, index) => (
               <li key={`${event.ts}-${event.type}-${index}`}>
                 <time>{formatClock(event.ts)}</time>
                 <span className={`activity-dot event-${eventTone(event.type)}`} />
-                <span>{eventDescription(event)}</span>
+                <span>{eventDescription(event)}{count > 1 ? <small className="activity-count">{count} similar updates</small> : null}</span>
               </li>
             ))}
             <div ref={endRef} />
@@ -667,18 +726,16 @@ function TaskDetails({
   projection,
   onRedirect
 }: {
-  task: TaskProjection | null;
+  task: TaskProjection;
   projection: BoardProjection;
   onRedirect: () => void;
 }): React.JSX.Element {
-  if (!task) {
-    return (
-      <section className="surface task-details intentional-empty">
-        <TerminalSquare size={23} /><strong>Select a task</strong><span>Its files, live output, and current issue will appear here.</span>
-      </section>
-    );
-  }
+  const [outputMode, setOutputMode] = useState<"summary" | "raw">("summary");
+  useEffect(() => setOutputMode("summary"), [task.task_id]);
   const files = leaseRows(projection).filter((lease) => lease.taskId === task.task_id);
+  const output = outputMode === "summary"
+    ? summarizeWorkerOutput(projection.selectedOutput)
+    : projection.selectedOutput.map((record) => `[${formatClock(record.ts)}] ${record.text}`).join("\n");
   return (
     <section className="surface task-details">
       <header className="section-heading">
@@ -687,9 +744,15 @@ function TaskDetails({
       </header>
       <div className="task-detail-grid">
         <div className="task-output-panel">
-          <div className="subheading"><span><TerminalSquare size={13} />Live output</span><small>{projection.selectedOutput.length} records</small></div>
+          <div className="subheading">
+            <span><TerminalSquare size={13} />Live output</span>
+            <span className="output-mode" role="group" aria-label="Worker output detail">
+              <button type="button" className={outputMode === "summary" ? "is-active" : ""} onClick={() => setOutputMode("summary")}>Highlights</button>
+              <button type="button" className={outputMode === "raw" ? "is-active" : ""} onClick={() => setOutputMode("raw")}>Full output</button>
+            </span>
+          </div>
           <ScrollArea className="output-scroll">
-            <pre className="task-output">{projection.selectedOutput.length > 0 ? projection.selectedOutput.map((record) => `[${formatClock(record.ts)}] ${record.text}`).join("\n") : "Waiting for this worker to produce output."}</pre>
+            <pre className="task-output">{projection.selectedOutput.length > 0 ? output : "Waiting for this worker to produce output."}</pre>
           </ScrollArea>
         </div>
         <div className="task-file-panel">
@@ -705,14 +768,12 @@ function TaskDetails({
 
 function QueueColumn({
   inspection,
-  projection,
   busy,
   onOpenPlan,
   onSelectTask,
   onApprove
 }: {
   inspection: WorkspaceInspection | null;
-  projection: BoardProjection;
   busy: boolean;
   onOpenPlan: () => void;
   onSelectTask: (taskId: string) => void;
@@ -725,11 +786,6 @@ function QueueColumn({
           <QueueRow key={item.id} item={item} busy={busy} onOpen={() => item.kind === "plan_review" ? onOpenPlan() : item.task_id ? onSelectTask(item.task_id) : undefined} onApprove={() => onApprove(item)} />
         ))}
       </QueuePanel>
-      <QueuePanel title="Later" count={inspection?.later.length ?? 0} empty="Review backlog is clear.">
-        {inspection?.later.map((item) => <QueueRow key={item.id} item={item} busy={busy} onOpen={() => item.task_id ? onSelectTask(item.task_id) : undefined} onApprove={() => undefined} />)}
-      </QueuePanel>
-      <RoutingPanel projection={projection} />
-      <QualityPanel projection={projection} />
     </aside>
   );
 }
@@ -755,22 +811,10 @@ function queueActionLabel(actionType: string): string {
   return "Approve";
 }
 
-function RoutingPanel({ projection }: { projection: BoardProjection }): React.JSX.Element {
-  const observations = projection.routingObservations.slice(0, 2);
-  return (
-    <section className="surface compact-panel"><header className="section-heading"><div><h2>Routing</h2><span>Recent measured runs</span></div><Route size={15} /></header>
-      {observations.length === 0 ? <p className="panel-empty">No measured provider runs yet.</p> : <div className="compact-list">{observations.map((item) => <div key={`${item.task_id}-${item.ts}`}><span><strong>{item.provider}</strong><small>{item.task_id}</small></span><b>{item.effective_tokens === null ? "No total" : `${formatCompact(item.effective_tokens)} tokens`}</b></div>)}</div>}
-    </section>
-  );
-}
-
-function QualityPanel({ projection }: { projection: BoardProjection }): React.JSX.Element {
-  const runs = qualityRunRows(projection).slice(0, 2);
-  return (
-    <section className="surface compact-panel"><header className="section-heading"><div><h2>Draft comparisons</h2><span>Independent candidate work</span></div><Sparkles size={15} /></header>
-      {runs.length === 0 ? <p className="panel-empty">No draft comparisons yet.</p> : <div className="compact-list">{runs.map((run) => <div key={run.quality_run_id}><span><strong>{run.task_id}</strong><small>{plainQualityStatus(run.status)}</small></span><b>{run.drafts_verified}/{run.drafts_started} checked</b></div>)}</div>}
-    </section>
-  );
+function actionSuccessMessage(actionType: string): string {
+  if (actionType === "manager.approve_pending") return "The next project step was approved.";
+  if (actionType === "verification.rerun") return "Fresh project checks completed.";
+  return "The requested action completed.";
 }
 
 function PromptComposer({
@@ -951,7 +995,7 @@ function phasesFor(task: TaskProjection, integrationFailure: string | null = nul
   return [
     { key: "scoped", label: "Ready", status: task.lease_files.length > 0 || task.state !== "planned" ? "complete" : "active" },
     { key: "running", label: "Working", status: failure ? "failed" : task.state === "paused" ? "waiting" : task.state === "running" ? "active" : ["submitted", "accepted", "verified"].includes(task.state) ? "complete" : "waiting" },
-    { key: "scope", label: "Scope", status: task.state === "rejected" ? "failed" : task.patch.verdict === "accept" || task.state === "verified" ? "complete" : task.patch.submitted ? "active" : "waiting" },
+    { key: "scope", label: "Files", status: task.state === "rejected" ? "failed" : task.patch.verdict === "accept" || task.state === "verified" ? "complete" : task.patch.submitted ? "active" : "waiting" },
     { key: "verified", label: "Verified", status: integrationFailure !== null || task.integration === "blocked" || task.integration === "failed" ? "failed" : task.state === "verified" || task.integration === "passed" ? "complete" : task.integration === "queued" ? "active" : "waiting" }
   ];
 }
@@ -959,18 +1003,22 @@ function phasesFor(task: TaskProjection, integrationFailure: string | null = nul
 function phaseDetail(task: TaskProjection, phase: string): string {
   if (phase === "scoped") return `${task.lease_files.length} files are inside this task's working boundary`;
   if (phase === "running") return task.state === "running" ? "The worker is active" : "The worker is not active";
-  if (phase === "scope") return task.patch.reason ?? "No scope-check result recorded yet";
+  if (phase === "scope") return task.patch.reason ?? "No file-check result recorded yet";
   return task.integration === "passed" ? "Project checks passed; ready for explicit adoption" : "Not verified against the project yet";
 }
 
 function eventDescription(event: HivemindEvent): string {
   const subject = event.task_id ? `${event.task_id} ` : "";
+  if (event.type === "adoption.completed") {
+    const taskCount = Array.isArray(event.data.task_ids) ? event.data.task_ids.length : 0;
+    return `Adopted ${taskCount} ${taskCount === 1 ? "task" : "tasks"} into the project branch`;
+  }
   const labels: Record<string, string> = {
     "task.created": "was added to the plan",
     "task.started": "started working",
     "task.completed": "finished its work",
     "task.failed": "stopped unexpectedly",
-    "task.paused": "paused for provider capacity",
+    "task.paused": "paused for capacity",
     "task.resumed": "resumed from saved work",
     "task.blocked": "needs help before it can continue",
     "task.redirected": "received new guidance",
@@ -981,12 +1029,12 @@ function eventDescription(event: HivemindEvent): string {
     "lease.approved": "can now edit its assigned files",
     "lease.released": "finished editing its assigned files",
     "patch.submitted": "submitted a change for checks",
-    "patch.accepted": "passed the file-scope checks",
+    "patch.accepted": "passed the file checks",
     "patch.rejected": "needs to revise its change",
     "integration.blocked": "Project checks are blocked",
     "integration.low_confidence": "A change has thin test coverage",
     "integration.passed": "Changes passed project checks and are ready to adopt",
-    "routing.observed": "A provider run was measured",
+    "routing.observed": "A model run was measured",
     "quality.draft_started": "An independent draft started",
     "quality.draft_verified": "An independent draft was checked",
     "quality.selection_decided": "A candidate change was selected for review"
@@ -1008,7 +1056,7 @@ function plainPrimaryDetail(detail: string, kind: WorkspaceQueueItem["kind"]): s
 }
 
 function plainTaskIssue(issue: string): string {
-  if (/quota|429|capacity/iu.test(issue)) return "Paused until provider capacity is available.";
+  if (/quota|429|capacity/iu.test(issue)) return "Paused until capacity is available.";
   if (/oracle|coverage/iu.test(issue)) return "Testing is too thin for this change.";
   if (/write[-_ ]intent|scope/iu.test(issue)) return "The worker tried to change a file outside this task.";
   return issue;
@@ -1022,11 +1070,6 @@ function integrationLanguage(status: string): { label: string; tone: string } {
   if (status === "passed") return { label: "Ready to adopt", tone: "good" };
   if (status === "running" || status === "queued") return { label: "Checking", tone: "live" };
   return { label: "Not verified yet", tone: "neutral" };
-}
-
-function plainQualityStatus(status: string): string {
-  const labels: Record<string, string> = { "candidate selected": "Candidate ready", "refinement complete": "Refinement ready", drafting: "Drafting", checking: "Checking", reviewing: "Reviewing", skipped: "Skipped", "no candidate": "No candidate" };
-  return labels[status] ?? "Recorded";
 }
 
 function tierTone(tier: WorkspacePlanTask["tier"]): "neutral" | "warning" | "danger" {

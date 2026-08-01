@@ -35,6 +35,12 @@ export interface WorkspaceQueueItem {
   created_at: string;
   task_id: string | null;
   action: { type: string; payload: Record<string, unknown> } | null;
+  change_set?: {
+    verification_id: string;
+    base_branch: string;
+    task_ids: string[];
+    changed_files: string[];
+  };
 }
 
 export interface WorkspacePlanTask {
@@ -763,6 +769,7 @@ async function buildQueues(
   }
   if (adoption.value.status === "ready" && adoption.value.verification_id !== null) {
     const verificationId = adoption.value.verification_id;
+    const baseBranch = adoption.value.base_branch ?? "the project branch";
     const reviewed = [...events].reverse().find((event) => event.type === "adoption.reviewed" && event.data.verification_id === verificationId);
     const reviewFailed = reviewed !== undefined && events.some((event) =>
       event.type === "adoption.failed" && event.data.pending_adoption_id === reviewed.data.pending_adoption_id && event.ts >= reviewed.ts
@@ -779,8 +786,8 @@ async function buildQueues(
       kind: "adoption_ready",
       title: exactReview ? "Confirm this exact change set" : "Fresh checks passed; review the change set",
       detail: exactReview
-        ? `${taskSummary} · ${fileSummary} · base ${baseSummary}. This one action moves the verified set onto the project branch.`
-        : `${taskSummary} · ${fileSummary} · base ${baseSummary}. Review binds this exact set before merge authorization appears.`,
+        ? `${taskSummary} / ${fileSummary} / base ${baseSummary}. This one action moves the verified set onto ${baseBranch}.`
+        : `${taskSummary} / ${fileSummary} / base ${baseSummary}. Review binds this exact set before merge authorization appears.`,
       created_at: exactReview ? reviewed!.ts : adoption.value.verified_at ?? new Date(0).toISOString(),
       task_id: null,
       action: exactReview ? {
@@ -791,7 +798,13 @@ async function buildQueues(
           expected_base_head: reviewed!.data.expected_base_head,
           expected_state_hash: reviewed!.data.expected_state_hash
         }
-      } : { type: "adoption.review", payload: { verification_id: verificationId } }
+      } : { type: "adoption.review", payload: { verification_id: verificationId } },
+      change_set: {
+        verification_id: verificationId,
+        base_branch: baseBranch,
+        task_ids: [...adoption.value.task_ids],
+        changed_files: [...adoption.value.changed_files]
+      }
     });
   }
   for (const event of latestTaskAttention(events)) {

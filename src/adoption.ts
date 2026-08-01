@@ -68,6 +68,7 @@ export interface AdoptionReadiness {
   task_ids: string[];
   changed_files: string[];
   base_commit: string | null;
+  base_branch: string | null;
   verified_at: string | null;
 }
 
@@ -108,7 +109,7 @@ export async function inspectLatestAdoptionReadiness(repoRoot: string): Promise<
   if (events.value.some((event) => event.type === "adoption.completed" && event.data.verification_id === verificationId)) {
     return { ok: true, value: {
       status: "adopted", reason_code: "none", reason: "The exact verified set is already on the project branch.",
-      verification_id: verificationId, task_ids: taskIds, changed_files: [], base_commit: null, verified_at: latest.ts
+      verification_id: verificationId, task_ids: taskIds, changed_files: [], base_commit: null, base_branch: null, verified_at: latest.ts
     } };
   }
   const state = await deriveAdoptionState(repoRoot, verificationId);
@@ -129,6 +130,7 @@ export async function inspectLatestAdoptionReadiness(repoRoot: string): Promise<
     task_ids: [...state.value.stored.manifest.task_ids],
     changed_files: [...state.value.stored.manifest.changed_files],
     base_commit: state.value.stored.manifest.base_commit,
+    base_branch: state.value.stored.manifest.base_branch,
     verified_at: latest.ts
   } };
 }
@@ -369,7 +371,7 @@ async function validateAdoptionOwnership(repoRoot: string, manifest: Verificatio
 }
 
 function emptyReadiness(): AdoptionReadiness {
-  return { status: "none", reason_code: "none", reason: "No verified set is waiting for adoption.", verification_id: null, task_ids: [], changed_files: [], base_commit: null, verified_at: null };
+  return { status: "none", reason_code: "none", reason: "No verified set is waiting for adoption.", verification_id: null, task_ids: [], changed_files: [], base_commit: null, base_branch: null, verified_at: null };
 }
 
 function blockedReadiness(
@@ -378,7 +380,7 @@ function blockedReadiness(
   reasonCode: AdoptionReadiness["reason_code"],
   reason: string
 ): AdoptionReadiness {
-  return { status: "needs_reverification", reason_code: reasonCode, reason, verification_id: null, task_ids: taskIds, changed_files: [], base_commit: null, verified_at: event.ts };
+  return { status: "needs_reverification", reason_code: reasonCode, reason, verification_id: null, task_ids: taskIds, changed_files: [], base_commit: null, base_branch: null, verified_at: event.ts };
 }
 
 function failedReadiness(event: HivemindEvent, verificationId: string, taskIds: string[], reason: string): AdoptionReadiness {
@@ -393,7 +395,7 @@ function failedReadiness(event: HivemindEvent, verificationId: string, taskIds: 
           : /clean base worktree|checked-out base branch/iu.test(reason)
             ? "base_worktree"
             : "unknown";
-  return { status: "needs_reverification", reason_code: reasonCode, reason, verification_id: verificationId, task_ids: taskIds, changed_files: [], base_commit: null, verified_at: event.ts };
+  return { status: "needs_reverification", reason_code: reasonCode, reason, verification_id: verificationId, task_ids: taskIds, changed_files: [], base_commit: null, base_branch: null, verified_at: event.ts };
 }
 
 function stringArray(value: unknown): string[] | null {
