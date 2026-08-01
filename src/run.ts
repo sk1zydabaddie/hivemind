@@ -1,8 +1,9 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { copyFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { invokeAgent, type InvokeAgentResult } from "./adapter.js";
+import { findDangerousAdapterArgs, invokeAgent, type InvokeAgentResult } from "./adapter.js";
 import { writeFileAtomic } from "./atomic.js";
 import { checkpointTask, loadTaskCheckpointResumeState } from "./checkpoint.js";
 import { loadConfig, type HivemindConfig, type RunCeiling } from "./config.js";
@@ -22,7 +23,7 @@ import { routeTaskProvider } from "./routing.js";
 import { latestTaskRunState } from "./run-state.js";
 import { taskCancellationRequested } from "./task-control.js";
 import { requireActiveSpecRatified } from "./spec.js";
-import { createTaskWorktree } from "./worktree.js";
+import { createTaskWorktree, removeTaskWorktree } from "./worktree.js";
 
 const execFileAsync = promisify(execFile);
 const agentLogPath = "agent.log";
@@ -229,6 +230,13 @@ async function prepareRunTask(
     return routeResult;
   }
   let selectedTool = routeResult.value.tool;
+  const dangerousArgs = findDangerousAdapterArgs(routeResult.value.profile.invoke);
+  if (dangerousArgs.length > 0 && options.allowDangerousAdapter !== true) {
+    return {
+      ok: false,
+      reason: `adapter profile "${selectedTool}" contains dangerous invocation flags (${dangerousArgs.join(", ")}); rerun with --allow-dangerous-adapter only for approved disposable gate runs`
+    };
+  }
 
   const ceiling = configResult.config.resource_policy?.run_ceiling;
   const preflightResult = checkRunCeilingPreflight(ceiling, routeResult.value.profile);
@@ -493,7 +501,7 @@ async function finishPreparedRunAttempt(
       invokeResult.exitCode,
       undefined,
       undefined,
-      { releaseLease: invokeResult.budget_exceeded === true }
+      { preserveWorktree: invokeResult.budget_exceeded === true }
     );
     return failed.ok ? invokeResult : failed;
   }
@@ -528,7 +536,15 @@ async function finishPreparedRunAttempt(
   );
   if (!postRunResult.ok) {
     await recordRoutingObservationBestEffort(repoRoot, prepared, invokeResult.value, 0);
-    const failed = await emitRunFailure(repoRoot, prepared, postRunResult.reason, invokeResult.value.exitCode);
+    const failed = await emitRunFailure(
+      repoRoot,
+      prepared,
+      postRunResult.reason,
+      invokeResult.value.exitCode,
+      undefined,
+      undefined,
+      { preserveWorktree: true }
+    );
     return failed.ok ? postRunResult : failed;
   }
 
@@ -769,10 +785,55 @@ async function emitRunFailure(
   toolExit?: number,
   diffPath?: string,
   changedFiles?: number,
-  options: { releaseLease?: boolean } = {}
+  options: { preserveWorktree?: boolean } = {}
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (options.preserveWorktree !== true) {
+    const archived = await archiveFailedRunLog(repoRoot, prepared.taskId, prepared.worktree);
+    if (!archived.ok) {
+      return emitRunEvent(
+        repoRoot,
+        {
+          type: "task.failed",
+          task_id: prepared.taskId,
+          data: {
+            run_id: prepared.runId,
+            tool: prepared.tool,
+            routing_task_type: prepared.contract.routing_task_type,
+            reason: `${reason}; failed-task log archival incomplete: ${archived.reason}`,
+            lease_released: [],
+            worktree_removed: false,
+            lease_held_for_retry: true
+          }
+        },
+        prepared.onEvent
+      );
+    }
+    const worktree = await removeTaskWorktree(repoRoot, prepared.taskId, { discardChanges: true });
+    if (!worktree.ok) {
+      return emitRunEvent(
+        repoRoot,
+        {
+          type: "task.failed",
+          task_id: prepared.taskId,
+          data: {
+            run_id: prepared.runId,
+            tool: prepared.tool,
+            routing_task_type: prepared.contract.routing_task_type,
+            reason: `${reason}; failed-task worktree cleanup incomplete: ${worktree.reason}`,
+            lease_released: [],
+            worktree_removed: false,
+            lease_held_for_retry: true,
+            ...(toolExit === undefined ? {} : { tool_exit: toolExit }),
+            ...(diffPath === undefined ? {} : { diff_path: diffPath }),
+            ...(changedFiles === undefined ? {} : { changed_files: changedFiles })
+          }
+        },
+        prepared.onEvent
+      );
+    }
+  }
   let releasedFiles: string[] | undefined;
-  if (options.releaseLease !== false) {
+  if (options.preserveWorktree !== true) {
     const released = await releaseLease(repoRoot, prepared.taskId);
     if (!released.ok) {
       return { ok: false, reason: `failed to release lease for failed task ${prepared.taskId}: ${released.reason}` };
@@ -791,6 +852,8 @@ async function emitRunFailure(
         routing_task_type: prepared.contract.routing_task_type,
         reason,
         ...(releasedFiles === undefined ? {} : { lease_released: releasedFiles }),
+        worktree_removed: options.preserveWorktree !== true,
+        lease_held_for_retry: options.preserveWorktree === true,
         ...(toolExit === undefined ? {} : { tool_exit: toolExit }),
         ...(diffPath === undefined ? {} : { diff_path: diffPath }),
         ...(changedFiles === undefined ? {} : { changed_files: changedFiles })
@@ -798,6 +861,24 @@ async function emitRunFailure(
     },
     prepared.onEvent
   );
+}
+
+async function archiveFailedRunLog(
+  repoRoot: string,
+  taskId: string,
+  worktreePath: string
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  try {
+    const destinationDir = path.join(repoRoot, ".hivemind", "patches", taskId);
+    await mkdir(destinationDir, { recursive: true });
+    await copyFile(path.join(worktreePath, agentLogPath), path.join(destinationDir, agentLogPath));
+    return { ok: true };
+  } catch (error: unknown) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+      return { ok: true };
+    }
+    return { ok: false, reason: formatErrorDetail(error, "unknown log archival failure") };
+  }
 }
 
 async function recordRoutingObservationBestEffort(

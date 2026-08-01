@@ -193,7 +193,7 @@ test("workspace prompt prepares a linted mixed-tier plan but cannot authorize or
       payload: { message: "Execute the exact ratified plan.", tool: "fixture-manager" }
     });
     assert.equal(failedStart.ok, false);
-    if (!failedStart.ok) assert.match(failedStart.reason, /at most one next action/u);
+    if (!failedStart.ok) assert.match(failedStart.reason, /single-only or taskless action/u);
     const afterFailedStart = await executeWorkspaceAction(repo, { type: "status.inspect", payload: {} });
     assert.equal(afterFailedStart.ok, true, afterFailedStart.ok ? undefined : afterFailedStart.reason);
     if (afterFailedStart.ok) {

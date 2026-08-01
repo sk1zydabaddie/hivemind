@@ -257,7 +257,7 @@ test("runTask captures diff but returns failure when the adapter times out", asy
     assert.match(result.reason, /worker fake exited 124/);
     assert.match(result.reason, /1 changed file/);
     assert.match(await readFile(path.join(repo, ".hivemind", "patches", "T-001", "diff.patch"), "utf8"), /\+changed before timeout/);
-    const log = await readFile(path.join(repo, ".hivemind", "worktrees", "T-001", "agent.log"), "utf8");
+    const log = await readFile(path.join(repo, ".hivemind", "patches", "T-001", "agent.log"), "utf8");
     assert.match(log, /timed_out: true/);
     const leases = await readActiveLeases(repo);
     assert.equal(leases.ok, true);

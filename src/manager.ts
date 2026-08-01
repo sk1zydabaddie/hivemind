@@ -18,6 +18,7 @@ import { createTaskContract, type CreateTaskContractResult } from "./contract.js
 import { loadAndValidateContract, normalizeContract, validateContract, type TaskContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
+import { formatErrorDetail } from "./error-detail.js";
 import { enqueueIntegrationPatch, integrateShadow, type EnqueueIntegrationPatchResult, type IntegrationStatus } from "./integrate.js";
 import { checkWriteIntent, type WriteIntentPass } from "./intent.js";
 import { extractJsonObject } from "./json.js";
@@ -55,8 +56,11 @@ interface ManagerSession {
 
 interface ManagerProposalState {
   proposal_id: string;
-  status: "pending" | "consumed";
+  status: "pending" | "consumed" | "discarded";
+  next_action_index?: number;
   consumed_at?: string;
+  discarded_at?: string;
+  discard_reason?: string;
 }
 
 interface ManagerWorkingSet {
@@ -152,6 +156,15 @@ export type ManagerAction =
   | { type: "enqueue_patch"; task_id: string }
   | { type: "admit_value_quality"; task_id: string; strategy: ValueQualityStrategy; n?: number }
   | { type: "integrate_shadow" };
+
+const MANAGER_BATCH_MAX_ACTIONS = 5;
+const PRE_WORKER_BATCH_SEQUENCE: ManagerAction["type"][] = [
+  "create_task_contract",
+  "request_lease",
+  "check_write_intent",
+  "create_worktree",
+  "run_worker"
+];
 
 export interface ManagerSessionResult {
   session_id: string;
@@ -356,6 +369,8 @@ async function startManagerSessionWithId(
   if (!proposedAction.ok) {
     return recordManagerProposalFailure(repoRoot, sessionId, proposedAction.reason);
   }
+  const proposalValidation = validateAutonomousSessionProposal(proposedAction.value);
+  if (!proposalValidation.ok) return proposalValidation;
   const session: ManagerSession = {
     version: 1,
     session_id: sessionId,
@@ -585,13 +600,13 @@ async function buildFullManagerProposalPrompt(repoRoot: string, message: string,
     value: [
       "You are the Hivemind manager/orchestrator. You PROPOSE actions; deterministic Hivemind gates DISPOSE.",
       "",
-      "Choose only the next single manager action from current durable state.",
-      "The actions array MUST contain zero or one action object. Never batch a pipeline or predict later actions in the same proposal.",
-      "Hivemind will execute and observe that one action before asking for another proposal.",
+      "Choose the next action or one bounded safe action batch from current durable state.",
+      "The actions array MUST contain zero to five action objects and MUST match one of the safe batch shapes below.",
+      "Hivemind executes each member sequentially through its own gate and stops at the first refusal or failure.",
       "",
       "Return exactly one JSON object and no prose outside it:",
       "{",
-      "  \"reason\": \"short explanation of the next single gated action\",",
+      "  \"reason\": \"short explanation of the next gated action or safe mechanical batch\",",
       "  \"human_approval_required_for\": [\"run_worker\", \"integrate_shadow\"],",
       "  \"actions\": [",
       "    {",
@@ -617,7 +632,7 @@ async function buildFullManagerProposalPrompt(repoRoot: string, message: string,
       "  ]",
       "}",
       "",
-      "Supported next-action object references (each line is an alternative; choose at most one):",
+      "Supported action object references:",
       "{ \"type\": \"get_status\" }",
       "{ \"type\": \"request_lease\", \"task_id\": \"T-001\" }",
       "{ \"type\": \"check_write_intent\", \"task_id\": \"T-001\", \"intent\": { \"task_id\": \"T-001\", \"intended_files\": [\"...\"], \"intended_symbols\": [], \"possible_risks\": [], \"will_not_change\": [\"...\"] } }",
@@ -629,7 +644,13 @@ async function buildFullManagerProposalPrompt(repoRoot: string, message: string,
       "{ \"type\": \"integrate_shadow\" }",
       "",
       "Hard rules:",
-      "- The actions array must contain zero or one action. A multi-action proposal is invalid and will be refused.",
+      "- The actions array must contain at most five actions. More than five is invalid and will be refused before any action executes.",
+      "- Multi-action proposals are allowed ONLY for one task and in one of these shapes:",
+      "  1. A contiguous segment of create_task_contract -> request_lease -> check_write_intent -> create_worktree -> run_worker. Never skip or reorder a step. run_worker, when present, is last.",
+      "  2. Exactly submit_patch -> analyze_patch for one task. analyze_patch is last.",
+      "- Every other action is single-only: get_status, scout_task, enqueue_patch, integrate_shadow, quality admission, redirect/replan decisions, and anything result-dependent.",
+      "- Never put an action after run_worker or analyze_patch. Their real outcome must be observed in durable state before another proposal.",
+      "- A batch is prediction, not authority: Hivemind independently gates each member and discards the remainder after the first refusal, failure, timeout, crash, escalation, or unexpected result.",
       "- Do not mark anything ratified, approved, accepted, integrated, or passed. You are proposing actions only.",
       "- Do not output self_approved, ratified, gate_verdict, result, skip_gates, or any other proof-like field.",
       "- If the plan is missing or not ready, propose get_status and explain the blocking state in reason.",
@@ -695,15 +716,17 @@ async function buildLeanManagerProposalPrompt(repoRoot: string, message: string,
       "The previous working set exceeded the metered context budget, so Hivemind checkpointed a working-set manifest and rebuilt this prompt from disk.",
       "Never trust an orchestrator snapshot or conversation summary for authoritative state. Authoritative state below was freshly read from .hivemind/ for this invocation.",
       "",
-      "Choose only the next single manager action from current durable state.",
-      "The actions array MUST contain zero or one action object. Never batch a pipeline or predict later actions in the same proposal.",
-      "Hivemind will execute and observe that one action before asking for another proposal.",
+      "Choose the next action or one bounded safe action batch from current durable state.",
+      "The actions array MUST contain zero to five action objects and MUST match the same safe batch shapes as the full manager contract.",
+      "Hivemind executes each member sequentially through its own gate and stops at the first refusal or failure.",
       "",
       "Return exactly one JSON object and no prose outside it:",
-      "{ \"reason\": \"short explanation of the next single gated action\", \"human_approval_required_for\": [], \"actions\": [{ \"type\": \"get_status\" }] }",
+      "{ \"reason\": \"short explanation of the next gated action or safe mechanical batch\", \"human_approval_required_for\": [], \"actions\": [{ \"type\": \"get_status\" }] }",
       "",
       "Hard rules:",
-      "- The actions array must contain zero or one action. A multi-action proposal is invalid and will be refused.",
+      "- The actions array contains at most five actions. Multi-action proposals are one-task contiguous segments of create_task_contract -> request_lease -> check_write_intent -> create_worktree -> run_worker, or exactly submit_patch -> analyze_patch.",
+      "- run_worker and analyze_patch are terminal. Every other result-dependent action remains single. Stop predicting after any action whose result must be observed.",
+      "- Hivemind gates every member independently and discards the remainder after the first refusal or failure.",
       "- Do not mark anything ratified, approved, accepted, integrated, or passed. You are proposing actions only.",
       "- Do not output self_approved, ratified, gate_verdict, result, skip_gates, or any other proof-like field.",
       "- Every state-changing action must be one of the supported action JSON shapes from the non-lean manager contract.",
@@ -913,8 +936,15 @@ function parseHumanApprovalList(raw: unknown): SpecResult<ManagerAction["type"][
 }
 
 function validateGeneratedManagerActions(actions: ManagerAction[], approvals: ManagerAction["type"][]): SpecResult<void> {
+  if (actions.length > MANAGER_BATCH_MAX_ACTIONS) {
+    return {
+      ok: false,
+      reason: `manager proposal exceeds the ${MANAGER_BATCH_MAX_ACTIONS}-action safe batch bound; no action was consumed`
+    };
+  }
   if (actions.length > 1) {
-    return { ok: false, reason: "manager proposal must contain at most one next action so no paid proposal output is silently discarded" };
+    const batch = validateManagerBatchShape(actions);
+    if (!batch.ok) return batch;
   }
   for (const action of actions) {
     if (action.type === "admit_value_quality") {
@@ -935,12 +965,56 @@ function validateGeneratedManagerActions(actions: ManagerAction[], approvals: Ma
   return { ok: true, value: undefined };
 }
 
-function scriptedManagerProposal(actions: ManagerAction[]): ManagerProposedAction {
+function validateAutonomousSessionProposal(proposal: ManagerProposedAction): SpecResult<void> {
+  if (proposal.source === "adapter-generated") {
+    return validateGeneratedManagerActions(proposal.actions, proposal.human_approval_required_for);
+  }
+  return proposal.actions.length <= 1
+    ? { ok: true, value: undefined }
+    : { ok: false, reason: "scripted multi-action proposals are not valid autonomous-session input" };
+}
+
+function validateManagerBatchShape(actions: ManagerAction[]): SpecResult<void> {
+  const taskIds = actions.map(managerActionTaskId);
+  if (taskIds.some((taskId) => taskId === null)) {
+    return { ok: false, reason: "manager multi-action proposal contains a single-only or taskless action; no action was consumed" };
+  }
+  const distinctTaskIds = new Set(taskIds as string[]);
+  if (distinctTaskIds.size !== 1) {
+    return { ok: false, reason: "manager multi-action proposal must target exactly one task; no action was consumed" };
+  }
+
+  const types = actions.map((action) => action.type);
+  if (types.length === 2 && types[0] === "submit_patch" && types[1] === "analyze_patch") {
+    return { ok: true, value: undefined };
+  }
+
+  const start = PRE_WORKER_BATCH_SEQUENCE.indexOf(types[0]);
+  if (start < 0 || start + types.length > PRE_WORKER_BATCH_SEQUENCE.length) {
+    return { ok: false, reason: "manager multi-action proposal is not a safe fixed-pipeline segment; no action was consumed" };
+  }
+  for (const [index, type] of types.entries()) {
+    if (PRE_WORKER_BATCH_SEQUENCE[start + index] !== type) {
+      return { ok: false, reason: "manager multi-action proposal skips or reorders the safe fixed pipeline; no action was consumed" };
+    }
+  }
+  return { ok: true, value: undefined };
+}
+
+function managerActionTaskId(action: ManagerAction): string | null {
+  if ("task_id" in action) return action.task_id;
+  if (action.type === "create_task_contract") {
+    return typeof action.contract.task_id === "string" && action.contract.task_id.trim() !== "" ? action.contract.task_id : null;
+  }
+  return null;
+}
+
+function scriptedManagerProposal(): ManagerProposedAction {
   return {
     type: "proposed_actions",
     source: "scripted",
     reason: "No-paid manager loop executing a pre-supplied action script through the deterministic manager executor.",
-    actions,
+    actions: [],
     human_approval_required_for: []
   };
 }
@@ -1171,12 +1245,14 @@ async function handleWriteIntentRedirect(
 function buildReactiveProposalMessage(session: ManagerSession): string {
   const last = session.executed_actions.at(-1);
   if (last === undefined) {
-    return "Reactive manager loop: propose exactly the next single manager action from current durable state.";
+    return "Reactive manager loop: propose the next action or one validated safe mechanical batch from current durable state.";
   }
   return [
-    "Reactive manager loop: propose exactly the next single manager action from current durable state.",
+    "Reactive manager loop: propose the next action or one validated safe mechanical batch from current durable state.",
     `Last manager observation: action ${last.type} returned ${last.result.ok ? "ok" : "rejected"}.`,
     `Last result JSON: ${JSON.stringify(last.result)}`,
+    "Safe batching rule: use only a one-task contiguous segment of create_task_contract -> request_lease -> check_write_intent -> create_worktree -> run_worker, or exactly submit_patch -> analyze_patch. Maximum five actions.",
+    "Reactivity rule: run_worker and analyze_patch end a batch. Keep enqueue_patch, integrate_shadow, Scout, redirect/replan, cross-task, and every other result-dependent decision single.",
     "Run pipeline rule: run_worker returning started means only that the daemon accepted the worker job. Do not propose submit_patch until durable state has a task.completed event and a patch bundle.",
     "Patch pipeline rule: enqueue_patch is allowed only after a real submit_patch event and a real analyze_patch accepted event. If a task has a patch bundle but submitted/analyzed/accepted are not all true, propose submit_patch or analyze_patch as the next missing step.",
     "Redirect rule: if the last action was check_write_intent and durable events include task.redirected, propose a corrected in-scope check_write_intent. Do not repeat the rejected intent.",
@@ -1187,8 +1263,8 @@ function buildReactiveProposalMessage(session: ManagerSession): string {
 
 function newProposalState(proposal: ManagerProposedAction): ManagerProposalState {
   return proposal.actions.length === 0
-    ? { proposal_id: randomUUID(), status: "consumed", consumed_at: new Date().toISOString() }
-    : { proposal_id: randomUUID(), status: "pending" };
+    ? { proposal_id: randomUUID(), status: "consumed", next_action_index: 0, consumed_at: new Date().toISOString() }
+    : { proposal_id: randomUUID(), status: "pending", next_action_index: 0 };
 }
 
 function appendProposalToSession(session: ManagerSession, proposal: ManagerProposedAction): ManagerSession {
@@ -1200,7 +1276,7 @@ function appendProposalToSession(session: ManagerSession, proposal: ManagerPropo
       ...session.turns,
       {
         role: "manager",
-        content: `proposed next action: ${proposal.actions[0]?.type ?? "none"} - ${proposal.reason}`
+        content: `proposed next actions: ${proposal.actions.map((action) => action.type).join(" -> ") || "none"} - ${proposal.reason}`
       }
     ]
   };
@@ -1255,7 +1331,7 @@ export async function runNoPaidManagerLoop(
   message: string,
   actions: ManagerAction[]
 ): Promise<SpecResult<ManagerLoopResult>> {
-  const session = await startManagerSession(repoRoot, message, { proposedAction: scriptedManagerProposal(actions) });
+  const session = await startManagerSession(repoRoot, message, { proposedAction: scriptedManagerProposal() });
   if (!session.ok) {
     return session;
   }
@@ -1402,9 +1478,6 @@ export async function continueAutonomousManagerLoop(
     } else {
       let nextProposal: ManagerProposedAction;
       if (session.value.proposal_state?.status === "pending") {
-        if (session.value.proposed_action.actions.length !== 1) {
-          return { ok: false, reason: "pending manager proposal must contain exactly one action" };
-        }
         nextProposal = session.value.proposed_action;
         proposalId = session.value.proposal_state.proposal_id;
       } else {
@@ -1445,7 +1518,9 @@ export async function continueAutonomousManagerLoop(
         };
       }
 
-      action = nextProposal.actions[0];
+      const pendingProposalAction = currentPendingProposalAction(sessionForWrite, proposalId);
+      if (!pendingProposalAction.ok) return pendingProposalAction;
+      action = pendingProposalAction.value;
       classification = await classifyManagerAction(repoRoot, action, policy.value);
       if (classification.tier === "human_approval") {
         const expectedState = await getStatus(repoRoot);
@@ -1655,13 +1730,12 @@ export async function retryBlockedManagerAction(
   if (session.value.pending_action !== undefined) {
     return { ok: false, reason: "manager retry refused: session already has a pending action" };
   }
-  if (session.value.proposed_action.actions.length !== 1) {
-    return { ok: false, reason: "manager retry refused: blocked session does not identify exactly one action" };
-  }
-  if (session.value.proposal_state?.status !== "consumed") {
+  if (session.value.proposal_state?.status !== "consumed" && session.value.proposal_state?.status !== "discarded") {
     return { ok: false, reason: "manager retry refused: blocked action does not come from a consumed proposal" };
   }
-  const action = session.value.proposed_action.actions[0];
+  const retryIndex = lastConsumedProposalActionIndex(session.value);
+  if (!retryIndex.ok) return { ok: false, reason: `manager retry refused: ${retryIndex.reason}` };
+  const action = session.value.proposed_action.actions[retryIndex.value];
   const blocked = session.value.blocked_action;
   const lastExecution = session.value.executed_actions.at(-1);
   if (
@@ -1692,7 +1766,8 @@ export async function retryBlockedManagerAction(
     blocked_action: undefined,
     proposal_state: {
       proposal_id: proposalId,
-      status: "pending"
+      status: "pending",
+      next_action_index: retryIndex.value
     },
     turns: [
       ...session.value.turns,
@@ -1778,7 +1853,12 @@ async function executeAuthorizedManagerAction(
     if (!proposal.ok) return proposal;
   }
 
-  const result = await executeDeterministicAction(repoRoot, session.session_id, action);
+  let result: ManagerActionExecutionRecord;
+  try {
+    result = await executeDeterministicAction(repoRoot, session.session_id, action);
+  } catch (error: unknown) {
+    result = { ok: false, reason: formatErrorDetail(error, `unexpected ${action.type} failure`) };
+  }
   const recordedSession = appendActionToSession(session, action, result, proposalId);
   const nextSession = clearPendingAction ? { ...recordedSession, pending_action: undefined } : recordedSession;
   const sessionPath = managerSessionPath(repoRoot, session.session_id);
@@ -2185,10 +2265,45 @@ function requirePendingProposal(
   if (session.proposal_state.proposal_id !== proposalId || session.proposal_state.status !== "pending") {
     return { ok: false, reason: "manager proposal is not the current unconsumed proposal" };
   }
-  if (session.proposed_action.actions.length !== 1 || JSON.stringify(session.proposed_action.actions[0]) !== JSON.stringify(action)) {
+  const current = currentPendingProposalAction(session, proposalId);
+  if (!current.ok) return current;
+  if (JSON.stringify(current.value) !== JSON.stringify(action)) {
     return { ok: false, reason: "manager proposal action does not match the current stored proposal" };
   }
   return { ok: true, value: undefined };
+}
+
+function currentPendingProposalAction(session: ManagerSession, proposalId: string): SpecResult<ManagerAction> {
+  if (session.proposal_state === undefined || session.proposal_state.proposal_id !== proposalId || session.proposal_state.status !== "pending") {
+    return { ok: false, reason: "manager proposal is not the current unconsumed proposal" };
+  }
+  const cursor = proposalCursor(session);
+  if (!cursor.ok) return cursor;
+  const action = session.proposed_action.actions[cursor.value];
+  return action === undefined
+    ? { ok: false, reason: "manager proposal cursor does not identify an unconsumed action" }
+    : { ok: true, value: action };
+}
+
+function proposalCursor(session: ManagerSession): SpecResult<number> {
+  const state = session.proposal_state;
+  if (state === undefined) return { ok: false, reason: "manager session has no durable proposal identity" };
+  if (state.next_action_index === undefined) {
+    if (session.proposed_action.actions.length <= 1) {
+      return { ok: true, value: state.status === "pending" ? 0 : session.proposed_action.actions.length };
+    }
+    return { ok: false, reason: "manager batch proposal has no durable next-action cursor" };
+  }
+  return { ok: true, value: state.next_action_index };
+}
+
+function lastConsumedProposalActionIndex(session: ManagerSession): SpecResult<number> {
+  const cursor = proposalCursor(session);
+  if (!cursor.ok) return cursor;
+  const index = cursor.value - 1;
+  return index >= 0 && session.proposed_action.actions[index] !== undefined
+    ? { ok: true, value: index }
+    : { ok: false, reason: "consumed proposal does not identify its last executed action" };
 }
 
 function appendActionToSession(
@@ -2204,6 +2319,25 @@ function appendActionToSession(
     ...("task_id" in action ? { task_id: action.task_id } : {}),
     result
   };
+  let proposalState = session.proposal_state;
+  if (proposalId !== undefined) {
+    const cursor = proposalCursor(session);
+    if (!cursor.ok) throw new Error(cursor.reason);
+    const nextActionIndex = cursor.value + 1;
+    const hasRemainder = nextActionIndex < session.proposed_action.actions.length;
+    const now = new Date().toISOString();
+    proposalState = !result.ok && hasRemainder
+      ? {
+          proposal_id: proposalId,
+          status: "discarded",
+          next_action_index: nextActionIndex,
+          discarded_at: now,
+          discard_reason: `action ${action.type} at index ${cursor.value} failed: ${result.reason}`
+        }
+      : hasRemainder
+        ? { proposal_id: proposalId, status: "pending", next_action_index: nextActionIndex }
+        : { proposal_id: proposalId, status: "consumed", next_action_index: nextActionIndex, consumed_at: now };
+  }
   return {
     ...session,
     turns: [
@@ -2214,15 +2348,7 @@ function appendActionToSession(
       }
     ],
     executed_actions: [...session.executed_actions, actionRecord],
-    ...(proposalId === undefined
-      ? {}
-      : {
-          proposal_state: {
-            proposal_id: proposalId,
-            status: "consumed" as const,
-            consumed_at: new Date().toISOString()
-          }
-        })
+    ...(proposalState === undefined ? {} : { proposal_state: proposalState })
   };
 }
 
@@ -2340,15 +2466,57 @@ function validateManagerSession(value: unknown, sessionId: string): SpecResult<M
   if (!Array.isArray(value.executed_actions)) {
     return { ok: false, reason: "manager session executed_actions must be an array" };
   }
+  if (!isRecord(value.proposed_action) || !Array.isArray(value.proposed_action.actions)) {
+    return { ok: false, reason: "manager session proposed_action must contain an actions array" };
+  }
+  const storedActions = parseManagerActionList(value.proposed_action.actions, "manager session proposed actions");
+  if (!storedActions.ok) return storedActions;
+  const storedApprovals = parseHumanApprovalList(value.proposed_action.human_approval_required_for);
+  if (!storedApprovals.ok) return { ok: false, reason: `manager session ${storedApprovals.reason}` };
+  if (
+    (value.proposed_action.source !== "adapter-generated" && value.proposed_action.source !== "scripted") ||
+    typeof value.proposed_action.reason !== "string" ||
+    value.proposed_action.reason.trim() === ""
+  ) {
+    return { ok: false, reason: "manager session proposed_action metadata is malformed" };
+  }
+  const storedProposalValidation = validateAutonomousSessionProposal({
+    type: "proposed_actions",
+    source: value.proposed_action.source,
+    reason: value.proposed_action.reason,
+    actions: storedActions.value,
+    human_approval_required_for: storedApprovals.value
+  });
+  if (!storedProposalValidation.ok) {
+    return { ok: false, reason: `manager session stored proposal is unsafe: ${storedProposalValidation.reason}` };
+  }
+  const proposedActionCount = value.proposed_action.actions.length;
   if (value.proposal_state !== undefined) {
     if (!isRecord(value.proposal_state)) return { ok: false, reason: "manager proposal_state must be an object" };
     const proposalState = value.proposal_state;
     if (
       typeof proposalState.proposal_id !== "string" ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(proposalState.proposal_id) ||
-      (proposalState.status !== "pending" && proposalState.status !== "consumed") ||
+      (proposalState.status !== "pending" && proposalState.status !== "consumed" && proposalState.status !== "discarded") ||
+      (proposalState.next_action_index !== undefined &&
+        (!Number.isSafeInteger(proposalState.next_action_index) ||
+          Number(proposalState.next_action_index) < 0 ||
+          Number(proposalState.next_action_index) > proposedActionCount)) ||
+      (proposalState.next_action_index === undefined && proposedActionCount > 1) ||
+      (proposalState.status === "pending" && proposalState.next_action_index === proposedActionCount) ||
+      (proposalState.status === "consumed" && proposalState.next_action_index !== undefined && proposalState.next_action_index !== proposedActionCount) ||
       (proposalState.status === "pending" && proposalState.consumed_at !== undefined) ||
-      (proposalState.status === "consumed" && (typeof proposalState.consumed_at !== "string" || Number.isNaN(Date.parse(proposalState.consumed_at))))
+      (proposalState.status === "consumed" && (typeof proposalState.consumed_at !== "string" || Number.isNaN(Date.parse(proposalState.consumed_at)))) ||
+      (proposalState.status === "discarded" &&
+        (proposalState.next_action_index === undefined ||
+          Number(proposalState.next_action_index) <= 0 ||
+          Number(proposalState.next_action_index) >= proposedActionCount ||
+          proposalState.consumed_at !== undefined ||
+          typeof proposalState.discarded_at !== "string" ||
+          Number.isNaN(Date.parse(proposalState.discarded_at)) ||
+          typeof proposalState.discard_reason !== "string" ||
+          proposalState.discard_reason.trim() === "")) ||
+      (proposalState.status !== "discarded" && (proposalState.discarded_at !== undefined || proposalState.discard_reason !== undefined))
     ) {
       return { ok: false, reason: "manager proposal_state is malformed" };
     }
@@ -2379,6 +2547,10 @@ function validateManagerSession(value: unknown, sessionId: string): SpecResult<M
       value.proposal_state.proposal_id !== pending.proposal_id
     ) {
       return { ok: false, reason: "manager pending_action does not identify the current unconsumed proposal" };
+    }
+    const pendingIndex = Number(value.proposal_state.next_action_index ?? 0);
+    if (JSON.stringify(value.proposed_action.actions[pendingIndex]) !== JSON.stringify(action.value)) {
+      return { ok: false, reason: "manager pending_action does not match the proposal's current action" };
     }
   }
   if (value.blocked_action !== undefined) {

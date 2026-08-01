@@ -1341,6 +1341,12 @@ Contract/lease/write-intent/worktree/submit/analyze/enqueue successes never requ
 
 Auto is implemented by creating and disposing the same exact pending authorization artifacts, not by removing approval checks or relabeling consequential actions as Tier 1. Plan auto-ratification calls the same exact-hash primitive. Manager policy has no adoption action and cannot construct or satisfy M8.7’s separate adoption identity. React remains a thin client: Core publishes the level, decision trail, and available typed controls.
 
+### Bounded manager batching
+
+Manager proposal batching is a cost optimization over the fixed pipeline, not a new authority model. One proposal may carry at most five sequential actions, and only in two proven shapes for one task: a contiguous segment of `create_task_contract -> request_lease -> check_write_intent -> create_worktree -> run_worker`, with `run_worker` terminal, or `submit_patch -> analyze_patch`, with `analyze_patch` terminal. The bound equals the longest safe mechanical prefix; it is not permission to combine five arbitrary actions.
+
+Core validates the complete shape before consuming anything, then sends each action independently through the same deterministic executor and M8.3 gates used by a single-action proposal. It stops on the first refusal, failure, timeout, crash, escalation, or unexpected result and discards every predicted remainder. `run_worker` and `analyze_patch` end their batches so the manager must observe real worker and gate outcomes before deciding what follows. Enqueue, shadow verification, Scout, redirect/replan work, cross-task decisions, and adoption remain single. Tier-2 interruption follows the active M9.1 policy but still uses the exact pending identity and durable-state hash; adoption remains outside the manager action domain at every level. Executed actions retain the same individual durable evidence and order as unbatched execution.
+
 The full app should have these main pages or equivalent workspace surfaces.
 
 ### 1. Project Home

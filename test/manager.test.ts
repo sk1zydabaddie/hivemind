@@ -90,7 +90,7 @@ test("manager session shell records a user message against the active ratified s
   });
 });
 
-test("full manager prompt requires exactly one next action independently of caller wording", async () => {
+test("full manager prompt permits only bounded safe batches independently of caller wording", async () => {
   await withTempRepo(async ({ repo }) => {
     await createRatifiedSpec(repo, "S-001");
     await writePromptCapturingManagerProfile(repo, 16_000);
@@ -100,10 +100,10 @@ test("full manager prompt requires exactly one next action independently of call
     assert.equal(result.ok, true);
     if (!result.ok) return;
     const prompt = await readFile(path.join(repo, ".hivemind", "captured-manager-prompt.txt"), "utf8");
-    assert.match(prompt, /Choose only the next single manager action from current durable state/u);
-    assert.match(prompt, /actions array MUST contain zero or one action object/u);
-    assert.match(prompt, /Never batch a pipeline or predict later actions in the same proposal/u);
-    assert.match(prompt, /Supported next-action object references \(each line is an alternative; choose at most one\)/u);
+    assert.match(prompt, /Choose the next action or one bounded safe action batch from current durable state/u);
+    assert.match(prompt, /actions array MUST contain zero to five action objects/u);
+    assert.match(prompt, /contiguous segment of create_task_contract -> request_lease -> check_write_intent -> create_worktree -> run_worker/u);
+    assert.match(prompt, /Never put an action after run_worker or analyze_patch/u);
     assert.doesNotMatch(prompt, /next gated action sequence/u);
   });
 });
@@ -122,9 +122,9 @@ test("manager context pressure checkpoints and sends a lean rehydrated prompt", 
     const prompt = await readFile(path.join(repo, ".hivemind", "captured-manager-prompt.txt"), "utf8");
     assert.match(prompt, /Context rehydration mode: lean/);
     assert.match(prompt, /freshly read from \.hivemind\//);
-    assert.match(prompt, /Choose only the next single manager action from current durable state/u);
-    assert.match(prompt, /actions array MUST contain zero or one action object/u);
-    assert.match(prompt, /Never batch a pipeline or predict later actions in the same proposal/u);
+    assert.match(prompt, /Choose the next action or one bounded safe action batch from current durable state/u);
+    assert.match(prompt, /actions array MUST contain zero to five action objects/u);
+    assert.match(prompt, /run_worker and analyze_patch are terminal/u);
     assert.doesNotMatch(prompt, /next gated action sequence/u);
     const snapshotPath = path.join(repo, ".hivemind", "resource", "checkpoints", "orchestrator.snapshot.json");
     const snapshotText = await readFile(snapshotPath, "utf8");
@@ -288,7 +288,7 @@ test("manager proposal generation rejects self-approval fields and removed place
   await withTempRepo(async ({ repo }) => {
     await createRatifiedSpec(repo, "S-001");
     await writeManagerProposalProfile(repo, {
-      reason: "A paid proposal must identify exactly one next action.",
+      reason: "An unsafe multi-action proposal must fail before consumption.",
       human_approval_required_for: [],
       actions: [{ type: "get_status" }, { type: "get_status" }]
     });
@@ -297,8 +297,77 @@ test("manager proposal generation rejects self-approval fields and removed place
 
     assert.equal(multiple.ok, false);
     if (multiple.ok) return;
-    assert.match(multiple.reason, /at most one next action/u);
+    assert.match(multiple.reason, /single-only or taskless action/u);
     assert.equal(await exists(path.join(repo, ".hivemind", "orchestrator", "sessions")), false);
+  });
+});
+
+test("manager refuses over-long and unsafe batch shapes before partial consumption", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const contract = managerContract("T-SHAPE", baseCommit, ["README.md"]);
+    const cases: Array<{ name: string; actions: ManagerAction[]; reason: RegExp }> = [
+      {
+        name: "over-long",
+        actions: [
+          { type: "create_task_contract", contract },
+          { type: "request_lease", task_id: "T-SHAPE" },
+          { type: "check_write_intent", task_id: "T-SHAPE", intent: intentFor("T-SHAPE", ["README.md"]) },
+          { type: "create_worktree", task_id: "T-SHAPE" },
+          { type: "run_worker", task_id: "T-SHAPE", tool: "worker" },
+          { type: "submit_patch", task_id: "T-SHAPE" }
+        ],
+        reason: /exceeds the 5-action safe batch bound/u
+      },
+      {
+        name: "cross-task",
+        actions: [
+          { type: "request_lease", task_id: "T-A" },
+          { type: "check_write_intent", task_id: "T-B", intent: intentFor("T-B", ["README.md"]) }
+        ],
+        reason: /exactly one task/u
+      },
+      {
+        name: "skipped-step",
+        actions: [
+          { type: "request_lease", task_id: "T-SHAPE" },
+          { type: "create_worktree", task_id: "T-SHAPE" }
+        ],
+        reason: /skips or reorders/u
+      },
+      {
+        name: "result-dependent",
+        actions: [
+          { type: "analyze_patch", task_id: "T-SHAPE" },
+          { type: "enqueue_patch", task_id: "T-SHAPE" }
+        ],
+        reason: /not a safe fixed-pipeline segment/u
+      }
+    ];
+
+    for (const fixture of cases) {
+      await writeManagerProposalProfile(
+        repo,
+        proposalFor(fixture.actions, fixture.actions.some((action) => action.type === "run_worker") ? ["run_worker"] : [])
+      );
+      const result = await startManagerSession(repo, `Refuse ${fixture.name}.`);
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.match(result.reason, fixture.reason);
+    }
+
+    const directScriptedBypass = await startManagerSession(repo, "Attempt a scripted autonomous batch.", {
+      proposedAction: testProposal([
+        { type: "request_lease", task_id: "T-SHAPE" },
+        { type: "check_write_intent", task_id: "T-SHAPE", intent: intentFor("T-SHAPE", ["README.md"]) }
+      ])
+    });
+    assert.equal(directScriptedBypass.ok, false);
+    if (!directScriptedBypass.ok) assert.match(directScriptedBypass.reason, /scripted multi-action proposals are not valid/u);
+
+    assert.equal(await exists(path.join(repo, ".hivemind", "orchestrator", "sessions")), false);
+    assert.equal(await exists(path.join(repo, ".hivemind", "tasks", "T-SHAPE.contract.json")), false);
+    const events = await readRequiredEvents(repo);
+    assert.equal(events.some((event) => event.type.startsWith("task.") || event.type.startsWith("lease.") || event.type.startsWith("write_intent.")), false);
   });
 });
 
@@ -488,6 +557,254 @@ test("manager autonomous loop chains Tier-1 actions after deterministic passes",
     assert.deepEqual(session.executed_actions.map((action) => action.type), ["create_task_contract", "request_lease", "check_write_intent"]);
     assert.equal(await exists(path.join(repo, ".hivemind", "tasks", "T-AUTO.contract.json")), true);
   });
+});
+
+test("manager consumes a valid fixed-pipeline batch from one paid proposal cursor", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const contract = managerContract("T-BATCH", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, contract);
+    await writeReactiveManagerProposalProfile(repo, {
+      initial: proposalFor([
+        { type: "create_task_contract", contract },
+        { type: "request_lease", task_id: "T-BATCH" },
+        { type: "check_write_intent", task_id: "T-BATCH", intent: intentFor("T-BATCH", ["README.md"]) },
+        { type: "create_worktree", task_id: "T-BATCH" }
+      ]),
+      after_create_worktree_ok: proposalFor([])
+    });
+
+    const started = await startManagerSession(repo, "Consume one safe batch.", { tool: "manager" });
+    assert.equal(started.ok, true, started.ok ? undefined : started.reason);
+    if (!started.ok) return;
+    const stored = await readSession(repo, started.value.session_path);
+    assert.equal(stored.proposal_state.status, "pending");
+    assert.equal(stored.proposal_state.next_action_index, 0);
+
+    const result = await continueAutonomousManagerLoop(repo, started.value.session_id, { tool: "manager", maxSteps: 8 });
+
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    if (!result.ok) return;
+    assert.equal(result.value.status, "completed");
+    assert.deepEqual(result.value.steps.map((step) => step.action_type), [
+      "create_task_contract", "request_lease", "check_write_intent", "create_worktree"
+    ]);
+    assert.equal(result.value.steps.every((step) => step.result?.ok === true), true);
+    assert.deepEqual(await managerReactiveCalls(repo), ["initial", "after_create_worktree_ok"]);
+    const session = await readSession(repo, result.value.session_path);
+    assert.equal(session.proposal_state.status, "consumed");
+    assert.deepEqual(session.executed_actions.map((action) => action.type), [
+      "create_task_contract", "request_lease", "check_write_intent", "create_worktree"
+    ]);
+  });
+});
+
+test("Review-everything pauses at the exact terminal run_worker identity inside a batch", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const marker = path.join(repo, "batch-worker-ran.txt");
+    const agentPath = await writeAgent(repo, "approved-batch-worker.mjs", [
+      "const { appendFile, writeFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'approved batched worker\\n');",
+      `await writeFile(${JSON.stringify(marker)}, 'ran');`
+    ]);
+    await writeProfile(repo, "approved-batch-worker", agentPath);
+    const contract = managerContract("T-BATCH-APPROVAL", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, contract);
+    await writeReactiveManagerProposalProfile(repo, {
+      initial: proposalFor([
+        { type: "create_task_contract", contract },
+        { type: "request_lease", task_id: "T-BATCH-APPROVAL" },
+        { type: "check_write_intent", task_id: "T-BATCH-APPROVAL", intent: intentFor("T-BATCH-APPROVAL", ["README.md"]) },
+        { type: "create_worktree", task_id: "T-BATCH-APPROVAL" },
+        { type: "run_worker", task_id: "T-BATCH-APPROVAL", tool: "approved-batch-worker" }
+      ], ["run_worker"]),
+      after_run_worker_ok: proposalFor([])
+    });
+
+    const paused = await runAutonomousManagerLoop(repo, "Pause at the batch authorization boundary.", { tool: "manager", maxSteps: 8 });
+    assert.equal(paused.ok, true, paused.ok ? undefined : paused.reason);
+    if (!paused.ok) return;
+    assert.equal(paused.value.status, "paused");
+    assert.deepEqual(paused.value.steps.map((step) => step.action_type), [
+      "create_task_contract", "request_lease", "check_write_intent", "create_worktree", "run_worker"
+    ]);
+    const pending = paused.value.steps.at(-1)?.pause;
+    assert.ok(pending);
+    assert.equal(pending.action_type, "run_worker");
+    assert.equal(await exists(marker), false);
+    const beforeApproval = await readSession(repo, paused.value.session_path);
+    assert.equal(beforeApproval.proposal_state.status, "pending");
+    assert.equal(beforeApproval.proposal_state.next_action_index, 4);
+
+    const approved = await approvePendingManagerAction(repo, {
+      session_id: paused.value.session_id,
+      pending_action_id: pending.pending_action_id,
+      action_type: pending.action_type,
+      subject: pending.subject,
+      expected_state_hash: pending.expected_state_hash
+    });
+    assert.equal(approved.ok, true, approved.ok ? undefined : approved.reason);
+    if (!approved.ok) return;
+    assert.equal(approved.value.result.ok, true);
+    assert.equal(await exists(marker), true);
+    const afterApproval = await readSession(repo, paused.value.session_path);
+    assert.equal(afterApproval.proposal_state.status, "consumed");
+    assert.equal(afterApproval.proposal_state.next_action_index, 5);
+    assert.deepEqual(await managerReactiveCalls(repo), ["initial"]);
+  });
+});
+
+test("manager stops at a mid-batch gate refusal and durably discards the remainder", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const contract = managerContract("T-BATCH-REFUSED", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, contract);
+    const holder = await requestLease(repo, "T-LIVE-HOLDER", ["README.md"]);
+    assert.equal(holder.ok, true, holder.ok ? undefined : holder.reason);
+    await writeReactiveManagerProposalProfile(repo, {
+      initial: proposalFor([
+        { type: "create_task_contract", contract },
+        { type: "request_lease", task_id: "T-BATCH-REFUSED" },
+        { type: "check_write_intent", task_id: "T-BATCH-REFUSED", intent: intentFor("T-BATCH-REFUSED", ["README.md"]) },
+        { type: "create_worktree", task_id: "T-BATCH-REFUSED" }
+      ])
+    });
+
+    const result = await runAutonomousManagerLoop(repo, "Stop at the first refused member.", { tool: "manager", maxSteps: 8 });
+
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    if (!result.ok) return;
+    assert.equal(result.value.status, "stopped");
+    assert.deepEqual(result.value.steps.map((step) => step.action_type), ["create_task_contract", "request_lease"]);
+    assert.equal(result.value.steps.at(-1)?.result?.ok, false);
+    const session = await readSession(repo, result.value.session_path);
+    assert.equal(session.proposal_state.status, "discarded");
+    assert.equal(session.proposal_state.next_action_index, 2);
+    assert.match(session.proposal_state.discard_reason ?? "", /request_lease.*failed/u);
+    assert.deepEqual(session.executed_actions.map((action) => action.type), ["create_task_contract", "request_lease"]);
+    assert.equal(await exists(path.join(repo, ".hivemind", "worktrees", "T-BATCH-REFUSED")), false);
+    const events = await readRequiredEvents(repo);
+    assert.equal(events.some((event) => event.type.startsWith("write_intent.") && event.task_id === "T-BATCH-REFUSED"), false);
+    assert.deepEqual(await managerReactiveCalls(repo), ["initial"]);
+  });
+});
+
+test("a terminal batched worker crash or timeout stops with cleanup and no predicted continuation", async () => {
+  for (const failure of ["crash", "timeout"] as const) {
+    await withTempRepo(async ({ repo, baseCommit }) => {
+      await setConfigManagerAutonomy(repo, { level: "auto" });
+      await createRatifiedSpec(repo, "S-001");
+      const taskId = failure === "crash" ? "T-BATCH-CRASH" : "T-BATCH-TIMEOUT";
+      const agentPath = await writeAgent(
+        repo,
+        `${failure}-batch-worker.mjs`,
+        failure === "crash"
+          ? ["console.error('hard crash fixture');", "process.exit(9);"]
+          : ["setInterval(() => {}, 1000);"]
+      );
+      await writeProfile(repo, `${failure}-worker`, agentPath, "strong", 1, failure === "timeout" ? 50 : undefined);
+      const contract = managerContract(taskId, baseCommit, ["README.md"]);
+      await prepareLintedPlan(repo, contract);
+      await writeReactiveManagerProposalProfile(repo, {
+        initial: proposalFor([
+          { type: "create_task_contract", contract },
+          { type: "request_lease", task_id: taskId },
+          { type: "check_write_intent", task_id: taskId, intent: intentFor(taskId, ["README.md"]) },
+          { type: "create_worktree", task_id: taskId },
+          { type: "run_worker", task_id: taskId, tool: `${failure}-worker` }
+        ], ["run_worker"]),
+        after_run_worker_rejected: proposalFor([{ type: "submit_patch", task_id: taskId }])
+      });
+
+      const result = await runAutonomousManagerLoop(repo, `Exercise batched worker ${failure}.`, { tool: "manager", maxSteps: 8 });
+
+      assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+      if (!result.ok) return;
+      assert.equal(result.value.status, "stopped");
+      assert.deepEqual(result.value.steps.map((step) => step.action_type), [
+        "create_task_contract", "request_lease", "check_write_intent", "create_worktree", "run_worker"
+      ]);
+      const finalResult = result.value.steps.at(-1)?.result;
+      const reason = finalResult?.ok === false ? finalResult.reason : "";
+      assert.match(reason, failure === "crash" ? /exited 9/u : /timed out/u);
+      assert.equal(await exists(path.join(repo, ".hivemind", "worktrees", taskId)), false);
+      assert.equal(await exists(path.join(repo, ".hivemind", "patches", taskId, "diff.patch")), true);
+      assert.equal(Object.values(result.value.final_status.leases).includes(taskId), false);
+      const events = await readRequiredEvents(repo);
+      assert.equal(events.some((event) => event.type === "task.failed" && event.task_id === taskId), true);
+      assert.equal(events.some((event) => event.type === "lease.released" && event.task_id === taskId), true);
+      assert.deepEqual(await managerReactiveCalls(repo), ["initial"]);
+    });
+  }
+});
+
+test("batched and single-action execution have equivalent work trails while batching halves the fixed-pipeline proposal calls", async () => {
+  const observations: Array<{ mode: "single" | "batch"; trail: string[]; managerCalls: number }> = [];
+  for (const mode of ["single", "batch"] as const) {
+    await withTempRepo(async ({ repo, baseCommit }) => {
+      await setConfigManagerAutonomy(repo, { level: "auto" });
+      await createRatifiedSpec(repo, "S-001");
+      await setConfigTestCommand(repo, "node -e \"process.exit(0)\"");
+      const agentPath = await writeAgent(repo, `${mode}-trail-worker.mjs`, [
+        "const { appendFile } = await import('node:fs/promises');",
+        "await appendFile('README.md', 'equivalent work trail\\n');"
+      ]);
+      await writeProfile(repo, "trail-worker", agentPath);
+      const contract = managerContract("T-TRAIL", baseCommit, ["README.md"]);
+      await prepareLintedPlan(repo, contract);
+      const single = {
+        initial: proposalFor([{ type: "create_task_contract", contract }]),
+        after_create_task_contract_ok: proposalFor([{ type: "request_lease", task_id: "T-TRAIL" }]),
+        after_request_lease_ok: proposalFor([{ type: "check_write_intent", task_id: "T-TRAIL", intent: intentFor("T-TRAIL", ["README.md"]) }]),
+        after_check_write_intent_ok: proposalFor([{ type: "create_worktree", task_id: "T-TRAIL" }]),
+        after_create_worktree_ok: proposalFor([{ type: "run_worker", task_id: "T-TRAIL", tool: "trail-worker" }], ["run_worker"]),
+        after_run_worker_ok: proposalFor([{ type: "submit_patch", task_id: "T-TRAIL" }]),
+        after_submit_patch_ok: proposalFor([{ type: "analyze_patch", task_id: "T-TRAIL" }]),
+        after_analyze_patch_ok: proposalFor([{ type: "enqueue_patch", task_id: "T-TRAIL" }]),
+        after_enqueue_patch_ok: proposalFor([{ type: "integrate_shadow" }], ["integrate_shadow"]),
+        after_integrate_shadow_ok: proposalFor([])
+      };
+      const batch = {
+        initial: proposalFor([
+          { type: "create_task_contract", contract },
+          { type: "request_lease", task_id: "T-TRAIL" },
+          { type: "check_write_intent", task_id: "T-TRAIL", intent: intentFor("T-TRAIL", ["README.md"]) },
+          { type: "create_worktree", task_id: "T-TRAIL" },
+          { type: "run_worker", task_id: "T-TRAIL", tool: "trail-worker" }
+        ], ["run_worker"]),
+        after_run_worker_ok: proposalFor([
+          { type: "submit_patch", task_id: "T-TRAIL" },
+          { type: "analyze_patch", task_id: "T-TRAIL" }
+        ]),
+        after_analyze_patch_ok: proposalFor([{ type: "enqueue_patch", task_id: "T-TRAIL" }]),
+        after_enqueue_patch_ok: proposalFor([{ type: "integrate_shadow" }], ["integrate_shadow"]),
+        after_integrate_shadow_ok: proposalFor([])
+      };
+      await writeReactiveManagerProposalProfile(repo, mode === "single" ? single : batch);
+
+      const result = await runAutonomousManagerLoop(repo, `Run ${mode} trail.`, { tool: "manager", maxSteps: 16 });
+      assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+      if (!result.ok) return;
+      assert.equal(result.value.status, "completed");
+      const events = await readRequiredEvents(repo);
+      observations.push({
+        mode,
+        trail: events
+          .filter((event) =>
+            !event.type.startsWith("autonomy.") &&
+            event.type !== "orchestrator.checkpointed" &&
+            event.type !== "orchestrator.resumed"
+          )
+          .map((event) => `${event.type}:${event.task_id ?? "project"}`),
+        managerCalls: (await managerReactiveCalls(repo)).length
+      });
+    });
+  }
+
+  assert.deepEqual(observations[1].trail, observations[0].trail);
+  assert.equal(observations[0].managerCalls, 10);
+  assert.equal(observations[1].managerCalls, 5);
 });
 
 test("all autonomy levels preserve the same complete work trail while changing only routine interruption", async () => {
@@ -2072,13 +2389,13 @@ async function readSession(
   sessionPath: string
 ): Promise<{
   session_id: string;
-  proposal_state: { proposal_id: string; status: "pending" | "consumed"; consumed_at?: string };
+  proposal_state: { proposal_id: string; status: "pending" | "consumed" | "discarded"; next_action_index?: number; consumed_at?: string; discard_reason?: string };
   pending_action?: { action: { type: string }; reason: string; recommendation: string };
   executed_actions: Array<{ type: string; result: { ok: boolean; reason?: string } }>;
 }> {
   return JSON.parse(await readFile(path.join(repo, sessionPath), "utf8")) as {
     session_id: string;
-    proposal_state: { proposal_id: string; status: "pending" | "consumed"; consumed_at?: string };
+    proposal_state: { proposal_id: string; status: "pending" | "consumed" | "discarded"; next_action_index?: number; consumed_at?: string; discard_reason?: string };
     pending_action?: { action: { type: string }; reason: string; recommendation: string };
     executed_actions: Array<{ type: string; result: { ok: boolean; reason?: string } }>;
   };
@@ -2181,7 +2498,14 @@ async function writeAgent(repo: string, fileName: string, lines: string[]): Prom
   return agentPath;
 }
 
-async function writeProfile(repo: string, tool: string, agentPath: string, routingTier = "strong", costRank = 1): Promise<void> {
+async function writeProfile(
+  repo: string,
+  tool: string,
+  agentPath: string,
+  routingTier = "strong",
+  costRank = 1,
+  timeoutMs?: number
+): Promise<void> {
   const adaptersDir = path.join(repo, ".hivemind", "adapters");
   await mkdir(adaptersDir, { recursive: true });
   await writeFile(
@@ -2194,7 +2518,8 @@ async function writeProfile(repo: string, tool: string, agentPath: string, routi
         verified_on: "2026-06-16",
         context_window: 1024,
         routing_tier: routingTier,
-        cost_rank: costRank
+        cost_rank: costRank,
+        ...(timeoutMs === undefined ? {} : { timeout_ms: timeoutMs })
       },
       null,
       2
