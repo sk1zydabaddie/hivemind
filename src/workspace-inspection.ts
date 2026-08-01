@@ -679,7 +679,10 @@ async function buildQueues(
       detail: integrationFailure.reason,
       created_at: session?.created_at ?? new Date(0).toISOString(),
       task_id: integrationFailure.task_ids[0] ?? null,
-      action: null
+      action: session === null ? null : {
+        type: "manager.retry_blocked",
+        payload: { session_id: session.session_id }
+      }
     });
   }
   const mergeState = [...events].reverse().find((event) =>

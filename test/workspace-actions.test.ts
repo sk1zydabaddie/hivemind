@@ -781,7 +781,7 @@ test("workspace inspection surfaces a durable integration refusal in plain langu
     const stoppedView = stopped.value as {
       manager_session: { blocked_action_type: string; blocked_reason: string };
       integration_failure: { reason: string; task_ids: string[] };
-      needs_you: Array<{ kind: string; title: string; detail: string; task_id: string | null }>;
+      needs_you: Array<{ kind: string; title: string; detail: string; task_id: string | null; action: { type: string; payload: Record<string, unknown> } | null }>;
     };
     assert.equal(stoppedView.manager_session.blocked_action_type, "integrate_shadow");
     assert.equal(stoppedView.manager_session.blocked_reason, "configured base branch missing-project-branch not found");
@@ -794,6 +794,49 @@ test("workspace inspection surfaces a durable integration refusal in plain langu
     assert.equal(failureItem?.title, "The project check could not finish");
     assert.equal(failureItem?.detail, stoppedView.integration_failure.reason);
     assert.equal(failureItem?.task_id, "T-001");
+    assert.equal(failureItem?.action?.type, "manager.retry_blocked");
+    assert.deepEqual(failureItem?.action?.payload, { session_id: session.value.session_id });
+
+    const craftedRetry = await executeWorkspaceAction(repo, {
+      type: "manager.retry_blocked",
+      payload: { session_id: session.value.session_id, action_type: "get_status" }
+    });
+    assert.equal(craftedRetry.ok, false);
+    if (!craftedRetry.ok) assert.match(craftedRetry.reason, /unsupported field/u);
+
+    const retried = await executeWorkspaceAction(repo, failureItem!.action!);
+    assert.equal(retried.ok, true, retried.ok ? undefined : retried.reason);
+    const retryInspection = await executeWorkspaceAction(repo, { type: "status.inspect", payload: {} });
+    assert.equal(retryInspection.ok, true, retryInspection.ok ? undefined : retryInspection.reason);
+    if (!retryInspection.ok) return;
+    const retryView = retryInspection.value as {
+      manager_session: { continuation_available: boolean; blocked_reason: string | null };
+      integration_failure: null;
+    };
+    assert.equal(retryView.manager_session.continuation_available, true);
+    assert.equal(retryView.manager_session.blocked_reason, null);
+    assert.equal(retryView.integration_failure, null);
+
+    const represented = await executeWorkspaceAction(repo, {
+      type: "manager.continue",
+      payload: { session_id: session.value.session_id, tool: "unused-fixture", max_steps: 1 }
+    });
+    assert.equal(represented.ok, true, represented.ok ? undefined : represented.reason);
+    const refreshed = await executeWorkspaceAction(repo, { type: "status.inspect", payload: {} });
+    assert.equal(refreshed.ok, true, refreshed.ok ? undefined : refreshed.reason);
+    if (!refreshed.ok) return;
+    const refreshedView = refreshed.value as {
+      manager_session: { pending_action: { pending_action_id: string; action_type: string } };
+      needs_you: Array<{ kind: string; action: { type: string; payload: Record<string, unknown> } | null }>;
+    };
+    assert.equal(refreshedView.manager_session.pending_action.action_type, "integrate_shadow");
+    assert.notEqual(refreshedView.manager_session.pending_action.pending_action_id, (approval.action.payload as { pending_action_id: string }).pending_action_id);
+    assert.equal(refreshedView.needs_you.find((item) => item.kind === "manager_approval")?.action?.type, "manager.approve_pending");
+    const retryEvents = await readEvents(repo);
+    assert.equal(retryEvents.ok, true);
+    if (retryEvents.ok) {
+      assert.equal(retryEvents.value.filter((event) => event.type === "manager.action_retry_requested").length, 1);
+    }
     const workTab = await readFile(path.resolve("desktop/src/components/workspace/work-tab.tsx"), "utf8");
     assert.doesNotMatch(workTab, /A required check is missing or could not be measured/u);
     const inspectionSource = await readFile(path.resolve("src/workspace-inspection.ts"), "utf8");

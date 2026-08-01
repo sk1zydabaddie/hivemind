@@ -4,7 +4,7 @@ import { generateBestOfN } from "./best-of-n.js";
 import { generateCharacterizationCandidate } from "./characterization-generator.js";
 import { generateDraftRefine } from "./draft-refine.js";
 import { recordHumanGuidance } from "./human-guidance.js";
-import { approvePendingManagerAction, continueAutonomousManagerLoop, startWorkspaceManagerSession } from "./manager.js";
+import { approvePendingManagerAction, continueAutonomousManagerLoop, retryBlockedManagerAction, startWorkspaceManagerSession } from "./manager.js";
 import { authorizeManualTask, prepareWorkspaceTentativePlan, queuePlanAmendment, ratifyPlan, reviewManualTaskForAuthorization, reviewPlanForRatification } from "./plan.js";
 import { cancelQualityRun } from "./quality-control.js";
 import { findGitRoot } from "./repo.js";
@@ -15,6 +15,7 @@ import { inspectWorkspace } from "./workspace-inspection.js";
 export const workspaceActionTypes = [
   "manager.start",
   "manager.continue",
+  "manager.retry_blocked",
   "guidance.record",
   "plan.prepare",
   "plan.review",
@@ -110,6 +111,10 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
           maxSteps: parsed.value.max_steps
         })
       : parsed;
+  }
+  if (raw.type === "manager.retry_blocked") {
+    const parsed = exactStrings(payload, ["session_id"]);
+    return parsed.ok ? retryBlockedManagerAction(repoRoot, parsed.value.session_id) : parsed;
   }
   if (raw.type === "verify.characterize") {
     const parsed = exactStrings(payload, ["task_id", "tool", "check_id"], ["check_id"]);

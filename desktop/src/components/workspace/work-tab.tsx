@@ -224,7 +224,19 @@ export function WorkTab({
     setFeedback("");
     try {
       await onAction(item.action);
-      setFeedback("The reviewed action was accepted.");
+      if (item.action.type === "manager.retry_blocked" && managerSession) {
+        await onAction({
+          type: "manager.continue",
+          payload: {
+            session_id: managerSession.session_id,
+            tool: managerSession.tool,
+            max_steps: 25
+          }
+        });
+        setFeedback("The project check is ready for your approval with the refreshed project state.");
+      } else {
+        setFeedback("The reviewed action was accepted.");
+      }
     } catch (error) {
       setFeedback(plainActionError(error));
     } finally {
@@ -501,7 +513,7 @@ function AttentionCard({
       </div>
       {item.action ? (
         <button className="button-primary" type="button" disabled={busy} onClick={onApprove}>
-          Approve
+          {queueActionLabel(item.action.type)}
         </button>
       ) : (
         <button className="button-secondary" type="button" onClick={onOpen}>
@@ -730,9 +742,13 @@ function QueueRow({ item, busy, onOpen, onApprove }: { item: WorkspaceQueueItem;
   return (
     <div className="queue-row">
       <div><strong>{item.title}</strong><span>{plainPrimaryDetail(item.detail, item.kind)}</span></div>
-      {item.action ? <button className="queue-action" type="button" disabled={busy} onClick={onApprove}>Approve</button> : item.kind === "plan_review" || item.task_id ? <button className="icon-button" type="button" onClick={onOpen} aria-label={`Open ${item.title}`}><ChevronRight size={15} /></button> : null}
+      {item.action ? <button className="queue-action" type="button" disabled={busy} onClick={onApprove}>{queueActionLabel(item.action.type)}</button> : item.kind === "plan_review" || item.task_id ? <button className="icon-button" type="button" onClick={onOpen} aria-label={`Open ${item.title}`}><ChevronRight size={15} /></button> : null}
     </div>
   );
+}
+
+function queueActionLabel(actionType: string): string {
+  return actionType === "manager.retry_blocked" ? "Retry" : "Approve";
 }
 
 function RoutingPanel({ projection }: { projection: BoardProjection }): React.JSX.Element {

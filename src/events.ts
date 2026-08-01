@@ -65,6 +65,7 @@ export const eventTypes = [
   "human.guidance_recorded",
   "human.guidance_consumed",
   "manager.action_approved",
+  "manager.action_retry_requested",
   "approval.required",
   "quota.low",
   "quota.exhausted",

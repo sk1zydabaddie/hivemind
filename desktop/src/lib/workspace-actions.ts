@@ -189,6 +189,7 @@ export type WorkspaceAction = {
   type:
     | "manager.start"
     | "manager.continue"
+    | "manager.retry_blocked"
     | "guidance.record"
     | "plan.prepare"
     | "plan.review"

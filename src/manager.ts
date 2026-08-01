@@ -1515,6 +1515,72 @@ export async function continueAutonomousManagerLoop(
   };
 }
 
+export async function retryBlockedManagerAction(
+  repoRoot: string,
+  sessionId: string
+): Promise<SpecResult<{ session_id: string; action_type: ManagerAction["type"]; status: "retry_pending" }>> {
+  const session = await loadManagerSession(repoRoot, sessionId);
+  if (!session.ok) return session;
+  if (session.value.blocked_action === undefined) {
+    return { ok: false, reason: "manager retry refused: session has no blocked action" };
+  }
+  if (session.value.pending_action !== undefined) {
+    return { ok: false, reason: "manager retry refused: session already has a pending action" };
+  }
+  if (session.value.proposed_action.actions.length !== 1) {
+    return { ok: false, reason: "manager retry refused: blocked session does not identify exactly one action" };
+  }
+  if (session.value.proposal_state?.status !== "consumed") {
+    return { ok: false, reason: "manager retry refused: blocked action does not come from a consumed proposal" };
+  }
+  const action = session.value.proposed_action.actions[0];
+  const blocked = session.value.blocked_action;
+  const lastExecution = session.value.executed_actions.at(-1);
+  if (
+    action.type !== blocked.action_type ||
+    lastExecution?.type !== blocked.action_type ||
+    lastExecution.result.ok !== false ||
+    lastExecution.result.reason !== blocked.result.reason
+  ) {
+    return { ok: false, reason: "manager retry refused: blocked action identity is inconsistent with durable execution history" };
+  }
+
+  const proposalId = randomUUID();
+  const recorded = await appendEvent(repoRoot, {
+    type: "manager.action_retry_requested",
+    task_id: "task_id" in action ? action.task_id : null,
+    data: {
+      version: 1,
+      session_id: session.value.session_id,
+      action_type: action.type,
+      previous_reason: blocked.result.reason,
+      proposal_id: proposalId
+    }
+  });
+  if (!recorded.ok) return recorded;
+
+  await writeJsonAtomic(managerSessionPath(repoRoot, session.value.session_id), {
+    ...session.value,
+    blocked_action: undefined,
+    proposal_state: {
+      proposal_id: proposalId,
+      status: "pending"
+    },
+    turns: [
+      ...session.value.turns,
+      { role: "user", content: `retry requested for blocked action ${action.type}` }
+    ]
+  });
+  return {
+    ok: true,
+    value: {
+      session_id: session.value.session_id,
+      action_type: action.type,
+      status: "retry_pending"
+    }
+  };
+}
+
 export async function executeManagerAction(
   repoRoot: string,
   sessionId: string,

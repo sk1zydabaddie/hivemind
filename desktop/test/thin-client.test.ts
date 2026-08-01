@@ -125,7 +125,9 @@ describe("React workspace boundary", () => {
     for (const action of actions) expect(audit).toContain(`\`${action}\``);
     const inspection = await readFile(path.resolve(desktopRoot, "..", "src", "workspace-inspection.ts"), "utf8");
     expect(inspection).toContain('type: "manager.approve_pending"');
+    expect(inspection).toContain('type: "manager.retry_blocked"');
     expect(work).toMatch(/if \(!item\.action\) return;[\s\S]*await onAction\(item\.action\)/u);
+    expect(work).toMatch(/item\.action\.type === "manager\.retry_blocked"[\s\S]*type: "manager\.continue"/u);
     expect(audit).toContain("`manager.approve_pending`");
     expect(work).toMatch(/Guidance is read on the next step and does not change work already in progress/u);
     expect(work).toMatch(/Nothing starts until you review and approve this exact plan/u);
