@@ -28,7 +28,7 @@ import { getStatus, type HivemindStatus } from "./status.js";
 
 export interface WorkspaceQueueItem {
   id: string;
-  kind: "plan_review" | "manager_approval" | "verification_blocked" | "task_attention" | "quality_cancel_failed" | "memory_review" | "quality_review" | "plan_amendment";
+  kind: "plan_review" | "manager_approval" | "verification_blocked" | "task_attention" | "quality_cancel_failed" | "memory_review" | "quality_review" | "plan_amendment" | "adoption_ready";
   title: string;
   detail: string;
   created_at: string;
@@ -175,6 +175,7 @@ export interface WorkspaceHistoryRun {
   outcome: "active" | "completed" | "needs_attention" | "paused";
   outcome_detail: string;
   verified_tasks: string[];
+  merged_tasks: string[];
   stopped_tasks: Array<{ task_id: string; state: "failed" | "blocked" | "cancelled" | "paused"; reason: string }>;
   calls: number;
   effective_tokens: number;
@@ -372,6 +373,7 @@ async function inspectHistory(
     const nextStart = ascending[index + 1]?.created_at;
     const runEvents = events.filter((event) => event.ts >= session.created_at && (nextStart === undefined || event.ts < nextStart));
     const verifiedTasks = verifiedTaskIds(runEvents);
+    const mergedTasks = mergedTaskIds(runEvents);
     const stoppedTasks = stoppedTaskStates(runEvents);
     const plannedTaskIds = await ratifiedTaskIds(repoRoot, events, session.spec_id, session.created_at);
     const usage = sessionUsage(ledger, session.session_id);
@@ -387,6 +389,7 @@ async function inspectHistory(
       outcome: outcome.state,
       outcome_detail: outcome.detail,
       verified_tasks: verifiedTasks,
+      merged_tasks: mergedTasks,
       stopped_tasks: stoppedTasks,
       calls: usage.calls,
       effective_tokens: usage.effectiveTokens,
@@ -485,6 +488,16 @@ function verifiedTaskIds(events: HivemindEvent[]): string[] {
     if (event.type === "task.integrated" && event.task_id !== null) ids.add(event.task_id);
     if (event.type === "integration.passed" && Array.isArray(event.data.applied)) {
       for (const value of event.data.applied) if (typeof value === "string") ids.add(value);
+    }
+  }
+  return [...ids].sort();
+}
+
+function mergedTaskIds(events: HivemindEvent[]): string[] {
+  const ids = new Set<string>();
+  for (const event of events) {
+    if (event.type === "adoption.completed" && Array.isArray(event.data.task_ids)) {
+      for (const value of event.data.task_ids) if (typeof value === "string") ids.add(value);
     }
   }
   return [...ids].sort();
@@ -718,6 +731,44 @@ async function buildQueues(
   );
   if (verificationState?.type === "integration.blocked") {
     needsYou.push(queueEvent(verificationState, "verification_blocked", "Project checks are blocked", plainEvidence(verificationState)));
+  }
+  const latestVerified = [...events].reverse().find((event) =>
+    event.type === "integration.passed" &&
+    typeof event.data.verification_id === "string" &&
+    typeof event.data.verification_manifest_sha256 === "string"
+  );
+  if (latestVerified !== undefined && typeof latestVerified.data.verification_id === "string") {
+    const verificationId = latestVerified.data.verification_id;
+    const completed = events.some((event) => event.type === "adoption.completed" && event.data.verification_id === verificationId);
+    if (!completed) {
+      const reviewed = [...events].reverse().find((event) => event.type === "adoption.reviewed" && event.data.verification_id === verificationId);
+      const reviewFailed = reviewed !== undefined && events.some((event) =>
+        event.type === "adoption.failed" && event.data.pending_adoption_id === reviewed.data.pending_adoption_id && event.ts >= reviewed.ts
+      );
+      const exactReview = reviewed !== undefined && !reviewFailed &&
+        typeof reviewed.data.pending_adoption_id === "string" &&
+        typeof reviewed.data.expected_base_head === "string" &&
+        typeof reviewed.data.expected_state_hash === "string";
+      needsYou.push({
+        id: `adoption:${verificationId}:${exactReview ? reviewed!.data.pending_adoption_id : "review"}`,
+        kind: "adoption_ready",
+        title: exactReview ? "A verified change is ready to merge" : "A verified change is ready to review",
+        detail: exactReview
+          ? "Confirm the exact verified set. Hivemind will refuse if the project changed since review."
+          : "Review the exact checked set before it changes the project branch.",
+        created_at: exactReview ? reviewed!.ts : latestVerified.ts,
+        task_id: null,
+        action: exactReview ? {
+          type: "adoption.execute",
+          payload: {
+            pending_adoption_id: reviewed!.data.pending_adoption_id,
+            verification_id: verificationId,
+            expected_base_head: reviewed!.data.expected_base_head,
+            expected_state_hash: reviewed!.data.expected_state_hash
+          }
+        } : { type: "adoption.review", payload: { verification_id: verificationId } }
+      });
+    }
   }
   for (const event of latestTaskAttention(events)) {
     needsYou.push(queueEvent(event, "task_attention", taskAttentionTitle(event), plainEvidence(event)));

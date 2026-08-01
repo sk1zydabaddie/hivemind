@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { generateBestOfN } from "./best-of-n.js";
+import { adoptVerifiedSet, reviewVerifiedSetAdoption } from "./adoption.js";
+import { callDaemonIfConfigured } from "./daemon-client.js";
 import { generateCharacterizationCandidate } from "./characterization-generator.js";
 import { generateDraftRefine } from "./draft-refine.js";
 import { recordHumanGuidance } from "./human-guidance.js";
@@ -32,7 +34,9 @@ export const workspaceActionTypes = [
   "quality.best_of_n",
   "quality.draft_refine",
   "quality.cancel",
-  "memory.review_handoff"
+  "memory.review_handoff",
+  "adoption.review",
+  "adoption.execute"
 ] as const;
 
 export type WorkspaceActionType = (typeof workspaceActionTypes)[number];
@@ -128,6 +132,19 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
       ? { ok: true, value: { proposal_id: parsed.value.proposal_id, command: `hivemind memory review ${parsed.value.proposal_id} --approve`, local_interactive_tty_required: true, promotion_performed: false } }
       : parsed;
   }
+  if (raw.type === "adoption.review") {
+    const parsed = exactStrings(payload, ["verification_id"]);
+    return parsed.ok ? reviewVerifiedSetAdoption(repoRoot, parsed.value.verification_id) : parsed;
+  }
+  if (raw.type === "adoption.execute") {
+    const parsed = exactStrings(payload, ["pending_adoption_id", "verification_id", "expected_base_head", "expected_state_hash"]);
+    return parsed.ok ? adoptVerifiedSet(repoRoot, {
+      pending_adoption_id: parsed.value.pending_adoption_id,
+      verification_id: parsed.value.verification_id,
+      expected_base_head: parsed.value.expected_base_head,
+      expected_state_hash: parsed.value.expected_state_hash
+    }) : parsed;
+  }
   return { ok: false, reason: "unsupported workspace action" };
 }
 
@@ -166,7 +183,8 @@ export async function workspaceActionCommand(cwd: string, args: string[]): Promi
     console.error("error: workspace action file must contain valid JSON");
     return 1;
   }
-  const result = await executeWorkspaceAction(repoRoot, raw);
+  const daemon = await callDaemonIfConfigured<unknown>(repoRoot, "/workspace/action", raw as Record<string, unknown>);
+  const result = daemon.routed ? daemon : await executeWorkspaceAction(repoRoot, raw);
   if (!result.ok) {
     console.error(`error: ${result.reason}`);
     return 1;

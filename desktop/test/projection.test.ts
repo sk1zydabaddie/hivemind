@@ -75,6 +75,26 @@ describe("read-only event projection", () => {
     expect(state.tasks["T-FAIL"].issue).toBe("worker process exited 1");
   });
 
+  test("projects Merged only from adoption.completed, never from verification", () => {
+    const state = createBoardProjection();
+    applyEventMessage(state, {
+      kind: "event",
+      source: "history",
+      event: makeEvent("integration.passed", null, { applied: ["T-ADOPT"], tests: "pass" })
+    });
+    expect(state.tasks["T-ADOPT"].state).toBe("verified");
+    applyEventMessage(state, {
+      kind: "event",
+      source: "history",
+      event: makeEvent("adoption.completed", null, {
+        task_ids: ["T-ADOPT"],
+        pre_adoption_ref: "a".repeat(40),
+        adopted_ref: "b".repeat(40)
+      })
+    });
+    expect(state.tasks["T-ADOPT"].state).toBe("merged");
+  });
+
   test("surfaces blocked and low-confidence project-check evidence", () => {
     const blocked = createBoardProjection();
     applyEventMessage(blocked, {

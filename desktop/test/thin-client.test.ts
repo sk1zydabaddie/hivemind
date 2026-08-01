@@ -79,6 +79,7 @@ describe("React workspace boundary", () => {
       path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"),
       "utf8"
     );
+    const projection = await readFile(path.join(desktopRoot, "src", "lib", "projection.ts"), "utf8");
     const visibleSource = `${app}\n${work}`;
 
     for (const label of [
@@ -109,7 +110,9 @@ describe("React workspace boundary", () => {
       );
     }
     expect(visibleSource).not.toMatch(/High-tier oracle floor|fake-metered reported this state/u);
-    expect(visibleSource).not.toMatch(/\bMerged\b|Reached merge|Waiting to merge|blocked before merge|merge checks/iu);
+    expect(visibleSource).not.toMatch(/Reached merge|Waiting to merge|blocked before merge|merge checks/iu);
+    expect(work).toMatch(/merged:\s*\{ label: "Merged"/u);
+    expect(projection).toMatch(/case "adoption\.completed":[\s\S]*state = "merged"/u);
 
     const audit = await readFile(path.resolve(desktopRoot, "..", "docs", "m8-action-routing-audit.md"), "utf8");
     const actions = [...work.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
@@ -127,6 +130,10 @@ describe("React workspace boundary", () => {
     const inspection = await readFile(path.resolve(desktopRoot, "..", "src", "workspace-inspection.ts"), "utf8");
     expect(inspection).toContain('type: "manager.approve_pending"');
     expect(inspection).toContain('type: "manager.retry_blocked"');
+    expect(inspection).toContain('type: "adoption.review"');
+    expect(inspection).toContain('type: "adoption.execute"');
+    expect(audit).toContain("`adoption.review`");
+    expect(audit).toContain("`adoption.execute`");
     expect(work).toMatch(/if \(!item\.action\) return;[\s\S]*await onAction\(item\.action\)/u);
     expect(work).toMatch(/item\.action\.type === "manager\.retry_blocked"[\s\S]*type: "manager\.continue"/u);
     expect(audit).toContain("`manager.approve_pending`");
@@ -186,7 +193,10 @@ describe("React workspace boundary", () => {
     expect(memory).toMatch(/The app cannot approve this item/u);
     expect(memory).toMatch(/Review in a terminal/u);
     expect(history).toMatch(/read-only project evidence/u);
-    expect(source).not.toMatch(/\bmerged\b|Reached merge/iu);
+    expect(source).not.toMatch(/Reached merge/iu);
+    expect(history).toMatch(/run\.merged_tasks/u);
+    const inspection = await readFile(path.resolve(desktopRoot, "..", "src", "workspace-inspection.ts"), "utf8");
+    expect(inspection).toMatch(/event\.type === "adoption\.completed"[\s\S]*event\.data\.task_ids/u);
     expect(app).not.toMatch(/FutureWorkspaceTab/u);
   });
 });

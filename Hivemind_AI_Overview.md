@@ -1962,7 +1962,9 @@ Authority levels:
 
 Most subagents should be Level 0–2.
 
-Levels 5 and 6 are **not held by any LLM agent**. Level 5 (apply patches to the shadow branch and run checks) is performed by the deterministic Shadow Integration Service. Level 6 (adopt into the base branch / open a PR) remains a separately authorized design requirement and is not yet implemented; when built, both its mechanics and its explicit human authority must live in deterministic code, not in a prompt. The manager agent caps out at Level 1 (plan/propose) for anything safety-relevant. This is the Core Architectural Principle applied to authority levels — the most dangerous powers are the ones most firmly kept out of LLM hands.
+Levels 5 and 6 are **not held by any LLM agent**. Level 5 (apply patches to the shadow branch and run checks) is performed by the deterministic Shadow Integration Service. Level 6 local-branch adoption is performed only by M8.7's explicitly authorized deterministic adoption primitive; opening a PR remains future scope. The manager agent caps out at Level 1 (plan/propose) for anything safety-relevant. This is the Core Architectural Principle applied to authority levels — the most dangerous powers are the ones most firmly kept out of LLM hands.
+
+M8.7 implements Level 6 for a local base branch as **verified-set adoption**. Shadow verification itself emits the immutable verification-set manifest: base ref, ordered patches and their hashes, combined tree, check/oracle evidence, and governing config identity are bound at the moment they are measured, never reconstructed later. A typed human action may then adopt only that exact set after every identity and lease is re-derived against the live repository. The base transition is one guarded operation, and durable adoption evidence retains both the pre-adoption and adopted refs so a human can identify and manually revert a completed but unwanted adoption. Chat and agents remain proposers only.
 
 ## MVP: What We Build First
 
@@ -2015,7 +2017,7 @@ The two supported Phase-1 workflows are:
 1. **CLI-driven workflow** — the operator runs `hivemind` commands directly.
 2. **Manual worktree mode** — Hivemind generates the worktree, contract, and prompt; the user runs any coding tool against it and brings back a diff.
 
-Both currently terminate after a diff passes the deterministic scope check and the accepted set passes shadow verification. Adoption into the configured base branch is a separate, human-authorized capability that has not yet been built.
+Both feed the deterministic scope check and shadow verification. M8.7 then provides the separate, human-authorized local-base adoption capability; neither mode may write the configured base branch directly.
 
 ### Component Specifications
 

@@ -84,7 +84,8 @@ const stateLanguage: Record<
   blocked: { label: "Project checks blocked", tone: "danger" },
   failed: { label: "Worker stopped", tone: "danger" },
   cancelled: { label: "Stopped", tone: "neutral" },
-  verified: { label: "Ready to adopt", tone: "good" }
+  verified: { label: "Ready to adopt", tone: "good" },
+  merged: { label: "Merged", tone: "good" }
 };
 
 export function WorkTab({
@@ -747,7 +748,10 @@ function QueueRow({ item, busy, onOpen, onApprove }: { item: WorkspaceQueueItem;
 }
 
 function queueActionLabel(actionType: string): string {
-  return actionType === "manager.retry_blocked" ? "Retry" : "Approve";
+  if (actionType === "manager.retry_blocked") return "Retry";
+  if (actionType === "adoption.review") return "Review";
+  if (actionType === "adoption.execute") return "Merge exact set";
+  return "Approve";
 }
 
 function RoutingPanel({ projection }: { projection: BoardProjection }): React.JSX.Element {

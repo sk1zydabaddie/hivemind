@@ -8,6 +8,9 @@ export interface IntegrationStatus {
   applied: string[];
   tests: "pass" | "fail" | "blocked";
   report: string;
+  verification_id?: string;
+  verification_manifest_path?: string;
+  verification_manifest_sha256?: string;
 }
 
 export interface IntegrationQueueEntry {

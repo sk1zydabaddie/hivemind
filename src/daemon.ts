@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { analyzeTask } from "./analyze.js";
+import { reconcileAdoptionsOnStartup } from "./adoption.js";
 import { currentBuildIdentity } from "./build-identity.js";
 import { checkpointTask } from "./checkpoint.js";
 import { createTaskContract } from "./contract.js";
@@ -61,6 +62,11 @@ export async function daemonCommand(cwd: string, args: string[]): Promise<number
   }
   if (!qualityPreflight.value.blocked) {
     await reconcileProjectTempDirectories(repoRoot);
+  }
+  const adoptionReconcile = await reconcileAdoptionsOnStartup(repoRoot);
+  if (!adoptionReconcile.ok) {
+    console.error(`error: ${adoptionReconcile.reason}`);
+    return 1;
   }
   const reconcileResult = await reconcileIncompleteRuns(repoRoot);
   if (!reconcileResult.ok) {

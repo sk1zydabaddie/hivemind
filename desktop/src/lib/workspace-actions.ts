@@ -10,7 +10,8 @@ export interface WorkspaceQueueItem {
     | "quality_cancel_failed"
     | "memory_review"
     | "quality_review"
-    | "plan_amendment";
+    | "plan_amendment"
+    | "adoption_ready";
   title: string;
   detail: string;
   created_at: string;
@@ -173,6 +174,7 @@ export interface WorkspaceHistoryRun {
   outcome: "active" | "completed" | "needs_attention" | "paused";
   outcome_detail: string;
   verified_tasks: string[];
+  merged_tasks: string[];
   stopped_tasks: Array<{
     task_id: string;
     state: "failed" | "blocked" | "cancelled" | "paused";
@@ -206,7 +208,9 @@ export type WorkspaceAction = {
     | "quality.best_of_n"
     | "quality.draft_refine"
     | "quality.cancel"
-    | "memory.review_handoff";
+    | "memory.review_handoff"
+    | "adoption.review"
+    | "adoption.execute";
   payload: Record<string, unknown>;
 };
 

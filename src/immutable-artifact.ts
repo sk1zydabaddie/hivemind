@@ -16,7 +16,7 @@ export async function writeImmutableJsonArtifact(
     await link(tempPath, filePath);
   } catch (error: unknown) {
     if (isNodeError(error, "EEXIST")) {
-      throw new Error(`immutable quality-run artifact already exists: ${filePath}`);
+      throw new Error(`immutable artifact already exists: ${filePath}`);
     }
     throw error;
   } finally {

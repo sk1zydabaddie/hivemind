@@ -23,6 +23,13 @@ import {
   type QualityDraftVerificationContext,
   type VerificationRunResult
 } from "./verification.js";
+import {
+  captureVerificationInputs,
+  verificationInputsStillMatch,
+  writeVerificationSet,
+  type StoredVerificationSet,
+  type VerificationSetOracleAssessment
+} from "./verification-set.js";
 
 export type { IntegrationQueueEntry, IntegrationStatus } from "./integration-state.js";
 export type { VerificationRunResult } from "./verification.js";
@@ -52,7 +59,7 @@ interface GateSummary {
   reason: string;
 }
 
-interface OracleFloorAssessment {
+export interface OracleFloorAssessment extends VerificationSetOracleAssessment {
   coverage_configured: boolean;
   binding: boolean;
   task_tier: TaskTier;
@@ -135,6 +142,10 @@ export async function integrateShadow(
   const accepted = gateResult.value.filter((summary) => summary.verdict === "accept").map((summary) => summary.taskId);
   if (accepted.length === 0) {
     return { ok: false, reason: "no accepted patches to integrate" };
+  }
+  const verificationInputs = await captureVerificationInputs(repoRoot, accepted);
+  if (!verificationInputs.ok) {
+    return verificationInputs;
   }
 
   const timestamp = integrationTimestamp();
@@ -223,15 +234,51 @@ export async function integrateShadow(
                   }
                 }
                 if (outcome === null) {
-                  status = {
-                    branch,
-                    applied: accepted,
-                    tests: verification.value.tests,
-                    report
-                  };
-                  await writeIntegrationStatus(repoRoot, status);
-                  const eventResult = await appendIntegrationEvent(repoRoot, status);
-                  outcome = eventResult.ok ? { ok: true, value: status } : eventResult;
+                  let storedVerification: StoredVerificationSet | null = null;
+                  if (verification.value.tests === "pass") {
+                    const unchanged = await verificationInputsStillMatch(repoRoot, verificationInputs.value);
+                    if (!unchanged.ok) {
+                      outcome = unchanged;
+                    } else {
+                      const treeResult = await git(worktreePath, ["write-tree"]);
+                      if (!treeResult.ok) {
+                        outcome = { ok: false, reason: `failed to bind verified tree: ${treeResult.reason}` };
+                      } else {
+                        const stored = await writeVerificationSet(repoRoot, {
+                          base_branch: baseBranch,
+                          base_commit: baseResult.stdout.trim(),
+                          task_ids: accepted,
+                          inputs: verificationInputs.value.inputs,
+                          changed_files: changedFilesResult.stdout.split("\0").filter(Boolean).sort(),
+                          result_tree: treeResult.stdout.trim(),
+                          config_path: ".hivemind/config.json",
+                          config_sha256: verificationInputs.value.config_sha256,
+                          verification: { ...verification.value, tests: "pass" },
+                          oracle: oracleFloor
+                        });
+                        if (!stored.ok) outcome = stored;
+                        else storedVerification = stored.value;
+                      }
+                    }
+                  }
+                  if (outcome === null) {
+                    status = {
+                      branch,
+                      applied: accepted,
+                      tests: verification.value.tests,
+                      report,
+                      ...(storedVerification === null
+                        ? {}
+                        : {
+                            verification_id: storedVerification.manifest.verification_id,
+                            verification_manifest_path: storedVerification.manifest_path,
+                            verification_manifest_sha256: storedVerification.manifest_sha256
+                          })
+                    };
+                    await writeIntegrationStatus(repoRoot, status);
+                    const eventResult = await appendIntegrationEvent(repoRoot, status);
+                    outcome = eventResult.ok ? { ok: true, value: status } : eventResult;
+                  }
                 }
               }
             }
@@ -474,7 +521,12 @@ async function appendIntegrationEvent(repoRoot: string, status: IntegrationStatu
       branch: status.branch,
       applied: status.applied,
       tests: status.tests,
-      report: status.report
+      report: status.report,
+      ...(status.verification_id === undefined ? {} : {
+        verification_id: status.verification_id,
+        verification_manifest_path: status.verification_manifest_path,
+        verification_manifest_sha256: status.verification_manifest_sha256
+      })
     }
   });
   return eventResult.ok ? { ok: true } : { ok: false, reason: `failed to append ${eventType} event: ${eventResult.reason}` };

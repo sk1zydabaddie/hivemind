@@ -23,6 +23,11 @@ export interface LeaseReleaseResult {
   released: string[];
 }
 
+export interface TaskLeaseRequirement {
+  task_id: string;
+  files: string[];
+}
+
 export type LeaseStore = Record<string, string>;
 type LeaseResult<T> = { ok: true; value: T } | { ok: false; reason: string };
 
@@ -262,6 +267,50 @@ export async function releaseLease(repoRoot: string, taskId: string): Promise<Le
     return { ok: false, reason: `failed to append lease.released event: ${eventResult.reason}` };
   }
 
+  return result;
+}
+
+export async function runWithHeldTaskLeases<T>(
+  repoRoot: string,
+  requirements: TaskLeaseRequirement[],
+  action: () => Promise<LeaseResult<T>>
+): Promise<LeaseResult<T>> {
+  const taskIds = [...new Set(requirements.map((requirement) => requirement.task_id))].sort();
+  const releasedByTask = new Map(taskIds.map((taskId) => [taskId, [] as string[]]));
+  const result = await withLeaseLock(repoRoot, async () => {
+    const storeResult = await readActiveLeases(repoRoot);
+    if (!storeResult.ok) return storeResult;
+    for (const requirement of requirements) {
+      for (const file of requirement.files) {
+        const holder = storeResult.store[file];
+        if (holder !== requirement.task_id) {
+          return {
+            ok: false,
+            reason: `adoption lease changed before transition: ${file} ${holder === undefined ? "is not leased" : `held by ${holder}`}`
+          };
+        }
+      }
+    }
+    const actionResult = await action();
+    if (!actionResult.ok) return actionResult;
+    const holders = new Set(taskIds);
+    const nextStore: LeaseStore = {};
+    for (const [filePath, holder] of Object.entries(storeResult.store)) {
+      if (holders.has(holder)) releasedByTask.get(holder)!.push(filePath);
+      else nextStore[filePath] = holder;
+    }
+    await writeActiveLeases(repoRoot, nextStore);
+    return actionResult;
+  });
+  if (!result.ok) return result;
+  for (const taskId of taskIds) {
+    const eventResult = await appendEvent(repoRoot, {
+      type: "lease.released",
+      task_id: taskId,
+      data: { released: releasedByTask.get(taskId)!.sort(), reason: "verified set adopted" }
+    });
+    if (!eventResult.ok) return { ok: false, reason: `failed to append lease.released event: ${eventResult.reason}` };
+  }
   return result;
 }
 

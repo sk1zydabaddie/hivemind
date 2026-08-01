@@ -8,7 +8,8 @@ export const TASK_STATES = [
   "blocked",
   "failed",
   "cancelled",
-  "verified"
+  "verified",
+  "merged"
 ] as const;
 
 export type TaskState = (typeof TASK_STATES)[number];
@@ -87,7 +88,7 @@ export interface SubagentProjection {
 export interface ArtifactMovement {
   id: string;
   task_id: string;
-  stage: "checks" | "tests" | "verified";
+  stage: "checks" | "tests" | "verified" | "merged";
   event_type: string;
   event_at: string;
 }
@@ -386,6 +387,14 @@ export function applyEventMessage(
         const appliedTask = ensureTask(projection, taskId);
         appliedTask.state = "verified";
         appliedTask.integration = "passed";
+      }
+      break;
+    case "adoption.completed":
+      for (const taskId of readStringArray(event.data.task_ids) ?? []) {
+        const adoptedTask = ensureTask(projection, taskId);
+        adoptedTask.state = "merged";
+        adoptedTask.integration = "merged";
+        adoptedTask.issue = null;
       }
       break;
     case "integration.failed":
@@ -745,6 +754,7 @@ function movementStage(type: string): ArtifactMovement["stage"] | null {
   if (type === "patch.accepted") return "checks";
   if (type === "verification.completed") return "tests";
   if (type === "integration.passed") return "verified";
+  if (type === "adoption.completed") return "merged";
   return null;
 }
 
