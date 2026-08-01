@@ -66,6 +66,20 @@ The daemon now provides a scoped in-process route transport while a queued handl
 
 Core daemons also capture and publish a deterministic compiled-build identity at startup. The desktop compares that identity before attach and before each action, so a live pre-fix daemon is surfaced instead of silently receiving another paid call. Missing or mismatched identity never causes the shell to start a second writer.
 
+## Post-repair E2E Resume
+
+The repaired dispatcher consumed the already-paid `create_task_contract` proposal and drove `T-001` through contract creation, lease, write intent, worktree creation, and a real Codex worker without nested HTTP. The worker ran for 121.032 seconds, changed only `src/release-notes.ts` and `test/release-notes.test.ts`, and passed all four scratch-repository tests. The manager then submitted and analyzed the patch, the deterministic scope gate accepted it, and the patch entered the integration queue.
+
+The explicit merge approval reached the real integration primitive. Integration then stopped at the deterministic floor with:
+
+```text
+base branch main not found
+```
+
+The scratch repository's checked-out branch is not named `main`, while its integration configuration expects `main`. The manager recorded `integrate_shadow` as consumed with `result_ok: false` and a Tier-3 hard stop. Per the bounded-run rule, no branch/config adaptation, retry, second worker, or additional paid call followed. `T-002` never started.
+
+This proves the self-reentrancy repair under the real UI path, but the complete two-task merge and post-run History acceptance remain unverified.
+
 ## Spend
 
 | Call | Provider tokens | Self-measured tokens | Wall time |
@@ -76,7 +90,9 @@ Core daemons also capture and publish a deterministic compiled-build identity at
 | Manager, repaired single-action proposal | 20,447 | 3,647 | included below |
 | Total | 81,904 | 13,373 | 84.544 s |
 
-Provider-reported usage was the accounting source. Provider usage was 6.12 times the self-measured estimate. No worker call occurred.
+Provider-reported usage was the accounting source. Provider usage was 6.12 times the self-measured estimate. No worker call had occurred at that checkpoint.
+
+After the repaired resume, the current daemon ledger contains 209,636 provider tokens across 13 requests: planner 19,561, manager 159,969, and worker 30,106. The earlier stale-daemon manager call cost another 20,937 provider tokens but is absent from the replacement daemon's request counter. Actual paid spend for the attempt is therefore 230,573 provider tokens across 14 calls. The Work indicator displayed approximately 230.5K tokens but 13 calls, so token visibility included the failed call while request-count continuity across daemon replacement did not.
 
 Before `95e25ce`, the UI still showed `1 call / 19.6K` after the failed manager request had been durably metered. After the repair, it showed `2 calls / 40.5K`, then advanced after each retry. The defect is closed.
 
@@ -91,6 +107,12 @@ Before `95e25ce`, the UI still showed `1 call / 19.6K` after the failed manager 
 - The new Retry control was obvious and preserved the exact ratified plan. Its first use also exposed a lifecycle fact the UI did not communicate: attaching to a daemon started before a Core update leaves that process on old code.
 - The continuation timeout message is raw infrastructure text and is too long for the prompt dock. More importantly, `Continue run` looked safely retryable even though the daemon mutation queue was still occupied; the UI has no distinct "operation may still be running" state.
 - When the daemon was deliberately restarted, the disconnected header leaked the `\\?\` long-path prefix again. The normal connected header remains clean, so path sanitization is incomplete specifically in the connection-error surface.
+- The worker inspector was useful: it made the real provider startup mode, live output, changed files, and eventual patch visible without leaving the workspace. Raw ANSI escapes and the complete uncollapsed transcript made it harder to scan than necessary.
+- The Swarm tree accurately oriented the two sequential tasks, but for this small run it was mostly empty canvas. The inspector earned its space; the tree itself did not materially affect a decision.
+- After the worker finished, the selected task continued to read `Working` until the manager advanced the patch pipeline. That label conflates worker execution with post-worker processing.
+- The merge approval surfaced manager-internal wording (`integrate_shadow` and instructions to the orchestrator) instead of a human explanation.
+- The integration rejection disappeared from the attention queue after approval and was not presented as a clear recovery card. The durable session held the exact reason, but the workspace did not make it visible.
+- The 30-second desktop action timeout still presents successful long-running manager work as a raw socket failure while the daemon completes durably. This made the operator guess whether clicking again was safe.
 
 ## Screenshots
 
@@ -100,3 +122,8 @@ Before `95e25ce`, the UI still showed `1 call / 19.6K` after the failed manager 
 - `04-retry-and-correct-spend.jpg`: existing ratification preserved, failed call visible in spend, and audited retry available.
 - `05-stale-daemon-second-refusal.jpg`: retry against the pre-repair daemon, with the second paid failure included in spend.
 - `06-manager-continue-deadlock.jpg`: repaired single-action proposal stored, followed by the daemon self-routing timeout on continuation.
+- `07-worker-completed-output.png`: real Codex worker completed, changed two scoped files, and streamed output into the inspector.
+- `08-swarm-after-worker.png`: real two-task sequential swarm after the first worker completed.
+- `09-swarm-worker-inspector.png`: selected worker with live output and changed-file detail.
+- `10-merge-approval.png`: accepted patch awaiting explicit shadow-integration approval.
+- `11-integration-rejected.png`: workspace immediately after the Tier-3 `base branch main not found` rejection.
