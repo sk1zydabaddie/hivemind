@@ -130,6 +130,21 @@ export function WorkTab({
     managerSession.status !== "complete" &&
     managerSession.status !== "stopped";
   const continuationAvailable = managerSession?.continuation_available === true;
+  const managerStartAvailable =
+    inspection?.current_plan !== null &&
+    inspection?.current_plan !== undefined &&
+    plan === null &&
+    (managerSession === null || managerSession === undefined);
+
+  const startManager = async (): Promise<void> => {
+    await onAction({
+      type: "manager.start",
+      payload: {
+        message: "Execute the exact ratified plan through the normal checks.",
+        tool: "manager"
+      }
+    });
+  };
 
   const submitPrompt = async (
     event: React.FormEvent<HTMLFormElement>
@@ -295,12 +310,25 @@ export function WorkTab({
         value={composer}
         runActive={runActive}
         continuationAvailable={continuationAvailable}
+        managerStartAvailable={managerStartAvailable}
         busy={busy}
         feedback={feedback || plainActionError(actionError)}
         spend={inspection?.spend ?? null}
         onChange={setComposer}
         onSubmit={submitPrompt}
         onContinue={continueRun}
+        onStartManager={async () => {
+          setBusy(true);
+          setFeedback("");
+          try {
+            await startManager();
+            setFeedback("The manager prepared the first step. Continue when you are ready.");
+          } catch (error) {
+            setFeedback(plainActionError(error));
+          } finally {
+            setBusy(false);
+          }
+        }}
       />
 
       {reviewOpen && plan ? (
@@ -319,13 +347,7 @@ export function WorkTab({
                   expected_plan_hash: plan.plan_hash
                 }
               });
-              await onAction({
-                type: "manager.start",
-                payload: {
-                  message: "Execute the exact ratified plan through the normal checks.",
-                  tool: "manager"
-                }
-              });
+              await startManager();
               setReviewOpen(false);
               setFeedback("Plan approved. The manager prepared the first step; continue when you are ready.");
             } catch (error) {
@@ -729,22 +751,26 @@ function PromptComposer({
   value,
   runActive,
   continuationAvailable,
+  managerStartAvailable,
   busy,
   feedback,
   spend,
   onChange,
   onSubmit,
-  onContinue
+  onContinue,
+  onStartManager
 }: {
   value: string;
   runActive: boolean;
   continuationAvailable: boolean;
+  managerStartAvailable: boolean;
   busy: boolean;
   feedback: string;
   spend: WorkspaceInspection["spend"] | null;
   onChange: (value: string) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   onContinue: () => Promise<void>;
+  onStartManager: () => Promise<void>;
 }): React.JSX.Element {
   return (
     <footer className="prompt-dock">
@@ -760,6 +786,7 @@ function PromptComposer({
         <div className="prompt-note">
           <span>{runActive ? "Guidance is read on the next step and does not change work already in progress." : "Typed text proposes work. Review buttons approve it."}</span>
           <span className="prompt-actions">
+            {managerStartAvailable ? <button className="button-secondary continue-run" type="button" disabled={busy} onClick={() => void onStartManager()}><Play size={13} />Retry manager</button> : null}
             {continuationAvailable ? <button className="button-secondary continue-run" type="button" disabled={busy} onClick={() => void onContinue()}><Play size={13} />Continue run</button> : null}
             {feedback ? <strong role="status">{feedback}</strong> : null}
           </span>

@@ -243,6 +243,7 @@ export function useWorkspace(): WorkspaceView {
       } catch (error) {
         const normalized = error instanceof Error ? error : new Error(String(error));
         setActionError(normalized.message);
+        await refreshInspection().catch(() => undefined);
         throw normalized;
       }
     },

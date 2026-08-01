@@ -181,6 +181,33 @@ test("workspace prompt prepares a linted mixed-tier plan but cannot authorize or
       payload: { spec_id: "S-001", expected_plan_hash: result.plan_hash }
     });
     assert.equal(ratified.ok, true, ratified.ok ? undefined : ratified.reason);
+
+    await writeWorkspaceManagerAdapter(repo, "fixture-manager", managerMarker, {
+      reason: "Incorrectly batch the fixed pipeline.",
+      human_approval_required_for: ["run_worker"],
+      actions: [{ type: "get_status" }, { type: "get_status" }]
+    });
+    const failedStart = await executeWorkspaceAction(repo, {
+      type: "manager.start",
+      payload: { message: "Execute the exact ratified plan.", tool: "fixture-manager" }
+    });
+    assert.equal(failedStart.ok, false);
+    if (!failedStart.ok) assert.match(failedStart.reason, /at most one next action/u);
+    const afterFailedStart = await executeWorkspaceAction(repo, { type: "status.inspect", payload: {} });
+    assert.equal(afterFailedStart.ok, true, afterFailedStart.ok ? undefined : afterFailedStart.reason);
+    if (afterFailedStart.ok) {
+      const failedView = afterFailedStart.value as {
+        manager_session: unknown;
+        current_plan: { plan_hash: string };
+        spend: { calls: number; effective_tokens: number };
+      };
+      assert.equal(failedView.manager_session, null);
+      assert.equal(failedView.current_plan.plan_hash, result.plan_hash);
+      assert.equal(failedView.spend.calls, 2);
+      assert.equal(failedView.spend.effective_tokens > 0, true);
+    }
+
+    await writeWorkspaceManagerAdapter(repo, "fixture-manager", managerMarker);
     const started = await executeWorkspaceAction(repo, {
       type: "manager.start",
       payload: { message: "Execute the exact ratified plan.", tool: "fixture-manager" }
@@ -188,13 +215,13 @@ test("workspace prompt prepares a linted mixed-tier plan but cannot authorize or
     assert.equal(started.ok, true, started.ok ? undefined : started.reason);
     if (!started.ok) return;
     assert.equal((started.value as { session_id: string }).session_id, result.usage_session_id);
-    assert.equal(await readFile(managerMarker, "utf8"), "spawned\n");
+    assert.equal(await readFile(managerMarker, "utf8"), "spawned\nspawned\n");
 
     const ledger = await readQuotaLedger(repo);
     assert.equal(ledger.ok, true);
     if (ledger.ok) {
       assert.equal(ledger.value["fixture-planner"]?.session_usage[result.usage_session_id]?.requests, 1);
-      assert.equal(ledger.value["fixture-manager"]?.session_usage[result.usage_session_id]?.requests, 1);
+      assert.equal(ledger.value["fixture-manager"]?.session_usage[result.usage_session_id]?.requests, 2);
     }
   });
 });
@@ -710,10 +737,17 @@ test("React action bridge remains a typed Tauri invocation with no Core authorit
 test("Work tab prepares before ratification and starts only from the explicit approval control", async () => {
   const source = await readFile(path.resolve("desktop/src/components/workspace/work-tab.tsx"), "utf8");
   assert.match(source, /type: "plan\.prepare"/u);
-  assert.match(source, /type: "plan\.ratify"[\s\S]*type: "manager\.start"/u);
+  assert.match(source, /type: "plan\.ratify"/u);
+  assert.match(source, /const startManager[\s\S]*type: "manager\.start"/u);
+  assert.match(source, /type: "plan\.ratify"[\s\S]*await startManager\(\)/u);
   assert.match(source, /Approve and start/u);
+  assert.match(source, /Retry manager/u);
+  assert.match(source, /managerStartAvailable[\s\S]*type: "manager\.start"/u);
   assert.match(source, /Typed guidance cannot approve it/u);
   assert.doesNotMatch(source, /type: "plan\.ratify"[\s\S]{0,220}(composer|message)/u);
+
+  const hookSource = await readFile(path.resolve("desktop/src/hooks/use-workspace.ts"), "utf8");
+  assert.match(hookSource, /catch \(error\)[\s\S]*setActionError\(normalized\.message\);[\s\S]*refreshInspection\(\)\.catch/u);
 });
 
 test("Memory and History inspection never crosses the selected project boundary", async () => {
@@ -855,13 +889,22 @@ async function writeWorkspacePlanningAdapter(
   }, null, 2)}\n`);
 }
 
-async function writeWorkspaceManagerAdapter(repo: string, tool: string, marker: string): Promise<void> {
+async function writeWorkspaceManagerAdapter(
+  repo: string,
+  tool: string,
+  marker: string,
+  proposal: Record<string, unknown> = {
+    reason: "Await execution through deterministic actions.",
+    human_approval_required_for: [],
+    actions: []
+  }
+): Promise<void> {
   const agent = path.join(repo, `${tool}.mjs`);
   await writeFile(agent, [
     "import { appendFile } from 'node:fs/promises';",
     "for await (const _chunk of process.stdin) {}",
     `await appendFile(${JSON.stringify(marker)}, 'spawned\\n');`,
-    "console.log(JSON.stringify({ reason: 'Await execution through deterministic actions.', human_approval_required_for: [], actions: [] }));"
+    `console.log(${JSON.stringify(JSON.stringify(proposal))});`
   ].join("\n"));
   await writeFile(path.join(repo, ".hivemind", "adapters", `${tool}.profile.json`), `${JSON.stringify({
     tool,

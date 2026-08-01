@@ -88,6 +88,24 @@ test("manager session shell records a user message against the active ratified s
   });
 });
 
+test("full manager prompt requires exactly one next action independently of caller wording", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await writePromptCapturingManagerProfile(repo, 16_000);
+
+    const result = await startManagerSession(repo, "Execute the entire plan through every normal check.");
+
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    const prompt = await readFile(path.join(repo, ".hivemind", "captured-manager-prompt.txt"), "utf8");
+    assert.match(prompt, /Choose only the next single manager action from current durable state/u);
+    assert.match(prompt, /actions array MUST contain zero or one action object/u);
+    assert.match(prompt, /Never batch a pipeline or predict later actions in the same proposal/u);
+    assert.match(prompt, /Supported next-action object references \(each line is an alternative; choose at most one\)/u);
+    assert.doesNotMatch(prompt, /next gated action sequence/u);
+  });
+});
+
 test("manager context pressure checkpoints and sends a lean rehydrated prompt", async () => {
   await withTempRepo(async ({ repo }) => {
     await createRatifiedSpec(repo, "S-001");
@@ -102,6 +120,10 @@ test("manager context pressure checkpoints and sends a lean rehydrated prompt", 
     const prompt = await readFile(path.join(repo, ".hivemind", "captured-manager-prompt.txt"), "utf8");
     assert.match(prompt, /Context rehydration mode: lean/);
     assert.match(prompt, /freshly read from \.hivemind\//);
+    assert.match(prompt, /Choose only the next single manager action from current durable state/u);
+    assert.match(prompt, /actions array MUST contain zero or one action object/u);
+    assert.match(prompt, /Never batch a pipeline or predict later actions in the same proposal/u);
+    assert.doesNotMatch(prompt, /next gated action sequence/u);
     const snapshotPath = path.join(repo, ".hivemind", "resource", "checkpoints", "orchestrator.snapshot.json");
     const snapshotText = await readFile(snapshotPath, "utf8");
     const snapshot = JSON.parse(snapshotText) as {
