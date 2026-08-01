@@ -60,6 +60,12 @@ Continuation then failed with Windows socket timeout `10060`. The timeout was a 
 
 This is a missing daemon-internal execution boundary, not a reason to extend the 30-second Rust action timeout. A longer timeout would only wait longer on the same self-deadlock. The loop was not redesigned during this test.
 
+## Free Repair Before Resume
+
+The daemon now provides a scoped in-process route transport while a queued handler is running. Manager actions still resolve the same registered daemon handlers and primitives, including the asynchronous `/run` job, but do not issue nested HTTP or queue behind themselves. A deterministic fake-worker regression drove the complete nine-action lifecycle through real `/workspace/action` requests and observed only the six outer requests.
+
+Core daemons also capture and publish a deterministic compiled-build identity at startup. The desktop compares that identity before attach and before each action, so a live pre-fix daemon is surfaced instead of silently receiving another paid call. Missing or mismatched identity never causes the shell to start a second writer.
+
 ## Spend
 
 | Call | Provider tokens | Self-measured tokens | Wall time |

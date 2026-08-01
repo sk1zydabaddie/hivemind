@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path, { dirname } from "node:path";
@@ -10,6 +10,8 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { appendEvent, readEvents } from "../src/events.js";
+import { currentBuildIdentity } from "../src/build-identity.js";
+import { createDaemonServer } from "../src/daemon.js";
 import { initProject } from "../src/init.js";
 import { requestLease } from "../src/lease.js";
 import { readQuotaLedger } from "../src/resource-ledger.js";
@@ -488,7 +490,7 @@ test("manager autonomous loop chains Tier-1 actions after deterministic passes",
   });
 });
 
-test("workspace dispatcher consumes the stored first proposal and drives a complete gated loop without the CLI", async () => {
+test("daemon workspace dispatcher consumes the stored first proposal and completes the loop without nested HTTP", async (context) => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
     await setConfigTestCommand(repo, "node -e \"process.exit(0)\"");
@@ -512,7 +514,22 @@ test("workspace dispatcher consumes the stored first proposal and drives a compl
       after_integrate_shadow_ok: proposalFor([])
     });
 
-    const started = await executeWorkspaceAction(repo, {
+    const daemon = createDaemonServer(repo, await currentBuildIdentity());
+    const observedRoutes: string[] = [];
+    daemon.on("request", (request) => observedRoutes.push(request.url ?? ""));
+    await listenServer(daemon);
+    const address = daemon.address() as AddressInfo;
+    const daemonUrl = `http://127.0.0.1:${address.port}`;
+    const previousDaemonUrl = process.env.HIVEMIND_DAEMON_URL;
+    process.env.HIVEMIND_DAEMON_URL = daemonUrl;
+    context.after(async () => {
+      if (previousDaemonUrl === undefined) delete process.env.HIVEMIND_DAEMON_URL;
+      else process.env.HIVEMIND_DAEMON_URL = previousDaemonUrl;
+      await closeTestServer(daemon);
+    });
+    const dispatch = (action: Record<string, unknown>) => postWorkspaceActionForTest(daemonUrl, action);
+
+    const started = await dispatch({
       type: "manager.start",
       payload: { message: "Drive the workspace loop.", tool: "manager" }
     });
@@ -521,7 +538,7 @@ test("workspace dispatcher consumes the stored first proposal and drives a compl
     const sessionId = (started.value as { session_id: string }).session_id;
     assert.deepEqual(await managerReactiveCalls(repo), ["initial"]);
 
-    let continued = await executeWorkspaceAction(repo, {
+    let continued = await dispatch({
       type: "manager.continue",
       payload: { session_id: sessionId, tool: "manager", max_steps: 20 }
     });
@@ -537,7 +554,7 @@ test("workspace dispatcher consumes the stored first proposal and drives a compl
       const pending = loop.steps.at(-1)?.pause;
       assert.ok(pending);
       assert.equal(pending.action_type, expectedAction);
-      const approved = await executeWorkspaceAction(repo, {
+      const approved = await dispatch({
         type: "manager.approve_pending",
         payload: {
           session_id: sessionId,
@@ -548,7 +565,7 @@ test("workspace dispatcher consumes the stored first proposal and drives a compl
         }
       });
       assert.equal(approved.ok, true, approved.ok ? undefined : approved.reason);
-      continued = await executeWorkspaceAction(repo, {
+      continued = await dispatch({
         type: "manager.continue",
         payload: { session_id: sessionId, tool: "manager", max_steps: 20 }
       });
@@ -563,6 +580,8 @@ test("workspace dispatcher consumes the stored first proposal and drives a compl
     const session = await readSession(repo, `.hivemind/orchestrator/sessions/${sessionId}.json`);
     assert.equal(session.proposal_state.status, "consumed");
     assert.equal(session.executed_actions.length, 9);
+    assert.equal(observedRoutes.length, 6);
+    assert.deepEqual(new Set(observedRoutes), new Set(["/workspace/action"]));
   });
 });
 
@@ -2322,6 +2341,52 @@ async function stopDaemon(daemon: DaemonProcess): Promise<void> {
   });
 }
 
+async function listenServer(server: Server): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+}
+
+async function closeTestServer(server: Server): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  });
+}
+
+async function postWorkspaceActionForTest(
+  daemonUrl: string,
+  action: Record<string, unknown>
+): Promise<{ ok: true; value: unknown } | { ok: false; reason: string }> {
+  const body = JSON.stringify(action);
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(`${daemonUrl}/workspace/action`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "content-length": Buffer.byteLength(body)
+      }
+    }, (response) => {
+      let raw = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => { raw += chunk; });
+      response.on("end", () => {
+        try {
+          resolve(JSON.parse(raw) as { ok: true; value: unknown } | { ok: false; reason: string });
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+    request.setTimeout(30_000, () => request.destroy(new Error("workspace action deadlocked or timed out")));
+    request.on("error", reject);
+    request.end(body);
+  });
+}
+
 interface RunLifecycleDaemon {
   url: string;
   readonly runRequests: number;
@@ -2335,7 +2400,7 @@ async function startRunLifecycleDaemon(repo: string, options: { taskId: string; 
   const server = createServer(async (request, response) => {
     try {
       if (request.method === "GET" && request.url === "/health") {
-        sendJson(response, 200, { ok: true, repo_root: repo });
+        sendJson(response, 200, { ok: true, repo_root: repo, build_id: await currentBuildIdentity() });
         return;
       }
       if (request.method === "POST" && request.url === "/run") {

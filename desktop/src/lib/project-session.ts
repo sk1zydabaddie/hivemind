@@ -1,6 +1,7 @@
 export interface ProjectConnection {
   project_root: string;
   daemon_url: string;
+  build_id: string;
   status: "attached" | "started";
 }
 
@@ -93,7 +94,8 @@ export function validateProjectConnection(value: unknown): ProjectConnection {
     record.status === "attached" || record.status === "started"
       ? record.status
       : "";
-  if (projectRoot === "" || daemonUrl === "" || status === "") {
+  const buildId = typeof record.build_id === "string" ? record.build_id.trim() : "";
+  if (projectRoot === "" || daemonUrl === "" || status === "" || !/^[a-f0-9]{64}$/u.test(buildId)) {
     throw new Error("The desktop shell returned an incomplete project connection.");
   }
   if (!/^http:\/\/(?:127\.0\.0\.1|localhost):\d+$/u.test(daemonUrl)) {
@@ -102,6 +104,7 @@ export function validateProjectConnection(value: unknown): ProjectConnection {
   return {
     project_root: projectRoot,
     daemon_url: daemonUrl,
+    build_id: buildId,
     status
   };
 }

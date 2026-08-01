@@ -1,6 +1,6 @@
 # M8 Workspace Action Routing Audit
 
-M8 follows two fixed rules: chat steers while typed actions authorize, and the React/Tauri workspace is a thin client over deterministic Core. The shared dispatcher is `executeWorkspaceAction()`; `hivemind workspace <typed-action-json-file>`, daemon `POST /workspace/action`, and Tauri `workspace_action` all reach that same function. React contains only the typed Tauri invocation.
+M8 follows two fixed rules: chat steers while typed actions authorize, and the React/Tauri workspace is a thin client over deterministic Core. The shared dispatcher is `executeWorkspaceAction()`; `hivemind workspace <typed-action-json-file>`, daemon `POST /workspace/action`, and Tauri `workspace_action` all reach that same function. React contains only the typed Tauri invocation. External callers use loopback HTTP to reach the daemon's serialized mutation queue. While a workspace action is already executing inside that queue, daemon-aware Core callers use a scoped in-process transport that resolves the same route handler and primitive; they never call the daemon back over HTTP or acquire the queue twice.
 
 ## Action Registry
 
@@ -35,3 +35,9 @@ MCP exposes no workspace action or promotion tool. If an M8 control later needs 
 ## Queue Exception
 
 Long-running quality generation currently uses the serialized daemon mutation queue. `quality.cancel` is the sole named interrupt permitted outside that queue so an in-flight provider can be stopped. It can only append/reconcile cancellation evidence; it cannot admit, generate, select, adopt, or mutate canonical task state. Event appends retain the existing atomic append discipline, and terminal `quality.cancelled` follows durable `quality.draft_disposed` evidence.
+
+The in-process transport is not a queue exception. It exists only while the outer daemon request already owns the queue and invokes the exact registered daemon route locally. The full dispatcher regression asserts that a complete task lifecycle entering through `/workspace/action` emits no nested HTTP route. CLI, MCP, and Tauri transports remain unchanged.
+
+## Daemon Build Identity
+
+The desktop refuses to attach or submit a workspace action unless the live daemon's startup-captured Core build identity matches the currently configured Hivemind CLI build. Missing identity is treated as a mismatch for a live daemon. The shell never responds to a mismatch by starting a second daemon; it surfaces the stale-build condition so the human can restart the existing writer deliberately. This check is transport provenance, not an authorization override, and it changes no gate semantics.

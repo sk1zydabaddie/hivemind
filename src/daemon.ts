@@ -1,8 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { analyzeTask } from "./analyze.js";
+import { currentBuildIdentity } from "./build-identity.js";
 import { checkpointTask } from "./checkpoint.js";
 import { createTaskContract } from "./contract.js";
+import { withInProcessDaemonTransport } from "./daemon-client.js";
 import { removeDaemonState, writeDaemonState } from "./daemon-state.js";
 import { formatErrorDetail } from "./error-detail.js";
 import { EventBus } from "./event-bus.js";
@@ -73,7 +75,8 @@ export async function daemonCommand(cwd: string, args: string[]): Promise<number
     }
   }
 
-  const server = createDaemonServer(repoRoot);
+  const buildId = await currentBuildIdentity();
+  const server = createDaemonServer(repoRoot, buildId);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(options.value.port, options.value.host, () => {
@@ -87,13 +90,15 @@ export async function daemonCommand(cwd: string, args: string[]): Promise<number
   await writeDaemonState(repoRoot, {
     pid: process.pid,
     url: daemonUrl,
-    repo_root: repoRoot
+    repo_root: repoRoot,
+    build_id: buildId
   });
   console.log(
     JSON.stringify({
       event: "daemon.ready",
       url: daemonUrl,
-      repo_root: repoRoot
+      repo_root: repoRoot,
+      build_id: buildId
     })
   );
 
@@ -110,13 +115,13 @@ export async function daemonCommand(cwd: string, args: string[]): Promise<number
   return 0;
 }
 
-function createDaemonServer(repoRoot: string) {
+export function createDaemonServer(repoRoot: string, buildId: string) {
   const queue = new SerializedQueue();
   const eventBus = new EventBus();
   return createServer(async (request, response) => {
     try {
       if (request.method === "GET" && request.url === "/health") {
-        writeJson(response, 200, { ok: true, repo_root: repoRoot });
+        writeJson(response, 200, { ok: true, repo_root: repoRoot, build_id: buildId });
         return;
       }
       if (request.method === "GET" && request.url === "/events/stream") {
@@ -133,7 +138,7 @@ function createDaemonServer(repoRoot: string) {
         return;
       }
 
-      const handler = routeHandler(repoRoot, request);
+      const handler = routeHandler(repoRoot, request.method, request.url);
       if (handler === null) {
         writeJson(response, 404, { ok: false, reason: "unknown daemon route" });
         return;
@@ -151,9 +156,20 @@ function createDaemonServer(repoRoot: string) {
         return;
       }
 
+      const invokeInProcess = (endpoint: string, body: DaemonPayload) => {
+        const localHandler = routeHandler(repoRoot, "POST", endpoint);
+        return localHandler === null
+          ? Promise.resolve({ ok: false as const, reason: `unknown in-process daemon route ${endpoint}` })
+          : localHandler(body, eventBus);
+      };
+      const execute = () => withInProcessDaemonTransport(
+        repoRoot,
+        invokeInProcess,
+        () => handler(payloadResult.value, eventBus)
+      );
       const result = isQueueInterrupt(request, payloadResult.value)
-        ? await handler(payloadResult.value, eventBus)
-        : await queue.run(() => handler(payloadResult.value, eventBus));
+        ? await execute()
+        : await queue.run(execute);
       await eventBus.publishNewDurableEvents(repoRoot, previousEvents.value.length);
       writeJson(response, result.ok ? 200 : 400, result);
     } catch (error: unknown) {
@@ -162,29 +178,29 @@ function createDaemonServer(repoRoot: string) {
   });
 }
 
-function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler | null {
-  if (request.method === "POST" && request.url === "/lease/request-contract") {
+function routeHandler(repoRoot: string, method: string | undefined, url: string | undefined): DaemonHandler | null {
+  if (method === "POST" && url === "/lease/request-contract") {
     return async (payload) => {
       const taskId = readTaskId(payload);
       return taskId.ok ? requestLeaseForContract(repoRoot, taskId.value) : taskId;
     };
   }
-  if (request.method === "POST" && request.url === "/contract/create") {
+  if (method === "POST" && url === "/contract/create") {
     return async (payload) => createTaskContract(repoRoot, payload.contract);
   }
-  if (request.method === "POST" && request.url === "/status") {
+  if (method === "POST" && url === "/status") {
     return async () => getStatus(repoRoot);
   }
-  if (request.method === "POST" && request.url === "/resource/quota") {
+  if (method === "POST" && url === "/resource/quota") {
     return async () => readQuotaLedger(repoRoot);
   }
-  if (request.method === "POST" && request.url === "/memory/propose") {
+  if (method === "POST" && url === "/memory/propose") {
     return async (payload) => proposeMemoryLesson(repoRoot, payload.proposal);
   }
-  if (request.method === "POST" && request.url === "/routing/derive") {
+  if (method === "POST" && url === "/routing/derive") {
     return async () => proposeLearnedRoutingPolicy(repoRoot);
   }
-  if (request.method === "POST" && request.url === "/quality/admit") {
+  if (method === "POST" && url === "/quality/admit") {
     return async (payload) => {
       const taskId = readTaskId(payload);
       if (!taskId.ok) {
@@ -199,16 +215,16 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
       });
     };
   }
-  if (request.method === "POST" && request.url === "/workspace/action") {
+  if (method === "POST" && url === "/workspace/action") {
     return async (payload) => executeWorkspaceAction(repoRoot, payload);
   }
-  if (request.method === "POST" && request.url === "/checkpoint/task") {
+  if (method === "POST" && url === "/checkpoint/task") {
     return async (payload) => {
       const taskId = readTaskId(payload);
       return taskId.ok ? checkpointTask(repoRoot, taskId.value) : taskId;
     };
   }
-  if (request.method === "POST" && request.url === "/plan/thrash") {
+  if (method === "POST" && url === "/plan/thrash") {
     return async (payload) => {
       const specId = readRequiredString(payload, "spec_id");
       if (!specId.ok) {
@@ -222,13 +238,13 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
       return budget.ok ? evaluatePlanThrash(repoRoot, specId.value, taskId.value, budget.value) : budget;
     };
   }
-  if (request.method === "POST" && request.url === "/lease/release") {
+  if (method === "POST" && url === "/lease/release") {
     return async (payload) => {
       const taskId = readTaskId(payload);
       return taskId.ok ? releaseLease(repoRoot, taskId.value) : taskId;
     };
   }
-  if (request.method === "POST" && request.url === "/intent/check") {
+  if (method === "POST" && url === "/intent/check") {
     return async (payload) => {
       const taskId = readTaskId(payload);
       if (!taskId.ok) {
@@ -237,22 +253,22 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
       return isRecord(payload.intent) ? checkWriteIntent(repoRoot, taskId.value, payload.intent) : { ok: false, reason: "intent must be a JSON object" };
     };
   }
-  if (request.method === "POST" && request.url === "/supervision/redirect") {
+  if (method === "POST" && url === "/supervision/redirect") {
     return async (payload) => requestTaskRedirect(repoRoot, payload);
   }
-  if (request.method === "POST" && request.url === "/worktree/create") {
+  if (method === "POST" && url === "/worktree/create") {
     return async (payload) => {
       const taskId = readTaskId(payload);
       return taskId.ok ? createTaskWorktree(repoRoot, taskId.value) : taskId;
     };
   }
-  if (request.method === "POST" && request.url === "/worktree/remove") {
+  if (method === "POST" && url === "/worktree/remove") {
     return async (payload) => {
       const taskId = readTaskId(payload);
       return taskId.ok ? removeTaskWorktree(repoRoot, taskId.value) : taskId;
     };
   }
-  if (request.method === "POST" && request.url === "/run") {
+  if (method === "POST" && url === "/run") {
     return async (payload, eventBus) => {
       const taskId = readTaskId(payload);
       if (!taskId.ok) {
@@ -274,7 +290,7 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
       });
     };
   }
-  if (request.method === "POST" && request.url === "/run/mark-failed") {
+  if (method === "POST" && url === "/run/mark-failed") {
     return async (payload) => {
       const taskId = readTaskId(payload);
       if (!taskId.ok) {
@@ -287,7 +303,7 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
       return markRunFailed(repoRoot, taskId.value, reason.value, payload.source === undefined ? {} : { source: payload.source });
     };
   }
-  if (request.method === "POST" && request.url === "/scout/run") {
+  if (method === "POST" && url === "/scout/run") {
     return async (payload) => {
       const taskId = readTaskId(payload);
       if (!taskId.ok) {
@@ -306,28 +322,28 @@ function routeHandler(repoRoot: string, request: IncomingMessage): DaemonHandler
       });
     };
   }
-  if (request.method === "POST" && request.url === "/submit") {
+  if (method === "POST" && url === "/submit") {
     return async (payload) => {
       const taskId = readTaskId(payload);
       return taskId.ok ? submitTask(repoRoot, taskId.value) : taskId;
     };
   }
-  if (request.method === "POST" && request.url === "/analyze") {
+  if (method === "POST" && url === "/analyze") {
     return async (payload) => {
       const taskId = readTaskId(payload);
       return taskId.ok ? analyzeTask(repoRoot, taskId.value) : taskId;
     };
   }
-  if (request.method === "POST" && request.url === "/analyze/verdict") {
+  if (method === "POST" && url === "/analyze/verdict") {
     return async (payload) => {
       const taskId = readTaskId(payload);
       return taskId.ok ? analyzeTask(repoRoot, taskId.value, { emitEvent: false }) : taskId;
     };
   }
-  if (request.method === "POST" && request.url === "/integrate/shadow") {
+  if (method === "POST" && url === "/integrate/shadow") {
     return async () => integrateShadow(repoRoot);
   }
-  if (request.method === "POST" && request.url === "/integration/enqueue") {
+  if (method === "POST" && url === "/integration/enqueue") {
     return async (payload) => {
       const taskId = readTaskId(payload);
       return taskId.ok ? enqueueIntegrationPatch(repoRoot, taskId.value) : taskId;

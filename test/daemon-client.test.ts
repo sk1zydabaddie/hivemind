@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { currentBuildIdentity } from "../src/build-identity.js";
 import { callDaemonIfConfigured } from "../src/daemon-client.js";
 
 test("daemon client preserves nested fetch causes instead of collapsing them to fetch failed", async () => {
@@ -30,5 +31,33 @@ test("daemon client preserves nested fetch causes instead of collapsing them to 
     } else {
       process.env.HIVEMIND_DAEMON_URL = originalUrl;
     }
+  }
+});
+
+test("daemon client refuses a live daemon from a different Core build before mutation", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalUrl = process.env.HIVEMIND_DAEMON_URL;
+  const calls: string[] = [];
+  process.env.HIVEMIND_DAEMON_URL = "http://127.0.0.1:65535";
+  globalThis.fetch = (async (input) => {
+    calls.push(String(input));
+    return new Response(JSON.stringify({
+      ok: true,
+      repo_root: process.cwd(),
+      build_id: "0".repeat(64)
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+
+  try {
+    assert.notEqual(await currentBuildIdentity(), "0".repeat(64));
+    const result = await callDaemonIfConfigured(process.cwd(), "/lease/request-contract", { task_id: "T-001" });
+    assert.equal(result.routed, true);
+    assert.equal(result.ok, false);
+    if (result.routed && !result.ok) assert.match(result.reason, /daemon build mismatch/u);
+    assert.deepEqual(calls, ["http://127.0.0.1:65535/health"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalUrl === undefined) delete process.env.HIVEMIND_DAEMON_URL;
+    else process.env.HIVEMIND_DAEMON_URL = originalUrl;
   }
 });

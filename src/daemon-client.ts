@@ -1,5 +1,7 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { realpath } from "node:fs/promises";
 import path from "node:path";
+import { currentBuildIdentity } from "./build-identity.js";
 import { daemonProcessIsLive, readDaemonState } from "./daemon-state.js";
 import { formatErrorDetail } from "./error-detail.js";
 
@@ -11,6 +13,24 @@ export type DaemonCallResult<T> =
 interface DaemonHealth {
   ok: true;
   repo_root: string;
+  build_id: string;
+}
+
+type InProcessDaemonResult = { ok: true; value: unknown } | { ok: false; reason: string };
+
+interface InProcessDaemonContext {
+  repo_root: string;
+  invoke: (endpoint: string, body: Record<string, unknown>) => Promise<InProcessDaemonResult>;
+}
+
+const inProcessDaemonContext = new AsyncLocalStorage<InProcessDaemonContext>();
+
+export async function withInProcessDaemonTransport<T>(
+  repoRoot: string,
+  invoke: InProcessDaemonContext["invoke"],
+  action: () => Promise<T>
+): Promise<T> {
+  return inProcessDaemonContext.run({ repo_root: repoRoot, invoke }, action);
 }
 
 export async function callDaemonIfConfigured<T>(
@@ -18,6 +38,17 @@ export async function callDaemonIfConfigured<T>(
   endpoint: string,
   body: Record<string, unknown>
 ): Promise<DaemonCallResult<T>> {
+  const local = inProcessDaemonContext.getStore();
+  if (local !== undefined) {
+    if (!(await sameRepoRoot(repoRoot, local.repo_root))) {
+      return { routed: true, ok: false, reason: "in-process daemon context belongs to a different git repository root" };
+    }
+    const result = await local.invoke(endpoint, body);
+    return result.ok
+      ? { routed: true, ok: true, value: result.value as T }
+      : { routed: true, ok: false, reason: result.reason };
+  }
+
   const addressResult = await resolveDaemonAddress(repoRoot);
   if (!addressResult.ok) {
     return { routed: true, ok: false, reason: addressResult.reason };
@@ -33,6 +64,14 @@ export async function callDaemonIfConfigured<T>(
   }
   if (!(await sameRepoRoot(repoRoot, healthResult.value.repo_root))) {
     return { routed: true, ok: false, reason: "daemon repo_root does not match the current git repository root" };
+  }
+  const expectedBuildId = await currentBuildIdentity();
+  if (healthResult.value.build_id !== expectedBuildId) {
+    return {
+      routed: true,
+      ok: false,
+      reason: `daemon build mismatch: running ${healthResult.value.build_id || "unknown"}, expected ${expectedBuildId}; restart the daemon before continuing`
+    };
   }
 
   const result = await requestJson<{ ok: true; value: T } | { ok: false; reason: string }>(`${baseUrl}${endpoint}`, {

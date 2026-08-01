@@ -9,6 +9,7 @@ export interface DaemonState {
   pid: number;
   url: string;
   repo_root: string;
+  build_id?: string;
   started_at: string;
 }
 
@@ -30,12 +31,16 @@ export async function readDaemonState(repoRoot: string): Promise<{ ok: true; val
   return validation.ok ? { ok: true, value: raw as DaemonState } : validation;
 }
 
-export async function writeDaemonState(repoRoot: string, value: Omit<DaemonState, "version" | "started_at">): Promise<void> {
+export async function writeDaemonState(
+  repoRoot: string,
+  value: Omit<DaemonState, "version" | "started_at" | "build_id"> & { build_id: string }
+): Promise<void> {
   await writeJsonAtomic(daemonStatePath(repoRoot), {
     version: 1,
     pid: value.pid,
     url: value.url,
     repo_root: value.repo_root,
+    build_id: value.build_id,
     started_at: new Date().toISOString()
   });
 }
@@ -63,6 +68,9 @@ function validateDaemonState(value: unknown): { ok: true } | { ok: false; reason
   }
   if (typeof value.repo_root !== "string" || value.repo_root.trim() === "") {
     return { ok: false, reason: "daemon state repo_root must be a non-empty string" };
+  }
+  if (value.build_id !== undefined && (typeof value.build_id !== "string" || !/^[a-f0-9]{64}$/u.test(value.build_id))) {
+    return { ok: false, reason: "daemon state build_id must be a lowercase SHA-256 digest when present" };
   }
   if (typeof value.started_at !== "string" || Number.isNaN(Date.parse(value.started_at))) {
     return { ok: false, reason: "daemon state started_at must be an ISO timestamp string" };

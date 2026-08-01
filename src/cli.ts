@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { analyzeCommand } from "./analyze.js";
+import { currentBuildIdentity } from "./build-identity.js";
 import { checkpointCommand } from "./checkpoint.js";
 import { daemonCommand } from "./daemon.js";
 import { integrateCommand } from "./integrate.js";
@@ -29,6 +30,11 @@ async function main(argv: string[]): Promise<number> {
 
   if (command === "init" && rest.length === 0) {
     return initProject(process.cwd());
+  }
+
+  if (command === "build-id" && rest.length === 0) {
+    console.log(await currentBuildIdentity());
+    return 0;
   }
 
   if (command === "contract") {
