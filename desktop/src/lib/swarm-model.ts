@@ -104,7 +104,7 @@ export function defaultCollapsedGroups(
 
 export function displayStateForTask(task: TaskProjection): AgentDisplayState {
   if (["failed", "blocked", "rejected"].includes(task.state)) return "needs-you";
-  if (task.state === "integrated") return "done";
+  if (task.state === "verified") return "done";
   if (["planned", "paused", "cancelled"].includes(task.state)) return "waiting";
   return "healthy";
 }

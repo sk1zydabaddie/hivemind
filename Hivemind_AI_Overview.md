@@ -1323,7 +1323,7 @@ M8 turns the verified read-only Tauri monitor into the local Hivemind workspace.
 
 Three rules govern the workspace:
 
-1. **Plain language first.** A user can run the loop without learning Hivemind vocabulary. Terms such as lease, canon, oracle, Tier-2, and write-intent appear only in detail views or when the underlying decision genuinely requires them. The primary UI says "blocked before merge," "thin test coverage," "see what's untested," and "write a test."
+1. **Plain language first.** A user can run the loop without learning Hivemind vocabulary. Terms such as lease, canon, oracle, Tier-2, and write-intent appear only in detail views or when the underlying decision genuinely requires them. The primary UI says "project checks blocked," "thin test coverage," "see what's untested," and "write a test."
 2. **Chat steers; buttons authorize.** Free text is advisory guidance to a proposal. It never satisfies a gate, grants approval, ratifies a plan, promotes memory, integrates a patch, changes a tier, or authorizes spend. Approvals are explicit typed structured actions disposed by deterministic Core primitives.
 3. **Thin client, one truth.** React holds ephemeral render state only. Authoritative project state remains under the selected repo's `.hivemind/`; actionable eligibility and current status come from the daemon. The UI contains no gate, routing, integration, promotion, or lifecycle truth of its own and invokes the same Core primitives as the CLI.
 
@@ -1486,7 +1486,7 @@ Shows anything requiring human approval:
 Every task moves through one canonical, code-owned state machine. Statuses shown elsewhere in the UI (e.g. "coding," "revision requested") are display labels that map onto these states; this is the authoritative model.
 
 ```
-planned ──▶ scouting ──▶ in_progress ──▶ submitted ──▶ in_review ──▶ integrated
+planned ──▶ scouting ──▶ in_progress ──▶ submitted ──▶ in_review ──▶ verified
    │  (optional Scout pass)      │              │            │
    │                            │              │            └─(needs changes)─▶ revision_requested ─▶ in_progress
    │                            └─(declares write-intent)    │
@@ -1500,20 +1500,20 @@ State meanings:
 - **in_progress** — a Builder has declared write-intent (validated against its lease) and is editing in its worktree.
 - **submitted** — a patch bundle has been handed in; the deterministic patch broker runs its gate.
 - **in_review** — **the structural wall.** A task can only reach here if the deterministic gate has already passed (it is not a place to rescue an out-of-scope diff). Here the advisory Reviewer comments and any *required* human approvals are collected.
-- **integrated** — applied via the shadow integration service and merged after its checks/approvals; terminal success. A task is integrated only when the durable event trail proves the full path (`patch.submitted` -> `patch.accepted` -> `integration.passed` for that task); derived cache files such as `integration/status.json` may report integration details but are not authoritative for per-task completion.
+- **verified** — applied to a disposable shadow branch and passed the configured project checks; ready for a separately authorized adoption step. `integration.passed` proves verification only: it does not update the configured base branch and must never be presented as a merge. A task is verified only when the durable event trail proves the full path (`patch.submitted` -> `patch.accepted` -> `integration.passed` for that task); derived cache files such as `integration/status.json` may report details but are not authoritative for per-task completion.
 - **revision_requested** — gate or review found a problem; returns to in_progress with feedback.
 - **blocked / cancelled** — escalated or stopped; reachable from any state.
 
 A quota-wall pause is deliberately **not** a state here. When the Resource & Continuity Manager (component 14) checkpoints a task whose provider has hit a limit, the task keeps its current lifecycle state (typically `in_progress`); only its *execution attributes* change — the worker is detached and the partial work is snapshotted — exactly as "which agent is assigned" is orthogonal to task state. On resume, a possibly-different provider re-attaches. This keeps the state machine from forking into provider-specific variants.
 
-The one rule that makes `in_review` worth naming as its own state: **nothing transitions `in_review → integrated` on the manager's say-so.** Who clears it is decided by deterministic code from the risk tier (see Risk Configuration):
+The one rule that makes `in_review` worth naming as its own state: **nothing transitions `in_review → verified` on the manager's say-so.** Who clears it is decided by deterministic code from the risk tier (see Risk Configuration):
 
 - **Auto-Allowed tier** (e.g. an isolated, well-tested component edit): `in_review` may clear automatically once the deterministic gate and shadow tests pass — no human needed.
 - **Ask-User / Always-Block tiers** (schema, dependencies, auth, merge-to-main, etc.): `in_review` *requires* an explicit human grant and cannot be cleared by any agent.
 
 This is a deliberate adaptation, not a contradiction of our approval philosophy: we keep `in_review` as a structural checkpoint for every task, but we do **not** force a human to click "approve" on trivial, low-risk work — the risk tier decides. That preserves both human authority where it matters and the "don't approve every tiny action" principle.
 
-Phase note: the full multi-state board and live transitions are Phase 3/5. Phase 1 implements the spine that matters now — `submitted → (deterministic gate) → in_review → integrated`, with the human grant required for risky tiers.
+Phase note: the implemented spine is `submitted → (deterministic gate) → in_review → verified`, with the human grant required for risky tiers. Updating the configured base branch is a separate adoption authority and is not implemented by shadow integration.
 
 ## Real-Time Supervision
 
@@ -1962,7 +1962,7 @@ Authority levels:
 
 Most subagents should be Level 0–2.
 
-Levels 5 and 6 are **not held by any LLM agent**. Level 5 (apply patches to the shadow branch and run checks) is performed by the deterministic Shadow Integration Service. Level 6 (merge to main / open PR) is executed deterministically and only after explicit human approval. The manager agent caps out at Level 1 (plan/propose) for anything safety-relevant: it can *request* integration and *propose* a merge, but the mechanics and the authority to actually write to `main` live in code, not in a prompt. This is the Core Architectural Principle applied to authority levels — the most dangerous powers are the ones most firmly kept out of LLM hands.
+Levels 5 and 6 are **not held by any LLM agent**. Level 5 (apply patches to the shadow branch and run checks) is performed by the deterministic Shadow Integration Service. Level 6 (adopt into the base branch / open a PR) remains a separately authorized design requirement and is not yet implemented; when built, both its mechanics and its explicit human authority must live in deterministic code, not in a prompt. The manager agent caps out at Level 1 (plan/propose) for anything safety-relevant. This is the Core Architectural Principle applied to authority levels — the most dangerous powers are the ones most firmly kept out of LLM hands.
 
 ## MVP: What We Build First
 
@@ -2015,7 +2015,7 @@ The two supported Phase-1 workflows are:
 1. **CLI-driven workflow** — the operator runs `hivemind` commands directly.
 2. **Manual worktree mode** — Hivemind generates the worktree, contract, and prompt; the user runs any coding tool against it and brings back a diff.
 
-Both terminate in the same place: a diff goes through the deterministic scope check, accepted diffs go through shadow test, and the operator approves the final merge.
+Both currently terminate after a diff passes the deterministic scope check and the accepted set passes shadow verification. Adoption into the configured base branch is a separate, human-authorized capability that has not yet been built.
 
 ### Component Specifications
 

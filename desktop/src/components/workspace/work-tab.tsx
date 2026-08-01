@@ -9,7 +9,6 @@ import {
   ChevronRight,
   Clock3,
   FileCode2,
-  GitMerge,
   Layers3,
   MessageSquareText,
   PencilLine,
@@ -82,10 +81,10 @@ const stateLanguage: Record<
   submitted: { label: "Change ready", tone: "live" },
   accepted: { label: "Checks passed", tone: "good" },
   rejected: { label: "Needs revision", tone: "danger" },
-  blocked: { label: "Blocked before merge", tone: "danger" },
+  blocked: { label: "Project checks blocked", tone: "danger" },
   failed: { label: "Worker stopped", tone: "danger" },
   cancelled: { label: "Stopped", tone: "neutral" },
-  integrated: { label: "Merged", tone: "good" }
+  verified: { label: "Ready to adopt", tone: "good" }
 };
 
 export function WorkTab({
@@ -404,7 +403,7 @@ export function WorkTab({
       {redirectOpen && selected ? (
         <TextActionDialog
           title={`Guide ${selected.task_id}`}
-          description="This reaches the worker at its next safe correction point. File and merge checks still apply."
+          description="This reaches the worker at its next safe correction point. File and project checks still apply."
           value={redirectText}
           busy={busy}
           submitLabel="Send guidance"
@@ -478,14 +477,14 @@ function RunSummary({
   const active = counts.running + counts.submitted + counts.accepted + counts.paused;
   const attention = inspection?.needs_you.length ?? 0;
   const files = leaseRows(projection).length;
-  const merge = integrationLanguage(projection.integration.status);
+  const verification = integrationLanguage(projection.integration.status);
   return (
     <section className="run-summary" aria-label="Current run">
       <div><Activity size={15} /><span><strong>{active}</strong> active</span></div>
       <div><FileCode2 size={15} /><span><strong>{files}</strong> files being edited</span></div>
       <div><AlertTriangle size={15} /><span><strong>{attention}</strong> need you</span></div>
-      <div className={`summary-merge tone-${merge.tone}`}>
-        <GitMerge size={15} /><span>{merge.label}</span>
+      <div className={`summary-verification tone-${verification.tone}`}>
+        <CheckCircle2 size={15} /><span>{verification.label}</span>
       </div>
     </section>
   );
@@ -890,7 +889,7 @@ function AmendmentDialog({ value, plan, busy, onChange, onClose, onSubmit }: { v
 
 function TextActionDialog({ title, description, value, busy, submitLabel, onChange, onClose, onSubmit }: { title: string; description: string; value: string; busy: boolean; submitLabel: string; onChange: (value: string) => void; onClose: () => void; onSubmit: () => Promise<void> }): React.JSX.Element {
   return (
-    <div className="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="text-action-title"><form className="action-dialog" onSubmit={(event) => { event.preventDefault(); void onSubmit(); }}><header><div><h2 id="text-action-title">{title}</h2><p>{description}</p></div><button className="icon-button" type="button" onClick={onClose} aria-label="Close"><X size={17} /></button></header><textarea rows={6} value={value} onChange={(event) => onChange(event.target.value)} autoFocus /><footer><span>This guidance cannot approve a file or merge.</span><button className="button-primary" type="submit" disabled={busy || value.trim() === ""}>{submitLabel}</button></footer></form></div>
+    <div className="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="text-action-title"><form className="action-dialog" onSubmit={(event) => { event.preventDefault(); void onSubmit(); }}><header><div><h2 id="text-action-title">{title}</h2><p>{description}</p></div><button className="icon-button" type="button" onClick={onClose} aria-label="Close"><X size={17} /></button></header><textarea rows={6} value={value} onChange={(event) => onChange(event.target.value)} autoFocus /><footer><span>This guidance cannot approve a file or adopt a change.</span><button className="button-primary" type="submit" disabled={busy || value.trim() === ""}>{submitLabel}</button></footer></form></div>
   );
 }
 
@@ -946,17 +945,17 @@ function phasesFor(task: TaskProjection, integrationFailure: string | null = nul
   const failure = ["failed", "blocked", "rejected", "cancelled"].includes(task.state);
   return [
     { key: "scoped", label: "Ready", status: task.lease_files.length > 0 || task.state !== "planned" ? "complete" : "active" },
-    { key: "running", label: "Working", status: failure ? "failed" : task.state === "paused" ? "waiting" : task.state === "running" ? "active" : ["submitted", "accepted", "integrated"].includes(task.state) ? "complete" : "waiting" },
-    { key: "verified", label: "Checked", status: task.state === "rejected" ? "failed" : task.patch.verdict === "accept" || task.state === "integrated" ? "complete" : task.patch.submitted ? "active" : "waiting" },
-    { key: "integrated", label: "Merged", status: integrationFailure !== null || task.integration === "blocked" || task.integration === "failed" ? "failed" : task.state === "integrated" || task.integration === "passed" ? "complete" : task.integration === "queued" ? "active" : "waiting" }
+    { key: "running", label: "Working", status: failure ? "failed" : task.state === "paused" ? "waiting" : task.state === "running" ? "active" : ["submitted", "accepted", "verified"].includes(task.state) ? "complete" : "waiting" },
+    { key: "scope", label: "Scope", status: task.state === "rejected" ? "failed" : task.patch.verdict === "accept" || task.state === "verified" ? "complete" : task.patch.submitted ? "active" : "waiting" },
+    { key: "verified", label: "Verified", status: integrationFailure !== null || task.integration === "blocked" || task.integration === "failed" ? "failed" : task.state === "verified" || task.integration === "passed" ? "complete" : task.integration === "queued" ? "active" : "waiting" }
   ];
 }
 
 function phaseDetail(task: TaskProjection, phase: string): string {
   if (phase === "scoped") return `${task.lease_files.length} files are inside this task's working boundary`;
   if (phase === "running") return task.state === "running" ? "The worker is active" : "The worker is not active";
-  if (phase === "verified") return task.patch.reason ?? "No change verdict recorded yet";
-  return task.integration === "passed" ? "Merged after checks passed" : "Not merged yet";
+  if (phase === "scope") return task.patch.reason ?? "No scope-check result recorded yet";
+  return task.integration === "passed" ? "Project checks passed; ready for explicit adoption" : "Not verified against the project yet";
 }
 
 function eventDescription(event: HivemindEvent): string {
@@ -979,9 +978,9 @@ function eventDescription(event: HivemindEvent): string {
     "patch.submitted": "submitted a change for checks",
     "patch.accepted": "passed the file-scope checks",
     "patch.rejected": "needs to revise its change",
-    "integration.blocked": "A change is blocked before merge",
+    "integration.blocked": "Project checks are blocked",
     "integration.low_confidence": "A change has thin test coverage",
-    "integration.passed": "Checked changes were merged",
+    "integration.passed": "Changes passed project checks and are ready to adopt",
     "routing.observed": "A provider run was measured",
     "quality.draft_started": "An independent draft started",
     "quality.draft_verified": "An independent draft was checked",
@@ -1011,12 +1010,12 @@ function plainTaskIssue(issue: string): string {
 }
 
 function integrationLanguage(status: string): { label: string; tone: string } {
-  if (status === "blocked") return { label: "Blocked before merge", tone: "danger" };
+  if (status === "blocked") return { label: "Project checks blocked", tone: "danger" };
   if (status === "low-confidence") return { label: "Thin test coverage", tone: "warning" };
   if (status === "failed") return { label: "Checks failed", tone: "danger" };
-  if (status === "passed") return { label: "Checks passed", tone: "good" };
+  if (status === "passed") return { label: "Ready to adopt", tone: "good" };
   if (status === "running" || status === "queued") return { label: "Checking", tone: "live" };
-  return { label: "Waiting to merge", tone: "neutral" };
+  return { label: "Not verified yet", tone: "neutral" };
 }
 
 function plainQualityStatus(status: string): string {

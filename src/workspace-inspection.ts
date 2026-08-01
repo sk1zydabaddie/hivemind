@@ -11,6 +11,7 @@ import { readCanonMemory, type CanonMemoryEntry } from "./memory-canon.js";
 import { readMemoryProposal, type MemoryProposal } from "./memory-log.js";
 import {
   loadCurrentRatifiedPlan,
+  loadRatifiedPlanByIdentity,
   loadTentativePlan,
   reviewPlanForRatification,
   type PlanRatificationResult,
@@ -27,7 +28,7 @@ import { getStatus, type HivemindStatus } from "./status.js";
 
 export interface WorkspaceQueueItem {
   id: string;
-  kind: "plan_review" | "manager_approval" | "merge_blocked" | "task_attention" | "quality_cancel_failed" | "memory_review" | "quality_review" | "plan_amendment";
+  kind: "plan_review" | "manager_approval" | "verification_blocked" | "task_attention" | "quality_cancel_failed" | "memory_review" | "quality_review" | "plan_amendment";
   title: string;
   detail: string;
   created_at: string;
@@ -173,7 +174,7 @@ export interface WorkspaceHistoryRun {
   duration_ms: number;
   outcome: "active" | "completed" | "needs_attention" | "paused";
   outcome_detail: string;
-  merged_tasks: string[];
+  verified_tasks: string[];
   stopped_tasks: Array<{ task_id: string; state: "failed" | "blocked" | "cancelled" | "paused"; reason: string }>;
   calls: number;
   effective_tokens: number;
@@ -367,15 +368,16 @@ async function inspectHistory(
   const sessions = await inspectManagerSessionHistory(repoRoot);
   if (!sessions.ok) return sessions;
   const ascending = [...sessions.value].sort((left, right) => left.created_at.localeCompare(right.created_at));
-  const runs = ascending.map((session, index) => {
+  const runs = await Promise.all(ascending.map(async (session, index) => {
     const nextStart = ascending[index + 1]?.created_at;
     const runEvents = events.filter((event) => event.ts >= session.created_at && (nextStart === undefined || event.ts < nextStart));
-    const mergedTasks = mergedTaskIds(runEvents);
+    const verifiedTasks = verifiedTaskIds(runEvents);
     const stoppedTasks = stoppedTaskStates(runEvents);
+    const plannedTaskIds = await ratifiedTaskIds(repoRoot, events, session.spec_id, session.created_at);
     const usage = sessionUsage(ledger, session.session_id);
     const lastEventAt = runEvents.at(-1)?.ts ?? session.last_activity_at;
     const lastActivityAt = lastEventAt > session.last_activity_at ? lastEventAt : session.last_activity_at;
-    const outcome = historyOutcome(session.status, mergedTasks, stoppedTasks);
+    const outcome = historyOutcome(session.status, verifiedTasks, stoppedTasks, plannedTaskIds);
     return {
       session_id: session.session_id,
       spec_id: session.spec_id,
@@ -384,7 +386,7 @@ async function inspectHistory(
       duration_ms: Math.max(0, Date.parse(lastActivityAt) - Date.parse(session.created_at)),
       outcome: outcome.state,
       outcome_detail: outcome.detail,
-      merged_tasks: mergedTasks,
+      verified_tasks: verifiedTasks,
       stopped_tasks: stoppedTasks,
       calls: usage.calls,
       effective_tokens: usage.effectiveTokens,
@@ -392,7 +394,7 @@ async function inspectHistory(
       self_measured_tokens: usage.selfMeasuredTokens,
       evidence_paths: [session.evidence_path, ".hivemind/log/events.jsonl"]
     } satisfies WorkspaceHistoryRun;
-  });
+  }));
   return {
     ok: true,
     value: {
@@ -477,7 +479,7 @@ function attemptOutcome(
   return exitCodes.every((exitCode) => exitCode === 0) ? "pass" : exitCodes.every((exitCode) => typeof exitCode === "number" && exitCode !== 0) ? "fail" : "unknown";
 }
 
-function mergedTaskIds(events: HivemindEvent[]): string[] {
+function verifiedTaskIds(events: HivemindEvent[]): string[] {
   const ids = new Set<string>();
   for (const event of events) {
     if (event.type === "task.integrated" && event.task_id !== null) ids.add(event.task_id);
@@ -524,14 +526,40 @@ function sessionUsage(ledger: QuotaLedger, sessionId: string) {
 
 function historyOutcome(
   status: ManagerWorkspaceSession["status"],
-  mergedTasks: string[],
-  stoppedTasks: WorkspaceHistoryRun["stopped_tasks"]
+  verifiedTasks: string[],
+  stoppedTasks: WorkspaceHistoryRun["stopped_tasks"],
+  plannedTaskIds: string[] | null
 ): { state: WorkspaceHistoryRun["outcome"]; detail: string } {
   if (stoppedTasks.length > 0) return { state: "needs_attention", detail: `${stoppedTasks.length} task${stoppedTasks.length === 1 ? "" : "s"} stopped or paused.` };
   if (status === "paused") return { state: "paused", detail: "The run is waiting for a decision." };
+  if (plannedTaskIds !== null && plannedTaskIds.every((taskId) => verifiedTasks.includes(taskId))) {
+    return { state: "completed", detail: `All ${plannedTaskIds.length} planned task${plannedTaskIds.length === 1 ? "" : "s"} passed project checks and are ready to adopt.` };
+  }
   if (status === "active") return { state: "active", detail: "The run is still active." };
-  if (mergedTasks.length > 0) return { state: "completed", detail: `${mergedTasks.length} task${mergedTasks.length === 1 ? "" : "s"} reached merge.` };
-  return { state: "completed", detail: "The run ended without a merged task." };
+  if (verifiedTasks.length > 0) return { state: "completed", detail: `${verifiedTasks.length} task${verifiedTasks.length === 1 ? "" : "s"} passed project checks and are ready to adopt.` };
+  return { state: "completed", detail: "The run ended without a verified change." };
+}
+
+async function ratifiedTaskIds(
+  repoRoot: string,
+  events: HivemindEvent[],
+  specId: string,
+  sessionCreatedAt: string
+): Promise<string[] | null> {
+  const ratification = [...events].reverse().find((event) =>
+    event.type === "plan.ratified" &&
+    event.ts <= sessionCreatedAt &&
+    event.data.spec_id === specId
+  );
+  if (ratification === undefined) return null;
+  const plan = await loadRatifiedPlanByIdentity(
+    repoRoot,
+    specId,
+    ratification.data.plan_path,
+    ratification.data.plan_hash,
+    "workspace history"
+  );
+  return plan.ok ? plan.value.tasks.map((task) => task.task_id) : null;
 }
 
 function compareMemoryItems(left: WorkspaceMemoryProposal, right: WorkspaceMemoryProposal): number {
@@ -674,7 +702,7 @@ async function buildQueues(
   if (integrationFailure !== null) {
     needsYou.push({
       id: `integration-failure:${session?.session_id ?? "unknown"}`,
-      kind: "merge_blocked",
+      kind: "verification_blocked",
       title: "The project check could not finish",
       detail: integrationFailure.reason,
       created_at: session?.created_at ?? new Date(0).toISOString(),
@@ -685,11 +713,11 @@ async function buildQueues(
       }
     });
   }
-  const mergeState = [...events].reverse().find((event) =>
+  const verificationState = [...events].reverse().find((event) =>
     ["integration.blocked", "integration.failed", "integration.passed", "integration.started"].includes(event.type)
   );
-  if (mergeState?.type === "integration.blocked") {
-    needsYou.push(queueEvent(mergeState, "merge_blocked", "A change is blocked before merge", plainEvidence(mergeState)));
+  if (verificationState?.type === "integration.blocked") {
+    needsYou.push(queueEvent(verificationState, "verification_blocked", "Project checks are blocked", plainEvidence(verificationState)));
   }
   for (const event of latestTaskAttention(events)) {
     needsYou.push(queueEvent(event, "task_attention", taskAttentionTitle(event), plainEvidence(event)));
@@ -802,7 +830,7 @@ function plainApprovalDetail(action: string): string {
     return "This starts the assigned worker inside its approved file boundary.";
   }
   if (action === "integrate_shadow") {
-    return "This applies the checked change to an isolated copy and runs the project's configured checks before merge.";
+    return "This applies the change to an isolated copy and runs the project's configured checks. It does not update the project branch.";
   }
   return "Review this proposed action before allowing the run to continue.";
 }

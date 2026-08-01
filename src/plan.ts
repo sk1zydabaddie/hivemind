@@ -1056,6 +1056,16 @@ export async function loadCurrentRatifiedPlan(
   }
   const planPath = ratification.data.plan_path;
   const planHash = ratification.data.plan_hash;
+  return loadRatifiedPlanByIdentity(repoRoot, specId, planPath, planHash, action);
+}
+
+export async function loadRatifiedPlanByIdentity(
+  repoRoot: string,
+  specId: string,
+  planPath: unknown,
+  planHash: unknown,
+  action = "operation"
+): Promise<SpecResult<TentativePlan>> {
   if (
     typeof planPath !== "string" ||
     typeof planHash !== "string" ||

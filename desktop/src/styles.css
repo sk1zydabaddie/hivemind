@@ -141,7 +141,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .run-summary > div { min-width: 0; display: flex; align-items: center; gap: 7px; padding: 7px 15px; color: var(--ink-soft); border-right: 1px solid var(--pinline-soft); font-size: 10px; }
 .run-summary > div:last-child { border-right: 0; }
 .run-summary strong { color: var(--iron-ink); }
-.summary-merge { margin-left: auto; }
+.summary-verification { margin-left: auto; }
 .tone-danger { color: var(--exception-clay) !important; }
 .tone-warning { color: var(--lease-amber) !important; }
 .tone-good { color: var(--success) !important; }
@@ -375,7 +375,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .subagent-node.tone-done { background: var(--success-wash); }
 .artifact-marker { position: absolute; z-index: 2; top: -4px; left: 0; width: 8px; height: 8px; background: var(--meridian); border: 2px solid var(--paper); border-radius: 50%; box-shadow: 0 0 0 1px var(--meridian); animation: artifact-travel 1.25s cubic-bezier(.2,.7,.2,1) both; }
 .artifact-marker.stage-tests { background: var(--lease-amber); box-shadow: 0 0 0 1px var(--lease-amber); }
-.artifact-marker.stage-merged { background: var(--success); box-shadow: 0 0 0 1px var(--success); }
+.artifact-marker.stage-verified { background: var(--success); box-shadow: 0 0 0 1px var(--success); }
 
 .agent-inspector { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); }
 .agent-inspector > header { min-width: 0; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 10px 11px; border-bottom: 1px solid var(--pinline); }

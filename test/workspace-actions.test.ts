@@ -644,7 +644,7 @@ test("workspace inspection presents authoritative plan detail and daemon-derived
       spend: { calls: number; effective_tokens: number; session_ceiling_tokens: number };
       swarm: { characterizations: Array<{ candidate_id: string; task_id: string; classification: string; check_id: string; base_outcome: string; post_change_outcome: string }> };
       memory: { pending_lessons: Array<{ title: string; lesson: string; evidence: string[]; review_command: string }>; routing_changes: Array<{ title: string; task_types: Array<{ providers: Array<{ weight: number; cost_source: string; evidence: string[] }> }> }>; draft_tests: Array<{ patch: string }>; canon: unknown[]; active_routing: { status: string } };
-      history: { runs: Array<{ session_id: string; stopped_tasks: Array<{ task_id: string }>; calls: number }> };
+      history: { runs: Array<{ session_id: string; verified_tasks: string[]; stopped_tasks: Array<{ task_id: string }>; calls: number }> };
     };
     assert.match(view.plan_review.plan_hash, /^[a-f0-9]{64}$/u);
     assert.equal(view.current_plan.plan_hash, view.plan_review.plan_hash);
@@ -669,8 +669,8 @@ test("workspace inspection presents authoritative plan detail and daemon-derived
       patch_requirements: ["Keep the change scoped."],
       critical_path_approved: false
     });
-    assert.deepEqual(view.needs_you.map((item) => item.kind).sort(), ["merge_blocked", "plan_review", "task_attention"]);
-    assert.equal(view.needs_you.find((item) => item.kind === "merge_blocked")?.detail, "Critical change, line 42 untested.");
+    assert.deepEqual(view.needs_you.map((item) => item.kind).sort(), ["plan_review", "task_attention", "verification_blocked"]);
+    assert.equal(view.needs_you.find((item) => item.kind === "verification_blocked")?.detail, "Critical change, line 42 untested.");
     assert.deepEqual(view.later.map((item) => item.kind), ["memory_review", "memory_review"]);
     assert.equal(view.spend.calls, 0);
     assert.equal(view.spend.effective_tokens, 0);
@@ -707,6 +707,65 @@ test("workspace inspection presents authoritative plan detail and daemon-derived
 
     const source = await readFile(path.resolve("src/workspace-inspection.ts"), "utf8");
     assert.doesNotMatch(source, /appendEvent|ratifyPlan|queuePlanAmendment|requestTaskRedirect/u);
+  });
+});
+
+test("History stays active until every ratified task is durably verified, then becomes completed", async () => {
+  await withRepo(async (repo) => {
+    await mkdir(path.join(repo, "src"), { recursive: true });
+    await mkdir(path.join(repo, "test"), { recursive: true });
+    await writeFile(path.join(repo, "src", "app.ts"), "export const value = 1;\n");
+    await writeFile(path.join(repo, "test", "app.test.ts"), "export const covered = true;\n");
+    await execFileAsync("git", ["add", "src/app.ts", "test/app.test.ts"], { cwd: repo, windowsHide: true });
+    await execFileAsync("git", ["commit", "-m", "add history fixture"], { cwd: repo, windowsHide: true });
+    await createRatifiedSpec(repo, "S-001");
+    const proposal = workspacePlanFixture();
+    assert.equal((await createTentativePlan(repo, "S-001", proposal)).ok, true);
+    assert.equal((await groundTentativePlan(repo, "S-001")).ok, true);
+    assert.equal((await lintTentativePlan(repo, "S-001")).ok, true);
+    const review = await executeWorkspaceAction(repo, { type: "plan.review", payload: { spec_id: "S-001" } });
+    assert.equal(review.ok, true, review.ok ? undefined : review.reason);
+    if (!review.ok) return;
+    const ratified = await executeWorkspaceAction(repo, {
+      type: "plan.ratify",
+      payload: { spec_id: "S-001", expected_plan_hash: (review.value as { plan_hash: string }).plan_hash }
+    });
+    assert.equal(ratified.ok, true, ratified.ok ? undefined : ratified.reason);
+    const session = await startManagerSession(repo, "Keep the session locally active while durable verification finishes.", {
+      proposedAction: {
+        type: "proposed_actions",
+        source: "scripted",
+        reason: "Inspect the run after project checks.",
+        actions: [{ type: "get_status" }],
+        human_approval_required_for: []
+      }
+    });
+    assert.equal(session.ok, true, session.ok ? undefined : session.reason);
+
+    await appendEvent(repo, {
+      type: "integration.passed",
+      task_id: null,
+      data: { applied: ["T-001", "T-999"], verification_scope: "shadow" }
+    });
+    const partial = await executeWorkspaceAction(repo, { type: "status.inspect", payload: {} });
+    assert.equal(partial.ok, true, partial.ok ? undefined : partial.reason);
+    if (!partial.ok) return;
+    const partialRun = (partial.value as { history: { runs: Array<{ outcome: string; verified_tasks: string[] }> } }).history.runs[0];
+    assert.equal(partialRun?.outcome, "active");
+    assert.deepEqual(partialRun?.verified_tasks, ["T-001", "T-999"]);
+
+    await appendEvent(repo, {
+      type: "integration.passed",
+      task_id: null,
+      data: { applied: ["T-002"], verification_scope: "shadow" }
+    });
+    const complete = await executeWorkspaceAction(repo, { type: "status.inspect", payload: {} });
+    assert.equal(complete.ok, true, complete.ok ? undefined : complete.reason);
+    if (!complete.ok) return;
+    const completeRun = (complete.value as { history: { runs: Array<{ outcome: string; outcome_detail: string; verified_tasks: string[] }> } }).history.runs[0];
+    assert.equal(completeRun?.outcome, "completed");
+    assert.equal(completeRun?.outcome_detail, "All 2 planned tasks passed project checks and are ready to adopt.");
+    assert.deepEqual(completeRun?.verified_tasks, ["T-001", "T-002", "T-999"]);
   });
 });
 
@@ -765,7 +824,7 @@ test("workspace inspection surfaces a durable integration refusal in plain langu
     };
     const approval = awaitingView.needs_you.find((item) => item.kind === "manager_approval");
     assert.equal(approval?.title, "Approve checking this change against the project");
-    assert.equal(approval?.detail, "This applies the checked change to an isolated copy and runs the project's configured checks before merge.");
+    assert.equal(approval?.detail, "This applies the change to an isolated copy and runs the project's configured checks. It does not update the project branch.");
     assert.doesNotMatch(`${approval?.title} ${approval?.detail}`, /integrate_shadow|shadow integration/iu);
     assert.equal(approval?.action?.type, "manager.approve_pending");
     assert.ok(approval?.action);
@@ -790,7 +849,7 @@ test("workspace inspection surfaces a durable integration refusal in plain langu
       stoppedView.integration_failure.reason,
       'The configured project branch "missing-project-branch" could not be found. Review the base branch setting, then retry the project check.'
     );
-    const failureItem = stoppedView.needs_you.find((item) => item.kind === "merge_blocked");
+    const failureItem = stoppedView.needs_you.find((item) => item.kind === "verification_blocked");
     assert.equal(failureItem?.title, "The project check could not finish");
     assert.equal(failureItem?.detail, stoppedView.integration_failure.reason);
     assert.equal(failureItem?.task_id, "T-001");

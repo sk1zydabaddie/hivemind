@@ -88,7 +88,7 @@ The stopped `integrate_shadow` action was recovered through the audited exact-ac
 
 The same UI session then drove `T-002` through contract creation, lease, write intent, detached worktree, explicit worker approval, a real Codex worker, patch submission, deterministic scope analysis, integration queueing, and explicit project-check approval. The worker ran for 124.161 seconds, changed only `src/cli.ts` and `test/cli.test.ts`, exited successfully, and reported 50,249 provider tokens. The final shadow tree applied both accepted patches and passed 7/7 tests. Durable evidence includes `task.completed`, `patch.accepted`, `verification.completed`, and `integration.passed` for both tasks.
 
-The run did **not** merge those patches into the scratch repository's `master` branch. `integrateShadow()` intentionally creates a throwaway `integration/<timestamp>` branch, verifies it, records `integration.passed`, and deletes the branch. `master` remains at seed commit `e440496`, and its source tree still has the original 2/2 tests. The UI currently labels this state `Merged` / `Reached merge`, which overstates the implemented contract. Automatic adoption into the target branch remains outside the current integration primitive; the screenshots document a successful shadow integration, not a repository merge.
+The run did **not** merge those patches into the scratch repository's `master` branch. `integrateShadow()` intentionally creates a throwaway `integration/<timestamp>` branch, verifies it, records `integration.passed`, and deletes the branch. `master` remains at seed commit `e440496`, and its source tree still has the original 2/2 tests. At capture time the UI labeled this state `Merged` / `Reached merge`, which overstated the implemented contract; the subsequent truthfulness repair now presents it as `Verified` / `Ready to adopt`. Automatic adoption into the target branch remains outside the current integration primitive; the screenshots document successful shadow verification, not a repository merge.
 
 ## Spend
 
@@ -129,7 +129,7 @@ Before `95e25ce`, the UI still showed `1 call / 19.6K` after the failed manager 
 - The prompt/continuation dock can fall below the visible viewport when selected-task output is tall; keyboard navigation was needed once during the run.
 - The worker output is diagnostically complete but visually noisy: ANSI escapes, provider startup telemetry, the full prompt, and long raw transcript text are uncollapsed.
 - History showed both tasks and the cumulative spend, but still marked the run `Active` after terminal shadow integration. No explicit session-complete event currently closes that presentation.
-- The largest semantic UI defect is `Merged` / `Reached merge`: the user sees a completed merge while the canonical target branch remains unchanged. The correct current wording is shadow-tested / ready for adoption unless and until a separate approved merge primitive exists.
+- The largest semantic UI defect was `Merged` / `Reached merge`: the user saw a completed merge while the canonical target branch remained unchanged. The projection and every primary surface now say `Verified`, `Checks passed`, or `Ready to adopt` unless and until a separate approved adoption primitive exists.
 
 ### Panels Actually Used
 
@@ -148,11 +148,11 @@ Before `95e25ce`, the UI still showed `1 call / 19.6K` after the failed manager 
 - `07-worker-completed-output.png`: real Codex worker completed, changed two scoped files, and streamed output into the inspector.
 - `08-swarm-after-worker.png`: real two-task sequential swarm after the first worker completed.
 - `09-swarm-worker-inspector.png`: selected worker with live output and changed-file detail.
-- `10-merge-approval.png`: accepted patch awaiting explicit shadow-integration approval.
+- `10-project-check-approval.png`: accepted patch awaiting explicit shadow-verification approval.
 - `11-integration-rejected.png`: workspace immediately after the Tier-3 `base branch main not found` rejection.
 - `07-integration-failure-surfaced.png`: repaired attention and task-card presentation of the durable branch failure.
 - `08-integration-retry-approval.png`: exact-action retry awaiting a fresh explicit approval.
-- `09-t001-merged.png`: `T-001` after successful shadow integration; the screenshot's `Merged` label is now a documented overstatement.
+- `09-t001-shadow-verified.png`: `T-001` after successful shadow verification; the screenshot's old `Merged` label is retained as evidence of the defect that prompted the truthfulness repair.
 - `10-t002-worker-approval.png`: `T-002` awaiting explicit real-worker approval.
 - `11-t002-swarm-live.png`: real `T-002` worker active in the Swarm tree and inspector.
 - `12-t002-integration-approval.png`: both accepted patches awaiting explicit final project-check approval.

@@ -11,7 +11,7 @@ import {
 } from "../src/lib/projection";
 
 describe("read-only event projection", () => {
-  test("replays task, file-scope, patch, and merge events", () => {
+  test("replays task, file-scope, patch, and shadow-verification events", () => {
     const state = createBoardProjection();
     for (const item of [
       makeEvent("task.created", "T-001", { title: "Create ledger" }),
@@ -43,7 +43,7 @@ describe("read-only event projection", () => {
 
     const rows = taskRows(state);
     expect(rows).toHaveLength(1);
-    expect(rows[0].state).toBe("integrated");
+    expect(rows[0].state).toBe("verified");
     expect(rows[0].patch.submitted).toBe(true);
     expect(rows[0].patch.verdict).toBe("accept");
     expect(leaseRows(state)).toEqual([
@@ -75,7 +75,7 @@ describe("read-only event projection", () => {
     expect(state.tasks["T-FAIL"].issue).toBe("worker process exited 1");
   });
 
-  test("surfaces blocked and low-confidence merge evidence", () => {
+  test("surfaces blocked and low-confidence project-check evidence", () => {
     const blocked = createBoardProjection();
     applyEventMessage(blocked, {
       kind: "event",
@@ -206,7 +206,7 @@ describe("read-only event projection", () => {
     });
     expect(state.artifactMovements.map((movement) => [movement.task_id, movement.stage])).toEqual([
       ["T-005", "tests"],
-      ["T-005", "merged"]
+      ["T-005", "verified"]
     ]);
   });
 

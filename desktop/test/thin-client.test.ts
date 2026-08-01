@@ -82,7 +82,7 @@ describe("React workspace boundary", () => {
     const visibleSource = `${app}\n${work}`;
 
     for (const label of [
-      "Blocked before merge",
+      "Project checks blocked",
       "Thin test coverage",
       "Files being edited",
       "Paused for capacity",
@@ -109,6 +109,7 @@ describe("React workspace boundary", () => {
       );
     }
     expect(visibleSource).not.toMatch(/High-tier oracle floor|fake-metered reported this state/u);
+    expect(visibleSource).not.toMatch(/\bMerged\b|Reached merge|Waiting to merge|blocked before merge|merge checks/iu);
 
     const audit = await readFile(path.resolve(desktopRoot, "..", "docs", "m8-action-routing-audit.md"), "utf8");
     const actions = [...work.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
@@ -185,6 +186,7 @@ describe("React workspace boundary", () => {
     expect(memory).toMatch(/The app cannot approve this item/u);
     expect(memory).toMatch(/Review in a terminal/u);
     expect(history).toMatch(/read-only project evidence/u);
+    expect(source).not.toMatch(/\bmerged\b|Reached merge/iu);
     expect(app).not.toMatch(/FutureWorkspaceTab/u);
   });
 });

@@ -187,7 +187,7 @@ function ProviderMetric({ provider }: { provider: WorkspaceRoutingProvider }): R
     <div className="provider-metric">
       <div><strong>{provider.provider}</strong><b>{provider.weight.toFixed(2)}</b></div>
       <div className="metric-bar" aria-label={`${provider.provider} weight ${provider.weight.toFixed(2)}`}><i style={{ width: `${Math.max(4, Math.min(100, provider.weight * 100))}%` }} /></div>
-      <p>{provider.sample_count} samples / {provider.integrated_count} merged / {provider.failed_count} stopped / {provider.revision_count} revisions</p>
+      <p>{provider.sample_count} samples / {provider.integrated_count} verified / {provider.failed_count} stopped / {provider.revision_count} revisions</p>
       <p>{formatCompact(provider.merged_diff_bytes)} changed bytes / {formatCompact(provider.effective_tokens)} tokens / {provider.cost_source.replaceAll("_", " ")}</p>
       <EvidenceList items={provider.evidence} compact />
     </div>

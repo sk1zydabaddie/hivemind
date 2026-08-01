@@ -3,7 +3,7 @@ import {
   CheckCircle2,
   Clock3,
   FileSearch,
-  GitMerge,
+  BadgeCheck,
   History,
   ReceiptText,
   TimerReset
@@ -18,9 +18,9 @@ export function HistoryTab({ inspection }: { inspection: WorkspaceInspection | n
   const totals = (history?.runs ?? []).reduce((sum, run) => ({
     calls: sum.calls + run.calls,
     tokens: sum.tokens + run.effective_tokens,
-    merged: sum.merged + run.merged_tasks.length,
+    verified: sum.verified + run.verified_tasks.length,
     stopped: sum.stopped + run.stopped_tasks.length
-  }), { calls: 0, tokens: 0, merged: 0, stopped: 0 });
+  }), { calls: 0, tokens: 0, verified: 0, stopped: 0 });
 
   return (
     <section className="history-tab">
@@ -32,7 +32,7 @@ export function HistoryTab({ inspection }: { inspection: WorkspaceInspection | n
         <div className="history-totals" aria-label="Project history summary">
           <HistoryTotal icon={<History size={15} />} label="Runs" value={history?.runs.length ?? 0} />
           <HistoryTotal icon={<ReceiptText size={15} />} label="Calls" value={totals.calls} />
-          <HistoryTotal icon={<GitMerge size={15} />} label="Reached merge" value={totals.merged} />
+          <HistoryTotal icon={<BadgeCheck size={15} />} label="Verified" value={totals.verified} />
           <HistoryTotal icon={<AlertTriangle size={15} />} label="Stopped" value={totals.stopped} />
         </div>
       </header>
@@ -102,8 +102,8 @@ function RunCard({ run }: { run: WorkspaceHistoryRun }): React.JSX.Element {
       <p className="run-outcome-detail">{run.outcome_detail}</p>
       <div className="run-detail-grid">
         <section>
-          <h3><GitMerge size={14} />Reached merge <Badge tone="good">{run.merged_tasks.length}</Badge></h3>
-          {run.merged_tasks.length ? <ul>{run.merged_tasks.map((taskId) => <li key={taskId}><CheckCircle2 size={12} />{taskId}</li>)}</ul> : <p>No task reached merge in this run.</p>}
+          <h3><BadgeCheck size={14} />Passed project checks <Badge tone="good">{run.verified_tasks.length}</Badge></h3>
+          {run.verified_tasks.length ? <ul>{run.verified_tasks.map((taskId) => <li key={taskId}><CheckCircle2 size={12} />{taskId}</li>)}</ul> : <p>No task passed the project checks in this run.</p>}
         </section>
         <section>
           <h3><AlertTriangle size={14} />Stopped <Badge tone={run.stopped_tasks.length ? "danger" : "neutral"}>{run.stopped_tasks.length}</Badge></h3>

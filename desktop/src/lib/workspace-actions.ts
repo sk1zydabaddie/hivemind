@@ -5,7 +5,7 @@ export interface WorkspaceQueueItem {
   kind:
     | "plan_review"
     | "manager_approval"
-    | "merge_blocked"
+    | "verification_blocked"
     | "task_attention"
     | "quality_cancel_failed"
     | "memory_review"
@@ -172,7 +172,7 @@ export interface WorkspaceHistoryRun {
   duration_ms: number;
   outcome: "active" | "completed" | "needs_attention" | "paused";
   outcome_detail: string;
-  merged_tasks: string[];
+  verified_tasks: string[];
   stopped_tasks: Array<{
     task_id: string;
     state: "failed" | "blocked" | "cancelled" | "paused";

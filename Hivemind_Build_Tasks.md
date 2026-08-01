@@ -692,7 +692,7 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
   - Orchestrator steering writes a durable human-guidance record that is assembled into the stateless orchestrator's next proposal. It does not mutate an in-flight action or launch an extra provider turn.
   - Mid-run plan amendments are add-only for active work. New tasks and queued changes to not-yet-started tasks still pass proposal, grounding, lint, ratification, contract, dependency, and lease floors. Editing a running task is refused because its contract is immutable; the available choices are redirect or cancel-and-replan.
   - Worker steering uses the M6.3 `revision_requested -> in_progress` correction path at its safe boundary with human-authored guidance. It never approves an out-of-scope intent. Scout/characterization/quality draft sub-agents are not steerable; cancel the quality run and explicitly restart with new guidance.
-  - Present internal failures in plain language, with optional details: for example "blocked before merge," "thin test coverage," "see what's untested," and "write a test."
+  - Present internal failures in plain language, with optional details: for example "project checks blocked," "thin test coverage," "see what's untested," and "write a test."
 - **Acceptance test (binary):** In a no-paid run, guidance appears in the orchestrator's next already-scheduled proposal without changing in-flight state; a running-task plan edit is refused while an add-only task amendment follows the normal floors; a human worker correction travels through M6.3 and still requires a valid redeclared intent; plan execution waits for typed ratification; spend/Needs-you/Later remain live; and no chat text authorizes an action.
 
 ### M8.5 (U5) — Swarm tab
@@ -703,9 +703,9 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
   - Render an agent tree with orchestrator root, execution groups, tasks, and observed sub-agents such as Scout, characterization, and quality drafts. Fit the whole swarm in one desktop view with scroll-to-zoom and click-to-inspect.
   - Use plain group labels such as "2 at once" and "in order." Color encodes daemon-published healthy, needs-you, and waiting states; the UI does not derive action eligibility from color.
   - The inspector shows current work, provider/agent, live task-specific output, relevant change evidence, and the U3-audited actions **Redirect**, **Stop**, and **See change**. It exposes no renderer-local mutation.
-  - Visualize a change moving through scope check, tests, and merge on the tree edges only when matching durable events arrive. There is no ambient motion; reduced-motion replaces travel with an immediate state change and brief non-motion emphasis.
+  - Visualize a change moving through scope checks, project tests, and verification on the tree edges only when matching durable events arrive. There is no ambient motion; reduced-motion replaces travel with an immediate state change and brief non-motion emphasis.
   - Planned parallelism and actual simultaneous activity must not be conflated. A group may say "2 at once" as plan structure, while active indicators come only from real task/run events.
-- **Acceptance test (binary):** A representative nine-task no-paid fixture shows all mixed-state tasks and sub-agents on one screen, the needs-you node is visually findable without reading every label, selection tails that agent's live output, real gate/test/merge events alone drive artifact movement, reduced-motion removes travel, and every inspector action routes through U3.
+- **Acceptance test (binary):** A representative nine-task no-paid fixture shows all mixed-state tasks and sub-agents on one screen, the needs-you node is visually findable without reading every label, selection tails that agent's live output, real scope-check/test/verification events alone drive artifact movement, reduced-motion removes travel, and every inspector action routes through U3.
 
 ### M8.6 (U6) — Memory + History tabs
 - **Depends on:** M8.3, M8.4, M7.3, M7.5, M7.6e, M7.7.
