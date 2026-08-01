@@ -1015,6 +1015,7 @@ function plainTaskIssue(issue: string): string {
 }
 
 function integrationLanguage(status: string): { label: string; tone: string } {
+  if (status === "merged") return { label: "Merged", tone: "good" };
   if (status === "blocked") return { label: "Project checks blocked", tone: "danger" };
   if (status === "low-confidence") return { label: "Thin test coverage", tone: "warning" };
   if (status === "failed") return { label: "Checks failed", tone: "danger" };

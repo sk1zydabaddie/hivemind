@@ -93,6 +93,8 @@ describe("read-only event projection", () => {
       })
     });
     expect(state.tasks["T-ADOPT"].state).toBe("merged");
+    expect(state.integration.status).toBe("merged");
+    expect(state.integration.lastEvent?.type).toBe("adoption.completed");
   });
 
   test("surfaces blocked and low-confidence project-check evidence", () => {

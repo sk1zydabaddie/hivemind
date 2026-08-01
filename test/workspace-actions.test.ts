@@ -226,6 +226,62 @@ test("workspace prompt prepares a linted mixed-tier plan but cannot authorize or
   });
 });
 
+test("workspace inspection remains current after the exact ratified plan is adopted", async () => {
+  await withRepo(async (repo) => {
+    await mkdir(path.join(repo, "src"), { recursive: true });
+    await mkdir(path.join(repo, "test"), { recursive: true });
+    await writeFile(path.join(repo, "src", "app.ts"), "export const value = 1;\n");
+    await writeFile(path.join(repo, "test", "app.test.ts"), "export const covered = true;\n");
+    await execFileAsync("git", ["add", "src/app.ts", "test/app.test.ts"], { cwd: repo, windowsHide: true });
+    await execFileAsync("git", ["commit", "-m", "add planning fixture"], { cwd: repo, windowsHide: true });
+    const preAdoptionRef = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: repo, windowsHide: true })).stdout.trim();
+    await createRatifiedSpec(repo, "S-001");
+    await setTierGlobs(repo);
+    await writeWorkspacePlanningAdapter(repo, "fixture-planner", workspacePlanFixture());
+
+    const prepared = await executeWorkspaceAction(repo, {
+      type: "plan.prepare",
+      payload: { prompt: "Prepare the two-task fixture.", tool: "fixture-planner" }
+    });
+    assert.equal(prepared.ok, true, prepared.ok ? undefined : prepared.reason);
+    if (!prepared.ok) return;
+    const planHash = (prepared.value as { plan_hash: string }).plan_hash;
+    const ratified = await executeWorkspaceAction(repo, {
+      type: "plan.ratify",
+      payload: { spec_id: "S-001", expected_plan_hash: planHash }
+    });
+    assert.equal(ratified.ok, true, ratified.ok ? undefined : ratified.reason);
+
+    await writeFile(path.join(repo, "adopted.txt"), "adopted\n");
+    await execFileAsync("git", ["add", "adopted.txt"], { cwd: repo, windowsHide: true });
+    await execFileAsync("git", ["commit", "-m", "adopt exact plan"], { cwd: repo, windowsHide: true });
+    const adoptedRef = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: repo, windowsHide: true })).stdout.trim();
+    await appendEvent(repo, {
+      type: "adoption.completed",
+      task_id: null,
+      data: {
+        adoption_id: "A-inspection",
+        verification_id: "V-inspection",
+        pre_adoption_ref: preAdoptionRef,
+        adopted_ref: adoptedRef,
+        task_ids: ["T-001", "T-002"]
+      }
+    });
+
+    const inspected = await executeWorkspaceAction(repo, { type: "status.inspect", payload: {} });
+    assert.equal(inspected.ok, true, inspected.ok ? undefined : inspected.reason);
+    if (!inspected.ok) return;
+    const view = inspected.value as {
+      plan_review: unknown;
+      current_plan: { plan_hash: string } | null;
+      needs_you: Array<{ kind: string }>;
+    };
+    assert.equal(view.plan_review, null);
+    assert.equal(view.current_plan?.plan_hash, planHash);
+    assert.equal(view.needs_you.some((item) => item.kind === "adoption_ready"), false);
+  });
+});
+
 test("workspace planning surfaces skeleton-trap lint failure without preparing or executing", async () => {
   await withRepo(async (repo) => {
     await createRatifiedSpec(repo, "S-001");
@@ -774,6 +830,19 @@ test("History stays active until every ratified task is durably verified, then b
     assert.equal(completeRun?.outcome, "completed");
     assert.equal(completeRun?.outcome_detail, "All 2 planned tasks passed project checks and are ready to adopt.");
     assert.deepEqual(completeRun?.verified_tasks, ["T-001", "T-002", "T-999"]);
+
+    await appendEvent(repo, {
+      type: "adoption.completed",
+      task_id: null,
+      data: { task_ids: ["T-001", "T-002"], pre_adoption_ref: "a".repeat(40), adopted_ref: "b".repeat(40) }
+    });
+    const adopted = await executeWorkspaceAction(repo, { type: "status.inspect", payload: {} });
+    assert.equal(adopted.ok, true, adopted.ok ? undefined : adopted.reason);
+    if (!adopted.ok) return;
+    const adoptedRun = (adopted.value as { history: { runs: Array<{ outcome: string; outcome_detail: string; merged_tasks: string[] }> } }).history.runs[0];
+    assert.equal(adoptedRun?.outcome, "completed");
+    assert.equal(adoptedRun?.outcome_detail, "All 2 planned tasks merged into the project.");
+    assert.deepEqual(adoptedRun?.merged_tasks, ["T-001", "T-002"]);
   });
 });
 

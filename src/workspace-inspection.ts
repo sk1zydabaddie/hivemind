@@ -380,7 +380,7 @@ async function inspectHistory(
     const usage = sessionUsage(ledger, session.session_id);
     const lastEventAt = runEvents.at(-1)?.ts ?? session.last_activity_at;
     const lastActivityAt = lastEventAt > session.last_activity_at ? lastEventAt : session.last_activity_at;
-    const outcome = historyOutcome(session.status, verifiedTasks, stoppedTasks, plannedTaskIds);
+    const outcome = historyOutcome(session.status, verifiedTasks, mergedTasks, stoppedTasks, plannedTaskIds);
     return {
       session_id: session.session_id,
       spec_id: session.spec_id,
@@ -541,11 +541,15 @@ function sessionUsage(ledger: QuotaLedger, sessionId: string) {
 function historyOutcome(
   status: ManagerWorkspaceSession["status"],
   verifiedTasks: string[],
+  mergedTasks: string[],
   stoppedTasks: WorkspaceHistoryRun["stopped_tasks"],
   plannedTaskIds: string[] | null
 ): { state: WorkspaceHistoryRun["outcome"]; detail: string } {
   if (stoppedTasks.length > 0) return { state: "needs_attention", detail: `${stoppedTasks.length} task${stoppedTasks.length === 1 ? "" : "s"} stopped or paused.` };
   if (status === "paused") return { state: "paused", detail: "The run is waiting for a decision." };
+  if (plannedTaskIds !== null && plannedTaskIds.every((taskId) => mergedTasks.includes(taskId))) {
+    return { state: "completed", detail: `All ${plannedTaskIds.length} planned task${plannedTaskIds.length === 1 ? "" : "s"} merged into the project.` };
+  }
   if (plannedTaskIds !== null && plannedTaskIds.every((taskId) => verifiedTasks.includes(taskId))) {
     return { state: "completed", detail: `All ${plannedTaskIds.length} planned task${plannedTaskIds.length === 1 ? "" : "s"} passed project checks and are ready to adopt.` };
   }
@@ -595,7 +599,10 @@ async function inspectPlans(
         event.type === "plan.ratified" && event.data.spec_id === specId && event.data.plan_hash === reviewed.value.plan_hash
       );
       if (!alreadyRatified) review = presentPlan(reviewed.value, config);
-    } else if (!reviewed.reason.includes("requires a current lint-passed tentative plan")) {
+    } else if (
+      !reviewed.reason.includes("requires a current lint-passed tentative plan") &&
+      !tentativePlanWasFullyAdopted(tentative.value, events)
+    ) {
       return reviewed;
     }
   } else if (!tentative.reason.startsWith("tentative plan not found:")) {
@@ -607,6 +614,19 @@ async function inspectPlans(
   }
   const current = review ?? (ratified.ok ? presentStoredPlan(specId, ratified.value, config, events) : null);
   return { ok: true, review, current };
+}
+
+function tentativePlanWasFullyAdopted(plan: TentativePlan, events: HivemindEvent[]): boolean {
+  const plannedTaskIds = plan.tasks.map((task) => task.task_id);
+  return events.some((event) => {
+    if (event.type !== "adoption.completed" || event.data.pre_adoption_ref !== plan.base_commit) return false;
+    const adoptedTaskIds = new Set(
+      Array.isArray(event.data.task_ids)
+        ? event.data.task_ids.filter((taskId): taskId is string => typeof taskId === "string")
+        : []
+    );
+    return plannedTaskIds.length > 0 && plannedTaskIds.every((taskId) => adoptedTaskIds.has(taskId));
+  });
 }
 
 function presentPlan(

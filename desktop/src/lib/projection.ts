@@ -390,6 +390,8 @@ export function applyEventMessage(
       }
       break;
     case "adoption.completed":
+      projection.integration.status = "merged";
+      projection.integration.lastEvent = event;
       for (const taskId of readStringArray(event.data.task_ids) ?? []) {
         const adoptedTask = ensureTask(projection, taskId);
         adoptedTask.state = "merged";
