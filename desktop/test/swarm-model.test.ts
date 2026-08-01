@@ -85,6 +85,7 @@ function fixtureInspection(taskCount: number): WorkspaceInspection {
     manager_session: null,
     plan_review: plan,
     current_plan: plan,
+    integration_failure: null,
     needs_you: [],
     later: [],
     spend: { session_id: null, calls: 0, effective_tokens: 0, run_ceiling_tokens: 150_000, session_ceiling_tokens: 500_000 },

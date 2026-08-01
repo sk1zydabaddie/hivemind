@@ -110,9 +110,21 @@ export async function integrateShadow(
     return { ok: false, reason: "config.test_command must not be empty for shadow integration" };
   }
 
-  const mainResult = await git(repoRoot, ["rev-parse", "--verify", "main"]);
-  if (!mainResult.ok) {
-    return { ok: false, reason: "base branch main not found" };
+  const baseBranch = configResult.config.base_branch?.trim();
+  if (!baseBranch) {
+    return {
+      ok: false,
+      reason: "config.base_branch is not recorded; check out the intended base branch and run hivemind init again"
+    };
+  }
+  const branchFormat = await git(repoRoot, ["check-ref-format", "--branch", baseBranch]);
+  if (!branchFormat.ok) {
+    return { ok: false, reason: `configured base branch ${baseBranch} is invalid` };
+  }
+  const baseRef = `refs/heads/${baseBranch}`;
+  const baseResult = await git(repoRoot, ["rev-parse", "--verify", baseRef]);
+  if (!baseResult.ok) {
+    return { ok: false, reason: `configured base branch ${baseBranch} not found` };
   }
 
   const gateResult = await gateQueue(repoRoot, queueResult.value);
@@ -135,7 +147,7 @@ export async function integrateShadow(
 
   try {
     await mkdir(path.dirname(worktreePath), { recursive: true });
-    const worktreeResult = await git(repoRoot, ["worktree", "add", "-b", branch, worktreePath, "main"]);
+    const worktreeResult = await git(repoRoot, ["worktree", "add", "-b", branch, worktreePath, baseRef]);
     if (!worktreeResult.ok) {
       outcome = { ok: false, reason: worktreeResult.reason };
     } else {

@@ -10,6 +10,7 @@ export interface HivemindConfig {
   version: 1;
   stack: "typescript-node";
   repo_root: string;
+  base_branch?: string;
   test_command: string;
   allowed_globs: string[];
   forbidden_globs: string[];
@@ -111,6 +112,9 @@ export function validateConfig(raw: unknown): string[] {
     problems.push("stack must be typescript-node");
   }
   requireString(raw, "repo_root", problems);
+  if ("base_branch" in raw && (typeof raw.base_branch !== "string" || raw.base_branch.trim() === "")) {
+    problems.push("base_branch must be a non-empty string when configured");
+  }
   requireString(raw, "test_command", problems);
   requireStringArray(raw, "allowed_globs", problems);
   requireStringArray(raw, "forbidden_globs", problems);
@@ -141,6 +145,7 @@ export function normalizeConfig(raw: unknown): HivemindConfig {
     version: 1,
     stack: "typescript-node",
     repo_root: String(raw.repo_root),
+    ...(typeof raw.base_branch === "string" ? { base_branch: raw.base_branch.trim() } : {}),
     test_command: String(raw.test_command),
     allowed_globs: normalizeStringArray(raw.allowed_globs),
     forbidden_globs: normalizeStringArray(raw.forbidden_globs),

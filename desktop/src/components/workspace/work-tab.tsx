@@ -267,6 +267,7 @@ export function WorkTab({
           <div className="work-reading-grid">
             <CurrentWork
               tasks={tasks}
+              integrationFailure={inspection?.integration_failure ?? null}
               selectedTaskId={projection.selectedTaskId}
               onSelectTask={onSelectTask}
               onAdd={() =>
@@ -516,12 +517,14 @@ function AttentionCard({
 
 function CurrentWork({
   tasks,
+  integrationFailure,
   selectedTaskId,
   onSelectTask,
   onAdd,
   onEdit
 }: {
   tasks: TaskProjection[];
+  integrationFailure: WorkspaceInspection["integration_failure"];
   selectedTaskId: string | null;
   onSelectTask: (taskId: string) => void;
   onAdd: () => void;
@@ -571,6 +574,7 @@ function CurrentWork({
                       <TaskLane
                         key={task.task_id}
                         task={task}
+                        integrationFailure={integrationFailure?.task_ids.includes(task.task_id) ? integrationFailure.reason : null}
                         selected={task.task_id === selectedTaskId}
                         onSelect={() => onSelectTask(task.task_id)}
                       />
@@ -586,8 +590,10 @@ function CurrentWork({
   );
 }
 
-function TaskLane({ task, selected, onSelect }: { task: TaskProjection; selected: boolean; onSelect: () => void }): React.JSX.Element {
-  const language = stateLanguage[task.state];
+function TaskLane({ task, integrationFailure, selected, onSelect }: { task: TaskProjection; integrationFailure: string | null; selected: boolean; onSelect: () => void }): React.JSX.Element {
+  const language = integrationFailure === null
+    ? stateLanguage[task.state]
+    : { label: "Project check stopped", tone: "danger" as const };
   return (
     <button type="button" className={`task-lane state-${task.state}${selected ? " is-selected" : ""}`} onClick={onSelect} aria-pressed={selected}>
       <span className="task-lane-head">
@@ -595,7 +601,7 @@ function TaskLane({ task, selected, onSelect }: { task: TaskProjection; selected
         <Badge tone={language.tone}>{language.label}</Badge>
       </span>
       <span className="phase-rail" aria-label={`${task.task_id} progress`}>
-        {phasesFor(task).map((phase, index) => (
+        {phasesFor(task, integrationFailure).map((phase, index) => (
           <span className={`phase phase-${phase.status}`} key={phase.key} title={phaseDetail(task, phase.key)}>
             {index > 0 ? <span className="phase-line" /> : null}
             <span className="phase-node">{phase.status === "complete" ? <Check size={10} /> : phase.status === "failed" ? <AlertTriangle size={10} /> : null}</span>
@@ -608,7 +614,7 @@ function TaskLane({ task, selected, onSelect }: { task: TaskProjection; selected
         <span><FileCode2 size={12} />{task.lease_files.length} files</span>
         {task.depends_on.length > 0 ? <span><ArrowRight size={12} />after {task.depends_on.join(", ")}</span> : null}
       </span>
-      {task.issue ? <span className="task-issue">{plainTaskIssue(task.issue)}</span> : null}
+      {integrationFailure || task.issue ? <span className="task-issue">{plainTaskIssue(integrationFailure ?? task.issue!)}</span> : null}
     </button>
   );
 }
@@ -920,13 +926,13 @@ function splitList(value: string): string[] {
   return value.split(/[\n,]/u).map((entry) => entry.trim()).filter(Boolean);
 }
 
-function phasesFor(task: TaskProjection): TaskPhase[] {
+function phasesFor(task: TaskProjection, integrationFailure: string | null = null): TaskPhase[] {
   const failure = ["failed", "blocked", "rejected", "cancelled"].includes(task.state);
   return [
     { key: "scoped", label: "Ready", status: task.lease_files.length > 0 || task.state !== "planned" ? "complete" : "active" },
     { key: "running", label: "Working", status: failure ? "failed" : task.state === "paused" ? "waiting" : task.state === "running" ? "active" : ["submitted", "accepted", "integrated"].includes(task.state) ? "complete" : "waiting" },
     { key: "verified", label: "Checked", status: task.state === "rejected" ? "failed" : task.patch.verdict === "accept" || task.state === "integrated" ? "complete" : task.patch.submitted ? "active" : "waiting" },
-    { key: "integrated", label: "Merged", status: task.integration === "blocked" || task.integration === "failed" ? "failed" : task.state === "integrated" || task.integration === "passed" ? "complete" : task.integration === "queued" ? "active" : "waiting" }
+    { key: "integrated", label: "Merged", status: integrationFailure !== null || task.integration === "blocked" || task.integration === "failed" ? "failed" : task.state === "integrated" || task.integration === "passed" ? "complete" : task.integration === "queued" ? "active" : "waiting" }
   ];
 }
 
@@ -976,7 +982,6 @@ function eventTone(type: string): string {
 }
 
 function plainPrimaryDetail(detail: string, kind: WorkspaceQueueItem["kind"]): string {
-  if (kind === "merge_blocked") return "A required check is missing or could not be measured. Open the change to see what is untested.";
   if (kind === "quality_cancel_failed") return "A draft process may still be active. Review it before starting another one.";
   if (/oracle|tier-?2|write[-_ ]intent|lease|durable trail|provider evidence/iu.test(detail)) return "Open the details to see what needs attention.";
   return detail;

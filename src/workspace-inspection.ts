@@ -73,6 +73,10 @@ export interface WorkspaceInspection {
   manager_session: ManagerWorkspaceSession | null;
   plan_review: WorkspacePlanReview | null;
   current_plan: WorkspacePlanReview | null;
+  integration_failure: {
+    reason: string;
+    task_ids: string[];
+  } | null;
   needs_you: WorkspaceQueueItem[];
   later: WorkspaceQueueItem[];
   spend: {
@@ -202,7 +206,8 @@ export async function inspectWorkspace(repoRoot: string): Promise<{ ok: true; va
     ? { ok: true as const, review: null, current: null }
     : await inspectPlans(repoRoot, specId, events.value, config.config);
   if (!planState.ok) return planState;
-  const queues = await buildQueues(repoRoot, events.value, planState.review, session.value);
+  const integrationFailure = buildIntegrationFailure(status.value, session.value);
+  const queues = await buildQueues(repoRoot, events.value, planState.review, session.value, integrationFailure);
   if (!queues.ok) return queues;
   const ledger = await readQuotaLedger(repoRoot);
   if (!ledger.ok) return ledger;
@@ -234,6 +239,7 @@ export async function inspectWorkspace(repoRoot: string): Promise<{ ok: true; va
       manager_session: session.value,
       plan_review: planState.review,
       current_plan: planState.current,
+      integration_failure: integrationFailure,
       needs_you: queues.value.needsYou,
       later: queues.value.later,
       spend: {
@@ -629,7 +635,8 @@ async function buildQueues(
   repoRoot: string,
   events: HivemindEvent[],
   planReview: WorkspacePlanReview | null,
-  session: ManagerWorkspaceSession | null
+  session: ManagerWorkspaceSession | null,
+  integrationFailure: WorkspaceInspection["integration_failure"]
 ): Promise<{ ok: true; value: { needsYou: WorkspaceQueueItem[]; later: WorkspaceQueueItem[] } } | { ok: false; reason: string }> {
   const needsYou: WorkspaceQueueItem[] = [];
   if (planReview !== null) {
@@ -648,8 +655,8 @@ async function buildQueues(
     needsYou.push({
       id: `approval:${pending.pending_action_id}`,
       kind: "manager_approval",
-      title: `Approve ${plainActionName(pending.action_type)}`,
-      detail: pending.recommendation || pending.reason,
+      title: plainApprovalTitle(pending.action_type),
+      detail: plainApprovalDetail(pending.action_type),
       created_at: session.created_at,
       task_id: typeof pending.action === "object" && pending.action !== null && "task_id" in pending.action && typeof pending.action.task_id === "string" ? pending.action.task_id : null,
       action: {
@@ -662,6 +669,17 @@ async function buildQueues(
           expected_state_hash: pending.expected_state_hash
         }
       }
+    });
+  }
+  if (integrationFailure !== null) {
+    needsYou.push({
+      id: `integration-failure:${session?.session_id ?? "unknown"}`,
+      kind: "merge_blocked",
+      title: "The project check could not finish",
+      detail: integrationFailure.reason,
+      created_at: session?.created_at ?? new Date(0).toISOString(),
+      task_id: integrationFailure.task_ids[0] ?? null,
+      action: null
     });
   }
   const mergeState = [...events].reverse().find((event) =>
@@ -738,15 +756,52 @@ function plainEvidence(event: HivemindEvent): string {
   return "Open the details to see what happened.";
 }
 
+function buildIntegrationFailure(
+  status: HivemindStatus,
+  session: ManagerWorkspaceSession | null
+): WorkspaceInspection["integration_failure"] {
+  if (session?.blocked_action_type !== "integrate_shadow" || session.blocked_reason === null) {
+    return null;
+  }
+  return {
+    reason: plainIntegrationFailureReason(session.blocked_reason),
+    task_ids: [...status.integration.queue]
+  };
+}
+
+function plainIntegrationFailureReason(reason: string): string {
+  const missingBranch = /^configured base branch (.+) not found$/u.exec(reason);
+  if (missingBranch) {
+    return `The configured project branch "${missingBranch[1]}" could not be found. Review the base branch setting, then retry the project check.`;
+  }
+  if (/config\.base_branch is not recorded/iu.test(reason)) {
+    return "This project has no recorded base branch. Check out the intended branch, run project setup again, then retry the project check.";
+  }
+  return reason;
+}
+
 function taskAttentionTitle(event: HivemindEvent): string {
   if (event.type === "patch.rejected") return `${event.task_id} needs a revision`;
   if (event.type === "task.blocked") return `${event.task_id} cannot continue`;
   return `${event.task_id} stopped unexpectedly`;
 }
 
-function plainActionName(action: string): string {
-  const labels: Record<string, string> = { run_worker: "starting this worker", integrate_shadow: "merging checked changes" };
-  return labels[action] ?? action.replaceAll("_", " ");
+function plainApprovalTitle(action: string): string {
+  const labels: Record<string, string> = {
+    run_worker: "Approve starting this worker",
+    integrate_shadow: "Approve checking this change against the project"
+  };
+  return labels[action] ?? `Approve ${action.replaceAll("_", " ")}`;
+}
+
+function plainApprovalDetail(action: string): string {
+  if (action === "run_worker") {
+    return "This starts the assigned worker inside its approved file boundary.";
+  }
+  if (action === "integrate_shadow") {
+    return "This applies the checked change to an isolated copy and runs the project's configured checks before merge.";
+  }
+  return "Review this proposed action before allowing the run to continue.";
 }
 
 function compareQueueItems(left: WorkspaceQueueItem, right: WorkspaceQueueItem): number {

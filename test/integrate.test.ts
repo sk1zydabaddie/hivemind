@@ -556,7 +556,34 @@ test("integrateShadow fails closed for malformed queue inputs and empty test com
   });
 });
 
-test("integrateShadow fails closed when main is missing or no queued patches are accepted", async () => {
+test("integrateShadow uses the recorded repository base branch and supports master", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await setConfigTestCommand(repo, "node -e \"process.exit(0)\"");
+    await writeContract(repo, "T-MASTER", baseCommit, ["README.md"]);
+    await writePatchFromEdit(repo, "T-MASTER", baseCommit, async () => {
+      await writeFile(path.join(repo, "README.md"), "# Fixture\nmaster branch integration\n");
+    });
+    await appendEvent(repo, {
+      type: "patch.submitted",
+      task_id: "T-MASTER",
+      data: { patch_path: ".hivemind/patches/T-MASTER/diff.patch", changed_files: 1 }
+    });
+    await appendEvent(repo, {
+      type: "patch.accepted",
+      task_id: "T-MASTER",
+      data: { verdict: "accept", reason: "all changes are within scope" }
+    });
+    await writeQueue(repo, ["T-MASTER"]);
+
+    const result = await integrateShadow(repo);
+
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    const config = JSON.parse(await readFile(path.join(repo, ".hivemind", "config.json"), "utf8")) as { base_branch: string };
+    assert.equal(config.base_branch, "master");
+  }, "master");
+});
+
+test("integrateShadow fails closed when the configured branch is missing or unrecorded", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await setConfigTestCommand(repo, "node -e \"process.exit(0)\"");
     await git(repo, ["branch", "-m", "main", "not-main"]);
@@ -568,7 +595,19 @@ test("integrateShadow fails closed when main is missing or no queued patches are
     if (missingMain.ok) {
       return;
     }
-    assert.match(missingMain.reason, /base branch main not found/);
+    assert.match(missingMain.reason, /configured base branch main not found/);
+
+    const configPath = path.join(repo, ".hivemind", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    delete config.base_branch;
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+    const unrecorded = await integrateShadow(repo);
+    assert.equal(unrecorded.ok, false);
+    if (!unrecorded.ok) {
+      assert.match(unrecorded.reason, /config\.base_branch is not recorded/);
+    }
+    config.base_branch = "main";
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 
     await git(repo, ["branch", "-m", "not-main", "main"]);
     const nextBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
@@ -640,13 +679,16 @@ test("enqueueIntegrationPatch requires a real submitted and accepted non-empty p
   });
 });
 
-async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
+async function withTempRepo(
+  run: (context: { repo: string; baseCommit: string }) => Promise<void>,
+  baseBranch = "main"
+): Promise<void> {
   const repo = await mkdtemp(path.join(tmpdir(), "hivemind-integrate-test-"));
   try {
     await git(repo, ["init"]);
     await git(repo, ["config", "user.name", "Hivemind Test"]);
     await git(repo, ["config", "user.email", "hivemind@example.test"]);
-    await git(repo, ["checkout", "-b", "main"]);
+    await git(repo, ["checkout", "-b", baseBranch]);
     await mkdir(path.join(repo, "src"), { recursive: true });
     await writeFile(path.join(repo, "README.md"), "# Fixture\n");
     await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = 'base';\n");

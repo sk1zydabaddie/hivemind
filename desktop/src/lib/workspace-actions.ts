@@ -64,10 +64,15 @@ export interface WorkspaceInspection {
     tool: string;
     call_count: number;
     blocked_reason: string | null;
+    blocked_action_type: string | null;
     continuation_available: boolean;
   };
   plan_review: WorkspacePlanReview | null;
   current_plan: WorkspacePlanReview | null;
+  integration_failure: {
+    reason: string;
+    task_ids: string[];
+  } | null;
   needs_you: WorkspaceQueueItem[];
   later: WorkspaceQueueItem[];
   spend: {

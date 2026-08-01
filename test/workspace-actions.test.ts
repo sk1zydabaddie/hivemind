@@ -710,6 +710,95 @@ test("workspace inspection presents authoritative plan detail and daemon-derived
   });
 });
 
+test("workspace inspection surfaces a durable integration refusal in plain language", async () => {
+  await withRepo(async (repo) => {
+    await createRatifiedSpec(repo, "S-001");
+    const proposal = workspacePlanFixture();
+    proposal.tasks = [proposal.tasks[0]];
+    proposal.execution_groups = [{ group_id: "G-1", mode: "sequence", task_ids: ["T-001"] }];
+    assert.equal((await createTentativePlan(repo, "S-001", proposal)).ok, true);
+    assert.equal((await groundTentativePlan(repo, "S-001")).ok, true);
+    assert.equal((await lintTentativePlan(repo, "S-001")).ok, true);
+    const review = await executeWorkspaceAction(repo, { type: "plan.review", payload: { spec_id: "S-001" } });
+    assert.equal(review.ok, true, review.ok ? undefined : review.reason);
+    if (!review.ok) return;
+    const ratified = await executeWorkspaceAction(repo, {
+      type: "plan.ratify",
+      payload: { spec_id: "S-001", expected_plan_hash: (review.value as { plan_hash: string }).plan_hash }
+    });
+    assert.equal(ratified.ok, true, ratified.ok ? undefined : ratified.reason);
+    await writeContract(repo, "T-001", ["README.md"]);
+    await mkdir(path.join(repo, ".hivemind", "integration"), { recursive: true });
+    await writeFile(
+      path.join(repo, ".hivemind", "integration", "queue.json"),
+      `${JSON.stringify([{ task_id: "T-001" }], null, 2)}\n`
+    );
+    const configPath = path.join(repo, ".hivemind", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    config.base_branch = "missing-project-branch";
+    config.test_command = "node -e \"process.exit(0)\"";
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+
+    const session = await startManagerSession(repo, "Check the accepted change.", {
+      proposedAction: {
+        type: "proposed_actions",
+        source: "scripted",
+        reason: "The accepted change is ready for the project checks.",
+        actions: [{ type: "integrate_shadow" }],
+        human_approval_required_for: ["integrate_shadow"]
+      }
+    });
+    assert.equal(session.ok, true, session.ok ? undefined : session.reason);
+    if (!session.ok) return;
+    const continued = await executeWorkspaceAction(repo, {
+      type: "manager.continue",
+      payload: { session_id: session.value.session_id, tool: "unused-fixture", max_steps: 1 }
+    });
+    assert.equal(continued.ok, true, continued.ok ? undefined : continued.reason);
+
+    const awaiting = await executeWorkspaceAction(repo, { type: "status.inspect", payload: {} });
+    assert.equal(awaiting.ok, true, awaiting.ok ? undefined : awaiting.reason);
+    if (!awaiting.ok) return;
+    const awaitingView = awaiting.value as {
+      manager_session: { pending_action: Record<string, unknown> };
+      needs_you: Array<{ kind: string; title: string; detail: string; action: { type: string; payload: Record<string, unknown> } | null }>;
+    };
+    const approval = awaitingView.needs_you.find((item) => item.kind === "manager_approval");
+    assert.equal(approval?.title, "Approve checking this change against the project");
+    assert.equal(approval?.detail, "This applies the checked change to an isolated copy and runs the project's configured checks before merge.");
+    assert.doesNotMatch(`${approval?.title} ${approval?.detail}`, /integrate_shadow|shadow integration/iu);
+    assert.equal(approval?.action?.type, "manager.approve_pending");
+    assert.ok(approval?.action);
+
+    const approved = await executeWorkspaceAction(repo, {
+      type: "manager.approve_pending",
+      payload: approval.action.payload
+    });
+    assert.equal(approved.ok, true, approved.ok ? undefined : approved.reason);
+    const stopped = await executeWorkspaceAction(repo, { type: "status.inspect", payload: {} });
+    assert.equal(stopped.ok, true, stopped.ok ? undefined : stopped.reason);
+    if (!stopped.ok) return;
+    const stoppedView = stopped.value as {
+      manager_session: { blocked_action_type: string; blocked_reason: string };
+      integration_failure: { reason: string; task_ids: string[] };
+      needs_you: Array<{ kind: string; title: string; detail: string; task_id: string | null }>;
+    };
+    assert.equal(stoppedView.manager_session.blocked_action_type, "integrate_shadow");
+    assert.equal(stoppedView.manager_session.blocked_reason, "configured base branch missing-project-branch not found");
+    assert.deepEqual(stoppedView.integration_failure.task_ids, ["T-001"]);
+    assert.equal(
+      stoppedView.integration_failure.reason,
+      'The configured project branch "missing-project-branch" could not be found. Review the base branch setting, then retry the project check.'
+    );
+    const failureItem = stoppedView.needs_you.find((item) => item.kind === "merge_blocked");
+    assert.equal(failureItem?.title, "The project check could not finish");
+    assert.equal(failureItem?.detail, stoppedView.integration_failure.reason);
+    assert.equal(failureItem?.task_id, "T-001");
+    const workTab = await readFile(path.resolve("desktop/src/components/workspace/work-tab.tsx"), "utf8");
+    assert.doesNotMatch(workTab, /A required check is missing or could not be measured/u);
+  });
+});
+
 test("the CLI workspace path uses the same dispatcher and rejects crafted authority", async () => {
   await withRepo(async (repo) => {
     const actionPath = path.join(repo, "crafted-workspace-action.json");

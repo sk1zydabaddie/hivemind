@@ -21,7 +21,7 @@ const cliPath = path.resolve(testDir, "../src/cli.js");
 
 test("init creates the M0.1 .hivemind scaffold inside a git repo", async () => {
   await withTempDir(async (repo) => {
-    await git(repo, ["init"]);
+    await git(repo, ["init", "-b", "master"]);
     await writeFile(path.join(repo, "package.json"), JSON.stringify({ scripts: { test: "node --test" } }));
 
     const code = await initProject(repo);
@@ -39,6 +39,7 @@ test("init creates the M0.1 .hivemind scaffold inside a git repo", async () => {
       version: number;
       stack: string;
       repo_root: string;
+      base_branch: string;
       test_command: string;
       allowed_globs: string[];
       forbidden_globs: string[];
@@ -52,6 +53,7 @@ test("init creates the M0.1 .hivemind scaffold inside a git repo", async () => {
       version: 1,
       stack: "typescript-node",
       repo_root: repo.replaceAll("\\", "/"),
+      base_branch: "master",
       test_command: "npm test",
       allowed_globs: [],
       forbidden_globs: ["**/*.lock", "**/package.json", "**/.git/**"],
@@ -246,6 +248,41 @@ test("init is idempotent and does not overwrite config", async () => {
 
     assert.equal(await initProject(repo), 0);
     assert.equal(await readFile(configPath, "utf8"), edited);
+  });
+});
+
+test("init records the current branch in legacy config without changing existing settings", async () => {
+  await withTempDir(async (repo) => {
+    await git(repo, ["init", "-b", "master"]);
+    assert.equal(await initProject(repo), 0);
+    const configPath = path.join(repo, ".hivemind", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    delete config.base_branch;
+    config.test_command = "custom verification";
+    config.custom_setting = { preserved: true };
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+
+    assert.equal(await initProject(repo), 0);
+
+    const migrated = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    assert.equal(migrated.base_branch, "master");
+    assert.equal(migrated.test_command, "custom verification");
+    assert.deepEqual(migrated.custom_setting, { preserved: true });
+  });
+});
+
+test("init fails closed when symbolic HEAD cannot identify a base branch", async () => {
+  await withTempDir(async (repo) => {
+    await git(repo, ["init", "-b", "main"]);
+    await git(repo, ["config", "user.name", "Hivemind Test"]);
+    await git(repo, ["config", "user.email", "hivemind@example.test"]);
+    await writeFile(path.join(repo, "README.md"), "# Detached fixture\n");
+    await git(repo, ["add", "README.md"]);
+    await git(repo, ["commit", "-m", "initial"]);
+    await git(repo, ["checkout", "--detach", "HEAD"]);
+
+    assert.equal(await initProject(repo), 1);
+    await assert.rejects(stat(path.join(repo, ".hivemind", "config.json")));
   });
 });
 

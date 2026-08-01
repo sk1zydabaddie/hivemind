@@ -113,6 +113,7 @@ export interface ManagerWorkspaceSession {
   tool: string;
   call_count: number;
   pending_action: ManagerPendingAction | null;
+  blocked_action_type: ManagerAction["type"] | null;
   blocked_reason: string | null;
   continuation_available: boolean;
 }
@@ -2050,6 +2051,7 @@ function presentManagerWorkspaceHistorySession(session: ManagerSession): Manager
     tool: session.proposed_action.tool ?? "manager",
     call_count: session.turns.filter((turn) => turn.role === "manager").length,
     pending_action: pending,
+    blocked_action_type: session.blocked_action?.action_type ?? null,
     blocked_reason: blockedReason,
     continuation_available: status === "active" && session.proposal_state !== undefined,
     task_ids: [...new Set(taskIds)].sort(),
