@@ -1,0 +1,6 @@
+     Running BeforeDevCommand (`npm run dev`)
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+        Info Watching D:\Projects\Hivemind AI\desktop\src-tauri for changes...
+[1m[92m   Compiling[0m hivemind_desktop v0.0.0 (D:\Projects\Hivemind AI\desktop\src-tauri)
+[1m[96m    Building[0m [=======================> ] 352/354: hivemin…[1m[96m    Building[0m [=======================> ] 353/354: hivemin…                                                            [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 3.57s
+[1m[92m     Running[0m `target\debug\hivemind_desktop.exe`

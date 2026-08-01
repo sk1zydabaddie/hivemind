@@ -24,7 +24,7 @@ approval: never
 sandbox: read-only
 ```
 
-## Result
+## Initial Result
 
 Exact-hash ratification succeeded. The first manager call then returned seven actions in one proposal:
 
@@ -44,21 +44,35 @@ Core refused the proposal with:
 manager proposal must contain at most one next action so no paid proposal output is silently discarded
 ```
 
-This was a correct fail-closed result, but it blocked the E2E before any task, lease, worktree, worker, inspector use, or merge. No retry was made. The scratch repository remained source-clean and had no canonical work state to clean up.
+This was a correct fail-closed result, but it initially blocked the E2E before any task, lease, worktree, worker, inspector use, or merge. The scratch repository remained source-clean and had no canonical work state to clean up.
 
 The manager startup also reported `approval: never` and `sandbox: read-only`.
+
+## Repair And Resume
+
+Core commit `95e25ce` made the zero-or-one-action rule explicit in both manager prompt modes, retained the parser guard, added a Work-tab retry through the existing `manager.start` dispatcher action, and refreshed inspection after failed actions so metered failures appear in spend.
+
+The first retry attached to the still-live scratch daemon that predated the repair. That daemon retained the old prompt module in memory and returned the same invalid batch. The UI correctly advanced to `3 calls / 61.5K`, proving the spend-display repair. No task state was created. The daemon was then replaced only after `/health` proved its scratch-project identity and disk inspection proved there was no task, manager, lease, worktree, patch, or output state to orphan.
+
+The retry against the replacement daemon produced one valid stored action: `create_task_contract` for `T-001`. The UI advanced to `4 calls / 81.9K` and exposed `Continue run`, proving that the repaired prompt works and the initial paid proposal is durably retained.
+
+Continuation then failed with Windows socket timeout `10060`. The timeout was a symptom, not the root cause. The daemon processes `/workspace/action` inside its serialized mutation queue. `manager.continue` consumed the stored execution path far enough to call `routeMutatingAction()` for `create_task_contract`, which discovered the same live daemon and posted `/contract/create` back to itself. That nested request waited behind the outer queue holder while the outer request waited for the nested request. A live TCP snapshot showed daemon PID `32184` connected to its own port `56029`. After the client timeout, the manager session still had the proposal in `pending`, `executed_actions` was empty, and no contract, lease, worktree, worker, or patch existed. Retrying would duplicate risk while the queue remained deadlocked, so the run stopped without further paid calls.
+
+This is a missing daemon-internal execution boundary, not a reason to extend the 30-second Rust action timeout. A longer timeout would only wait longer on the same self-deadlock. The loop was not redesigned during this test.
 
 ## Spend
 
 | Call | Provider tokens | Self-measured tokens | Wall time |
 | --- | ---: | ---: | ---: |
 | Planner | 19,561 | 2,276 | 24.356 s |
-| Manager | 20,959 | 3,733 | 25.088 s |
-| Total | 40,520 | 6,009 | 49.444 s |
+| Manager, original batched proposal | 20,959 | 3,733 | 25.088 s |
+| Manager, stale-daemon retry | 20,937 | 3,717 | included below |
+| Manager, repaired single-action proposal | 20,447 | 3,647 | included below |
+| Total | 81,904 | 13,373 | 84.544 s |
 
-Provider-reported usage was the accounting source. Provider usage was 6.74 times the self-measured estimate.
+Provider-reported usage was the accounting source. Provider usage was 6.12 times the self-measured estimate. No worker call occurred.
 
-The UI still showed `1 call / 19.6K` after the failed manager request had been durably metered. This is a separate spend-inspectability defect: failed-before-session manager calls are omitted from the current workspace spend projection.
+Before `95e25ce`, the UI still showed `1 call / 19.6K` after the failed manager request had been durably metered. After the repair, it showed `2 calls / 40.5K`, then advanced after each retry. The defect is closed.
 
 ## Experience Findings
 
@@ -67,11 +81,16 @@ The UI still showed `1 call / 19.6K` after the failed manager request had been d
 - The non-aggressive takeover worked: the plan first appeared as a banner and attention item, and nothing started until the explicit review action.
 - The most-used surfaces were the project selector, bottom prompt, spend indicator, plan-ready banner, attention card, plan review, activity stream, and final status message.
 - `Later`, Routing, Draft comparisons, the empty task inspector, and most of the run-summary strip supplied no value before execution. They read as persistent structure waiting for data rather than tools used in this run.
-- Swarm usefulness, live worker output, task controls, merge presentation, and post-run History could not be judged because the manager proposal was refused before task creation.
-- The status message explained the internal one-action invariant rather than giving the user a recovery path. There was no visible retry or revise-manager-proposal control, which is where the flow stranded.
+- Swarm usefulness, live worker output, task controls, merge presentation, and post-run History still could not be judged because daemon-internal continuation deadlocked before task creation.
+- The new Retry control was obvious and preserved the exact ratified plan. Its first use also exposed a lifecycle fact the UI did not communicate: attaching to a daemon started before a Core update leaves that process on old code.
+- The continuation timeout message is raw infrastructure text and is too long for the prompt dock. More importantly, `Continue run` looked safely retryable even though the daemon mutation queue was still occupied; the UI has no distinct "operation may still be running" state.
+- When the daemon was deliberately restarted, the disconnected header leaked the `\\?\` long-path prefix again. The normal connected header remains clean, so path sanitization is incomplete specifically in the connection-error surface.
 
 ## Screenshots
 
 - `01-plan-ready.jpg`: linted tentative plan awaiting review; nothing started.
 - `02-plan-review.jpg`: real two-task review with Medium/High tiers, scopes, dependency, acceptance, and exact-hash approval.
 - `03-manager-proposal-refused.jpg`: ratified plan followed by the fail-closed manager-proposal error.
+- `04-retry-and-correct-spend.jpg`: existing ratification preserved, failed call visible in spend, and audited retry available.
+- `05-stale-daemon-second-refusal.jpg`: retry against the pre-repair daemon, with the second paid failure included in spend.
+- `06-manager-continue-deadlock.jpg`: repaired single-action proposal stored, followed by the daemon self-routing timeout on continuation.
