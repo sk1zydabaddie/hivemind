@@ -796,6 +796,8 @@ test("workspace inspection surfaces a durable integration refusal in plain langu
     assert.equal(failureItem?.task_id, "T-001");
     const workTab = await readFile(path.resolve("desktop/src/components/workspace/work-tab.tsx"), "utf8");
     assert.doesNotMatch(workTab, /A required check is missing or could not be measured/u);
+    const inspectionSource = await readFile(path.resolve("src/workspace-inspection.ts"), "utf8");
+    assert.match(inspectionSource, /\(\?:configured \)\?base branch/u);
   });
 });
 

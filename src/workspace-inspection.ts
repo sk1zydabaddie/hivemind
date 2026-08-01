@@ -770,7 +770,7 @@ function buildIntegrationFailure(
 }
 
 function plainIntegrationFailureReason(reason: string): string {
-  const missingBranch = /^configured base branch (.+) not found$/u.exec(reason);
+  const missingBranch = /^(?:configured )?base branch (.+) not found$/u.exec(reason);
   if (missingBranch) {
     return `The configured project branch "${missingBranch[1]}" could not be found. Review the base branch setting, then retry the project check.`;
   }
