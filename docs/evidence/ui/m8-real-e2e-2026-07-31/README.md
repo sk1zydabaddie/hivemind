@@ -70,7 +70,7 @@ Core daemons also capture and publish a deterministic compiled-build identity at
 
 The repaired dispatcher consumed the already-paid `create_task_contract` proposal and drove `T-001` through contract creation, lease, write intent, worktree creation, and a real Codex worker without nested HTTP. The worker ran for 121.032 seconds, changed only `src/release-notes.ts` and `test/release-notes.test.ts`, and passed all four scratch-repository tests. The manager then submitted and analyzed the patch, the deterministic scope gate accepted it, and the patch entered the integration queue.
 
-The explicit merge approval reached the real integration primitive. Integration then stopped at the deterministic floor with:
+The explicit project-check approval reached the real shadow-integration primitive. Integration then stopped at the deterministic floor with:
 
 ```text
 base branch main not found
@@ -78,7 +78,17 @@ base branch main not found
 
 The scratch repository's checked-out branch is not named `main`, while its integration configuration expects `main`. The manager recorded `integrate_shadow` as consumed with `result_ok: false` and a Tier-3 hard stop. Per the bounded-run rule, no branch/config adaptation, retry, second worker, or additional paid call followed. `T-002` never started.
 
-This proves the self-reentrancy repair under the real UI path, but the complete two-task merge and post-run History acceptance remain unverified.
+This proved the self-reentrancy repair under the real UI path and exposed a repository-assumption defect rather than a scratch-repository defect.
+
+## Base-branch Repair And Completed Shadow Run
+
+Project setup now records the checked-out symbolic `HEAD` branch in repo-local `config.base_branch`, and shadow integration verifies and uses that exact local branch ref. The scratch repository correctly recorded `master`. Setup fails closed when the branch cannot be resolved, and integration fails closed when the configured branch is missing or invalid. The audit found no production hardcoded remote name; remaining `HEAD` reads verify commit/worktree identity, while `hivemind/<task>` and `integration/<timestamp>` are Hivemind-owned branch names.
+
+The stopped `integrate_shadow` action was recovered through the audited exact-action retry. Retry did not replay the old approval or spend: it re-presented the same durable action behind a fresh pending-action identity and current-state hash. After explicit approval, `T-001` passed the full scratch suite with 4/4 tests.
+
+The same UI session then drove `T-002` through contract creation, lease, write intent, detached worktree, explicit worker approval, a real Codex worker, patch submission, deterministic scope analysis, integration queueing, and explicit project-check approval. The worker ran for 124.161 seconds, changed only `src/cli.ts` and `test/cli.test.ts`, exited successfully, and reported 50,249 provider tokens. The final shadow tree applied both accepted patches and passed 7/7 tests. Durable evidence includes `task.completed`, `patch.accepted`, `verification.completed`, and `integration.passed` for both tasks.
+
+The run did **not** merge those patches into the scratch repository's `master` branch. `integrateShadow()` intentionally creates a throwaway `integration/<timestamp>` branch, verifies it, records `integration.passed`, and deletes the branch. `master` remains at seed commit `e440496`, and its source tree still has the original 2/2 tests. The UI currently labels this state `Merged` / `Reached merge`, which overstates the implemented contract. Automatic adoption into the target branch remains outside the current integration primitive; the screenshots document a successful shadow integration, not a repository merge.
 
 ## Spend
 
@@ -92,7 +102,9 @@ This proves the self-reentrancy repair under the real UI path, but the complete 
 
 Provider-reported usage was the accounting source. Provider usage was 6.12 times the self-measured estimate. No worker call had occurred at that checkpoint.
 
-After the repaired resume, the current daemon ledger contains 209,636 provider tokens across 13 requests: planner 19,561, manager 159,969, and worker 30,106. The earlier stale-daemon manager call cost another 20,937 provider tokens but is absent from the replacement daemon's request counter. Actual paid spend for the attempt is therefore 230,573 provider tokens across 14 calls. The Work indicator displayed approximately 230.5K tokens but 13 calls, so token visibility included the failed call while request-count continuity across daemon replacement did not.
+At the terminal shadow-integration point, the replacement daemon ledger contains 409,795 provider tokens across 23 requests: planner 19,561, manager 309,879 across 20 requests, and workers 80,355 across 2 requests. Self-measured usage for those calls is 133,649 tokens. The earlier stale-daemon manager call cost another 20,937 provider tokens and one request but is absent from the replacement daemon ledger. Actual paid spend for the complete attempt is therefore **430,732 provider tokens across 24 calls**, within the deliberate one-off 650,000-token session ceiling and with no call over the 150,000 per-call ceiling.
+
+The final History screen displays 23 calls / 409.8K because it reads the current daemon ledger. The cross-daemon total is one call and 20,937 tokens higher. This continuity gap remains recorded as a known accounting limitation rather than being hidden.
 
 Before `95e25ce`, the UI still showed `1 call / 19.6K` after the failed manager request had been durably metered. After the repair, it showed `2 calls / 40.5K`, then advanced after each retry. The defect is closed.
 
@@ -103,7 +115,7 @@ Before `95e25ce`, the UI still showed `1 call / 19.6K` after the failed manager 
 - The non-aggressive takeover worked: the plan first appeared as a banner and attention item, and nothing started until the explicit review action.
 - The most-used surfaces were the project selector, bottom prompt, spend indicator, plan-ready banner, attention card, plan review, activity stream, and final status message.
 - `Later`, Routing, Draft comparisons, the empty task inspector, and most of the run-summary strip supplied no value before execution. They read as persistent structure waiting for data rather than tools used in this run.
-- Swarm usefulness, live worker output, task controls, merge presentation, and post-run History still could not be judged because daemon-internal continuation deadlocked before task creation.
+- The Swarm inspector was useful during real execution: it located the active `T-002` worker, showed its changed files, startup mode, duration, and live output without leaving the app. The small two-task tree itself was mainly orientation rather than a decision surface.
 - The new Retry control was obvious and preserved the exact ratified plan. Its first use also exposed a lifecycle fact the UI did not communicate: attaching to a daemon started before a Core update leaves that process on old code.
 - The continuation timeout message is raw infrastructure text and is too long for the prompt dock. More importantly, `Continue run` looked safely retryable even though the daemon mutation queue was still occupied; the UI has no distinct "operation may still be running" state.
 - When the daemon was deliberately restarted, the disconnected header leaked the `\\?\` long-path prefix again. The normal connected header remains clean, so path sanitization is incomplete specifically in the connection-error surface.
@@ -111,8 +123,19 @@ Before `95e25ce`, the UI still showed `1 call / 19.6K` after the failed manager 
 - The Swarm tree accurately oriented the two sequential tasks, but for this small run it was mostly empty canvas. The inspector earned its space; the tree itself did not materially affect a decision.
 - After the worker finished, the selected task continued to read `Working` until the manager advanced the patch pipeline. That label conflates worker execution with post-worker processing.
 - The merge approval surfaced manager-internal wording (`integrate_shadow` and instructions to the orchestrator) instead of a human explanation.
-- The integration rejection disappeared from the attention queue after approval and was not presented as a clear recovery card. The durable session held the exact reason, but the workspace did not make it visible.
+- The initial integration rejection disappeared from the attention queue after approval and was not presented as a clear recovery card. The repair now projects that durable reason into the attention and task cards and offers exact-action retry.
 - The 30-second desktop action timeout still presents successful long-running manager work as a raw socket failure while the daemon completes durably. This made the operator guess whether clicking again was safe.
+- The activity stream contains many generic `Project state was updated` rows. They crowd out the small number of events that changed an operator decision.
+- The prompt/continuation dock can fall below the visible viewport when selected-task output is tall; keyboard navigation was needed once during the run.
+- The worker output is diagnostically complete but visually noisy: ANSI escapes, provider startup telemetry, the full prompt, and long raw transcript text are uncollapsed.
+- History showed both tasks and the cumulative spend, but still marked the run `Active` after terminal shadow integration. No explicit session-complete event currently closes that presentation.
+- The largest semantic UI defect is `Merged` / `Reached merge`: the user sees a completed merge while the canonical target branch remains unchanged. The correct current wording is shadow-tested / ready for adoption unless and until a separate approved merge primitive exists.
+
+### Panels Actually Used
+
+- Used: project selector, prompt, spend meter, plan-ready banner, plan review, attention card, task cards, activity stream, Swarm tree for orientation, Swarm inspector/live output, explicit worker and project-check approvals, and History.
+- Low value or noise in this run: empty Later queue, empty routing and draft-comparison panels, repetitive activity rows, and large unused tree canvas for a two-task sequence.
+- Missing control reached for: an honest final adoption/merge action. None exists because the current integration contract stops after the disposable shadow check.
 
 ## Screenshots
 
@@ -127,3 +150,11 @@ Before `95e25ce`, the UI still showed `1 call / 19.6K` after the failed manager 
 - `09-swarm-worker-inspector.png`: selected worker with live output and changed-file detail.
 - `10-merge-approval.png`: accepted patch awaiting explicit shadow-integration approval.
 - `11-integration-rejected.png`: workspace immediately after the Tier-3 `base branch main not found` rejection.
+- `07-integration-failure-surfaced.png`: repaired attention and task-card presentation of the durable branch failure.
+- `08-integration-retry-approval.png`: exact-action retry awaiting a fresh explicit approval.
+- `09-t001-merged.png`: `T-001` after successful shadow integration; the screenshot's `Merged` label is now a documented overstatement.
+- `10-t002-worker-approval.png`: `T-002` awaiting explicit real-worker approval.
+- `11-t002-swarm-live.png`: real `T-002` worker active in the Swarm tree and inspector.
+- `12-t002-integration-approval.png`: both accepted patches awaiting explicit final project-check approval.
+- `13-final-work-shadow-integrated.png`: terminal Work view after the two-patch shadow suite passed 7/7; target `master` remained unchanged.
+- `14-history-real-run.png`: final History view with both tasks, current-daemon spend, and the still-Active / Reached-merge presentation findings.
