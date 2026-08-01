@@ -4,6 +4,8 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { writeJsonAtomic } from "./atomic.js";
+import { type AutonomyLevel } from "./autonomy-level.js";
+import { readProjectAutonomyLevel, recordAutonomyDecision } from "./autonomy.js";
 import {
   adapterRunLogPath,
   findDangerousAdapterArgs,
@@ -114,7 +116,8 @@ export interface WorkspacePreparedPlanResult {
   usage_session_id: string;
   task_count: number;
   lint_status: "passed";
-  status: "awaiting_ratification";
+  status: "awaiting_ratification" | "ratified_by_policy";
+  autonomy_level: AutonomyLevel;
 }
 
 export interface GroundPlanResult {
@@ -450,6 +453,8 @@ export async function prepareWorkspaceTentativePlan(
   if (!linted.ok) return linted;
   const reviewed = await reviewPlanForRatification(repoRoot, activeSpec.value.spec_id);
   if (!reviewed.ok) return reviewed;
+  const autonomy = await readProjectAutonomyLevel(repoRoot);
+  if (!autonomy.ok) return autonomy;
 
   const recorded = await appendEvent(repoRoot, {
     type: "plan.prepared",
@@ -463,11 +468,40 @@ export async function prepareWorkspaceTentativePlan(
       usage_session_id: usageSessionId,
       tool,
       prompt_hash: createHash("sha256").update(normalizedPrompt).digest("hex"),
+      autonomy_level: autonomy.value,
       status: "awaiting_ratification",
       authorization_effect: "none"
     }
   });
   if (!recorded.ok) return recorded;
+
+  if (autonomy.value === "auto") {
+    const ratified = await ratifyPlanWithSource(repoRoot, reviewed.value.spec_id, reviewed.value.plan_hash, "autonomy_policy", autonomy.value);
+    if (!ratified.ok) return ratified;
+    const decision = await recordAutonomyDecision(repoRoot, {
+      level: autonomy.value,
+      session_id: usageSessionId,
+      decision: "plan_ratification",
+      action_type: "plan.ratify",
+      interruption: "suppressed",
+      authorization_source: "autonomy_policy",
+      result: "authorized",
+      reason: "Auto suppresses the plan interruption after the existing exact-hash ratification primitive succeeds."
+    });
+    if (!decision.ok) return decision;
+  } else {
+    const decision = await recordAutonomyDecision(repoRoot, {
+      level: autonomy.value,
+      session_id: usageSessionId,
+      decision: "plan_ratification",
+      action_type: "plan.ratify",
+      interruption: "required",
+      authorization_source: "human",
+      result: "paused",
+      reason: `${autonomy.value} requires exact-hash human plan ratification before execution.`
+    });
+    if (!decision.ok) return decision;
+  }
 
   return {
     ok: true,
@@ -479,7 +513,8 @@ export async function prepareWorkspaceTentativePlan(
       usage_session_id: usageSessionId,
       task_count: reviewed.value.task_count,
       lint_status: "passed",
-      status: "awaiting_ratification"
+      status: autonomy.value === "auto" ? "ratified_by_policy" : "awaiting_ratification",
+      autonomy_level: autonomy.value
     }
   };
 }
@@ -487,7 +522,7 @@ export async function prepareWorkspaceTentativePlan(
 export async function readRatifiedWorkspacePlanSession(
   repoRoot: string,
   specId: string
-): Promise<SpecResult<string>> {
+): Promise<SpecResult<{ session_id: string }>> {
   const reviewed = await reviewPlanForRatification(repoRoot, specId);
   if (!reviewed.ok) return reviewed;
   const events = await readEvents(repoRoot);
@@ -513,7 +548,7 @@ export async function readRatifiedWorkspacePlanSession(
   if (typeof sessionId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(sessionId)) {
     return { ok: false, reason: "workspace execution refused: prepared-plan session identity is invalid" };
   }
-  return { ok: true, value: sessionId };
+  return { ok: true, value: { session_id: sessionId } };
 }
 
 function parsePlanArgs(
@@ -968,6 +1003,18 @@ export async function ratifyPlan(
   specId: string,
   expectedHash: string
 ): Promise<SpecResult<PlanRatificationResult>> {
+  const autonomy = await readProjectAutonomyLevel(repoRoot);
+  if (!autonomy.ok) return autonomy;
+  return ratifyPlanWithSource(repoRoot, specId, expectedHash, "human", autonomy.value);
+}
+
+async function ratifyPlanWithSource(
+  repoRoot: string,
+  specId: string,
+  expectedHash: string,
+  authorizationSource: "human" | "autonomy_policy",
+  autonomyLevel: AutonomyLevel
+): Promise<SpecResult<PlanRatificationResult>> {
   if (!/^[a-f0-9]{64}$/u.test(expectedHash)) {
     return { ok: false, reason: "plan ratification requires the exact 64-character hash shown by --review" };
   }
@@ -1020,7 +1067,9 @@ export async function ratifyPlan(
         plan_path: relativePath,
         base_commit: plan.value.base_commit,
         task_count: plan.value.tasks.length,
-        confirmation: "exact_plan_hash"
+        confirmation: "exact_plan_hash",
+        authorization_source: authorizationSource,
+        autonomy_level: autonomyLevel
       }
     });
     if (!event.ok) {

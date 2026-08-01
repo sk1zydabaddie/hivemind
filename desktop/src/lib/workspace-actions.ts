@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
+export type AutonomyLevel = "auto" | "review_plan" | "review_everything";
+
 export interface WorkspaceQueueItem {
   id: string;
   kind:
@@ -74,6 +76,12 @@ export interface WorkspaceInspection {
     blocked_reason: string | null;
     blocked_action_type: string | null;
     continuation_available: boolean;
+    autonomy_level: AutonomyLevel;
+    autonomy_levels: AutonomyLevel[];
+  };
+  autonomy: {
+    configured_level: AutonomyLevel;
+    run_levels: AutonomyLevel[];
   };
   plan_review: WorkspacePlanReview | null;
   current_plan: WorkspacePlanReview | null;
@@ -89,6 +97,7 @@ export interface WorkspaceInspection {
     effective_tokens: number;
     run_ceiling_tokens: number;
     session_ceiling_tokens: number;
+    near_session_ceiling: boolean;
   };
   swarm: {
     characterizations: Array<{
@@ -192,10 +201,12 @@ export interface WorkspaceHistoryRun {
   provider_reported_tokens: number;
   self_measured_tokens: number;
   evidence_paths: string[];
+  autonomy_levels: AutonomyLevel[];
 }
 
 export type WorkspaceAction = {
   type:
+    | "autonomy.set"
     | "manager.start"
     | "manager.continue"
     | "manager.retry_blocked"
@@ -210,6 +221,7 @@ export type WorkspaceAction = {
     | "task.redirect"
     | "task.stop"
     | "status.inspect"
+    | "trail.inspect"
     | "change.inspect"
     | "verify.characterize"
     | "quality.best_of_n"

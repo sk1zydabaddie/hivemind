@@ -116,6 +116,7 @@ describe("React workspace boundary", () => {
     const audit = await readFile(path.resolve(desktopRoot, "..", "docs", "m8-action-routing-audit.md"), "utf8");
     const actions = [...work.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
     expect(new Set(actions)).toEqual(new Set([
+      "autonomy.set",
       "change.inspect",
       "guidance.record",
       "manager.continue",
@@ -124,7 +125,8 @@ describe("React workspace boundary", () => {
       "plan.prepare",
       "plan.ratify",
       "plan.review",
-      "task.redirect"
+      "task.redirect",
+      "task.stop"
     ]));
     for (const action of actions) expect(audit).toContain(`\`${action}\``);
     const inspection = await readFile(path.resolve(desktopRoot, "..", "src", "workspace-inspection.ts"), "utf8");
@@ -180,7 +182,7 @@ describe("React workspace boundary", () => {
     expect(styles).toMatch(/prefers-reduced-motion[\s\S]*\.artifact-marker\s*\{\s*display:\s*none/u);
   });
 
-  test("Memory and History remain read-only views with no promotion surface", async () => {
+  test("Memory has no promotion surface and History exposes only the audited read-only trail", async () => {
     const memory = await readFile(
       path.join(desktopRoot, "src", "components", "workspace", "memory-tab.tsx"),
       "utf8"
@@ -191,8 +193,13 @@ describe("React workspace boundary", () => {
     );
     const app = await readFile(path.join(desktopRoot, "src", "App.tsx"), "utf8");
     const source = `${memory}\n${history}`;
+    const audit = await readFile(path.resolve(desktopRoot, "..", "docs", "m8-action-routing-audit.md"), "utf8");
 
-    expect(source).not.toMatch(/onAction|invokeWorkspaceAction|fetch\(|method:\s*["']POST/u);
+    expect(memory).not.toMatch(/onAction|invokeWorkspaceAction|fetch\(|method:\s*["']POST/u);
+    expect(history).not.toMatch(/invokeWorkspaceAction|fetch\(|method:\s*["']POST/u);
+    const historyActions = [...history.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
+    expect(new Set(historyActions)).toEqual(new Set(["trail.inspect"]));
+    expect(audit).toContain("`trail.inspect`");
     expect(source).not.toMatch(/reviewMemoryProposal|memory\.review_handoff|Promote|Approve/u);
     expect(memory).toMatch(/The app cannot approve this item/u);
     expect(memory).toMatch(/Review in a terminal/u);

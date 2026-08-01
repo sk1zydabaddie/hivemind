@@ -47,6 +47,7 @@ test("init creates the M0.1 .hivemind scaffold inside a git repo", async () => {
         run_ceiling: { tokens: number };
         session_ceiling: { tokens: number };
       };
+      manager_autonomy: { level: string };
     };
 
     assert.deepEqual(config, {
@@ -57,6 +58,7 @@ test("init creates the M0.1 .hivemind scaffold inside a git repo", async () => {
       test_command: "npm test",
       allowed_globs: [],
       forbidden_globs: ["**/*.lock", "**/package.json", "**/.git/**"],
+      manager_autonomy: { level: "auto" },
       resource_policy: {
         run_ceiling: { tokens: DEFAULT_RUN_TOKEN_CEILING },
         session_ceiling: { tokens: DEFAULT_SESSION_TOKEN_CEILING }

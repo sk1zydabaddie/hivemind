@@ -490,6 +490,116 @@ test("manager autonomous loop chains Tier-1 actions after deterministic passes",
   });
 });
 
+test("all autonomy levels preserve the same complete work trail while changing only routine interruption", async () => {
+  let baselineTrail: string[] | null = null;
+  for (const level of ["auto", "review_plan", "review_everything"] as const) {
+    await withTempRepo(async ({ repo, baseCommit }) => {
+    await setConfigManagerAutonomy(repo, { level });
+    await setConfigTestCommand(repo, "node -e \"process.exit(0)\"");
+    await createRatifiedSpec(repo, "S-001");
+    const workerPath = await writeAgent(repo, "auto-worker.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'auto mode verified this change\\n');"
+    ]);
+    await writeProfile(repo, "auto-worker", workerPath);
+    const contract = managerContract("T-AUTO-FULL", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, contract);
+    await writeReactiveManagerProposalProfile(repo, {
+      initial: proposalFor([{ type: "create_task_contract", contract }]),
+      after_create_task_contract_ok: proposalFor([{ type: "request_lease", task_id: "T-AUTO-FULL" }]),
+      after_request_lease_ok: proposalFor([{ type: "check_write_intent", task_id: "T-AUTO-FULL", intent: intentFor("T-AUTO-FULL", ["README.md"]) }]),
+      after_check_write_intent_ok: proposalFor([{ type: "create_worktree", task_id: "T-AUTO-FULL" }]),
+      after_create_worktree_ok: proposalFor([{ type: "run_worker", task_id: "T-AUTO-FULL", tool: "auto-worker" }], ["run_worker"]),
+      after_run_worker_ok: proposalFor([{ type: "submit_patch", task_id: "T-AUTO-FULL" }]),
+      after_submit_patch_ok: proposalFor([{ type: "analyze_patch", task_id: "T-AUTO-FULL" }]),
+      after_analyze_patch_ok: proposalFor([{ type: "enqueue_patch", task_id: "T-AUTO-FULL" }]),
+      after_enqueue_patch_ok: proposalFor([{ type: "integrate_shadow" }], ["integrate_shadow"]),
+      after_integrate_shadow_ok: proposalFor([])
+    });
+
+    const result = level === "review_everything"
+      ? await runAutonomousLoopWithTypedApprovals(repo, "Run with every routine interruption.", "manager", 20, new Set(["run_worker", "integrate_shadow"]))
+      : await runAutonomousManagerLoop(repo, "Run without routine interruptions.", { tool: "manager", maxSteps: 20 });
+
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    if (!result.ok) return;
+    assert.equal(result.value.status, "completed");
+    assert.deepEqual(result.value.steps.map((step) => step.action_type), [
+      "create_task_contract", "request_lease", "check_write_intent", "create_worktree", "run_worker",
+      "submit_patch", "analyze_patch", "enqueue_patch", "integrate_shadow"
+    ]);
+    assert.equal(result.value.steps.some((step) => step.pause !== undefined), false);
+    assert.deepEqual(result.value.final_status.integration.status?.applied, ["T-AUTO-FULL"]);
+    const events = await readRequiredEvents(repo);
+    const policyApprovals = events.filter((event) => event.type === "manager.action_approved");
+    assert.deepEqual(policyApprovals.map((event) => event.data.action_type), ["run_worker", "integrate_shadow"]);
+    const expectedSource = level === "review_everything" ? "human" : "autonomy_policy";
+    assert.equal(policyApprovals.every((event) => event.data.authorization_source === expectedSource && event.data.autonomy_level === level), true);
+    assertEventOrder(events.map((event) => event.type), [
+      "task.created", "lease.approved", "write_intent.approved", "task.started", "patch.submitted",
+      "patch.accepted", "integration.queued", "integration.passed"
+    ]);
+    assert.equal(events.some((event) => event.type.startsWith("adoption.")), false);
+    const durableWorkTrail = events
+      .filter((event) => !event.type.startsWith("autonomy."))
+      .map((event) => `${event.type}:${event.task_id ?? "project"}`);
+    if (baselineTrail === null) baselineTrail = durableWorkTrail;
+    else assert.deepEqual(durableWorkTrail, baselineTrail);
+    });
+  }
+});
+
+test("Auto still pauses Critical escalation before spawning the worker", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await setConfigManagerAutonomy(repo, { level: "auto" });
+    await setTierPatterns(repo, { critical_globs: ["README.md"] });
+    await createRatifiedSpec(repo, "S-001");
+    const contract = managerContract("T-CRITICAL-AUTO", baseCommit, ["README.md"]);
+    await prepareLintedPlanWithTasks(repo, [{ ...planTaskFromContract(contract), critical_path_approved: true }]);
+    await writeReactiveManagerProposalProfile(repo, {
+      initial: proposalFor([{ type: "create_task_contract", contract }]),
+      after_create_task_contract_ok: proposalFor([{ type: "run_worker", task_id: "T-CRITICAL-AUTO", tool: "must-not-spawn" }], ["run_worker"])
+    });
+
+    const result = await runAutonomousManagerLoop(repo, "Attempt Critical work.", { tool: "manager", maxSteps: 2 });
+
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    if (!result.ok) return;
+    assert.equal(result.value.status, "paused");
+    assert.equal(result.value.steps.at(-1)?.pause?.action_type, "create_task_contract");
+    assert.match(result.value.steps.at(-1)?.pause?.reason ?? "", /Critical-tier scope/u);
+    assert.deepEqual((await readSession(repo, result.value.session_path)).executed_actions, []);
+  });
+});
+
+test("Auto records and surfaces a session-ceiling stop before another manager call", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await setConfigManagerAutonomy(repo, { level: "auto" });
+    await createRatifiedSpec(repo, "S-001");
+    await writeManagerProposalProfile(repo, proposalFor([{ type: "get_status" }]));
+    const started = await startManagerSession(repo, "Use the stored no-paid first action.", { proposedAction: testProposal([{ type: "get_status" }]) });
+    assert.equal(started.ok, true, started.ok ? undefined : started.reason);
+    if (!started.ok) return;
+    await setResourceSessionCeiling(repo, 1);
+
+    const continued = await continueAutonomousManagerLoop(repo, started.value.session_id, { tool: "manager", maxSteps: 3 });
+
+    assert.equal(continued.ok, false);
+    if (!continued.ok) assert.match(continued.reason, /token budget exceeded/u);
+    const events = await readRequiredEvents(repo);
+    const exhausted = events.find((event) => event.type === "quota.exhausted");
+    assert.equal(exhausted?.data.session_id, started.value.session_id);
+    assert.equal(exhausted?.data.source, "token_ceiling");
+    assert.equal(await managerReactiveCalls(repo).then((calls) => calls.length), 0);
+    const view = await executeWorkspaceAction(repo, { type: "status.inspect", payload: {} });
+    assert.equal(view.ok, true, view.ok ? undefined : view.reason);
+    if (view.ok) {
+      const needsYou = (view.value as { needs_you: Array<{ detail: string }> }).needs_you;
+      assert.equal(needsYou.some((item) => /token budget exceeded/iu.test(item.detail)), true);
+    }
+  });
+});
+
 test("daemon workspace dispatcher consumes the stored first proposal and completes the loop without nested HTTP", async (context) => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
@@ -585,6 +695,52 @@ test("daemon workspace dispatcher consumes the stored first proposal and complet
   });
 });
 
+test("daemon workspace task.stop interrupts an Auto worker without waiting behind the manager queue", async (context) => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await setConfigManagerAutonomy(repo, { level: "auto" });
+    await createRatifiedSpec(repo, "S-001");
+    const workerPath = await writeAgent(repo, "auto-hanging-worker.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'partial work before stop\\n');",
+      "setInterval(() => {}, 1000);"
+    ]);
+    await writeProfile(repo, "auto-hanging-worker", workerPath);
+    const contract = managerContract("T-AUTO-STOP", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, contract);
+    await writeReactiveManagerProposalProfile(repo, {
+      initial: proposalFor([{ type: "create_task_contract", contract }]),
+      after_create_task_contract_ok: proposalFor([{ type: "request_lease", task_id: "T-AUTO-STOP" }]),
+      after_request_lease_ok: proposalFor([{ type: "check_write_intent", task_id: "T-AUTO-STOP", intent: intentFor("T-AUTO-STOP", ["README.md"]) }]),
+      after_check_write_intent_ok: proposalFor([{ type: "create_worktree", task_id: "T-AUTO-STOP" }]),
+      after_create_worktree_ok: proposalFor([{ type: "run_worker", task_id: "T-AUTO-STOP", tool: "auto-hanging-worker" }], ["run_worker"]),
+      after_run_worker_rejected: proposalFor([])
+    });
+
+    const daemon = createDaemonServer(repo, await currentBuildIdentity());
+    await listenServer(daemon);
+    const address = daemon.address() as AddressInfo;
+    const daemonUrl = `http://127.0.0.1:${address.port}`;
+    context.after(() => closeTestServer(daemon));
+    const dispatch = (action: Record<string, unknown>) => postWorkspaceActionForTest(daemonUrl, action);
+    const started = await dispatch({ type: "manager.start", payload: { message: "Run until stopped.", tool: "manager" } });
+    assert.equal(started.ok, true, started.ok ? undefined : started.reason);
+    if (!started.ok) return;
+    const sessionId = (started.value as { session_id: string }).session_id;
+    const continuation = dispatch({ type: "manager.continue", payload: { session_id: sessionId, tool: "manager", max_steps: 10 } });
+    await waitForDurableEvent(repo, "task.worker_process_started", "T-AUTO-STOP");
+
+    const stopped = await dispatch({ type: "task.stop", payload: { task_id: "T-AUTO-STOP", reason: "Stop from the workspace while Auto is running." } });
+    assert.equal(stopped.ok, true, stopped.ok ? undefined : stopped.reason);
+    const loop = await continuation;
+    assert.equal(loop.ok, true, loop.ok ? undefined : loop.reason);
+    if (loop.ok) assert.equal((loop.value as ManagerAutonomousLoopResult).status, "stopped");
+    const events = await readRequiredEvents(repo);
+    assert.equal(events.some((event) => event.type === "task.cancelled" && event.task_id === "T-AUTO-STOP"), true);
+    assert.equal(events.some((event) => event.type === "lease.released" && event.task_id === "T-AUTO-STOP"), true);
+    assert.equal(await exists(path.join(repo, ".hivemind", "worktrees", "T-AUTO-STOP")), false);
+  });
+});
+
 test("manager autonomous loop pauses Tier-2 actions for human approval", async () => {
   await withTempRepo(async ({ repo }) => {
     await createRatifiedSpec(repo, "S-001");
@@ -675,6 +831,7 @@ test("human-tier manager actions require the exact daemon-issued pending identit
 
 test("manager autonomous loop hard-stops on gate rejection without retrying or changing provider tier", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
+    await setConfigManagerAutonomy(repo, { level: "auto" });
     await createRatifiedSpec(repo, "S-001");
     const agentPath = await writeAgent(repo, "weak-tier-agent.mjs", [
       "const { appendFile } = await import('node:fs/promises');",
@@ -1672,6 +1829,7 @@ async function withTempRepo(run: (context: { repo: string; baseCommit: string })
     await git(repo, ["add", "README.md"]);
     await git(repo, ["commit", "-m", "initial"]);
     await initProject(repo);
+    await setConfigManagerAutonomy(repo, { level: "review_everything" });
     await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
   } finally {
     await cleanupTempRepo(repo);
@@ -1989,6 +2147,22 @@ async function setConfigManagerAutonomy(repo: string, managerAutonomy: Record<st
       : {}) as Record<string, unknown>),
     ...managerAutonomy
   };
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+async function setTierPatterns(repo: string, patterns: Record<string, string[]>): Promise<void> {
+  const configPath = path.join(repo, ".hivemind", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+  await writeFile(configPath, `${JSON.stringify({ ...config, ...patterns }, null, 2)}\n`);
+}
+
+async function setResourceSessionCeiling(repo: string, tokens: number): Promise<void> {
+  const configPath = path.join(repo, ".hivemind", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+  const policy = typeof config.resource_policy === "object" && config.resource_policy !== null && !Array.isArray(config.resource_policy)
+    ? config.resource_policy as Record<string, unknown>
+    : {};
+  config.resource_policy = { ...policy, session_ceiling: { tokens } };
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
@@ -2349,6 +2523,16 @@ async function listenServer(server: Server): Promise<void> {
       resolve();
     });
   });
+}
+
+async function waitForDurableEvent(repo: string, type: string, taskId: string, timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const events = await readEvents(repo);
+    if (events.ok && events.value.some((event) => event.type === type && event.task_id === taskId)) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.fail(`timed out waiting for ${type} on ${taskId}`);
 }
 
 async function closeTestServer(server: Server): Promise<void> {

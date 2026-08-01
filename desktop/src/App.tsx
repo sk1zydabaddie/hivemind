@@ -135,7 +135,7 @@ export default function App(): React.JSX.Element {
             <MemoryTab inspection={workspace.inspection} />
           </TabsContent>
           <TabsContent value="history">
-            <HistoryTab inspection={workspace.inspection} />
+            <HistoryTab inspection={workspace.inspection} onAction={workspace.performAction} />
           </TabsContent>
         </Tabs>
       </main>

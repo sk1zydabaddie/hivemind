@@ -1,5 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import { DEFAULT_AUTONOMY_LEVEL, isAutonomyLevel, type AutonomyLevel } from "./autonomy-level.js";
 import { loadConfig, type HivemindConfig } from "./config.js";
 import { readEvents, type HivemindEvent } from "./events.js";
 import {
@@ -79,6 +80,10 @@ export interface WorkspaceInspection {
   status: HivemindStatus;
   active_spec_id: string | null;
   manager_session: ManagerWorkspaceSession | null;
+  autonomy: {
+    configured_level: AutonomyLevel;
+    run_levels: AutonomyLevel[];
+  };
   plan_review: WorkspacePlanReview | null;
   current_plan: WorkspacePlanReview | null;
   integration_failure: {
@@ -93,6 +98,7 @@ export interface WorkspaceInspection {
     effective_tokens: number;
     run_ceiling_tokens: number;
     session_ceiling_tokens: number;
+    near_session_ceiling: boolean;
   };
   swarm: {
     characterizations: WorkspaceCharacterization[];
@@ -189,6 +195,7 @@ export interface WorkspaceHistoryRun {
   provider_reported_tokens: number;
   self_measured_tokens: number;
   evidence_paths: string[];
+  autonomy_levels: AutonomyLevel[];
 }
 
 export interface WorkspaceHistoryInspection {
@@ -210,6 +217,10 @@ export async function inspectWorkspace(repoRoot: string): Promise<{ ok: true; va
   const specId = activeSpec.ok ? activeSpec.value.spec_id : null;
   const session = specId === null ? { ok: true as const, value: null } : await inspectLatestManagerSession(repoRoot, specId);
   if (!session.ok) return session;
+  const currentSession = session.value;
+  const currentRunLevels = currentSession === null
+    ? []
+    : runAutonomyLevels(events.value.filter((event) => event.ts >= currentSession.created_at), currentSession.autonomy_level);
 
   const planState = specId === null
     ? { ok: true as const, review: null, current: null }
@@ -246,6 +257,10 @@ export async function inspectWorkspace(repoRoot: string): Promise<{ ok: true; va
       status: status.value,
       active_spec_id: specId,
       manager_session: session.value,
+      autonomy: {
+        configured_level: config.config.manager_autonomy?.level ?? DEFAULT_AUTONOMY_LEVEL,
+        run_levels: currentRunLevels
+      },
       plan_review: planState.review,
       current_plan: planState.current,
       integration_failure: integrationFailure,
@@ -256,7 +271,8 @@ export async function inspectWorkspace(repoRoot: string): Promise<{ ok: true; va
         calls,
         effective_tokens: effectiveTokens,
         run_ceiling_tokens: config.config.resource_policy?.run_ceiling?.tokens ?? 150_000,
-        session_ceiling_tokens: config.config.resource_policy?.session_ceiling?.tokens ?? 500_000
+        session_ceiling_tokens: config.config.resource_policy?.session_ceiling?.tokens ?? 500_000,
+        near_session_ceiling: effectiveTokens >= (config.config.resource_policy?.session_ceiling?.tokens ?? 500_000) * 0.8
       },
       swarm,
       memory: memory.value,
@@ -384,6 +400,7 @@ async function inspectHistory(
     const stoppedTasks = stoppedTaskStates(runEvents);
     const plannedTaskIds = await ratifiedTaskIds(repoRoot, events, session.spec_id, session.created_at);
     const usage = sessionUsage(ledger, session.session_id);
+    const autonomyLevels = runAutonomyLevels(runEvents, session.autonomy_level);
     const lastEventAt = runEvents.at(-1)?.ts ?? session.last_activity_at;
     const lastActivityAt = lastEventAt > session.last_activity_at ? lastEventAt : session.last_activity_at;
     const outcome = historyOutcome(session.status, verifiedTasks, mergedTasks, stoppedTasks, plannedTaskIds);
@@ -402,7 +419,8 @@ async function inspectHistory(
       effective_tokens: usage.effectiveTokens,
       provider_reported_tokens: usage.providerReportedTokens,
       self_measured_tokens: usage.selfMeasuredTokens,
-      evidence_paths: [session.evidence_path, ".hivemind/log/events.jsonl"]
+      evidence_paths: [session.evidence_path, ".hivemind/log/events.jsonl"],
+      autonomy_levels: autonomyLevels
     } satisfies WorkspaceHistoryRun;
   }));
   return {
@@ -810,6 +828,10 @@ async function buildQueues(
   for (const event of latestTaskAttention(events)) {
     needsYou.push(queueEvent(event, "task_attention", taskAttentionTitle(event), plainEvidence(event)));
   }
+  const exhausted = [...events].reverse().find((event) => event.type === "quota.exhausted" && event.data.source === "token_ceiling");
+  if (exhausted !== undefined) {
+    needsYou.push(queueEvent(exhausted, "task_attention", "The run reached its spending limit", plainEvidence(exhausted)));
+  }
   for (const event of latestQualityCancellationFailures(events)) {
     needsYou.push(queueEvent(event, "quality_cancel_failed", "A draft run could not stop cleanly", plainEvidence(event)));
   }
@@ -842,12 +864,12 @@ function latestTaskAttention(events: HivemindEvent[]): HivemindEvent[] {
   const latest = new Map<string, HivemindEvent>();
   const relevant = new Set([
     "task.started", "task.resumed", "task.redirected", "task.completed", "task.integrated", "task.cancelled",
-    "task.failed", "task.blocked", "patch.rejected", "patch.accepted"
+    "task.failed", "task.blocked", "task.paused", "patch.rejected", "patch.accepted"
   ]);
   for (const event of events) {
     if (event.task_id !== null && relevant.has(event.type)) latest.set(event.task_id, event);
   }
-  return [...latest.values()].filter((event) => ["task.failed", "task.blocked", "patch.rejected"].includes(event.type));
+  return [...latest.values()].filter((event) => ["task.failed", "task.blocked", "task.paused", "patch.rejected"].includes(event.type));
 }
 
 function latestQualityCancellationFailures(events: HivemindEvent[]): HivemindEvent[] {
@@ -902,7 +924,17 @@ function plainIntegrationFailureReason(reason: string): string {
 function taskAttentionTitle(event: HivemindEvent): string {
   if (event.type === "patch.rejected") return `${event.task_id} needs a revision`;
   if (event.type === "task.blocked") return `${event.task_id} cannot continue`;
+  if (event.type === "task.paused") return `${event.task_id} is waiting for capacity`;
   return `${event.task_id} stopped unexpectedly`;
+}
+
+function runAutonomyLevels(events: HivemindEvent[], startingLevel: AutonomyLevel): AutonomyLevel[] {
+  const levels: AutonomyLevel[] = [startingLevel];
+  for (const event of events) {
+    if (event.type !== "autonomy.decision_recorded" || !isAutonomyLevel(event.data.level)) continue;
+    if (levels.at(-1) !== event.data.level) levels.push(event.data.level);
+  }
+  return levels;
 }
 
 function plainApprovalTitle(action: string): string {

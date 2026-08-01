@@ -51,6 +51,7 @@ export async function initProject(cwd: string): Promise<number> {
     test_command: await detectTestCommand(repoRoot),
     allowed_globs: [],
     forbidden_globs: ["**/*.lock", "**/package.json", "**/.git/**"],
+    manager_autonomy: { level: "auto" },
     resource_policy: {
       run_ceiling: { tokens: DEFAULT_RUN_TOKEN_CEILING },
       session_ceiling: { tokens: DEFAULT_SESSION_TOKEN_CEILING }

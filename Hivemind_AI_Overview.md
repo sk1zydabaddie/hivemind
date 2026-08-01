@@ -1329,6 +1329,18 @@ Three rules govern the workspace:
 
 M8 is intentionally a rough working workspace before a second polish pass. Functional completeness, safety-path reuse, and project isolation take priority over visual elaboration.
 
+### Autonomy levels
+
+M9 separates **enforcement** from **interruption**. Every dependency, lease, write-intent, diff-scope, tier, token, oracle, verification, and adoption floor remains deterministic and records the same durable evidence. An autonomy level changes only whether an otherwise valid consequential step enters `Needs you` before its exact typed authorization is disposed. “Silent” means visible in the full trail without demanding attention; it never means absent evidence.
+
+- **Auto** (project default): the exact generated plan is shown non-blocking as work starts, `run_worker` and shadow verification use policy authorization over the same daemon-issued identity/hash artifacts, and the run stops at explicit adoption review. Token ceilings are the primary routine spend guard.
+- **Review plan:** the exact-hash plan review blocks execution; after ratification, worker and shadow-verification interruptions are suppressed as in Auto.
+- **Review everything:** plan, worker, and shadow-verification decisions retain the pre-M9 human interruption behavior.
+
+Contract/lease/write-intent/worktree/submit/analyze/enqueue successes never require attention at any level. Adoption always requires the human at every level because it mutates the configured base branch. Tier-3 stops, deterministic rejections, sensitive/Critical escalation, configured High/Critical oracle blocks, no-reroute quota walls, and token-ceiling stops always surface. Policy ambiguity fails toward interruption. A project-level change applies to the next interruption decision, and the run trail records every level actually used so a mid-run change cannot rewrite history.
+
+Auto is implemented by creating and disposing the same exact pending authorization artifacts, not by removing approval checks or relabeling consequential actions as Tier 1. Plan auto-ratification calls the same exact-hash primitive. Manager policy has no adoption action and cannot construct or satisfy M8.7’s separate adoption identity. React remains a thin client: Core publishes the level, decision trail, and available typed controls.
+
 The full app should have these main pages or equivalent workspace surfaces.
 
 ### 1. Project Home

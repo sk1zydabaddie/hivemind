@@ -1,6 +1,7 @@
 import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { readJsonFile } from "./json.js";
+import { isAutonomyLevel, type AutonomyLevel } from "./autonomy-level.js";
 import { normalizeRepoPathPattern, validateRepoRelativePathOrGlob } from "./path-pattern.js";
 
 export const DEFAULT_RUN_TOKEN_CEILING = 150_000;
@@ -48,6 +49,7 @@ export interface ResourcePolicy {
 }
 
 export interface ManagerAutonomyPolicy {
+  level?: AutonomyLevel;
   tier2_actions?: string[];
   cost_threshold?: ManagerCostThreshold;
   redirect_limit?: number;
@@ -232,6 +234,9 @@ function validateManagerAutonomyPolicy(value: unknown, problems: string[]): void
     problems.push("manager_autonomy must be a JSON object");
     return;
   }
+  if ("level" in value && !isAutonomyLevel(value.level)) {
+    problems.push("manager_autonomy.level must be auto, review_plan, or review_everything");
+  }
   if ("tier2_actions" in value) {
     requireStringArray(value, "tier2_actions", problems);
   }
@@ -377,6 +382,7 @@ function normalizeManagerAutonomyPolicy(value: unknown): ManagerAutonomyPolicy {
     return {};
   }
   return {
+    ...(isAutonomyLevel(value.level) ? { level: value.level } : {}),
     ...("tier2_actions" in value ? { tier2_actions: normalizeStringArray(value.tier2_actions) } : {}),
     ...("cost_threshold" in value ? { cost_threshold: normalizeManagerCostThreshold(value.cost_threshold) } : {}),
     ...("redirect_limit" in value && typeof value.redirect_limit === "number" ? { redirect_limit: value.redirect_limit } : {})

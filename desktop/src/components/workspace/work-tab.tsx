@@ -7,6 +7,7 @@ import {
   Check,
   CheckCircle2,
   ChevronRight,
+  CircleStop,
   Clock3,
   FileDiff,
   FileCode2,
@@ -31,6 +32,7 @@ import {
   type TaskState
 } from "../../lib/projection";
 import type {
+  AutonomyLevel,
   WorkspaceAction,
   WorkspaceInspection,
   WorkspacePlanReview,
@@ -113,6 +115,7 @@ export function WorkTab({
   const [changeSetPatch, setChangeSetPatch] = useState<{ verificationId: string; text: string } | null>(null);
   const [changeSetPatchError, setChangeSetPatchError] = useState("");
   const [changeSetPatchLoading, setChangeSetPatchLoading] = useState(false);
+  const [stopBusy, setStopBusy] = useState(false);
   const activityEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -137,14 +140,22 @@ export function WorkTab({
     inspection?.current_plan !== undefined &&
     plan === null &&
     (managerSession === null || managerSession === undefined);
+  const activeAutonomyLevel = inspection?.autonomy.run_levels.at(-1) ?? inspection?.autonomy.configured_level ?? "auto";
 
-  const startManager = async (): Promise<void> => {
-    await onAction({
+  const startManager = async (message = "Execute the exact ratified plan through the normal checks."): Promise<{ session_id: string }> => {
+    return onAction<{ session_id: string }>({
       type: "manager.start",
       payload: {
-        message: "Execute the exact ratified plan through the normal checks.",
+        message,
         tool: "manager"
       }
+    });
+  };
+
+  const continueSession = async (sessionId: string): Promise<void> => {
+    await onAction({
+      type: "manager.continue",
+      payload: { session_id: sessionId, tool: "manager", max_steps: 25 }
     });
   };
 
@@ -168,17 +179,25 @@ export function WorkTab({
         setReviewOpen(true);
         return;
       } else if (inspection?.current_plan === null || inspection?.current_plan === undefined) {
-        await onAction({
+        const prepared = await onAction<{ status: "awaiting_ratification" | "ratified_by_policy"; autonomy_level: AutonomyLevel; task_count: number }>({
           type: "plan.prepare",
           payload: { prompt: message, tool: "planner" }
         });
-        setFeedback("A tentative plan is ready to review. Nothing has started.");
+        if (prepared.status === "ratified_by_policy") {
+          const started = await startManager(message);
+          await continueSession(started.session_id);
+          setFeedback(`${prepared.task_count} ${prepared.task_count === 1 ? "task" : "tasks"}, working. You can stop the active worker at any time.`);
+        } else {
+          setFeedback("A tentative plan is ready to review. Nothing has started.");
+        }
       } else {
-        await onAction({
-          type: "manager.start",
-          payload: { message, tool: "manager" }
-        });
-        setFeedback("The manager prepared the first step. Continue when you are ready.");
+        const started = await startManager(message);
+        if (inspection?.autonomy.configured_level === "review_everything") {
+          setFeedback("The manager prepared the first step. Continue when you are ready.");
+        } else {
+          await continueSession(started.session_id);
+          setFeedback("Work advanced until completion or the next issue that needs you.");
+        }
       }
       setComposer("");
     } catch (error) {
@@ -284,7 +303,46 @@ export function WorkTab({
         />
       ) : null}
 
-      <RunSummary projection={projection} inspection={inspection} />
+      {runActive && activeAutonomyLevel === "auto" && inspection?.current_plan ? (
+        <AutoRunBanner
+          taskCount={inspection.current_plan.tasks.length}
+          stopBusy={stopBusy}
+          onStop={async () => {
+            const runningTask = tasks.find((task) => task.state === "running");
+            if (!runningTask) {
+              setFeedback("No worker is active at this instant. The Stop control remains available when one starts.");
+              return;
+            }
+            setStopBusy(true);
+            try {
+              await onAction({ type: "task.stop", payload: { task_id: runningTask.task_id, reason: "Stopped from the Auto run banner" } });
+              setFeedback(`${runningTask.task_id} stopped; its cleanup and ownership release were recorded.`);
+            } catch (error) {
+              setFeedback(plainActionError(error));
+            } finally {
+              setStopBusy(false);
+            }
+          }}
+        />
+      ) : null}
+
+      <RunSummary
+        projection={projection}
+        inspection={inspection}
+        busy={busy}
+        onLevelChange={async (level) => {
+          setBusy(true);
+          setFeedback("");
+          try {
+            await onAction({ type: "autonomy.set", payload: { level } });
+            setFeedback(`Interruption level changed to ${autonomyLabel(level)} for the next decision.`);
+          } catch (error) {
+            setFeedback(plainActionError(error));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
 
       <div className="work-layout">
         <div className="work-main">
@@ -369,8 +427,13 @@ export function WorkTab({
           setBusy(true);
           setFeedback("");
           try {
-            await startManager();
-            setFeedback("The manager prepared the first step. Continue when you are ready.");
+            const started = await startManager();
+            if (inspection?.autonomy.configured_level === "review_everything") {
+              setFeedback("The manager prepared the first step. Continue when you are ready.");
+            } else {
+              await continueSession(started.session_id);
+              setFeedback("Work advanced until completion or the next issue that needs you.");
+            }
           } catch (error) {
             setFeedback(plainActionError(error));
           } finally {
@@ -395,9 +458,14 @@ export function WorkTab({
                   expected_plan_hash: plan.plan_hash
                 }
               });
-              await startManager();
+              const started = await startManager();
               setReviewOpen(false);
-              setFeedback("Plan approved. The manager prepared the first step; continue when you are ready.");
+              if (inspection?.autonomy.configured_level === "review_everything") {
+                setFeedback("Plan approved. The manager prepared the first step; continue when you are ready.");
+              } else {
+                await continueSession(started.session_id);
+                setFeedback("Plan approved. Work advanced until completion or the next issue that needs you.");
+              }
             } catch (error) {
               setFeedback(plainActionError(error));
             } finally {
@@ -502,12 +570,33 @@ function PlanBanner({
   );
 }
 
+function AutoRunBanner({
+  taskCount,
+  stopBusy,
+  onStop
+}: {
+  taskCount: number;
+  stopBusy: boolean;
+  onStop: () => Promise<void>;
+}): React.JSX.Element {
+  return (
+    <section className="auto-run-banner" aria-label="Auto run active">
+      <div><Play size={16} /><span><strong>{taskCount} {taskCount === 1 ? "task" : "tasks"}, working</strong><small>The full plan and every check remain available in the project trail.</small></span></div>
+      <button className="button-secondary danger-button" type="button" disabled={stopBusy} onClick={() => void onStop()}><CircleStop size={14} />Stop</button>
+    </section>
+  );
+}
+
 function RunSummary({
   projection,
-  inspection
+  inspection,
+  busy,
+  onLevelChange
 }: {
   projection: BoardProjection;
   inspection: WorkspaceInspection | null;
+  busy: boolean;
+  onLevelChange: (level: AutonomyLevel) => Promise<void>;
 }): React.JSX.Element {
   const counts = taskStateCounts(projection);
   const active = counts.running + counts.submitted + counts.accepted + counts.paused;
@@ -522,6 +611,14 @@ function RunSummary({
       <div className={`summary-verification tone-${verification.tone}`}>
         <CheckCircle2 size={15} /><span>{verification.label}</span>
       </div>
+      <label className="autonomy-control">
+        <span>Interruptions</span>
+        <select value={inspection?.autonomy.configured_level ?? "auto"} disabled={busy} onChange={(event) => void onLevelChange(event.target.value as AutonomyLevel)}>
+          <option value="auto">Auto</option>
+          <option value="review_plan">Review plan</option>
+          <option value="review_everything">Review everything</option>
+        </select>
+      </label>
     </section>
   );
 }
@@ -870,12 +967,16 @@ function SpendIndicator({ spend }: { spend: WorkspaceInspection["spend"] | null 
   if (!spend) return <span className="spend-indicator"><Clock3 size={13} />No active spend</span>;
   const ratio = spend.session_ceiling_tokens > 0 ? Math.min(100, (spend.effective_tokens / spend.session_ceiling_tokens) * 100) : 0;
   return (
-    <span className="spend-indicator" title={`${spend.run_ceiling_tokens.toLocaleString()} tokens maximum per call`}>
+    <span className={`spend-indicator ${spend.near_session_ceiling ? "is-near-ceiling" : ""}`} title={`${spend.run_ceiling_tokens.toLocaleString()} tokens maximum per call`}>
       <span>{spend.calls} calls</span>
       <span className="spend-track"><i style={{ width: `${ratio}%` }} /></span>
       <span>{formatCompact(spend.effective_tokens)} / {formatCompact(spend.session_ceiling_tokens)} tokens</span>
     </span>
   );
+}
+
+function autonomyLabel(level: AutonomyLevel): string {
+  return level === "auto" ? "Auto" : level === "review_plan" ? "Review plan" : "Review everything";
 }
 
 function PlanTakeover({ plan, busy, onClose, onRatify }: { plan: WorkspacePlanReview; busy: boolean; onClose: () => void; onRatify: () => Promise<void> }): React.JSX.Element {

@@ -83,12 +83,13 @@ function fixtureInspection(taskCount: number): WorkspaceInspection {
   return {
     active_spec_id: "S-001",
     manager_session: null,
+    autonomy: { configured_level: "auto", run_levels: [] },
     plan_review: plan,
     current_plan: plan,
     integration_failure: null,
     needs_you: [],
     later: [],
-    spend: { session_id: null, calls: 0, effective_tokens: 0, run_ceiling_tokens: 150_000, session_ceiling_tokens: 500_000 },
+    spend: { session_id: null, calls: 0, effective_tokens: 0, run_ceiling_tokens: 150_000, session_ceiling_tokens: 500_000, near_session_ceiling: false },
     swarm: {
       characterizations: [{
         candidate_id: "C-001",

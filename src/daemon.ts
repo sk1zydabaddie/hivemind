@@ -401,7 +401,9 @@ function tasksNeedingStartupReconciliation(events: HivemindEvent[]): string[] {
 }
 
 function isQueueInterrupt(request: IncomingMessage, payload: DaemonPayload): boolean {
-  return request.method === "POST" && request.url === "/workspace/action" && payload.type === "quality.cancel";
+  return request.method === "POST" &&
+    request.url === "/workspace/action" &&
+    (payload.type === "quality.cancel" || payload.type === "task.stop");
 }
 
 function startedWithoutTerminal(events: HivemindEvent[]): string[] {

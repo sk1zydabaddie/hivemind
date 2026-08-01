@@ -3,6 +3,8 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { analyzeTask } from "./analyze.js";
 import { writeJsonAtomic } from "./atomic.js";
+import { DEFAULT_AUTONOMY_LEVEL, isAutonomyLevel, type AutonomyLevel } from "./autonomy-level.js";
+import { readProjectAutonomyLevel, recordAutonomyDecision } from "./autonomy.js";
 import {
   adapterRunLogPath,
   findDangerousAdapterArgs,
@@ -41,6 +43,7 @@ interface ManagerSession {
   session_id: string;
   created_at: string;
   spec_id: string;
+  autonomy_level_at_start?: AutonomyLevel;
   working_set: ManagerWorkingSet;
   turns: ManagerTurn[];
   proposed_action: ManagerProposedAction;
@@ -116,6 +119,8 @@ export interface ManagerWorkspaceSession {
   blocked_action_type: ManagerAction["type"] | null;
   blocked_reason: string | null;
   continuation_available: boolean;
+  autonomy_level: AutonomyLevel;
+  autonomy_levels: AutonomyLevel[];
 }
 
 export interface ManagerWorkspaceHistorySession extends ManagerWorkspaceSession {
@@ -211,6 +216,7 @@ interface AutonomousLoopOptions {
 
 interface ActionClassification {
   tier: "autonomous" | "human_approval";
+  interruption: "none" | "configurable" | "escalation";
   reason: string;
   recommendation: string;
 }
@@ -299,7 +305,12 @@ export async function startWorkspaceManagerSession(
   if (!activeSpec.ok) return activeSpec;
   const preparedSession = await readRatifiedWorkspacePlanSession(repoRoot, activeSpec.value.spec_id);
   if (!preparedSession.ok) return preparedSession;
-  return startManagerSessionWithId(repoRoot, message, { tool }, preparedSession.value);
+  return startManagerSessionWithId(
+    repoRoot,
+    message,
+    { tool },
+    preparedSession.value.session_id
+  );
 }
 
 async function startManagerSessionWithId(
@@ -329,6 +340,8 @@ async function startManagerSessionWithId(
   if (!status.ok) {
     return status;
   }
+  const autonomy = await readProjectAutonomyLevel(repoRoot);
+  if (!autonomy.ok) return autonomy;
 
   try {
     await stat(managerSessionPath(repoRoot, sessionId));
@@ -341,13 +354,14 @@ async function startManagerSessionWithId(
       ? await generateManagerProposal(repoRoot, message.trim(), options.tool ?? "manager", spec.value.spec_id, sessionId)
       : ({ ok: true, value: options.proposedAction } as const);
   if (!proposedAction.ok) {
-    return proposedAction;
+    return recordManagerProposalFailure(repoRoot, sessionId, proposedAction.reason);
   }
   const session: ManagerSession = {
     version: 1,
     session_id: sessionId,
     created_at: new Date().toISOString(),
     spec_id: spec.value.spec_id,
+    autonomy_level_at_start: autonomy.value,
     working_set: {
       spec: {
         spec_id: spec.value.spec_id,
@@ -373,6 +387,17 @@ async function startManagerSessionWithId(
 
   const relativePath = `.hivemind/orchestrator/sessions/${sessionId}.json`;
   await writeJsonAtomic(path.join(repoRoot, relativePath), session);
+  const autonomyRecorded = await recordAutonomyDecision(repoRoot, {
+    level: autonomy.value,
+    session_id: sessionId,
+    decision: "run_started",
+    action_type: "manager.start",
+    interruption: "not_applicable",
+    authorization_source: "deterministic_pipeline",
+    result: "started",
+    reason: `Manager run started with project autonomy level ${autonomy.value}.`
+  });
+  if (!autonomyRecorded.ok) return autonomyRecorded;
   return {
     ok: true,
     value: {
@@ -921,6 +946,7 @@ function scriptedManagerProposal(actions: ManagerAction[]): ManagerProposedActio
 }
 
 interface ManagerAutonomyRuntimePolicy {
+  level: AutonomyLevel;
   tier2Actions: Set<ManagerAction["type"]>;
   costThreshold: {
     estimated_requests: number;
@@ -944,6 +970,7 @@ async function loadManagerAutonomyPolicy(repoRoot: string): Promise<SpecResult<M
   return {
     ok: true,
     value: {
+      level: config.config.manager_autonomy?.level ?? DEFAULT_AUTONOMY_LEVEL,
       tier2Actions: new Set(tier2Actions as ManagerAction["type"][]),
       costThreshold: {
         estimated_requests: config.config.manager_autonomy?.cost_threshold?.estimated_requests ?? 0,
@@ -961,45 +988,70 @@ async function classifyManagerAction(
   action: ManagerAction,
   policy: ManagerAutonomyRuntimePolicy
 ): Promise<ActionClassification> {
+  const critical = await actionTouchesCriticalScope(repoRoot, action);
+  if (!critical.ok) return humanApprovalClassification(action, critical.reason, "escalation");
+  if (critical.value) {
+    return humanApprovalClassification(action, `action ${action.type} touches Critical-tier scope`, "escalation");
+  }
+
   if (policy.tier2Actions.has(action.type)) {
-    return humanApprovalClassification(action, `action ${action.type} is configured as high-risk/consequential`);
+    return humanApprovalClassification(
+      action,
+      `action ${action.type} is configured as high-risk/consequential`,
+      isConfigurableAutonomyAction(action.type) ? "configurable" : "escalation"
+    );
   }
 
   const cost = estimateManagerActionCost(action);
   if (cost.estimated_requests > policy.costThreshold.estimated_requests) {
     return humanApprovalClassification(
       action,
-      `action ${action.type} estimated provider requests ${cost.estimated_requests} exceeds configured autonomous threshold ${policy.costThreshold.estimated_requests}`
+      `action ${action.type} estimated provider requests ${cost.estimated_requests} exceeds configured autonomous threshold ${policy.costThreshold.estimated_requests}`,
+      isConfigurableAutonomyAction(action.type) ? "configurable" : "escalation"
     );
   }
   if (policy.costThreshold.wall_time_ms !== undefined && cost.wall_time_ms !== undefined && cost.wall_time_ms > policy.costThreshold.wall_time_ms) {
     return humanApprovalClassification(
       action,
-      `action ${action.type} estimated wall time ${cost.wall_time_ms}ms exceeds configured autonomous threshold ${policy.costThreshold.wall_time_ms}ms`
+      `action ${action.type} estimated wall time ${cost.wall_time_ms}ms exceeds configured autonomous threshold ${policy.costThreshold.wall_time_ms}ms`,
+      isConfigurableAutonomyAction(action.type) ? "configurable" : "escalation"
     );
-  }
-
-  const critical = await actionTouchesCriticalScope(repoRoot, action);
-  if (!critical.ok) {
-    return humanApprovalClassification(action, critical.reason);
-  }
-  if (critical.value) {
-    return humanApprovalClassification(action, `action ${action.type} touches Critical-tier scope`);
   }
 
   return {
     tier: "autonomous",
+    interruption: "none",
     reason: `action ${action.type} is Tier 1 and may run after deterministic checks pass`,
     recommendation: "Proceed through the deterministic manager executor."
   };
 }
 
-function humanApprovalClassification(action: ManagerAction, reason: string): ActionClassification {
+function humanApprovalClassification(
+  action: ManagerAction,
+  reason: string,
+  interruption: "configurable" | "escalation"
+): ActionClassification {
   return {
     tier: "human_approval",
+    interruption,
     reason,
     recommendation: `Pause and ask the human to approve, modify, or reject ${action.type}; do not execute it autonomously.`
   };
+}
+
+function isConfigurableAutonomyAction(action: ManagerAction["type"]): action is "run_worker" | "integrate_shadow" {
+  return action === "run_worker" || action === "integrate_shadow";
+}
+
+function shouldSuppressManagerInterruption(
+  level: AutonomyLevel,
+  classification: ActionClassification,
+  action: ManagerAction
+): boolean {
+  return level !== "review_everything" &&
+    classification.tier === "human_approval" &&
+    classification.interruption === "configurable" &&
+    isConfigurableAutonomyAction(action.type);
 }
 
 function estimateManagerActionCost(action: ManagerAction): { estimated_requests: number; wall_time_ms?: number } {
@@ -1269,13 +1321,10 @@ export async function continueAutonomousManagerLoop(
   sessionId: string,
   options: AutonomousLoopOptions
 ): Promise<SpecResult<ManagerAutonomousLoopResult>> {
-  const policy = await loadManagerAutonomyPolicy(repoRoot);
-  if (!policy.ok) {
-    return policy;
-  }
-
   const steps: ManagerAutonomousLoopResult["steps"] = [];
   for (let index = 0; index < options.maxSteps; index += 1) {
+    const policy = await loadManagerAutonomyPolicy(repoRoot);
+    if (!policy.ok) return policy;
     const session = await loadManagerSession(repoRoot, sessionId);
     if (!session.ok) {
       return session;
@@ -1309,6 +1358,25 @@ export async function continueAutonomousManagerLoop(
     let classification: ActionClassification;
     let proposalId: string;
     if (session.value.pending_action !== undefined) {
+      const pendingAction = parseManagerAction(session.value.pending_action.action);
+      if (!pendingAction.ok) return pendingAction;
+      const pendingClassification = await classifyManagerAction(repoRoot, pendingAction.value, policy.value);
+      if (shouldSuppressManagerInterruption(policy.value.level, pendingClassification, pendingAction.value)) {
+        const authorized = await authorizePendingManagerAction(
+          repoRoot,
+          pendingRequest(session.value.session_id, session.value.pending_action),
+          "autonomy_policy",
+          policy.value.level
+        );
+        if (!authorized.ok) return authorized;
+        steps.push({
+          index,
+          action_type: pendingAction.value.type,
+          tier: "human_approval",
+          result: authorized.value.result
+        });
+        continue;
+      }
       const status = await getStatus(repoRoot);
       if (!status.ok) {
         return status;
@@ -1353,9 +1421,7 @@ export async function continueAutonomousManagerLoop(
           session.value.spec_id,
           session.value.session_id
         );
-        if (!generated.ok) {
-          return generated;
-        }
+        if (!generated.ok) return recordManagerProposalFailure(repoRoot, sessionId, generated.reason);
         nextProposal = generated.value;
         sessionForWrite = appendProposalToSession(session.value, nextProposal);
         await writeJsonAtomic(managerSessionPath(repoRoot, sessionId), sessionForWrite);
@@ -1396,6 +1462,52 @@ export async function continueAutonomousManagerLoop(
           recommendation: classification.recommendation
         };
         await writeJsonAtomic(managerSessionPath(repoRoot, sessionId), { ...sessionForWrite, proposed_action: nextProposal, pending_action: pending });
+        if (shouldSuppressManagerInterruption(policy.value.level, classification, action)) {
+          const authorized = await authorizePendingManagerAction(
+            repoRoot,
+            pendingRequest(sessionId, pending),
+            "autonomy_policy",
+            policy.value.level
+          );
+          if (!authorized.ok) return authorized;
+          if (!authorized.value.result.ok) {
+            const status = await getStatus(repoRoot);
+            if (!status.ok) return status;
+            return {
+              ok: true,
+              value: {
+                session_id: sessionId,
+                session_path: managerSessionRelativePath(sessionId),
+                status: "stopped",
+                steps: [
+                  ...steps,
+                  {
+                    index,
+                    action_type: action.type,
+                    tier: "gate_rejection",
+                    result: authorized.value.result,
+                    stop: buildGateRejectionAdvice(action, authorized.value.result.reason)
+                  }
+                ],
+                final_status: status.value
+              }
+            };
+          }
+          steps.push({ index, action_type: action.type, tier: "human_approval", result: authorized.value.result });
+          continue;
+        }
+        const decision = await recordAutonomyDecision(repoRoot, {
+          level: policy.value.level,
+          session_id: sessionId,
+          decision: "manager_action",
+          action_type: action.type,
+          interruption: "required",
+          authorization_source: "human",
+          pending_action_id: pending.pending_action_id,
+          result: "paused",
+          reason: classification.reason
+        });
+        if (!decision.ok) return decision;
         const status = await getStatus(repoRoot);
         if (!status.ok) {
           return status;
@@ -1513,6 +1625,22 @@ export async function continueAutonomousManagerLoop(
       final_status: status.value
     }
   };
+}
+
+async function recordManagerProposalFailure(
+  repoRoot: string,
+  sessionId: string,
+  reason: string
+): Promise<SpecResult<never>> {
+  if (/token budget exceeded/iu.test(reason)) {
+    const recorded = await appendEvent(repoRoot, {
+      type: "quota.exhausted",
+      task_id: null,
+      data: { version: 1, session_id: sessionId, reason, source: "token_ceiling" }
+    });
+    if (!recorded.ok) return recorded;
+  }
+  return { ok: false, reason };
 }
 
 export async function retryBlockedManagerAction(
@@ -1670,6 +1798,17 @@ export async function approvePendingManagerAction(
   repoRoot: string,
   request: unknown
 ): Promise<SpecResult<ManagerActionResult>> {
+  const autonomy = await readProjectAutonomyLevel(repoRoot);
+  if (!autonomy.ok) return autonomy;
+  return authorizePendingManagerAction(repoRoot, request, "human", autonomy.value);
+}
+
+async function authorizePendingManagerAction(
+  repoRoot: string,
+  request: unknown,
+  authorizationSource: "human" | "autonomy_policy",
+  autonomyLevel: AutonomyLevel
+): Promise<SpecResult<ManagerActionResult>> {
   if (!isRecord(request)) return { ok: false, reason: "manager approval must be a JSON object" };
   const allowed = new Set(["session_id", "pending_action_id", "action_type", "subject", "expected_state_hash"]);
   const extra = Object.keys(request).filter((key) => !allowed.has(key));
@@ -1704,9 +1843,15 @@ export async function approvePendingManagerAction(
   }
   const policy = await loadManagerAutonomyPolicy(repoRoot);
   if (!policy.ok) return policy;
+  if (authorizationSource === "autonomy_policy" && policy.value.level !== autonomyLevel) {
+    return { ok: false, reason: "manager policy authorization refused: autonomy level changed after the pending action was classified" };
+  }
   const classification = await classifyManagerAction(repoRoot, parsedAction.value, policy.value);
   if (classification.tier !== "human_approval") {
     return { ok: false, reason: "manager approval refused: pending action no longer requires human approval" };
+  }
+  if (authorizationSource === "autonomy_policy" && !shouldSuppressManagerInterruption(autonomyLevel, classification, parsedAction.value)) {
+    return { ok: false, reason: "manager policy authorization refused: this action or escalation still requires a human at the active autonomy level" };
   }
   const result = await executeAuthorizedManagerAction(repoRoot, session.value, parsedAction.value, pending.proposal_id, true);
   if (!result.ok) return result;
@@ -1723,6 +1868,18 @@ export async function approvePendingManagerAction(
     ...refreshed.value,
     blocked_action: blockedAction
   });
+  const decision = await recordAutonomyDecision(repoRoot, {
+    level: policy.value.level,
+    session_id: session.value.session_id,
+    decision: "manager_action",
+    action_type: parsedAction.value.type,
+    interruption: authorizationSource === "autonomy_policy" ? "suppressed" : "required",
+    authorization_source: authorizationSource,
+    pending_action_id: pending.pending_action_id,
+    result: result.value.result.ok ? "authorized" : "refused",
+    reason: result.value.result.ok ? classification.reason : result.value.result.reason
+  });
+  if (!decision.ok) return decision;
   const recorded = await appendEvent(repoRoot, {
     type: "manager.action_approved",
     task_id: "task_id" in parsedAction.value ? parsedAction.value.task_id : null,
@@ -1733,10 +1890,22 @@ export async function approvePendingManagerAction(
       action_type: pending.action_type,
       subject: pending.subject,
       expected_state_hash: pending.expected_state_hash,
-      result_ok: result.value.result.ok
+      result_ok: result.value.result.ok,
+      authorization_source: authorizationSource,
+      autonomy_level: policy.value.level
     }
   });
   return recorded.ok ? result : recorded;
+}
+
+function pendingRequest(sessionId: string, pending: ManagerPendingAction): Record<string, string> {
+  return {
+    session_id: sessionId,
+    pending_action_id: pending.pending_action_id,
+    action_type: pending.action_type,
+    subject: pending.subject,
+    expected_state_hash: pending.expected_state_hash
+  };
 }
 
 function hashDurableState(status: HivemindStatus): string {
@@ -2108,6 +2277,7 @@ function presentManagerWorkspaceHistorySession(session: ManagerSession): Manager
     .map((action) => action.task_id)
     .filter((taskId): taskId is string => typeof taskId === "string");
   const status = pending !== null ? "paused" : blockedReason !== null ? "stopped" : session.proposed_action.actions.length === 0 ? "complete" : "active";
+  const autonomyLevel = session.autonomy_level_at_start ?? "review_everything";
   return {
     session_id: session.session_id,
     spec_id: session.spec_id,
@@ -2120,6 +2290,8 @@ function presentManagerWorkspaceHistorySession(session: ManagerSession): Manager
     blocked_action_type: session.blocked_action?.action_type ?? null,
     blocked_reason: blockedReason,
     continuation_available: status === "active" && session.proposal_state !== undefined,
+    autonomy_level: autonomyLevel,
+    autonomy_levels: [autonomyLevel],
     task_ids: [...new Set(taskIds)].sort(),
     evidence_path: managerSessionRelativePath(session.session_id)
   };
@@ -2158,6 +2330,9 @@ function validateManagerSession(value: unknown, sessionId: string): SpecResult<M
   }
   if (typeof value.spec_id !== "string" || value.spec_id.trim() === "") {
     return { ok: false, reason: "manager session spec_id must be a string" };
+  }
+  if (value.autonomy_level_at_start !== undefined && !isAutonomyLevel(value.autonomy_level_at_start)) {
+    return { ok: false, reason: "manager session autonomy_level_at_start is invalid" };
   }
   if (!Array.isArray(value.turns)) {
     return { ok: false, reason: "manager session turns must be an array" };

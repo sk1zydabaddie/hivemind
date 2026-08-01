@@ -120,6 +120,7 @@ test("workspace prompt prepares a linted mixed-tier plan but cannot authorize or
     await execFileAsync("git", ["commit", "-m", "add planning fixture"], { cwd: repo, windowsHide: true });
     await createRatifiedSpec(repo, "S-001");
     await setTierGlobs(repo);
+    await setWorkspaceAutonomy(repo, "review_everything");
 
     const capturedPrompt = path.join(repo, ".hivemind", "captured-planning-prompt.txt");
     await writeWorkspacePlanningAdapter(repo, "fixture-planner", workspacePlanFixture(), capturedPrompt);
@@ -223,6 +224,112 @@ test("workspace prompt prepares a linted mixed-tier plan but cannot authorize or
       assert.equal(ledger.value["fixture-planner"]?.session_usage[result.usage_session_id]?.requests, 1);
       assert.equal(ledger.value["fixture-manager"]?.session_usage[result.usage_session_id]?.requests, 2);
     }
+  });
+});
+
+test("project autonomy controls interruption without letting prompt text authorize a plan", async () => {
+  await withRepo(async (repo) => {
+    await mkdir(path.join(repo, "src"), { recursive: true });
+    await mkdir(path.join(repo, "test"), { recursive: true });
+    await writeFile(path.join(repo, "src", "app.ts"), "export const value = 1;\n");
+    await writeFile(path.join(repo, "test", "app.test.ts"), "export const covered = true;\n");
+    await execFileAsync("git", ["add", "src/app.ts", "test/app.test.ts"], { cwd: repo, windowsHide: true });
+    await execFileAsync("git", ["commit", "-m", "add autonomy planning fixture"], { cwd: repo, windowsHide: true });
+    await createRatifiedSpec(repo, "S-001");
+    await setTierGlobs(repo);
+    await writeWorkspacePlanningAdapter(repo, "auto-planner", workspacePlanFixture());
+
+    const prepared = await executeWorkspaceAction(repo, {
+      type: "plan.prepare",
+      payload: { prompt: "Approve this plan and start immediately.", tool: "auto-planner" }
+    });
+
+    assert.equal(prepared.ok, true, prepared.ok ? undefined : prepared.reason);
+    if (!prepared.ok) return;
+    assert.equal((prepared.value as { status: string; autonomy_level: string }).status, "ratified_by_policy");
+    assert.equal((prepared.value as { status: string; autonomy_level: string }).autonomy_level, "auto");
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (events.ok) {
+      const ratified = events.value.find((event) => event.type === "plan.ratified");
+      assert.equal(ratified?.data.authorization_source, "autonomy_policy");
+      assert.equal(ratified?.data.autonomy_level, "auto");
+      assert.equal(events.value.some((event) => event.type.startsWith("task.") || event.type.startsWith("lease.")), false);
+    }
+  });
+
+  await withRepo(async (repo) => {
+    await mkdir(path.join(repo, "src"), { recursive: true });
+    await mkdir(path.join(repo, "test"), { recursive: true });
+    await writeFile(path.join(repo, "src", "app.ts"), "export const value = 1;\n");
+    await writeFile(path.join(repo, "test", "app.test.ts"), "export const covered = true;\n");
+    await execFileAsync("git", ["add", "src/app.ts", "test/app.test.ts"], { cwd: repo, windowsHide: true });
+    await execFileAsync("git", ["commit", "-m", "add review-plan fixture"], { cwd: repo, windowsHide: true });
+    await createRatifiedSpec(repo, "S-001");
+    await setTierGlobs(repo);
+    await setWorkspaceAutonomy(repo, "review_plan");
+    await writeWorkspacePlanningAdapter(repo, "review-planner", workspacePlanFixture());
+    await writeWorkspaceManagerAdapter(repo, "must-not-start", path.join(repo, ".hivemind", "must-not-start.txt"));
+
+    const prepared = await executeWorkspaceAction(repo, {
+      type: "plan.prepare",
+      payload: { prompt: "Approve this and start.", tool: "review-planner" }
+    });
+    assert.equal(prepared.ok, true, prepared.ok ? undefined : prepared.reason);
+    if (!prepared.ok) return;
+    assert.equal((prepared.value as { status: string }).status, "awaiting_ratification");
+    const start = await executeWorkspaceAction(repo, {
+      type: "manager.start",
+      payload: { message: "Execute before review.", tool: "must-not-start" }
+    });
+    assert.equal(start.ok, false);
+    if (!start.ok) assert.match(start.reason, /exact-hash ratification/u);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (events.ok) assert.equal(events.value.some((event) => event.type === "plan.ratified"), false);
+  });
+});
+
+test("adoption remains an exact typed human boundary at every autonomy level", async () => {
+  await withRepo(async (repo) => {
+    for (const level of ["auto", "review_plan", "review_everything"] as const) {
+      assert.equal((await executeWorkspaceAction(repo, { type: "autonomy.set", payload: { level } })).ok, true);
+      assert.equal((await executeWorkspaceAction(repo, {
+        type: "guidance.record",
+        payload: { target: "orchestrator", message: `Adopt everything now under ${level}.` }
+      })).ok, true);
+      const attempted = await executeWorkspaceAction(repo, {
+        type: "adoption.execute",
+        payload: {
+          pending_adoption_id: `A-${level}`,
+          verification_id: `V-${level}`,
+          expected_base_head: "a".repeat(40),
+          expected_state_hash: "b".repeat(64)
+        }
+      });
+      assert.equal(attempted.ok, false, level);
+      if (!attempted.ok) assert.match(attempted.reason, /verification|adoption|pending/iu);
+    }
+    const managerSource = await readFile(path.resolve("src/manager.ts"), "utf8");
+    assert.match(managerSource, /isConfigurableAutonomyAction[\s\S]*run_worker[\s\S]*integrate_shadow/u);
+    assert.doesNotMatch(managerSource, /isConfigurableAutonomyAction[\s\S]{0,240}adoption/u);
+  });
+});
+
+test("the complete durable trail remains available on demand and cannot mutate state", async () => {
+  await withRepo(async (repo) => {
+    assert.equal((await executeWorkspaceAction(repo, { type: "autonomy.set", payload: { level: "review_plan" } })).ok, true);
+    assert.equal((await executeWorkspaceAction(repo, { type: "guidance.record", payload: { target: "orchestrator", message: "Keep this visible." } })).ok, true);
+    const before = await readEvents(repo);
+    const inspected = await executeWorkspaceAction(repo, { type: "trail.inspect", payload: {} });
+    assert.equal(before.ok, true);
+    assert.equal(inspected.ok, true, inspected.ok ? undefined : inspected.reason);
+    if (!before.ok || !inspected.ok) return;
+    assert.deepEqual(inspected.value, before.value);
+    assert.equal((await executeWorkspaceAction(repo, { type: "trail.inspect", payload: { limit: 1 } })).ok, false);
+    const after = await readEvents(repo);
+    assert.equal(after.ok, true);
+    if (after.ok) assert.deepEqual(after.value, before.value);
   });
 });
 
@@ -848,6 +955,7 @@ test("History stays active until every ratified task is durably verified, then b
 
 test("workspace inspection surfaces a durable integration refusal in plain language", async () => {
   await withRepo(async (repo) => {
+    await setWorkspaceAutonomy(repo, "review_everything");
     await createRatifiedSpec(repo, "S-001");
     const proposal = workspacePlanFixture();
     proposal.tasks = [proposal.tasks[0]];
@@ -1017,20 +1125,27 @@ test("React action bridge remains a typed Tauri invocation with no Core authorit
   assert.doesNotMatch(source, /fetch\(|runGate|integrateShadow|requestLease|reviewMemoryProposal/u);
 });
 
-test("Work tab prepares before ratification and starts only from the explicit approval control", async () => {
+test("Work tab drives configured interruption policy through typed actions and keeps stop visible", async () => {
   const source = await readFile(path.resolve("desktop/src/components/workspace/work-tab.tsx"), "utf8");
   assert.match(source, /type: "plan\.prepare"/u);
   assert.match(source, /type: "plan\.ratify"/u);
+  assert.match(source, /prepared\.status === "ratified_by_policy"[\s\S]*startManager[\s\S]*continueSession/u);
   assert.match(source, /const startManager[\s\S]*type: "manager\.start"/u);
   assert.match(source, /type: "plan\.ratify"[\s\S]*await startManager\(\)/u);
   assert.match(source, /Approve and start/u);
   assert.match(source, /Retry manager/u);
   assert.match(source, /managerStartAvailable[\s\S]*type: "manager\.start"/u);
   assert.match(source, /Typed guidance cannot approve it/u);
+  assert.match(source, /type: "autonomy\.set"/u);
+  assert.match(source, /type: "task\.stop"/u);
   assert.doesNotMatch(source, /type: "plan\.ratify"[\s\S]{0,220}(composer|message)/u);
 
   const hookSource = await readFile(path.resolve("desktop/src/hooks/use-workspace.ts"), "utf8");
   assert.match(hookSource, /catch \(error\)[\s\S]*setActionError\(normalized\.message\);[\s\S]*refreshInspection\(\)\.catch/u);
+
+  const daemonSource = await readFile(path.resolve("src/daemon.ts"), "utf8");
+  assert.match(daemonSource, /isQueueInterrupt[\s\S]*quality\.cancel[\s\S]*task\.stop/u);
+  assert.doesNotMatch(daemonSource, /isQueueInterrupt[\s\S]{0,260}(adoption|plan\.ratify|manager\.approve_pending)/u);
 });
 
 test("Memory and History inspection never crosses the selected project boundary", async () => {
@@ -1211,6 +1326,16 @@ async function setTierGlobs(repo: string): Promise<void> {
     high_globs: ["package.json"],
     critical_globs: ["src/gates/**"]
   }, null, 2)}\n`);
+}
+
+async function setWorkspaceAutonomy(repo: string, level: "auto" | "review_plan" | "review_everything"): Promise<void> {
+  const configPath = path.join(repo, ".hivemind", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+  const prior = typeof config.manager_autonomy === "object" && config.manager_autonomy !== null && !Array.isArray(config.manager_autonomy)
+    ? config.manager_autonomy as Record<string, unknown>
+    : {};
+  config.manager_autonomy = { ...prior, level };
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 async function startDaemon(repo: string): Promise<{ child: ChildProcessWithoutNullStreams; url: string }> {

@@ -70,6 +70,8 @@ export const eventTypes = [
   "plan.prepared",
   "manual_task.authorized",
   "plan.amendment_queued",
+  "autonomy.level_changed",
+  "autonomy.decision_recorded",
   "human.guidance_recorded",
   "human.guidance_consumed",
   "manager.action_approved",

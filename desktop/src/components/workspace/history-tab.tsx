@@ -8,12 +8,23 @@ import {
   ReceiptText,
   TimerReset
 } from "lucide-react";
+import { useState } from "react";
 
 import { Badge } from "../ui/badge";
 import { ScrollArea } from "../ui/scroll-area";
-import type { WorkspaceHistoryRun, WorkspaceInspection } from "../../lib/workspace-actions";
+import type { WorkspaceAction, WorkspaceHistoryRun, WorkspaceInspection } from "../../lib/workspace-actions";
 
-export function HistoryTab({ inspection }: { inspection: WorkspaceInspection | null }): React.JSX.Element {
+interface DurableTrailEvent {
+  ts: string;
+  type: string;
+  task_id: string | null;
+  data: Record<string, unknown>;
+}
+
+export function HistoryTab({ inspection, onAction }: { inspection: WorkspaceInspection | null; onAction: <T>(action: WorkspaceAction) => Promise<T> }): React.JSX.Element {
+  const [trail, setTrail] = useState<DurableTrailEvent[] | null>(null);
+  const [trailError, setTrailError] = useState("");
+  const [trailLoading, setTrailLoading] = useState(false);
   const history = inspection?.history;
   const totals = (history?.runs ?? []).reduce((sum, run) => ({
     calls: sum.calls + run.calls,
@@ -36,6 +47,14 @@ export function HistoryTab({ inspection }: { inspection: WorkspaceInspection | n
           <HistoryTotal icon={<BadgeCheck size={15} />} label="Verified" value={totals.verified} />
           <HistoryTotal icon={<CheckCircle2 size={15} />} label="Merged" value={totals.merged} />
           <HistoryTotal icon={<AlertTriangle size={15} />} label="Stopped" value={totals.stopped} />
+          <button className="button-secondary trail-button" type="button" disabled={trailLoading} onClick={() => {
+            setTrailLoading(true);
+            setTrailError("");
+            void onAction<DurableTrailEvent[]>({ type: "trail.inspect", payload: {} })
+              .then(setTrail)
+              .catch((error: unknown) => setTrailError(error instanceof Error ? error.message : String(error)))
+              .finally(() => setTrailLoading(false));
+          }}><FileSearch size={14} />{trailLoading ? "Opening..." : "Full trail"}</button>
         </div>
       </header>
 
@@ -83,6 +102,24 @@ export function HistoryTab({ inspection }: { inspection: WorkspaceInspection | n
           </div>
         </aside>
       </div>
+      {trail !== null || trailError !== "" ? (
+        <div className="dialog-backdrop" role="presentation" onMouseDown={() => setTrail(null)}>
+          <section className="durable-trail-dialog surface" role="dialog" aria-modal="true" aria-label="Full project trail" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div><h2>Full project trail</h2><span>Every recorded decision and check, newest last.</span></div>
+              <button className="button-secondary" type="button" onClick={() => { setTrail(null); setTrailError(""); }}>Close</button>
+            </header>
+            {trailError !== "" ? <p className="trail-error">{trailError}</p> : (
+              <ScrollArea className="durable-trail-scroll"><ol>{(trail ?? []).map((event, index) => (
+                <li key={`${event.ts}-${index}`}>
+                  <time>{formatDateTime(event.ts)}</time><strong>{plainEventName(event.type)}</strong><span>{event.task_id ?? "Project"}</span>
+                  <details><summary>Details</summary><pre>{JSON.stringify(event.data, null, 2)}</pre></details>
+                </li>
+              ))}</ol></ScrollArea>
+            )}
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -101,7 +138,10 @@ function RunCard({ run }: { run: WorkspaceHistoryRun }): React.JSX.Element {
           <Badge tone={tone}>{plainOutcome(run.outcome)}</Badge>
         </div>
       </header>
-      <p className="run-outcome-detail">{run.outcome_detail}</p>
+      <div className="run-summary-line">
+        <p className="run-outcome-detail">{run.outcome_detail}</p>
+        <span className="run-autonomy">Interruptions: {run.autonomy_levels.map(plainAutonomyLevel).join(" -> ")}</span>
+      </div>
       <div className="run-detail-grid">
         <section>
           <h3><BadgeCheck size={14} />Passed project checks <Badge tone="good">{run.verified_tasks.length}</Badge></h3>
@@ -154,6 +194,14 @@ function plainOutcome(outcome: WorkspaceHistoryRun["outcome"]): string {
 
 function plainStoppedState(state: WorkspaceHistoryRun["stopped_tasks"][number]["state"]): string {
   return ({ failed: "Worker stopped", blocked: "Could not continue", cancelled: "Stopped by a person", paused: "Waiting for capacity" })[state];
+}
+
+function plainAutonomyLevel(level: WorkspaceHistoryRun["autonomy_levels"][number]): string {
+  return ({ auto: "Auto", review_plan: "Review plan", review_everything: "Review everything" })[level];
+}
+
+function plainEventName(type: string): string {
+  return type.replaceAll("_", " ").replaceAll(".", " / ");
 }
 
 function formatDuration(ms: number): string {

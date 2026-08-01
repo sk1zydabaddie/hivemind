@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { generateBestOfN } from "./best-of-n.js";
 import { adoptVerifiedSet, reviewVerifiedSetAdoption } from "./adoption.js";
+import { isAutonomyLevel } from "./autonomy-level.js";
+import { setProjectAutonomyLevel } from "./autonomy.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { generateCharacterizationCandidate } from "./characterization-generator.js";
 import { generateDraftRefine } from "./draft-refine.js";
@@ -11,11 +13,13 @@ import { authorizeManualTask, prepareWorkspaceTentativePlan, queuePlanAmendment,
 import { cancelQualityRun } from "./quality-control.js";
 import { reverifyQueuedPatchSet } from "./reverify.js";
 import { findGitRoot } from "./repo.js";
+import { readEvents } from "./events.js";
 import { requestTaskRedirect } from "./supervision.js";
 import { requestTaskStop } from "./task-control.js";
 import { inspectWorkspace } from "./workspace-inspection.js";
 
 export const workspaceActionTypes = [
+  "autonomy.set",
   "manager.start",
   "manager.continue",
   "manager.retry_blocked",
@@ -30,6 +34,7 @@ export const workspaceActionTypes = [
   "task.redirect",
   "task.stop",
   "status.inspect",
+  "trail.inspect",
   "change.inspect",
   "verify.characterize",
   "quality.best_of_n",
@@ -54,6 +59,12 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
   const payload = raw.payload;
   if (!isRecord(payload)) return { ok: false, reason: "workspace action payload must be an object" };
 
+  if (raw.type === "autonomy.set") {
+    const parsed = exactStrings(payload, ["level"]);
+    return parsed.ok && isAutonomyLevel(parsed.value.level)
+      ? setProjectAutonomyLevel(repoRoot, parsed.value.level)
+      : { ok: false, reason: parsed.ok ? "autonomy level must be auto, review_plan, or review_everything" : parsed.reason };
+  }
   if (raw.type === "guidance.record") return recordHumanGuidance(repoRoot, payload);
   if (raw.type === "plan.prepare") {
     const parsed = exactStrings(payload, ["prompt", "tool"]);
@@ -95,6 +106,10 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
   if (raw.type === "status.inspect") {
     if (Object.keys(payload).length > 0) return { ok: false, reason: "status.inspect takes no fields" };
     return inspectWorkspace(repoRoot);
+  }
+  if (raw.type === "trail.inspect") {
+    if (Object.keys(payload).length > 0) return { ok: false, reason: "trail.inspect takes no fields" };
+    return readEvents(repoRoot);
   }
   if (raw.type === "change.inspect") {
     const parsed = exactStrings(payload, ["task_id"]);
