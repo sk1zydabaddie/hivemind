@@ -90,7 +90,7 @@ describe("React workspace boundary", () => {
       "Needs you",
       "Later",
       "Guidance is read on the next step",
-      "Approve this plan"
+      "Approve and start"
     ]) {
       expect(visibleSource).toContain(label);
     }
@@ -117,6 +117,7 @@ describe("React workspace boundary", () => {
       "manager.continue",
       "manager.start",
       "plan.amend",
+      "plan.prepare",
       "plan.ratify",
       "plan.review",
       "task.redirect"

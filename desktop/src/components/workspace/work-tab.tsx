@@ -146,6 +146,16 @@ export function WorkTab({
           payload: { target: "orchestrator", message }
         });
         setFeedback("Guidance saved for the next step. Current work was not changed.");
+      } else if (plan !== null) {
+        setFeedback("Review the prepared plan before starting work. Typed guidance cannot approve it.");
+        setReviewOpen(true);
+        return;
+      } else if (inspection?.current_plan === null || inspection?.current_plan === undefined) {
+        await onAction({
+          type: "plan.prepare",
+          payload: { prompt: message, tool: "planner" }
+        });
+        setFeedback("A tentative plan is ready to review. Nothing has started.");
       } else {
         await onAction({
           type: "manager.start",
@@ -309,8 +319,15 @@ export function WorkTab({
                   expected_plan_hash: plan.plan_hash
                 }
               });
+              await onAction({
+                type: "manager.start",
+                payload: {
+                  message: "Execute the exact ratified plan through the normal checks.",
+                  tool: "manager"
+                }
+              });
               setReviewOpen(false);
-              setFeedback("Plan approved. Work can now begin through the normal checks.");
+              setFeedback("Plan approved. The manager prepared the first step; continue when you are ready.");
             } catch (error) {
               setFeedback(plainActionError(error));
             } finally {
@@ -785,7 +802,7 @@ function PlanTakeover({ plan, busy, onClose, onRatify }: { plan: WorkspacePlanRe
             </section>
           ))}
         </div>
-        <footer><div><code>{plan.plan_hash.slice(0, 12)}</code><span>Any regenerated or edited plan needs a new approval.</span></div><button className="button-primary ratify-button" type="button" disabled={busy} onClick={() => void onRatify()}><CheckCircle2 size={16} />Approve this plan</button></footer>
+        <footer><div><code>{plan.plan_hash.slice(0, 12)}</code><span>Any regenerated or edited plan needs a new approval.</span></div><button className="button-primary ratify-button" type="button" disabled={busy} onClick={() => void onRatify()}><CheckCircle2 size={16} />Approve and start</button></footer>
       </section>
     </div>
   );
@@ -905,6 +922,7 @@ function eventDescription(event: HivemindEvent): string {
     "task.blocked": "needs help before it can continue",
     "task.redirected": "received new guidance",
     "human.guidance_recorded": "Guidance was saved for the next proposal",
+    "plan.prepared": "A tentative plan was prepared for review",
     "plan.ratified": "The current plan was approved",
     "plan.amendment_queued": "A plan change was queued for review",
     "lease.approved": "can now edit its assigned files",

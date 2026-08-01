@@ -59,6 +59,7 @@ export const eventTypes = [
   "quality.cancel_failed",
   "quality.cancelled",
   "plan.ratified",
+  "plan.prepared",
   "manual_task.authorized",
   "plan.amendment_queued",
   "human.guidance_recorded",

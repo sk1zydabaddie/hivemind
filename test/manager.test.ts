@@ -1765,6 +1765,20 @@ async function prepareLintedPlanWithTasks(repo: string, tasks: Record<string, un
   await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
   await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
   const review = JSON.parse((await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--review"], { cwd: repo, windowsHide: true })).stdout) as { plan_hash: string };
+  await appendEvent(repo, {
+    type: "plan.prepared",
+    task_id: null,
+    data: {
+      version: 1,
+      spec_id: "S-001",
+      plan_hash: review.plan_hash,
+      plan_path: ".hivemind/plans/S-001.tentative.json",
+      proposal_path: name,
+      usage_session_id: "11111111-1111-4111-8111-111111111111",
+      status: "awaiting_ratification",
+      authorization_effect: "none"
+    }
+  });
   await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ratify", review.plan_hash], { cwd: repo, windowsHide: true });
 }
 

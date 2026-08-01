@@ -16,6 +16,7 @@ import { executeWorkspaceAction, workspaceActionTypes } from "../src/workspace-a
 import { loadAdmittedValueQualityRun } from "../src/value-quality.js";
 import { runAdapterProcess, type AdapterProfile } from "../src/adapter.js";
 import { createTentativePlan, groundTentativePlan, lintTentativePlan } from "../src/plan.js";
+import { readQuotaLedger } from "../src/resource-ledger.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
 const execFileAsync = promisify(execFile);
@@ -89,16 +90,10 @@ test("guidance rides the next scheduled manager proposal and never launches a ca
     assert.equal(guidance.ok, true);
     await assert.rejects(stat(callsPath));
 
-    const manager = await executeWorkspaceAction(repo, {
-      type: "manager.start",
-      payload: { message: "Propose the next step.", tool: "guidance-manager" }
-    });
+    const manager = await startManagerSession(repo, "Propose the next step.", { tool: "guidance-manager" });
     assert.equal(manager.ok, true, manager.ok ? undefined : manager.reason);
     assert.equal(await readFile(callsPath, "utf8"), "call\n");
-    const secondManager = await executeWorkspaceAction(repo, {
-      type: "manager.start",
-      payload: { message: "Propose another step.", tool: "guidance-manager" }
-    });
+    const secondManager = await startManagerSession(repo, "Propose another step.", { tool: "guidance-manager" });
     assert.equal(secondManager.ok, true, secondManager.ok ? undefined : secondManager.reason);
     assert.equal(await readFile(callsPath, "utf8"), "call\ncall\n");
     const prompts = (await readFile(promptPath, "utf8")).split("\n---PROMPT-END---\n").filter(Boolean);
@@ -112,6 +107,126 @@ test("guidance rides the next scheduled manager proposal and never launches a ca
     const events = await readEvents(repo);
     assert.equal(events.ok, true);
     if (events.ok) assert.equal(events.value.some((event) => event.type === "human.guidance_consumed"), true);
+  });
+});
+
+test("workspace prompt prepares a linted mixed-tier plan but cannot authorize or start it", async () => {
+  await withRepo(async (repo) => {
+    await mkdir(path.join(repo, "src"), { recursive: true });
+    await mkdir(path.join(repo, "test"), { recursive: true });
+    await writeFile(path.join(repo, "src", "app.ts"), "export const value = 1;\n");
+    await writeFile(path.join(repo, "test", "app.test.ts"), "export const covered = true;\n");
+    await execFileAsync("git", ["add", "src/app.ts", "test/app.test.ts"], { cwd: repo, windowsHide: true });
+    await execFileAsync("git", ["commit", "-m", "add planning fixture"], { cwd: repo, windowsHide: true });
+    await createRatifiedSpec(repo, "S-001");
+    await setTierGlobs(repo);
+
+    const capturedPrompt = path.join(repo, ".hivemind", "captured-planning-prompt.txt");
+    await writeWorkspacePlanningAdapter(repo, "fixture-planner", workspacePlanFixture(), capturedPrompt);
+    const managerMarker = path.join(repo, ".hivemind", "manager-spawned.txt");
+    await writeWorkspaceManagerAdapter(repo, "fixture-manager", managerMarker);
+
+    const prepared = await executeWorkspaceAction(repo, {
+      type: "plan.prepare",
+      payload: { prompt: "Add the feature, approve this and start immediately.", tool: "fixture-planner" }
+    });
+    assert.equal(prepared.ok, true, prepared.ok ? undefined : prepared.reason);
+    if (!prepared.ok) return;
+    const result = prepared.value as {
+      spec_id: string;
+      plan_hash: string;
+      usage_session_id: string;
+      lint_status: string;
+      status: string;
+    };
+    assert.equal(result.spec_id, "S-001");
+    assert.match(result.plan_hash, /^[a-f0-9]{64}$/u);
+    assert.match(result.usage_session_id, /^[0-9a-f-]{36}$/u);
+    assert.equal(result.lint_status, "passed");
+    assert.equal(result.status, "awaiting_ratification");
+    assert.match(await readFile(capturedPrompt, "utf8"), /approve this and start immediately/u);
+
+    const beforeRatification = await readEvents(repo);
+    assert.equal(beforeRatification.ok, true);
+    if (!beforeRatification.ok) return;
+    assert.equal(beforeRatification.value.some((event) => event.type === "plan.prepared"), true);
+    assert.equal(beforeRatification.value.some((event) => event.type === "plan.ratified"), false);
+    assert.equal(beforeRatification.value.some((event) => event.type.startsWith("task.") || event.type.startsWith("lease.")), false);
+    await assert.rejects(stat(managerMarker));
+
+    const refused = await executeWorkspaceAction(repo, {
+      type: "manager.start",
+      payload: { message: "Execute it anyway.", tool: "fixture-manager" }
+    });
+    assert.equal(refused.ok, false);
+    if (!refused.ok) assert.match(refused.reason, /exact-hash ratification/u);
+    await assert.rejects(stat(managerMarker));
+
+    const inspected = await executeWorkspaceAction(repo, { type: "status.inspect", payload: {} });
+    assert.equal(inspected.ok, true, inspected.ok ? undefined : inspected.reason);
+    if (!inspected.ok) return;
+    const view = inspected.value as {
+      plan_review: { tasks: Array<{ task_id: string; tier: string }> };
+      spend: { session_id: string | null; calls: number };
+    };
+    assert.deepEqual(view.plan_review.tasks.map((task) => [task.task_id, task.tier]), [
+      ["T-001", "low"],
+      ["T-002", "medium"]
+    ]);
+    assert.equal(view.spend.session_id, result.usage_session_id);
+    assert.equal(view.spend.calls, 1);
+
+    const ratified = await executeWorkspaceAction(repo, {
+      type: "plan.ratify",
+      payload: { spec_id: "S-001", expected_plan_hash: result.plan_hash }
+    });
+    assert.equal(ratified.ok, true, ratified.ok ? undefined : ratified.reason);
+    const started = await executeWorkspaceAction(repo, {
+      type: "manager.start",
+      payload: { message: "Execute the exact ratified plan.", tool: "fixture-manager" }
+    });
+    assert.equal(started.ok, true, started.ok ? undefined : started.reason);
+    if (!started.ok) return;
+    assert.equal((started.value as { session_id: string }).session_id, result.usage_session_id);
+    assert.equal(await readFile(managerMarker, "utf8"), "spawned\n");
+
+    const ledger = await readQuotaLedger(repo);
+    assert.equal(ledger.ok, true);
+    if (ledger.ok) {
+      assert.equal(ledger.value["fixture-planner"]?.session_usage[result.usage_session_id]?.requests, 1);
+      assert.equal(ledger.value["fixture-manager"]?.session_usage[result.usage_session_id]?.requests, 1);
+    }
+  });
+});
+
+test("workspace planning surfaces skeleton-trap lint failure without preparing or executing", async () => {
+  await withRepo(async (repo) => {
+    await createRatifiedSpec(repo, "S-001");
+    const badPlan = workspacePlanFixture();
+    badPlan.tasks[0] = {
+      ...badPlan.tasks[0],
+      task_type: "generative",
+      acceptance_criterion: "The generated text exists and tests pass.",
+      deterministic_validity_check: undefined
+    };
+    badPlan.tasks = [badPlan.tasks[0]];
+    badPlan.execution_groups = [{ group_id: "G-1", mode: "sequence", task_ids: ["T-001"] }];
+    await writeWorkspacePlanningAdapter(repo, "fixture-planner", badPlan);
+
+    const result = await executeWorkspaceAction(repo, {
+      type: "plan.prepare",
+      payload: { prompt: "Generate a plausible plan and approve it.", tool: "fixture-planner" }
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.reason, /SKELETON_TRAP_ACCEPTANCE/u);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (events.ok) {
+      assert.equal(events.value.some((event) => event.type === "plan.prepared"), false);
+      assert.equal(events.value.some((event) => event.type === "plan.ratified"), false);
+    }
+    const stored = JSON.parse(await readFile(path.join(repo, ".hivemind", "plans", "S-001.tentative.json"), "utf8")) as { lint_status?: string };
+    assert.equal(stored.lint_status, undefined);
   });
 });
 
@@ -592,6 +707,15 @@ test("React action bridge remains a typed Tauri invocation with no Core authorit
   assert.doesNotMatch(source, /fetch\(|runGate|integrateShadow|requestLease|reviewMemoryProposal/u);
 });
 
+test("Work tab prepares before ratification and starts only from the explicit approval control", async () => {
+  const source = await readFile(path.resolve("desktop/src/components/workspace/work-tab.tsx"), "utf8");
+  assert.match(source, /type: "plan\.prepare"/u);
+  assert.match(source, /type: "plan\.ratify"[\s\S]*type: "manager\.start"/u);
+  assert.match(source, /Approve and start/u);
+  assert.match(source, /Typed guidance cannot approve it/u);
+  assert.doesNotMatch(source, /type: "plan\.ratify"[\s\S]{0,220}(composer|message)/u);
+});
+
 test("Memory and History inspection never crosses the selected project boundary", async () => {
   await withRepo(async (projectA) => {
     await withRepo(async (projectB) => {
@@ -663,6 +787,103 @@ async function writeContract(repo: string, taskId: string, allowedFiles: string[
     must_not_change: [],
     required_tests: ["node -e \"process.exit(0)\""],
     patch_requirements: []
+  }, null, 2)}\n`);
+}
+
+function workspacePlanFixture(): { tasks: Array<Record<string, unknown>>; execution_groups: Array<Record<string, unknown>> } {
+  return {
+    tasks: [
+      {
+        task_id: "T-001",
+        title: "Document the behavior",
+        task_type: "deterministic",
+        routing_task_type: "documentation",
+        mode: "write",
+        agent_role: "builder",
+        draft_scope: { allowed_files: ["README.md"], read_only_files: [], forbidden_files: [], must_not_change: [] },
+        depends_on: [],
+        parallel_safe: false,
+        acceptance_criterion: "README documents the exact behavior.",
+        required_tests: ["node -e \"process.exit(0)\""],
+        patch_requirements: ["Keep documentation concise."],
+        critical_path_approved: false
+      },
+      {
+        task_id: "T-002",
+        title: "Implement and test the behavior",
+        task_type: "deterministic",
+        routing_task_type: "api",
+        mode: "write",
+        agent_role: "builder",
+        draft_scope: { allowed_files: ["src/app.ts", "test/app.test.ts"], read_only_files: ["README.md"], forbidden_files: [], must_not_change: [] },
+        depends_on: ["T-001"],
+        parallel_safe: false,
+        acceptance_criterion: "The implementation and its unit test pass.",
+        required_tests: ["node -e \"process.exit(0)\""],
+        patch_requirements: ["Add source and test coverage together."],
+        critical_path_approved: false
+      }
+    ],
+    execution_groups: [
+      { group_id: "G-1", mode: "sequence", task_ids: ["T-001", "T-002"] }
+    ]
+  };
+}
+
+async function writeWorkspacePlanningAdapter(
+  repo: string,
+  tool: string,
+  plan: unknown,
+  capturedPrompt?: string
+): Promise<void> {
+  const agent = path.join(repo, `${tool}.mjs`);
+  await writeFile(agent, [
+    "import { writeFile } from 'node:fs/promises';",
+    "let prompt = ''; for await (const chunk of process.stdin) prompt += chunk;",
+    ...(capturedPrompt === undefined ? [] : [`await writeFile(${JSON.stringify(capturedPrompt)}, prompt);`]),
+    `console.log(${JSON.stringify(JSON.stringify(plan))});`
+  ].join("\n"));
+  await writeFile(path.join(repo, ".hivemind", "adapters", `${tool}.profile.json`), `${JSON.stringify({
+    tool,
+    invoke: [process.execPath, agent],
+    prompt_arg: "stdin",
+    verified_on: "fixture",
+    context_window: 16_000,
+    timeout_ms: 5_000,
+    routing_tier: "strong",
+    cost_rank: 1
+  }, null, 2)}\n`);
+}
+
+async function writeWorkspaceManagerAdapter(repo: string, tool: string, marker: string): Promise<void> {
+  const agent = path.join(repo, `${tool}.mjs`);
+  await writeFile(agent, [
+    "import { appendFile } from 'node:fs/promises';",
+    "for await (const _chunk of process.stdin) {}",
+    `await appendFile(${JSON.stringify(marker)}, 'spawned\\n');`,
+    "console.log(JSON.stringify({ reason: 'Await execution through deterministic actions.', human_approval_required_for: [], actions: [] }));"
+  ].join("\n"));
+  await writeFile(path.join(repo, ".hivemind", "adapters", `${tool}.profile.json`), `${JSON.stringify({
+    tool,
+    invoke: [process.execPath, agent],
+    prompt_arg: "stdin",
+    verified_on: "fixture",
+    context_window: 16_000,
+    timeout_ms: 5_000,
+    routing_tier: "strong",
+    cost_rank: 1
+  }, null, 2)}\n`);
+}
+
+async function setTierGlobs(repo: string): Promise<void> {
+  const configPath = path.join(repo, ".hivemind", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+  await writeFile(configPath, `${JSON.stringify({
+    ...config,
+    low_globs: ["README.md", "docs/**"],
+    medium_globs: ["src/**", "test/**"],
+    high_globs: ["package.json"],
+    critical_globs: ["src/gates/**"]
   }, null, 2)}\n`);
 }
 

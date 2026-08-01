@@ -22,7 +22,7 @@ import { extractJsonObject } from "./json.js";
 import { markHumanGuidanceConsumed, readPendingHumanGuidance } from "./human-guidance.js";
 import { applyOrchestratorContextBudget } from "./orchestrator-context.js";
 import { requestLeaseForContract, type LeaseGrantResult } from "./lease.js";
-import { evaluatePlanThrash, loadTentativePlan } from "./plan.js";
+import { evaluatePlanThrash, loadTentativePlan, readRatifiedWorkspacePlanSession } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { inferTaskTier } from "./routing.js";
 import { markRunFailed, runTask, type RunFailureMarkResult, type RunResult, type RunStartResult } from "./run.js";
@@ -286,6 +286,27 @@ export async function startManagerSession(
   message: string,
   options: StartManagerSessionOptions = {}
 ): Promise<SpecResult<ManagerSessionResult>> {
+  return startManagerSessionWithId(repoRoot, message, options, randomUUID());
+}
+
+export async function startWorkspaceManagerSession(
+  repoRoot: string,
+  message: string,
+  tool: string
+): Promise<SpecResult<ManagerSessionResult>> {
+  const activeSpec = await requireActiveSpecRatified(repoRoot);
+  if (!activeSpec.ok) return activeSpec;
+  const preparedSession = await readRatifiedWorkspacePlanSession(repoRoot, activeSpec.value.spec_id);
+  if (!preparedSession.ok) return preparedSession;
+  return startManagerSessionWithId(repoRoot, message, { tool }, preparedSession.value);
+}
+
+async function startManagerSessionWithId(
+  repoRoot: string,
+  message: string,
+  options: StartManagerSessionOptions,
+  sessionId: string
+): Promise<SpecResult<ManagerSessionResult>> {
   if (message.trim() === "") {
     return { ok: false, reason: "manager message must not be empty" };
   }
@@ -308,7 +329,12 @@ export async function startManagerSession(
     return status;
   }
 
-  const sessionId = randomUUID();
+  try {
+    await stat(managerSessionPath(repoRoot, sessionId));
+    return { ok: false, reason: `manager session ${sessionId} already exists` };
+  } catch (error: unknown) {
+    if (!isNodeError(error, "ENOENT")) throw error;
+  }
   const proposedAction =
     options.proposedAction === undefined
       ? await generateManagerProposal(repoRoot, message.trim(), options.tool ?? "manager", spec.value.spec_id, sessionId)

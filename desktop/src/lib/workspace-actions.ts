@@ -185,6 +185,7 @@ export type WorkspaceAction = {
     | "manager.start"
     | "manager.continue"
     | "guidance.record"
+    | "plan.prepare"
     | "plan.review"
     | "plan.ratify"
     | "manual_task.review"

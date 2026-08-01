@@ -211,7 +211,10 @@ export async function inspectWorkspace(repoRoot: string): Promise<{ ok: true; va
   if (!memory.ok) return memory;
   const history = await inspectHistory(repoRoot, events.value, ledger.value, config.config);
   if (!history.ok) return history;
-  const sessionId = session.value?.session_id ?? null;
+  const preparedPlanSession = planState.current === null
+    ? null
+    : latestPreparedPlanSession(events.value, planState.current);
+  const sessionId = preparedPlanSession ?? session.value?.session_id ?? null;
   let calls = 0;
   let effectiveTokens = 0;
   if (sessionId !== null) {
@@ -245,6 +248,20 @@ export async function inspectWorkspace(repoRoot: string): Promise<{ ok: true; va
       history: history.value
     }
   };
+}
+
+function latestPreparedPlanSession(
+  events: HivemindEvent[],
+  plan: WorkspacePlanReview
+): string | null {
+  const prepared = [...events].reverse().find((event) =>
+    event.type === "plan.prepared" &&
+    event.data.spec_id === plan.spec_id &&
+    event.data.plan_hash === plan.plan_hash
+  );
+  return typeof prepared?.data.usage_session_id === "string"
+    ? prepared.data.usage_session_id
+    : null;
 }
 
 async function inspectCharacterizations(repoRoot: string): Promise<WorkspaceInspection["swarm"]> {

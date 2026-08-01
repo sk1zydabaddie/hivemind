@@ -24,7 +24,7 @@ import { buildPlanningGenerationPrompt } from "./planning-prompt.js";
 import { assertNoKnownFailedScopeRepeat, evaluateThrashForPlan, type ReplanEvaluationResult } from "./replan.js";
 import { findGitRoot } from "./repo.js";
 import { isRoutingTaskType, type RoutingTaskType, routingTaskTypeExpectation } from "./routing-task-type.js";
-import { checkPlanningAllowed } from "./spec.js";
+import { checkPlanningAllowed, requireActiveSpecRatified } from "./spec.js";
 import { loadSpecDocument, type SpecResult, validateRequestedSpecId } from "./spec-format.js";
 import { validateRequestedTaskId } from "./task-id.js";
 import { latestTaskRunState } from "./run-state.js";
@@ -104,6 +104,17 @@ export interface GeneratedPlanResult extends TentativePlanResult {
   proposal_path: string;
   source: "adapter-generated";
   apply_command: string;
+}
+
+export interface WorkspacePreparedPlanResult {
+  spec_id: string;
+  plan_hash: string;
+  plan_path: string;
+  proposal_path: string;
+  usage_session_id: string;
+  task_count: number;
+  lint_status: "passed";
+  status: "awaiting_ratification";
 }
 
 export interface GroundPlanResult {
@@ -309,6 +320,17 @@ export async function generateTentativePlan(
   outPath: string,
   steering?: string
 ): Promise<SpecResult<GeneratedPlanResult>> {
+  return generateTentativePlanWithSession(repoRoot, specId, tool, outPath, steering);
+}
+
+async function generateTentativePlanWithSession(
+  repoRoot: string,
+  specId: string,
+  tool: string,
+  outPath: string,
+  steering?: string,
+  usageSessionId?: string
+): Promise<SpecResult<GeneratedPlanResult>> {
   const allowed = await checkPlanningAllowed(repoRoot, specId);
   if (!allowed.ok) {
     return allowed;
@@ -355,7 +377,8 @@ export async function generateTentativePlan(
   }
   const startedAt = Date.now();
   const processResult = await runAdapterProcess(repoRoot, profileResult.profile, repoRoot, prompt.value, {
-    outputLogPath: adapterRunLogPath(repoRoot, `planning-${specId}`)
+    outputLogPath: adapterRunLogPath(repoRoot, `planning-${specId}`),
+    usageSessionId
   });
   if (!processResult.ok) {
     return processResult;
@@ -389,6 +412,108 @@ export async function generateTentativePlan(
       apply_command: `hivemind plan ${specId} --propose ${confinedOut.value.relativePath}`
     }
   };
+}
+
+export async function prepareWorkspaceTentativePlan(
+  repoRoot: string,
+  prompt: string,
+  tool: string
+): Promise<SpecResult<WorkspacePreparedPlanResult>> {
+  const normalizedPrompt = prompt.trim();
+  if (normalizedPrompt === "") {
+    return { ok: false, reason: "planning prompt must not be empty" };
+  }
+  const activeSpec = await requireActiveSpecRatified(repoRoot);
+  if (!activeSpec.ok) return activeSpec;
+
+  const usageSessionId = randomUUID();
+  const proposalPath = path.join(
+    repoRoot,
+    ".hivemind",
+    "resource",
+    "planning",
+    `${usageSessionId}.proposal.json`
+  );
+  const generated = await generateTentativePlanWithSession(
+    repoRoot,
+    activeSpec.value.spec_id,
+    tool,
+    proposalPath,
+    normalizedPrompt,
+    usageSessionId
+  );
+  if (!generated.ok) return generated;
+
+  const grounded = await groundTentativePlan(repoRoot, activeSpec.value.spec_id);
+  if (!grounded.ok) return grounded;
+  const linted = await lintTentativePlan(repoRoot, activeSpec.value.spec_id);
+  if (!linted.ok) return linted;
+  const reviewed = await reviewPlanForRatification(repoRoot, activeSpec.value.spec_id);
+  if (!reviewed.ok) return reviewed;
+
+  const recorded = await appendEvent(repoRoot, {
+    type: "plan.prepared",
+    task_id: null,
+    data: {
+      version: 1,
+      spec_id: reviewed.value.spec_id,
+      plan_hash: reviewed.value.plan_hash,
+      plan_path: reviewed.value.plan_path,
+      proposal_path: generated.value.proposal_path,
+      usage_session_id: usageSessionId,
+      tool,
+      prompt_hash: createHash("sha256").update(normalizedPrompt).digest("hex"),
+      status: "awaiting_ratification",
+      authorization_effect: "none"
+    }
+  });
+  if (!recorded.ok) return recorded;
+
+  return {
+    ok: true,
+    value: {
+      spec_id: reviewed.value.spec_id,
+      plan_hash: reviewed.value.plan_hash,
+      plan_path: reviewed.value.plan_path,
+      proposal_path: generated.value.proposal_path,
+      usage_session_id: usageSessionId,
+      task_count: reviewed.value.task_count,
+      lint_status: "passed",
+      status: "awaiting_ratification"
+    }
+  };
+}
+
+export async function readRatifiedWorkspacePlanSession(
+  repoRoot: string,
+  specId: string
+): Promise<SpecResult<string>> {
+  const reviewed = await reviewPlanForRatification(repoRoot, specId);
+  if (!reviewed.ok) return reviewed;
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return events;
+  const ratified = [...events.value].reverse().find((event) =>
+    event.type === "plan.ratified" &&
+    event.data.spec_id === specId &&
+    event.data.plan_hash === reviewed.value.plan_hash
+  );
+  if (ratified === undefined) {
+    return { ok: false, reason: "workspace execution requires exact-hash ratification of the prepared plan" };
+  }
+  const prepared = [...events.value].reverse().find((event) =>
+    event.type === "plan.prepared" &&
+    event.data.spec_id === specId &&
+    event.data.plan_hash === reviewed.value.plan_hash &&
+    event.data.plan_path === reviewed.value.plan_path
+  );
+  if (prepared === undefined) {
+    return { ok: false, reason: "workspace execution requires a durable prepared-plan record" };
+  }
+  const sessionId = prepared.data.usage_session_id;
+  if (typeof sessionId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(sessionId)) {
+    return { ok: false, reason: "workspace execution refused: prepared-plan session identity is invalid" };
+  }
+  return { ok: true, value: sessionId };
 }
 
 function parsePlanArgs(

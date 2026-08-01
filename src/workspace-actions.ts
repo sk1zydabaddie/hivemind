@@ -4,8 +4,8 @@ import { generateBestOfN } from "./best-of-n.js";
 import { generateCharacterizationCandidate } from "./characterization-generator.js";
 import { generateDraftRefine } from "./draft-refine.js";
 import { recordHumanGuidance } from "./human-guidance.js";
-import { approvePendingManagerAction, continueAutonomousManagerLoop, startManagerSession } from "./manager.js";
-import { authorizeManualTask, queuePlanAmendment, ratifyPlan, reviewManualTaskForAuthorization, reviewPlanForRatification } from "./plan.js";
+import { approvePendingManagerAction, continueAutonomousManagerLoop, startWorkspaceManagerSession } from "./manager.js";
+import { authorizeManualTask, prepareWorkspaceTentativePlan, queuePlanAmendment, ratifyPlan, reviewManualTaskForAuthorization, reviewPlanForRatification } from "./plan.js";
 import { cancelQualityRun } from "./quality-control.js";
 import { findGitRoot } from "./repo.js";
 import { requestTaskRedirect } from "./supervision.js";
@@ -16,6 +16,7 @@ export const workspaceActionTypes = [
   "manager.start",
   "manager.continue",
   "guidance.record",
+  "plan.prepare",
   "plan.review",
   "plan.ratify",
   "manual_task.review",
@@ -47,6 +48,10 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
   if (!isRecord(payload)) return { ok: false, reason: "workspace action payload must be an object" };
 
   if (raw.type === "guidance.record") return recordHumanGuidance(repoRoot, payload);
+  if (raw.type === "plan.prepare") {
+    const parsed = exactStrings(payload, ["prompt", "tool"]);
+    return parsed.ok ? prepareWorkspaceTentativePlan(repoRoot, parsed.value.prompt, parsed.value.tool) : parsed;
+  }
   if (raw.type === "plan.review") {
     const parsed = exactStrings(payload, ["spec_id"]);
     return parsed.ok ? reviewPlanForRatification(repoRoot, parsed.value.spec_id) : parsed;
@@ -95,7 +100,7 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
   }
   if (raw.type === "manager.start") {
     const parsed = exactStrings(payload, ["message", "tool"]);
-    return parsed.ok ? startManagerSession(repoRoot, parsed.value.message, { tool: parsed.value.tool }) : parsed;
+    return parsed.ok ? startWorkspaceManagerSession(repoRoot, parsed.value.message, parsed.value.tool) : parsed;
   }
   if (raw.type === "manager.continue") {
     const parsed = parseManagerContinue(payload);
