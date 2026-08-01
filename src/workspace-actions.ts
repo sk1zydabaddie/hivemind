@@ -9,6 +9,7 @@ import { recordHumanGuidance } from "./human-guidance.js";
 import { approvePendingManagerAction, continueAutonomousManagerLoop, retryBlockedManagerAction, startWorkspaceManagerSession } from "./manager.js";
 import { authorizeManualTask, prepareWorkspaceTentativePlan, queuePlanAmendment, ratifyPlan, reviewManualTaskForAuthorization, reviewPlanForRatification } from "./plan.js";
 import { cancelQualityRun } from "./quality-control.js";
+import { reverifyQueuedPatchSet } from "./reverify.js";
 import { findGitRoot } from "./repo.js";
 import { requestTaskRedirect } from "./supervision.js";
 import { requestTaskStop } from "./task-control.js";
@@ -35,6 +36,7 @@ export const workspaceActionTypes = [
   "quality.draft_refine",
   "quality.cancel",
   "memory.review_handoff",
+  "verification.rerun",
   "adoption.review",
   "adoption.execute"
 ] as const;
@@ -131,6 +133,11 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
     return parsed.ok
       ? { ok: true, value: { proposal_id: parsed.value.proposal_id, command: `hivemind memory review ${parsed.value.proposal_id} --approve`, local_interactive_tty_required: true, promotion_performed: false } }
       : parsed;
+  }
+  if (raw.type === "verification.rerun") {
+    return Object.keys(payload).length === 0
+      ? reverifyQueuedPatchSet(repoRoot)
+      : { ok: false, reason: "verification.rerun takes no fields; Core derives the queued patch set" };
   }
   if (raw.type === "adoption.review") {
     const parsed = exactStrings(payload, ["verification_id"]);

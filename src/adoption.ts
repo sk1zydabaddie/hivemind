@@ -60,12 +60,93 @@ interface AdoptionState {
   state_hash: string;
 }
 
+export interface AdoptionReadiness {
+  status: "none" | "needs_reverification" | "ready" | "adopted";
+  reason_code: "none" | "missing_provenance" | "moved_head" | "changed_inputs" | "lease_problem" | "oracle_block" | "verification_failed" | "base_worktree" | "unknown";
+  reason: string;
+  verification_id: string | null;
+  task_ids: string[];
+  changed_files: string[];
+  base_commit: string | null;
+  verified_at: string | null;
+}
+
+export async function inspectLatestAdoptionReadiness(repoRoot: string): Promise<AdoptionResult<AdoptionReadiness>> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return events;
+  const latest = [...events.value].reverse().find((event) =>
+    ["integration.passed", "integration.failed", "integration.blocked", "verification.rerun_failed"].includes(event.type)
+  );
+  if (latest === undefined) return { ok: true, value: emptyReadiness() };
+  const taskIds = stringArray(latest.data.applied) ?? stringArray(latest.data.task_ids) ?? [];
+  if (latest.type === "integration.blocked") {
+    return { ok: true, value: blockedReadiness(
+      latest,
+      taskIds,
+      "oracle_block",
+      eventReason(latest) ?? "Fresh project checks are blocked by the configured coverage requirement."
+    ) };
+  }
+  if (latest.type === "integration.failed" || latest.type === "verification.rerun_failed") {
+    const reason = eventReason(latest) ?? "The latest project checks did not complete successfully.";
+    return { ok: true, value: blockedReadiness(latest, taskIds, "verification_failed", reason) };
+  }
+  const verificationId = typeof latest.data.verification_id === "string" ? latest.data.verification_id : null;
+  if (
+    verificationId === null ||
+    typeof latest.data.verification_manifest_path !== "string" ||
+    typeof latest.data.verification_manifest_sha256 !== "string"
+  ) {
+    return {
+      ok: true,
+      value: {
+        ...blockedReadiness(latest, taskIds, "missing_provenance", "These checks predate verified-set provenance. Run the real project checks again before adoption."),
+        verification_id: verificationId
+      }
+    };
+  }
+  if (events.value.some((event) => event.type === "adoption.completed" && event.data.verification_id === verificationId)) {
+    return { ok: true, value: {
+      status: "adopted", reason_code: "none", reason: "The exact verified set is already on the project branch.",
+      verification_id: verificationId, task_ids: taskIds, changed_files: [], base_commit: null, verified_at: latest.ts
+    } };
+  }
+  const state = await deriveAdoptionState(repoRoot, verificationId);
+  if (!state.ok) return { ok: true, value: failedReadiness(latest, verificationId, taskIds, state.reason) };
+  const ownership = await validateAdoptionOwnership(repoRoot, state.value.stored.manifest);
+  if (!ownership.ok) return { ok: true, value: failedReadiness(latest, verificationId, taskIds, ownership.reason) };
+  const canonical = await requireCleanCanonicalBase(
+    repoRoot,
+    state.value.stored.manifest.base_branch,
+    state.value.stored.manifest.base_commit
+  );
+  if (!canonical.ok) return { ok: true, value: failedReadiness(latest, verificationId, taskIds, canonical.reason) };
+  return { ok: true, value: {
+    status: "ready",
+    reason_code: "none",
+    reason: "The exact verified set still matches the project and is ready for review.",
+    verification_id: verificationId,
+    task_ids: [...state.value.stored.manifest.task_ids],
+    changed_files: [...state.value.stored.manifest.changed_files],
+    base_commit: state.value.stored.manifest.base_commit,
+    verified_at: latest.ts
+  } };
+}
+
 export async function reviewVerifiedSetAdoption(
   repoRoot: string,
   verificationId: string
 ): Promise<AdoptionResult<AdoptionReview>> {
   const state = await deriveAdoptionState(repoRoot, verificationId);
   if (!state.ok) return state;
+  const preconditions = await validateAdoptionPreconditions(repoRoot, state.value.stored.manifest);
+  if (!preconditions.ok) return preconditions;
+  const canonical = await requireCleanCanonicalBase(
+    repoRoot,
+    state.value.stored.manifest.base_branch,
+    state.value.stored.manifest.base_commit
+  );
+  if (!canonical.ok) return canonical;
   const pendingId = `PA-${randomUUID()}`;
   const value: AdoptionReview = {
     pending_adoption_id: pendingId,
@@ -254,16 +335,24 @@ async function deriveAdoptionState(repoRoot: string, verificationId: string): Pr
 }
 
 async function validateAdoptionPreconditions(repoRoot: string, manifest: VerificationSetManifest): Promise<AdoptionResult<TaskLeaseRequirement[]>> {
+  const ownership = await validateAdoptionOwnership(repoRoot, manifest);
+  if (!ownership.ok) return ownership;
+  for (const input of manifest.inputs) {
+    const analyzed = await analyzeTask(repoRoot, input.task_id, { emitEvent: false });
+    if (!analyzed.ok || analyzed.value.verdict !== "accept") {
+      return { ok: false, reason: `patch gate refused ${input.task_id}: ${analyzed.ok ? analyzed.value.reason : analyzed.reason}` };
+    }
+  }
+  return ownership;
+}
+
+async function validateAdoptionOwnership(repoRoot: string, manifest: VerificationSetManifest): Promise<AdoptionResult<TaskLeaseRequirement[]>> {
   if (manifest.oracle.decision === "block") return { ok: false, reason: "oracle floor blocked this verification set" };
   if (manifest.oracle.coverage_configured && manifest.oracle.binding && manifest.oracle.status !== "strong") {
     return { ok: false, reason: `oracle floor refuses ${manifest.oracle.task_tier} adoption with ${manifest.oracle.status} coverage evidence` };
   }
   const leaseRequirements: TaskLeaseRequirement[] = [];
   for (const input of manifest.inputs) {
-    const analyzed = await analyzeTask(repoRoot, input.task_id, { emitEvent: false });
-    if (!analyzed.ok || analyzed.value.verdict !== "accept") {
-      return { ok: false, reason: `patch gate refused ${input.task_id}: ${analyzed.ok ? analyzed.value.reason : analyzed.reason}` };
-    }
     const contract = await loadAndValidateContract(repoRoot, input.task_id);
     if (!contract.ok) return contract;
     if (contract.contract.base_commit !== manifest.base_commit) {
@@ -277,6 +366,45 @@ async function validateAdoptionPreconditions(repoRoot: string, manifest: Verific
     leaseRequirements.push({ task_id: input.task_id, files: lease.files });
   }
   return { ok: true, value: leaseRequirements };
+}
+
+function emptyReadiness(): AdoptionReadiness {
+  return { status: "none", reason_code: "none", reason: "No verified set is waiting for adoption.", verification_id: null, task_ids: [], changed_files: [], base_commit: null, verified_at: null };
+}
+
+function blockedReadiness(
+  event: HivemindEvent,
+  taskIds: string[],
+  reasonCode: AdoptionReadiness["reason_code"],
+  reason: string
+): AdoptionReadiness {
+  return { status: "needs_reverification", reason_code: reasonCode, reason, verification_id: null, task_ids: taskIds, changed_files: [], base_commit: null, verified_at: event.ts };
+}
+
+function failedReadiness(event: HivemindEvent, verificationId: string, taskIds: string[], reason: string): AdoptionReadiness {
+  const reasonCode: AdoptionReadiness["reason_code"] = /live base HEAD|checked-out base HEAD|base moved/iu.test(reason)
+    ? "moved_head"
+    : /lease|ownership|held by|not leased/iu.test(reason)
+      ? "lease_problem"
+      : /oracle|coverage/iu.test(reason)
+        ? "oracle_block"
+        : /hash changed|not bound|manifest|partially verified|task identities/iu.test(reason)
+          ? "changed_inputs"
+          : /clean base worktree|checked-out base branch/iu.test(reason)
+            ? "base_worktree"
+            : "unknown";
+  return { status: "needs_reverification", reason_code: reasonCode, reason, verification_id: verificationId, task_ids: taskIds, changed_files: [], base_commit: null, verified_at: event.ts };
+}
+
+function stringArray(value: unknown): string[] | null {
+  return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : null;
+}
+
+function eventReason(event: HivemindEvent): string | null {
+  for (const key of ["plain_reason", "reason", "diagnostic", "recommendation", "report"]) {
+    if (typeof event.data[key] === "string" && event.data[key].trim() !== "") return event.data[key] as string;
+  }
+  return null;
 }
 
 async function requireCleanCanonicalBase(repoRoot: string, branch: string, expectedHead: string): Promise<AdoptionResult<true>> {

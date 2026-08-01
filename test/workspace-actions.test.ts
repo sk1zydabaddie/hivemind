@@ -510,6 +510,14 @@ test("the daemon workspace route calls the shared dispatcher and rejects crafted
       assert.equal(crafted.response.status, 400);
       assert.equal(crafted.body.ok, false);
       assert.match(String(crafted.body.reason), /cannot supply authority field/u);
+
+      const shapedVerification = await postJson(daemon.url, {
+        type: "verification.rerun",
+        payload: { task_ids: ["T-001"] }
+      });
+      assert.equal(shapedVerification.response.status, 400);
+      assert.equal(shapedVerification.body.ok, false);
+      assert.match(String(shapedVerification.body.reason), /takes no fields/u);
     } finally {
       daemon.child.kill("SIGTERM");
       await once(daemon.child, "exit");
@@ -669,8 +677,8 @@ test("workspace inspection presents authoritative plan detail and daemon-derived
       patch_requirements: ["Keep the change scoped."],
       critical_path_approved: false
     });
-    assert.deepEqual(view.needs_you.map((item) => item.kind).sort(), ["plan_review", "task_attention", "verification_blocked"]);
-    assert.equal(view.needs_you.find((item) => item.kind === "verification_blocked")?.detail, "Critical change, line 42 untested.");
+    assert.deepEqual(view.needs_you.map((item) => item.kind).sort(), ["plan_review", "reverification_required", "task_attention"]);
+    assert.match(view.needs_you.find((item) => item.kind === "reverification_required")?.detail ?? "", /^Critical change, line 42 untested\./u);
     assert.deepEqual(view.later.map((item) => item.kind), ["memory_review", "memory_review"]);
     assert.equal(view.spend.calls, 0);
     assert.equal(view.spend.effective_tokens, 0);
@@ -915,6 +923,19 @@ test("the CLI workspace path uses the same dispatcher and rejects crafted author
       execFileAsync(process.execPath, [path.resolve("dist/src/cli.js"), "workspace", actionPath], { cwd: repo, windowsHide: true }),
       (error: unknown) => {
         assert.match(String((error as { stderr?: string }).stderr), /cannot supply authority field/u);
+        return true;
+      }
+    );
+
+    const shapedVerificationPath = path.join(repo, "crafted-reverification.json");
+    await writeFile(shapedVerificationPath, `${JSON.stringify({
+      type: "verification.rerun",
+      payload: { task_ids: ["T-001"] }
+    }, null, 2)}\n`);
+    await assert.rejects(
+      execFileAsync(process.execPath, [path.resolve("dist/src/cli.js"), "workspace", shapedVerificationPath], { cwd: repo, windowsHide: true }),
+      (error: unknown) => {
+        assert.match(String((error as { stderr?: string }).stderr), /takes no fields/u);
         return true;
       }
     );

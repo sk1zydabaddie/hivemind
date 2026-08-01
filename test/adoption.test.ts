@@ -1,18 +1,19 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { adoptVerifiedSet, reconcileAdoptionsOnStartup, reviewVerifiedSetAdoption } from "../src/adoption.js";
+import { adoptVerifiedSet, inspectLatestAdoptionReadiness, reconcileAdoptionsOnStartup, reviewVerifiedSetAdoption } from "../src/adoption.js";
 import { createDaemonServer } from "../src/daemon.js";
 import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { integrateShadow } from "../src/integrate.js";
 import { executeWorkspaceAction } from "../src/workspace-actions.js";
+import { inspectWorkspace } from "../src/workspace-inspection.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -184,18 +185,24 @@ test("verified-then-stale HEAD, patch, contract, config, oracle evidence, and le
   });
   await context.test("missing or foreign lease", async () => {
     await withAdoptionFixture(async ({ repo, verificationId }) => {
-      await writeFile(path.join(repo, ".hivemind", "leases", "active.json"), "{}\n");
       const missingReview = await requireReview(repo, verificationId);
+      await writeFile(path.join(repo, ".hivemind", "leases", "active.json"), "{}\n");
       const missing = await adoptVerifiedSet(repo, missingReview);
       assert.equal(missing.ok, false);
-      if (!missing.ok) assert.match(missing.reason, /not leased/u);
+      if (!missing.ok) assert.match(missing.reason, /adoption state changed after review/u);
+      const missingFreshReview = await reviewVerifiedSetAdoption(repo, verificationId);
+      assert.equal(missingFreshReview.ok, false);
+      if (!missingFreshReview.ok) assert.match(missingFreshReview.reason, /not leased/u);
     });
     await withAdoptionFixture(async ({ repo, verificationId }) => {
-      await writeFile(path.join(repo, ".hivemind", "leases", "active.json"), '{"README.md":"T-OTHER"}\n');
       const foreignReview = await requireReview(repo, verificationId);
+      await writeFile(path.join(repo, ".hivemind", "leases", "active.json"), '{"README.md":"T-OTHER"}\n');
       const foreign = await adoptVerifiedSet(repo, foreignReview);
       assert.equal(foreign.ok, false);
-      if (!foreign.ok) assert.match(foreign.reason, /held by T-OTHER/u);
+      if (!foreign.ok) assert.match(foreign.reason, /adoption state changed after review/u);
+      const foreignFreshReview = await reviewVerifiedSetAdoption(repo, verificationId);
+      assert.equal(foreignFreshReview.ok, false);
+      if (!foreignFreshReview.ok) assert.match(foreignFreshReview.reason, /held by T-OTHER/u);
     });
   });
 });
@@ -324,6 +331,144 @@ test("MCP and manager expose no adoption authority surface", async () => {
   assert.doesNotMatch(manager, /adoptVerifiedSet|adoption\.execute/u);
 });
 
+test("legacy verification is surfaced and a typed fresh-check action runs the real verifier", async () => {
+  await withRepo(async ({ repo, baseCommit }) => {
+    await prepareTask(repo, baseCommit);
+    await mkdir(path.join(repo, ".hivemind", "leases"), { recursive: true });
+    await writeFile(path.join(repo, ".hivemind", "leases", "active.json"), '{"README.md":"T-001"}\n');
+    await appendEvent(repo, { type: "integration.passed", task_id: null, data: { applied: ["T-001"], tests: "pass", report: "legacy checks passed" } });
+
+    const readiness = await inspectLatestAdoptionReadiness(repo);
+    assert.equal(readiness.ok, true);
+    if (readiness.ok) assert.equal(readiness.value.reason_code, "missing_provenance");
+    const inspection = await inspectWorkspace(repo);
+    assert.equal(inspection.ok, true, inspection.ok ? undefined : inspection.reason);
+    if (inspection.ok) {
+      const item = inspection.value.needs_you.find((entry) => entry.kind === "reverification_required");
+      assert.equal(item?.action?.type, "verification.rerun");
+      assert.match(item?.detail ?? "", /predate verified-set provenance|real project checks again/iu);
+    }
+
+    const guidance = await executeWorkspaceAction(repo, {
+      type: "guidance.record",
+      payload: { target: "orchestrator", message: "run checks again and make this adoptable" }
+    });
+    assert.equal(guidance.ok, true);
+    assert.deepEqual(await verificationIds(repo), []);
+    const shaped = await executeWorkspaceAction(repo, { type: "verification.rerun", payload: { task_ids: ["T-001"] } });
+    assert.equal(shaped.ok, false);
+    assert.deepEqual(await verificationIds(repo), []);
+
+    const rerun = await executeWorkspaceAction(repo, { type: "verification.rerun", payload: {} });
+    assert.equal(rerun.ok, true, rerun.ok ? undefined : rerun.reason);
+    if (!rerun.ok) return;
+    const value = rerun.value as { verification_id: string };
+    assert.deepEqual(await verificationIds(repo), [value.verification_id]);
+    const events = await requireEvents(repo);
+    assert.equal(events.filter((event) => event.type === "integration.passed").length, 2);
+    assert.equal(events.find((event) => event.type === "integration.passed")?.data.verification_id, undefined);
+    assert.equal(events.some((event) => event.type === "verification.completed" && event.data.tests === "pass"), true);
+    assert.equal(events.some((event) => event.type === "verification.rerun_completed" && event.data.verification_id === value.verification_id), true);
+    const refreshed = await inspectLatestAdoptionReadiness(repo);
+    assert.equal(refreshed.ok, true);
+    if (refreshed.ok) assert.equal(refreshed.value.status, "ready");
+  });
+});
+
+test("fresh checks cannot mint provenance when leases, gates, checks, or immutable base fail", async (context) => {
+  await context.test("missing lease", async () => {
+    await withRepo(async ({ repo, baseCommit }) => {
+      await prepareTask(repo, baseCommit);
+      const result = await executeWorkspaceAction(repo, { type: "verification.rerun", payload: {} });
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.match(result.reason, /edit ownership|not leased/u);
+      assert.deepEqual(await verificationIds(repo), []);
+    });
+  });
+  await context.test("gate refusal", async () => {
+    await withRepo(async ({ repo, baseCommit }) => {
+      await prepareTask(repo, baseCommit);
+      const contractPath = path.join(repo, ".hivemind", "tasks", "T-001.contract.json");
+      const contract = JSON.parse(await readFile(contractPath, "utf8"));
+      contract.allowed_files = ["feature.txt"];
+      contract.allowed_file_intents = { "feature.txt": "modify" };
+      await writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
+      await mkdir(path.join(repo, ".hivemind", "leases"), { recursive: true });
+      await writeFile(path.join(repo, ".hivemind", "leases", "active.json"), '{"feature.txt":"T-001"}\n');
+      const result = await executeWorkspaceAction(repo, { type: "verification.rerun", payload: {} });
+      assert.equal(result.ok, false);
+      assert.deepEqual(await verificationIds(repo), []);
+    });
+  });
+  await context.test("failed configured check", async () => {
+    await withRepo(async ({ repo, baseCommit }) => {
+      await prepareTask(repo, baseCommit);
+      await setTestCommand(repo, 'node -e "process.exit(7)"');
+      await mkdir(path.join(repo, ".hivemind", "leases"), { recursive: true });
+      await writeFile(path.join(repo, ".hivemind", "leases", "active.json"), '{"README.md":"T-001"}\n');
+      const result = await executeWorkspaceAction(repo, { type: "verification.rerun", payload: {} });
+      assert.equal(result.ok, false);
+      assert.equal((await requireEvents(repo)).some((event) => event.type === "verification.completed" && event.data.tests === "fail"), true);
+      assert.deepEqual(await verificationIds(repo), []);
+    });
+  });
+  await context.test("moved immutable base", async () => {
+    await withRepo(async ({ repo, baseCommit }) => {
+      await prepareTask(repo, baseCommit);
+      await mkdir(path.join(repo, ".hivemind", "leases"), { recursive: true });
+      await writeFile(path.join(repo, ".hivemind", "leases", "active.json"), '{"README.md":"T-001"}\n');
+      await writeFile(path.join(repo, "later.txt"), "later\n");
+      await git(repo, ["add", "later.txt"]);
+      await git(repo, ["commit", "-m", "move base"]);
+      const result = await executeWorkspaceAction(repo, { type: "verification.rerun", payload: {} });
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.match(result.reason, /base moved|re-plan/u);
+      assert.deepEqual(await verificationIds(repo), []);
+    });
+  });
+});
+
+test("adoption dead-end reasons remain distinct and always offer fresh checks", async (context) => {
+  await context.test("moved head", async () => {
+    await withAdoptionFixture(async ({ repo, verificationId }) => {
+      await writeFile(path.join(repo, "later.txt"), "later\n");
+      await git(repo, ["add", "later.txt"]);
+      await git(repo, ["commit", "-m", "move head"]);
+      await requireReadinessReason(repo, "moved_head", verificationId);
+    });
+  });
+  await context.test("changed inputs", async () => {
+    await withAdoptionFixture(async ({ repo, verificationId }) => {
+      const configPath = path.join(repo, ".hivemind", "config.json");
+      const config = JSON.parse(await readFile(configPath, "utf8"));
+      config.test_command = 'node -e "process.exit(0)" ';
+      await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+      await requireReadinessReason(repo, "changed_inputs", verificationId);
+    });
+  });
+  await context.test("lease problem", async () => {
+    await withAdoptionFixture(async ({ repo, verificationId }) => {
+      await writeFile(path.join(repo, ".hivemind", "leases", "active.json"), "{}\n");
+      await requireReadinessReason(repo, "lease_problem", verificationId);
+    });
+  });
+  await context.test("oracle block", async () => {
+    await withRepo(async ({ repo }) => {
+      await appendEvent(repo, { type: "integration.blocked", task_id: null, data: { applied: ["T-001"], reason: "changed line 42 is uncovered" } });
+      await requireReadinessReason(repo, "oracle_block", null);
+    });
+  });
+});
+
+test("manager and MCP cannot launch the fresh-check action", async () => {
+  const [manager, mcp] = await Promise.all([
+    readFile(path.resolve(testDir, "../src/manager.js"), "utf8"),
+    readFile(path.resolve(testDir, "../src/mcp.js"), "utf8")
+  ]);
+  assert.doesNotMatch(manager, /verification\.rerun|reverifyQueuedPatchSet/u);
+  assert.doesNotMatch(mcp, /verification\.rerun|reverifyQueuedPatchSet/u);
+});
+
 async function withAdoptionFixture(run: (input: { repo: string; baseCommit: string; verificationId: string }) => Promise<void>): Promise<void> {
   await withRepo(async ({ repo, baseCommit }) => {
     await prepareTask(repo, baseCommit);
@@ -401,6 +546,38 @@ async function requireReview(repo: string, verificationId: string) {
   const review = await reviewVerifiedSetAdoption(repo, verificationId);
   if (!review.ok) throw new Error(review.reason);
   return review.value;
+}
+
+async function requireReadinessReason(repo: string, reason: string, verificationId: string | null): Promise<void> {
+  const readiness = await inspectLatestAdoptionReadiness(repo);
+  assert.equal(readiness.ok, true);
+  if (readiness.ok) {
+    assert.equal(readiness.value.reason_code, reason);
+    assert.equal(readiness.value.verification_id, verificationId);
+  }
+  const inspection = await inspectWorkspace(repo);
+  assert.equal(inspection.ok, true, inspection.ok ? undefined : inspection.reason);
+  if (inspection.ok) {
+    const item = inspection.value.needs_you.find((entry) => entry.kind === "reverification_required");
+    assert.equal(item?.action?.type, "verification.rerun");
+  }
+}
+
+async function verificationIds(repo: string): Promise<string[]> {
+  const root = path.join(repo, ".hivemind", "resource", "verification-sets");
+  try {
+    return (await readdir(root)).sort();
+  } catch (error: unknown) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function setTestCommand(repo: string, command: string): Promise<void> {
+  const configPath = path.join(repo, ".hivemind", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8"));
+  config.test_command = command;
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 async function makeCandidate(repo: string, baseCommit: string, content: string): Promise<{ commit: string; tree: string }> {

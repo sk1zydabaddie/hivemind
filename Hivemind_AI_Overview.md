@@ -1966,6 +1966,8 @@ Levels 5 and 6 are **not held by any LLM agent**. Level 5 (apply patches to the 
 
 M8.7 implements Level 6 for a local base branch as **verified-set adoption**. Shadow verification itself emits the immutable verification-set manifest: base ref, ordered patches and their hashes, combined tree, check/oracle evidence, and governing config identity are bound at the moment they are measured, never reconstructed later. A typed human action may then adopt only that exact set after every identity and lease is re-derived against the live repository. The base transition is one guarded operation, and durable adoption evidence retains both the pre-adoption and adopted refs so a human can identify and manually revert a completed but unwanted adoption. Chat and agents remain proposers only.
 
+Missing or stale adoption evidence is recovered by **fresh verification, never backfill**. The typed workspace re-check action derives the queued set, proves its immutable contracts still target the live base and its leases remain valid, and delegates to the same shadow verifier. The old result remains append-only evidence; a successful run receives a new identity and manifest. A moved base cannot be silently rebased because task contracts are immutable, so that case requires re-planning.
+
 ## MVP: What We Build First
 
 > **This chapter is now subordinate to the Development Roadmap.** An earlier draft listed ~11 subsystems as "the MVP" while the roadmap put most of them in Phases 2–3 — a direct contradiction. The roadmap is authoritative; this chapter describes only **Phase 1**, the smallest build that proves the core thesis. Anything not listed here is deferred, with its phase noted.

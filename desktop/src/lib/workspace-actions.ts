@@ -6,6 +6,7 @@ export interface WorkspaceQueueItem {
     | "plan_review"
     | "manager_approval"
     | "verification_blocked"
+    | "reverification_required"
     | "task_attention"
     | "quality_cancel_failed"
     | "memory_review"
@@ -209,6 +210,7 @@ export type WorkspaceAction = {
     | "quality.draft_refine"
     | "quality.cancel"
     | "memory.review_handoff"
+    | "verification.rerun"
     | "adoption.review"
     | "adoption.execute";
   payload: Record<string, unknown>;

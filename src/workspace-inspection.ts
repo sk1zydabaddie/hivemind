@@ -25,10 +25,11 @@ import { inferAllowedFilesTier, type TaskTier } from "./routing.js";
 import { readJsonFile } from "./json.js";
 import { readActiveSpec } from "./spec.js";
 import { getStatus, type HivemindStatus } from "./status.js";
+import { inspectLatestAdoptionReadiness } from "./adoption.js";
 
 export interface WorkspaceQueueItem {
   id: string;
-  kind: "plan_review" | "manager_approval" | "verification_blocked" | "task_attention" | "quality_cancel_failed" | "memory_review" | "quality_review" | "plan_amendment" | "adoption_ready";
+  kind: "plan_review" | "manager_approval" | "verification_blocked" | "reverification_required" | "task_attention" | "quality_cancel_failed" | "memory_review" | "quality_review" | "plan_amendment" | "adoption_ready";
   title: string;
   detail: string;
   created_at: string;
@@ -726,49 +727,52 @@ async function buildQueues(
       }
     });
   }
-  const verificationState = [...events].reverse().find((event) =>
-    ["integration.blocked", "integration.failed", "integration.passed", "integration.started"].includes(event.type)
-  );
-  if (verificationState?.type === "integration.blocked") {
-    needsYou.push(queueEvent(verificationState, "verification_blocked", "Project checks are blocked", plainEvidence(verificationState)));
+  const adoption = await inspectLatestAdoptionReadiness(repoRoot);
+  if (!adoption.ok) return adoption;
+  if (adoption.value.status === "needs_reverification") {
+    const taskDetail = adoption.value.task_ids.length === 0 ? "the queued changes" : adoption.value.task_ids.join(" + ");
+    needsYou.push({
+      id: `reverify:${adoption.value.verified_at ?? "unknown"}:${adoption.value.reason_code}`,
+      kind: "reverification_required",
+      title: adoptionReasonTitle(adoption.value.reason_code),
+      detail: `${adoption.value.reason} Fresh checks will re-evaluate ${taskDetail}; they will not reuse or alter the old result.`,
+      created_at: adoption.value.verified_at ?? new Date(0).toISOString(),
+      task_id: adoption.value.task_ids[0] ?? null,
+      action: { type: "verification.rerun", payload: {} }
+    });
   }
-  const latestVerified = [...events].reverse().find((event) =>
-    event.type === "integration.passed" &&
-    typeof event.data.verification_id === "string" &&
-    typeof event.data.verification_manifest_sha256 === "string"
-  );
-  if (latestVerified !== undefined && typeof latestVerified.data.verification_id === "string") {
-    const verificationId = latestVerified.data.verification_id;
-    const completed = events.some((event) => event.type === "adoption.completed" && event.data.verification_id === verificationId);
-    if (!completed) {
-      const reviewed = [...events].reverse().find((event) => event.type === "adoption.reviewed" && event.data.verification_id === verificationId);
-      const reviewFailed = reviewed !== undefined && events.some((event) =>
-        event.type === "adoption.failed" && event.data.pending_adoption_id === reviewed.data.pending_adoption_id && event.ts >= reviewed.ts
-      );
-      const exactReview = reviewed !== undefined && !reviewFailed &&
-        typeof reviewed.data.pending_adoption_id === "string" &&
-        typeof reviewed.data.expected_base_head === "string" &&
-        typeof reviewed.data.expected_state_hash === "string";
-      needsYou.push({
-        id: `adoption:${verificationId}:${exactReview ? reviewed!.data.pending_adoption_id : "review"}`,
-        kind: "adoption_ready",
-        title: exactReview ? "A verified change is ready to merge" : "A verified change is ready to review",
-        detail: exactReview
-          ? "Confirm the exact verified set. Hivemind will refuse if the project changed since review."
-          : "Review the exact checked set before it changes the project branch.",
-        created_at: exactReview ? reviewed!.ts : latestVerified.ts,
-        task_id: null,
-        action: exactReview ? {
-          type: "adoption.execute",
-          payload: {
-            pending_adoption_id: reviewed!.data.pending_adoption_id,
-            verification_id: verificationId,
-            expected_base_head: reviewed!.data.expected_base_head,
-            expected_state_hash: reviewed!.data.expected_state_hash
-          }
-        } : { type: "adoption.review", payload: { verification_id: verificationId } }
-      });
-    }
+  if (adoption.value.status === "ready" && adoption.value.verification_id !== null) {
+    const verificationId = adoption.value.verification_id;
+    const reviewed = [...events].reverse().find((event) => event.type === "adoption.reviewed" && event.data.verification_id === verificationId);
+    const reviewFailed = reviewed !== undefined && events.some((event) =>
+      event.type === "adoption.failed" && event.data.pending_adoption_id === reviewed.data.pending_adoption_id && event.ts >= reviewed.ts
+    );
+    const exactReview = reviewed !== undefined && !reviewFailed &&
+      typeof reviewed.data.pending_adoption_id === "string" &&
+      typeof reviewed.data.expected_base_head === "string" &&
+      typeof reviewed.data.expected_state_hash === "string";
+    const taskSummary = adoption.value.task_ids.join(" + ");
+    const fileSummary = `${adoption.value.changed_files.length} files`;
+    const baseSummary = adoption.value.base_commit === null ? "the verified base" : adoption.value.base_commit.slice(0, 8);
+    needsYou.push({
+      id: `adoption:${verificationId}:${exactReview ? reviewed!.data.pending_adoption_id : "review"}`,
+      kind: "adoption_ready",
+      title: exactReview ? "Confirm this exact change set" : "Fresh checks passed; review the change set",
+      detail: exactReview
+        ? `${taskSummary} · ${fileSummary} · base ${baseSummary}. This one action moves the verified set onto the project branch.`
+        : `${taskSummary} · ${fileSummary} · base ${baseSummary}. Review binds this exact set before merge authorization appears.`,
+      created_at: exactReview ? reviewed!.ts : adoption.value.verified_at ?? new Date(0).toISOString(),
+      task_id: null,
+      action: exactReview ? {
+        type: "adoption.execute",
+        payload: {
+          pending_adoption_id: reviewed!.data.pending_adoption_id,
+          verification_id: verificationId,
+          expected_base_head: reviewed!.data.expected_base_head,
+          expected_state_hash: reviewed!.data.expected_state_hash
+        }
+      } : { type: "adoption.review", payload: { verification_id: verificationId } }
+    });
   }
   for (const event of latestTaskAttention(events)) {
     needsYou.push(queueEvent(event, "task_attention", taskAttentionTitle(event), plainEvidence(event)));
@@ -884,6 +888,15 @@ function plainApprovalDetail(action: string): string {
     return "This applies the change to an isolated copy and runs the project's configured checks. It does not update the project branch.";
   }
   return "Review this proposed action before allowing the run to continue.";
+}
+
+function adoptionReasonTitle(reason: string): string {
+  if (reason === "missing_provenance") return "This change needs fresh checks before it can merge";
+  if (reason === "moved_head") return "The project changed after these checks";
+  if (reason === "changed_inputs") return "The checked inputs no longer match";
+  if (reason === "lease_problem") return "Editing ownership changed after verification";
+  if (reason === "oracle_block") return "Test coverage is not strong enough to continue";
+  return "The latest project checks need to run again";
 }
 
 function compareQueueItems(left: WorkspaceQueueItem, right: WorkspaceQueueItem): number {

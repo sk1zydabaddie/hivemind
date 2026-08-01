@@ -749,6 +749,7 @@ function QueueRow({ item, busy, onOpen, onApprove }: { item: WorkspaceQueueItem;
 
 function queueActionLabel(actionType: string): string {
   if (actionType === "manager.retry_blocked") return "Retry";
+  if (actionType === "verification.rerun") return "Run checks again";
   if (actionType === "adoption.review") return "Review";
   if (actionType === "adoption.execute") return "Merge exact set";
   return "Approve";
