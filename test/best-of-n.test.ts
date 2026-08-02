@@ -191,8 +191,8 @@ test("best-of-N checks the shared session ceiling before the second call", async
   await withBestOfNRepo(async ({ repo, tracePath, agentPath }) => {
     await updateConfig(repo, (config) => {
       config.resource_policy = {
-        run_ceiling: { tokens: 150_000 },
-        session_ceiling: { tokens: 3_100 }
+        run_ceiling: { tokens: 3_100 },
+        session_ceiling: { tokens: 6_000 }
       };
     });
     await writeProfile(repo, "metered-fixture", agentPath, tracePath, {
@@ -207,7 +207,7 @@ test("best-of-N checks the shared session ceiling before the second call", async
     });
     assert.equal(result.ok, false);
     if (!result.ok) {
-      assert.match(result.reason, /D-002 was refused before provider spawn/);
+      assert.match(result.reason, /draft D-002 provider execution stopped the quality run/);
       assert.match(result.reason, /token budget exceeded/);
       assert.ok(result.quality_run_id);
       if (result.quality_run_id !== undefined) {
@@ -238,7 +238,7 @@ test("best-of-N checks the shared session ceiling before the second call", async
               "D-002"
             )
           ),
-          false
+          true
         );
         const ledger = await readQuotaLedger(repo);
         assert.equal(ledger.ok, true, ledger.ok ? undefined : ledger.reason);
@@ -326,7 +326,7 @@ test("best-of-N is on-demand only and structurally reuses admission, routing, ad
   assert.match(proposer, /await disposeSpeculativeDraft\(/u);
   assert.doesNotMatch(proposer, /runGate|runShadowVerification|from "\.\/lease/u);
   assert.match(provider, /await runAdapterProcess\(/u);
-  assert.match(provider, /await recordAdapterUsage\(/u);
+  assert.match(provider, /processResult\.value\.quotaRequest/u);
   assert.match(cli, /rest\[0\] === "best-of-n"/u);
 
   for (const file of ["manager.ts", "daemon.ts", "mcp.ts"]) {

@@ -19,7 +19,7 @@ import { reconcileProjectTempDirectories } from "./project-temp.js";
 import { preflightQualityCancellationReconciliation, reconcileQualityCancellationsOnStartup } from "./quality-control.js";
 import { findGitRoot } from "./repo.js";
 import { evaluatePlanThrash } from "./plan.js";
-import { readQuotaLedger } from "./resource-ledger.js";
+import { readQuotaLedger, reconcileMeteredCallReservations } from "./resource-ledger.js";
 import { markRunFailed, startRunTaskJob } from "./run.js";
 import { runScout } from "./scout.js";
 import { getStatus } from "./status.js";
@@ -62,6 +62,11 @@ export async function daemonCommand(cwd: string, args: string[]): Promise<number
   }
   if (!qualityPreflight.value.blocked) {
     await reconcileProjectTempDirectories(repoRoot);
+  }
+  const reservationReconcile = await reconcileMeteredCallReservations(repoRoot);
+  if (!reservationReconcile.ok) {
+    console.error(`error: ${reservationReconcile.reason}`);
+    return 1;
   }
   const adoptionReconcile = await reconcileAdoptionsOnStartup(repoRoot);
   if (!adoptionReconcile.ok) {

@@ -352,9 +352,9 @@ test("plan generator writes an adapter proposal that still goes through ground a
     assert.equal(JSON.parse(linted.stdout).lint_status, "passed");
 
     const ledger = JSON.parse(await readFile(path.join(repo, ".hivemind", "resource", "ledger.json"), "utf8")) as {
-      "fake-planner": { self_measured: { requests: number } };
+      providers: { "fake-planner": { self_measured: { requests: number } } };
     };
-    assert.equal(ledger["fake-planner"].self_measured.requests, 1);
+    assert.equal(ledger.providers["fake-planner"].self_measured.requests, 1);
   });
 });
 

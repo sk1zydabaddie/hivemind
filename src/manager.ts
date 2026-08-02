@@ -10,7 +10,6 @@ import {
   findDangerousAdapterArgs,
   formatAdapterProcessFailure,
   loadAdapterProfile,
-  recordAdapterUsage,
   runAdapterProcess
 } from "./adapter.js";
 import { loadConfig } from "./config.js";
@@ -484,18 +483,13 @@ export async function generateManagerProposal(
     return prompt;
   }
 
-  const startedAt = Date.now();
   const processResult = await runAdapterProcess(repoRoot, profileResult.profile, repoRoot, prompt.value, {
     outputLogPath: adapterRunLogPath(repoRoot, `manager-${resolvedSpecId}`),
-    usageSessionId
+    usageSessionId,
+    usageRunId: usageSessionId ?? resolvedSpecId
   });
   if (!processResult.ok) {
     return processResult;
-  }
-  const wallTimeMs = Date.now() - startedAt;
-  const ledgerResult = await recordAdapterUsage(repoRoot, profileResult.profile, prompt.value, processResult.value, wallTimeMs);
-  if (!ledgerResult.ok) {
-    return { ok: false, reason: ledgerResult.reason };
   }
   if (processResult.value.exitCode !== 0) {
     return { ok: false, reason: formatAdapterProcessFailure(tool, processResult.value, "manager adapter") };
@@ -829,18 +823,14 @@ async function generateRedirectCorrection(
     return prompt;
   }
 
-  const startedAt = Date.now();
   const processResult = await runAdapterProcess(repoRoot, profileResult.profile, repoRoot, prompt.value, {
     outputLogPath: adapterRunLogPath(repoRoot, `redirect-${action.task_id}`),
-    usageSessionId
+    usageSessionId,
+    usageRunId: usageSessionId,
+    usageTaskId: action.task_id
   });
   if (!processResult.ok) {
     return processResult;
-  }
-  const wallTimeMs = Date.now() - startedAt;
-  const ledgerResult = await recordAdapterUsage(repoRoot, profileResult.profile, prompt.value, processResult.value, wallTimeMs);
-  if (!ledgerResult.ok) {
-    return { ok: false, reason: ledgerResult.reason };
   }
   if (processResult.value.exitCode !== 0) {
     return { ok: false, reason: formatAdapterProcessFailure(tool, processResult.value, "redirect correction adapter") };

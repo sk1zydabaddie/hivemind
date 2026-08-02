@@ -191,7 +191,8 @@ test("a crashed refiner is preserved as ineligible, the original wins, and clean
 test("draft-refine authorizes the shared ceiling before the second call", async () => {
   await withDraftRefineRepo(async ({ repo, tracePath, agentPath }) => {
     await updateConfig(repo, (config) => {
-      config.resource_policy.session_ceiling.tokens = 3_100;
+      config.resource_policy.run_ceiling.tokens = 3_100;
+      config.resource_policy.session_ceiling.tokens = 6_000;
     });
     await writeProfile(repo, "cheap-fixture", agentPath, tracePath, {
       role: "cheap",
@@ -201,42 +202,24 @@ test("draft-refine authorizes the shared ceiling before the second call", async 
     });
 
     const result = await generateDraftRefine(repo, { task_id: "T-001" });
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.match(result.reason, /R-001 was refused before provider spawn/);
-      assert.match(result.reason, /token budget exceeded/);
-      assert.ok(result.quality_run_id);
-      if (result.quality_run_id !== undefined) {
-        assert.equal(
-          await pathExists(
-            path.join(
-              repo,
-              ".hivemind",
-              "resource",
-              "quality-runs",
-              result.quality_run_id,
-              "drafts",
-              "D-001"
-            )
-          ),
-          true
-        );
-        assert.equal(
-          await pathExists(
-            path.join(
-              repo,
-              ".hivemind",
-              "resource",
-              "quality-runs",
-              result.quality_run_id,
-              "drafts",
-              "R-001"
-            )
-          ),
-          false
-        );
-      }
-    }
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    if (!result.ok) return;
+    assert.equal(result.value.draft.outcome, "eligible");
+    assert.equal(result.value.refinement.outcome, "producer_crashed");
+    assert.match(result.value.refinement.reason ?? "", /token budget exceeded/);
+    assert.equal(result.value.selection.selected_draft_id, "D-001");
+    assert.equal(
+      await pathExists(
+        path.join(repo, ".hivemind", "resource", "quality-runs", result.value.quality_run_id, "drafts", "D-001")
+      ),
+      true
+    );
+    assert.equal(
+      await pathExists(
+        path.join(repo, ".hivemind", "resource", "quality-runs", result.value.quality_run_id, "drafts", "R-001")
+      ),
+      true
+    );
     assert.deepEqual(
       (await readFile(tracePath, "utf8")).trim().split(/\r?\n/u),
       ["start:D-001:cheap", "end:D-001:cheap"]
@@ -260,7 +243,7 @@ test("draft-refine is on-demand only and structurally reuses admission, routing,
     /runGate|runShadowVerification|from "\.\/lease|requestLease|grantLease|releaseLease/u
   );
   assert.match(provider, /await runAdapterProcess\(/u);
-  assert.match(provider, /await recordAdapterUsage\(/u);
+  assert.match(provider, /processResult\.value\.quotaRequest/u);
   assert.match(cli, /rest\[0\] === "draft-refine"/u);
   for (const file of ["manager.ts", "daemon.ts", "mcp.ts", "integrate.ts"]) {
     const contents = await readFile(path.join(projectRoot, "src", file), "utf8");

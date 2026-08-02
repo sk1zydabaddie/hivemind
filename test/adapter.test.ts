@@ -18,7 +18,7 @@ import {
   validateAdapterProfile
 } from "../src/adapter.js";
 import { initProject } from "../src/init.js";
-import { estimateTokens, readQuotaLedger } from "../src/resource-ledger.js";
+import { estimateTokens, readQuotaLedger, readQuotaLedgerState } from "../src/resource-ledger.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
@@ -400,6 +400,18 @@ test("invokeAgent runs stdin adapter inside the task worktree and writes agent.l
     assert.equal(ledger.value.fake.source, "dual-channel");
     assert.equal(ledger.value.fake.observed_limit, null);
     assert.equal(ledger.value.fake.provider_usage_capture.last_status, "not_available");
+    const state = await readQuotaLedgerState(repo);
+    assert.equal(state.ok, true);
+    if (!state.ok) return;
+    const reservations = Object.values(state.value.reservations);
+    assert.equal(reservations.length, 1);
+    assert.equal(reservations[0].status, "settled");
+    assert.equal(reservations[0].task_id, "T-001");
+    assert.equal(reservations[0].run_id, "T-001");
+    assert.equal(reservations[0].provider, "fake");
+    assert.ok(reservations[0].session_id);
+    assert.ok(reservations[0].daemon_instance_id);
+    assert.ok(reservations[0].process_identity);
   });
 });
 
@@ -556,7 +568,7 @@ test("invokeAgent refuses before spawning when the manager session token budget 
     if (result.ok) {
       return;
     }
-    assert.match(result.reason, /manager session manager-session used 0 effective tokens with .* estimated input tokens against ceiling 0/);
+    assert.match(result.reason, /session manager-session has 0 settled tokens and 0 active reserved tokens.*ceiling 0/);
     await assertMissing(markerPath);
   });
 });
@@ -781,6 +793,13 @@ test("invokeAgent returns a scoped error when the adapter command cannot start",
       return;
     }
     assert.match(result.reason, /failed to start adapter "fake"/);
+    const ledger = await readQuotaLedgerState(repo);
+    assert.equal(ledger.ok, true);
+    if (!ledger.ok) return;
+    const reservations = Object.values(ledger.value.reservations);
+    assert.equal(reservations.length, 1);
+    assert.equal(reservations[0].status, "released");
+    assert.equal(reservations[0].settlement?.reason, "spawn_failed");
   });
 });
 

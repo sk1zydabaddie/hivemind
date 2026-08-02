@@ -10,9 +10,16 @@ import { terminateProcessTreeAndVerify, type DurableProcessIdentity } from "./pr
 import { assembleAgentPrompt, buildAgentPromptFromContract } from "./prompt-cache.js";
 import {
   adapterOutputIndicatesThrottle,
-  checkTokenBudgetPreflight,
+  bindMeteredCallProcess,
+  currentMeteringRuntimeInstanceId,
   estimateTokens,
+  releaseMeteredCallAfterSpawnFailure,
   recordQuotaUsage,
+  reserveMeteredCall,
+  settleMeteredCall,
+  writeMeteredUsageArtifact,
+  type LastQuotaRequest,
+  type MeteredCallReservation,
   type ProviderReportedUsage,
   type ProviderUsageCapture
 } from "./resource-ledger.js";
@@ -76,6 +83,9 @@ export interface AdapterProcessResult {
   modelOutput: string;
   providerUsageCapture: ProviderUsageCapture;
   usageSessionId: string | null;
+  reservationId: string | null;
+  quotaRequest: LastQuotaRequest;
+  wallTimeMs: number;
   timedOut: boolean;
   cancelled?: boolean;
   outputLogPath: string | null;
@@ -85,9 +95,22 @@ export interface AdapterProcessOptions {
   onStreamChunk?: (chunk: AdapterStreamChunk) => void;
   outputLogPath?: string;
   usageSessionId?: string;
+  usageRunId?: string;
+  usageTaskId?: string;
   shouldCancel?: () => Promise<boolean>;
   onProcessStart?: (identity: DurableProcessIdentity) => Promise<{ ok: true } | { ok: false; reason: string }>;
 }
+
+type AdapterProcessFailure = {
+  ok: false;
+  reason: string;
+  budget_exceeded?: true;
+  exitCode?: number;
+  wallTimeMs?: number;
+  effectiveTokens?: number;
+};
+
+type AdapterProcessExecutionResult = { ok: true; value: AdapterProcessResult } | AdapterProcessFailure;
 
 const ADAPTER_PROFILE_FIELDS = new Set([
   "tool",
@@ -135,58 +158,34 @@ export async function invokeAgent(
     return promptResult;
   }
   const prompt = promptResult.value.full_prompt;
-  const startedAt = Date.now();
   const logPath = path.join(worktreePath, "agent.log");
   const processResult = await runAdapterProcess(repoRoot, profileResult.profile, worktreePath, prompt, {
     onStreamChunk: options.onStreamChunk,
     outputLogPath: logPath,
     usageSessionId: options.usageSessionId,
+    usageRunId: options.usageSessionId ?? taskId,
+    usageTaskId: taskId,
     shouldCancel: options.shouldCancel,
     onProcessStart: options.onProcessStart
   });
   if (!processResult.ok) {
     return processResult;
   }
-  const wallTimeMs = Date.now() - startedAt;
   const throttled = adapterOutputIndicatesThrottle(processResult.value.stdout, processResult.value.stderr, processResult.value.exitCode);
-  const ledgerResult = await recordAdapterUsage(
-    repoRoot,
-    profileResult.profile,
-    prompt,
-    processResult.value,
-    wallTimeMs,
-    throttled
-  );
-  if (!ledgerResult.ok) {
-    return {
-      ok: false,
-      reason: ledgerResult.reason,
-      ...(ledgerResult.budget_exceeded === true
-        ? {
-            budget_exceeded: true as const,
-            exitCode: processResult.value.exitCode,
-            wallTimeMs,
-            effectiveTokens:
-              processResult.value.providerUsageCapture.status === "captured"
-                ? processResult.value.providerUsageCapture.usage.total_tokens
-                : estimateTokens(prompt) + estimateTokens(processResult.value.modelOutput)
-          }
-        : {})
-    };
-  }
+  const quota = processResult.value.quotaRequest;
 
   return {
     ok: true,
     value: {
       exitCode: processResult.value.exitCode,
       logPath,
-      wallTimeMs,
+      wallTimeMs: processResult.value.wallTimeMs,
       timedOut: processResult.value.timedOut,
       throttled,
-      effectiveTokens: ledgerResult.value.last_request?.effective_tokens ?? estimateTokens(prompt) + estimateTokens(processResult.value.modelOutput),
-      selfMeasuredTokens: ledgerResult.value.last_request?.self_measured_tokens ?? estimateTokens(prompt) + estimateTokens(processResult.value.modelOutput),
-      providerReportedTokens: ledgerResult.value.last_request?.provider_reported_tokens ?? null,
-      accountingSource: ledgerResult.value.last_request?.accounting_source ?? "self_measured",
+      effectiveTokens: quota.effective_tokens,
+      selfMeasuredTokens: quota.self_measured_tokens,
+      providerReportedTokens: quota.provider_reported_tokens,
+      accountingSource: quota.accounting_source,
       cancelled: processResult.value.cancelled === true,
       failureReason:
         processResult.value.exitCode === 0
@@ -332,7 +331,7 @@ export async function runAdapterProcess(
   cwd: string,
   prompt: string,
   options: AdapterProcessOptions = {}
-): Promise<{ ok: true; value: AdapterProcessResult } | { ok: false; reason: string }> {
+): Promise<AdapterProcessExecutionResult> {
   const refusedModes = findRefusedAdapterModes(profile, process.env);
   if (refusedModes.length > 0) {
     return {
@@ -340,10 +339,18 @@ export async function runAdapterProcess(
       reason: `adapter invocation refused before spawn: ultra or dynamic-workflow orchestration would violate one-worker/one-scope ownership (${refusedModes.join(", ")})`
     };
   }
-  const budget = await checkTokenBudgetPreflight(repoRoot, profile.tool, options.usageSessionId, estimateTokens(prompt));
-  if (!budget.ok) {
-    return budget;
-  }
+  const usageSessionId = options.usageSessionId ?? `standalone-${randomUUID()}`;
+  const reservationResult = await reserveMeteredCall(repoRoot, {
+    provider: profile.tool,
+    session_id: usageSessionId,
+    run_id: options.usageRunId ?? usageSessionId,
+    task_id: options.usageTaskId ?? null,
+    daemon_instance_id: currentMeteringRuntimeInstanceId(),
+    estimated_input_tokens: estimateTokens(prompt)
+  });
+  if (!reservationResult.ok) return reservationResult;
+  const reservation = reservationResult.value.reservation;
+  const startedAt = Date.now();
   return new Promise((resolve) => {
     const [command, ...baseArgs] = profile.invoke;
     const args = profile.prompt_arg === "arg" ? [...baseArgs, prompt] : baseArgs;
@@ -351,9 +358,12 @@ export async function runAdapterProcess(
     const processIdentity: DurableProcessIdentity | null = child.pid === undefined
       ? null
       : { pid: child.pid, process_instance_id: randomUUID() };
-    const processStart = processIdentity === null || options.onProcessStart === undefined
-      ? Promise.resolve<{ ok: true } | { ok: false; reason: string }>({ ok: true })
-      : options.onProcessStart(processIdentity);
+    const processBinding = bindAdapterProcessReservation(repoRoot, reservation, processIdentity);
+    const processStart = processBinding.then((bound) =>
+      !bound.ok || processIdentity === null || options.onProcessStart === undefined
+        ? bound
+        : options.onProcessStart(processIdentity)
+    );
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let failedToStart = false;
@@ -418,7 +428,13 @@ export async function runAdapterProcess(
         clearTimeout(timeout);
       }
       if (cancellationPoll) clearTimeout(cancellationPoll);
-      void resolveStartFailure(profile.tool, error, options.outputLogPath, resolve);
+      void (async () => {
+        const release = reservation === null
+          ? { ok: true as const }
+          : await releaseMeteredCallAfterSpawnFailure(repoRoot, reservation.reservation_id);
+        const suffix = release.ok ? "" : `; reservation release failed: ${release.reason}`;
+        await resolveStartFailure(profile.tool, error, options.outputLogPath, resolve, suffix);
+      })();
     });
     child.on("close", (code) => {
       if (failedToStart) {
@@ -430,10 +446,6 @@ export async function runAdapterProcess(
       if (cancellationPoll) clearTimeout(cancellationPoll);
       void (async () => {
         const identityRecorded = await processStart;
-        if (!identityRecorded.ok) {
-          resolve({ ok: false, reason: `worker process identity was not durably recorded: ${identityRecorded.reason}` });
-          return;
-        }
         const capturedStderr = Buffer.concat(stderr).toString("utf8");
         const capturedStdout = Buffer.concat(stdout).toString("utf8");
         const exitCode = cancelled ? 130 : timedOut ? 124 : code ?? 1;
@@ -447,12 +459,24 @@ export async function runAdapterProcess(
               : formatErrorDetail(stdinError, "adapter stdin failed"),
           modelOutput: normalized.modelOutput,
           providerUsageCapture: normalized.providerUsageCapture,
-          usageSessionId: options.usageSessionId ?? null,
+          usageSessionId: reservation === null && options.usageSessionId === undefined ? null : usageSessionId,
+          reservationId: reservation?.reservation_id ?? null,
+          quotaRequest: buildUnmeteredQuotaRequest(prompt, normalized.modelOutput, normalized.providerUsageCapture),
+          wallTimeMs: Date.now() - startedAt,
           timedOut,
           cancelled,
           outputLogPath: options.outputLogPath ?? null
         };
-        void resolveProcessResult(profile.tool, result, resolve);
+        void resolveProcessResult(
+          repoRoot,
+          profile.tool,
+          prompt,
+          reservation,
+          processIdentity,
+          result,
+          resolve,
+          identityRecorded.ok ? undefined : `worker process identity was not durably recorded: ${identityRecorded.reason}`
+        );
       })();
     });
 
@@ -460,6 +484,38 @@ export async function runAdapterProcess(
       child.stdin.end(prompt);
     }
   });
+}
+
+async function bindAdapterProcessReservation(
+  repoRoot: string,
+  reservation: MeteredCallReservation | null,
+  identity: DurableProcessIdentity | null
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (reservation === null) return { ok: true };
+  if (identity === null) {
+    return {
+      ok: false,
+      reason: `metered adapter spawn did not expose a process identity; reservation ${reservation.reservation_id} retained`
+    };
+  }
+  const bound = await bindMeteredCallProcess(repoRoot, reservation.reservation_id, identity);
+  return bound.ok ? { ok: true } : bound;
+}
+
+function buildUnmeteredQuotaRequest(
+  prompt: string,
+  modelOutput: string,
+  capture: ProviderUsageCapture
+): LastQuotaRequest {
+  const selfMeasuredTokens = estimateTokens(prompt) + estimateTokens(modelOutput);
+  const reportedTokens = capture.status === "captured" ? capture.usage.total_tokens : null;
+  return {
+    self_measured_tokens: selfMeasuredTokens,
+    provider_reported_tokens: reportedTokens,
+    effective_tokens: reportedTokens ?? selfMeasuredTokens,
+    accounting_source: reportedTokens === null ? "self_measured" : "provider_reported",
+    provider_usage_status: capture.status
+  };
 }
 
 function collectRefusedModeValues(value: unknown, location: string, refused: Set<string>): void {
@@ -491,25 +547,6 @@ function environmentCanEnableOrchestrationMode(key: string, value: string): bool
 
 function containsRefusedModeMarker(value: string): boolean {
   return /(?:^|[^a-z0-9])ultra(?:code)?(?:$|[^a-z0-9])|dynamic[_ -]?workflows?/iu.test(value);
-}
-
-export async function recordAdapterUsage(
-  repoRoot: string,
-  profile: AdapterProfile,
-  prompt: string,
-  result: AdapterProcessResult,
-  wallTimeMs: number,
-  throttled = adapterOutputIndicatesThrottle(result.stdout, result.stderr, result.exitCode)
-): ReturnType<typeof recordQuotaUsage> {
-  return recordQuotaUsage(repoRoot, {
-    provider: profile.tool,
-    input_text: prompt,
-    model_output_text: result.modelOutput,
-    wall_time_ms: wallTimeMs,
-    throttled,
-    ...(result.usageSessionId === null ? {} : { session_id: result.usageSessionId }),
-    provider_usage: result.providerUsageCapture
-  });
 }
 
 export function parseAdapterProviderUsage(
@@ -611,31 +648,96 @@ export function formatAdapterProcessFailure(
 }
 
 async function resolveProcessResult(
+  repoRoot: string,
   tool: string,
+  prompt: string,
+  reservation: MeteredCallReservation | null,
+  processIdentity: DurableProcessIdentity | null,
   result: AdapterProcessResult,
-  resolve: (value: { ok: true; value: AdapterProcessResult } | { ok: false; reason: string }) => void
+  resolve: (value: AdapterProcessExecutionResult) => void,
+  processStartFailure?: string
 ): Promise<void> {
+  const failures: string[] = processStartFailure === undefined ? [] : [processStartFailure];
+  let budgetExceeded = false;
   if (result.outputLogPath !== null) {
     try {
       await writeAdapterProcessLog(result.outputLogPath, tool, result);
     } catch (error: unknown) {
-      resolve({
-        ok: false,
-        reason: `failed to write adapter output log ${result.outputLogPath}: ${formatErrorDetail(error, "unknown log write error")}`
-      });
-      return;
+      failures.push(`failed to write adapter output log ${result.outputLogPath}: ${formatErrorDetail(error, "unknown log write error")}`);
     }
   }
-  resolve({ ok: true, value: result });
+  let settledResult = result;
+  if (reservation === null) {
+    const unmetered = await recordQuotaUsage(repoRoot, {
+      provider: tool,
+      input_text: prompt,
+      model_output_text: result.modelOutput,
+      wall_time_ms: result.wallTimeMs,
+      throttled: adapterOutputIndicatesThrottle(result.stdout, result.stderr, result.exitCode),
+      ...(result.usageSessionId === null ? {} : { session_id: result.usageSessionId }),
+      provider_usage: result.providerUsageCapture
+    });
+    if (!unmetered.ok) {
+      failures.push(unmetered.reason);
+    } else if (unmetered.value.last_request !== null) {
+      settledResult = { ...result, quotaRequest: unmetered.value.last_request };
+    }
+  } else {
+    if (processIdentity === null) {
+      failures.push(`metered reservation ${reservation.reservation_id} has no durable process identity; reservation retained`);
+    } else {
+      const usage = {
+        input_tokens_estimated: estimateTokens(prompt),
+        output_tokens_estimated: estimateTokens(result.modelOutput),
+        wall_time_ms: result.wallTimeMs,
+        throttled: adapterOutputIndicatesThrottle(result.stdout, result.stderr, result.exitCode),
+        provider_usage: result.providerUsageCapture
+      };
+      const artifact = await writeMeteredUsageArtifact(repoRoot, reservation.reservation_id, processIdentity, usage);
+      if (!artifact.ok) failures.push(artifact.reason);
+      const settlement = await settleMeteredCall(repoRoot, reservation.reservation_id, processIdentity, usage);
+      if (!settlement.ok) {
+        failures.push(settlement.reason);
+        budgetExceeded = settlement.budget_exceeded === true;
+      } else {
+        const quotaRequest = settlement.value.entry.last_request;
+        if (quotaRequest === null) {
+          failures.push(`metered reservation ${reservation.reservation_id} settled without request accounting`);
+        } else {
+          settledResult = { ...result, quotaRequest };
+        }
+      }
+    }
+  }
+  if (failures.length > 0) {
+    resolve({
+      ok: false,
+      reason: failures.join("; "),
+      ...(budgetExceeded
+        ? {
+            budget_exceeded: true as const,
+            exitCode: result.exitCode,
+            wallTimeMs: result.wallTimeMs,
+            effectiveTokens:
+              result.providerUsageCapture.status === "captured"
+                ? result.providerUsageCapture.usage.total_tokens
+                : estimateTokens(prompt) + estimateTokens(result.modelOutput)
+          }
+        : {})
+    });
+    return;
+  }
+  resolve({ ok: true, value: settledResult });
 }
 
 async function resolveStartFailure(
   tool: string,
   error: NodeJS.ErrnoException,
   outputLogPath: string | undefined,
-  resolve: (value: { ok: true; value: AdapterProcessResult } | { ok: false; reason: string }) => void
+  resolve: (value: AdapterProcessExecutionResult) => void,
+  suffix = ""
 ): Promise<void> {
-  const reason = formatSpawnError(tool, error);
+  const reason = `${formatSpawnError(tool, error)}${suffix}`;
   if (outputLogPath !== undefined) {
     try {
       await writeFileAtomic(

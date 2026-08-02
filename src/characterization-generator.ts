@@ -6,7 +6,6 @@ import {
   findDangerousAdapterArgs,
   formatAdapterProcessFailure,
   loadAdapterProfile,
-  recordAdapterUsage,
   runAdapterProcess
 } from "./adapter.js";
 import {
@@ -118,7 +117,6 @@ export async function generateCharacterizationCandidate(
     repoRoot,
     authoringBase.value.commit,
     async (checkoutPath): Promise<CharacterizationGenerationOutcome> => {
-      const startedAt = Date.now();
       const processResult = await runAdapterProcess(
         repoRoot,
         profileResult.profile,
@@ -126,23 +124,15 @@ export async function generateCharacterizationCandidate(
         prompt,
         {
           outputLogPath,
-          usageSessionId: sessionId
+          usageSessionId: sessionId,
+          usageRunId: sessionId,
+          usageTaskId: taskId
         }
       );
       if (!processResult.ok) {
         return processResult;
       }
-      const wallTimeMs = Date.now() - startedAt;
-      const ledgerResult = await recordAdapterUsage(
-        repoRoot,
-        profileResult.profile,
-        prompt,
-        processResult.value,
-        wallTimeMs
-      );
-      if (!ledgerResult.ok) {
-        return ledgerResult;
-      }
+      const wallTimeMs = processResult.value.wallTimeMs;
       if (processResult.value.exitCode !== 0) {
         return {
           ok: false,
@@ -183,8 +173,8 @@ export async function generateCharacterizationCandidate(
             exit_code: processResult.value.exitCode,
             wall_time_ms: wallTimeMs,
             output_log: processResult.value.outputLogPath,
-            effective_tokens: ledgerResult.value.last_request?.effective_tokens ?? 0,
-            accounting_source: ledgerResult.value.last_request?.accounting_source ?? "self_measured"
+            effective_tokens: processResult.value.quotaRequest.effective_tokens,
+            accounting_source: processResult.value.quotaRequest.accounting_source
           },
           disposer: "M7.6c validateCharacterizationCandidate",
           candidate: validation.value

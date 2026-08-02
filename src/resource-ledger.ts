@@ -1,10 +1,12 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, open, rm } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { writeJsonAtomic } from "./atomic.js";
-import { loadConfig } from "./config.js";
+import { loadConfig, type HivemindConfig } from "./config.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { readJsonFile } from "./json.js";
+import { getProcessLiveness, type ProcessLiveness } from "./process-liveness.js";
 import { findGitRoot } from "./repo.js";
 
 export interface SelfMeasuredUsage {
@@ -99,6 +101,74 @@ export interface QuotaLedgerEntry {
 
 export type QuotaLedger = Record<string, QuotaLedgerEntry>;
 
+export interface MeteredProcessIdentity {
+  pid: number;
+  process_instance_id: string;
+}
+
+export interface MeteredUsage {
+  input_tokens_estimated: number;
+  output_tokens_estimated: number;
+  wall_time_ms: number;
+  throttled: boolean;
+  provider_usage: ProviderUsageCapture;
+}
+
+export interface MeteredCallSettlement {
+  settled_at: string;
+  reason: "completed" | "spawn_failed" | "dead_process_usage_recovered" | "dead_process_full_charge";
+  charged_tokens: number;
+  accounting_source: "provider_reported" | "self_measured" | "full_reservation";
+}
+
+export interface MeteredCallReservation {
+  version: 1;
+  reservation_id: string;
+  status: "active" | "settled" | "released";
+  provider: string;
+  session_id: string;
+  run_id: string;
+  task_id: string | null;
+  daemon_instance_id: string;
+  reserved_tokens: number;
+  created_at: string;
+  process_identity: MeteredProcessIdentity | null;
+  usage_artifact_path: string;
+  settlement: MeteredCallSettlement | null;
+}
+
+export interface QuotaLedgerState {
+  version: 2;
+  providers: QuotaLedger;
+  reservations: Record<string, MeteredCallReservation>;
+}
+
+export interface MeteredBudgetCapacity {
+  session_id: string;
+  session_ceiling_tokens: number;
+  per_call_reservation_tokens: number;
+  settled_tokens: number;
+  active_reserved_tokens: number;
+  available_reservations: number;
+}
+
+export interface ReserveMeteredCallInput {
+  provider: string;
+  session_id: string;
+  run_id: string;
+  task_id: string | null;
+  daemon_instance_id: string;
+  estimated_input_tokens: number;
+}
+
+export type ReserveMeteredCallResult =
+  | { ok: true; value: { reservation: MeteredCallReservation | null; capacity: MeteredBudgetCapacity | null } }
+  | { ok: false; reason: string; budget_exceeded?: true };
+
+export type SettleMeteredCallResult =
+  | { ok: true; value: { entry: QuotaLedgerEntry; reservation: MeteredCallReservation } }
+  | { ok: false; reason: string; budget_exceeded?: true };
+
 export interface QuotaUsageRecord {
   provider: string;
   input_text: string;
@@ -117,6 +187,7 @@ export type RecordQuotaUsageResult =
 const ledgerLockRetryMs = 25;
 const ledgerLockTimeoutMs = 2000;
 const ledgerQueues = new Map<string, Promise<void>>();
+const meteringRuntimeInstanceId = randomUUID();
 
 export async function quotaCommand(cwd: string, args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
@@ -143,12 +214,19 @@ export async function quotaCommand(cwd: string, args: string[]): Promise<number>
 }
 
 export async function readQuotaLedger(repoRoot: string): Promise<{ ok: true; value: QuotaLedger } | { ok: false; reason: string }> {
+  const state = await readQuotaLedgerState(repoRoot);
+  return state.ok ? { ok: true, value: state.value.providers } : state;
+}
+
+export async function readQuotaLedgerState(
+  repoRoot: string
+): Promise<{ ok: true; value: QuotaLedgerState } | { ok: false; reason: string }> {
   let raw: unknown;
   try {
     raw = await readJsonFile(ledgerPath(repoRoot));
   } catch (error: unknown) {
     if (isNodeError(error, "ENOENT")) {
-      return { ok: true, value: {} };
+      return { ok: true, value: emptyLedgerState() };
     }
     if (error instanceof SyntaxError) {
       return { ok: false, reason: "invalid JSON in .hivemind/resource/ledger.json" };
@@ -156,7 +234,272 @@ export async function readQuotaLedger(repoRoot: string): Promise<{ ok: true; val
     throw error;
   }
 
-  return normalizeQuotaLedger(raw);
+  return normalizeQuotaLedgerState(raw);
+}
+
+export function currentMeteringRuntimeInstanceId(): string {
+  return meteringRuntimeInstanceId;
+}
+
+export async function reserveMeteredCall(
+  repoRoot: string,
+  input: ReserveMeteredCallInput
+): Promise<ReserveMeteredCallResult> {
+  const provider = normalizeProvider(input.provider);
+  const sessionId = normalizeSessionId(input.session_id);
+  const runId = normalizeIdentifier(input.run_id);
+  const daemonInstanceId = normalizeIdentifier(input.daemon_instance_id);
+  const taskId = input.task_id === null ? null : normalizeIdentifier(input.task_id);
+  if (provider === null || sessionId === null || runId === null || daemonInstanceId === null || (input.task_id !== null && taskId === null)) {
+    return { ok: false, reason: "metered reservation identifiers must be non-empty safe identifiers" };
+  }
+  if (!Number.isSafeInteger(input.estimated_input_tokens) || input.estimated_input_tokens < 0) {
+    return { ok: false, reason: "estimated input tokens must be a non-negative safe integer" };
+  }
+  if (isUnmeteredProvider(provider)) {
+    return { ok: true, value: { reservation: null, capacity: null } };
+  }
+  const config = await loadConfig(repoRoot);
+  if (!config.ok) return config;
+  const reservationTokens = config.config.resource_policy?.run_ceiling?.tokens;
+  const sessionCeiling = config.config.resource_policy?.session_ceiling?.tokens;
+  if (reservationTokens === undefined || sessionCeiling === undefined) {
+    return { ok: false, reason: "metered calls require configured run and session token ceilings" };
+  }
+  if (reservationTokens === 0 || input.estimated_input_tokens >= reservationTokens) {
+    return {
+      ok: false,
+      reason: reservationTokens === 0
+        ? `token budget exceeded: run token ceiling 0 forbids invoking metered provider ${provider}`
+        : `token budget exceeded: estimated input ${input.estimated_input_tokens} tokens leaves no output budget under run ceiling ${reservationTokens} for ${provider}`,
+      budget_exceeded: true
+    };
+  }
+
+  return withLedgerMutation(repoRoot, async (state) => {
+    const capacity = buildBudgetCapacity(state, sessionId, sessionCeiling, reservationTokens);
+    if (capacity.settled_tokens + capacity.active_reserved_tokens + reservationTokens > sessionCeiling) {
+      return {
+        ok: false,
+        reason: `token budget exceeded: session ${sessionId} has ${capacity.settled_tokens} settled tokens and ${capacity.active_reserved_tokens} active reserved tokens; another ${reservationTokens}-token call would exceed ceiling ${sessionCeiling} (budget permits ${capacity.available_reservations} more simultaneous call(s))`,
+        budget_exceeded: true
+      };
+    }
+    const reservationId = randomUUID();
+    const reservation: MeteredCallReservation = {
+      version: 1,
+      reservation_id: reservationId,
+      status: "active",
+      provider,
+      session_id: sessionId,
+      run_id: runId,
+      task_id: taskId,
+      daemon_instance_id: daemonInstanceId,
+      reserved_tokens: reservationTokens,
+      created_at: new Date().toISOString(),
+      process_identity: null,
+      usage_artifact_path: reservationUsageArtifactPath(repoRoot, reservationId),
+      settlement: null
+    };
+    state.reservations[reservationId] = reservation;
+    return {
+      ok: true,
+      value: {
+        reservation,
+        capacity: {
+          ...capacity,
+          active_reserved_tokens: capacity.active_reserved_tokens + reservationTokens,
+          available_reservations: Math.floor(
+            Math.max(0, sessionCeiling - capacity.settled_tokens - capacity.active_reserved_tokens - reservationTokens) /
+              reservationTokens
+          )
+        }
+      }
+    };
+  });
+}
+
+export async function bindMeteredCallProcess(
+  repoRoot: string,
+  reservationId: string,
+  identity: MeteredProcessIdentity
+): Promise<{ ok: true; value: MeteredCallReservation } | { ok: false; reason: string }> {
+  if (!Number.isSafeInteger(identity.pid) || identity.pid <= 0 || normalizeIdentifier(identity.process_instance_id) === null) {
+    return { ok: false, reason: "metered process identity is invalid" };
+  }
+  return withLedgerMutation(repoRoot, async (state) => {
+    const reservation = state.reservations[reservationId];
+    if (reservation === undefined || reservation.status !== "active") {
+      return { ok: false, reason: `active metered reservation not found: ${reservationId}` };
+    }
+    if (reservation.process_identity !== null) {
+      return { ok: false, reason: `metered reservation ${reservationId} already has a process identity` };
+    }
+    const next = { ...reservation, process_identity: identity };
+    state.reservations[reservationId] = next;
+    return { ok: true, value: next };
+  });
+}
+
+export async function releaseMeteredCallAfterSpawnFailure(
+  repoRoot: string,
+  reservationId: string
+): Promise<{ ok: true; value: MeteredCallReservation } | { ok: false; reason: string }> {
+  return withLedgerMutation(repoRoot, async (state) => {
+    const reservation = state.reservations[reservationId];
+    if (reservation === undefined || reservation.status !== "active") {
+      return { ok: false, reason: `active metered reservation not found: ${reservationId}` };
+    }
+    if (reservation.process_identity !== null) {
+      return { ok: false, reason: `metered reservation ${reservationId} cannot be released as a spawn failure after process binding` };
+    }
+    const next: MeteredCallReservation = {
+      ...reservation,
+      status: "released",
+      settlement: {
+        settled_at: new Date().toISOString(),
+        reason: "spawn_failed",
+        charged_tokens: 0,
+        accounting_source: "self_measured"
+      }
+    };
+    state.reservations[reservationId] = next;
+    return { ok: true, value: next };
+  });
+}
+
+export async function settleMeteredCall(
+  repoRoot: string,
+  reservationId: string,
+  identity: MeteredProcessIdentity,
+  usage: MeteredUsage,
+  reason: MeteredCallSettlement["reason"] = "completed"
+): Promise<SettleMeteredCallResult> {
+  const usageValidation = validateMeteredUsage(usage);
+  if (!usageValidation.ok) return usageValidation;
+  const config = await loadConfig(repoRoot);
+  if (!config.ok) return config;
+  return withLedgerMutation(repoRoot, async (state) => {
+    const reservation = state.reservations[reservationId];
+    if (reservation === undefined) return { ok: false, reason: `metered reservation not found: ${reservationId}` };
+    if (reservation.status !== "active") {
+      return { ok: false, reason: `metered reservation ${reservationId} was already ${reservation.status}` };
+    }
+    if (!sameProcessIdentity(reservation.process_identity, identity)) {
+      return { ok: false, reason: `metered reservation ${reservationId} process identity does not match settlement` };
+    }
+    const applied = applyMeteredUsage(state.providers, reservation.provider, reservation.session_id, usage);
+    state.providers = applied.providers;
+    const settlement: MeteredCallSettlement = {
+      settled_at: new Date().toISOString(),
+      reason,
+      charged_tokens: applied.effectiveTokens,
+      accounting_source: reason === "dead_process_full_charge" ? "full_reservation" : applied.accountingSource
+    };
+    const nextReservation: MeteredCallReservation = { ...reservation, status: "settled", settlement };
+    state.reservations[reservationId] = nextReservation;
+    if (usage.provider_usage.status === "expected_but_unparseable") {
+      return {
+        ok: false,
+        commit: true,
+        reason: `provider usage expected but unparseable for ${reservation.provider} (${usage.provider_usage.parser}): ${usage.provider_usage.reason}; self-measured fallback recorded`
+      };
+    }
+    const budget = validateSettledBudget(config.config, reservation, applied.entry, state.providers);
+    if (!budget.ok) return { ...budget, commit: true };
+    return { ok: true, value: { entry: applied.entry, reservation: nextReservation } };
+  });
+}
+
+export async function readMeteredBudgetCapacity(
+  repoRoot: string,
+  sessionId: string
+): Promise<{ ok: true; value: MeteredBudgetCapacity } | { ok: false; reason: string }> {
+  const normalizedSession = normalizeSessionId(sessionId);
+  if (normalizedSession === null) return { ok: false, reason: "quota session_id must be a non-empty identifier" };
+  const config = await loadConfig(repoRoot);
+  if (!config.ok) return config;
+  const reservationTokens = config.config.resource_policy?.run_ceiling?.tokens;
+  const sessionCeiling = config.config.resource_policy?.session_ceiling?.tokens;
+  if (reservationTokens === undefined || reservationTokens === 0 || sessionCeiling === undefined) {
+    return { ok: false, reason: "metered capacity requires positive run and configured session token ceilings" };
+  }
+  const state = await readQuotaLedgerState(repoRoot);
+  if (!state.ok) return state;
+  return { ok: true, value: buildBudgetCapacity(state.value, normalizedSession, sessionCeiling, reservationTokens) };
+}
+
+export async function writeMeteredUsageArtifact(
+  repoRoot: string,
+  reservationId: string,
+  identity: MeteredProcessIdentity,
+  usage: MeteredUsage
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const state = await readQuotaLedgerState(repoRoot);
+  if (!state.ok) return state;
+  const reservation = state.value.reservations[reservationId];
+  if (reservation === undefined || reservation.status !== "active") {
+    return { ok: false, reason: `active metered reservation not found: ${reservationId}` };
+  }
+  if (!sameProcessIdentity(reservation.process_identity, identity)) {
+    return { ok: false, reason: `metered reservation ${reservationId} process identity does not match usage evidence` };
+  }
+  const validation = validateMeteredUsage(usage);
+  if (!validation.ok) return validation;
+  const expectedPath = reservationUsageArtifactPath(repoRoot, reservationId);
+  if (path.resolve(reservation.usage_artifact_path) !== path.resolve(expectedPath)) {
+    return { ok: false, reason: `metered reservation ${reservationId} usage artifact path does not match its identity` };
+  }
+  await writeJsonAtomic(expectedPath, {
+    version: 1,
+    reservation_id: reservationId,
+    process_identity: identity,
+    usage
+  });
+  return { ok: true };
+}
+
+export async function reconcileMeteredCallReservations(
+  repoRoot: string,
+  options: { probeLiveness?: (pid: number) => ProcessLiveness } = {}
+): Promise<{ ok: true; value: { retained: number; settled: number; fully_charged: number } } | { ok: false; reason: string }> {
+  const state = await readQuotaLedgerState(repoRoot);
+  if (!state.ok) return state;
+  const active = Object.values(state.value.reservations).filter((reservation) => reservation.status === "active");
+  let retained = 0;
+  let settled = 0;
+  let fullyCharged = 0;
+  const probe = options.probeLiveness ?? getProcessLiveness;
+  for (const reservation of active) {
+    const identity = reservation.process_identity;
+    if (identity === null || probe(identity.pid) !== "dead") {
+      retained += 1;
+      continue;
+    }
+    const recovered = await readMeteredUsageArtifact(repoRoot, reservation, identity);
+    const usage: MeteredUsage = recovered ?? {
+      input_tokens_estimated: reservation.reserved_tokens,
+      output_tokens_estimated: 0,
+      wall_time_ms: 0,
+      throttled: false,
+      provider_usage: {
+        status: "not_available",
+        parser: null,
+        reason: "worker was proven dead before durable provider usage could be recovered; full reservation charged"
+      }
+    };
+    const result = await settleMeteredCall(
+      repoRoot,
+      reservation.reservation_id,
+      identity,
+      usage,
+      recovered === null ? "dead_process_full_charge" : "dead_process_usage_recovered"
+    );
+    if (!result.ok && result.budget_exceeded !== true) return result;
+    settled += 1;
+    if (recovered === null) fullyCharged += 1;
+  }
+  return { ok: true, value: { retained, settled, fully_charged: fullyCharged } };
 }
 
 export async function checkTokenBudgetPreflight(
@@ -239,89 +582,26 @@ export async function recordQuotaUsage(repoRoot: string, record: QuotaUsageRecor
   if (!config.ok) {
     return config;
   }
-
-  return withInProcessLedgerQueue(repoRoot, () =>
-    withLedgerLock(repoRoot, async () => {
-      const ledgerResult = await readQuotaLedger(repoRoot);
-      if (!ledgerResult.ok) {
-        return ledgerResult;
-      }
-
-      const now = new Date().toISOString();
-      const previous = ledgerResult.value[provider] ?? createEmptyEntry(provider, now);
-      const measuredThisRequest: SelfMeasuredUsage = {
-        requests: 1,
-        input_tokens_estimated: estimateTokens(record.input_text),
-        output_tokens_estimated: estimateTokens(record.model_output_text),
-        wall_time_ms: record.wall_time_ms
+  return withLedgerMutation(repoRoot, async (state) => {
+    const usage: MeteredUsage = {
+      input_tokens_estimated: estimateTokens(record.input_text),
+      output_tokens_estimated: estimateTokens(record.model_output_text),
+      wall_time_ms: record.wall_time_ms,
+      throttled: record.throttled,
+      provider_usage: capture.value
+    };
+    const applied = applyMeteredUsage(state.providers, provider, sessionId, usage);
+    state.providers = applied.providers;
+    if (capture.value.status === "expected_but_unparseable") {
+      return {
+        ok: false,
+        commit: true,
+        reason: `provider usage expected but unparseable for ${provider} (${capture.value.parser}): ${capture.value.reason}; self-measured fallback recorded`
       };
-      const selfMeasured = addUsage(previous.self_measured, measuredThisRequest);
-      const selfMeasuredTokens = measuredThisRequest.input_tokens_estimated + measuredThisRequest.output_tokens_estimated;
-      const reportedThisRequest = capture.value.status === "captured" ? capture.value.usage : null;
-      const providerReported = mergeProviderReported(
-        previous.provider_reported,
-        reportedThisRequest,
-        selfMeasuredTokens
-      );
-      const effectiveTokens = reportedThisRequest?.total_tokens ?? selfMeasuredTokens;
-      const lastRequest: LastQuotaRequest = {
-        self_measured_tokens: selfMeasuredTokens,
-        provider_reported_tokens: reportedThisRequest?.total_tokens ?? null,
-        effective_tokens: effectiveTokens,
-        accounting_source: reportedThisRequest === null ? "self_measured" : "provider_reported",
-        provider_usage_status: capture.value.status
-      };
-      const nextEntry: QuotaLedgerEntry = {
-        self_measured: selfMeasured,
-        provider_reported: providerReported,
-        provider_usage_capture: addUsageCapture(previous.provider_usage_capture, capture.value),
-        last_request: lastRequest,
-        session_usage:
-          sessionId === null
-            ? previous.session_usage
-            : addSessionUsage(previous.session_usage, sessionId, selfMeasuredTokens, reportedThisRequest?.total_tokens ?? null),
-        reconciliation: buildReconciliation(providerReported, record.throttled || previous.observed_limit !== null),
-        observed_limit: record.throttled ? { ...selfMeasured, observed_at: now, reason: "throttle" } : previous.observed_limit,
-        resets_at: previous.resets_at,
-        source: "dual-channel",
-        updated_at: now,
-        unmetered: isUnmeteredProvider(provider)
-      };
-      const nextLedger: QuotaLedger = {
-        ...ledgerResult.value,
-        [provider]: nextEntry
-      };
-      await writeQuotaLedger(repoRoot, nextLedger);
-      if (capture.value.status === "expected_but_unparseable") {
-        return {
-          ok: false,
-          reason: `provider usage expected but unparseable for ${provider} (${capture.value.parser}): ${capture.value.reason}; self-measured fallback recorded`
-        };
-      }
-      if (!nextEntry.unmetered) {
-        const runTokenCeiling = config.config.resource_policy?.run_ceiling?.tokens;
-        if (runTokenCeiling !== undefined && effectiveTokens > runTokenCeiling) {
-          return {
-            ok: false,
-            reason: `token budget exceeded: ${provider} call used ${effectiveTokens} effective tokens against run ceiling ${runTokenCeiling}`,
-            budget_exceeded: true
-          };
-        }
-        const sessionTokenCeiling = config.config.resource_policy?.session_ceiling?.tokens;
-        if (sessionId !== null && sessionTokenCeiling !== undefined) {
-          const sessionTokens = sessionEffectiveTokens(nextLedger, sessionId);
-          if (sessionTokens > sessionTokenCeiling) {
-            return {
-              ok: false,
-              reason: `token budget exceeded: manager session ${sessionId} used ${sessionTokens} effective tokens against ceiling ${sessionTokenCeiling}`,
-              budget_exceeded: true
-            };
-          }
-        }
-      }
-      return { ok: true, value: nextEntry };
-    })
-  );
+    }
+    const budget = validateSettledBudget(config.config, null, applied.entry, state.providers, sessionId);
+    return budget.ok ? { ok: true, value: applied.entry } : { ...budget, commit: true };
+  });
 }
 
 export function adapterOutputIndicatesThrottle(stdout: string, stderr: string, exitCode: number): boolean {
@@ -333,6 +613,88 @@ export function adapterOutputIndicatesThrottle(stdout: string, stderr: string, e
 
 export function estimateTokens(value: string): number {
   return Math.ceil(Buffer.byteLength(value, "utf8") / 4);
+}
+
+function applyMeteredUsage(
+  providers: QuotaLedger,
+  provider: string,
+  sessionId: string | null,
+  usage: MeteredUsage
+): {
+  providers: QuotaLedger;
+  entry: QuotaLedgerEntry;
+  effectiveTokens: number;
+  accountingSource: "provider_reported" | "self_measured";
+} {
+  const now = new Date().toISOString();
+  const previous = providers[provider] ?? createEmptyEntry(provider, now);
+  const measuredThisRequest: SelfMeasuredUsage = {
+    requests: 1,
+    input_tokens_estimated: usage.input_tokens_estimated,
+    output_tokens_estimated: usage.output_tokens_estimated,
+    wall_time_ms: usage.wall_time_ms
+  };
+  const selfMeasured = addUsage(previous.self_measured, measuredThisRequest);
+  const selfMeasuredTokens = measuredThisRequest.input_tokens_estimated + measuredThisRequest.output_tokens_estimated;
+  const reportedThisRequest = usage.provider_usage.status === "captured" ? usage.provider_usage.usage : null;
+  const providerReported = mergeProviderReported(previous.provider_reported, reportedThisRequest, selfMeasuredTokens);
+  const effectiveTokens = reportedThisRequest?.total_tokens ?? selfMeasuredTokens;
+  const accountingSource = reportedThisRequest === null ? "self_measured" : "provider_reported";
+  const nextEntry: QuotaLedgerEntry = {
+    self_measured: selfMeasured,
+    provider_reported: providerReported,
+    provider_usage_capture: addUsageCapture(previous.provider_usage_capture, usage.provider_usage),
+    last_request: {
+      self_measured_tokens: selfMeasuredTokens,
+      provider_reported_tokens: reportedThisRequest?.total_tokens ?? null,
+      effective_tokens: effectiveTokens,
+      accounting_source: accountingSource,
+      provider_usage_status: usage.provider_usage.status
+    },
+    session_usage:
+      sessionId === null
+        ? previous.session_usage
+        : addSessionUsage(previous.session_usage, sessionId, selfMeasuredTokens, reportedThisRequest?.total_tokens ?? null),
+    reconciliation: buildReconciliation(providerReported, usage.throttled || previous.observed_limit !== null),
+    observed_limit: usage.throttled ? { ...selfMeasured, observed_at: now, reason: "throttle" } : previous.observed_limit,
+    resets_at: previous.resets_at,
+    source: "dual-channel",
+    updated_at: now,
+    unmetered: isUnmeteredProvider(provider)
+  };
+  return { providers: { ...providers, [provider]: nextEntry }, entry: nextEntry, effectiveTokens, accountingSource };
+}
+
+function validateSettledBudget(
+  config: HivemindConfig,
+  reservation: MeteredCallReservation | null,
+  entry: QuotaLedgerEntry,
+  providers: QuotaLedger,
+  sessionIdOverride?: string | null
+): { ok: true } | { ok: false; reason: string; budget_exceeded: true } {
+  if (entry.unmetered) return { ok: true };
+  const effectiveTokens = entry.last_request?.effective_tokens ?? 0;
+  const runTokenCeiling = config.resource_policy?.run_ceiling?.tokens;
+  if (runTokenCeiling !== undefined && effectiveTokens > runTokenCeiling) {
+    return {
+      ok: false,
+      reason: `token budget exceeded: ${reservation?.provider ?? "provider"} call used ${effectiveTokens} effective tokens against run ceiling ${runTokenCeiling}`,
+      budget_exceeded: true
+    };
+  }
+  const sessionId = reservation?.session_id ?? sessionIdOverride ?? null;
+  const sessionTokenCeiling = config.resource_policy?.session_ceiling?.tokens;
+  if (sessionId !== null && sessionTokenCeiling !== undefined) {
+    const sessionTokens = sessionEffectiveTokens(providers, sessionId);
+    if (sessionTokens > sessionTokenCeiling) {
+      return {
+        ok: false,
+        reason: `token budget exceeded: manager session ${sessionId} used ${sessionTokens} effective tokens against ceiling ${sessionTokenCeiling}`,
+        budget_exceeded: true
+      };
+    }
+  }
+  return { ok: true };
 }
 
 function createEmptyEntry(provider: string, updatedAt: string): QuotaLedgerEntry {
@@ -393,6 +755,76 @@ function sessionEffectiveTokens(ledger: QuotaLedger, sessionId: string): number 
   );
 }
 
+function buildBudgetCapacity(
+  state: QuotaLedgerState,
+  sessionId: string,
+  sessionCeiling: number,
+  reservationTokens: number
+): MeteredBudgetCapacity {
+  const settledTokens = sessionEffectiveTokens(state.providers, sessionId);
+  const activeReservedTokens = Object.values(state.reservations).reduce(
+    (sum, reservation) =>
+      sum + (reservation.status === "active" && reservation.session_id === sessionId ? reservation.reserved_tokens : 0),
+    0
+  );
+  return {
+    session_id: sessionId,
+    session_ceiling_tokens: sessionCeiling,
+    per_call_reservation_tokens: reservationTokens,
+    settled_tokens: settledTokens,
+    active_reserved_tokens: activeReservedTokens,
+    available_reservations: Math.floor(
+      Math.max(0, sessionCeiling - settledTokens - activeReservedTokens) / reservationTokens
+    )
+  };
+}
+
+function validateMeteredUsage(usage: MeteredUsage): { ok: true } | { ok: false; reason: string } {
+  for (const field of ["input_tokens_estimated", "output_tokens_estimated", "wall_time_ms"] as const) {
+    if (!Number.isSafeInteger(usage[field]) || usage[field] < 0) {
+      return { ok: false, reason: `metered usage ${field} must be a non-negative safe integer` };
+    }
+  }
+  if (typeof usage.throttled !== "boolean") {
+    return { ok: false, reason: "metered usage throttled must be boolean" };
+  }
+  return validateProviderUsageCapture("metered usage provider_usage", usage.provider_usage);
+}
+
+async function readMeteredUsageArtifact(
+  repoRoot: string,
+  reservation: MeteredCallReservation,
+  identity: MeteredProcessIdentity
+): Promise<MeteredUsage | null> {
+  const expectedPath = reservationUsageArtifactPath(repoRoot, reservation.reservation_id);
+  if (path.resolve(reservation.usage_artifact_path) !== path.resolve(expectedPath)) return null;
+  let raw: unknown;
+  try {
+    raw = await readJsonFile(expectedPath);
+  } catch {
+    return null;
+  }
+  if (
+    !isRecord(raw) ||
+    raw.version !== 1 ||
+    raw.reservation_id !== reservation.reservation_id ||
+    !isRecord(raw.process_identity) ||
+    !sameProcessIdentity(raw.process_identity as unknown as MeteredProcessIdentity, identity) ||
+    !isRecord(raw.usage)
+  ) {
+    return null;
+  }
+  const usage = raw.usage as unknown as MeteredUsage;
+  return validateMeteredUsage(usage).ok ? usage : null;
+}
+
+function sameProcessIdentity(
+  left: MeteredProcessIdentity | null,
+  right: MeteredProcessIdentity
+): boolean {
+  return left !== null && left.pid === right.pid && left.process_instance_id === right.process_instance_id;
+}
+
 function emptyUsage(): SelfMeasuredUsage {
   return {
     requests: 0,
@@ -402,12 +834,48 @@ function emptyUsage(): SelfMeasuredUsage {
   };
 }
 
-async function writeQuotaLedger(repoRoot: string, ledger: QuotaLedger): Promise<void> {
-  const sorted = Object.fromEntries(Object.entries(ledger).sort(([left], [right]) => left.localeCompare(right)));
-  await writeJsonAtomic(ledgerPath(repoRoot), sorted);
+function emptyLedgerState(): QuotaLedgerState {
+  return { version: 2, providers: {}, reservations: {} };
 }
 
-async function withLedgerLock<T>(repoRoot: string, action: () => Promise<{ ok: true; value: T } | { ok: false; reason: string }>): Promise<{ ok: true; value: T } | { ok: false; reason: string }> {
+async function writeQuotaLedgerState(repoRoot: string, state: QuotaLedgerState): Promise<void> {
+  const providers = Object.fromEntries(Object.entries(state.providers).sort(([left], [right]) => left.localeCompare(right)));
+  const reservations = Object.fromEntries(
+    Object.entries(state.reservations).sort(([left], [right]) => left.localeCompare(right))
+  );
+  await writeJsonAtomic(ledgerPath(repoRoot), { version: 2, providers, reservations });
+}
+
+type LedgerMutationResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; reason: string; budget_exceeded?: true; commit?: true };
+
+async function withLedgerMutation<T>(
+  repoRoot: string,
+  action: (state: QuotaLedgerState) => Promise<LedgerMutationResult<T>>
+): Promise<{ ok: true; value: T } | { ok: false; reason: string; budget_exceeded?: true }> {
+  return withInProcessLedgerQueue(repoRoot, () =>
+    withLedgerLock(repoRoot, async () => {
+      const state = await readQuotaLedgerState(repoRoot);
+      if (!state.ok) return state;
+      const result = await action(state.value);
+      if (result.ok || result.commit === true) {
+        await writeQuotaLedgerState(repoRoot, state.value);
+      }
+      if (result.ok) return result;
+      return {
+        ok: false,
+        reason: result.reason,
+        ...(result.budget_exceeded === true ? { budget_exceeded: true as const } : {})
+      };
+    })
+  );
+}
+
+async function withLedgerLock<T>(
+  repoRoot: string,
+  action: () => Promise<LedgerMutationResult<T>>
+): Promise<LedgerMutationResult<T>> {
   const lockPath = ledgerLockPath(repoRoot);
   await mkdir(path.dirname(lockPath), { recursive: true });
   const deadline = Date.now() + ledgerLockTimeoutMs;
@@ -435,8 +903,8 @@ async function withLedgerLock<T>(repoRoot: string, action: () => Promise<{ ok: t
 
 async function withInProcessLedgerQueue<T>(
   repoRoot: string,
-  action: () => Promise<{ ok: true; value: T } | { ok: false; reason: string }>
-): Promise<{ ok: true; value: T } | { ok: false; reason: string }> {
+  action: () => Promise<LedgerMutationResult<T>>
+): Promise<LedgerMutationResult<T>> {
   const key = ledgerLockPath(repoRoot);
   const previous = ledgerQueues.get(key) ?? Promise.resolve();
   let release!: () => void;
@@ -465,6 +933,10 @@ function ledgerLockPath(repoRoot: string): string {
   return path.join(repoRoot, ".hivemind", "resource", "ledger.lock");
 }
 
+function reservationUsageArtifactPath(repoRoot: string, reservationId: string): string {
+  return path.join(repoRoot, ".hivemind", "resource", "reservations", `${reservationId}.usage.json`);
+}
+
 function normalizeProvider(provider: string): string | null {
   const trimmed = provider.trim();
   return trimmed === "" || /[\u0000-\u001f/\\]/.test(trimmed) ? null : trimmed;
@@ -478,9 +950,113 @@ function normalizeSessionId(sessionId: string | undefined): string | null {
   return trimmed === "" || /[\u0000-\u001f/\\]/u.test(trimmed) ? null : trimmed;
 }
 
+function normalizeIdentifier(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed === "" || /[\u0000-\u001f/\\]/u.test(trimmed) ? null : trimmed;
+}
+
 function isUnmeteredProvider(provider: string): boolean {
   const normalized = provider.toLowerCase();
   return normalized === "local" || normalized.startsWith("local-") || normalized === "ollama";
+}
+
+function normalizeQuotaLedgerState(value: unknown): { ok: true; value: QuotaLedgerState } | { ok: false; reason: string } {
+  if (isRecord(value) && value.version === 2) {
+    const providers = normalizeQuotaLedger(value.providers);
+    if (!providers.ok) return providers;
+    if (!isRecord(value.reservations)) {
+      return { ok: false, reason: "quota ledger reservations must be a JSON object" };
+    }
+    const reservations: Record<string, MeteredCallReservation> = {};
+    for (const [reservationId, raw] of Object.entries(value.reservations)) {
+      const normalized = normalizeMeteredCallReservation(reservationId, raw);
+      if (!normalized.ok) return normalized;
+      reservations[reservationId] = normalized.value;
+    }
+    return { ok: true, value: { version: 2, providers: providers.value, reservations } };
+  }
+  const providers = normalizeQuotaLedger(value);
+  return providers.ok ? { ok: true, value: { version: 2, providers: providers.value, reservations: {} } } : providers;
+}
+
+function normalizeMeteredCallReservation(
+  reservationId: string,
+  value: unknown
+): { ok: true; value: MeteredCallReservation } | { ok: false; reason: string } {
+  if (!isRecord(value) || value.version !== 1 || value.reservation_id !== reservationId) {
+    return { ok: false, reason: `quota reservation ${reservationId} has invalid identity or version` };
+  }
+  if (normalizeIdentifier(reservationId) === null || normalizeProvider(String(value.provider ?? "")) === null) {
+    return { ok: false, reason: `quota reservation ${reservationId} has invalid provider or identifier` };
+  }
+  for (const field of ["session_id", "run_id", "daemon_instance_id"] as const) {
+    if (typeof value[field] !== "string" || normalizeIdentifier(value[field]) === null) {
+      return { ok: false, reason: `quota reservation ${reservationId}.${field} must be a safe identifier` };
+    }
+  }
+  if (value.task_id !== null && (typeof value.task_id !== "string" || normalizeIdentifier(value.task_id) === null)) {
+    return { ok: false, reason: `quota reservation ${reservationId}.task_id must be a safe identifier or null` };
+  }
+  if (!Number.isSafeInteger(value.reserved_tokens) || typeof value.reserved_tokens !== "number" || value.reserved_tokens <= 0) {
+    return { ok: false, reason: `quota reservation ${reservationId}.reserved_tokens must be a positive safe integer` };
+  }
+  if (typeof value.created_at !== "string" || Number.isNaN(Date.parse(value.created_at))) {
+    return { ok: false, reason: `quota reservation ${reservationId}.created_at must be an ISO timestamp` };
+  }
+  if (typeof value.usage_artifact_path !== "string" || value.usage_artifact_path.trim() === "") {
+    return { ok: false, reason: `quota reservation ${reservationId}.usage_artifact_path must be non-empty` };
+  }
+  if (value.status !== "active" && value.status !== "settled" && value.status !== "released") {
+    return { ok: false, reason: `quota reservation ${reservationId}.status is invalid` };
+  }
+  if (value.process_identity !== null) {
+    if (
+      !isRecord(value.process_identity) ||
+      !Number.isSafeInteger(value.process_identity.pid) ||
+      typeof value.process_identity.pid !== "number" ||
+      value.process_identity.pid <= 0 ||
+      typeof value.process_identity.process_instance_id !== "string" ||
+      normalizeIdentifier(value.process_identity.process_instance_id) === null
+    ) {
+      return { ok: false, reason: `quota reservation ${reservationId}.process_identity is invalid` };
+    }
+  }
+  const settlement = normalizeMeteredSettlement(reservationId, value.settlement);
+  if (!settlement.ok) return settlement;
+  if ((value.status === "active") !== (settlement.value === null)) {
+    return { ok: false, reason: `quota reservation ${reservationId} status and settlement disagree` };
+  }
+  return { ok: true, value: value as unknown as MeteredCallReservation };
+}
+
+function normalizeMeteredSettlement(
+  reservationId: string,
+  value: unknown
+): { ok: true; value: MeteredCallSettlement | null } | { ok: false; reason: string } {
+  if (value === null) return { ok: true, value: null };
+  if (!isRecord(value)) return { ok: false, reason: `quota reservation ${reservationId}.settlement is invalid` };
+  if (typeof value.settled_at !== "string" || Number.isNaN(Date.parse(value.settled_at))) {
+    return { ok: false, reason: `quota reservation ${reservationId}.settlement.settled_at must be an ISO timestamp` };
+  }
+  if (
+    value.reason !== "completed" &&
+    value.reason !== "spawn_failed" &&
+    value.reason !== "dead_process_usage_recovered" &&
+    value.reason !== "dead_process_full_charge"
+  ) {
+    return { ok: false, reason: `quota reservation ${reservationId}.settlement.reason is invalid` };
+  }
+  if (!Number.isSafeInteger(value.charged_tokens) || typeof value.charged_tokens !== "number" || value.charged_tokens < 0) {
+    return { ok: false, reason: `quota reservation ${reservationId}.settlement.charged_tokens is invalid` };
+  }
+  if (
+    value.accounting_source !== "provider_reported" &&
+    value.accounting_source !== "self_measured" &&
+    value.accounting_source !== "full_reservation"
+  ) {
+    return { ok: false, reason: `quota reservation ${reservationId}.settlement.accounting_source is invalid` };
+  }
+  return { ok: true, value: value as unknown as MeteredCallSettlement };
 }
 
 function normalizeQuotaLedger(value: unknown): { ok: true; value: QuotaLedger } | { ok: false; reason: string } {

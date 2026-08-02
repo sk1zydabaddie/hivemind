@@ -8,7 +8,6 @@ import {
   findDangerousAdapterArgs,
   formatAdapterProcessFailure,
   loadAdapterProfile,
-  recordAdapterUsage,
   runAdapterProcess
 } from "./adapter.js";
 import { findGitRoot } from "./repo.js";
@@ -105,27 +104,15 @@ export async function runScout(
     return promptResult;
   }
 
-  const startedAt = Date.now();
   const processResult = await runAdapterProcess(repoRoot, profileResult.profile, sourceRootResult.value, promptResult.value.prompt, {
     outputLogPath: adapterRunLogPath(repoRoot, `scout-${taskId}`),
-    usageSessionId: options.usageSessionId
+    usageSessionId: options.usageSessionId,
+    usageRunId: options.usageSessionId ?? taskId,
+    usageTaskId: taskId
   });
   if (!processResult.ok) {
     return processResult;
   }
-  const wallTimeMs = Date.now() - startedAt;
-
-  const ledgerResult = await recordAdapterUsage(
-    repoRoot,
-    profileResult.profile,
-    promptResult.value.prompt,
-    processResult.value,
-    wallTimeMs
-  );
-  if (!ledgerResult.ok) {
-    return { ok: false, reason: ledgerResult.reason };
-  }
-
   if (processResult.value.exitCode !== 0) {
     return { ok: false, reason: formatAdapterProcessFailure(tool, processResult.value, "Scout adapter") };
   }

@@ -3,7 +3,6 @@ import {
   findDangerousAdapterArgs,
   formatAdapterProcessFailure,
   loadAdapterProfile,
-  recordAdapterUsage,
   runAdapterProcess
 } from "./adapter.js";
 import { readEvents, type HivemindEvent } from "./events.js";
@@ -53,16 +52,13 @@ export async function consolidateMemory(
 
   const prompt = buildConsolidationPrompt(evidence);
   const outputLogPath = adapterRunLogPath(repoRoot, "memory-consolidation");
-  const startedAt = Date.now();
   return withProjectTempDirectory(repoRoot, "consolidation", async ({ path: isolatedCwd }) => {
-    const processResult = await runAdapterProcess(repoRoot, profile.profile, isolatedCwd, prompt, { outputLogPath });
+    const processResult = await runAdapterProcess(repoRoot, profile.profile, isolatedCwd, prompt, {
+      outputLogPath,
+      usageRunId: "memory-consolidation"
+    });
     if (!processResult.ok) {
       return processResult;
-    }
-    const wallTimeMs = Date.now() - startedAt;
-    const ledger = await recordAdapterUsage(repoRoot, profile.profile, prompt, processResult.value, wallTimeMs);
-    if (!ledger.ok) {
-      return ledger;
     }
     if (processResult.value.exitCode !== 0) {
       return { ok: false, reason: formatAdapterProcessFailure(tool, processResult.value, "consolidation adapter") };

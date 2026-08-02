@@ -1,7 +1,6 @@
 import {
   findDangerousAdapterArgs,
   formatAdapterProcessFailure,
-  recordAdapterUsage,
   runAdapterProcess,
   type AdapterProcessResult
 } from "./adapter.js";
@@ -49,6 +48,7 @@ export async function runQualityProvider(
     prompt,
     {
       usageSessionId: qualityRunId,
+      usageRunId: qualityRunId,
       shouldCancel: () => qualityRunCancelled(repoRoot, qualityRunId),
       onProcessStart: async (identity) => {
         const recorded = await appendEvent(repoRoot, {
@@ -82,32 +82,14 @@ export async function runQualityProvider(
   }
 
   ensureCapturedOutput(output, processResult.value);
-  const ledger = await recordAdapterUsage(
-    repoRoot,
-    route.profile,
-    prompt,
-    processResult.value,
-    wallTimeMs
-  );
   const provenance = buildProcessProvenance(
     route,
     qualityRunId,
     wallTimeMs,
     processResult.value,
-    ledger.ok ? ledger.value.last_request : null,
+    processResult.value.quotaRequest,
     prompt
   );
-  if (!ledger.ok) {
-    return {
-      producer_result: {
-        status: processResult.value.timedOut ? "timed_out" : "crashed",
-        reason: ledger.reason,
-        output,
-        provenance
-      },
-      model_output: processResult.value.modelOutput
-    };
-  }
   if (processResult.value.timedOut) {
     return {
       producer_result: {

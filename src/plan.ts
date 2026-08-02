@@ -12,7 +12,6 @@ import {
   findDangerousAdapterArgs,
   formatAdapterProcessFailure,
   loadAdapterProfile,
-  recordAdapterUsage,
   runAdapterProcess
 } from "./adapter.js";
 import { canonicalizeIntentPath } from "./canonicalize.js";
@@ -379,18 +378,13 @@ async function generateTentativePlanWithSession(
   if (!prompt.ok) {
     return prompt;
   }
-  const startedAt = Date.now();
   const processResult = await runAdapterProcess(repoRoot, profileResult.profile, repoRoot, prompt.value, {
     outputLogPath: adapterRunLogPath(repoRoot, `planning-${specId}`),
-    usageSessionId
+    usageSessionId,
+    usageRunId: usageSessionId ?? specId
   });
   if (!processResult.ok) {
     return processResult;
-  }
-  const wallTimeMs = Date.now() - startedAt;
-  const ledgerResult = await recordAdapterUsage(repoRoot, profileResult.profile, prompt.value, processResult.value, wallTimeMs);
-  if (!ledgerResult.ok) {
-    return { ok: false, reason: ledgerResult.reason };
   }
   if (processResult.value.exitCode !== 0) {
     return { ok: false, reason: formatAdapterProcessFailure(tool, processResult.value, "planning adapter") };

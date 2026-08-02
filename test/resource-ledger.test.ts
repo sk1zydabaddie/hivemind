@@ -9,10 +9,19 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { initProject } from "../src/init.js";
+import { getProcessLiveness } from "../src/process-liveness.js";
 import {
+  bindMeteredCallProcess,
   checkTokenBudgetPreflight,
+  currentMeteringRuntimeInstanceId,
+  readMeteredBudgetCapacity,
   readQuotaLedger,
+  readQuotaLedgerState,
+  reconcileMeteredCallReservations,
   recordQuotaUsage,
+  reserveMeteredCall,
+  settleMeteredCall,
+  writeMeteredUsageArtifact,
   type QuotaLedger
 } from "../src/resource-ledger.js";
 
@@ -362,6 +371,204 @@ test("quota ledger serializes concurrent self-metered usage records", async () =
   });
 });
 
+test("atomic reservations prevent simultaneous calls from spending the same remaining session budget", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await setResourcePolicy(repo, {
+      run_ceiling: { tokens: 150_000 },
+      session_ceiling: { tokens: 150_000 }
+    });
+    const inputs = ["run-a", "run-b"].map((runId) => ({
+      provider: "codex",
+      session_id: "shared-session",
+      run_id: runId,
+      task_id: runId,
+      daemon_instance_id: currentMeteringRuntimeInstanceId(),
+      estimated_input_tokens: 1
+    }));
+
+    const results = await Promise.all(inputs.map((input) => reserveMeteredCall(repo, input)));
+
+    assert.equal(results.filter((result) => result.ok).length, 1);
+    assert.equal(results.filter((result) => !result.ok && result.budget_exceeded === true).length, 1);
+    const state = await readQuotaLedgerState(repo);
+    assert.equal(state.ok, true);
+    if (!state.ok) return;
+    assert.equal(Object.values(state.value.reservations).filter((entry) => entry.status === "active").length, 1);
+  });
+});
+
+test("restart reconciliation retains reservations for live and unknown worker liveness", async () => {
+  for (const liveness of ["alive", "unknown"] as const) {
+    await withTempRepo(async ({ repo }) => {
+      const reservation = await reserveTestCall(repo, `session-${liveness}`);
+      const identity = { pid: 4242, process_instance_id: `process-${liveness}` };
+      assert.equal((await bindMeteredCallProcess(repo, reservation.reservation_id, identity)).ok, true);
+
+      const reconciled = await reconcileMeteredCallReservations(repo, {
+        probeLiveness: () =>
+          liveness === "unknown"
+            ? getProcessLiveness(4242, () => {
+                throw Object.assign(new Error("permission denied"), { code: "EPERM" });
+              })
+            : liveness
+      });
+      assert.deepEqual(reconciled, { ok: true, value: { retained: 1, settled: 0, fully_charged: 0 } });
+      const state = await readQuotaLedgerState(repo);
+      assert.equal(state.ok, true);
+      if (!state.ok) return;
+      assert.equal(state.value.reservations[reservation.reservation_id].status, "active");
+      assert.equal(state.value.providers.codex, undefined);
+    });
+  }
+});
+
+test("daemon startup preserves a live metered reservation instead of blanket-releasing it", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const reservation = await reserveTestCall(repo, "daemon-restart-live");
+    assert.equal(
+      (
+        await bindMeteredCallProcess(repo, reservation.reservation_id, {
+          pid: process.pid,
+          process_instance_id: "live-test-owner"
+        })
+      ).ok,
+      true
+    );
+
+    const daemon = await startDaemon(repo);
+    try {
+      const state = await readQuotaLedgerState(repo);
+      assert.equal(state.ok, true);
+      if (!state.ok) return;
+      assert.equal(state.value.reservations[reservation.reservation_id].status, "active");
+    } finally {
+      await stopDaemon(daemon);
+    }
+  });
+});
+
+test("a proven-dead worker without durable usage is charged the full reservation", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const reservation = await reserveTestCall(repo, "dead-full-charge");
+    assert.equal(
+      (await bindMeteredCallProcess(repo, reservation.reservation_id, { pid: 5252, process_instance_id: "dead-process" })).ok,
+      true
+    );
+    await mkdir(path.dirname(reservation.usage_artifact_path), { recursive: true });
+    await writeFile(reservation.usage_artifact_path, "{\"version\":1,\"reservation_id\":\"wrong\"}\n", "utf8");
+
+    const reconciled = await reconcileMeteredCallReservations(repo, { probeLiveness: () => "dead" });
+    assert.deepEqual(reconciled, { ok: true, value: { retained: 0, settled: 1, fully_charged: 1 } });
+    const state = await readQuotaLedgerState(repo);
+    assert.equal(state.ok, true);
+    if (!state.ok) return;
+    const settled = state.value.reservations[reservation.reservation_id];
+    assert.equal(settled.status, "settled");
+    assert.equal(settled.settlement?.charged_tokens, 150_000);
+    assert.equal(settled.settlement?.accounting_source, "full_reservation");
+    assert.equal(state.value.providers.codex.session_usage[reservation.session_id].effective_tokens, 150_000);
+  });
+});
+
+test("restart reconciliation settles durable provider usage instead of charging the full reservation", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const reservation = await reserveTestCall(repo, "dead-recovered-usage");
+    const identity = { pid: 6262, process_instance_id: "dead-with-usage" };
+    assert.equal((await bindMeteredCallProcess(repo, reservation.reservation_id, identity)).ok, true);
+    assert.equal(
+      (
+        await writeMeteredUsageArtifact(repo, reservation.reservation_id, identity, {
+          input_tokens_estimated: 3,
+          output_tokens_estimated: 2,
+          wall_time_ms: 10,
+          throttled: false,
+          provider_usage: {
+            status: "captured",
+            parser: "codex-jsonl",
+            usage: {
+              input_tokens: 12,
+              cached_input_tokens: 0,
+              output_tokens: 8,
+              reasoning_tokens: null,
+              total_tokens: 20
+            }
+          }
+        })
+      ).ok,
+      true
+    );
+
+    const reconciled = await reconcileMeteredCallReservations(repo, { probeLiveness: () => "dead" });
+    assert.deepEqual(reconciled, { ok: true, value: { retained: 0, settled: 1, fully_charged: 0 } });
+    const state = await readQuotaLedgerState(repo);
+    assert.equal(state.ok, true);
+    if (!state.ok) return;
+    assert.equal(state.value.reservations[reservation.reservation_id].settlement?.charged_tokens, 20);
+    assert.equal(state.value.reservations[reservation.reservation_id].settlement?.accounting_source, "provider_reported");
+  });
+});
+
+test("metered settlement is exactly once and releases the unused reservation remainder", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const reservation = await reserveTestCall(repo, "exactly-once");
+    const identity = { pid: 7272, process_instance_id: "settlement-owner" };
+    assert.equal((await bindMeteredCallProcess(repo, reservation.reservation_id, identity)).ok, true);
+    const usage = {
+      input_tokens_estimated: 5,
+      output_tokens_estimated: 5,
+      wall_time_ms: 10,
+      throttled: false,
+      provider_usage: {
+        status: "captured" as const,
+        parser: "codex-jsonl",
+        usage: {
+          input_tokens: 12,
+          cached_input_tokens: 0,
+          output_tokens: 8,
+          reasoning_tokens: null,
+          total_tokens: 20
+        }
+      }
+    };
+
+    const wrongOwner = await settleMeteredCall(
+      repo,
+      reservation.reservation_id,
+      { pid: identity.pid, process_instance_id: "different-owner" },
+      usage
+    );
+    assert.equal(wrongOwner.ok, false);
+    if (!wrongOwner.ok) assert.match(wrongOwner.reason, /identity does not match/);
+    const first = await settleMeteredCall(repo, reservation.reservation_id, identity, usage);
+    assert.equal(first.ok, true);
+    const second = await settleMeteredCall(repo, reservation.reservation_id, identity, usage);
+    assert.equal(second.ok, false);
+    if (!second.ok) assert.match(second.reason, /already settled/);
+    const ledger = await readQuotaLedger(repo);
+    assert.equal(ledger.ok, true);
+    if (!ledger.ok) return;
+    assert.equal(ledger.value.codex.self_measured.requests, 1);
+    assert.equal(ledger.value.codex.session_usage[reservation.session_id].effective_tokens, 20);
+
+    const capacity = await readMeteredBudgetCapacity(repo, reservation.session_id);
+    assert.equal(capacity.ok, true);
+    if (!capacity.ok) return;
+    assert.equal(capacity.value.active_reserved_tokens, 0);
+    assert.equal(capacity.value.available_reservations, 3);
+  });
+});
+
+test("the default token ceilings expose a budget concurrency limit of three calls", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const capacity = await readMeteredBudgetCapacity(repo, "default-capacity");
+    assert.equal(capacity.ok, true);
+    if (!capacity.ok) return;
+    assert.equal(capacity.value.per_call_reservation_tokens, 150_000);
+    assert.equal(capacity.value.session_ceiling_tokens, 500_000);
+    assert.equal(capacity.value.available_reservations, 3);
+  });
+});
+
 test("quota ledger serializes writers forced to contend behind one lock", async () => {
   await withTempRepo(async ({ repo }) => {
     const lockPath = path.join(repo, ".hivemind", "resource", "ledger.lock");
@@ -537,6 +744,22 @@ async function setResourcePolicy(repo: string, resourcePolicy: Record<string, un
   const configPath = path.join(repo, ".hivemind", "config.json");
   const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
   await writeFile(configPath, `${JSON.stringify({ ...config, resource_policy: resourcePolicy }, null, 2)}\n`);
+}
+
+async function reserveTestCall(repo: string, sessionId: string) {
+  const reserved = await reserveMeteredCall(repo, {
+    provider: "codex",
+    session_id: sessionId,
+    run_id: `run-${sessionId}`,
+    task_id: `task-${sessionId}`,
+    daemon_instance_id: currentMeteringRuntimeInstanceId(),
+    estimated_input_tokens: 1
+  });
+  assert.equal(reserved.ok, true);
+  if (!reserved.ok || reserved.value.reservation === null) {
+    throw new Error("fixture metered reservation was not created");
+  }
+  return reserved.value.reservation;
 }
 
 async function startDaemon(repo: string): Promise<DaemonProcess> {

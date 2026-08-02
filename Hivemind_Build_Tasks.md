@@ -800,6 +800,21 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
 
 ---
 
+### M10.2 — Atomic metered-call reservations
+- **Depends on:** M4.6, M6.7, M10.1.
+- **Read first:** Overview § *Concurrent task execution*; § *Resource & Continuity Manager*; PL-1 process-liveness contract; adapter spawn boundary; quota-ledger locking and restart reconciliation.
+- **Goal:** Prevent simultaneous metered calls from admitting against the same unsettled session balance before any concurrent scheduler exists.
+- **Behavior — exact (C4):**
+  - The existing quota ledger evolves atomically under its existing single lock to contain both settled usage and active per-call reservations. There is no parallel balance, reservation file, or caller-owned accounting state. Legacy settled-only ledgers remain readable and normalize into the current ledger document.
+  - Every metered adapter invocation reserves the configured per-call token ceiling before `spawn`. Admission atomically requires `settled session usage + active reservations + new reservation <= session ceiling`; no reservation means no metered spawn. Each reservation is durably bound to provider, session, run/task identity, daemon/runtime instance, and the spawned process PID plus process-instance identity. Unmetered local adapters remain outside token reservation.
+  - Normal completion atomically records provider-reported usage when captured (self-measured fallback), marks the reservation settled exactly once, and releases the unused reserved remainder. A pre-spawn failure releases its unused reservation. A completed call that exceeds a run/session ceiling remains durably charged and stops before its output advances the workflow.
+  - Restart reconciliation uses PL-1 only: `alive` or `unknown` (including EPERM/access denied) retains the reservation. Only a proven-dead process may be reconciled. Valid durable adapter-usage evidence settles the captured amount; absent, malformed, identity-mismatched, or unreadable evidence charges the full reservation conservatively. Age never proves staleness.
+  - The capacity projection exposes settled tokens, active reserved tokens, per-call reservation size, session ceiling, and the remaining simultaneous-call budget. With the defaults, 150,000 tokens reserved per call against 500,000 per session admits at most three concurrent metered calls even if a later scheduler is configured for four; the user-visible reason identifies budget, not scheduler cap, as the limiter.
+  - This unit starts no scheduler and launches no concurrent tasks. Lease acquisition, lock ownership, and disjointness semantics are unchanged.
+- **Acceptance test (binary):** Two simultaneous reservations racing for one remaining call budget cannot both pass. Live and EPERM/unknown process owners are never reclaimed; a proven-dead owner with no valid durable usage is charged the full reservation, while valid durable usage is settled. Settlement is exactly once, duplicate settlement cannot add usage, spawn failure releases its reservation, normal settlement releases unused capacity, and daemon startup preserves live reservations rather than blanket-releasing them. The adapter spawn boundary refuses before process creation when reservation admission fails, and the default capacity reports three simultaneous calls under the 150K/500K ceilings.
+
+---
+
 ## Beyond M8
 - **Native adapters** and **cloud/team mode** remain future productization. Their old Overview phase numbers are roadmap labels, not M8 Workspace contract numbers; decompose them into the same one-acceptance-test contracts when reached.
 - **Dogfooding** remains an available deliberate demonstration after M8, not the mechanism used to build M4–M8. When explicitly enabled, it exercises Hivemind's protected workflow against its own repo without replacing each feature's direct contract acceptance.

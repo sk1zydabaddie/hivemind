@@ -6,7 +6,6 @@ import {
   findDangerousAdapterArgs,
   formatAdapterProcessFailure,
   loadAdapterProfile,
-  recordAdapterUsage,
   runAdapterProcess
 } from "./adapter.js";
 import { extractJsonObject, readJsonFile } from "./json.js";
@@ -291,19 +290,13 @@ export async function generateIdeationRound(
   }
 
   const prompt = buildIdeationGenerationPrompt(loaded.value, spec.value.markdown, steering);
-  const startedAt = Date.now();
   const processResult = await runAdapterProcess(repoRoot, profileResult.profile, repoRoot, prompt, {
-    outputLogPath: adapterRunLogPath(repoRoot, `ideation-${specId}`)
+    outputLogPath: adapterRunLogPath(repoRoot, `ideation-${specId}`),
+    usageRunId: specId
   });
   if (!processResult.ok) {
     return processResult;
   }
-  const wallTimeMs = Date.now() - startedAt;
-  const ledgerResult = await recordAdapterUsage(repoRoot, profileResult.profile, prompt, processResult.value, wallTimeMs);
-  if (!ledgerResult.ok) {
-    return { ok: false, reason: ledgerResult.reason };
-  }
-
   if (processResult.value.exitCode !== 0) {
     return { ok: false, reason: formatAdapterProcessFailure(tool, processResult.value, "ideation adapter") };
   }
