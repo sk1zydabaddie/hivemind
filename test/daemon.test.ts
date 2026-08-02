@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +12,7 @@ import { initProject } from "../src/init.js";
 import { checkWriteIntent } from "../src/intent.js";
 import { readActiveLeases, requestLeaseForContract } from "../src/lease.js";
 import { appendTaskOutput, readTaskOutput } from "../src/output-stream.js";
+import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
 import { authorizePlanlessManualTaskIfEligible } from "./support/manual-task.js";
 
@@ -251,27 +252,34 @@ test("daemon streams compact authoritative events separately from per-task worke
   });
 });
 
-test("daemon startup marks started runs without completion as failed", async () => {
-  await withTempRepo(async ({ repo }) => {
-    const started = await appendEvent(repo, {
-      type: "task.started",
-      task_id: "T-001",
-      data: { tool: "fake-stream", worktree: path.join(repo, ".hivemind", "worktrees", "T-001") }
+test("daemon startup does not reclaim a live unfinished worker", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-LIVE", baseCommit, ["README.md"]);
+    const lease = await requestLeaseForContract(repo, "T-LIVE");
+    assert.equal(lease.ok, true, lease.ok ? undefined : lease.reason);
+    const worktree = await createTaskWorktree(repo, "T-LIVE");
+    assert.equal(worktree.ok, true, worktree.ok ? undefined : worktree.reason);
+    const worker = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { windowsHide: true });
+    assert.notEqual(worker.pid, undefined);
+    await appendEvent(repo, { type: "task.started", task_id: "T-LIVE", data: { run_id: "R-LIVE", tool: "fake-stream" } });
+    await appendEvent(repo, {
+      type: "task.worker_process_started",
+      task_id: "T-LIVE",
+      data: { run_id: "R-LIVE", pid: worker.pid, process_instance_id: "live-worker" }
     });
-    assert.equal(started.ok, true);
 
     const daemon = await startDaemon(repo);
     try {
       const events = await readEvents(repo);
       assert.equal(events.ok, true);
-      if (!events.ok) {
-        return;
-      }
-      const failed = events.value.find((event) => event.type === "task.failed" && event.task_id === "T-001");
-      assert.notEqual(failed, undefined);
-      assert.match(String(failed?.data.reason), /daemon restarted before worker completion/);
+      if (events.ok) assert.equal(events.value.some((event) => event.type === "task.failed" && event.task_id === "T-LIVE"), false);
+      const held = await readActiveLeases(repo);
+      assert.equal(held.ok, true);
+      if (held.ok) assert.equal(held.store["README.md"], "T-LIVE");
+      if (worktree.ok) assert.equal((await stat(worktree.value.worktree)).isDirectory(), true);
     } finally {
       await stopDaemon(daemon);
+      worker.kill();
     }
   });
 });

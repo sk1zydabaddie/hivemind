@@ -26,7 +26,7 @@ import { getStatus } from "./status.js";
 import { submitTask } from "./submit.js";
 import { requestTaskRedirect } from "./supervision.js";
 import { validateRequestedTaskId } from "./task-id.js";
-import { reconcileTaskCancellationOnStartup } from "./task-control.js";
+import { reconcileTaskRunOnStartup } from "./task-control.js";
 import { admitValueQuality } from "./value-quality.js";
 import { createTaskWorktree, removeTaskWorktree } from "./worktree.js";
 import { executeWorkspaceAction } from "./workspace-actions.js";
@@ -365,23 +365,8 @@ async function reconcileIncompleteRuns(repoRoot: string): Promise<{ ok: true } |
   }
 
   for (const taskId of tasksNeedingStartupReconciliation(events.value)) {
-    const cancelRequested = events.value.some((event) => event.type === "task.cancel_requested" && event.task_id === taskId);
-    if (cancelRequested) {
-      const cancelled = await reconcileTaskCancellationOnStartup(repoRoot, taskId);
-      if (!cancelled.ok) return cancelled;
-      continue;
-    }
-    const append = await appendEvent(repoRoot, {
-      type: "task.failed",
-      task_id: taskId,
-      data: {
-        reason: "daemon restarted before worker completion; in-flight run marked failed",
-        recovered: false
-      }
-    });
-    if (!append.ok) {
-      return append;
-    }
+    const reconciled = await reconcileTaskRunOnStartup(repoRoot, taskId);
+    if (!reconciled.ok) return reconciled;
   }
 
   return { ok: true };

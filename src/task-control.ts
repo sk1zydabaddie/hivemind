@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { copyFile, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
 import { loadAndValidateContract } from "./contract.js";
@@ -11,6 +11,7 @@ import { removeTaskWorktree } from "./worktree.js";
 
 const cleanupRetryMs = 2_500;
 const cleanupRetryIntervalMs = 50;
+const agentLogPath = "agent.log";
 
 export interface TaskStopResult {
   task_id: string;
@@ -106,15 +107,13 @@ export async function finalizeTaskCancellation(
   if (!hasOpenCancelRequest(events.value, taskId)) {
     return { ok: false, reason: `task cancellation refused: no durable cancel request for ${taskId}` };
   }
-  const worktree = await removeTaskWorktreeAfterProcessExit(repoRoot, taskId);
-  if (!worktree.ok) return recordTaskStopFailure(repoRoot, taskId, worktree.reason, "worktree_cleanup", "dead", true);
-  try {
-    await rm(path.join(repoRoot, ".hivemind", "patches", taskId), { recursive: true, force: true });
-  } catch (error: unknown) {
-    return recordTaskStopFailure(repoRoot, taskId, errorMessage(error), "patch_cleanup", "dead", true);
+  const cleanup = await cleanupTaskAfterProvenWorkerDeath(repoRoot, taskId, {
+    archiveAgentLog: false,
+    removePatchBundle: true
+  });
+  if (!cleanup.ok) {
+    return recordTaskStopFailure(repoRoot, taskId, cleanup.reason, cleanup.stage, "dead", true);
   }
-  const lease = await releaseLease(repoRoot, taskId);
-  if (!lease.ok) return recordTaskStopFailure(repoRoot, taskId, lease.reason, "lease_release", "dead", true);
   const current = await readEvents(repoRoot);
   if (!current.ok) return current;
   if (current.value.some((event) => event.type === "task.cancelled" && event.task_id === taskId)) {
@@ -127,7 +126,7 @@ export async function finalizeTaskCancellation(
     data: {
       version: 1,
       reason: typeof request?.data.reason === "string" ? request.data.reason : "human stop requested",
-      lease_released: true,
+      lease_released: cleanup.released,
       worktree_removed: true,
       patch_bundle_removed: true,
       terminal: true
@@ -136,35 +135,104 @@ export async function finalizeTaskCancellation(
   return appended.ok ? { ok: true, value: undefined } : appended;
 }
 
-export async function reconcileTaskCancellationOnStartup(
+export async function reconcileTaskRunOnStartup(
   repoRoot: string,
   taskId: string,
   options: { probeLiveness?: (pid: number) => ProcessLiveness } = {}
 ): Promise<ControlResult<void>> {
   const events = await readEvents(repoRoot);
   if (!events.ok) return events;
-  if (!hasOpenCancelRequest(events.value, taskId)) return { ok: true, value: undefined };
+  const cancellationRequested = hasOpenCancelRequest(events.value, taskId);
   const state = latestTaskRunState(events.value, taskId);
-  if (state.state === "not_started" || (state.state === "failed" && state.failed.data.worker_death_proven === true)) {
+  if (cancellationRequested && (state.state === "not_started" || (state.state === "failed" && state.failed.data.worker_death_proven === true))) {
     return finalizeTaskCancellation(repoRoot, taskId);
   }
   const identity = workerIdentityForLatestRun(events.value, taskId);
   if (!identity.ok) {
-    const failed = await recordTaskStopFailure(repoRoot, taskId, identity.reason, "restart_worker_identity", "unknown");
-    return failed.recorded ? { ok: true, value: undefined } : failed;
+    return { ok: true, value: undefined };
   }
   const liveness = (options.probeLiveness ?? getProcessLiveness)(identity.value.pid);
   if (liveness !== "dead") {
-    const failed = await recordTaskStopFailure(
-      repoRoot,
-      taskId,
-      `daemon restart cannot prove worker pid ${identity.value.pid} is dead; liveness is ${liveness}`,
-      "restart_worker_liveness",
-      liveness
-    );
+    return { ok: true, value: undefined };
+  }
+  return cancellationRequested
+    ? finalizeTaskCancellation(repoRoot, taskId)
+    : finalizeFailedTaskAfterRestart(repoRoot, taskId, identity.value);
+}
+
+async function finalizeFailedTaskAfterRestart(
+  repoRoot: string,
+  taskId: string,
+  identity: DurableProcessIdentity
+): Promise<ControlResult<void>> {
+  const cleanup = await cleanupTaskAfterProvenWorkerDeath(repoRoot, taskId, {
+    archiveAgentLog: true,
+    removePatchBundle: false
+  });
+  if (!cleanup.ok) {
+    const failed = await recordTaskStopFailure(repoRoot, taskId, cleanup.reason, cleanup.stage, "dead", true);
     return failed.recorded ? { ok: true, value: undefined } : failed;
   }
-  return finalizeTaskCancellation(repoRoot, taskId);
+  const appended = await appendEvent(repoRoot, {
+    type: "task.failed",
+    task_id: taskId,
+    data: {
+      version: 1,
+      reason: "daemon restarted after the worker process ended without a durable completion",
+      recovered: true,
+      worker_death_proven: true,
+      worker_liveness: "dead",
+      pid: identity.pid,
+      process_instance_id: identity.process_instance_id,
+      lease_released: cleanup.released,
+      worktree_removed: true,
+      lease_held_for_retry: false,
+      terminal: true
+    }
+  });
+  return appended.ok ? { ok: true, value: undefined } : appended;
+}
+
+type CleanupFailureStage = "log_archival" | "worktree_cleanup" | "patch_cleanup" | "lease_release";
+
+async function cleanupTaskAfterProvenWorkerDeath(
+  repoRoot: string,
+  taskId: string,
+  options: { archiveAgentLog: boolean; removePatchBundle: boolean }
+): Promise<{ ok: true; released: string[] } | { ok: false; reason: string; stage: CleanupFailureStage }> {
+  if (options.archiveAgentLog) {
+    const archived = await archiveAgentLog(repoRoot, taskId);
+    if (!archived.ok) return { ...archived, stage: "log_archival" };
+  }
+  const worktree = await removeTaskWorktreeAfterProcessExit(repoRoot, taskId);
+  if (!worktree.ok) return { ...worktree, stage: "worktree_cleanup" };
+  if (options.removePatchBundle) {
+    try {
+      await rm(path.join(repoRoot, ".hivemind", "patches", taskId), { recursive: true, force: true });
+    } catch (error: unknown) {
+      return { ok: false, reason: errorMessage(error), stage: "patch_cleanup" };
+    }
+  }
+  const lease = await releaseLease(repoRoot, taskId);
+  return lease.ok
+    ? { ok: true, released: lease.value.released }
+    : { ok: false, reason: lease.reason, stage: "lease_release" };
+}
+
+async function archiveAgentLog(repoRoot: string, taskId: string): Promise<ControlResult<void>> {
+  try {
+    const destination = path.join(repoRoot, ".hivemind", "patches", taskId);
+    await mkdir(destination, { recursive: true });
+    await copyFile(
+      path.join(repoRoot, ".hivemind", "worktrees", taskId, agentLogPath),
+      path.join(destination, agentLogPath)
+    );
+    return { ok: true, value: undefined };
+  } catch (error: unknown) {
+    return isNodeError(error, "ENOENT")
+      ? { ok: true, value: undefined }
+      : { ok: false, reason: errorMessage(error) };
+  }
 }
 
 function workerIdentityForLatestRun(
@@ -239,6 +307,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isNodeError(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 async function removeTaskWorktreeAfterProcessExit(

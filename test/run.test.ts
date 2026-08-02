@@ -19,7 +19,7 @@ import { recordHumanGuidance } from "../src/human-guidance.js";
 import { recordQuotaUsage } from "../src/resource-ledger.js";
 import { submitTask } from "../src/submit.js";
 import { authorizeManualTask, reviewManualTaskForAuthorization } from "../src/plan.js";
-import { reconcileTaskCancellationOnStartup, requestTaskStop } from "../src/task-control.js";
+import { reconcileTaskRunOnStartup, requestTaskStop } from "../src/task-control.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
@@ -1027,7 +1027,7 @@ test("stop cleanup failure keeps the lease held, records a terminal retryable fa
   });
 });
 
-test("restart reconciliation never reclaims an ambiguously-live worker", async () => {
+test("restart reconciliation never reclaims an ambiguously-live cancelled worker", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-STOP-UNKNOWN", baseCommit, ["README.md"]);
     await grantLease(repo, "T-STOP-UNKNOWN", ["README.md"]);
@@ -1041,7 +1041,7 @@ test("restart reconciliation never reclaims an ambiguously-live worker", async (
     });
     await appendEvent(repo, { type: "task.cancel_requested", task_id: "T-STOP-UNKNOWN", data: { reason: "daemon stopped mid-cancel" } });
 
-    const reconciled = await reconcileTaskCancellationOnStartup(repo, "T-STOP-UNKNOWN", { probeLiveness: () => "unknown" });
+    const reconciled = await reconcileTaskRunOnStartup(repo, "T-STOP-UNKNOWN", { probeLiveness: () => "unknown" });
     assert.equal(reconciled.ok, true, reconciled.ok ? undefined : reconciled.reason);
     const held = await readActiveLeases(repo);
     assert.equal(held.ok, true);
@@ -1050,11 +1050,34 @@ test("restart reconciliation never reclaims an ambiguously-live worker", async (
     const events = await readEvents(repo);
     assert.equal(events.ok, true);
     if (events.ok) {
-      const terminal = events.value.at(-1);
-      assert.equal(terminal?.type, "task.failed");
-      assert.equal(terminal?.data.worker_liveness, "unknown");
-      assert.equal(terminal?.data.lease_state, "held");
+      assert.equal(events.value.some((event) => event.type === "task.failed" && event.task_id === "T-STOP-UNKNOWN"), false);
+      assert.equal(events.value.at(-1)?.type, "task.cancel_requested");
     }
+  });
+});
+
+test("ordinary restart reconciliation treats EPERM-style ambiguity as alive", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-RUN-UNKNOWN", baseCommit, ["README.md"]);
+    await grantLease(repo, "T-RUN-UNKNOWN", ["README.md"]);
+    const worktree = await createTaskWorktree(repo, "T-RUN-UNKNOWN");
+    assert.equal(worktree.ok, true);
+    await appendEvent(repo, { type: "task.started", task_id: "T-RUN-UNKNOWN", data: { run_id: "R-UNKNOWN" } });
+    await appendEvent(repo, {
+      type: "task.worker_process_started",
+      task_id: "T-RUN-UNKNOWN",
+      data: { run_id: "R-UNKNOWN", pid: 4242, process_instance_id: "unknown-worker" }
+    });
+
+    const reconciled = await reconcileTaskRunOnStartup(repo, "T-RUN-UNKNOWN", { probeLiveness: () => "unknown" });
+    assert.equal(reconciled.ok, true, reconciled.ok ? undefined : reconciled.reason);
+    const held = await readActiveLeases(repo);
+    assert.equal(held.ok, true);
+    if (held.ok) assert.equal(held.store["README.md"], "T-RUN-UNKNOWN");
+    if (worktree.ok) assert.equal((await stat(worktree.value.worktree)).isDirectory(), true);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (events.ok) assert.equal(events.value.some((event) => event.type === "task.failed" && event.task_id === "T-RUN-UNKNOWN"), false);
   });
 });
 
@@ -1072,7 +1095,7 @@ test("restart reconciliation reclaims a provably-dead worker and reaches task.ca
     });
     await appendEvent(repo, { type: "task.cancel_requested", task_id: "T-STOP-DEAD", data: { reason: "daemon stopped mid-cancel" } });
 
-    const reconciled = await reconcileTaskCancellationOnStartup(repo, "T-STOP-DEAD", { probeLiveness: () => "dead" });
+    const reconciled = await reconcileTaskRunOnStartup(repo, "T-STOP-DEAD", { probeLiveness: () => "dead" });
     assert.equal(reconciled.ok, true, reconciled.ok ? undefined : reconciled.reason);
     const released = await readActiveLeases(repo);
     assert.equal(released.ok, true);
@@ -1081,6 +1104,37 @@ test("restart reconciliation reclaims a provably-dead worker and reaches task.ca
     const events = await readEvents(repo);
     assert.equal(events.ok, true);
     if (events.ok) assert.equal(events.value.at(-1)?.type, "task.cancelled");
+  });
+});
+
+test("ordinary restart reconciliation cleans a proven-dead worker before releasing its lease", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-RUN-DEAD", baseCommit, ["README.md"]);
+    await grantLease(repo, "T-RUN-DEAD", ["README.md"]);
+    const worktree = await createTaskWorktree(repo, "T-RUN-DEAD");
+    assert.equal(worktree.ok, true);
+    await appendEvent(repo, { type: "task.started", task_id: "T-RUN-DEAD", data: { run_id: "R-DEAD" } });
+    await appendEvent(repo, {
+      type: "task.worker_process_started",
+      task_id: "T-RUN-DEAD",
+      data: { run_id: "R-DEAD", pid: 4343, process_instance_id: "dead-worker" }
+    });
+
+    const reconciled = await reconcileTaskRunOnStartup(repo, "T-RUN-DEAD", { probeLiveness: () => "dead" });
+    assert.equal(reconciled.ok, true, reconciled.ok ? undefined : reconciled.reason);
+    const released = await readActiveLeases(repo);
+    assert.equal(released.ok, true);
+    if (released.ok) assert.deepEqual(released.store, {});
+    if (worktree.ok) await assertMissing(worktree.value.worktree);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (events.ok) {
+      const failed = events.value.at(-1);
+      assert.equal(failed?.type, "task.failed");
+      assert.equal(failed?.data.worker_death_proven, true);
+      assert.equal(failed?.data.worktree_removed, true);
+      assert.deepEqual(failed?.data.lease_released, ["README.md"]);
+    }
   });
 });
 
