@@ -9,6 +9,7 @@ export interface WorkspaceQueueItem {
     | "manager_approval"
     | "verification_blocked"
     | "reverification_required"
+    | "run_stalled"
     | "task_attention"
     | "quality_cancel_failed"
     | "memory_review"
@@ -70,6 +71,7 @@ export interface WorkspaceInspection {
     session_id: string;
     spec_id: string;
     created_at: string;
+    last_activity_at: string;
     status: "active" | "paused" | "stopped" | "complete";
     tool: string;
     call_count: number;

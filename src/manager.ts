@@ -116,6 +116,7 @@ export interface ManagerWorkspaceSession {
   session_id: string;
   spec_id: string;
   created_at: string;
+  last_activity_at: string;
   status: "active" | "paused" | "stopped" | "complete";
   tool: string;
   call_count: number;
@@ -128,7 +129,6 @@ export interface ManagerWorkspaceSession {
 }
 
 export interface ManagerWorkspaceHistorySession extends ManagerWorkspaceSession {
-  last_activity_at: string;
   task_ids: string[];
   evidence_path: string;
 }
@@ -2364,7 +2364,7 @@ export async function inspectLatestManagerSession(
       right.created_at.localeCompare(left.created_at) || right.session_id.localeCompare(left.session_id)
     )[0];
   if (latest === undefined) return { ok: true, value: null };
-  const { last_activity_at: _lastActivityAt, task_ids: _taskIds, evidence_path: _evidencePath, ...current } = latest;
+  const { task_ids: _taskIds, evidence_path: _evidencePath, ...current } = latest;
   return { ok: true, value: current };
 }
 

@@ -20,6 +20,9 @@ import {
 } from "./plan.js";
 import { readQuotaLedger, type QuotaLedger } from "./resource-ledger.js";
 import { readPromotedRoutingPolicy } from "./learned-routing.js";
+import { loadAdapterProfile } from "./adapter.js";
+import { getProcessLiveness, type ProcessLiveness } from "./process-liveness.js";
+import { latestTaskRunState } from "./run-state.js";
 import type { LearnedRoutingPolicy, RoutingProviderScorecard } from "./routing-policy-schema.js";
 import type { ValueQualityPolicy } from "./value-quality-policy-schema.js";
 import { inferAllowedFilesTier, type TaskTier } from "./routing.js";
@@ -30,7 +33,7 @@ import { inspectLatestAdoptionReadiness } from "./adoption.js";
 
 export interface WorkspaceQueueItem {
   id: string;
-  kind: "plan_review" | "manager_approval" | "verification_blocked" | "reverification_required" | "task_attention" | "quality_cancel_failed" | "memory_review" | "quality_review" | "plan_amendment" | "adoption_ready";
+  kind: "plan_review" | "manager_approval" | "verification_blocked" | "reverification_required" | "run_stalled" | "task_attention" | "quality_cancel_failed" | "memory_review" | "quality_review" | "plan_amendment" | "adoption_ready";
   title: string;
   detail: string;
   created_at: string;
@@ -205,7 +208,18 @@ export interface WorkspaceHistoryInspection {
   warnings: string[];
 }
 
-export async function inspectWorkspace(repoRoot: string): Promise<{ ok: true; value: WorkspaceInspection } | { ok: false; reason: string }> {
+export const DEFAULT_RUN_STALL_INTERVAL_MS = 45_000;
+
+export interface WorkspaceInspectionOptions {
+  now?: Date;
+  stallIntervalMs?: number;
+  processLiveness?: (pid: number) => ProcessLiveness;
+}
+
+export async function inspectWorkspace(
+  repoRoot: string,
+  options: WorkspaceInspectionOptions = {}
+): Promise<{ ok: true; value: WorkspaceInspection } | { ok: false; reason: string }> {
   const status = await getStatus(repoRoot);
   if (!status.ok) return status;
   const config = await loadConfig(repoRoot);
@@ -227,7 +241,15 @@ export async function inspectWorkspace(repoRoot: string): Promise<{ ok: true; va
     : await inspectPlans(repoRoot, specId, events.value, config.config);
   if (!planState.ok) return planState;
   const integrationFailure = buildIntegrationFailure(status.value, session.value);
-  const queues = await buildQueues(repoRoot, events.value, planState.review, session.value, integrationFailure);
+  const queues = await buildQueues(
+    repoRoot,
+    events.value,
+    planState.review,
+    planState.current,
+    session.value,
+    integrationFailure,
+    options
+  );
   if (!queues.ok) return queues;
   const ledger = await readQuotaLedger(repoRoot);
   if (!ledger.ok) return ledger;
@@ -721,8 +743,10 @@ async function buildQueues(
   repoRoot: string,
   events: HivemindEvent[],
   planReview: WorkspacePlanReview | null,
+  currentPlan: WorkspacePlanReview | null,
   session: ManagerWorkspaceSession | null,
-  integrationFailure: WorkspaceInspection["integration_failure"]
+  integrationFailure: WorkspaceInspection["integration_failure"],
+  options: WorkspaceInspectionOptions
 ): Promise<{ ok: true; value: { needsYou: WorkspaceQueueItem[]; later: WorkspaceQueueItem[] } } | { ok: false; reason: string }> {
   const needsYou: WorkspaceQueueItem[] = [];
   if (planReview !== null) {
@@ -771,6 +795,8 @@ async function buildQueues(
       }
     });
   }
+  const stalled = await inspectRunStall(repoRoot, events, planReview, currentPlan, session, options);
+  if (stalled !== null) needsYou.push(stalled);
   const adoption = await inspectLatestAdoptionReadiness(repoRoot);
   if (!adoption.ok) return adoption;
   if (adoption.value.status === "needs_reverification") {
@@ -858,6 +884,139 @@ async function buildQueues(
       later: later.sort(compareQueueItems)
     }
   };
+}
+
+async function inspectRunStall(
+  repoRoot: string,
+  events: HivemindEvent[],
+  planReview: WorkspacePlanReview | null,
+  currentPlan: WorkspacePlanReview | null,
+  session: ManagerWorkspaceSession | null,
+  options: WorkspaceInspectionOptions
+): Promise<WorkspaceQueueItem | null> {
+  if (planReview !== null || currentPlan === null) return null;
+  const now = options.now ?? new Date();
+  const stallIntervalMs = options.stallIntervalMs ?? DEFAULT_RUN_STALL_INTERVAL_MS;
+  if (!Number.isFinite(now.getTime()) || !Number.isInteger(stallIntervalMs) || stallIntervalMs <= 0) return null;
+  if (events.some((event) => {
+    const taskIds = event.data.task_ids;
+    return event.type === "adoption.completed" &&
+      Array.isArray(taskIds) &&
+      currentPlan.tasks.every((task) => taskIds.includes(task.task_id));
+  })) return null;
+
+  if (session === null) {
+    const ratified = [...events].reverse().find((event) =>
+      event.type === "plan.ratified" &&
+      event.data.spec_id === currentPlan.spec_id &&
+      event.data.plan_hash === currentPlan.plan_hash
+    );
+    if (ratified === undefined || elapsedMs(now, ratified.ts) < stallIntervalMs) return null;
+    return {
+      id: `run-stalled:start:${currentPlan.plan_hash}:${ratified.ts}`,
+      kind: "run_stalled",
+      title: "Approved work has not started",
+      detail: `No project step was recorded after the plan was approved. Expected next: start the ${currentPlan.tasks.length}-task run.`,
+      created_at: ratified.ts,
+      task_id: null,
+      action: {
+        type: "manager.start",
+        payload: { message: "Continue the exact approved plan through the normal checks.", tool: "manager" }
+      }
+    };
+  }
+
+  if (session.status !== "active" || !session.continuation_available) return null;
+  const runEvents = events.filter((event) => event.ts >= session.created_at);
+  const lastProgressAt = [...runEvents.map((event) => event.ts), session.last_activity_at]
+    .filter((value) => !Number.isNaN(Date.parse(value)))
+    .sort()
+    .at(-1) ?? session.created_at;
+  if (elapsedMs(now, lastProgressAt) < stallIntervalMs) return null;
+
+  for (const task of currentPlan.tasks) {
+    const state = latestTaskRunState(events, task.task_id);
+    if (state.state !== "running") continue;
+    const worker = await inspectRunningWorkerStall(repoRoot, events, task.task_id, state.started, now, stallIntervalMs, options.processLiveness);
+    if (worker.status === "healthy_or_uncertain") return null;
+    return {
+      id: `run-stalled:worker:${task.task_id}:${worker.since}`,
+      kind: "run_stalled",
+      title: `${task.task_id} stopped making progress`,
+      detail: `${worker.reason} Expected next: stop the worker cleanly, then retry or re-plan.`,
+      created_at: worker.since,
+      task_id: task.task_id,
+      action: { type: "task.stop", payload: { task_id: task.task_id, reason: "Stop a stalled worker from the workspace." } }
+    };
+  }
+
+  return {
+    id: `run-stalled:continue:${session.session_id}:${lastProgressAt}`,
+    kind: "run_stalled",
+    title: "The run stopped advancing",
+    detail: `No durable project step followed the last recorded activity. Expected next: continue the approved run from its stored state.`,
+    created_at: lastProgressAt,
+    task_id: null,
+    action: {
+      type: "manager.continue",
+      payload: { session_id: session.session_id, tool: session.tool, max_steps: 25 }
+    }
+  };
+}
+
+async function inspectRunningWorkerStall(
+  repoRoot: string,
+  events: HivemindEvent[],
+  taskId: string,
+  started: HivemindEvent,
+  now: Date,
+  stallIntervalMs: number,
+  probeLiveness: ((pid: number) => ProcessLiveness) | undefined
+): Promise<{ status: "stalled"; reason: string; since: string } | { status: "healthy_or_uncertain" }> {
+  const runId = started.data.run_id;
+  const processStarted = [...events].reverse().find((event) =>
+    event.type === "task.worker_process_started" &&
+    event.task_id === taskId &&
+    event.data.run_id === runId
+  );
+  if (processStarted === undefined) {
+    return elapsedMs(now, started.ts) >= stallIntervalMs
+      ? { status: "stalled", reason: "The worker never recorded a process start.", since: started.ts }
+      : { status: "healthy_or_uncertain" };
+  }
+  const processStopped = events.some((event) =>
+    event.type === "task.worker_process_stopped" &&
+    event.task_id === taskId &&
+    event.data.run_id === runId &&
+    event.ts >= processStarted.ts
+  );
+  if (processStopped) {
+    return { status: "stalled", reason: "The worker stopped without recording a task result.", since: processStarted.ts };
+  }
+  const pid = Number(processStarted.data.pid);
+  if (!Number.isSafeInteger(pid) || pid <= 0) return { status: "healthy_or_uncertain" };
+  const liveness = (probeLiveness ?? getProcessLiveness)(pid);
+  if (liveness === "dead") {
+    return { status: "stalled", reason: "The worker process ended without recording a task result.", since: processStarted.ts };
+  }
+  if (liveness === "unknown") return { status: "healthy_or_uncertain" };
+
+  const tool = typeof processStarted.data.tool === "string" ? processStarted.data.tool : "";
+  if (tool === "") return { status: "healthy_or_uncertain" };
+  const profile = await loadAdapterProfile(repoRoot, tool);
+  if (!profile.ok || profile.profile.timeout_ms === undefined) return { status: "healthy_or_uncertain" };
+  return elapsedMs(now, processStarted.ts) >= profile.profile.timeout_ms + stallIntervalMs
+    ? {
+        status: "stalled",
+        reason: `The worker remained active past its ${Math.ceil(profile.profile.timeout_ms / 1000)}-second time limit.`,
+        since: processStarted.ts
+      }
+    : { status: "healthy_or_uncertain" };
+}
+
+function elapsedMs(now: Date, timestamp: string): number {
+  const then = Date.parse(timestamp);
+  return Number.isNaN(then) ? 0 : Math.max(0, now.getTime() - then);
 }
 
 function latestTaskAttention(events: HivemindEvent[]): HivemindEvent[] {

@@ -51,6 +51,7 @@ h1, h2, h3, p { margin-top: 0; }
 h1, h2, h3 { font-family: var(--display-font); letter-spacing: 0; }
 
 .app-shell { height: 100vh; display: grid; grid-template-rows: 58px minmax(0, 1fr); overflow: hidden; }
+.app-shell.has-shell-alert { grid-template-rows: 58px auto minmax(0, 1fr); }
 .app-header {
   display: grid;
   grid-template-columns: minmax(170px, .55fr) minmax(420px, 1.65fr) minmax(190px, .65fr);
@@ -100,6 +101,18 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .connection-readout strong, .connection-readout small { display: block; overflow-wrap: anywhere; }
 .connection-readout strong { font-size: 11px; text-transform: capitalize; }
 .connection-readout small { margin-top: 1px; color: var(--ink-soft); font-size: 9px; }
+.shell-build-alert {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 9px 24px;
+  color: var(--exception-clay);
+  background: var(--exception-wash);
+  border-bottom: 1px solid var(--exception-clay);
+  font-size: 11px;
+}
+.shell-build-alert strong { flex: 0 0 auto; }
+.shell-build-alert span:last-child { margin-left: auto; font-weight: 700; }
 
 .workspace-tabs { min-height: 0; display: grid; grid-template-rows: 44px minmax(0, 1fr); }
 .tab-rail { display: flex; align-items: center; justify-content: space-between; padding: 0 24px; background: var(--paper); border-bottom: 1px solid var(--pinline); }

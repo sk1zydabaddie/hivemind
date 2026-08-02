@@ -2,6 +2,8 @@ export interface ProjectConnection {
   project_root: string;
   daemon_url: string;
   build_id: string;
+  shell_build_id: string;
+  expected_shell_build_id: string;
   status: "attached" | "started";
 }
 
@@ -95,8 +97,20 @@ export function validateProjectConnection(value: unknown): ProjectConnection {
       ? record.status
       : "";
   const buildId = typeof record.build_id === "string" ? record.build_id.trim() : "";
-  if (projectRoot === "" || daemonUrl === "" || status === "" || !/^[a-f0-9]{64}$/u.test(buildId)) {
+  const shellBuildId = typeof record.shell_build_id === "string" ? record.shell_build_id.trim() : "";
+  const expectedShellBuildId = typeof record.expected_shell_build_id === "string" ? record.expected_shell_build_id.trim() : "";
+  if (
+    projectRoot === "" ||
+    daemonUrl === "" ||
+    status === "" ||
+    !/^[a-f0-9]{64}$/u.test(buildId) ||
+    !/^[a-f0-9]{64}$/u.test(shellBuildId) ||
+    !/^[a-f0-9]{64}$/u.test(expectedShellBuildId)
+  ) {
     throw new Error("The desktop shell returned an incomplete project connection.");
+  }
+  if (shellBuildId !== expectedShellBuildId) {
+    throw new Error("Desktop update required: the running shell does not match Hivemind Core. Rebuild and restart the app before using project controls.");
   }
   if (!/^http:\/\/(?:127\.0\.0\.1|localhost):\d+$/u.test(daemonUrl)) {
     throw new Error("The desktop shell returned a non-loopback daemon URL.");
@@ -105,6 +119,8 @@ export function validateProjectConnection(value: unknown): ProjectConnection {
     project_root: projectRoot,
     daemon_url: daemonUrl,
     build_id: buildId,
+    shell_build_id: shellBuildId,
+    expected_shell_build_id: expectedShellBuildId,
     status
   };
 }

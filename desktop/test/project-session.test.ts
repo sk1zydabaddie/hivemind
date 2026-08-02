@@ -10,6 +10,7 @@ import {
 
 describe("project-bound desktop session", () => {
   const buildId = "a".repeat(64);
+  const shellBuildId = "b".repeat(64);
   test("a later selection wins and stale project state is never reconnected", async () => {
     const pending = new Map<
       string,
@@ -32,6 +33,8 @@ describe("project-bound desktop session", () => {
       project_root: "B",
       daemon_url: "http://127.0.0.1:41002",
       build_id: buildId,
+      shell_build_id: shellBuildId,
+      expected_shell_build_id: shellBuildId,
       status: "attached"
     });
     expect((await projectB).ok).toBe(true);
@@ -39,6 +42,8 @@ describe("project-bound desktop session", () => {
       project_root: "A",
       daemon_url: "http://127.0.0.1:41001",
       build_id: buildId,
+      shell_build_id: shellBuildId,
+      expected_shell_build_id: shellBuildId,
       status: "attached"
     });
     expect(await projectA).toEqual({ ok: false, stale: true });
@@ -53,12 +58,16 @@ describe("project-bound desktop session", () => {
         project_root: "D:\\Projects\\A",
         daemon_url: "http://127.0.0.1:8765/",
         build_id: buildId,
+        shell_build_id: shellBuildId,
+        expected_shell_build_id: shellBuildId,
         status: "started"
       })
     ).toEqual({
       project_root: "D:\\Projects\\A",
       daemon_url: "http://127.0.0.1:8765",
       build_id: buildId,
+      shell_build_id: shellBuildId,
+      expected_shell_build_id: shellBuildId,
       status: "started"
     });
     expect(() =>
@@ -66,6 +75,8 @@ describe("project-bound desktop session", () => {
         project_root: "D:\\Projects\\A",
         daemon_url: "https://example.com",
         build_id: buildId,
+        shell_build_id: shellBuildId,
+        expected_shell_build_id: shellBuildId,
         status: "attached"
       })
     ).toThrow(/non-loopback/u);
@@ -74,9 +85,21 @@ describe("project-bound desktop session", () => {
         project_root: "D:\\Projects\\A",
         daemon_url: "http://127.0.0.1:8765",
         build_id: "stale",
+        shell_build_id: shellBuildId,
+        expected_shell_build_id: shellBuildId,
         status: "attached"
       })
     ).toThrow(/incomplete project connection/u);
+    expect(() =>
+      validateProjectConnection({
+        project_root: "D:\\Projects\\A",
+        daemon_url: "http://127.0.0.1:8765",
+        build_id: buildId,
+        shell_build_id: shellBuildId,
+        expected_shell_build_id: "c".repeat(64),
+        status: "attached"
+      })
+    ).toThrow(/Desktop update required/u);
   });
 
   test("queued callbacks from a prior project become invalid immediately", () => {

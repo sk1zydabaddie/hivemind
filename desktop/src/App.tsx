@@ -42,10 +42,11 @@ export default function App(): React.JSX.Element {
     workspace.connection?.project_root ?? workspace.projectPath
   );
   const projectName = projectNameFromPath(visibleProjectPath);
+  const shellUpdateRequired = workspace.connectionState === "update required";
 
   return (
     <TooltipProvider delayDuration={180}>
-      <main className="app-shell">
+      <main className={`app-shell ${shellUpdateRequired ? "has-shell-alert" : ""}`}>
         <header className="app-header">
           <div className="brand">
             <span className="brand-mark" aria-hidden="true">
@@ -87,6 +88,14 @@ export default function App(): React.JSX.Element {
           </div>
         </header>
 
+        {shellUpdateRequired ? (
+          <section className="shell-build-alert" role="alert">
+            <strong>Desktop update required</strong>
+            <span>{workspace.connectionDetail}</span>
+            <span>Project controls are disabled until the app is rebuilt and restarted.</span>
+          </section>
+        ) : null}
+
         <Tabs className="workspace-tabs" defaultValue="work">
           <div className="tab-rail">
             <TabsList aria-label="Workspace sections">
@@ -118,6 +127,9 @@ export default function App(): React.JSX.Element {
               projection={workspace.projection}
               inspection={workspace.inspection}
               actionError={workspace.actionError}
+              connectionState={workspace.connectionState}
+              connectionDetail={workspace.connectionDetail}
+              onReconnect={() => workspace.switchProject(workspace.connection?.project_root ?? workspace.projectPath)}
               onSelectTask={workspace.selectTaskOutput}
               onAction={workspace.performAction}
             />

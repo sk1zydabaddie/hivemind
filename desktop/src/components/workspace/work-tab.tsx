@@ -48,6 +48,9 @@ interface WorkTabProps {
   projection: BoardProjection;
   inspection: WorkspaceInspection | null;
   actionError: string;
+  connectionState: string;
+  connectionDetail: string;
+  onReconnect: () => Promise<void>;
   onSelectTask: (taskId: string) => void;
   onAction: <T>(action: WorkspaceAction) => Promise<T>;
 }
@@ -93,6 +96,9 @@ export function WorkTab({
   projection,
   inspection,
   actionError,
+  connectionState,
+  connectionDetail,
+  onReconnect,
   onSelectTask,
   onAction
 }: WorkTabProps): React.JSX.Element {
@@ -122,7 +128,18 @@ export function WorkTab({
     activityEndRef.current?.scrollIntoView({ block: "nearest" });
   }, [projection.eventCount]);
 
-  const attention = inspection?.needs_you.find(
+  const connectionAttention: WorkspaceQueueItem | null = connectionState === "connection interrupted" || connectionState === "connection error"
+    ? {
+        id: "connection-interrupted",
+        kind: "run_stalled",
+        title: "Project updates stopped",
+        detail: `${connectionDetail || "The desktop lost its connection to this project."} Expected next: reconnect before trusting the run's current state.`,
+        created_at: new Date().toISOString(),
+        task_id: null,
+        action: null
+      }
+    : null;
+  const attention = connectionAttention ?? inspection?.needs_you.find(
     (item) => !dismissedAttention.includes(item.id)
   );
   const plan = inspection?.plan_review ?? null;
@@ -244,8 +261,11 @@ export function WorkTab({
     setBusy(true);
     setFeedback("");
     try {
-      const result = await onAction<{ task_ids?: string[] }>(item.action);
-      if (item.action.type === "manager.retry_blocked" && managerSession) {
+      const result = await onAction<{ task_ids?: string[]; session_id?: string }>(item.action);
+      if (item.action.type === "manager.start" && result.session_id) {
+        await continueSession(result.session_id);
+        setFeedback("The stalled run restarted from its approved plan.");
+      } else if (item.action.type === "manager.retry_blocked" && managerSession) {
         await onAction({
           type: "manager.continue",
           payload: {
@@ -355,7 +375,9 @@ export function WorkTab({
               patchLoading={changeSetPatchLoading}
               onLoadPatch={() => void loadChangeSetPatch(attention)}
               onOpen={() => {
-                if (attention.kind === "plan_review") {
+                if (attention.id === "connection-interrupted") {
+                  void onReconnect();
+                } else if (attention.kind === "plan_review") {
                   void openPlanReview();
                 } else if (attention.task_id) {
                   onSelectTask(attention.task_id);
@@ -405,10 +427,12 @@ export function WorkTab({
 
         <QueueColumn
           inspection={inspection}
+          connectionAttention={connectionAttention}
           busy={busy}
           onOpenPlan={() => void openPlanReview()}
           onSelectTask={onSelectTask}
           onApprove={(item) => void approveQueueItem(item)}
+          onReconnect={() => void onReconnect()}
         />
       </div>
 
@@ -865,22 +889,35 @@ function TaskDetails({
 
 function QueueColumn({
   inspection,
+  connectionAttention,
   busy,
   onOpenPlan,
   onSelectTask,
-  onApprove
+  onApprove,
+  onReconnect
 }: {
   inspection: WorkspaceInspection | null;
+  connectionAttention: WorkspaceQueueItem | null;
   busy: boolean;
   onOpenPlan: () => void;
   onSelectTask: (taskId: string) => void;
   onApprove: (item: WorkspaceQueueItem) => void;
+  onReconnect: () => void;
 }): React.JSX.Element {
+  const items = connectionAttention === null
+    ? inspection?.needs_you ?? []
+    : [connectionAttention, ...(inspection?.needs_you ?? [])];
   return (
     <aside className="queue-column">
-      <QueuePanel title="Needs you" count={inspection?.needs_you.length ?? 0} empty="Nothing is blocking progress.">
-        {inspection?.needs_you.map((item) => (
-          <QueueRow key={item.id} item={item} busy={busy} onOpen={() => item.kind === "plan_review" ? onOpenPlan() : item.task_id ? onSelectTask(item.task_id) : undefined} onApprove={() => onApprove(item)} />
+      <QueuePanel title="Needs you" count={items.length} empty="Nothing is blocking progress.">
+        {items.map((item) => (
+          <QueueRow
+            key={item.id}
+            item={item}
+            busy={busy}
+            onOpen={() => item.id === "connection-interrupted" ? onReconnect() : item.kind === "plan_review" ? onOpenPlan() : item.task_id ? onSelectTask(item.task_id) : undefined}
+            onApprove={() => onApprove(item)}
+          />
         ))}
       </QueuePanel>
     </aside>
@@ -895,13 +932,16 @@ function QueueRow({ item, busy, onOpen, onApprove }: { item: WorkspaceQueueItem;
   return (
     <div className="queue-row">
       <div><strong>{item.title}</strong><span>{plainPrimaryDetail(item.detail, item.kind)}</span></div>
-      {item.action ? <button className="queue-action" type="button" disabled={busy} onClick={onApprove}>{queueActionLabel(item.action.type)}</button> : item.kind === "plan_review" || item.task_id ? <button className="icon-button" type="button" onClick={onOpen} aria-label={`Open ${item.title}`}><ChevronRight size={15} /></button> : null}
+      {item.action ? <button className="queue-action" type="button" disabled={busy} onClick={onApprove}>{queueActionLabel(item.action.type)}</button> : item.kind === "plan_review" || item.kind === "run_stalled" || item.task_id ? <button className="icon-button" type="button" onClick={onOpen} aria-label={`Open ${item.title}`}><ChevronRight size={15} /></button> : null}
     </div>
   );
 }
 
 function queueActionLabel(actionType: string): string {
+  if (actionType === "manager.start") return "Restart run";
+  if (actionType === "manager.continue") return "Continue";
   if (actionType === "manager.retry_blocked") return "Retry";
+  if (actionType === "task.stop") return "Stop worker";
   if (actionType === "verification.rerun") return "Run checks again";
   if (actionType === "adoption.review") return "Review";
   if (actionType === "adoption.execute") return "Merge exact set";

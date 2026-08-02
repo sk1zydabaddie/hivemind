@@ -51,12 +51,18 @@ export function useWorkspace(): WorkspaceView {
   const streamGuardRef = useRef(createProjectStreamGuard());
   const connectionRef = useRef<ProjectConnection | null>(null);
   const inspectionTimerRef = useRef<number | null>(null);
+  const inspectionPollRef = useRef<number | null>(null);
+  const inspectionInFlightRef = useRef(false);
 
   const closeStreams = useCallback(() => {
     eventSourceRef.current?.close();
     eventSourceRef.current = null;
     outputSourceRef.current?.close();
     outputSourceRef.current = null;
+    if (inspectionPollRef.current !== null) {
+      window.clearInterval(inspectionPollRef.current);
+      inspectionPollRef.current = null;
+    }
   }, []);
 
   const render = useCallback(() => {
@@ -65,7 +71,8 @@ export function useWorkspace(): WorkspaceView {
 
   const refreshInspection = useCallback(async () => {
     const currentConnection = connectionRef.current;
-    if (!currentConnection) return;
+    if (!currentConnection || inspectionInFlightRef.current) return;
+    inspectionInFlightRef.current = true;
     const isCurrentProject = streamGuardRef.current.capture();
     try {
       const value = await invokeWorkspaceAction<WorkspaceInspection>(
@@ -80,6 +87,8 @@ export function useWorkspace(): WorkspaceView {
       if (isCurrentProject()) {
         setActionError(error instanceof Error ? error.message : String(error));
       }
+    } finally {
+      inspectionInFlightRef.current = false;
     }
   }, []);
 
@@ -134,6 +143,8 @@ export function useWorkspace(): WorkspaceView {
         if (isCurrentProject()) {
           setConnectionState("live");
           void refreshInspection();
+          if (inspectionPollRef.current !== null) window.clearInterval(inspectionPollRef.current);
+          inspectionPollRef.current = window.setInterval(() => void refreshInspection(), 5_000);
         }
       };
       source.onerror = () => {
@@ -200,7 +211,11 @@ export function useWorkspace(): WorkspaceView {
           connectEventStream(nextConnection);
         },
         onError: (error) => {
-          setConnectionState("connection error");
+          setConnectionState(
+            /desktop shell build mismatch|Desktop update required/iu.test(error.message)
+              ? "update required"
+              : "connection error"
+          );
           setConnectionDetail(error.message);
           render();
         }

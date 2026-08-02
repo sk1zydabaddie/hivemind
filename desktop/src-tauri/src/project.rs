@@ -9,12 +9,18 @@ use std::time::{Duration, Instant};
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 const HEALTH_TIMEOUT: Duration = Duration::from_millis(750);
+const EMBEDDED_SHELL_BUILD_ID: &str = env!(
+    "HIVEMIND_SHELL_BUILD_ID",
+    "desktop shell build identity must be embedded at compile time"
+);
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct ProjectConnection {
     project_root: String,
     daemon_url: String,
     build_id: String,
+    shell_build_id: String,
+    expected_shell_build_id: String,
     status: String,
 }
 
@@ -63,6 +69,8 @@ pub async fn select_project(project_path: String) -> Result<ProjectConnection, S
             &mut start_daemon,
             &query_daemon_health,
             &query_cli_build_identity,
+            &query_cli_shell_build_identity,
+            EMBEDDED_SHELL_BUILD_ID,
             &process_liveness,
             STARTUP_TIMEOUT,
         )
@@ -81,6 +89,8 @@ pub async fn workspace_action(
         let state = read_daemon_state(&project_root)?
             .ok_or_else(|| "selected project's daemon is not running".to_string())?;
         validate_state_project(&project_root, &state)?;
+        let expected_shell_build_id = query_cli_shell_build_identity(&project_root)?;
+        validate_shell_build(EMBEDDED_SHELL_BUILD_ID, &expected_shell_build_id)?;
         let expected_build_id = query_cli_build_identity(&project_root)?;
         let health = query_daemon_health(&state.url)?;
         validate_health_project(&project_root, &health.repo_root)?;
@@ -91,11 +101,13 @@ pub async fn workspace_action(
     .map_err(|error| format!("workspace action task failed: {error}"))?
 }
 
-fn connect_project_with<L, H, B, P>(
+fn connect_project_with<L, H, B, S, P>(
     project_path: &str,
     launch: &mut L,
     health: &H,
     expected_build: &B,
+    expected_shell_build: &S,
+    embedded_shell_build_id: &str,
     liveness: &P,
     startup_timeout: Duration,
 ) -> Result<ProjectConnection, String>
@@ -103,9 +115,12 @@ where
     L: FnMut(&Path) -> Result<Option<Child>, String>,
     H: Fn(&str) -> Result<DaemonHealth, String>,
     B: Fn(&Path) -> Result<String, String>,
+    S: Fn(&Path) -> Result<String, String>,
     P: Fn(Option<u32>) -> ProcessLiveness,
 {
     let project_root = canonical_git_root(project_path)?;
+    let expected_shell_build_id = expected_shell_build(&project_root)?;
+    validate_shell_build(embedded_shell_build_id, &expected_shell_build_id)?;
     let expected_build_id = expected_build(&project_root)?;
     let config_path = project_root.join(".hivemind").join("config.json");
     if !config_path.is_file() {
@@ -118,7 +133,14 @@ where
             Ok(health_state) => {
                 validate_health_project(&project_root, &health_state.repo_root)?;
                 validate_daemon_build(&state, &health_state, &expected_build_id)?;
-                return Ok(connection(&project_root, &state.url, &expected_build_id, "attached"));
+                return Ok(connection(
+                    &project_root,
+                    &state.url,
+                    &expected_build_id,
+                    embedded_shell_build_id,
+                    &expected_shell_build_id,
+                    "attached",
+                ));
             }
             Err(reason) => match liveness(state.pid) {
                 ProcessLiveness::Dead => {}
@@ -153,7 +175,14 @@ where
                 // Dropping Child detaches the daemon. Tauri intentionally owns no
                 // shutdown hook so closing or switching the app cannot kill it.
                 drop(child);
-                return Ok(connection(&project_root, &state.url, &expected_build_id, "started"));
+                return Ok(connection(
+                    &project_root,
+                    &state.url,
+                    &expected_build_id,
+                    embedded_shell_build_id,
+                    &expected_shell_build_id,
+                    "started",
+                ));
             }
         }
         if Instant::now() >= deadline {
@@ -247,6 +276,18 @@ fn validate_daemon_build(
     Ok(())
 }
 
+fn validate_shell_build(embedded_build_id: &str, expected_build_id: &str) -> Result<(), String> {
+    if !is_build_identity(embedded_build_id) || !is_build_identity(expected_build_id) {
+        return Err("desktop shell build identity is missing or malformed; rebuild and restart the desktop app".to_string());
+    }
+    if embedded_build_id != expected_build_id {
+        return Err(format!(
+            "desktop shell build mismatch: running {embedded_build_id}, Core expects {expected_build_id}; rebuild and restart the desktop app before using project controls"
+        ));
+    }
+    Ok(())
+}
+
 fn start_daemon(project_root: &Path) -> Result<Option<Child>, String> {
     let mut command = daemon_command()?;
     command
@@ -284,23 +325,33 @@ fn daemon_command() -> Result<Command, String> {
 }
 
 fn query_cli_build_identity(project_root: &Path) -> Result<String, String> {
+    query_cli_identity(project_root, "build-id", "Core build")
+}
+
+fn query_cli_shell_build_identity(project_root: &Path) -> Result<String, String> {
+    query_cli_identity(project_root, "shell-build-id", "desktop shell build")
+}
+
+fn query_cli_identity(project_root: &Path, command: &str, label: &str) -> Result<String, String> {
     let output = daemon_command()?
-        .arg("build-id")
+        .arg(command)
         .current_dir(project_root)
         .output()
-        .map_err(|error| format!("could not query Hivemind Core build identity: {error}"))?;
+        .map_err(|error| format!("could not query Hivemind {label} identity: {error}"))?;
     if !output.status.success() {
         return Err(format!(
-            "Hivemind Core build identity command failed: {}",
+            "Hivemind {label} identity command failed: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
     let build_id = String::from_utf8(output.stdout)
-        .map_err(|_| "Hivemind Core build identity was not UTF-8".to_string())?
+        .map_err(|_| format!("Hivemind {label} identity was not UTF-8"))?
         .trim()
         .to_string();
     if !is_build_identity(&build_id) {
-        return Err("Hivemind Core returned an invalid build identity".to_string());
+        return Err(format!(
+            "Hivemind Core returned an invalid {label} identity"
+        ));
     }
     Ok(build_id)
 }
@@ -366,7 +417,10 @@ fn query_daemon_health(url: &str) -> Result<DaemonHealth, String> {
     Ok(health)
 }
 
-fn post_workspace_action(url: &str, action: &serde_json::Value) -> Result<serde_json::Value, String> {
+fn post_workspace_action(
+    url: &str,
+    action: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
     let endpoint = parse_loopback_url(url)?;
     let address = endpoint
         .to_socket_addrs()
@@ -375,9 +429,11 @@ fn post_workspace_action(url: &str, action: &serde_json::Value) -> Result<serde_
         .ok_or_else(|| "daemon URL did not resolve to loopback".to_string())?;
     let mut stream = TcpStream::connect_timeout(&address, HEALTH_TIMEOUT)
         .map_err(|error| format!("daemon action connection failed: {error}"))?;
-    stream.set_read_timeout(Some(Duration::from_secs(30)))
+    stream
+        .set_read_timeout(Some(Duration::from_secs(30)))
         .map_err(|error| format!("could not configure daemon action timeout: {error}"))?;
-    stream.set_write_timeout(Some(HEALTH_TIMEOUT))
+    stream
+        .set_write_timeout(Some(HEALTH_TIMEOUT))
         .map_err(|error| format!("could not configure daemon action timeout: {error}"))?;
     let body = serde_json::to_string(action)
         .map_err(|error| format!("workspace action is not JSON serializable: {error}"))?;
@@ -387,17 +443,25 @@ fn post_workspace_action(url: &str, action: &serde_json::Value) -> Result<serde_
         body.len(), body
     ).as_bytes()).map_err(|error| format!("daemon action request failed: {error}"))?;
     let mut response = String::new();
-    stream.read_to_string(&mut response)
+    stream
+        .read_to_string(&mut response)
         .map_err(|error| format!("daemon action response failed: {error}"))?;
-    let (headers, body) = response.split_once("\r\n\r\n")
+    let (headers, body) = response
+        .split_once("\r\n\r\n")
         .ok_or_else(|| "daemon action returned malformed HTTP".to_string())?;
     let parsed: serde_json::Value = serde_json::from_str(body)
         .map_err(|error| format!("daemon action returned invalid JSON: {error}"))?;
     if !headers.lines().next().unwrap_or("").contains(" 200 ") {
-        let reason = parsed.get("reason").and_then(|value| value.as_str()).unwrap_or("daemon action refused");
+        let reason = parsed
+            .get("reason")
+            .and_then(|value| value.as_str())
+            .unwrap_or("daemon action refused");
         return Err(reason.to_string());
     }
-    parsed.get("value").cloned().ok_or_else(|| "daemon action response omitted value".to_string())
+    parsed
+        .get("value")
+        .cloned()
+        .ok_or_else(|| "daemon action response omitted value".to_string())
 }
 
 fn validate_loopback_url(url: &str) -> Result<(), String> {
@@ -428,11 +492,20 @@ fn parse_loopback_url(url: &str) -> Result<String, String> {
     Ok(format!("{host}:{port}"))
 }
 
-fn connection(project_root: &Path, daemon_url: &str, build_id: &str, status: &str) -> ProjectConnection {
+fn connection(
+    project_root: &Path,
+    daemon_url: &str,
+    build_id: &str,
+    shell_build_id: &str,
+    expected_shell_build_id: &str,
+    status: &str,
+) -> ProjectConnection {
     ProjectConnection {
         project_root: project_root.to_string_lossy().into_owned(),
         daemon_url: daemon_url.trim_end_matches('/').to_string(),
         build_id: build_id.to_string(),
+        shell_build_id: shell_build_id.to_string(),
+        expected_shell_build_id: expected_shell_build_id.to_string(),
         status: status.to_string(),
     }
 }
@@ -569,14 +642,64 @@ mod tests {
             &mut launch,
             &|_| Ok(test_health(&project)),
             &|_| Ok(test_build_id()),
+            &|_| Ok(test_shell_build_id()),
+            &test_shell_build_id(),
             &|_| ProcessLiveness::Alive,
             Duration::from_millis(20),
         )
         .unwrap();
 
         assert_eq!(result.status, "attached");
+        assert_eq!(result.shell_build_id, test_shell_build_id());
+        assert_eq!(result.expected_shell_build_id, test_shell_build_id());
         assert_eq!(launch_count.load(Ordering::SeqCst), 0);
         cleanup_fixture(&project);
+    }
+
+    #[test]
+    fn stale_desktop_shell_is_refused_before_attach_launch_or_action_transport() {
+        let project = fixture_project("shell-build-stale");
+        let launch_count = Arc::new(AtomicUsize::new(0));
+        let launch_count_copy = launch_count.clone();
+        let mut launch = move |_root: &Path| {
+            launch_count_copy.fetch_add(1, Ordering::SeqCst);
+            Ok(None)
+        };
+
+        let result = connect_project_with(
+            project.to_str().unwrap(),
+            &mut launch,
+            &|_| panic!("daemon health must not be queried for a stale shell"),
+            &|_| Ok(test_build_id()),
+            &|_| Ok("d".repeat(64)),
+            &test_shell_build_id(),
+            &|_| ProcessLiveness::Alive,
+            Duration::from_millis(20),
+        );
+
+        assert!(result.unwrap_err().contains("desktop shell build mismatch"));
+        assert_eq!(launch_count.load(Ordering::SeqCst), 0);
+        cleanup_fixture(&project);
+    }
+
+    #[test]
+    fn every_workspace_action_rechecks_shell_identity_before_transport() {
+        let source = include_str!("project.rs");
+        let action = source
+            .split("pub async fn workspace_action")
+            .nth(1)
+            .and_then(|value| value.split("fn connect_project_with").next())
+            .expect("workspace_action source section");
+        let shell_check = action
+            .find("validate_shell_build")
+            .expect("shell identity check");
+        let transport = action
+            .find("post_workspace_action")
+            .expect("workspace action transport");
+        assert!(
+            shell_check < transport,
+            "shell identity must be verified before action transport"
+        );
     }
 
     #[test]
@@ -594,6 +717,8 @@ mod tests {
             &mut launch,
             &|_| Ok(test_health(&project)),
             &|_| Ok(test_build_id()),
+            &|_| Ok(test_shell_build_id()),
+            &test_shell_build_id(),
             &|_| ProcessLiveness::Dead,
             Duration::from_millis(20),
         )
@@ -628,6 +753,8 @@ mod tests {
                 }
             },
             &|_| Ok(test_build_id()),
+            &|_| Ok(test_shell_build_id()),
+            &test_shell_build_id(),
             &|pid| {
                 if pid == Some(u32::MAX) {
                     ProcessLiveness::Dead
@@ -667,6 +794,8 @@ mod tests {
             &mut launch,
             &|_| Ok(test_health(&other)),
             &|_| Ok(test_build_id()),
+            &|_| Ok(test_shell_build_id()),
+            &test_shell_build_id(),
             &|_| ProcessLiveness::Alive,
             Duration::from_millis(20),
         );
@@ -680,11 +809,21 @@ mod tests {
     #[test]
     fn live_missing_or_stale_daemon_build_is_surfaced_and_never_used_or_replaced() {
         for missing in [false, true] {
-            let project = fixture_project(if missing { "build-missing" } else { "build-stale" });
-            write_state(&project, &project, "http://127.0.0.1:40114", std::process::id());
+            let project = fixture_project(if missing {
+                "build-missing"
+            } else {
+                "build-stale"
+            });
+            write_state(
+                &project,
+                &project,
+                "http://127.0.0.1:40114",
+                std::process::id(),
+            );
             if missing {
                 let state_path = project.join(".hivemind").join("daemon.json");
-                let mut state: serde_json::Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+                let mut state: serde_json::Value =
+                    serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
                 state.as_object_mut().unwrap().remove("build_id");
                 fs::write(&state_path, state.to_string()).unwrap();
             }
@@ -702,12 +841,16 @@ mod tests {
             let result = connect_project_with(
                 project.to_str().unwrap(),
                 &mut launch,
-                &|_| Ok(DaemonHealth {
-                    ok: health.ok,
-                    repo_root: health.repo_root.clone(),
-                    build_id: health.build_id.clone(),
-                }),
+                &|_| {
+                    Ok(DaemonHealth {
+                        ok: health.ok,
+                        repo_root: health.repo_root.clone(),
+                        build_id: health.build_id.clone(),
+                    })
+                },
                 &|_| Ok("b".repeat(64)),
+                &|_| Ok(test_shell_build_id()),
+                &test_shell_build_id(),
                 &|_| ProcessLiveness::Alive,
                 Duration::from_millis(20),
             );
@@ -734,6 +877,8 @@ mod tests {
                 &mut launch,
                 &|_| Err("connection refused".to_string()),
                 &|_| Ok(test_build_id()),
+                &|_| Ok(test_shell_build_id()),
+                &test_shell_build_id(),
                 &|_| liveness,
                 Duration::from_millis(20),
             );
@@ -837,6 +982,10 @@ mod tests {
 
     fn test_build_id() -> String {
         "a".repeat(64)
+    }
+
+    fn test_shell_build_id() -> String {
+        "c".repeat(64)
     }
 
     fn test_health(project: &Path) -> DaemonHealth {

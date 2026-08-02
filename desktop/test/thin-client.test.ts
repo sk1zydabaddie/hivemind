@@ -16,6 +16,7 @@ describe("React workspace boundary", () => {
     expect(hook).toMatch(/\/tasks\/\$\{encodeURIComponent\(taskId\)\}\/output\/stream/u);
     expect(hook).not.toMatch(/localStorage|sessionStorage|fetch\(|XMLHttpRequest/u);
     expect(hook).toMatch(/invokeWorkspaceAction<WorkspaceInspection>/u);
+    expect(hook).toMatch(/setInterval\(\(\) => void refreshInspection\(\), 5_000\)/u);
     expect(hook).not.toMatch(/submit_patch|integrate_shadow|request_lease|runGate/u);
   });
 
@@ -50,6 +51,16 @@ describe("React workspace boundary", () => {
     const actions = await readFile(path.join(desktopRoot, "src", "lib", "workspace-actions.ts"), "utf8");
     expect(actions).toMatch(/invoke<T>\("workspace_action", \{ projectPath, action \}\)/u);
     expect(actions).not.toMatch(/fetch\(|runGate|integrateShadow|requestLease|reviewMemoryProposal/u);
+  });
+
+  test("stale shell identity and dropped connections refuse or surface before project actions", async () => {
+    const session = await readFile(path.join(desktopRoot, "src", "lib", "project-session.ts"), "utf8");
+    const app = await readFile(path.join(desktopRoot, "src", "App.tsx"), "utf8");
+    const work = await readFile(path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"), "utf8");
+    expect(session).toMatch(/shellBuildId !== expectedShellBuildId/u);
+    expect(app).toContain("Project controls are disabled until the app is rebuilt and restarted.");
+    expect(work).toContain("Project updates stopped");
+    expect(work).toMatch(/onReconnect/u);
   });
 
   test("old vanilla renderer is gone and one shadcn-style token path remains", async () => {

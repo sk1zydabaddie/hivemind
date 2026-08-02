@@ -17,6 +17,7 @@ import { loadAdmittedValueQualityRun } from "../src/value-quality.js";
 import { runAdapterProcess, type AdapterProfile } from "../src/adapter.js";
 import { createTentativePlan, groundTentativePlan, lintTentativePlan } from "../src/plan.js";
 import { readQuotaLedger } from "../src/resource-ledger.js";
+import { inspectWorkspace } from "../src/workspace-inspection.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
 const execFileAsync = promisify(execFile);
@@ -330,6 +331,98 @@ test("the complete durable trail remains available on demand and cannot mutate s
     const after = await readEvents(repo);
     assert.equal(after.ok, true);
     if (after.ok) assert.deepEqual(after.value, before.value);
+  });
+});
+
+test("a run with no durable progress surfaces recovery while a healthy long worker does not false-alert", async () => {
+  await withRepo(async (repo) => {
+    await prepareRatifiedWorkspacePlan(repo);
+    const ratifiedEvents = await readEvents(repo);
+    assert.equal(ratifiedEvents.ok, true);
+    if (!ratifiedEvents.ok) return;
+    const ratifiedAt = ratifiedEvents.value.find((event) => event.type === "plan.ratified")?.ts;
+    assert.ok(ratifiedAt);
+
+    const stranded = await inspectWorkspace(repo, {
+      now: new Date(Date.parse(ratifiedAt!) + 46_000),
+      stallIntervalMs: 45_000
+    });
+    assert.equal(stranded.ok, true, stranded.ok ? undefined : stranded.reason);
+    if (!stranded.ok) return;
+    const startAlert = stranded.value.needs_you.find((item) => item.kind === "run_stalled");
+    assert.equal(startAlert?.title, "Approved work has not started");
+    assert.equal(startAlert?.action?.type, "manager.start");
+    assert.match(startAlert?.detail ?? "", /Expected next: start the 2-task run/u);
+
+    const session = await startManagerSession(repo, "Run the approved plan.", {
+      proposedAction: {
+        type: "proposed_actions",
+        source: "scripted",
+        reason: "Inspect the current state.",
+        actions: [{ type: "get_status" }],
+        human_approval_required_for: []
+      }
+    });
+    assert.equal(session.ok, true, session.ok ? undefined : session.reason);
+    if (!session.ok) return;
+    await writeFile(path.join(repo, ".hivemind", "adapters", "stall-worker.profile.json"), `${JSON.stringify({
+      tool: "stall-worker",
+      invoke: [process.execPath, "worker.mjs"],
+      prompt_arg: "stdin",
+      verified_on: "fixture",
+      context_window: 8_000,
+      timeout_ms: 120_000
+    }, null, 2)}\n`);
+    const started = await appendEvent(repo, {
+      type: "task.started",
+      task_id: "T-001",
+      data: { run_id: "R-stall-fixture", tool: "stall-worker" }
+    });
+    assert.equal(started.ok, true);
+    const workerStarted = await appendEvent(repo, {
+      type: "task.worker_process_started",
+      task_id: "T-001",
+      data: {
+        version: 1,
+        run_id: "R-stall-fixture",
+        tool: "stall-worker",
+        pid: process.pid,
+        process_instance_id: "fixture-worker-instance"
+      }
+    });
+    assert.equal(workerStarted.ok, true);
+    const latest = await readEvents(repo);
+    assert.equal(latest.ok, true);
+    if (!latest.ok) return;
+    const workerAt = latest.value.at(-1)!.ts;
+
+    const healthy = await inspectWorkspace(repo, {
+      now: new Date(Date.parse(workerAt) + 90_000),
+      stallIntervalMs: 45_000,
+      processLiveness: () => "alive"
+    });
+    assert.equal(healthy.ok, true, healthy.ok ? undefined : healthy.reason);
+    if (healthy.ok) assert.equal(healthy.value.needs_you.some((item) => item.kind === "run_stalled"), false);
+
+    const ambiguous = await inspectWorkspace(repo, {
+      now: new Date(Date.parse(workerAt) + 180_000),
+      stallIntervalMs: 45_000,
+      processLiveness: () => "unknown"
+    });
+    assert.equal(ambiguous.ok, true, ambiguous.ok ? undefined : ambiguous.reason);
+    if (ambiguous.ok) assert.equal(ambiguous.value.needs_you.some((item) => item.kind === "run_stalled"), false);
+
+    const hung = await inspectWorkspace(repo, {
+      now: new Date(Date.parse(workerAt) + 180_000),
+      stallIntervalMs: 45_000,
+      processLiveness: () => "alive"
+    });
+    assert.equal(hung.ok, true, hung.ok ? undefined : hung.reason);
+    if (!hung.ok) return;
+    const hungAlert = hung.value.needs_you.find((item) => item.kind === "run_stalled");
+    assert.equal(hungAlert?.task_id, "T-001");
+    assert.equal(hungAlert?.action?.type, "task.stop");
+    assert.match(hungAlert?.detail ?? "", /past its 120-second time limit/u);
   });
 });
 
@@ -1220,6 +1313,29 @@ async function writeContract(repo: string, taskId: string, allowedFiles: string[
     required_tests: ["node -e \"process.exit(0)\""],
     patch_requirements: []
   }, null, 2)}\n`);
+}
+
+async function prepareRatifiedWorkspacePlan(repo: string): Promise<void> {
+  await mkdir(path.join(repo, "src"), { recursive: true });
+  await mkdir(path.join(repo, "test"), { recursive: true });
+  await writeFile(path.join(repo, "src", "app.ts"), "export const value = 1;\n");
+  await writeFile(path.join(repo, "test", "app.test.ts"), "export const covered = true;\n");
+  await execFileAsync("git", ["add", "src/app.ts", "test/app.test.ts"], { cwd: repo, windowsHide: true });
+  await execFileAsync("git", ["commit", "-m", "add stall fixture"], { cwd: repo, windowsHide: true });
+  await createRatifiedSpec(repo, "S-001");
+  await setTierGlobs(repo);
+  const plan = workspacePlanFixture();
+  assert.equal((await createTentativePlan(repo, "S-001", plan)).ok, true);
+  assert.equal((await groundTentativePlan(repo, "S-001")).ok, true);
+  assert.equal((await lintTentativePlan(repo, "S-001")).ok, true);
+  const review = await executeWorkspaceAction(repo, { type: "plan.review", payload: { spec_id: "S-001" } });
+  assert.equal(review.ok, true, review.ok ? undefined : review.reason);
+  if (!review.ok) return;
+  const ratified = await executeWorkspaceAction(repo, {
+    type: "plan.ratify",
+    payload: { spec_id: "S-001", expected_plan_hash: (review.value as { plan_hash: string }).plan_hash }
+  });
+  assert.equal(ratified.ok, true, ratified.ok ? undefined : ratified.reason);
 }
 
 function workspacePlanFixture(): { tasks: Array<Record<string, unknown>>; execution_groups: Array<Record<string, unknown>> } {
