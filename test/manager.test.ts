@@ -9,13 +9,14 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { appendEvent, readEvents } from "../src/events.js";
+import { appendEvent, readEvents, type HivemindEvent } from "../src/events.js";
 import { currentBuildIdentity } from "../src/build-identity.js";
+import { loadConfig } from "../src/config.js";
 import { createDaemonServer } from "../src/daemon.js";
 import { initProject } from "../src/init.js";
 import { integratedTaskIdsFromEvents } from "../src/integration-state.js";
 import { requestLease } from "../src/lease.js";
-import { readQuotaLedger } from "../src/resource-ledger.js";
+import { readQuotaLedger, recordQuotaUsage } from "../src/resource-ledger.js";
 import { latestTaskRunState } from "../src/run-state.js";
 import {
   approvePendingManagerAction,
@@ -23,6 +24,7 @@ import {
   executeManagerAction,
   runAutonomousManagerLoop,
   startManagerSession,
+  startWorkspaceManagerSession,
   type ManagerAction,
   type ManagerAutonomousLoopResult,
   type ManagerProposedAction
@@ -30,6 +32,7 @@ import {
 import { createSpec, type SpecResult } from "../src/spec.js";
 import { getStatus } from "../src/status.js";
 import { executeWorkspaceAction } from "../src/workspace-actions.js";
+import { admitExecutionWave } from "../src/wave-admission.js";
 import { authorizePlanlessManualTaskIfEligible } from "./support/manual-task.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
@@ -823,6 +826,122 @@ test("LLM-proposed and Core-derived execution have equivalent work trails while 
   assert.equal(observations[0].managerCalls, 10);
   assert.equal(observations[1].managerCalls, 5);
   assert.equal(observations[2].managerCalls, 0);
+});
+
+test("concurrent deterministic scheduling overlaps workers and preserves serial per-task trails", async (context) => {
+  const serial = await runConcurrentManagerFixture({ taskCount: 2, concurrency: 1, mode: "parallel", workerDelayMs: 2_500 });
+  const concurrent = await runConcurrentManagerFixture({ taskCount: 2, concurrency: 2, mode: "parallel", workerDelayMs: 2_500 });
+
+  assert.equal(maxConcurrentIntervals(serial.intervals), 1);
+  assert.equal(
+    maxConcurrentIntervals(concurrent.intervals),
+    2,
+    JSON.stringify({ intervals: concurrent.intervals, wave: concurrent.events.find((event) => event.type === "scheduler.wave_started") })
+  );
+  assert.deepEqual(concurrent.perTaskTrail, serial.perTaskTrail);
+  assert.ok(
+    concurrent.workerWindowMs < serial.workerWindowMs * 0.75,
+    `expected concurrent worker window ${concurrent.workerWindowMs}ms to beat serial ${serial.workerWindowMs}ms`
+  );
+  assert.equal(concurrent.events.some((event) => event.type === "scheduler.wave_started"), true);
+  assert.equal(concurrent.events.some((event) => event.type === "scheduler.wave_completed"), true);
+  context.diagnostic(
+    `M10.4 fixture worker window: serial=${serial.workerWindowMs}ms, concurrent=${concurrent.workerWindowMs}ms, reduction=${Math.round((1 - concurrent.workerWindowMs / serial.workerWindowMs) * 100)}%`
+  );
+});
+
+test("concurrent scheduler enforces cap two and refills a slot only after one of four workers finishes", async () => {
+  const result = await runConcurrentManagerFixture({ taskCount: 4, concurrency: 2, mode: "parallel", workerDelayMs: 2_000, sessionCeiling: 650_000 });
+
+  assert.equal(maxConcurrentIntervals(result.intervals), 2);
+  const starts = [...result.intervals].sort((left, right) => left.start - right.start);
+  assert.equal(starts.length, 4);
+  const firstFinish = Math.min(starts[0].end, starts[1].end);
+  assert.ok(starts[2].start >= firstFinish, `third worker started at ${starts[2].start} before a slot opened at ${firstFinish}`);
+  const wave = result.events.find((event) => event.type === "scheduler.wave_started");
+  assert.equal(wave?.data.configured_cap, 2);
+  assert.equal(wave?.data.effective_concurrency, 2);
+  assert.equal(wave?.data.binding_limit, "configured_cap");
+});
+
+test("concurrent worker configuration fails closed above the hard maximum of four", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await setConfigExecution(repo, 5);
+    const config = await loadConfig(repo);
+    assert.equal(config.ok, false);
+    if (!config.ok) assert.match(config.reason, /max_concurrent_workers must be an integer between 1 and 4/u);
+  });
+});
+
+test("concurrent scheduler distinguishes budget-limited execution from its configured cap", async () => {
+  const result = await runConcurrentManagerFixture({
+    taskCount: 2,
+    concurrency: 2,
+    mode: "parallel",
+    workerDelayMs: 1_000,
+    sessionCeiling: 300_000,
+    seedSettledUsage: true
+  });
+
+  assert.equal(maxConcurrentIntervals(result.intervals), 1);
+  const wave = result.events.find((event) => event.type === "scheduler.wave_started");
+  assert.equal(wave?.data.configured_cap, 2);
+  assert.equal(wave?.data.effective_concurrency, 1);
+  assert.equal(wave?.data.binding_limit, "budget");
+  assert.equal(wave?.data.budget_available_reservations, 1);
+});
+
+test("sequence execution groups remain strictly serial even when worker capacity is available", async () => {
+  const result = await runConcurrentManagerFixture({ taskCount: 2, concurrency: 2, mode: "sequence", workerDelayMs: 1_000 });
+
+  assert.equal(maxConcurrentIntervals(result.intervals), 1);
+  assert.equal(result.events.some((event) => event.type.startsWith("scheduler.wave_")), false);
+});
+
+test("each concurrent setup action keeps its independent gate and setup order", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const fixture = await prepareConcurrentManagerFixture(repo, 2, 2, "parallel", 1_500, 500_000);
+    const held = await requestLease(repo, "T-EXTERNAL-HOLDER", ["T-WAVE-002.txt"]);
+    assert.equal(held.ok, true, held.ok ? undefined : held.reason);
+
+    const started = await startWorkspaceManagerSession(repo, "Run the admitted wave until a real lease refusal.", "manager");
+    assert.equal(started.ok, true, started.ok ? undefined : started.reason);
+    if (!started.ok) return;
+    const result = await continueAutonomousManagerLoop(repo, started.value.session_id, { tool: "manager", maxSteps: 100 });
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    if (!result.ok) return;
+    assert.equal(result.value.status, "stopped");
+
+    const events = await readRequiredEvents(repo);
+    const firstStarted = events.findIndex((event) => event.type === "task.started" && event.task_id === fixture.taskIds[0]);
+    const secondCreated = events.findIndex((event) => event.type === "task.created" && event.task_id === fixture.taskIds[1]);
+    assert.ok(firstStarted >= 0 && secondCreated > firstStarted, "the second task setup began before the first worker start returned");
+    assert.equal(events.some((event) => event.type === "lease.rejected" && event.task_id === fixture.taskIds[1]), true);
+    assert.equal(events.some((event) => event.type === "task.worker_process_started" && event.task_id === fixture.taskIds[1]), false);
+    assert.equal(result.value.final_status.leases["T-WAVE-002.txt"], "T-EXTERNAL-HOLDER");
+  });
+});
+
+test("a concurrent worker failure stops later launches and cleans the failed task without corrupting siblings", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const fixture = await prepareConcurrentManagerFixture(repo, 3, 2, "parallel", 2_500, 500_000, "T-WAVE-001");
+    const started = await startWorkspaceManagerSession(repo, "Run the admitted wave until one worker fails.", "manager");
+    assert.equal(started.ok, true, started.ok ? undefined : started.reason);
+    if (!started.ok) return;
+
+    const result = await continueAutonomousManagerLoop(repo, started.value.session_id, { tool: "manager", maxSteps: 100 });
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    if (!result.ok) return;
+    assert.equal(result.value.status, "stopped");
+
+    const events = await readRequiredEvents(repo);
+    assert.equal(events.some((event) => event.type === "task.failed" && event.task_id === fixture.taskIds[0]), true);
+    assert.equal(events.some((event) => event.type === "scheduler.wave_stopped"), true);
+    assert.equal(events.some((event) => event.type === "task.worker_process_started" && event.task_id === fixture.taskIds[2]), false);
+    assert.equal(result.value.final_status.leases[`${fixture.taskIds[0]}.txt`], undefined);
+    await assertMissing(path.join(repo, ".hivemind", "worktrees", fixture.taskIds[0]));
+    assert.equal(events.some((event) => event.type === "task.completed" && event.task_id === fixture.taskIds[1]), true);
+  });
 });
 
 test("all autonomy levels preserve the same complete work trail while changing only routine interruption", async () => {
@@ -2381,6 +2500,150 @@ async function runAutonomousLoopWithTypedApprovals(
   return { ok: false, reason: "typed approval fixture exceeded its deterministic approval bound" };
 }
 
+interface WorkerInterval {
+  taskId: string;
+  start: number;
+  end: number;
+}
+
+interface ConcurrentFixtureResult {
+  events: HivemindEvent[];
+  intervals: WorkerInterval[];
+  workerWindowMs: number;
+  perTaskTrail: Record<string, string[]>;
+}
+
+async function runConcurrentManagerFixture(options: {
+  taskCount: number;
+  concurrency: number;
+  mode: "parallel" | "sequence";
+  workerDelayMs: number;
+  sessionCeiling?: number;
+  seedSettledUsage?: boolean;
+}): Promise<ConcurrentFixtureResult> {
+  let output: ConcurrentFixtureResult | undefined;
+  await withTempRepo(async ({ repo }) => {
+    const fixture = await prepareConcurrentManagerFixture(
+      repo,
+      options.taskCount,
+      options.concurrency,
+      options.mode,
+      options.workerDelayMs,
+      options.sessionCeiling ?? 500_000
+    );
+    if (options.seedSettledUsage === true) {
+      const seeded = await recordQuotaUsage(repo, {
+        provider: "seeded-manager-history",
+        input_text: "one settled token before concurrent admission",
+        model_output_text: "",
+        wall_time_ms: 1,
+        throttled: false,
+        session_id: "11111111-1111-4111-8111-111111111111"
+      });
+      assert.equal(seeded.ok, true, seeded.ok ? undefined : seeded.reason);
+    }
+
+    const started = await startWorkspaceManagerSession(repo, "Run the deterministic concurrent fixture.", "manager");
+    assert.equal(started.ok, true, started.ok ? undefined : started.reason);
+    if (!started.ok) return;
+    const result = await continueAutonomousManagerLoop(repo, started.value.session_id, { tool: "manager", maxSteps: 100 });
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    if (!result.ok) return;
+    assert.equal(result.value.status, "completed", JSON.stringify(result.value.steps.at(-1)));
+
+    const events = await readRequiredEvents(repo);
+    const intervals = workerIntervals(events, fixture.taskIds);
+    const workerWindowMs = Math.max(...intervals.map((entry) => entry.end)) - Math.min(...intervals.map((entry) => entry.start));
+    output = {
+      events,
+      intervals,
+      workerWindowMs,
+      perTaskTrail: Object.fromEntries(
+        fixture.taskIds.map((taskId) => [
+          taskId,
+          events.filter((event) => event.task_id === taskId).map((event) => event.type)
+        ])
+      )
+    };
+  });
+  assert.ok(output);
+  return output;
+}
+
+async function prepareConcurrentManagerFixture(
+  repo: string,
+  taskCount: number,
+  concurrency: number,
+  mode: "parallel" | "sequence",
+  workerDelayMs: number,
+  sessionCeiling: number,
+  failTaskId?: string
+): Promise<{ taskIds: string[] }> {
+  await createRatifiedSpec(repo, "S-001");
+  await setConfigManagerAutonomy(repo, { level: "auto" });
+  const taskIds = Array.from({ length: taskCount }, (_, index) => `T-WAVE-${String(index + 1).padStart(3, "0")}`);
+  for (const taskId of taskIds) await writeFile(path.join(repo, `${taskId}.txt`), `${taskId} base\n`);
+  await git(repo, ["add", ...taskIds.map((taskId) => `${taskId}.txt`)]);
+  await git(repo, ["commit", "-m", "add concurrent fixture files"]);
+  const baseCommit = await gitStdout(repo, ["rev-parse", "HEAD"]);
+
+  const workerPath = await writeAgent(repo, "concurrent-worker.mjs", [
+    "const { appendFile } = await import('node:fs/promises');",
+    "const { basename } = await import('node:path');",
+    "const taskId = basename(process.cwd());",
+    "await appendFile(`${taskId}.txt`, `changed by ${taskId}\\n`);",
+    ...(failTaskId === undefined
+      ? []
+      : [
+          `if (taskId === ${JSON.stringify(failTaskId)}) {`,
+          `  await new Promise((resolve) => setTimeout(resolve, ${Math.max(1, Math.floor(workerDelayMs / 2))}));`,
+          "  throw new Error('fixture worker failure');",
+          "}"
+        ]),
+    `await new Promise((resolve) => setTimeout(resolve, ${workerDelayMs}));`
+  ]);
+  await writeProfile(repo, "concurrent-worker", workerPath);
+  await setConfigExecution(repo, concurrency);
+  await setResourceSessionCeiling(repo, sessionCeiling);
+  await setConfigTestCommand(repo, "node -e \"process.exit(0)\"");
+  await prepareLintedPlanWithTasks(
+    repo,
+    taskIds.map((taskId) => planTaskFromContract(managerContract(taskId, baseCommit, [`${taskId}.txt`]))),
+    "concurrent-plan.json",
+    mode
+  );
+  if (mode === "parallel") {
+    const admission = await admitExecutionWave(repo, "S-001", "G-1");
+    assert.equal(admission.ok, true, admission.ok ? undefined : admission.reason);
+    if (admission.ok) assert.deepEqual(admission.value.admitted_task_ids, taskIds);
+  }
+  return { taskIds };
+}
+
+function workerIntervals(events: HivemindEvent[], taskIds: string[]): WorkerInterval[] {
+  return taskIds.map((taskId) => {
+    const started = events.find((event) => event.type === "task.worker_process_started" && event.task_id === taskId);
+    const stopped = events.find((event) => event.type === "task.worker_process_stopped" && event.task_id === taskId);
+    assert.ok(started, `missing worker start for ${taskId}`);
+    assert.ok(stopped, `missing worker stop for ${taskId}`);
+    return { taskId, start: Date.parse(started.ts), end: Date.parse(stopped.ts) };
+  });
+}
+
+function maxConcurrentIntervals(intervals: WorkerInterval[]): number {
+  const points = intervals.flatMap((interval) => [
+    { at: interval.start, delta: 1 },
+    { at: interval.end, delta: -1 }
+  ]).sort((left, right) => left.at - right.at || left.delta - right.delta);
+  let active = 0;
+  let maximum = 0;
+  for (const point of points) {
+    active += point.delta;
+    maximum = Math.max(maximum, active);
+  }
+  return maximum;
+}
+
 function managerContract(taskId: string, baseCommit: string, allowedFiles: string[]): Record<string, unknown> {
   return {
     task_id: taskId,
@@ -2432,14 +2695,19 @@ async function prepareLintedPlan(repo: string, contract: Record<string, unknown>
   await prepareLintedPlanWithTasks(repo, [planTaskFromContract(contract)], name);
 }
 
-async function prepareLintedPlanWithTasks(repo: string, tasks: Record<string, unknown>[], name = "plan.json"): Promise<void> {
+async function prepareLintedPlanWithTasks(
+  repo: string,
+  tasks: Record<string, unknown>[],
+  name = "plan.json",
+  mode: "parallel" | "sequence" = "sequence"
+): Promise<void> {
   const planPath = path.join(repo, name);
   await writeFile(
     planPath,
     `${JSON.stringify(
         {
           tasks,
-        execution_groups: [{ group_id: "G-1", mode: "sequence", task_ids: tasks.map((task) => task.task_id) }]
+        execution_groups: [{ group_id: "G-1", mode, task_ids: tasks.map((task) => task.task_id) }]
       },
       null,
       2
@@ -2634,6 +2902,13 @@ async function setConfigManagerAutonomy(repo: string, managerAutonomy: Record<st
       : {}) as Record<string, unknown>),
     ...managerAutonomy
   };
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+async function setConfigExecution(repo: string, maxConcurrentWorkers: number): Promise<void> {
+  const configPath = path.join(repo, ".hivemind", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+  config.execution = { max_concurrent_workers: maxConcurrentWorkers };
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 

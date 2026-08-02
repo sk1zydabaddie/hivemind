@@ -6,6 +6,7 @@ import { writeJsonAtomic } from "./atomic.js";
 import {
   DEFAULT_RUN_TOKEN_CEILING,
   DEFAULT_SESSION_TOKEN_CEILING,
+  DEFAULT_MAX_CONCURRENT_WORKERS,
   type HivemindConfig
 } from "./config.js";
 import { findGitRoot } from "./repo.js";
@@ -52,6 +53,7 @@ export async function initProject(cwd: string): Promise<number> {
     allowed_globs: [],
     forbidden_globs: ["**/*.lock", "**/package.json", "**/.git/**"],
     manager_autonomy: { level: "auto" },
+    execution: { max_concurrent_workers: DEFAULT_MAX_CONCURRENT_WORKERS },
     resource_policy: {
       run_ceiling: { tokens: DEFAULT_RUN_TOKEN_CEILING },
       session_ceiling: { tokens: DEFAULT_SESSION_TOKEN_CEILING }

@@ -828,6 +828,21 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
 
 ---
 
+### M10.4 — Concurrent deterministic scheduler
+- **Depends on:** M9.3, M10.1, M10.2, M10.3.
+- **Read first:** Overview § *Concurrent task execution*; M10.1 runtime admission; deterministic happy-path manager executor; M10.2 budget-capacity projection; M8.3 action-routing audit.
+- **Goal:** Run admitted independent tasks with genuinely overlapping provider worker processes while keeping every control-plane mutation and deterministic gate serialized.
+- **Behavior — exact (C4):**
+  - Core reloads the exact ratified plan and durable state, selects the first unfinished execution group, and calls M10.1 admission. Only a `parallel` group with at least two currently runnable admitted tasks enters concurrent scheduling. Sequence groups retain the existing serial manager path unchanged.
+  - For each task, contract materialization, ordinary lease acquisition, contract-derived write intent, and dependency-aware worktree creation execute serially through the existing manager proposal cursor, autonomy classification, audited dispatcher, and action-specific gates. The scheduler starts the existing `run_worker` action only after that task's setup passes. Only provider worker processes overlap; manager judgment calls and control-plane mutations do not.
+  - Concurrency is `execution.max_concurrent_workers`, default two and valid only from one through the hard maximum four. The effective wave width is further limited by M10.2's current atomic reservation capacity. Durable `scheduler.wave_*` audit evidence distinguishes `configured_cap`, `budget`, and `ready_count` as the binding limit; M10.2 remains the authoritative spawn-time reservation floor.
+  - The pool refills one slot only after a running worker reaches a durable terminal result. Every task is re-admitted before setup, every action is independently proposed/executed through the existing path, and worker preparation/routing remains inside the shared run primitive and `routeTaskProvider()` with the tier floor unchanged. An unsuppressible human/critical escalation stays on the existing serial pending-action path rather than being converted into concurrent authority.
+  - A mid-wave refusal or worker failure stops new launches, waits for already-started siblings to reach definite durable outcomes, records the stop, and returns control without continuing predicted work. Rich per-sibling degradation, group cancellation, quota-wall coordination, and concurrent failure recovery remain M10.5; M10.4 introduces no lease exception or altered lease ownership.
+  - Trail equivalence is the M10 definition: each task's ordered authoritative event subsequence and gate outcomes match serial execution, while cross-task interleaving and scheduler audit events may differ. No LLM participates in wave selection or slot scheduling.
+- **Acceptance test (binary):** Timed fixture workers prove overlapping process windows. Four eligible tasks under cap two never exceed two and the third begins only after a slot opens. A budget capacity below the cap runs fewer workers and records `budget` as the reason. Serial and concurrent fixtures have identical per-task event subsequences and gate outcomes; sequence groups remain strictly serial; setup actions occur in serial order through their existing gates; and an external lease refusal prevents that task's worker spawn. The same two-worker fixture reports its measured serial-versus-concurrent worker-window reduction.
+
+---
+
 ## Beyond M8
 - **Native adapters** and **cloud/team mode** remain future productization. Their old Overview phase numbers are roadmap labels, not M8 Workspace contract numbers; decompose them into the same one-acceptance-test contracts when reached.
 - **Dogfooding** remains an available deliberate demonstration after M8, not the mechanism used to build M4–M8. When explicitly enabled, it exercises Hivemind's protected workflow against its own repo without replacing each feature's direct contract acceptance.

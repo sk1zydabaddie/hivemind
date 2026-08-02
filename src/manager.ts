@@ -12,7 +12,7 @@ import {
   loadAdapterProfile,
   runAdapterProcess
 } from "./adapter.js";
-import { loadConfig } from "./config.js";
+import { DEFAULT_MAX_CONCURRENT_WORKERS, loadConfig } from "./config.js";
 import { createTaskContract, type CreateTaskContractResult } from "./contract.js";
 import { loadAndValidateContract, normalizeAllowedFileIntents, normalizeContract, validateContract, type TaskContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
@@ -27,8 +27,9 @@ import { applyOrchestratorContextBudget } from "./orchestrator-context.js";
 import { requestLeaseForContract, type LeaseGrantResult } from "./lease.js";
 import { evaluatePlanThrash, loadCurrentRatifiedPlan, loadTentativePlan, readRatifiedWorkspacePlanSession, type TentativePlan, type TentativePlanTask } from "./plan.js";
 import { findGitRoot } from "./repo.js";
+import { readMeteredBudgetCapacity } from "./resource-ledger.js";
 import { inferTaskTier } from "./routing.js";
-import { markRunFailed, runTask, type RunFailureMarkResult, type RunResult, type RunStartResult } from "./run.js";
+import { markRunFailed, startRunTaskJob, type RunFailureMarkResult, type RunResult, type RunStartResult } from "./run.js";
 import { latestTaskRunState } from "./run-state.js";
 import { integratedTaskIdsFromEvents } from "./integration-state.js";
 import { runScout, type ScoutResult } from "./scout.js";
@@ -38,6 +39,7 @@ import { getStatus, type HivemindStatus } from "./status.js";
 import { submitTask, type SubmitResult } from "./submit.js";
 import { requestTaskRedirect } from "./supervision.js";
 import { admitValueQuality, type ValueQualityAdmission, type ValueQualityStrategy } from "./value-quality.js";
+import { admitExecutionWave } from "./wave-admission.js";
 import { createTaskWorktree, type WorktreeResult } from "./worktree.js";
 
 interface ManagerSession {
@@ -522,6 +524,27 @@ type DeterministicProposalDecision =
   | { kind: "waiting"; task_id: string }
   | { kind: "judgment"; reason: string };
 
+type DeterministicActionMode = "complete" | "start_worker";
+
+interface ConcurrentWaveStep {
+  action: ManagerAction;
+  tier: "autonomous" | "human_approval";
+  result: ManagerActionExecutionRecord;
+}
+
+type ConcurrentWaveDecision =
+  | { kind: "not_applicable" }
+  | {
+      kind: "executed";
+      group_id: string;
+      binding_limit: "configured_cap" | "budget" | "ready_count";
+      configured_cap: number;
+      effective_concurrency: number;
+      steps: ConcurrentWaveStep[];
+      failure?: { action: ManagerAction; result: Extract<ManagerActionExecutionRecord, { ok: false }> };
+    }
+  | { kind: "judgment"; reason: string };
+
 async function deriveOrGenerateManagerProposal(
   repoRoot: string,
   specId: string,
@@ -605,16 +628,10 @@ async function deriveDeterministicHappyPathProposal(
     const current = taskStatus.get(task.task_id);
 
     if (current === undefined) {
-      const contract = contractFromRatifiedPlanTask(plan.value, task);
-      if (!contract.ok) return { kind: "judgment", reason: contract.reason };
+      const actions = await derivePreWorkerActions(repoRoot, plan.value, task, current);
+      if (!actions.ok) return { kind: "judgment", reason: actions.reason };
       return deterministicProposal(
-        [
-          { type: "create_task_contract", contract: contract.value },
-          { type: "request_lease", task_id: task.task_id },
-          { type: "check_write_intent", task_id: task.task_id, intent: writeIntentFromContract(contract.value) },
-          { type: "create_worktree", task_id: task.task_id },
-          { type: "run_worker", task_id: task.task_id }
-        ],
+        actions.value,
         `Core derived the complete pre-worker pipeline for ${task.task_id} from the exact ratified plan and current durable state.`
       );
     }
@@ -666,30 +683,10 @@ async function deriveDeterministicHappyPathProposal(
       );
     }
 
-    const contract = await loadAndValidateContract(repoRoot, task.task_id);
-    if (!contract.ok) return { kind: "judgment", reason: contract.reason };
-    const actions: ManagerAction[] = [];
-    if (!current.lease.held) {
-      return deterministicProposal(
-        [{ type: "request_lease", task_id: task.task_id }],
-        `Core observed that ${task.task_id} has no current canonical lease.`
-      );
-    }
-    const intent = await requirePassedWriteIntent(repoRoot, task.task_id);
-    if (!intent.ok) {
-      if (!intent.reason.startsWith("passed write intent not found")) {
-        return { kind: "judgment", reason: intent.reason };
-      }
-      actions.push({
-        type: "check_write_intent",
-        task_id: task.task_id,
-        intent: writeIntentFromContract(contract.contract)
-      });
-    }
-    if (current.worktree === "missing") actions.push({ type: "create_worktree", task_id: task.task_id });
-    actions.push({ type: "run_worker", task_id: task.task_id });
+    const actions = await derivePreWorkerActions(repoRoot, plan.value, task, current);
+    if (!actions.ok) return { kind: "judgment", reason: actions.reason };
     return deterministicProposal(
-      actions,
+      actions.value,
       `Core derived the remaining pre-worker pipeline for ${task.task_id} from current durable state.`
     );
   }
@@ -712,6 +709,324 @@ async function deriveDeterministicHappyPathProposal(
     .filter((task) => !integrated.has(task.task_id))
     .map((task) => `${task.task_id} waits for ${task.depends_on.filter((dependency) => !integrated.has(dependency)).join(", ") || "unknown state"}`);
   return { kind: "judgment", reason: `no task has a provable next happy-path action: ${blocked.join("; ")}` };
+}
+
+async function derivePreWorkerActions(
+  repoRoot: string,
+  plan: TentativePlan,
+  task: TentativePlanTask,
+  current: HivemindStatus["tasks"][number] | undefined
+): Promise<SpecResult<ManagerAction[]>> {
+  if (current === undefined) {
+    const contract = contractFromRatifiedPlanTask(plan, task);
+    if (!contract.ok) return contract;
+    return {
+      ok: true,
+      value: [
+        { type: "create_task_contract", contract: contract.value },
+        { type: "request_lease", task_id: task.task_id },
+        { type: "check_write_intent", task_id: task.task_id, intent: writeIntentFromContract(contract.value) },
+        { type: "create_worktree", task_id: task.task_id },
+        { type: "run_worker", task_id: task.task_id }
+      ]
+    };
+  }
+
+  const contract = await loadAndValidateContract(repoRoot, task.task_id);
+  if (!contract.ok) return contract;
+  const actions: ManagerAction[] = [];
+  if (!current.lease.held) actions.push({ type: "request_lease", task_id: task.task_id });
+  const intent = await requirePassedWriteIntent(repoRoot, task.task_id);
+  if (!intent.ok) {
+    if (!intent.reason.startsWith("passed write intent not found")) return intent;
+    actions.push({
+      type: "check_write_intent",
+      task_id: task.task_id,
+      intent: writeIntentFromContract(contract.contract)
+    });
+  }
+  if (current.worktree === "missing") actions.push({ type: "create_worktree", task_id: task.task_id });
+  actions.push({ type: "run_worker", task_id: task.task_id });
+  return { ok: true, value: actions };
+}
+
+async function tryExecuteConcurrentWorkerWave(
+  repoRoot: string,
+  session: ManagerSession,
+  policy: ManagerAutonomyRuntimePolicy
+): Promise<SpecResult<ConcurrentWaveDecision>> {
+  if (session.pending_action !== undefined || session.blocked_action !== undefined) {
+    return { ok: true, value: { kind: "not_applicable" } };
+  }
+  if (session.proposal_state?.status === "pending") {
+    const cursor = proposalCursor(session);
+    if (
+      !cursor.ok ||
+      cursor.value !== 0 ||
+      session.proposed_action.source !== "deterministic"
+    ) {
+      return { ok: true, value: { kind: "not_applicable" } };
+    }
+  }
+
+  const plan = await loadCurrentRatifiedPlan(repoRoot, session.spec_id, "concurrent deterministic scheduling");
+  if (!plan.ok) return { ok: true, value: { kind: "not_applicable" } };
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return events;
+  const integrated = integratedTaskIdsFromEvents(events.value);
+  const group = plan.value.execution_groups.find((entry) => entry.task_ids.some((taskId) => !integrated.has(taskId)));
+  if (group === undefined || group.mode !== "parallel") {
+    return { ok: true, value: { kind: "not_applicable" } };
+  }
+
+  const admission = await admitExecutionWave(repoRoot, session.spec_id, group.group_id);
+  if (!admission.ok) return { ok: true, value: { kind: "judgment", reason: admission.reason } };
+  if (admission.value.admitted_task_ids.length < 2) {
+    return { ok: true, value: { kind: "not_applicable" } };
+  }
+
+  const status = await getStatus(repoRoot);
+  if (!status.ok) return status;
+  const statusByTask = new Map(status.value.tasks.map((task) => [task.task_id, task]));
+  const taskById = new Map(plan.value.tasks.map((task) => [task.task_id, task]));
+  const runnable: Array<{ task: TentativePlanTask; actions: ManagerAction[] }> = [];
+  const config = await loadConfig(repoRoot);
+  if (!config.ok) return config;
+
+  for (const taskId of admission.value.admitted_task_ids) {
+    const task = taskById.get(taskId);
+    if (task === undefined) {
+      return { ok: true, value: { kind: "judgment", reason: `concurrent scheduler could not resolve admitted task ${taskId}` } };
+    }
+    const current = statusByTask.get(taskId);
+    const runState = latestTaskRunState(events.value, taskId);
+    if (current?.queued || runState.state === "running" || runState.state === "completed" || runState.state === "failed" || runState.state === "cancelled") {
+      continue;
+    }
+    const contract = contractFromRatifiedPlanTask(plan.value, task);
+    if (!contract.ok) return { ok: true, value: { kind: "judgment", reason: contract.reason } };
+    if (inferTaskTier(normalizeContract(contract.value), config.config) === "critical") {
+      return { ok: true, value: { kind: "not_applicable" } };
+    }
+    const actions = await derivePreWorkerActions(repoRoot, plan.value, task, current);
+    if (!actions.ok) return { ok: true, value: { kind: "judgment", reason: actions.reason } };
+    if (actions.value.at(-1)?.type !== "run_worker") {
+      return { ok: true, value: { kind: "judgment", reason: `concurrent scheduler derived no terminal worker action for ${taskId}` } };
+    }
+    if (actions.value.some((action) => action.type !== "run_worker" && policy.tier2Actions.has(action.type))) {
+      return { ok: true, value: { kind: "not_applicable" } };
+    }
+    runnable.push({ task, actions: actions.value });
+  }
+  if (runnable.length < 2) return { ok: true, value: { kind: "not_applicable" } };
+
+  const runClassification = await classifyManagerAction(
+    repoRoot,
+    { type: "run_worker", task_id: runnable[0].task.task_id },
+    policy
+  );
+  if (runClassification.tier === "human_approval" && !shouldSuppressManagerInterruption(policy.level, runClassification, { type: "run_worker", task_id: runnable[0].task.task_id })) {
+    return { ok: true, value: { kind: "not_applicable" } };
+  }
+
+  const capacity = await readMeteredBudgetCapacity(repoRoot, session.session_id);
+  if (!capacity.ok) return { ok: true, value: { kind: "judgment", reason: capacity.reason } };
+  const configuredCap = config.config.execution?.max_concurrent_workers ?? DEFAULT_MAX_CONCURRENT_WORKERS;
+  const effectiveConcurrency = Math.min(configuredCap, capacity.value.available_reservations, runnable.length);
+  if (effectiveConcurrency < 1) {
+    return {
+      ok: true,
+      value: {
+        kind: "judgment",
+        reason: `concurrent worker scheduling stopped: session token budget permits 0 additional metered calls under ceiling ${capacity.value.session_ceiling_tokens}`
+      }
+    };
+  }
+  const bindingLimit = capacity.value.available_reservations < Math.min(configuredCap, runnable.length)
+    ? "budget"
+    : configuredCap < runnable.length
+      ? "configured_cap"
+      : "ready_count";
+
+  const waveStarted = await appendEvent(repoRoot, {
+    type: "scheduler.wave_started",
+    task_id: null,
+    data: {
+      version: 1,
+      session_id: session.session_id,
+      group_id: group.group_id,
+      task_ids: runnable.map((entry) => entry.task.task_id),
+      configured_cap: configuredCap,
+      effective_concurrency: effectiveConcurrency,
+      binding_limit: bindingLimit,
+      budget_available_reservations: capacity.value.available_reservations
+    }
+  });
+  if (!waveStarted.ok) return waveStarted;
+
+  const steps: ConcurrentWaveStep[] = [];
+  const active = new Map<string, Promise<{ taskId: string; action: ManagerAction; tier: ConcurrentWaveStep["tier"]; result: ManagerActionExecutionRecord }>>();
+  let nextIndex = 0;
+  let failure: { action: ManagerAction; result: Extract<ManagerActionExecutionRecord, { ok: false }> } | undefined;
+
+  while (nextIndex < runnable.length || active.size > 0) {
+    while (failure === undefined && active.size < effectiveConcurrency && nextIndex < runnable.length) {
+      const entry = runnable[nextIndex++];
+      const currentAdmission = await admitExecutionWave(repoRoot, session.spec_id, group.group_id);
+      if (!currentAdmission.ok || !currentAdmission.value.admitted_task_ids.includes(entry.task.task_id)) {
+        failure = {
+          action: { type: "run_worker", task_id: entry.task.task_id },
+          result: {
+            ok: false,
+            reason: currentAdmission.ok
+              ? `concurrent scheduler re-admission no longer permits ${entry.task.task_id}`
+              : currentAdmission.reason
+          }
+        };
+        break;
+      }
+
+      const refreshedStatus = await getStatus(repoRoot);
+      if (!refreshedStatus.ok) return refreshedStatus;
+      const refreshedCurrent = refreshedStatus.value.tasks.find((task) => task.task_id === entry.task.task_id);
+      const refreshedActions = await derivePreWorkerActions(repoRoot, plan.value, entry.task, refreshedCurrent);
+      if (!refreshedActions.ok) {
+        failure = { action: { type: "run_worker", task_id: entry.task.task_id }, result: { ok: false, reason: refreshedActions.reason } };
+        break;
+      }
+
+      const setupActions = refreshedActions.value.slice(0, -1);
+      for (const action of setupActions) {
+        const executed = await executeScheduledWaveAction(repoRoot, session.session_id, action, policy, "complete");
+        if (!executed.ok) return executed;
+        steps.push({ action, tier: executed.value.tier, result: executed.value.result });
+        if (!executed.value.result.ok) {
+          failure = { action, result: executed.value.result };
+          break;
+        }
+      }
+      if (failure !== undefined) break;
+
+      const runAction: ManagerAction = { type: "run_worker", task_id: entry.task.task_id };
+      const started = await executeScheduledWaveAction(repoRoot, session.session_id, runAction, policy, "start_worker");
+      if (!started.ok) return started;
+      if (!started.value.result.ok) {
+        steps.push({ action: runAction, tier: started.value.tier, result: started.value.result });
+        failure = { action: runAction, result: started.value.result };
+        break;
+      }
+      active.set(
+        entry.task.task_id,
+        waitForTaskRunCompletion(repoRoot, entry.task.task_id)
+          .then((result) => ({ taskId: entry.task.task_id, action: runAction, tier: started.value.tier, result: recordResult(result) }))
+          .catch((error: unknown) => ({
+            taskId: entry.task.task_id,
+            action: runAction,
+            tier: started.value.tier,
+            result: { ok: false as const, reason: formatErrorDetail(error, `unexpected concurrent worker observation failure for ${entry.task.task_id}`) }
+          }))
+      );
+    }
+
+    if (active.size === 0) break;
+    const completed = await Promise.race(active.values());
+    active.delete(completed.taskId);
+    steps.push({ action: completed.action, tier: completed.tier, result: completed.result });
+    if (!completed.result.ok && failure === undefined) {
+      failure = { action: completed.action, result: completed.result };
+    }
+  }
+
+  if (active.size > 0) {
+    const remaining = await Promise.all(active.values());
+    for (const completed of remaining) {
+      steps.push({ action: completed.action, tier: completed.tier, result: completed.result });
+      if (!completed.result.ok && failure === undefined) failure = { action: completed.action, result: completed.result };
+    }
+  }
+
+  const waveFinished = await appendEvent(repoRoot, {
+    type: failure === undefined ? "scheduler.wave_completed" : "scheduler.wave_stopped",
+    task_id: null,
+    data: {
+      version: 1,
+      session_id: session.session_id,
+      group_id: group.group_id,
+      task_ids: runnable.map((entry) => entry.task.task_id),
+      binding_limit: bindingLimit,
+      result: failure === undefined ? "completed" : "stopped",
+      ...(failure === undefined ? {} : { reason: failure.result.reason })
+    }
+  });
+  if (!waveFinished.ok) return waveFinished;
+
+  return {
+    ok: true,
+    value: {
+      kind: "executed",
+      group_id: group.group_id,
+      binding_limit: bindingLimit,
+      configured_cap: configuredCap,
+      effective_concurrency: effectiveConcurrency,
+      steps,
+      ...(failure === undefined ? {} : { failure })
+    }
+  };
+}
+
+async function executeScheduledWaveAction(
+  repoRoot: string,
+  sessionId: string,
+  action: ManagerAction,
+  policy: ManagerAutonomyRuntimePolicy,
+  mode: DeterministicActionMode
+): Promise<SpecResult<{ tier: ConcurrentWaveStep["tier"]; result: ManagerActionExecutionRecord }>> {
+  const session = await loadManagerSession(repoRoot, sessionId);
+  if (!session.ok) return session;
+  const decision = deterministicProposal([action], `Core scheduled ${action.type} as one independently gated member of an admitted concurrent wave.`);
+  if (decision.kind !== "proposal") {
+    const reason = decision.kind === "judgment" ? decision.reason : `unexpected wait for ${decision.task_id}`;
+    return { ok: false, reason: `concurrent scheduler could not form an independently gated ${action.type} action: ${reason}` };
+  }
+  const proposed = appendProposalToSession(session.value, decision.proposal);
+  await writeJsonAtomic(managerSessionPath(repoRoot, sessionId), proposed);
+  const proposalId = proposed.proposal_state!.proposal_id;
+  const classification = await classifyManagerAction(repoRoot, action, policy);
+
+  if (classification.tier === "human_approval") {
+    if (!shouldSuppressManagerInterruption(policy.level, classification, action)) {
+      return { ok: false, reason: `concurrent scheduler reached an action that still requires human attention: ${classification.reason}` };
+    }
+    const expectedState = await getStatus(repoRoot);
+    if (!expectedState.ok) return expectedState;
+    const pending: ManagerPendingAction = {
+      pending_action_id: randomUUID(),
+      proposal_id: proposalId,
+      action,
+      action_type: action.type,
+      subject: managerActionSubject(action),
+      expected_state_hash: hashDurableState(expectedState.value),
+      tier: "human_approval",
+      reason: classification.reason,
+      recommendation: classification.recommendation
+    };
+    await writeJsonAtomic(managerSessionPath(repoRoot, sessionId), { ...proposed, pending_action: pending });
+    const authorized = await authorizePendingManagerAction(
+      repoRoot,
+      pendingRequest(sessionId, pending),
+      "autonomy_policy",
+      policy.level,
+      mode
+    );
+    return authorized.ok
+      ? { ok: true, value: { tier: "human_approval", result: authorized.value.result } }
+      : authorized;
+  }
+
+  const executed = await executeProposedManagerAction(repoRoot, sessionId, proposalId, action, mode);
+  return executed.ok
+    ? { ok: true, value: { tier: "autonomous", result: executed.value.result } }
+    : executed;
 }
 
 function orderedPlanTasks(plan: TentativePlan): SpecResult<TentativePlanTask[]> {
@@ -1720,6 +2035,49 @@ export async function continueAutonomousManagerLoop(
     }
     let sessionForWrite = session.value;
 
+    if (session.value.execution_mode === "deterministic_happy_path") {
+      const wave = await tryExecuteConcurrentWorkerWave(repoRoot, session.value, policy.value);
+      if (!wave.ok) return wave;
+      if (wave.value.kind === "judgment") {
+        return recordManagerProposalFailure(repoRoot, sessionId, wave.value.reason);
+      }
+      if (wave.value.kind === "executed") {
+        for (const waveStep of wave.value.steps) {
+          steps.push({
+            index: steps.length,
+            action_type: waveStep.action.type,
+            tier: waveStep.result.ok ? waveStep.tier : "gate_rejection",
+            result: waveStep.result,
+            ...(waveStep.result.ok ? {} : { stop: buildGateRejectionAdvice(waveStep.action, waveStep.result.reason) })
+          });
+        }
+        if (wave.value.failure !== undefined) {
+          const stop = buildGateRejectionAdvice(wave.value.failure.action, wave.value.failure.result.reason);
+          const blocked = await recordBlockedManagerAction(
+            repoRoot,
+            sessionId,
+            wave.value.failure.action,
+            wave.value.failure.result,
+            stop
+          );
+          if (!blocked.ok) return blocked;
+          const status = await getStatus(repoRoot);
+          if (!status.ok) return status;
+          return {
+            ok: true,
+            value: {
+              session_id: sessionId,
+              session_path: managerSessionRelativePath(sessionId),
+              status: "stopped",
+              steps,
+              final_status: status.value
+            }
+          };
+        }
+        continue;
+      }
+    }
+
     let action: ManagerAction;
     let classification: ActionClassification;
     let proposalId: string;
@@ -2192,7 +2550,8 @@ async function executeProposedManagerAction(
   repoRoot: string,
   sessionId: string,
   proposalId: string,
-  action: ManagerAction
+  action: ManagerAction,
+  mode: DeterministicActionMode = "complete"
 ): Promise<SpecResult<ManagerActionResult>> {
   const sessionResult = await loadManagerSession(repoRoot, sessionId);
   if (!sessionResult.ok) return sessionResult;
@@ -2210,7 +2569,7 @@ async function executeProposedManagerAction(
   if (classification.tier === "human_approval") {
     return { ok: false, reason: "proposed manager action requires its daemon-issued pending action and exact typed approval" };
   }
-  return executeAuthorizedManagerAction(repoRoot, sessionResult.value, action, proposalId);
+  return executeAuthorizedManagerAction(repoRoot, sessionResult.value, action, proposalId, false, mode);
 }
 
 async function executeAuthorizedManagerAction(
@@ -2218,7 +2577,8 @@ async function executeAuthorizedManagerAction(
   session: ManagerSession,
   action: ManagerAction,
   proposalId?: string,
-  clearPendingAction = false
+  clearPendingAction = false,
+  mode: DeterministicActionMode = "complete"
 ): Promise<SpecResult<ManagerActionResult>> {
 
   if (proposalId !== undefined) {
@@ -2228,7 +2588,7 @@ async function executeAuthorizedManagerAction(
 
   let result: ManagerActionExecutionRecord;
   try {
-    result = await executeDeterministicAction(repoRoot, session.session_id, action);
+    result = await executeDeterministicAction(repoRoot, session.session_id, action, mode);
   } catch (error: unknown) {
     result = { ok: false, reason: formatErrorDetail(error, `unexpected ${action.type} failure`) };
   }
@@ -2260,7 +2620,8 @@ async function authorizePendingManagerAction(
   repoRoot: string,
   request: unknown,
   authorizationSource: "human" | "autonomy_policy",
-  autonomyLevel: AutonomyLevel
+  autonomyLevel: AutonomyLevel,
+  mode: DeterministicActionMode = "complete"
 ): Promise<SpecResult<ManagerActionResult>> {
   if (!isRecord(request)) return { ok: false, reason: "manager approval must be a JSON object" };
   const allowed = new Set(["session_id", "pending_action_id", "action_type", "subject", "expected_state_hash"]);
@@ -2306,7 +2667,10 @@ async function authorizePendingManagerAction(
   if (authorizationSource === "autonomy_policy" && !shouldSuppressManagerInterruption(autonomyLevel, classification, parsedAction.value)) {
     return { ok: false, reason: "manager policy authorization refused: this action or escalation still requires a human at the active autonomy level" };
   }
-  const result = await executeAuthorizedManagerAction(repoRoot, session.value, parsedAction.value, pending.proposal_id, true);
+  if (mode === "start_worker" && (authorizationSource !== "autonomy_policy" || parsedAction.value.type !== "run_worker")) {
+    return { ok: false, reason: "start-only worker execution is confined to autonomy-policy scheduling" };
+  }
+  const result = await executeAuthorizedManagerAction(repoRoot, session.value, parsedAction.value, pending.proposal_id, true, mode);
   if (!result.ok) return result;
   const refreshed = await loadManagerSession(repoRoot, session.value.session_id);
   if (!refreshed.ok) return refreshed;
@@ -2369,7 +2733,12 @@ function managerActionSubject(action: ManagerAction): string {
   return "task_id" in action ? action.task_id : action.type;
 }
 
-async function executeDeterministicAction(repoRoot: string, sessionId: string, action: ManagerAction): Promise<ManagerActionExecutionRecord> {
+async function executeDeterministicAction(
+  repoRoot: string,
+  sessionId: string,
+  action: ManagerAction,
+  mode: DeterministicActionMode = "complete"
+): Promise<ManagerActionExecutionRecord> {
   if (action.type === "get_status") {
     return recordResult(await getStatus(repoRoot));
   }
@@ -2403,12 +2772,15 @@ async function executeDeterministicAction(repoRoot: string, sessionId: string, a
         usage_session_id: sessionId
       },
       () =>
-        runTask(repoRoot, action.task_id, action.tool, {
+        startRunTaskJob(repoRoot, action.task_id, action.tool, {
           allowDangerousAdapter: action.allow_dangerous_adapter === true,
           usageSessionId: sessionId
         })
     );
     if (!started.ok) {
+      return recordResult(started);
+    }
+    if (mode === "start_worker") {
       return recordResult(started);
     }
     return recordResult(await waitForTaskRunCompletion(repoRoot, action.task_id));

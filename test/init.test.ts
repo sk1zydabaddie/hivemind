@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import {
+  DEFAULT_MAX_CONCURRENT_WORKERS,
   DEFAULT_RUN_TOKEN_CEILING,
   DEFAULT_SESSION_TOKEN_CEILING,
   loadConfig
@@ -47,6 +48,7 @@ test("init creates the M0.1 .hivemind scaffold inside a git repo", async () => {
         run_ceiling: { tokens: number };
         session_ceiling: { tokens: number };
       };
+      execution: { max_concurrent_workers: number };
       manager_autonomy: { level: string };
     };
 
@@ -59,6 +61,7 @@ test("init creates the M0.1 .hivemind scaffold inside a git repo", async () => {
       allowed_globs: [],
       forbidden_globs: ["**/*.lock", "**/package.json", "**/.git/**"],
       manager_autonomy: { level: "auto" },
+      execution: { max_concurrent_workers: DEFAULT_MAX_CONCURRENT_WORKERS },
       resource_policy: {
         run_ceiling: { tokens: DEFAULT_RUN_TOKEN_CEILING },
         session_ceiling: { tokens: DEFAULT_SESSION_TOKEN_CEILING }

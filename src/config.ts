@@ -6,6 +6,8 @@ import { normalizeRepoPathPattern, validateRepoRelativePathOrGlob } from "./path
 
 export const DEFAULT_RUN_TOKEN_CEILING = 150_000;
 export const DEFAULT_SESSION_TOKEN_CEILING = 500_000;
+export const DEFAULT_MAX_CONCURRENT_WORKERS = 2;
+export const HARD_MAX_CONCURRENT_WORKERS = 4;
 
 export interface HivemindConfig {
   version: 1;
@@ -21,7 +23,12 @@ export interface HivemindConfig {
   critical_globs?: string[];
   resource_policy?: ResourcePolicy;
   manager_autonomy?: ManagerAutonomyPolicy;
+  execution?: ExecutionConfig;
   verification?: VerificationConfig;
+}
+
+export interface ExecutionConfig {
+  max_concurrent_workers: number;
 }
 
 export interface VerificationConfig {
@@ -131,6 +138,9 @@ export function validateConfig(raw: unknown): string[] {
   if ("manager_autonomy" in raw) {
     validateManagerAutonomyPolicy(raw.manager_autonomy, problems);
   }
+  if ("execution" in raw) {
+    validateExecutionConfig(raw.execution, problems);
+  }
   if ("verification" in raw) {
     validateVerificationConfig(raw.verification, problems);
   }
@@ -157,7 +167,33 @@ export function normalizeConfig(raw: unknown): HivemindConfig {
     ...("critical_globs" in raw ? { critical_globs: normalizeStringArray(raw.critical_globs) } : {}),
     resource_policy: normalizeResourcePolicy(raw.resource_policy),
     ...("manager_autonomy" in raw ? { manager_autonomy: normalizeManagerAutonomyPolicy(raw.manager_autonomy) } : {}),
+    execution: normalizeExecutionConfig(raw.execution),
     ...("verification" in raw ? { verification: normalizeVerificationConfig(raw.verification) } : {})
+  };
+}
+
+function validateExecutionConfig(value: unknown, problems: string[]): void {
+  if (!isRecord(value)) {
+    problems.push("execution must be a JSON object");
+    return;
+  }
+  if (
+    "max_concurrent_workers" in value &&
+    (!Number.isSafeInteger(value.max_concurrent_workers) ||
+      typeof value.max_concurrent_workers !== "number" ||
+      value.max_concurrent_workers < 1 ||
+      value.max_concurrent_workers > HARD_MAX_CONCURRENT_WORKERS)
+  ) {
+    problems.push(`execution.max_concurrent_workers must be an integer between 1 and ${HARD_MAX_CONCURRENT_WORKERS}`);
+  }
+}
+
+function normalizeExecutionConfig(value: unknown): ExecutionConfig {
+  return {
+    max_concurrent_workers:
+      isRecord(value) && typeof value.max_concurrent_workers === "number"
+        ? value.max_concurrent_workers
+        : DEFAULT_MAX_CONCURRENT_WORKERS
   };
 }
 
