@@ -9,6 +9,10 @@ use std::time::{Duration, Instant};
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 const HEALTH_TIMEOUT: Duration = Duration::from_millis(750);
+// Workspace actions can include bounded provider and worker runs. Their own Core
+// ceilings remain authoritative; this transport bound only prevents the shell
+// from abandoning a valid long-running response after the health-check timeout.
+const WORKSPACE_ACTION_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 const EMBEDDED_SHELL_BUILD_ID: &str = env!(
     "HIVEMIND_SHELL_BUILD_ID",
     "desktop shell build identity must be embedded at compile time"
@@ -430,7 +434,7 @@ fn post_workspace_action(
     let mut stream = TcpStream::connect_timeout(&address, HEALTH_TIMEOUT)
         .map_err(|error| format!("daemon action connection failed: {error}"))?;
     stream
-        .set_read_timeout(Some(Duration::from_secs(30)))
+        .set_read_timeout(Some(WORKSPACE_ACTION_TIMEOUT))
         .map_err(|error| format!("could not configure daemon action timeout: {error}"))?;
     stream
         .set_write_timeout(Some(HEALTH_TIMEOUT))
@@ -700,6 +704,19 @@ mod tests {
             shell_check < transport,
             "shell identity must be verified before action transport"
         );
+    }
+
+    #[test]
+    fn workspace_action_transport_does_not_abandon_bounded_worker_runs() {
+        assert!(WORKSPACE_ACTION_TIMEOUT >= Duration::from_secs(15 * 60));
+        let source = include_str!("project.rs");
+        let transport = source
+            .split("fn post_workspace_action")
+            .nth(1)
+            .and_then(|value| value.split("fn parse_loopback_url").next())
+            .expect("workspace action transport source section");
+        assert!(transport.contains("set_read_timeout(Some(WORKSPACE_ACTION_TIMEOUT))"));
+        assert!(!transport.contains("Duration::from_secs(30)"));
     }
 
     #[test]

@@ -203,6 +203,20 @@ test("planning prompt assembly is structurally canon-only and MCP exposes no pro
   assert.equal(mcpToolDefinitions.some((tool) => /memory|canon|promot/iu.test(tool.name)), false);
 });
 
+test("planning prompt requires independent validity evidence and forbids invented tooling", async () => {
+  await withMemoryRepo(async (repo) => {
+    const configPath = path.join(repo, ".hivemind", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    await writeFile(configPath, `${JSON.stringify({ ...config, test_command: "npm test" }, null, 2)}\n`);
+    const prompt = await planningPrompt(repo);
+    assert.equal(prompt.ok, true, prompt.ok ? undefined : prompt.reason);
+    if (!prompt.ok) return;
+    assert.match(prompt.value, /MUST NOT be copied into required_tests or be identical/u);
+    assert.match(prompt.value, /Do not invent tools such as ts-node, tsx, Jest, or Vitest/u);
+    assert.match(prompt.value, /Configured command evidence:\nStack: typescript-node\nFull test command: npm test/u);
+  });
+});
+
 async function withMemoryRepo(run: (repo: string) => Promise<void>): Promise<void> {
   const repo = await mkdtemp(path.join(tmpdir(), "hivemind-memory-test-"));
   try {

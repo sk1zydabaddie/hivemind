@@ -10,6 +10,9 @@ export function plainActionError(error: unknown): string {
   if (/current lint-passed tentative plan|plan hash|re-ratification/iu.test(raw)) {
     return "The plan changed. Review the latest version before approving it.";
   }
+  if (/SKELETON_TRAP_ACCEPTANCE.*deterministic_validity_check must be independent/iu.test(raw)) {
+    return "The proposed plan was stopped because its contract check duplicated a worker-owned test. No work started. Retry planning to produce an independent check.";
+  }
   if (/change not found/iu.test(raw)) {
     return "No submitted change is available for this task yet.";
   }

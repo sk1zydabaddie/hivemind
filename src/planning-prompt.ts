@@ -1,4 +1,5 @@
 import { formatCanonForPlanning, readCanonMemory } from "./memory-canon.js";
+import { loadConfig } from "./config.js";
 import type { SpecResult } from "./spec-format.js";
 
 export interface PlanningPromptInput {
@@ -14,6 +15,10 @@ export async function buildPlanningGenerationPrompt(input: PlanningPromptInput):
   const canon = await readCanonMemory(input.repoRoot);
   if (!canon.ok) {
     return canon;
+  }
+  const config = await loadConfig(input.repoRoot);
+  if (!config.ok) {
+    return config;
   }
 
   return {
@@ -67,6 +72,8 @@ export async function buildPlanningGenerationPrompt(input: PlanningPromptInput):
       "- A generative task must either use a BEHAVIORAL human-judged acceptance_criterion, or include deterministic_validity_check when its generated output has a machine-checkable validity rule.",
       "- If acceptance names an observable interface such as CLI flags or arguments, an exported signature, an output shape, or a file format, include an executable deterministic_validity_check that independently exercises that exact surface.",
       "- deterministic_validity_check is plan-authored verification, not a worker-authored test. Prefer an inline black-box command or a repository-authored check the task cannot modify.",
+      "- deterministic_validity_check MUST NOT be copied into required_tests or be identical to any required_tests entry. It is independent contract evidence in addition to the worker-facing test commands.",
+      "- Use only executables and loaders established by the configured stack and repository. Do not invent tools such as ts-node, tsx, Jest, or Vitest merely because they are common.",
       "- Do not give a generative quality task a stubbable binary criterion such as merely producing a file, JSON object, or passing typecheck.",
       "- Every task must have exactly one acceptance_criterion and at least one required_tests command or named review check that backs it.",
       "- Draft scopes are guesses, but every allowed_files entry must be labeled in allowed_file_intents as either modify or create.",
@@ -90,6 +97,11 @@ export async function buildPlanningGenerationPrompt(input: PlanningPromptInput):
       "",
       "Tracked files at base commit:",
       input.trackedFiles.length === 0 ? "(none)" : input.trackedFiles.join("\n"),
+      "",
+      "Configured command evidence:",
+      `Stack: ${config.config.stack}`,
+      `Full test command: ${config.config.test_command}`,
+      "Any other executable used by a validity check must be directly supported by repository content in the context; otherwise use the configured runtime and standard library only.",
       "",
       "Human-reviewed project canon:",
       formatCanonForPlanning(canon.value),
