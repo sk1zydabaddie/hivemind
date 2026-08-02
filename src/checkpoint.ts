@@ -17,6 +17,7 @@ import { getStatus, type StatusTask } from "./status.js";
 import { requirePassedWriteIntent } from "./intent.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { validateRequestedTaskId } from "./task-id.js";
+import { resolveTaskAuthoringBase } from "./task-authoring-base.js";
 
 const execFileAsync = promisify(execFile);
 const snapshotVersion = 1;
@@ -133,18 +134,16 @@ export async function checkpointTask(repoRoot: string, taskId: string): Promise<
   if (!headResult.ok) {
     return { ok: false, reason: `task worktree not ready: .hivemind/worktrees/${taskId} (${headResult.reason})` };
   }
-  const baseResult = await gitStdout(repoRoot, ["rev-parse", contract.base_commit]);
-  if (!baseResult.ok) {
-    return baseResult;
-  }
-  if (headResult.stdout !== baseResult.stdout) {
+  const authoringBase = await resolveTaskAuthoringBase(repoRoot, contract);
+  if (!authoringBase.ok) return authoringBase;
+  if (headResult.stdout !== authoringBase.value.commit) {
     return {
       ok: false,
-      reason: `task worktree .hivemind/worktrees/${taskId} is at ${headResult.stdout}, expected contract base ${baseResult.stdout}`
+      reason: `task worktree .hivemind/worktrees/${taskId} is at ${headResult.stdout}, expected verified authoring base ${authoringBase.value.commit}`
     };
   }
 
-  const diffResult = await captureWorktreeDiff(worktreePath, contract.base_commit, { excludeUntracked: [agentLogPath] });
+  const diffResult = await captureWorktreeDiff(worktreePath, authoringBase.value.commit, { excludeUntracked: [agentLogPath] });
   if (!diffResult.ok) {
     return diffResult;
   }
@@ -169,7 +168,7 @@ export async function checkpointTask(repoRoot: string, taskId: string): Promise<
     partial_diff: {
       source: "worktree",
       worktree_ref: worktreeRelativePath(taskId),
-      base_commit: contract.base_commit,
+      base_commit: authoringBase.value.commit,
       changed_files: diffResult.value.changedFiles,
       diff: diffResult.value.diff,
       diff_hash: sha256(diffResult.value.diff)
@@ -233,13 +232,15 @@ export async function loadTaskCheckpointResumeState(repoRoot: string, taskId: st
       reason: `checkpoint plan_ref ${snapshot.authoritative_refs.plan_ref.path} does not match active plan ${planResult.value.path}`
     };
   }
-  if (snapshot.partial_diff.base_commit !== contract.base_commit) {
+  const authoringBase = await resolveTaskAuthoringBase(repoRoot, contract);
+  if (!authoringBase.ok) return authoringBase;
+  if (snapshot.partial_diff.base_commit !== authoringBase.value.commit) {
     return {
       ok: false,
-      reason: `checkpoint partial_diff base ${snapshot.partial_diff.base_commit} does not match contract base ${contract.base_commit}`
+      reason: `checkpoint partial_diff base ${snapshot.partial_diff.base_commit} does not match verified authoring base ${authoringBase.value.commit}`
     };
   }
-  const liveDiffResult = await captureWorktreeDiff(path.join(repoRoot, snapshot.partial_diff.worktree_ref), contract.base_commit, { excludeUntracked: [agentLogPath] });
+  const liveDiffResult = await captureWorktreeDiff(path.join(repoRoot, snapshot.partial_diff.worktree_ref), authoringBase.value.commit, { excludeUntracked: [agentLogPath] });
   if (!liveDiffResult.ok) {
     return liveDiffResult;
   }

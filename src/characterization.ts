@@ -13,6 +13,7 @@ import { loadConfig, type HivemindConfig } from "./config.js";
 import { loadAndValidateContract, type TaskContract } from "./contract.js";
 import { runGate, type GateResult } from "./gate.js";
 import { validateTaskId } from "./task-id.js";
+import { resolveTaskAuthoringBase } from "./task-authoring-base.js";
 
 const execFileAsync = promisify(execFile);
 const allowedCandidateFields = new Set(["candidate_id", "task_id", "check_id", "patch"]);
@@ -227,9 +228,9 @@ async function loadCandidateContext(
   if (!contractResult.ok) {
     return contractResult;
   }
-  const resolvedBaseResult = await resolveCommit(repoRoot, contractResult.contract.base_commit);
-  if (!resolvedBaseResult.ok) {
-    return { ok: false, reason: `base tree identity could not be established: ${resolvedBaseResult.reason}` };
+  const authoringBase = await resolveTaskAuthoringBase(repoRoot, contractResult.contract);
+  if (!authoringBase.ok) {
+    return { ok: false, reason: `base tree identity could not be established: ${authoringBase.reason}` };
   }
   const taskPatchPath = path.join(repoRoot, ".hivemind", "patches", candidate.task_id, "diff.patch");
   let taskPatch: string;
@@ -255,7 +256,7 @@ async function loadCandidateContext(
       contract: contractResult.contract,
       check: { id: check.id, command: check.command },
       testPaths,
-      resolvedBaseCommit: resolvedBaseResult.commit,
+      resolvedBaseCommit: authoringBase.value.commit,
       taskPatchPath,
       taskPatch
     }
@@ -477,21 +478,6 @@ function stableOutcome(runs: NamedCheckResult[]): "pass" | "fail" | null {
 
 function indeterminate(reason: string, attempts: CharacterizationAttempt[]): ClassificationResult {
   return { classification: "indeterminate", reason, attempts };
-}
-
-async function resolveCommit(
-  repoRoot: string,
-  commit: string
-): Promise<{ ok: true; commit: string } | { ok: false; reason: string }> {
-  try {
-    const result = await execFileAsync("git", ["rev-parse", "--verify", `${commit}^{commit}`], {
-      cwd: repoRoot,
-      windowsHide: true
-    });
-    return { ok: true, commit: result.stdout.trim() };
-  } catch (error: unknown) {
-    return { ok: false, reason: commandError(error) };
-  }
 }
 
 async function gitOutput(cwd: string, args: string[]): Promise<string> {

@@ -1,5 +1,7 @@
+import { execFile } from "node:child_process";
 import { readdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 import { writeFileAtomic } from "./atomic.js";
 import { loadAndValidateContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
@@ -7,6 +9,7 @@ import { captureWorktreeDiff } from "./diff-capture.js";
 import { appendEvent, readEvents } from "./events.js";
 import { findGitRoot } from "./repo.js";
 import { latestTaskRunState } from "./run-state.js";
+import { resolveTaskAuthoringBase } from "./task-authoring-base.js";
 
 const bundleFiles = [
   "diff.patch",
@@ -19,6 +22,7 @@ const bundleFiles = [
 ] as const;
 const advisoryFiles = bundleFiles.filter((fileName) => fileName !== "diff.patch");
 const submitUntrackedExcludes = ["agent.log", ...bundleFiles];
+const execFileAsync = promisify(execFile);
 
 export interface SubmitResult {
   task_id: string;
@@ -70,7 +74,18 @@ export async function submitTask(repoRoot: string, taskId: string): Promise<{ ok
     return { ok: false, reason: `.hivemind/worktrees/${taskId} is not a directory` };
   }
 
-  const diffResult = await captureWorktreeDiff(worktreePath, contractResult.contract.base_commit, {
+  const authoringBase = await resolveTaskAuthoringBase(repoRoot, contractResult.contract);
+  if (!authoringBase.ok) {
+    return authoringBase;
+  }
+  const head = await gitStdout(worktreePath, ["rev-parse", "HEAD"]);
+  if (!head.ok || head.stdout !== authoringBase.value.commit) {
+    return {
+      ok: false,
+      reason: `task ${taskId} submit refused: worktree HEAD ${head.ok ? head.stdout : "unavailable"} does not match verified authoring base ${authoringBase.value.commit}`
+    };
+  }
+  const diffResult = await captureWorktreeDiff(worktreePath, authoringBase.value.commit, {
     excludeUntracked: submitUntrackedExcludes
   });
   if (!diffResult.ok) {
@@ -119,6 +134,17 @@ export async function submitTask(repoRoot: string, taskId: string): Promise<{ ok
       files: [...bundleFiles]
     }
   };
+}
+
+async function gitStdout(cwd: string, args: string[]): Promise<{ ok: true; stdout: string } | { ok: false; reason: string }> {
+  try {
+    const result = await execFileAsync("git", args, { cwd, windowsHide: true });
+    return { ok: true, stdout: result.stdout.trim() };
+  } catch (error: unknown) {
+    const stderr = typeof error === "object" && error !== null && "stderr" in error ? String(error.stderr).trim() : "";
+    const stdout = typeof error === "object" && error !== null && "stdout" in error ? String(error.stdout).trim() : "";
+    return { ok: false, reason: stderr || stdout || "git command failed" };
+  }
 }
 
 async function requireCompletedRunWithBundle(repoRoot: string, taskId: string): Promise<{ ok: true } | { ok: false; reason: string }> {

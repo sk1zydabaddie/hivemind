@@ -22,6 +22,7 @@ import { readQuotaLedger } from "./resource-ledger.js";
 import { routeTaskProvider } from "./routing.js";
 import { latestTaskRunState } from "./run-state.js";
 import { taskCancellationRequested } from "./task-control.js";
+import { resolveTaskAuthoringBase } from "./task-authoring-base.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { createTaskWorktree, removeTaskWorktree } from "./worktree.js";
 
@@ -248,6 +249,10 @@ async function prepareRunTask(
   if (!worktreeResult.ok) {
     return worktreeResult;
   }
+  const authoringBase = await resolveTaskAuthoringBase(repoRoot, contractResult.contract);
+  if (!authoringBase.ok) {
+    return authoringBase;
+  }
 
   const quotaPauseResume = await loadQuotaPauseResumeState(repoRoot, taskId);
   if (!quotaPauseResume.ok) {
@@ -309,7 +314,10 @@ async function prepareRunTask(
         run_id: runId,
         tool: selectedTool,
         routing_task_type: contractResult.contract.routing_task_type,
-        worktree: worktreeResult.value.worktree
+        worktree: worktreeResult.value.worktree,
+        contract_base_commit: contractResult.contract.base_commit,
+        authoring_base_commit: authoringBase.value.commit,
+        dependency_verification_id: authoringBase.value.verification_id
       }
     },
     options.onEvent
@@ -327,7 +335,10 @@ async function prepareRunTask(
         run_id: runId,
         tool: selectedTool,
         routing_task_type: contractResult.contract.routing_task_type,
-        worktree: worktreeResult.value.worktree
+        worktree: worktreeResult.value.worktree,
+        contract_base_commit: contractResult.contract.base_commit,
+        authoring_base_commit: authoringBase.value.commit,
+        dependency_verification_id: authoringBase.value.verification_id
       }
     },
     options.onEvent
@@ -343,7 +354,7 @@ async function prepareRunTask(
       taskId,
       tool: selectedTool,
       worktree: worktreeResult.value.worktree,
-      baseCommit: contractResult.contract.base_commit,
+      baseCommit: authoringBase.value.commit,
       contract: contractResult.contract,
       config: configResult.config,
       ceiling,

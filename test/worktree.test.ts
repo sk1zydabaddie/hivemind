@@ -109,7 +109,7 @@ test("worktree create fails closed when an existing worktree is stale", async ()
       return;
     }
     assert.match(second.reason, /existing worktree \.hivemind\/worktrees\/T-001 is at/);
-    assert.match(second.reason, /expected contract base/);
+    assert.match(second.reason, /expected verified authoring base/);
   });
 });
 

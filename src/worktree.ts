@@ -5,11 +5,12 @@ import { promisify } from "node:util";
 import type { TaskContract } from "./contract.js";
 import { loadAndValidateContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
-import { appendTaskCreatedIfMissing } from "./events.js";
+import { appendEvent, appendTaskCreatedIfMissing, readEvents } from "./events.js";
 import { canonicalizeConcreteFileScope } from "./file-scope.js";
 import { readActiveLeases } from "./lease.js";
 import { findGitRoot } from "./repo.js";
 import { requireActiveSpecRatified } from "./spec.js";
+import { resolveTaskAuthoringBase, type TaskAuthoringBase } from "./task-authoring-base.js";
 import { validateRequestedTaskId } from "./task-id.js";
 
 const execFileAsync = promisify(execFile);
@@ -66,9 +67,13 @@ export async function createTaskWorktree(
     return contractResult;
   }
 
+  const authoringBase = await resolveTaskAuthoringBase(repoRoot, contractResult.contract);
+  if (!authoringBase.ok) {
+    return authoringBase;
+  }
   const value = getWorktreeResult(repoRoot, taskId);
   if (await exists(value.worktree)) {
-    const reuseResult = await verifyExistingWorktree(repoRoot, taskId, value, contractResult.contract.base_commit);
+    const reuseResult = await verifyExistingWorktree(repoRoot, taskId, value, authoringBase.value.commit);
     if (!reuseResult.ok) {
       return reuseResult;
     }
@@ -80,7 +85,8 @@ export async function createTaskWorktree(
     if (!eventResult.ok) {
       return eventResult;
     }
-    return { ok: true, value };
+    const authoringEvent = await appendAuthoringBaseEvent(repoRoot, taskId, authoringBase.value);
+    return authoringEvent.ok ? { ok: true, value } : authoringEvent;
   }
 
   await mkdir(path.dirname(value.worktree), { recursive: true });
@@ -90,7 +96,7 @@ export async function createTaskWorktree(
     path.join(".hivemind", "worktrees", taskId),
     "-b",
     value.branch,
-    contractResult.contract.base_commit
+    authoringBase.value.commit
   ]);
   if (!gitResult.ok) {
     return { ok: false, reason: gitResult.reason };
@@ -106,7 +112,8 @@ export async function createTaskWorktree(
     return eventResult;
   }
 
-  return { ok: true, value };
+  const authoringEvent = await appendAuthoringBaseEvent(repoRoot, taskId, authoringBase.value);
+  return authoringEvent.ok ? { ok: true, value } : authoringEvent;
 }
 
 export async function removeTaskWorktree(
@@ -237,6 +244,34 @@ async function appendTaskCreatedEvent(
   return eventResult.ok ? { ok: true } : { ok: false, reason: `failed to append task.created event: ${eventResult.reason}` };
 }
 
+async function appendAuthoringBaseEvent(
+  repoRoot: string,
+  taskId: string,
+  authoringBase: TaskAuthoringBase
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return events;
+  const alreadyRecorded = events.value.some((event) =>
+    event.type === "task.authoring_base_prepared" &&
+    event.task_id === taskId &&
+    event.data.authoring_base_commit === authoringBase.commit &&
+    event.data.dependency_verification_id === authoringBase.verification_id
+  );
+  if (alreadyRecorded) return { ok: true };
+  const appended = await appendEvent(repoRoot, {
+    type: "task.authoring_base_prepared",
+    task_id: taskId,
+    data: {
+      contract_base_commit: authoringBase.contract_base_commit,
+      authoring_base_commit: authoringBase.commit,
+      authoring_base_tree: authoringBase.tree,
+      dependency_task_ids: authoringBase.dependency_task_ids,
+      dependency_verification_id: authoringBase.verification_id
+    }
+  });
+  return appended.ok ? { ok: true } : { ok: false, reason: `failed to append task.authoring_base_prepared event: ${appended.reason}` };
+}
+
 function parseNullSeparated(value: string): string[] {
   return value.split("\0").filter((entry) => entry.length > 0);
 }
@@ -249,7 +284,7 @@ async function verifyExistingWorktree(
   repoRoot: string,
   taskId: string,
   value: WorktreeResult,
-  baseCommit: string
+  authoringBaseCommit: string
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const branchResult = await gitStdout(value.worktree, ["branch", "--show-current"]);
   if (!branchResult.ok) {
@@ -267,7 +302,7 @@ async function verifyExistingWorktree(
     return { ok: false, reason: `existing worktree .hivemind/worktrees/${taskId} HEAD could not be inspected: ${headResult.reason}` };
   }
 
-  const baseResult = await gitStdout(repoRoot, ["rev-parse", baseCommit]);
+  const baseResult = await gitStdout(repoRoot, ["rev-parse", authoringBaseCommit]);
   if (!baseResult.ok) {
     return { ok: false, reason: baseResult.reason };
   }
@@ -275,7 +310,7 @@ async function verifyExistingWorktree(
   if (headResult.stdout !== baseResult.stdout) {
     return {
       ok: false,
-      reason: `existing worktree .hivemind/worktrees/${taskId} is at ${headResult.stdout}, expected contract base ${baseResult.stdout}; remove it and retry`
+      reason: `existing worktree .hivemind/worktrees/${taskId} is at ${headResult.stdout}, expected verified authoring base ${baseResult.stdout}; remove it and retry`
     };
   }
 

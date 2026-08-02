@@ -10,7 +10,7 @@ import { invokeAgent } from "../src/adapter.js";
 import type { TaskContract } from "../src/contract.js";
 import { readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
-import { assembleAgentPrompt, readCachedRepoFile, readCacheMetrics } from "../src/prompt-cache.js";
+import { assembleAgentPrompt, buildContractTaskContextLayer, readCachedRepoFile, readCacheMetrics } from "../src/prompt-cache.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
@@ -39,7 +39,42 @@ test("assembleAgentPrompt keeps sibling shared prefixes byte-identical and stabl
     assert.equal(first.value.full_prompt, repeat.value.full_prompt);
     assert.doesNotMatch(first.value.shared_prefix, /Task ID: T-001/);
     assert.match(first.value.layers.task_context_pack, /Task ID: T-001/);
+    assert.match(first.value.layers.task_context_pack, /Acceptance criterion: Prompt cache fixture assembles one prompt\./);
+    assert.match(first.value.layers.task_context_pack, /Allowed file intents:\n- README\.md: modify/);
+    assert.match(first.value.layers.task_context_pack, /Patch requirements:/);
     assert.match(first.value.layers.repo_substrate, /Project instructions/);
+  });
+});
+
+test("worker context fails closed when the acceptance criterion or patch requirements are unavailable", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-SPEC", baseCommit, ["README.md"]);
+    assert.equal((await createTaskWorktree(repo, "T-SPEC")).ok, true);
+
+    const missingAcceptance = await assembleAgentPrompt(repo, {
+      ...contractFor({ task_id: "T-SPEC", base_commit: baseCommit }),
+      acceptance_criterion: ""
+    });
+    const missingRequirements = await assembleAgentPrompt(repo, {
+      ...contractFor({ task_id: "T-SPEC", base_commit: baseCommit }),
+      patch_requirements: undefined
+    } as unknown as TaskContract);
+
+    assert.deepEqual(missingAcceptance, {
+      ok: false,
+      reason: "worker context refused: contract acceptance_criterion is missing"
+    });
+    assert.deepEqual(missingRequirements, {
+      ok: false,
+      reason: "worker context refused: contract patch_requirements is missing or malformed"
+    });
+    assert.throws(
+      () => buildContractTaskContextLayer({
+        ...contractFor({ task_id: "T-SPEC", base_commit: baseCommit }),
+        acceptance_criterion: ""
+      }),
+      /worker context refused: contract acceptance_criterion is missing/
+    );
   });
 });
 

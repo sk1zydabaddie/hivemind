@@ -141,3 +141,9 @@ export function projectNameFromPath(projectPath: string): string {
   const parts = visible.split(/[\\/]/u).filter(Boolean);
   return parts.at(-1) ?? visible;
 }
+
+export function actionErrorAfterDurableProgress(current: string): string {
+  return /daemon action response failed|connection attempt failed|failed to fetch|headers timeout|timed out connecting/iu.test(current)
+    ? ""
+    : current;
+}

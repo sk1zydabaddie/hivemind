@@ -9,10 +9,30 @@ import { loadContextPackForContract, taskKnowledgePath } from "./context-pack.js
 import type { TaskContract } from "./contract.js";
 import { appendEvent } from "./events.js";
 import { readJsonFile } from "./json.js";
+import { resolveTaskAuthoringBase } from "./task-authoring-base.js";
 
 const readCacheVersion = 1;
 const instructionFiles = ["AGENTS.md", "CLAUDE.md"] as const;
 const execFileAsync = promisify(execFile);
+const workerContextContractFields = [
+  "task_id",
+  "title",
+  "agent_role",
+  "routing_task_type",
+  "base_commit",
+  "acceptance_criterion",
+  "allowed_files",
+  "allowed_file_intents",
+  "read_only_files",
+  "forbidden_files",
+  "allowed_symbols",
+  "forbidden_symbols",
+  "must_not_change",
+  "required_tests",
+  "patch_requirements"
+] as const satisfies readonly (keyof TaskContract)[];
+type MissingWorkerContextContractField = Exclude<keyof TaskContract, (typeof workerContextContractFields)[number]>;
+const workerContextContractIsComplete: MissingWorkerContextContractField extends never ? true : never = true;
 
 export interface PromptLayers {
   global: string;
@@ -45,6 +65,10 @@ interface ReadCacheEntry {
 }
 
 export async function assembleAgentPrompt(repoRoot: string, contract: TaskContract): Promise<{ ok: true; value: AssembledPrompt } | { ok: false; reason: string }> {
+  const contractContextResult = validateWorkerContextContract(contract);
+  if (!contractContextResult.ok) {
+    return contractContextResult;
+  }
   const substrateResult = await buildRepoSubstrateLayer(repoRoot);
   if (!substrateResult.ok) {
     return substrateResult;
@@ -66,6 +90,10 @@ export async function assembleAgentPrompt(repoRoot: string, contract: TaskContra
 }
 
 export function buildAgentPromptFromContract(contract: TaskContract): string {
+  const contractContextResult = validateWorkerContextContract(contract);
+  if (!contractContextResult.ok) {
+    throw new Error(contractContextResult.reason);
+  }
   return composePrompt({
     global: buildGlobalLayer(),
     repo_substrate: "Repo substrate:\n- (not assembled)",
@@ -259,20 +287,21 @@ export async function resolveTaskPromptSourceRoot(repoRoot: string, contract: Ta
   if (!headResult.ok) {
     return { ok: false, reason: `task prompt source worktree not ready: .hivemind/worktrees/${contract.task_id} (${headResult.reason})` };
   }
-  const baseResult = await gitStdout(repoRoot, ["rev-parse", contract.base_commit]);
-  if (!baseResult.ok) {
-    return { ok: false, reason: baseResult.reason };
-  }
-  if (headResult.stdout !== baseResult.stdout) {
+  const authoringBase = await resolveTaskAuthoringBase(repoRoot, contract);
+  if (!authoringBase.ok) return authoringBase;
+  if (headResult.stdout !== authoringBase.value.commit) {
     return {
       ok: false,
-      reason: `task prompt source worktree .hivemind/worktrees/${contract.task_id} is at ${headResult.stdout}, expected contract base ${baseResult.stdout}`
+      reason: `task prompt source worktree .hivemind/worktrees/${contract.task_id} is at ${headResult.stdout}, expected verified authoring base ${authoringBase.value.commit}`
     };
   }
   return { ok: true, value: worktreePath };
 }
 
-function buildContractTaskContextLayer(contract: TaskContract): string {
+export function buildContractTaskContextLayer(contract: TaskContract): string {
+  void workerContextContractIsComplete;
+  const contractContextResult = validateWorkerContextContract(contract);
+  if (!contractContextResult.ok) throw new Error(contractContextResult.reason);
   return [
     "Task context pack:",
     `Task ID: ${contract.task_id}`,
@@ -280,8 +309,10 @@ function buildContractTaskContextLayer(contract: TaskContract): string {
     `Agent role: ${contract.agent_role}`,
     `Routing task type: ${contract.routing_task_type}`,
     `Base commit: ${contract.base_commit}`,
+    `Acceptance criterion: ${contract.acceptance_criterion}`,
     "",
     formatList("Allowed files", contract.allowed_files),
+    formatAllowedFileIntents(contract.allowed_file_intents),
     formatList("Read-only files", contract.read_only_files),
     formatList("Forbidden files", contract.forbidden_files),
     formatList("Allowed symbols", contract.allowed_symbols),
@@ -290,6 +321,21 @@ function buildContractTaskContextLayer(contract: TaskContract): string {
     formatList("Required tests", contract.required_tests),
     formatList("Patch requirements", contract.patch_requirements)
   ].join("\n");
+}
+
+function validateWorkerContextContract(contract: TaskContract): { ok: true } | { ok: false; reason: string } {
+  if (typeof contract.acceptance_criterion !== "string" || contract.acceptance_criterion.trim() === "") {
+    return { ok: false, reason: "worker context refused: contract acceptance_criterion is missing" };
+  }
+  if (!Array.isArray(contract.patch_requirements) || !contract.patch_requirements.every((entry) => typeof entry === "string")) {
+    return { ok: false, reason: "worker context refused: contract patch_requirements is missing or malformed" };
+  }
+  return { ok: true };
+}
+
+function formatAllowedFileIntents(intents: TaskContract["allowed_file_intents"]): string {
+  const entries = Object.entries(intents).sort(([left], [right]) => left.localeCompare(right));
+  return formatList("Allowed file intents", entries.map(([repoPath, intent]) => `${repoPath}: ${intent}`));
 }
 
 function buildPerTurnDeltaLayer(): string {

@@ -8,6 +8,7 @@ import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent } from "./events.js";
 import { runGate, type GateResult } from "./gate.js";
 import { findGitRoot } from "./repo.js";
+import { resolveTaskAuthoringBase } from "./task-authoring-base.js";
 import { prepareReadonlyWorktree } from "./worktree.js";
 
 const execFileAsync = promisify(execFile);
@@ -58,10 +59,12 @@ export async function analyzeTask(
   }
 
   const patch = await readFile(patchPath, "utf8");
+  const authoringBase = await resolveTaskAuthoringBase(repoRoot, contractResult.contract);
+  if (!authoringBase.ok) return authoringBase;
   const gateResult: GateResult =
     patch.trim() === ""
       ? { verdict: "reject", reason: "empty patch: no changes to analyze" }
-      : await runGate(contractResult.contract.base_commit, patchPath, contractResult.contract, configResult.config);
+      : await runGate(authoringBase.value.commit, patchPath, contractResult.contract, configResult.config);
   if (options.emitEvent !== false) {
     const eventType = gateResult.verdict === "accept" ? "patch.accepted" : "patch.rejected";
     const eventResult = await appendEvent(repoRoot, {
@@ -76,7 +79,7 @@ export async function analyzeTask(
       return { ok: false, reason: `failed to append ${eventType} event: ${eventResult.reason}` };
     }
     if (gateResult.verdict === "reject") {
-      const resetResult = await resetRejectedTaskWorktree(repoRoot, taskId, contractResult.contract.base_commit);
+      const resetResult = await resetRejectedTaskWorktree(repoRoot, taskId, authoringBase.value.commit);
       if (!resetResult.ok) {
         return resetResult;
       }
@@ -92,7 +95,7 @@ export async function analyzeTask(
 async function resetRejectedTaskWorktree(
   repoRoot: string,
   taskId: string,
-  baseCommit: string
+  authoringBaseCommit: string
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const worktreePath = path.join(repoRoot, ".hivemind", "worktrees", taskId);
   const worktree = await statIfExists(worktreePath);
@@ -119,14 +122,14 @@ async function resetRejectedTaskWorktree(
   if (!headResult.ok) {
     return { ok: false, reason: `rejected patch cleanup could not inspect ${taskId} HEAD: ${headResult.reason}` };
   }
-  const baseResult = await git(worktreePath, ["rev-parse", baseCommit]);
+  const baseResult = await git(worktreePath, ["rev-parse", authoringBaseCommit]);
   if (!baseResult.ok) {
     return { ok: false, reason: `rejected patch cleanup could not resolve ${taskId} base commit: ${baseResult.reason}` };
   }
   if (headResult.stdout.trim() !== baseResult.stdout.trim()) {
     return {
       ok: false,
-      reason: `rejected patch cleanup refused .hivemind/worktrees/${taskId}: HEAD ${headResult.stdout.trim()} is not contract base ${baseResult.stdout.trim()}`
+      reason: `rejected patch cleanup refused .hivemind/worktrees/${taskId}: HEAD ${headResult.stdout.trim()} is not verified authoring base ${baseResult.stdout.trim()}`
     };
   }
 

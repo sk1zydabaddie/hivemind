@@ -58,10 +58,7 @@ export function SwarmTab({
   onSelectTask,
   onAction
 }: SwarmTabProps): React.JSX.Element {
-  const tree = useMemo(
-    () => buildSwarmTree(projection, inspection),
-    [projection, inspection]
-  );
+  const tree = buildSwarmTree(projection, inspection);
   const suggestedCollapsed = useMemo(
     () => defaultCollapsedGroups(tree.groups),
     [tree.groups]
@@ -69,10 +66,7 @@ export function SwarmTab({
   const [groupOverrides, setGroupOverrides] = useState<Record<string, boolean>>({});
   const [selection, setSelection] = useState<Selection>({ type: "root", id: "orchestrator" });
   const [zoom, setZoom] = useState(0.9);
-  const movements = useMemo(
-    () => new Map(projection.artifactMovements.map((movement) => [movement.task_id, movement])),
-    [projection.artifactMovements]
-  );
+  const movements = new Map(projection.artifactMovements.map((movement) => [movement.task_id, movement]));
 
   const collapsed = (groupId: string): boolean =>
     groupOverrides[groupId] ?? suggestedCollapsed.has(groupId);

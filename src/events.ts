@@ -4,6 +4,7 @@ import { validateRequestedTaskId } from "./task-id.js";
 
 export const eventTypes = [
   "task.created",
+  "task.authoring_base_prepared",
   "task.assigned",
   "task.scouting_started",
   "task.run_accepted",

@@ -14,6 +14,7 @@ import {
 import {
   createProjectSession,
   createProjectStreamGuard,
+  actionErrorAfterDurableProgress,
   type ProjectConnection
 } from "../lib/project-session";
 import {
@@ -122,6 +123,7 @@ export function useWorkspace(): WorkspaceView {
         }
         const message = parseMessage<OutputMessage>(event.data);
         if (message) {
+          setActionError(actionErrorAfterDurableProgress);
           applyOutputMessage(projectionRef.current, message);
           render();
         }
@@ -141,6 +143,7 @@ export function useWorkspace(): WorkspaceView {
       eventSourceRef.current = source;
       source.onopen = () => {
         if (isCurrentProject()) {
+          setActionError(actionErrorAfterDurableProgress);
           setConnectionState("live");
           void refreshInspection();
           if (inspectionPollRef.current !== null) window.clearInterval(inspectionPollRef.current);
@@ -160,6 +163,7 @@ export function useWorkspace(): WorkspaceView {
         if (!message) {
           return;
         }
+        setActionError(actionErrorAfterDurableProgress);
         applyEventMessage(projectionRef.current, message);
         scheduleInspection();
         if (

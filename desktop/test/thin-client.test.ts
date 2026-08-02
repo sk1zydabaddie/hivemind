@@ -188,6 +188,8 @@ describe("React workspace boundary", () => {
     ]));
     for (const action of actions) expect(audit).toContain(`\`${action}\``);
     expect(swarm).not.toMatch(/runGate|integrateShadow|requestLease|reviewMemoryProposal/u);
+    expect(swarm).toMatch(/const tree = buildSwarmTree\(projection, inspection\)/u);
+    expect(swarm).not.toMatch(/useMemo\(\s*\(\) => buildSwarmTree/u);
     expect(projection).toMatch(/message\.source === "live"[\s\S]*recordArtifactMovements/u);
     expect(styles).toMatch(/\.artifact-marker[\s\S]*animation:\s*artifact-travel/u);
     expect(styles).toMatch(/prefers-reduced-motion[\s\S]*\.artifact-marker\s*\{\s*display:\s*none/u);

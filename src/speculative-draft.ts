@@ -19,6 +19,7 @@ import {
   type AdmittedValueQualityRun
 } from "./value-quality.js";
 import { finalizeQualityRunCancellation, qualityRunCancelled } from "./quality-control.js";
+import { resolveTaskAuthoringBase } from "./task-authoring-base.js";
 
 const execFileAsync = promisify(execFile);
 const draftIdPattern = /^D-(00[1-3])$/u;
@@ -146,10 +147,9 @@ export async function disposeSpeculativeDraft(
   if (!config.ok) {
     return config;
   }
-  const baseCommit = await resolveCommit(repoRoot, contract.contract.base_commit);
-  if (!baseCommit.ok) {
-    return baseCommit;
-  }
+  const authoringBase = await resolveTaskAuthoringBase(repoRoot, contract.contract);
+  if (!authoringBase.ok) return authoringBase;
+  const baseCommit = authoringBase.value.commit;
 
   const qualityRoot = path.join(
     repoRoot,
@@ -163,7 +163,7 @@ export async function disposeSpeculativeDraft(
   if (await pathExists(finalArtifactPath)) {
     return { ok: false, reason: `speculative draft artifact already exists: ${artifactRelativePath(repoRoot, finalArtifactPath)}` };
   }
-  await ensureQualityRunManifest(qualityRoot, admitted.value, baseCommit.value);
+  await ensureQualityRunManifest(qualityRoot, admitted.value, baseCommit);
   await mkdir(draftsRoot, { recursive: true });
 
   const tempArtifactPath = path.join(
@@ -181,7 +181,7 @@ export async function disposeSpeculativeDraft(
       version: 1,
       quality_run_id: request.quality_run_id,
       draft_id: request.draft_id,
-      base_commit: baseCommit.value,
+      base_commit: baseCommit,
       advisory_only: true
     }
   });
@@ -193,7 +193,7 @@ export async function disposeSpeculativeDraft(
   try {
     execution = await executeInDetachedCheckout(
       repoRoot,
-      baseCommit.value,
+      baseCommit,
       admitted.value,
       request.draft_id,
       patchPath,
@@ -205,7 +205,7 @@ export async function disposeSpeculativeDraft(
       tempArtifactPath,
       admitted.value,
       request.draft_id,
-      baseCommit.value,
+      baseCommit,
       execution
     );
     await rename(tempArtifactPath, finalArtifactPath);
@@ -227,7 +227,7 @@ export async function disposeSpeculativeDraft(
     diff_sha256: hashText(execution.diff),
     checkout_instance_id: execution.checkoutInstanceId,
     checkout_path_sha256: execution.checkoutPathSha256,
-    base_commit: baseCommit.value,
+    base_commit: baseCommit,
     provenance: execution.provenance,
     gate: execution.gate,
     shadow: execution.shadow
@@ -622,17 +622,6 @@ async function changedFiles(checkoutPath: string, baseCommit: string): Promise<s
     .filter((entry) => entry !== "")
     .map((entry) => entry.replaceAll("\\", "/"))
     .sort((left, right) => left.localeCompare(right));
-}
-
-async function resolveCommit(
-  repoRoot: string,
-  commit: string
-): Promise<{ ok: true; value: string } | { ok: false; reason: string }> {
-  try {
-    return { ok: true, value: (await gitOutput(repoRoot, ["rev-parse", "--verify", `${commit}^{commit}`])).trim() };
-  } catch (error: unknown) {
-    return { ok: false, reason: `canonical base commit could not be resolved: ${errorMessage(error)}` };
-  }
 }
 
 async function gitOutput(cwd: string, args: string[]): Promise<string> {

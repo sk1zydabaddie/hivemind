@@ -19,6 +19,7 @@ import { loadAndValidateContract, type TaskContract } from "./contract.js";
 import { contextPackRelativePath, loadContextPackForContract } from "./context-pack.js";
 import { captureWorktreeDiff } from "./diff-capture.js";
 import { readEvents, type HivemindEvent } from "./events.js";
+import { resolveTaskAuthoringBase } from "./task-authoring-base.js";
 
 export interface CharacterizationGenerationResult {
   task_id: string;
@@ -81,6 +82,8 @@ export async function generateCharacterizationCandidate(
   if (!contextPackResult.ok) {
     return contextPackResult;
   }
+  const authoringBase = await resolveTaskAuthoringBase(repoRoot, contractResult.contract);
+  if (!authoringBase.ok) return authoringBase;
   const profileResult = await loadAdapterProfile(repoRoot, tool);
   if (!profileResult.ok) {
     return profileResult;
@@ -113,7 +116,7 @@ export async function generateCharacterizationCandidate(
   const outputLogPath = adapterRunLogPath(repoRoot, `characterize-${taskId}`);
   const checkoutResult = await withDetachedCheckout(
     repoRoot,
-    contractResult.contract.base_commit,
+    authoringBase.value.commit,
     async (checkoutPath): Promise<CharacterizationGenerationOutcome> => {
       const startedAt = Date.now();
       const processResult = await runAdapterProcess(
@@ -147,7 +150,7 @@ export async function generateCharacterizationCandidate(
         };
       }
 
-      const diffResult = await captureWorktreeDiff(checkoutPath, contractResult.contract.base_commit);
+      const diffResult = await captureWorktreeDiff(checkoutPath, authoringBase.value.commit);
       if (!diffResult.ok) {
         return diffResult;
       }

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  actionErrorAfterDurableProgress,
   createProjectSession,
   createProjectStreamGuard,
   displayProjectPath,
@@ -121,6 +122,14 @@ describe("project-bound desktop session", () => {
     );
     expect(projectNameFromPath("\\\\?\\C:\\Users\\ethan\\Projects\\Hivemind AI\\")).toBe(
       "Hivemind AI"
+    );
+  });
+
+  test("durable progress clears recovered transport failures without hiding deterministic refusals", () => {
+    expect(actionErrorAfterDurableProgress("daemon action response failed: A connection attempt failed")).toBe("");
+    expect(actionErrorAfterDurableProgress("failed to fetch the daemon action response")).toBe("");
+    expect(actionErrorAfterDurableProgress("integration refused: changed line 42 is not covered")).toBe(
+      "integration refused: changed line 42 is not covered"
     );
   });
 });

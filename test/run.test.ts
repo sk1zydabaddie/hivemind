@@ -98,7 +98,7 @@ test("runTask lease-before-run accepts a contract-backed create lease", async ()
   });
 });
 
-test("runTask refuses a plan-backed dependent task until dependencies are event-integrated", async () => {
+test("runTask refuses a plan-backed dependent task without an identity-bound dependency verification", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     const agentPath = await writeAgent(repo, "dependency-bypass-agent.mjs", [
       "const { writeFile } = await import('node:fs/promises');",
@@ -130,12 +130,13 @@ test("runTask refuses a plan-backed dependent task until dependencies are event-
     await assertMissing(path.join(repo, ".hivemind", "worktrees", "T-DEP"));
 
     await appendIntegratedDependencyEvents(repo, "T-BASE");
-    const allowed = await runTask(repo, "T-DEP", "fake");
-    assert.equal(allowed.ok, true);
-    if (!allowed.ok) {
+    const stillBlocked = await runTask(repo, "T-DEP", "fake");
+    assert.equal(stillBlocked.ok, false);
+    if (stillBlocked.ok) {
       return;
     }
-    assert.equal(allowed.value.changed_files, 1);
+    assert.match(stillBlocked.reason, /requires one current verification set for exactly dependencies: T-BASE/);
+    await assertMissing(path.join(repo, ".hivemind", "worktrees", "T-DEP"));
   });
 });
 
