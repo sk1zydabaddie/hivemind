@@ -75,6 +75,7 @@ export const eventTypes = [
   "autonomy.decision_recorded",
   "human.guidance_recorded",
   "human.guidance_consumed",
+  "manager.judgment_requested",
   "manager.action_approved",
   "manager.action_retry_requested",
   "approval.required",

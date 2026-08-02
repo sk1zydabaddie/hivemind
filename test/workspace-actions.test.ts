@@ -189,27 +189,6 @@ test("workspace prompt prepares a linted mixed-tier plan but cannot authorize or
       human_approval_required_for: ["run_worker"],
       actions: [{ type: "get_status" }, { type: "get_status" }]
     });
-    const failedStart = await executeWorkspaceAction(repo, {
-      type: "manager.start",
-      payload: { message: "Execute the exact ratified plan.", tool: "fixture-manager" }
-    });
-    assert.equal(failedStart.ok, false);
-    if (!failedStart.ok) assert.match(failedStart.reason, /single-only or taskless action/u);
-    const afterFailedStart = await executeWorkspaceAction(repo, { type: "status.inspect", payload: {} });
-    assert.equal(afterFailedStart.ok, true, afterFailedStart.ok ? undefined : afterFailedStart.reason);
-    if (afterFailedStart.ok) {
-      const failedView = afterFailedStart.value as {
-        manager_session: unknown;
-        current_plan: { plan_hash: string };
-        spend: { calls: number; effective_tokens: number };
-      };
-      assert.equal(failedView.manager_session, null);
-      assert.equal(failedView.current_plan.plan_hash, result.plan_hash);
-      assert.equal(failedView.spend.calls, 2);
-      assert.equal(failedView.spend.effective_tokens > 0, true);
-    }
-
-    await writeWorkspaceManagerAdapter(repo, "fixture-manager", managerMarker);
     const started = await executeWorkspaceAction(repo, {
       type: "manager.start",
       payload: { message: "Execute the exact ratified plan.", tool: "fixture-manager" }
@@ -217,13 +196,26 @@ test("workspace prompt prepares a linted mixed-tier plan but cannot authorize or
     assert.equal(started.ok, true, started.ok ? undefined : started.reason);
     if (!started.ok) return;
     assert.equal((started.value as { session_id: string }).session_id, result.usage_session_id);
-    assert.equal(await readFile(managerMarker, "utf8"), "spawned\nspawned\n");
+    await assert.rejects(stat(managerMarker));
+    const afterStart = await executeWorkspaceAction(repo, { type: "status.inspect", payload: {} });
+    assert.equal(afterStart.ok, true, afterStart.ok ? undefined : afterStart.reason);
+    if (afterStart.ok) {
+      const startedView = afterStart.value as {
+        manager_session: { session_id: string };
+        current_plan: { plan_hash: string };
+        spend: { calls: number; effective_tokens: number };
+      };
+      assert.equal(startedView.manager_session.session_id, result.usage_session_id);
+      assert.equal(startedView.current_plan.plan_hash, result.plan_hash);
+      assert.equal(startedView.spend.calls, 1);
+      assert.equal(startedView.spend.effective_tokens > 0, true);
+    }
 
     const ledger = await readQuotaLedger(repo);
     assert.equal(ledger.ok, true);
     if (ledger.ok) {
       assert.equal(ledger.value["fixture-planner"]?.session_usage[result.usage_session_id]?.requests, 1);
-      assert.equal(ledger.value["fixture-manager"]?.session_usage[result.usage_session_id]?.requests, 2);
+      assert.equal(ledger.value["fixture-manager"], undefined);
     }
   });
 });

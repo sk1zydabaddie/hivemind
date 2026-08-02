@@ -13,6 +13,7 @@ import { appendEvent, readEvents } from "../src/events.js";
 import { currentBuildIdentity } from "../src/build-identity.js";
 import { createDaemonServer } from "../src/daemon.js";
 import { initProject } from "../src/init.js";
+import { integratedTaskIdsFromEvents } from "../src/integration-state.js";
 import { requestLease } from "../src/lease.js";
 import { readQuotaLedger } from "../src/resource-ledger.js";
 import { latestTaskRunState } from "../src/run-state.js";
@@ -739,9 +740,9 @@ test("a terminal batched worker crash or timeout stops with cleanup and no predi
   }
 });
 
-test("batched and single-action execution have equivalent work trails while batching halves the fixed-pipeline proposal calls", async () => {
-  const observations: Array<{ mode: "single" | "batch"; trail: string[]; managerCalls: number }> = [];
-  for (const mode of ["single", "batch"] as const) {
+test("LLM-proposed and Core-derived execution have equivalent work trails while Core removes happy-path manager calls", async () => {
+  const observations: Array<{ mode: "single" | "batch" | "deterministic"; trail: string[]; managerCalls: number }> = [];
+  for (const mode of ["single", "batch", "deterministic"] as const) {
     await withTempRepo(async ({ repo, baseCommit }) => {
       await setConfigManagerAutonomy(repo, { level: "auto" });
       await createRatifiedSpec(repo, "S-001");
@@ -781,9 +782,24 @@ test("batched and single-action execution have equivalent work trails while batc
         after_enqueue_patch_ok: proposalFor([{ type: "integrate_shadow" }], ["integrate_shadow"]),
         after_integrate_shadow_ok: proposalFor([])
       };
-      await writeReactiveManagerProposalProfile(repo, mode === "single" ? single : batch);
+      await writeReactiveManagerProposalProfile(repo, mode === "single" ? single : batch, "manager", 2);
 
-      const result = await runAutonomousManagerLoop(repo, `Run ${mode} trail.`, { tool: "manager", maxSteps: 16 });
+      let result: SpecResult<ManagerAutonomousLoopResult>;
+      if (mode === "deterministic") {
+        const started = await executeWorkspaceAction(repo, {
+          type: "manager.start",
+          payload: { message: "Run the Core-derived trail.", tool: "manager" }
+        });
+        assert.equal(started.ok, true, started.ok ? undefined : started.reason);
+        if (!started.ok) return;
+        result = await continueAutonomousManagerLoop(
+          repo,
+          (started.value as { session_id: string }).session_id,
+          { tool: "manager", maxSteps: 16 }
+        );
+      } else {
+        result = await runAutonomousManagerLoop(repo, `Run ${mode} trail.`, { tool: "manager", maxSteps: 16 });
+      }
       assert.equal(result.ok, true, result.ok ? undefined : result.reason);
       if (!result.ok) return;
       assert.equal(result.value.status, "completed");
@@ -803,8 +819,10 @@ test("batched and single-action execution have equivalent work trails while batc
   }
 
   assert.deepEqual(observations[1].trail, observations[0].trail);
+  assert.deepEqual(observations[2].trail, observations[0].trail);
   assert.equal(observations[0].managerCalls, 10);
   assert.equal(observations[1].managerCalls, 5);
+  assert.equal(observations[2].managerCalls, 0);
 });
 
 test("all autonomy levels preserve the same complete work trail while changing only routine interruption", async () => {
@@ -917,7 +935,7 @@ test("Auto records and surfaces a session-ceiling stop before another manager ca
   });
 });
 
-test("daemon workspace dispatcher consumes the stored first proposal and completes the loop without nested HTTP", async (context) => {
+test("daemon workspace dispatcher completes the Core-derived loop without manager calls or nested HTTP", async (context) => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
     await setConfigTestCommand(repo, "node -e \"process.exit(0)\"");
@@ -939,7 +957,7 @@ test("daemon workspace dispatcher consumes the stored first proposal and complet
       after_analyze_patch_ok: proposalFor([{ type: "enqueue_patch", task_id: "T-WORKSPACE" }]),
       after_enqueue_patch_ok: proposalFor([{ type: "integrate_shadow" }], ["integrate_shadow"]),
       after_integrate_shadow_ok: proposalFor([])
-    });
+    }, "manager", 2);
 
     const daemon = createDaemonServer(repo, await currentBuildIdentity());
     const observedRoutes: string[] = [];
@@ -963,7 +981,7 @@ test("daemon workspace dispatcher consumes the stored first proposal and complet
     assert.equal(started.ok, true, started.ok ? undefined : started.reason);
     if (!started.ok) return;
     const sessionId = (started.value as { session_id: string }).session_id;
-    assert.deepEqual(await managerReactiveCalls(repo), ["initial"]);
+    assert.deepEqual(await managerReactiveCalls(repo), []);
 
     let continued = await dispatch({
       type: "manager.continue",
@@ -974,12 +992,11 @@ test("daemon workspace dispatcher consumes the stored first proposal and complet
     let loop = continued.value as ManagerAutonomousLoopResult;
     assert.equal(loop.status, "paused");
     assert.equal(loop.steps.at(-1)?.action_type, "run_worker");
-    assert.deepEqual((await managerReactiveCalls(repo)).slice(0, 2), ["initial", "after_create_task_contract_ok"]);
-    assert.equal((await managerReactiveCalls(repo)).filter((entry) => entry === "initial").length, 1);
+    assert.deepEqual(await managerReactiveCalls(repo), []);
 
     for (const expectedAction of ["run_worker", "integrate_shadow"] as const) {
       const pending = loop.steps.at(-1)?.pause;
-      assert.ok(pending);
+      assert.ok(pending, JSON.stringify(loop));
       assert.equal(pending.action_type, expectedAction);
       const approved = await dispatch({
         type: "manager.approve_pending",
@@ -1002,13 +1019,164 @@ test("daemon workspace dispatcher consumes the stored first proposal and complet
     }
 
     assert.equal(loop.status, "completed");
-    assert.equal((await managerReactiveCalls(repo)).filter((entry) => entry === "initial").length, 1);
+    assert.deepEqual(await managerReactiveCalls(repo), []);
     assert.deepEqual(loop.final_status.integration.status?.applied, ["T-WORKSPACE"]);
     const session = await readSession(repo, `.hivemind/orchestrator/sessions/${sessionId}.json`);
     assert.equal(session.proposal_state.status, "consumed");
     assert.equal(session.executed_actions.length, 9);
     assert.equal(observedRoutes.length, 6);
     assert.deepEqual(new Set(observedRoutes), new Set(["/workspace/action"]));
+  });
+});
+
+test("Core-derived execution authors a dependent task on its verified predecessor without manager calls", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await setConfigManagerAutonomy(repo, { level: "auto" });
+    await writeFile(path.join(repo, "SECOND.md"), "second task seed\n");
+    await git(repo, ["add", "SECOND.md"]);
+    await git(repo, ["commit", "-m", "add dependent fixture"]);
+    const baseCommit = await gitStdout(repo, ["rev-parse", "HEAD"]);
+    await createRatifiedSpec(repo, "S-001");
+    await setConfigTestCommand(repo, "node -e \"process.exit(0)\"");
+    const workerPath = await writeAgent(repo, "dependency-aware-worker.mjs", [
+      "const { appendFile, readFile } = await import('node:fs/promises');",
+      "let input = '';",
+      "for await (const chunk of process.stdin) input += chunk;",
+      "if (input.includes('T-DEPENDENCY-ONE')) {",
+      "  await appendFile('README.md', 'verified predecessor content\\n');",
+      "} else {",
+      "  const predecessor = await readFile('README.md', 'utf8');",
+      "  if (!predecessor.includes('verified predecessor content')) process.exit(17);",
+      "  await appendFile('SECOND.md', 'authored with verified predecessor visible\\n');",
+      "}"
+    ]);
+    await writeProfile(repo, "dependency-aware-worker", workerPath);
+    await writeReactiveManagerProposalProfile(repo, { initial: proposalFor([]) }, "manager", 2);
+    const first = managerContract("T-DEPENDENCY-ONE", baseCommit, ["README.md"]);
+    const second = {
+      ...managerContract("T-DEPENDENCY-TWO", baseCommit, ["SECOND.md"]),
+      read_only_files: ["README.md"]
+    };
+    await prepareLintedPlanWithTasks(repo, [
+      planTaskFromContract(first),
+      planTaskFromContract(second, ["T-DEPENDENCY-ONE"])
+    ]);
+
+    const started = await executeWorkspaceAction(repo, {
+      type: "manager.start",
+      payload: { message: "Drive the dependency-aware happy path.", tool: "manager" }
+    });
+    assert.equal(started.ok, true, started.ok ? undefined : started.reason);
+    if (!started.ok) return;
+    const completed = await continueAutonomousManagerLoop(
+      repo,
+      (started.value as { session_id: string }).session_id,
+      { tool: "manager", maxSteps: 32 }
+    );
+    assert.equal(completed.ok, true, completed.ok ? undefined : completed.reason);
+    if (!completed.ok) return;
+    assert.equal(completed.value.status, "completed");
+    assert.deepEqual(await managerReactiveCalls(repo), []);
+    const events = await readRequiredEvents(repo);
+    assert.deepEqual([...integratedTaskIdsFromEvents(events)].sort(), ["T-DEPENDENCY-ONE", "T-DEPENDENCY-TWO"]);
+    const secondPatch = await readFile(path.join(repo, ".hivemind", "patches", "T-DEPENDENCY-TWO", "diff.patch"), "utf8");
+    assert.match(secondPatch, /authored with verified predecessor visible/u);
+  });
+});
+
+test("pending guidance forces one judgment proposal before the next deterministic transition", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await setConfigManagerAutonomy(repo, { level: "auto" });
+    await createRatifiedSpec(repo, "S-001");
+    await setConfigTestCommand(repo, "node -e \"process.exit(0)\"");
+    const workerPath = await writeAgent(repo, "guided-worker.mjs", [
+      "const { appendFile } = await import('node:fs/promises');",
+      "await appendFile('README.md', 'guided deterministic work\\n');"
+    ]);
+    await writeProfile(repo, "guided-worker", workerPath);
+    const contract = managerContract("T-GUIDED", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, contract);
+    await writeReactiveManagerProposalProfile(repo, {
+      initial: proposalFor([{ type: "get_status" }]),
+      after_get_status_ok: proposalFor([])
+    }, "manager", 2);
+
+    const started = await executeWorkspaceAction(repo, {
+      type: "manager.start",
+      payload: { message: "Drive the guided workspace loop.", tool: "manager" }
+    });
+    assert.equal(started.ok, true, started.ok ? undefined : started.reason);
+    if (!started.ok) return;
+    assert.deepEqual(await managerReactiveCalls(repo), []);
+    const sessionId = (started.value as { session_id: string }).session_id;
+
+    const guidance = await executeWorkspaceAction(repo, {
+      type: "guidance.record",
+      payload: { target: "orchestrator", message: "Prefer the smallest readable implementation." }
+    });
+    assert.equal(guidance.ok, true, guidance.ok ? undefined : guidance.reason);
+    const judgment = await continueAutonomousManagerLoop(repo, sessionId, { tool: "manager", maxSteps: 1 });
+    assert.equal(judgment.ok, true, judgment.ok ? undefined : judgment.reason);
+    if (!judgment.ok) return;
+    assert.deepEqual(judgment.value.steps.map((step) => step.action_type), ["get_status"]);
+    const statusAfterJudgment = await getStatus(repo);
+    assert.equal(statusAfterJudgment.ok, true, statusAfterJudgment.ok ? undefined : statusAfterJudgment.reason);
+    if (!statusAfterJudgment.ok) return;
+    assert.equal(statusAfterJudgment.value.tasks.length, 0);
+    assert.deepEqual(await managerReactiveCalls(repo), ["initial"]);
+
+    const completed = await continueAutonomousManagerLoop(repo, sessionId, { tool: "manager", maxSteps: 16 });
+    assert.equal(completed.ok, true, completed.ok ? undefined : completed.reason);
+    if (!completed.ok) return;
+    assert.equal(completed.value.status, "completed");
+    assert.deepEqual(await managerReactiveCalls(repo), ["initial"]);
+    const events = await readRequiredEvents(repo);
+    assert.equal(events.filter((event) => event.type === "human.guidance_consumed").length, 1);
+  });
+});
+
+test("a deterministic mid-path refusal discards later actions and routes recovery to manager judgment", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await setConfigManagerAutonomy(repo, { level: "auto" });
+    await createRatifiedSpec(repo, "S-001");
+    const contract = managerContract("T-DETERMINISTIC-REFUSED", baseCommit, ["README.md"]);
+    await prepareLintedPlan(repo, contract);
+    const holder = await requestLease(repo, "T-LIVE-HOLDER", ["README.md"]);
+    assert.equal(holder.ok, true, holder.ok ? undefined : holder.reason);
+    await writeReactiveManagerProposalProfile(repo, {
+      after_request_lease_rejected: proposalFor([])
+    }, "manager", 2);
+
+    const started = await executeWorkspaceAction(repo, {
+      type: "manager.start",
+      payload: { message: "Drive until a deterministic floor refuses.", tool: "manager" }
+    });
+    assert.equal(started.ok, true, started.ok ? undefined : started.reason);
+    if (!started.ok) return;
+    const sessionId = (started.value as { session_id: string }).session_id;
+    const stopped = await continueAutonomousManagerLoop(repo, sessionId, { tool: "manager", maxSteps: 8 });
+    assert.equal(stopped.ok, true, stopped.ok ? undefined : stopped.reason);
+    if (!stopped.ok) return;
+    assert.equal(stopped.value.status, "stopped");
+    assert.deepEqual(stopped.value.steps.map((step) => step.action_type), ["create_task_contract", "request_lease"]);
+    assert.deepEqual(await managerReactiveCalls(repo), []);
+    const afterRefusal = await readSession(repo, stopped.value.session_path);
+    assert.equal(afterRefusal.proposal_state.status, "discarded");
+    assert.ok(afterRefusal.blocked_action);
+    assert.equal(afterRefusal.blocked_action.action_type, "request_lease");
+    assert.equal(await exists(path.join(repo, ".hivemind", "worktrees", "T-DETERMINISTIC-REFUSED")), false);
+
+    const retry = await executeWorkspaceAction(repo, {
+      type: "manager.retry_blocked",
+      payload: { session_id: sessionId }
+    });
+    assert.equal(retry.ok, true, retry.ok ? undefined : retry.reason);
+    const judged = await continueAutonomousManagerLoop(repo, sessionId, { tool: "manager", maxSteps: 2 });
+    assert.equal(judged.ok, true, judged.ok ? undefined : judged.reason);
+    assert.deepEqual(await managerReactiveCalls(repo), ["after_request_lease_rejected"]);
+    const events = await readRequiredEvents(repo);
+    assert.equal(events.some((event) => event.type === "manager.judgment_requested"), true);
+    assert.equal(events.some((event) => event.type.startsWith("write_intent.") && event.task_id === "T-DETERMINISTIC-REFUSED"), false);
   });
 });
 
@@ -1031,7 +1199,7 @@ test("daemon workspace task.stop interrupts an Auto worker without waiting behin
       after_check_write_intent_ok: proposalFor([{ type: "create_worktree", task_id: "T-AUTO-STOP" }]),
       after_create_worktree_ok: proposalFor([{ type: "run_worker", task_id: "T-AUTO-STOP", tool: "auto-hanging-worker" }], ["run_worker"]),
       after_run_worker_rejected: proposalFor([])
-    });
+    }, "manager", 2);
 
     const daemon = createDaemonServer(repo, await currentBuildIdentity());
     await listenServer(daemon);
@@ -2391,12 +2559,14 @@ async function readSession(
   session_id: string;
   proposal_state: { proposal_id: string; status: "pending" | "consumed" | "discarded"; next_action_index?: number; consumed_at?: string; discard_reason?: string };
   pending_action?: { action: { type: string }; reason: string; recommendation: string };
+  blocked_action?: { action_type: string; result: { ok: false; reason: string } };
   executed_actions: Array<{ type: string; result: { ok: boolean; reason?: string } }>;
 }> {
   return JSON.parse(await readFile(path.join(repo, sessionPath), "utf8")) as {
     session_id: string;
     proposal_state: { proposal_id: string; status: "pending" | "consumed" | "discarded"; next_action_index?: number; consumed_at?: string; discard_reason?: string };
     pending_action?: { action: { type: string }; reason: string; recommendation: string };
+    blocked_action?: { action_type: string; result: { ok: false; reason: string } };
     executed_actions: Array<{ type: string; result: { ok: boolean; reason?: string } }>;
   };
 }
@@ -2527,7 +2697,12 @@ async function writeProfile(
   );
 }
 
-async function writeReactiveManagerProposalProfile(repo: string, proposals: Record<string, Record<string, unknown>>, tool = "manager"): Promise<void> {
+async function writeReactiveManagerProposalProfile(
+  repo: string,
+  proposals: Record<string, Record<string, unknown>>,
+  tool = "manager",
+  costRank = 1
+): Promise<void> {
   const agentPath = await writeAgent(repo, `${tool}-reactive-proposal-agent.mjs`, [
     "const { appendFile } = await import('node:fs/promises');",
     "let input = '';",
@@ -2550,7 +2725,7 @@ async function writeReactiveManagerProposalProfile(repo: string, proposals: Reco
         verified_on: "2026-06-16",
         context_window: 1024,
         routing_tier: "strong",
-        cost_rank: 1
+        cost_rank: costRank
       },
       null,
       2

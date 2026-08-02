@@ -15,21 +15,23 @@ import {
 } from "./adapter.js";
 import { loadConfig } from "./config.js";
 import { createTaskContract, type CreateTaskContractResult } from "./contract.js";
-import { loadAndValidateContract, normalizeContract, validateContract, type TaskContract } from "./contract.js";
+import { loadAndValidateContract, normalizeAllowedFileIntents, normalizeContract, validateContract, type TaskContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
 import { formatErrorDetail } from "./error-detail.js";
 import { enqueueIntegrationPatch, integrateShadow, type EnqueueIntegrationPatchResult, type IntegrationStatus } from "./integrate.js";
 import { checkWriteIntent, type WriteIntentPass } from "./intent.js";
+import { requirePassedWriteIntent } from "./intent.js";
 import { extractJsonObject } from "./json.js";
 import { markHumanGuidanceConsumed, readPendingHumanGuidance } from "./human-guidance.js";
 import { applyOrchestratorContextBudget } from "./orchestrator-context.js";
 import { requestLeaseForContract, type LeaseGrantResult } from "./lease.js";
-import { evaluatePlanThrash, loadTentativePlan, readRatifiedWorkspacePlanSession } from "./plan.js";
+import { evaluatePlanThrash, loadCurrentRatifiedPlan, loadTentativePlan, readRatifiedWorkspacePlanSession, type TentativePlan, type TentativePlanTask } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { inferTaskTier } from "./routing.js";
 import { markRunFailed, runTask, type RunFailureMarkResult, type RunResult, type RunStartResult } from "./run.js";
 import { latestTaskRunState } from "./run-state.js";
+import { integratedTaskIdsFromEvents } from "./integration-state.js";
 import { runScout, type ScoutResult } from "./scout.js";
 import { requireActiveSpecRatified, type SpecResult } from "./spec.js";
 import { loadSpecDocument } from "./spec-format.js";
@@ -44,6 +46,7 @@ interface ManagerSession {
   session_id: string;
   created_at: string;
   spec_id: string;
+  execution_mode: "deterministic_happy_path" | "llm_reactive";
   autonomy_level_at_start?: AutonomyLevel;
   working_set: ManagerWorkingSet;
   turns: ManagerTurn[];
@@ -85,7 +88,7 @@ interface ManagerTurn {
 
 export interface ManagerProposedAction {
   type: "proposed_actions";
-  source: "adapter-generated" | "scripted";
+  source: "adapter-generated" | "deterministic" | "scripted";
   reason: string;
   actions: ManagerAction[];
   human_approval_required_for: ManagerAction["type"][];
@@ -225,6 +228,7 @@ interface ManagerStopAdvice {
 interface AutonomousLoopOptions {
   tool: string;
   maxSteps: number;
+  deterministicHappyPath?: boolean;
 }
 
 interface ActionClassification {
@@ -237,6 +241,7 @@ interface ActionClassification {
 interface StartManagerSessionOptions {
   tool?: string;
   proposedAction?: ManagerProposedAction;
+  deterministicHappyPath?: boolean;
 }
 
 export async function managerCommand(cwd: string, args: string[]): Promise<number> {
@@ -286,7 +291,8 @@ async function runParsedManagerCommand(
   if (parsed.mode === "auto-message") {
     return runAutonomousManagerLoop(repoRoot, parsed.message, {
       tool: parsed.tool,
-      maxSteps: parsed.maxSteps
+      maxSteps: parsed.maxSteps,
+      deterministicHappyPath: true
     });
   }
   if (parsed.mode === "auto-session") {
@@ -321,7 +327,7 @@ export async function startWorkspaceManagerSession(
   return startManagerSessionWithId(
     repoRoot,
     message,
-    { tool },
+    { tool, deterministicHappyPath: true },
     preparedSession.value.session_id
   );
 }
@@ -362,10 +368,17 @@ async function startManagerSessionWithId(
   } catch (error: unknown) {
     if (!isNodeError(error, "ENOENT")) throw error;
   }
-  const proposedAction =
-    options.proposedAction === undefined
-      ? await generateManagerProposal(repoRoot, message.trim(), options.tool ?? "manager", spec.value.spec_id, sessionId)
-      : ({ ok: true, value: options.proposedAction } as const);
+  const proposedAction = options.proposedAction === undefined
+    ? options.deterministicHappyPath === true
+      ? await deriveOrGenerateManagerProposal(
+          repoRoot,
+          spec.value.spec_id,
+          message.trim(),
+          options.tool ?? "manager",
+          sessionId
+        )
+      : await generateManagerProposal(repoRoot, message.trim(), options.tool ?? "manager", spec.value.spec_id, sessionId)
+    : ({ ok: true, value: options.proposedAction } as const);
   if (!proposedAction.ok) {
     return recordManagerProposalFailure(repoRoot, sessionId, proposedAction.reason);
   }
@@ -376,6 +389,7 @@ async function startManagerSessionWithId(
     session_id: sessionId,
     created_at: new Date().toISOString(),
     spec_id: spec.value.spec_id,
+    execution_mode: options.deterministicHappyPath === true ? "deterministic_happy_path" : "llm_reactive",
     autonomy_level_at_start: autonomy.value,
     working_set: {
       spec: {
@@ -507,6 +521,288 @@ export async function generateManagerProposal(
       tool: profileResult.profile.tool
     }
   };
+}
+
+type DeterministicProposalDecision =
+  | { kind: "proposal"; proposal: ManagerProposedAction }
+  | { kind: "waiting"; task_id: string }
+  | { kind: "judgment"; reason: string };
+
+async function deriveOrGenerateManagerProposal(
+  repoRoot: string,
+  specId: string,
+  judgmentMessage: string,
+  tool: string,
+  usageSessionId: string,
+  forcedJudgmentReason?: string
+): Promise<SpecResult<ManagerProposedAction>> {
+  if (forcedJudgmentReason !== undefined) {
+    return generateManagerProposal(
+      repoRoot,
+      `${judgmentMessage}\n\nDeterministic happy-path execution stopped and requires judgment: ${forcedJudgmentReason}`,
+      tool,
+      specId,
+      usageSessionId
+    );
+  }
+  const guidance = await readPendingHumanGuidance(repoRoot);
+  if (!guidance.ok) return guidance;
+  if (guidance.value.length > 0) {
+    return generateManagerProposal(repoRoot, judgmentMessage, tool, specId, usageSessionId);
+  }
+
+  let derived = await deriveDeterministicHappyPathProposal(repoRoot, specId);
+  if (derived.kind === "waiting") {
+    const observed = await waitForTaskRunCompletion(repoRoot, derived.task_id);
+    if (!observed.ok) {
+      return generateManagerProposal(
+        repoRoot,
+        `${judgmentMessage}\n\nDeterministic happy-path execution stopped while observing ${derived.task_id}: ${observed.reason}`,
+        tool,
+        specId,
+        usageSessionId
+      );
+    }
+    derived = await deriveDeterministicHappyPathProposal(repoRoot, specId);
+  }
+  if (derived.kind === "judgment") {
+    return generateManagerProposal(
+      repoRoot,
+      `${judgmentMessage}\n\nDeterministic happy-path execution cannot prove the next action: ${derived.reason}`,
+      tool,
+      specId,
+      usageSessionId
+    );
+  }
+  if (derived.kind === "waiting") {
+    return { ok: false, reason: `task ${derived.task_id} remained in progress after durable completion observation` };
+  }
+  return { ok: true, value: derived.proposal };
+}
+
+async function deriveDeterministicHappyPathProposal(
+  repoRoot: string,
+  specId: string
+): Promise<DeterministicProposalDecision> {
+  const plan = await loadCurrentRatifiedPlan(repoRoot, specId, "deterministic happy-path derivation");
+  if (!plan.ok) return { kind: "judgment", reason: plan.reason };
+  const status = await getStatus(repoRoot);
+  if (!status.ok) return { kind: "judgment", reason: status.reason };
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return { kind: "judgment", reason: events.reason };
+
+  if (status.value.integration.status?.tests === "fail" || status.value.integration.status?.tests === "blocked") {
+    return {
+      kind: "judgment",
+      reason: `the latest project verification is ${status.value.integration.status.tests}; deterministic execution will not retry or advance past it`
+    };
+  }
+
+  const orderedTasks = orderedPlanTasks(plan.value);
+  if (!orderedTasks.ok) return { kind: "judgment", reason: orderedTasks.reason };
+  const integrated = integratedTaskIdsFromEvents(events.value);
+  const taskStatus = new Map(status.value.tasks.map((task) => [task.task_id, task]));
+  const planTaskIds = new Set(orderedTasks.value.map((task) => task.task_id));
+
+  for (const task of orderedTasks.value) {
+    if (integrated.has(task.task_id) || task.depends_on.some((dependency) => !integrated.has(dependency))) {
+      continue;
+    }
+    const current = taskStatus.get(task.task_id);
+
+    if (current === undefined) {
+      const contract = contractFromRatifiedPlanTask(plan.value, task);
+      if (!contract.ok) return { kind: "judgment", reason: contract.reason };
+      return deterministicProposal(
+        [
+          { type: "create_task_contract", contract: contract.value },
+          { type: "request_lease", task_id: task.task_id },
+          { type: "check_write_intent", task_id: task.task_id, intent: writeIntentFromContract(contract.value) },
+          { type: "create_worktree", task_id: task.task_id },
+          { type: "run_worker", task_id: task.task_id }
+        ],
+        `Core derived the complete pre-worker pipeline for ${task.task_id} from the exact ratified plan and current durable state.`
+      );
+    }
+
+    const runState = latestTaskRunState(events.value, task.task_id);
+    if (runState.state === "failed" || runState.state === "cancelled") {
+      const terminal = runState.state === "failed" ? runState.failed : runState.cancelled;
+      const reason = typeof terminal.data.reason === "string" ? terminal.data.reason : runState.state;
+      return { kind: "judgment", reason: `${task.task_id} is ${runState.state}: ${reason}` };
+    }
+    if (current.queued) {
+      if (runState.state !== "completed" || !current.patch.accepted || current.patch.verdict !== "accept") {
+        return { kind: "judgment", reason: `${task.task_id} is queued without current completed and accepted patch evidence` };
+      }
+      continue;
+    }
+    if (runState.state === "running") {
+      return { kind: "waiting", task_id: task.task_id };
+    }
+
+    if (runState.state === "completed") {
+      if (!current.lease.held) {
+        return { kind: "judgment", reason: `${task.task_id} completed but its canonical lease is no longer held` };
+      }
+      if (current.patch.bundle === "absent") {
+        return { kind: "judgment", reason: `${task.task_id} completed without a durable patch bundle` };
+      }
+      if (!current.patch.submitted) {
+        return deterministicProposal(
+          [{ type: "submit_patch", task_id: task.task_id }, { type: "analyze_patch", task_id: task.task_id }],
+          `Core observed ${task.task_id} completed with an unsubmitted patch and derived the existing submit/analyze pair.`
+        );
+      }
+      if (!current.patch.analyzed) {
+        return deterministicProposal(
+          [{ type: "analyze_patch", task_id: task.task_id }],
+          `Core observed a submitted, unanalyzed patch for ${task.task_id}.`
+        );
+      }
+      if (!current.patch.accepted || current.patch.verdict !== "accept") {
+        return {
+          kind: "judgment",
+          reason: `${task.task_id} analysis returned ${current.patch.verdict ?? "unknown"}: ${current.patch.reason}`
+        };
+      }
+      return deterministicProposal(
+        [{ type: "enqueue_patch", task_id: task.task_id }],
+        `Core observed current submitted and accepted evidence for ${task.task_id}.`
+      );
+    }
+
+    const contract = await loadAndValidateContract(repoRoot, task.task_id);
+    if (!contract.ok) return { kind: "judgment", reason: contract.reason };
+    const actions: ManagerAction[] = [];
+    if (!current.lease.held) {
+      return deterministicProposal(
+        [{ type: "request_lease", task_id: task.task_id }],
+        `Core observed that ${task.task_id} has no current canonical lease.`
+      );
+    }
+    const intent = await requirePassedWriteIntent(repoRoot, task.task_id);
+    if (!intent.ok) {
+      if (!intent.reason.startsWith("passed write intent not found")) {
+        return { kind: "judgment", reason: intent.reason };
+      }
+      actions.push({
+        type: "check_write_intent",
+        task_id: task.task_id,
+        intent: writeIntentFromContract(contract.contract)
+      });
+    }
+    if (current.worktree === "missing") actions.push({ type: "create_worktree", task_id: task.task_id });
+    actions.push({ type: "run_worker", task_id: task.task_id });
+    return deterministicProposal(
+      actions,
+      `Core derived the remaining pre-worker pipeline for ${task.task_id} from current durable state.`
+    );
+  }
+
+  const queuedForVerification = status.value.integration.queue.filter((taskId) => !integrated.has(taskId));
+  const foreignQueuedTask = queuedForVerification.find((taskId) => !planTaskIds.has(taskId));
+  if (foreignQueuedTask !== undefined) {
+    return { kind: "judgment", reason: `integration queue contains ${foreignQueuedTask}, which is outside the exact ratified plan` };
+  }
+  if (queuedForVerification.length > 0) {
+    return deterministicProposal(
+      [{ type: "integrate_shadow" }],
+      "Core observed accepted queued work and derived the existing shadow-verification action."
+    );
+  }
+  if (orderedTasks.value.every((task) => integrated.has(task.task_id))) {
+    return deterministicProposal([], "Every task in the exact ratified plan has current durable verification evidence.");
+  }
+  const blocked = orderedTasks.value
+    .filter((task) => !integrated.has(task.task_id))
+    .map((task) => `${task.task_id} waits for ${task.depends_on.filter((dependency) => !integrated.has(dependency)).join(", ") || "unknown state"}`);
+  return { kind: "judgment", reason: `no task has a provable next happy-path action: ${blocked.join("; ")}` };
+}
+
+function orderedPlanTasks(plan: TentativePlan): SpecResult<TentativePlanTask[]> {
+  const byId = new Map(plan.tasks.map((task) => [task.task_id, task]));
+  const ordered: TentativePlanTask[] = [];
+  const seen = new Set<string>();
+  for (const group of plan.execution_groups) {
+    for (const taskId of group.task_ids) {
+      const task = byId.get(taskId);
+      if (task === undefined || seen.has(taskId)) {
+        return { ok: false, reason: `ratified execution groups do not identify each task exactly once: ${taskId}` };
+      }
+      seen.add(taskId);
+      ordered.push(task);
+    }
+  }
+  return seen.size === plan.tasks.length
+    ? { ok: true, value: ordered }
+    : { ok: false, reason: "ratified execution groups omit one or more plan tasks" };
+}
+
+function contractFromRatifiedPlanTask(
+  plan: TentativePlan,
+  task: TentativePlanTask
+): SpecResult<Record<string, unknown>> {
+  const scope = task.grounded_scope;
+  if (scope === undefined) return { ok: false, reason: `ratified task ${task.task_id} has no grounded scope` };
+  return {
+    ok: true,
+    value: {
+      task_id: task.task_id,
+      title: task.title,
+      agent_role: task.agent_role,
+      routing_task_type: task.routing_task_type,
+      base_commit: plan.base_commit,
+      acceptance_criterion: task.acceptance_criterion,
+      ...(task.deterministic_validity_check === undefined
+        ? {}
+        : { deterministic_validity_check: task.deterministic_validity_check }),
+      allowed_files: scope.allowed_files,
+      allowed_file_intents: normalizeAllowedFileIntents(scope.allowed_files, scope.allowed_file_intents),
+      read_only_files: scope.read_only_files,
+      forbidden_files: scope.forbidden_files,
+      allowed_symbols: [],
+      forbidden_symbols: [],
+      must_not_change: scope.must_not_change,
+      required_tests: task.required_tests,
+      patch_requirements: task.patch_requirements
+    }
+  };
+}
+
+function writeIntentFromContract(contract: Record<string, unknown> | TaskContract): Record<string, unknown> {
+  const allowedFiles = Array.isArray(contract.allowed_files)
+    ? contract.allowed_files.filter((entry): entry is string => typeof entry === "string")
+    : [];
+  const patchRequirements = Array.isArray(contract.patch_requirements)
+    ? contract.patch_requirements.filter((entry): entry is string => typeof entry === "string")
+    : [];
+  const mustNotChange = Array.isArray(contract.must_not_change)
+    ? contract.must_not_change.filter((entry): entry is string => typeof entry === "string")
+    : [];
+  return {
+    task_id: String(contract.task_id),
+    intended_files: allowedFiles,
+    intended_symbols: [],
+    possible_risks: patchRequirements,
+    will_not_change: mustNotChange
+  };
+}
+
+function deterministicProposal(actions: ManagerAction[], reason: string): DeterministicProposalDecision {
+  const canonicalActions = parseManagerActionList(actions, "deterministic manager actions");
+  if (!canonicalActions.ok) return { kind: "judgment", reason: canonicalActions.reason };
+  const proposal: ManagerProposedAction = {
+    type: "proposed_actions",
+    source: "deterministic",
+    reason,
+    actions: canonicalActions.value,
+    human_approval_required_for: canonicalActions.value
+      .map((action) => action.type)
+      .filter((type): type is "run_worker" | "integrate_shadow" => type === "run_worker" || type === "integrate_shadow")
+  };
+  const validated = validateGeneratedManagerActions(proposal.actions, proposal.human_approval_required_for);
+  return validated.ok ? { kind: "proposal", proposal } : { kind: "judgment", reason: validated.reason };
 }
 
 async function generateRedirectCorrection(
@@ -967,7 +1263,7 @@ function validateGeneratedManagerActions(actions: ManagerAction[], approvals: Ma
 }
 
 function validateAutonomousSessionProposal(proposal: ManagerProposedAction): SpecResult<void> {
-  if (proposal.source === "adapter-generated") {
+  if (proposal.source === "adapter-generated" || proposal.source === "deterministic") {
     return validateGeneratedManagerActions(proposal.actions, proposal.human_approval_required_for);
   }
   return proposal.actions.length <= 1
@@ -1386,7 +1682,10 @@ export async function runAutonomousManagerLoop(
   message: string,
   options: AutonomousLoopOptions
 ): Promise<SpecResult<ManagerAutonomousLoopResult>> {
-  const session = await startManagerSession(repoRoot, message, { tool: options.tool });
+  const session = await startManagerSession(repoRoot, message, {
+    tool: options.tool,
+    deterministicHappyPath: options.deterministicHappyPath === true
+  });
   if (!session.ok) {
     return session;
   }
@@ -1479,8 +1778,36 @@ export async function continueAutonomousManagerLoop(
     } else {
       let nextProposal: ManagerProposedAction;
       if (session.value.proposal_state?.status === "pending") {
-        nextProposal = session.value.proposed_action;
-        proposalId = session.value.proposal_state.proposal_id;
+        const guidance = session.value.execution_mode === "deterministic_happy_path" && session.value.proposed_action.source === "deterministic"
+          ? await readPendingHumanGuidance(repoRoot)
+          : { ok: true as const, value: [] };
+        if (!guidance.ok) return guidance;
+        if (guidance.value.length > 0) {
+          const generated = await generateManagerProposal(
+            repoRoot,
+            `${buildReactiveProposalMessage(session.value)}\n\nPending human guidance requires judgment before the unexecuted deterministic proposal may advance.`,
+            options.tool,
+            session.value.spec_id,
+            session.value.session_id
+          );
+          if (!generated.ok) return recordManagerProposalFailure(repoRoot, sessionId, generated.reason);
+          nextProposal = generated.value;
+          sessionForWrite = appendProposalToSession(
+            {
+              ...session.value,
+              turns: [
+                ...session.value.turns,
+                { role: "manager", content: "superseded an unexecuted Core-derived proposal because durable human guidance required judgment first" }
+              ]
+            },
+            nextProposal
+          );
+          await writeJsonAtomic(managerSessionPath(repoRoot, sessionId), sessionForWrite);
+          proposalId = sessionForWrite.proposal_state!.proposal_id;
+        } else {
+          nextProposal = session.value.proposed_action;
+          proposalId = session.value.proposal_state.proposal_id;
+        }
       } else {
         if (session.value.proposal_state === undefined && session.value.proposed_action.actions.length > 0) {
           return {
@@ -1488,13 +1815,26 @@ export async function continueAutonomousManagerLoop(
             reason: "manager session predates durable proposal tracking; start a new session instead of guessing whether its stored proposal was consumed"
           };
         }
-        const generated = await generateManagerProposal(
-          repoRoot,
-          buildReactiveProposalMessage(session.value),
-          options.tool,
-          session.value.spec_id,
-          session.value.session_id
-        );
+        const lastExecution = session.value.executed_actions.at(-1);
+        const forcedJudgmentReason = lastExecution !== undefined && !lastExecution.result.ok
+          ? lastExecution.result.reason
+          : undefined;
+        const generated = session.value.execution_mode === "deterministic_happy_path"
+          ? await deriveOrGenerateManagerProposal(
+              repoRoot,
+              session.value.spec_id,
+              buildReactiveProposalMessage(session.value),
+              options.tool,
+              session.value.session_id,
+              forcedJudgmentReason
+            )
+          : await generateManagerProposal(
+              repoRoot,
+              buildReactiveProposalMessage(session.value),
+              options.tool,
+              session.value.spec_id,
+              session.value.session_id
+            );
         if (!generated.ok) return recordManagerProposalFailure(repoRoot, sessionId, generated.reason);
         nextProposal = generated.value;
         sessionForWrite = appendProposalToSession(session.value, nextProposal);
@@ -1654,6 +1994,8 @@ export async function continueAutonomousManagerLoop(
         };
       }
       const stop = buildGateRejectionAdvice(action, result.value.result.reason);
+      const blocked = await recordBlockedManagerAction(repoRoot, sessionId, action, result.value.result, stop);
+      if (!blocked.ok) return blocked;
       const status = await getStatus(repoRoot);
       if (!status.ok) {
         return status;
@@ -1703,6 +2045,22 @@ export async function continueAutonomousManagerLoop(
   };
 }
 
+async function recordBlockedManagerAction(
+  repoRoot: string,
+  sessionId: string,
+  action: ManagerAction,
+  result: Extract<ManagerActionExecutionRecord, { ok: false }>,
+  stop: ManagerStopAdvice
+): Promise<SpecResult<void>> {
+  const session = await loadManagerSession(repoRoot, sessionId);
+  if (!session.ok) return session;
+  await writeJsonAtomic(managerSessionPath(repoRoot, sessionId), {
+    ...session.value,
+    blocked_action: { action_type: action.type, result, stop }
+  });
+  return { ok: true, value: undefined };
+}
+
 async function recordManagerProposalFailure(
   repoRoot: string,
   sessionId: string,
@@ -1722,7 +2080,7 @@ async function recordManagerProposalFailure(
 export async function retryBlockedManagerAction(
   repoRoot: string,
   sessionId: string
-): Promise<SpecResult<{ session_id: string; action_type: ManagerAction["type"]; status: "retry_pending" }>> {
+): Promise<SpecResult<{ session_id: string; action_type: ManagerAction["type"]; status: "judgment_pending" | "retry_pending" }>> {
   const session = await loadManagerSession(repoRoot, sessionId);
   if (!session.ok) return session;
   if (session.value.blocked_action === undefined) {
@@ -1748,16 +2106,45 @@ export async function retryBlockedManagerAction(
     return { ok: false, reason: "manager retry refused: blocked action identity is inconsistent with durable execution history" };
   }
 
-  const proposalId = randomUUID();
+  if (session.value.execution_mode === "llm_reactive") {
+    const proposalId = randomUUID();
+    const recorded = await appendEvent(repoRoot, {
+      type: "manager.action_retry_requested",
+      task_id: "task_id" in action ? action.task_id : null,
+      data: {
+        version: 1,
+        session_id: session.value.session_id,
+        action_type: action.type,
+        previous_reason: blocked.result.reason,
+        proposal_id: proposalId
+      }
+    });
+    if (!recorded.ok) return recorded;
+    await writeJsonAtomic(managerSessionPath(repoRoot, session.value.session_id), {
+      ...session.value,
+      blocked_action: undefined,
+      proposal_state: {
+        proposal_id: proposalId,
+        status: "pending",
+        next_action_index: retryIndex.value
+      },
+      turns: [...session.value.turns, { role: "user", content: `retry requested for blocked action ${action.type}` }]
+    });
+    return {
+      ok: true,
+      value: { session_id: session.value.session_id, action_type: action.type, status: "retry_pending" }
+    };
+  }
+
   const recorded = await appendEvent(repoRoot, {
-    type: "manager.action_retry_requested",
+    type: "manager.judgment_requested",
     task_id: "task_id" in action ? action.task_id : null,
     data: {
       version: 1,
       session_id: session.value.session_id,
       action_type: action.type,
       previous_reason: blocked.result.reason,
-      proposal_id: proposalId
+      next_step: "manager_proposal"
     }
   });
   if (!recorded.ok) return recorded;
@@ -1765,14 +2152,9 @@ export async function retryBlockedManagerAction(
   await writeJsonAtomic(managerSessionPath(repoRoot, session.value.session_id), {
     ...session.value,
     blocked_action: undefined,
-    proposal_state: {
-      proposal_id: proposalId,
-      status: "pending",
-      next_action_index: retryIndex.value
-    },
     turns: [
       ...session.value.turns,
-      { role: "user", content: `retry requested for blocked action ${action.type}` }
+      { role: "user", content: `judgment requested after blocked action ${action.type}: ${blocked.result.reason}` }
     ]
   });
   return {
@@ -1780,7 +2162,7 @@ export async function retryBlockedManagerAction(
     value: {
       session_id: session.value.session_id,
       action_type: action.type,
-      status: "retry_pending"
+      status: "judgment_pending"
     }
   };
 }
@@ -2458,6 +2840,9 @@ function validateManagerSession(value: unknown, sessionId: string): SpecResult<M
   if (typeof value.spec_id !== "string" || value.spec_id.trim() === "") {
     return { ok: false, reason: "manager session spec_id must be a string" };
   }
+  if (value.execution_mode !== "deterministic_happy_path" && value.execution_mode !== "llm_reactive") {
+    return { ok: false, reason: "manager session execution_mode is invalid" };
+  }
   if (value.autonomy_level_at_start !== undefined && !isAutonomyLevel(value.autonomy_level_at_start)) {
     return { ok: false, reason: "manager session autonomy_level_at_start is invalid" };
   }
@@ -2475,7 +2860,9 @@ function validateManagerSession(value: unknown, sessionId: string): SpecResult<M
   const storedApprovals = parseHumanApprovalList(value.proposed_action.human_approval_required_for);
   if (!storedApprovals.ok) return { ok: false, reason: `manager session ${storedApprovals.reason}` };
   if (
-    (value.proposed_action.source !== "adapter-generated" && value.proposed_action.source !== "scripted") ||
+    (value.proposed_action.source !== "adapter-generated" &&
+      value.proposed_action.source !== "deterministic" &&
+      value.proposed_action.source !== "scripted") ||
     typeof value.proposed_action.reason !== "string" ||
     value.proposed_action.reason.trim() === ""
   ) {

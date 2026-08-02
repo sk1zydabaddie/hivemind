@@ -1350,6 +1350,12 @@ Manager proposal batching is a cost optimization over the fixed pipeline, not a 
 
 Core validates the complete shape before consuming anything, then sends each action independently through the same deterministic executor and M8.3 gates used by a single-action proposal. It stops on the first refusal, failure, timeout, crash, escalation, or unexpected result and discards every predicted remainder. `run_worker` and `analyze_patch` end their batches so the manager must observe real worker and gate outcomes before deciding what follows. Enqueue, shadow verification, Scout, redirect/replan work, cross-task decisions, and adoption remain single. Tier-2 interruption follows the active M9.1 policy but still uses the exact pending identity and durable-state hash; adoption remains outside the manager action domain at every level. Executed actions retain the same individual durable evidence and order as unbatched execution.
 
+### Deterministic happy-path execution
+
+The successful task pipeline is a durable-state machine, not a recurring judgment problem. Once a grounded plan is ratified, Core can derive contract materialization, lease, write intent, dependency-aware worktree creation, tier-eligible worker invocation, submission, analysis, queueing, and shadow verification from authoritative state. M9.3 therefore constructs the existing bounded manager actions deterministically and sends every action through the same M8.3 executor. It re-reads `.hivemind/` after every result; it does not remember that a step passed or cache a gate verdict.
+
+This changes proposal cost, not authority. Worker routing remains the existing deterministic tier route, configurable interruptions still use exact pending identities and state hashes, every floor still fires, and adoption remains human-only. The driver stops at the first refusal, failure, timeout, quota pause, rejection, escalation, oracle block, stale input, or unprovable state. Those are genuine judgment boundaries, so the existing manager LLM handles redirect/cancel/re-plan/escalation rather than Core guessing. Human guidance also forces that next judgment boundary before further mechanical progress; it never mutates an in-flight worker or authorizes an action. For equivalent successful actions, the authoritative event trail is unchanged from LLM-proposed execution.
+
 The full app should have these main pages or equivalent workspace surfaces.
 
 ### 1. Project Home
