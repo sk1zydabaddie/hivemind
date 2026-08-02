@@ -144,6 +144,8 @@ export function WorkTab({
     (item) => !dismissedAttention.includes(item.id)
   );
   const plan = inspection?.plan_review ?? null;
+  const currentPlan = inspection?.current_plan ?? null;
+  const displayedPlan = plan ?? currentPlan;
   const showPlanBanner =
     plan !== null && dismissedPlanHash !== plan.plan_hash;
   const managerSession = inspection?.manager_session;
@@ -247,9 +249,10 @@ export function WorkTab({
   };
 
   const openPlanReview = async (): Promise<void> => {
-    if (!plan) return;
+    if (!displayedPlan) return;
     setReviewOpen(true);
     setFeedback("");
+    if (!plan) return;
     try {
       await onAction({ type: "plan.review", payload: { spec_id: plan.spec_id } });
     } catch (error) {
@@ -351,6 +354,8 @@ export function WorkTab({
         projection={projection}
         inspection={inspection}
         busy={busy}
+        planAvailable={displayedPlan !== null}
+        onOpenPlan={() => void openPlanReview()}
         onLevelChange={async (level) => {
           setBusy(true);
           setFeedback("");
@@ -467,12 +472,14 @@ export function WorkTab({
         }}
       />
 
-      {reviewOpen && plan ? (
+      {reviewOpen && displayedPlan ? (
         <PlanTakeover
-          plan={plan}
+          plan={displayedPlan}
           busy={busy}
+          ratificationPending={plan !== null}
           onClose={() => setReviewOpen(false)}
           onRatify={async () => {
+            if (plan === null) return;
             setBusy(true);
             setFeedback("");
             try {
@@ -616,11 +623,15 @@ function RunSummary({
   projection,
   inspection,
   busy,
+  planAvailable,
+  onOpenPlan,
   onLevelChange
 }: {
   projection: BoardProjection;
   inspection: WorkspaceInspection | null;
   busy: boolean;
+  planAvailable: boolean;
+  onOpenPlan: () => void;
   onLevelChange: (level: AutonomyLevel) => Promise<void>;
 }): React.JSX.Element {
   const counts = taskStateCounts(projection);
@@ -636,6 +647,7 @@ function RunSummary({
       <div className={`summary-verification tone-${verification.tone}`}>
         <CheckCircle2 size={15} /><span>{verification.label}</span>
       </div>
+      {planAvailable ? <button className="button-secondary" type="button" onClick={onOpenPlan}><Layers3 size={14} />View plan</button> : null}
       <label className="autonomy-control">
         <span>Interruptions</span>
         <select value={inspection?.autonomy.configured_level ?? "auto"} disabled={busy} onChange={(event) => void onLevelChange(event.target.value as AutonomyLevel)}>
@@ -1020,12 +1032,12 @@ function autonomyLabel(level: AutonomyLevel): string {
   return level === "auto" ? "Auto" : level === "review_plan" ? "Review plan" : "Review everything";
 }
 
-function PlanTakeover({ plan, busy, onClose, onRatify }: { plan: WorkspacePlanReview; busy: boolean; onClose: () => void; onRatify: () => Promise<void> }): React.JSX.Element {
+function PlanTakeover({ plan, busy, ratificationPending, onClose, onRatify }: { plan: WorkspacePlanReview; busy: boolean; ratificationPending: boolean; onClose: () => void; onRatify: () => Promise<void> }): React.JSX.Element {
   return (
     <div className="takeover-backdrop" role="dialog" aria-modal="true" aria-labelledby="plan-review-title">
       <section className="plan-takeover">
         <header>
-          <div><span>Review before work begins</span><h2 id="plan-review-title">{plan.tasks.length} tasks, {plan.execution_groups.length} work groups</h2><p>Check the order, file boundaries, and risk. Approval applies only to this exact version.</p></div>
+          <div><span>{ratificationPending ? "Review before work begins" : "Ratified plan"}</span><h2 id="plan-review-title">{plan.tasks.length} tasks, {plan.execution_groups.length} work groups</h2><p>{ratificationPending ? "Check the order, file boundaries, and risk. Approval applies only to this exact version." : "This is the exact durable plan used for this run, including how each task's result is checked."}</p></div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Close plan review"><X size={18} /></button>
         </header>
         <div className="plan-review-body">
@@ -1041,7 +1053,7 @@ function PlanTakeover({ plan, busy, onClose, onRatify }: { plan: WorkspacePlanRe
             </section>
           ))}
         </div>
-        <footer><div><code>{plan.plan_hash.slice(0, 12)}</code><span>Any regenerated or edited plan needs a new approval.</span></div><button className="button-primary ratify-button" type="button" disabled={busy} onClick={() => void onRatify()}><CheckCircle2 size={16} />Approve and start</button></footer>
+        <footer><div><code>{plan.plan_hash.slice(0, 12)}</code><span>{ratificationPending ? "Any regenerated or edited plan needs a new approval." : "Read-only record of the exact approved plan."}</span></div>{ratificationPending ? <button className="button-primary ratify-button" type="button" disabled={busy} onClick={() => void onRatify()}><CheckCircle2 size={16} />Approve and start</button> : <button className="button-secondary" type="button" onClick={onClose}>Close</button>}</footer>
       </section>
     </div>
   );
@@ -1135,11 +1147,12 @@ function splitList(value: string): string[] {
 
 function phasesFor(task: TaskProjection, integrationFailure: string | null = null): TaskPhase[] {
   const failure = ["failed", "blocked", "rejected", "cancelled"].includes(task.state);
+  const adopted = task.state === "merged" || task.integration === "merged";
   return [
     { key: "scoped", label: "Ready", status: task.lease_files.length > 0 || task.state !== "planned" ? "complete" : "active" },
-    { key: "running", label: "Working", status: failure ? "failed" : task.state === "paused" ? "waiting" : task.state === "running" ? "active" : ["submitted", "accepted", "verified"].includes(task.state) ? "complete" : "waiting" },
-    { key: "scope", label: "Files", status: task.state === "rejected" ? "failed" : task.patch.verdict === "accept" || task.state === "verified" ? "complete" : task.patch.submitted ? "active" : "waiting" },
-    { key: "verified", label: "Verified", status: integrationFailure !== null || task.integration === "blocked" || task.integration === "failed" ? "failed" : task.state === "verified" || task.integration === "passed" ? "complete" : task.integration === "queued" ? "active" : "waiting" }
+    { key: "running", label: "Working", status: failure ? "failed" : task.state === "paused" ? "waiting" : task.state === "running" ? "active" : ["submitted", "accepted", "verified", "merged"].includes(task.state) ? "complete" : "waiting" },
+    { key: "scope", label: "Files", status: task.state === "rejected" ? "failed" : adopted || task.patch.verdict === "accept" || task.state === "verified" ? "complete" : task.patch.submitted ? "active" : "waiting" },
+    { key: "verified", label: "Verified", status: integrationFailure !== null || task.integration === "blocked" || task.integration === "failed" ? "failed" : adopted || task.state === "verified" || task.integration === "passed" ? "complete" : task.integration === "queued" ? "active" : "waiting" }
   ];
 }
 
@@ -1147,6 +1160,7 @@ function phaseDetail(task: TaskProjection, phase: string): string {
   if (phase === "scoped") return `${task.lease_files.length} files are inside this task's working boundary`;
   if (phase === "running") return task.state === "running" ? "The worker is active" : "The worker is not active";
   if (phase === "scope") return task.patch.reason ?? "No file-check result recorded yet";
+  if (task.integration === "merged" || task.state === "merged") return "Project checks passed and the change was adopted";
   return task.integration === "passed" ? "Project checks passed; ready for explicit adoption" : "Not verified against the project yet";
 }
 

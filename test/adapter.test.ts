@@ -9,10 +9,12 @@ import test from "node:test";
 import {
   buildAgentPrompt,
   findDangerousAdapterArgs,
+  findRefusedAdapterModes,
   invokeAgent,
   loadAdapterProfile,
   parseAdapterProviderUsage,
   resolveAdapterUsageParser,
+  runAdapterProcess,
   validateAdapterProfile
 } from "../src/adapter.js";
 import { initProject } from "../src/init.js";
@@ -168,6 +170,24 @@ test("validateAdapterProfile rejects unknown provider usage parsers", () => {
   );
 });
 
+test("adapter profiles fail closed on unknown settings and refused ultra modes", () => {
+  const base = {
+    tool: "codex-worker",
+    invoke: ["codex", "exec", "-"],
+    prompt_arg: "stdin",
+    verified_on: "2026-08-01",
+    context_window: 1024,
+    settings: { dynamic_workflows: true }
+  };
+  const problems = validateAdapterProfile(base, "codex-worker");
+  assert.ok(problems.includes("unsupported adapter profile field: settings"));
+  assert.ok(problems.some((problem) => problem.includes("refused orchestration mode")));
+  assert.deepEqual(
+    findRefusedAdapterModes({ invoke: ["claude", "--dynamic-workflows"] }),
+    ['profile.invoke[1]="--dynamic-workflows"']
+  );
+});
+
 test("adapter usage parsers normalize Codex text, Codex JSONL, and Claude JSON inside the adapter boundary", () => {
   assert.deepEqual(
     parseAdapterProviderUsage("codex-text", "", "\u001b[2mtokens used\u001b[0m\n14,351\n"),
@@ -279,6 +299,57 @@ test("findDangerousAdapterArgs detects provider bypass flags", () => {
     "--dangerously-bypass-approvals-and-sandbox"
   ]);
   assert.deepEqual(findDangerousAdapterArgs(["claude", "--permission-mode", "bypassPermissions"]), ["bypassPermissions"]);
+});
+
+test("ultra modes are refused before spawn for worker and orchestrator roles", async () => {
+  await withTempRepo(async ({ repo }) => {
+    for (const tool of ["fake-worker", "manager"]) {
+      const marker = path.join(repo, `${tool}.spawned`);
+      const result = await runAdapterProcess(
+        repo,
+        {
+          tool,
+          invoke: [process.execPath, "--eval", `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'spawned')`, "--ultracode"],
+          prompt_arg: "stdin",
+          verified_on: "2026-08-01",
+          context_window: 1024
+        },
+        repo,
+        "fixture"
+      );
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.match(result.reason, /refused before spawn.*one-worker\/one-scope/u);
+      await assert.rejects(stat(marker), { code: "ENOENT" });
+    }
+  });
+});
+
+test("ambiguous inherited provider ultra settings are refused before spawn", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const prior = process.env.CODEX_EFFORT;
+    process.env.CODEX_EFFORT = "ultra";
+    try {
+      const marker = path.join(repo, "env.spawned");
+      const result = await runAdapterProcess(
+        repo,
+        {
+          tool: "fake",
+          invoke: [process.execPath, "--eval", `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'spawned')`],
+          prompt_arg: "stdin",
+          verified_on: "2026-08-01",
+          context_window: 1024
+        },
+        repo,
+        "fixture"
+      );
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.match(result.reason, /environment CODEX_EFFORT/u);
+      await assert.rejects(stat(marker), { code: "ENOENT" });
+    } finally {
+      if (prior === undefined) delete process.env.CODEX_EFFORT;
+      else process.env.CODEX_EFFORT = prior;
+    }
+  });
 });
 
 test("invokeAgent runs stdin adapter inside the task worktree and writes agent.log", async () => {

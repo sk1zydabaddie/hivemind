@@ -164,6 +164,11 @@ describe("React workspace boundary", () => {
     );
     expect(work).toContain("How it is checked");
     expect(work).toMatch(/task\.deterministic_validity_check/u);
+    expect(work).toMatch(/const displayedPlan = plan \?\? currentPlan/u);
+    expect(work).toMatch(/ratificationPending=\{plan !== null\}/u);
+    expect(work).toMatch(/Read-only record of the exact approved plan/u);
+    expect(work).toMatch(/View plan/u);
+    expect(work).toMatch(/task\.integration === "merged" \|\| task\.state === "merged"/u);
   });
 
   test("prompt stays in the fixed Work layout and text does not truncate mid-word", async () => {

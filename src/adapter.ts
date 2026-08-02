@@ -89,6 +89,18 @@ export interface AdapterProcessOptions {
   onProcessStart?: (identity: DurableProcessIdentity) => Promise<{ ok: true } | { ok: false; reason: string }>;
 }
 
+const ADAPTER_PROFILE_FIELDS = new Set([
+  "tool",
+  "invoke",
+  "prompt_arg",
+  "verified_on",
+  "context_window",
+  "timeout_ms",
+  "routing_tier",
+  "cost_rank",
+  "usage_parser"
+]);
+
 export async function invokeAgent(
   repoRoot: string,
   taskId: string,
@@ -216,6 +228,17 @@ export function validateAdapterProfile(raw: unknown, expectedTool?: string): str
     return ["adapter profile must be a JSON object"];
   }
 
+  for (const field of Object.keys(raw)) {
+    if (!ADAPTER_PROFILE_FIELDS.has(field)) {
+      problems.push(`unsupported adapter profile field: ${field}`);
+    }
+  }
+
+  const refusedModes = findRefusedAdapterModes(raw);
+  if (refusedModes.length > 0) {
+    problems.push(`adapter profile enables a refused orchestration mode (${refusedModes.join(", ")})`);
+  }
+
   if (typeof raw.tool !== "string" || raw.tool.trim() === "") {
     problems.push("tool is required");
   } else if (expectedTool !== undefined && raw.tool !== expectedTool) {
@@ -286,6 +309,19 @@ export function findDangerousAdapterArgs(invoke: string[]): string[] {
   return [...dangerous];
 }
 
+export function findRefusedAdapterModes(
+  profile: unknown,
+  environment: NodeJS.ProcessEnv = {}
+): string[] {
+  const refused = new Set<string>();
+  collectRefusedModeValues(profile, "profile", refused);
+  for (const [key, value] of Object.entries(environment)) {
+    if (value === undefined || !environmentCanEnableOrchestrationMode(key, value)) continue;
+    refused.add(`environment ${key}`);
+  }
+  return [...refused].sort((left, right) => left.localeCompare(right));
+}
+
 export function buildAgentPrompt(contract: TaskContract): string {
   return buildAgentPromptFromContract(contract);
 }
@@ -297,6 +333,13 @@ export async function runAdapterProcess(
   prompt: string,
   options: AdapterProcessOptions = {}
 ): Promise<{ ok: true; value: AdapterProcessResult } | { ok: false; reason: string }> {
+  const refusedModes = findRefusedAdapterModes(profile, process.env);
+  if (refusedModes.length > 0) {
+    return {
+      ok: false,
+      reason: `adapter invocation refused before spawn: ultra or dynamic-workflow orchestration would violate one-worker/one-scope ownership (${refusedModes.join(", ")})`
+    };
+  }
   const budget = await checkTokenBudgetPreflight(repoRoot, profile.tool, options.usageSessionId, estimateTokens(prompt));
   if (!budget.ok) {
     return budget;
@@ -417,6 +460,37 @@ export async function runAdapterProcess(
       child.stdin.end(prompt);
     }
   });
+}
+
+function collectRefusedModeValues(value: unknown, location: string, refused: Set<string>): void {
+  if (typeof value === "string") {
+    if (containsRefusedModeMarker(value)) refused.add(`${location}=${JSON.stringify(value)}`);
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => collectRefusedModeValues(entry, `${location}[${index}]`, refused));
+    return;
+  }
+  if (!isRecord(value)) return;
+  for (const [key, entry] of Object.entries(value)) {
+    if (containsRefusedModeMarker(key) && entry !== false && entry !== null && entry !== undefined) {
+      refused.add(`${location}.${key}`);
+    }
+    collectRefusedModeValues(entry, `${location}.${key}`, refused);
+  }
+}
+
+function environmentCanEnableOrchestrationMode(key: string, value: string): boolean {
+  const normalizedKey = key.toLowerCase();
+  const normalizedValue = value.trim().toLowerCase();
+  if (["", "0", "false", "off", "disabled", "none"].includes(normalizedValue)) return false;
+  if (/ultra|dynamic[_-]?workflows?/u.test(normalizedKey)) return true;
+  if (!/(claude|anthropic|codex|openai|gpt|effort|workflow|agent)/u.test(normalizedKey)) return false;
+  return containsRefusedModeMarker(normalizedValue);
+}
+
+function containsRefusedModeMarker(value: string): boolean {
+  return /(?:^|[^a-z0-9])ultra(?:code)?(?:$|[^a-z0-9])|dynamic[_ -]?workflows?/iu.test(value);
 }
 
 export async function recordAdapterUsage(

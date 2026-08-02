@@ -250,6 +250,7 @@ export function applyEventMessage(
       break;
     case "task.completed":
       if (task) {
+        task.state = "submitted";
         task.worker_finished_at = event.ts;
       }
       break;

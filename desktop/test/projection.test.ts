@@ -75,6 +75,14 @@ describe("read-only event projection", () => {
     expect(state.tasks["T-FAIL"].issue).toBe("worker process exited 1");
   });
 
+  test("worker completion no longer projects as an active worker", () => {
+    const state = createBoardProjection();
+    applyEventMessage(state, { kind: "event", source: "history", event: makeEvent("task.started", "T-DONE", {}) });
+    applyEventMessage(state, { kind: "event", source: "live", event: makeEvent("task.completed", "T-DONE", {}) });
+    expect(state.tasks["T-DONE"].state).toBe("submitted");
+    expect(state.tasks["T-DONE"].worker_finished_at).not.toBeNull();
+  });
+
   test("projects Merged only from adoption.completed, never from verification", () => {
     const state = createBoardProjection();
     applyEventMessage(state, {
