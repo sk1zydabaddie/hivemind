@@ -1,7 +1,7 @@
 [package]
 name = "hivemind_desktop"
 version = "0.0.0"
-description = "Read-only desktop monitor for Hivemind AI daemon state."
+description = "Desktop workspace for Hivemind AI."
 authors = ["Hivemind AI"]
 edition = "2021"
 

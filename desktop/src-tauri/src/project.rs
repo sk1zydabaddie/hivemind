@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
+use tauri::Manager;
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 const HEALTH_TIMEOUT: Duration = Duration::from_millis(750);
@@ -66,14 +67,21 @@ enum ProcessProbeResult {
 }
 
 #[tauri::command]
-pub async fn select_project(project_path: String) -> Result<ProjectConnection, String> {
+pub async fn select_project(
+    app: tauri::AppHandle,
+    project_path: String,
+) -> Result<ProjectConnection, String> {
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|error| format!("could not resolve desktop resources: {error}"))?;
     tauri::async_runtime::spawn_blocking(move || {
         connect_project_with(
             &project_path,
-            &mut start_daemon,
+            &mut |project_root| start_daemon(project_root, Some(&resource_dir)),
             &query_daemon_health,
-            &query_cli_build_identity,
-            &query_cli_shell_build_identity,
+            &|project_root| query_cli_build_identity(project_root, Some(&resource_dir)),
+            &|project_root| query_expected_shell_build_identity(project_root, Some(&resource_dir)),
             EMBEDDED_SHELL_BUILD_ID,
             &process_liveness,
             STARTUP_TIMEOUT,
@@ -85,17 +93,23 @@ pub async fn select_project(project_path: String) -> Result<ProjectConnection, S
 
 #[tauri::command]
 pub async fn workspace_action(
+    app: tauri::AppHandle,
     project_path: String,
     action: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|error| format!("could not resolve desktop resources: {error}"))?;
     tauri::async_runtime::spawn_blocking(move || {
         let project_root = canonical_git_root(&project_path)?;
         let state = read_daemon_state(&project_root)?
             .ok_or_else(|| "selected project's daemon is not running".to_string())?;
         validate_state_project(&project_root, &state)?;
-        let expected_shell_build_id = query_cli_shell_build_identity(&project_root)?;
+        let expected_shell_build_id =
+            query_expected_shell_build_identity(&project_root, Some(&resource_dir))?;
         validate_shell_build(EMBEDDED_SHELL_BUILD_ID, &expected_shell_build_id)?;
-        let expected_build_id = query_cli_build_identity(&project_root)?;
+        let expected_build_id = query_cli_build_identity(&project_root, Some(&resource_dir))?;
         let health = query_daemon_health(&state.url)?;
         validate_health_project(&project_root, &health.repo_root)?;
         validate_daemon_build(&state, &health, &expected_build_id)?;
@@ -292,8 +306,8 @@ fn validate_shell_build(embedded_build_id: &str, expected_build_id: &str) -> Res
     Ok(())
 }
 
-fn start_daemon(project_root: &Path) -> Result<Option<Child>, String> {
-    let mut command = daemon_command()?;
+fn start_daemon(project_root: &Path, resource_dir: Option<&Path>) -> Result<Option<Child>, String> {
+    let mut command = daemon_command(resource_dir)?;
     command
         .args(["daemon", "--port", "0"])
         .current_dir(project_root)
@@ -307,7 +321,7 @@ fn start_daemon(project_root: &Path) -> Result<Option<Child>, String> {
         .map_err(|error| format!("could not start Hivemind daemon: {error}"))
 }
 
-fn daemon_command() -> Result<Command, String> {
+fn daemon_command(resource_dir: Option<&Path>) -> Result<Command, String> {
     if let Ok(configured) = std::env::var("HIVEMIND_CLI_PATH") {
         let configured = PathBuf::from(configured);
         if !configured.is_file() {
@@ -316,28 +330,96 @@ fn daemon_command() -> Result<Command, String> {
         return Ok(command_for_cli_path(configured));
     }
 
-    let development_cli = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("dist")
-        .join("src")
-        .join("cli.js");
-    if development_cli.is_file() {
-        return Ok(command_for_cli_path(development_cli));
+    if let Some(resource_dir) = resource_dir {
+        let bundled_cli = resource_dir
+            .join("core")
+            .join("dist")
+            .join("src")
+            .join("cli.js");
+        if bundled_cli.is_file() {
+            return Ok(command_for_cli_path(bundled_cli));
+        }
+        if !cfg!(debug_assertions) {
+            return Err(
+                "installed Hivemind Core resource is missing; reinstall the desktop app"
+                    .to_string(),
+            );
+        }
+    }
+
+    if cfg!(debug_assertions) {
+        let development_cli = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("dist")
+            .join("src")
+            .join("cli.js");
+        if development_cli.is_file() {
+            return Ok(command_for_cli_path(development_cli));
+        }
     }
     Ok(hidden_command("hivemind"))
 }
 
-fn query_cli_build_identity(project_root: &Path) -> Result<String, String> {
-    query_cli_identity(project_root, "build-id", "Core build")
+fn query_cli_build_identity(
+    project_root: &Path,
+    resource_dir: Option<&Path>,
+) -> Result<String, String> {
+    query_cli_identity(project_root, resource_dir, "build-id", "Core build")
 }
 
-fn query_cli_shell_build_identity(project_root: &Path) -> Result<String, String> {
-    query_cli_identity(project_root, "shell-build-id", "desktop shell build")
+fn query_cli_shell_build_identity(
+    project_root: &Path,
+    resource_dir: Option<&Path>,
+) -> Result<String, String> {
+    query_cli_identity(
+        project_root,
+        resource_dir,
+        "shell-build-id",
+        "desktop shell build",
+    )
 }
 
-fn query_cli_identity(project_root: &Path, command: &str, label: &str) -> Result<String, String> {
-    let output = daemon_command()?
+fn query_expected_shell_build_identity(
+    project_root: &Path,
+    resource_dir: Option<&Path>,
+) -> Result<String, String> {
+    if std::env::var_os("HIVEMIND_CLI_PATH").is_none() {
+        if let Some(resource_dir) = resource_dir {
+            let manifest = resource_dir.join("core").join("shell-build-id.txt");
+            if manifest.is_file() {
+                let value = fs::read_to_string(&manifest)
+                    .map_err(|error| {
+                        format!("could not read packaged shell build identity: {error}")
+                    })?
+                    .trim()
+                    .to_string();
+                if !is_build_identity(&value) {
+                    return Err(
+                        "packaged shell build identity is malformed; reinstall the desktop app"
+                            .to_string(),
+                    );
+                }
+                return Ok(value);
+            }
+            if !cfg!(debug_assertions) {
+                return Err(
+                    "packaged shell build identity is missing; reinstall the desktop app"
+                        .to_string(),
+                );
+            }
+        }
+    }
+    query_cli_shell_build_identity(project_root, resource_dir)
+}
+
+fn query_cli_identity(
+    project_root: &Path,
+    resource_dir: Option<&Path>,
+    command: &str,
+    label: &str,
+) -> Result<String, String> {
+    let output = daemon_command(resource_dir)?
         .arg(command)
         .current_dir(project_root)
         .output()
@@ -372,11 +454,28 @@ fn command_for_cli_path(cli_path: PathBuf) -> Command {
         let mut command = hidden_command(
             std::env::var("HIVEMIND_NODE_PATH").unwrap_or_else(|_| "node".to_string()),
         );
-        command.arg(cli_path);
+        command.arg(node_compatible_path(&cli_path));
         command
     } else {
         hidden_command(cli_path)
     }
+}
+
+#[cfg(windows)]
+fn node_compatible_path(path: &Path) -> PathBuf {
+    let rendered = path.to_string_lossy();
+    if let Some(unc) = rendered.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{unc}"));
+    }
+    if let Some(local) = rendered.strip_prefix(r"\\?\") {
+        return PathBuf::from(local);
+    }
+    path.to_path_buf()
+}
+
+#[cfg(not(windows))]
+fn node_compatible_path(path: &Path) -> PathBuf {
+    path.to_path_buf()
 }
 
 fn query_daemon_health(url: &str) -> Result<DaemonHealth, String> {
@@ -1011,6 +1110,21 @@ mod tests {
             repo_root: project.to_string_lossy().into_owned(),
             build_id: Some(test_build_id()),
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn node_cli_paths_drop_windows_verbatim_prefixes() {
+        assert_eq!(
+            node_compatible_path(Path::new(
+                r"\\?\C:\Program Files\Hivemind AI\core\dist\src\cli.js"
+            )),
+            PathBuf::from(r"C:\Program Files\Hivemind AI\core\dist\src\cli.js")
+        );
+        assert_eq!(
+            node_compatible_path(Path::new(r"\\?\UNC\server\share\core\dist\src\cli.js")),
+            PathBuf::from(r"\\server\share\core\dist\src\cli.js")
+        );
     }
 
     fn cleanup_fixture(project: &Path) {

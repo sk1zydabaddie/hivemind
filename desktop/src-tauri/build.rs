@@ -23,6 +23,7 @@ fn main() {
         "build.rs",
         "../../dist/src/build-identity.js",
         "../../dist/src/cli.js",
+        "gen/shell-build-id.txt",
     ] {
         println!("cargo:rerun-if-changed={input}");
     }

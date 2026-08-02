@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "bundle:prepare": "node scripts/prepare-bundle.mjs",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "test": "vitest run"

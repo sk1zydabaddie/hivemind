@@ -6,6 +6,7 @@ Root-level source-of-truth docs stay at the repository root:
 - `Hivemind_Build_Tasks.md`
 - `Hivemind_Build_Progress.md`
 - `CONTRIBUTING.md`
+- `docs/USER_GUIDE.md` - desktop installation and provider-mode safety.
 
 Supporting artifacts live here:
 
