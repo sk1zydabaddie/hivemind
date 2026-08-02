@@ -469,6 +469,7 @@ export async function reconcileMeteredCallReservations(
   let retained = 0;
   let settled = 0;
   let fullyCharged = 0;
+  const failures: string[] = [];
   const probe = options.probeLiveness ?? getProcessLiveness;
   for (const reservation of active) {
     const identity = reservation.process_identity;
@@ -495,9 +496,15 @@ export async function reconcileMeteredCallReservations(
       usage,
       recovered === null ? "dead_process_full_charge" : "dead_process_usage_recovered"
     );
-    if (!result.ok && result.budget_exceeded !== true) return result;
+    if (!result.ok && result.budget_exceeded !== true) {
+      failures.push(`${reservation.reservation_id}: ${result.reason}`);
+      continue;
+    }
     settled += 1;
     if (recovered === null) fullyCharged += 1;
+  }
+  if (failures.length > 0) {
+    return { ok: false, reason: `metered reservation reconciliation failed: ${failures.join("; ")}` };
   }
   return { ok: true, value: { retained, settled, fully_charged: fullyCharged } };
 }

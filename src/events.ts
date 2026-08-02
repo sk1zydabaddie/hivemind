@@ -2,6 +2,8 @@ import { appendFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { validateRequestedTaskId } from "./task-id.js";
 
+const eventAppendQueues = new Map<string, Promise<void>>();
+
 export const eventTypes = [
   "task.created",
   "task.authoring_base_prepared",
@@ -123,8 +125,7 @@ export async function appendEvent(repoRoot: string, input: HivemindEventInput): 
   }
 
   const eventPath = eventLogPath(repoRoot);
-  await mkdir(path.dirname(eventPath), { recursive: true });
-  await appendFile(eventPath, line, "utf8");
+  await appendCompleteEventLine(eventPath, line);
   return { ok: true, value: event };
 }
 
@@ -137,6 +138,10 @@ export async function readEvents(repoRoot: string): Promise<{ ok: true; value: H
       return { ok: true, value: [] };
     }
     throw error;
+  }
+
+  if (content.length > 0 && !content.endsWith("\n")) {
+    return { ok: false, reason: "events.jsonl ends with an incomplete event line" };
   }
 
   const events: HivemindEvent[] = [];
@@ -210,6 +215,34 @@ function validateEventShape(value: unknown): { ok: true } | { ok: false; reason:
 
 function eventLogPath(repoRoot: string): string {
   return path.join(repoRoot, ".hivemind", "log", "events.jsonl");
+}
+
+async function appendCompleteEventLine(eventPath: string, line: string): Promise<void> {
+  const key = eventQueueKey(eventPath);
+  const previous = eventAppendQueues.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const slot = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const next = previous.catch(() => undefined).then(() => slot);
+  eventAppendQueues.set(key, next);
+
+  await previous.catch(() => undefined);
+  try {
+    await mkdir(path.dirname(eventPath), { recursive: true });
+    // C3's append-only exception: one complete JSON line in one O_APPEND write.
+    await appendFile(eventPath, line, "utf8");
+  } finally {
+    release();
+    if (eventAppendQueues.get(key) === next) {
+      eventAppendQueues.delete(key);
+    }
+  }
+}
+
+function eventQueueKey(eventPath: string): string {
+  const resolved = path.normalize(path.resolve(eventPath));
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
 function isEventType(value: unknown): value is HivemindEventType {

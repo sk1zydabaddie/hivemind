@@ -16,10 +16,18 @@ import { runTask } from "../src/run.js";
 import { analyzeTask } from "../src/analyze.js";
 import { appendEvent, readEvents } from "../src/events.js";
 import { recordHumanGuidance } from "../src/human-guidance.js";
-import { recordQuotaUsage } from "../src/resource-ledger.js";
+import { createCachedProcessLivenessProbe, getProcessLiveness } from "../src/process-liveness.js";
+import {
+  bindMeteredCallProcess,
+  currentMeteringRuntimeInstanceId,
+  readQuotaLedgerState,
+  reconcileMeteredCallReservations,
+  recordQuotaUsage,
+  reserveMeteredCall
+} from "../src/resource-ledger.js";
 import { submitTask } from "../src/submit.js";
 import { authorizeManualTask, reviewManualTaskForAuthorization } from "../src/plan.js";
-import { reconcileTaskRunOnStartup, requestTaskStop } from "../src/task-control.js";
+import { reconcileTaskRunOnStartup, reconcileTaskRunsOnStartup, requestTaskStop } from "../src/task-control.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
@@ -1134,6 +1142,100 @@ test("ordinary restart reconciliation cleans a proven-dead worker before releasi
       assert.equal(failed?.data.worker_death_proven, true);
       assert.equal(failed?.data.worktree_removed, true);
       assert.deepEqual(failed?.data.lease_released, ["README.md"]);
+    }
+  });
+});
+
+test("restart reconciles dead, live, and ambiguous workers independently without reclaiming siblings", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const workerCases = [
+      { taskId: "T-LIFE-ALIVE", file: "alive.txt", pid: 5101, processId: "alive-worker", liveness: "alive" as const },
+      { taskId: "T-LIFE-DEAD", file: "dead.txt", pid: 5102, processId: "dead-worker", liveness: "dead" as const },
+      { taskId: "T-LIFE-UNKNOWN", file: "unknown.txt", pid: 5103, processId: "unknown-worker", liveness: "unknown" as const }
+    ];
+    for (const worker of workerCases) await writeFile(path.join(repo, worker.file), `${worker.taskId}\n`);
+    await git(repo, ["add", ...workerCases.map((worker) => worker.file)]);
+    await git(repo, ["commit", "-m", "add lifecycle fixtures"]);
+    const baseCommit = await gitStdout(repo, ["rev-parse", "HEAD"]);
+    const reservations = new Map<string, string>();
+
+    for (const worker of workerCases) {
+      await writeContract(repo, worker.taskId, baseCommit, [worker.file]);
+      await grantLease(repo, worker.taskId, [worker.file]);
+      const worktree = await createTaskWorktree(repo, worker.taskId);
+      assert.equal(worktree.ok, true, worktree.ok ? undefined : worktree.reason);
+      await appendEvent(repo, { type: "task.started", task_id: worker.taskId, data: { run_id: `R-${worker.taskId}` } });
+      await appendEvent(repo, {
+        type: "task.worker_process_started",
+        task_id: worker.taskId,
+        data: {
+          run_id: `R-${worker.taskId}`,
+          pid: worker.pid,
+          process_instance_id: worker.processId
+        }
+      });
+      const reserved = await reserveMeteredCall(repo, {
+        provider: "codex",
+        session_id: "multi-worker-restart",
+        run_id: `R-${worker.taskId}`,
+        task_id: worker.taskId,
+        daemon_instance_id: currentMeteringRuntimeInstanceId(),
+        estimated_input_tokens: 1
+      });
+      assert.equal(reserved.ok, true, reserved.ok ? undefined : reserved.reason);
+      if (!reserved.ok || reserved.value.reservation === null) continue;
+      reservations.set(worker.taskId, reserved.value.reservation.reservation_id);
+      const bound = await bindMeteredCallProcess(repo, reserved.value.reservation.reservation_id, {
+        pid: worker.pid,
+        process_instance_id: worker.processId
+      });
+      assert.equal(bound.ok, true, bound.ok ? undefined : bound.reason);
+    }
+
+    const probeCalls = new Map<number, number>();
+    const livenessByPid = new Map(workerCases.map((worker) => [worker.pid, worker.liveness]));
+    const startupLiveness = createCachedProcessLivenessProbe((pid) => {
+      probeCalls.set(pid, (probeCalls.get(pid) ?? 0) + 1);
+      const liveness = livenessByPid.get(pid);
+      if (liveness === "unknown") {
+        return getProcessLiveness(pid, () => {
+          throw Object.assign(new Error("permission denied"), { code: "EPERM" });
+        });
+      }
+      return liveness ?? "unknown";
+    });
+
+    const reservationResult = await reconcileMeteredCallReservations(repo, { probeLiveness: startupLiveness });
+    assert.deepEqual(reservationResult, { ok: true, value: { retained: 2, settled: 1, fully_charged: 1 } });
+    const taskResult = await reconcileTaskRunsOnStartup(repo, { probeLiveness: startupLiveness });
+    assert.equal(taskResult.ok, true, taskResult.ok ? undefined : taskResult.reason);
+    assert.deepEqual([...probeCalls.values()], [1, 1, 1]);
+
+    const leases = await readActiveLeases(repo);
+    assert.equal(leases.ok, true);
+    if (leases.ok) {
+      assert.equal(leases.store["alive.txt"], "T-LIFE-ALIVE");
+      assert.equal(leases.store["unknown.txt"], "T-LIFE-UNKNOWN");
+      assert.equal(leases.store["dead.txt"], undefined);
+    }
+    await assertMissing(path.join(repo, ".hivemind", "worktrees", "T-LIFE-DEAD"));
+    assert.equal((await stat(path.join(repo, ".hivemind", "worktrees", "T-LIFE-ALIVE"))).isDirectory(), true);
+    assert.equal((await stat(path.join(repo, ".hivemind", "worktrees", "T-LIFE-UNKNOWN"))).isDirectory(), true);
+
+    const ledger = await readQuotaLedgerState(repo);
+    assert.equal(ledger.ok, true);
+    if (ledger.ok) {
+      assert.equal(ledger.value.reservations[reservations.get("T-LIFE-DEAD") ?? ""].status, "settled");
+      assert.equal(ledger.value.reservations[reservations.get("T-LIFE-DEAD") ?? ""].settlement?.charged_tokens, 150_000);
+      assert.equal(ledger.value.reservations[reservations.get("T-LIFE-ALIVE") ?? ""].status, "active");
+      assert.equal(ledger.value.reservations[reservations.get("T-LIFE-UNKNOWN") ?? ""].status, "active");
+    }
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (events.ok) {
+      assert.equal(events.value.some((event) => event.type === "task.failed" && event.task_id === "T-LIFE-DEAD"), true);
+      assert.equal(events.value.some((event) => event.type === "task.failed" && event.task_id === "T-LIFE-ALIVE"), false);
+      assert.equal(events.value.some((event) => event.type === "task.failed" && event.task_id === "T-LIFE-UNKNOWN"), false);
     }
   });
 });

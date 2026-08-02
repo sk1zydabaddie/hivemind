@@ -18,6 +18,11 @@ export interface TaskStopResult {
   status: "cancelled";
 }
 
+export interface StartupTaskReconciliationResult {
+  examined: string[];
+  failures: Array<{ task_id: string; reason: string }>;
+}
+
 type ControlResult<T> = { ok: true; value: T } | { ok: false; reason: string };
 
 export async function requestTaskStop(
@@ -160,6 +165,26 @@ export async function reconcileTaskRunOnStartup(
     : finalizeFailedTaskAfterRestart(repoRoot, taskId, identity.value);
 }
 
+export async function reconcileTaskRunsOnStartup(
+  repoRoot: string,
+  options: { probeLiveness?: (pid: number) => ProcessLiveness } = {}
+): Promise<ControlResult<StartupTaskReconciliationResult>> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return events;
+  const taskIds = tasksNeedingStartupReconciliation(events.value);
+  const failures: Array<{ task_id: string; reason: string }> = [];
+  for (const taskId of taskIds) {
+    const reconciled = await reconcileTaskRunOnStartup(repoRoot, taskId, options);
+    if (!reconciled.ok) failures.push({ task_id: taskId, reason: reconciled.reason });
+  }
+  return failures.length === 0
+    ? { ok: true, value: { examined: taskIds, failures } }
+    : {
+        ok: false,
+        reason: `startup task reconciliation failed: ${failures.map((failure) => `${failure.task_id}: ${failure.reason}`).join("; ")}`
+      };
+}
+
 async function finalizeFailedTaskAfterRestart(
   repoRoot: string,
   taskId: string,
@@ -299,6 +324,36 @@ function hasOpenCancelRequest(events: HivemindEvent[], taskId: string): boolean 
     if (event.type === "task.cancelled") requested = false;
   }
   return requested;
+}
+
+function tasksNeedingStartupReconciliation(events: HivemindEvent[]): string[] {
+  const tasks = new Set(startedWithoutTerminal(events));
+  const openCancellation = new Set<string>();
+  for (const event of events) {
+    if (event.task_id === null) continue;
+    if (event.type === "task.started") openCancellation.delete(event.task_id);
+    if (event.type === "task.cancel_requested") openCancellation.add(event.task_id);
+    if (event.type === "task.cancelled") openCancellation.delete(event.task_id);
+  }
+  for (const taskId of openCancellation) tasks.add(taskId);
+  return [...tasks].sort((left, right) => left.localeCompare(right));
+}
+
+function startedWithoutTerminal(events: HivemindEvent[]): string[] {
+  const running = new Set<string>();
+  for (const event of events) {
+    if (event.task_id === null) continue;
+    if (event.type === "task.started") {
+      running.add(event.task_id);
+      continue;
+    }
+    if (event.type === "task.completed" || event.type === "task.failed" || event.type === "task.cancelled") {
+      running.delete(event.task_id);
+      continue;
+    }
+    if (event.type === "task.paused" && event.data.reason === "quota_exhausted") running.delete(event.task_id);
+  }
+  return [...running].sort((left, right) => left.localeCompare(right));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

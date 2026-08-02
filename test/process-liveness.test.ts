@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getProcessLiveness } from "../src/process-liveness.js";
+import { createCachedProcessLivenessProbe, getProcessLiveness } from "../src/process-liveness.js";
 
 test("PL-1 process liveness cases stay fail-closed", () => {
   const error = (code: string): Error & { code: string } =>
@@ -29,4 +29,18 @@ test("PL-1 process liveness cases stay fail-closed", () => {
   assert.equal(getProcessLiveness(undefined), "unknown");
   assert.equal(getProcessLiveness(Number.NaN), "unknown");
   assert.equal(getProcessLiveness(0), "unknown");
+});
+
+test("a startup liveness snapshot probes each worker pid only once", () => {
+  const calls = new Map<number, number>();
+  const cached = createCachedProcessLivenessProbe((pid) => {
+    calls.set(pid, (calls.get(pid) ?? 0) + 1);
+    return pid === 201 ? "dead" : "unknown";
+  });
+
+  assert.equal(cached(201), "dead");
+  assert.equal(cached(202), "unknown");
+  assert.equal(cached(201), "dead");
+  assert.equal(cached(202), "unknown");
+  assert.deepEqual([...calls.entries()], [[201, 1], [202, 1]]);
 });

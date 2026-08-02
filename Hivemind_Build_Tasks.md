@@ -815,6 +815,19 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
 
 ---
 
+### M10.3 — Multi-worker lifecycle foundation
+- **Depends on:** M2.7, M6.7, M10.2.
+- **Read first:** Overview § *Concurrent task execution*; C3 append-only event discipline; PL-1 process-liveness contract; daemon startup reconciliation; M10.2 reservation reconciliation.
+- **Goal:** Make the durable event trail and daemon-restart lifecycle safe for multiple independent workers before any concurrent scheduler or launch exists.
+- **Behavior — exact (C4):**
+  - `appendEvent()` remains the single authoritative event write path. Daemon-owned appends are serialized per normalized absolute repo event path, and each committed record remains one complete newline-terminated JSON object written by one `O_APPEND` call. Records are not buffered into batches or reordered: each task's invocation subsequence is retained exactly, while global inter-task order may vary. The reader rejects a non-newline-terminated trailing record as an incomplete write rather than accepting a possibly torn event.
+  - Daemon startup snapshots process liveness once per PID through the shared PL-1 implementation and supplies the same cached tri-state decision to reservation and task reconciliation. `alive` or `unknown`, including EPERM/access denied, retains that worker's lease, worktree, and reservation. Only `dead` permits settlement/charge and task cleanup; worktree/patch cleanup still precedes release of that task's lease last.
+  - Startup enumerates every unfinished task in stable identity order and reconciles each independently. A sibling's dead/alive/unknown outcome never releases, removes, settles, or terminally marks another worker's resources. Per-worker failures are collected only after all siblings have been considered, while invalid shared state still stops startup fail-closed.
+  - This unit adds no scheduler, concurrent launch, lease exception, or new liveness implementation. Sequence execution and all gate behavior remain unchanged.
+- **Acceptance test (binary):** Concurrent stress appends produce the exact requested number of complete parseable JSON lines with zero loss or interleaving, per-task subsequences remain ordered, and a deliberately incomplete trailing line is detected. In a three-worker restart fixture with one dead, one alive, and one EPERM/unknown process, only the dead worker is charged/settled, cleaned, terminally reconciled, and lease-released; the other two retain their reservations, worktrees, and leases. Each PID is probed once across both phases, no sibling resources are reclaimed, and reservations are never blanket-released.
+
+---
+
 ## Beyond M8
 - **Native adapters** and **cloud/team mode** remain future productization. Their old Overview phase numbers are roadmap labels, not M8 Workspace contract numbers; decompose them into the same one-acceptance-test contracts when reached.
 - **Dogfooding** remains an available deliberate demonstration after M8, not the mechanism used to build M4–M8. When explicitly enabled, it exercises Hivemind's protected workflow against its own repo without replacing each feature's direct contract acceptance.

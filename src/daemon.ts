@@ -9,7 +9,7 @@ import { withInProcessDaemonTransport } from "./daemon-client.js";
 import { removeDaemonState, writeDaemonState } from "./daemon-state.js";
 import { formatErrorDetail } from "./error-detail.js";
 import { EventBus } from "./event-bus.js";
-import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
+import { appendEvent, readEvents } from "./events.js";
 import { enqueueIntegrationPatch, integrateShadow } from "./integrate.js";
 import { checkWriteIntent } from "./intent.js";
 import { requestLeaseForContract, releaseLease } from "./lease.js";
@@ -19,6 +19,7 @@ import { reconcileProjectTempDirectories } from "./project-temp.js";
 import { preflightQualityCancellationReconciliation, reconcileQualityCancellationsOnStartup } from "./quality-control.js";
 import { findGitRoot } from "./repo.js";
 import { evaluatePlanThrash } from "./plan.js";
+import { createCachedProcessLivenessProbe } from "./process-liveness.js";
 import { readQuotaLedger, reconcileMeteredCallReservations } from "./resource-ledger.js";
 import { markRunFailed, startRunTaskJob } from "./run.js";
 import { runScout } from "./scout.js";
@@ -26,7 +27,7 @@ import { getStatus } from "./status.js";
 import { submitTask } from "./submit.js";
 import { requestTaskRedirect } from "./supervision.js";
 import { validateRequestedTaskId } from "./task-id.js";
-import { reconcileTaskRunOnStartup } from "./task-control.js";
+import { reconcileTaskRunsOnStartup } from "./task-control.js";
 import { admitValueQuality } from "./value-quality.js";
 import { createTaskWorktree, removeTaskWorktree } from "./worktree.js";
 import { executeWorkspaceAction } from "./workspace-actions.js";
@@ -63,7 +64,8 @@ export async function daemonCommand(cwd: string, args: string[]): Promise<number
   if (!qualityPreflight.value.blocked) {
     await reconcileProjectTempDirectories(repoRoot);
   }
-  const reservationReconcile = await reconcileMeteredCallReservations(repoRoot);
+  const startupLiveness = createCachedProcessLivenessProbe();
+  const reservationReconcile = await reconcileMeteredCallReservations(repoRoot, { probeLiveness: startupLiveness });
   if (!reservationReconcile.ok) {
     console.error(`error: ${reservationReconcile.reason}`);
     return 1;
@@ -73,7 +75,7 @@ export async function daemonCommand(cwd: string, args: string[]): Promise<number
     console.error(`error: ${adoptionReconcile.reason}`);
     return 1;
   }
-  const reconcileResult = await reconcileIncompleteRuns(repoRoot);
+  const reconcileResult = await reconcileTaskRunsOnStartup(repoRoot, { probeLiveness: startupLiveness });
   if (!reconcileResult.ok) {
     console.error(`error: ${reconcileResult.reason}`);
     return 1;
@@ -363,58 +365,10 @@ function routeHandler(repoRoot: string, method: string | undefined, url: string 
   return null;
 }
 
-async function reconcileIncompleteRuns(repoRoot: string): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const events = await readEvents(repoRoot);
-  if (!events.ok) {
-    return events;
-  }
-
-  for (const taskId of tasksNeedingStartupReconciliation(events.value)) {
-    const reconciled = await reconcileTaskRunOnStartup(repoRoot, taskId);
-    if (!reconciled.ok) return reconciled;
-  }
-
-  return { ok: true };
-}
-
-function tasksNeedingStartupReconciliation(events: HivemindEvent[]): string[] {
-  const tasks = new Set(startedWithoutTerminal(events));
-  const openCancellation = new Set<string>();
-  for (const event of events) {
-    if (event.task_id === null) continue;
-    if (event.type === "task.started") openCancellation.delete(event.task_id);
-    if (event.type === "task.cancel_requested") openCancellation.add(event.task_id);
-    if (event.type === "task.cancelled") openCancellation.delete(event.task_id);
-  }
-  for (const taskId of openCancellation) tasks.add(taskId);
-  return [...tasks].sort((left, right) => left.localeCompare(right));
-}
-
 function isQueueInterrupt(request: IncomingMessage, payload: DaemonPayload): boolean {
   return request.method === "POST" &&
     request.url === "/workspace/action" &&
     (payload.type === "quality.cancel" || payload.type === "task.stop");
-}
-
-function startedWithoutTerminal(events: HivemindEvent[]): string[] {
-  const running = new Set<string>();
-  for (const event of events) {
-    if (event.task_id === null) {
-      continue;
-    }
-    if (event.type === "task.started") {
-      running.add(event.task_id);
-      continue;
-    }
-    if (event.type === "task.completed" || event.type === "task.failed" || event.type === "task.cancelled") {
-      running.delete(event.task_id);
-      continue;
-    }
-    if (event.type === "task.paused" && event.data.reason === "quota_exhausted") {
-      running.delete(event.task_id);
-    }
-  }
-  return [...running].sort((left, right) => left.localeCompare(right));
 }
 
 function parseDaemonOptions(args: string[]): { ok: true; value: DaemonOptions } | { ok: false; reason: string } {

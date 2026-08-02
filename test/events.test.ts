@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -51,6 +51,84 @@ test("appendEvent creates the log file when missing", async () => {
 
     assert.equal(result.ok, true);
     assert.match(await readFile(path.join(repo, ".hivemind", "log", "events.jsonl"), "utf8"), /integration\.passed/);
+  });
+});
+
+test("concurrent event writers produce complete parseable lines with no loss", async () => {
+  await withTempRepo(async (repo) => {
+    const writerCount = 128;
+    const payload = "x".repeat(8_192);
+    const results = await Promise.all(
+      Array.from({ length: writerCount }, (_, index) =>
+        appendEvent(repo, {
+          type: "task.started",
+          task_id: `T-EVENT-${String(index).padStart(3, "0")}`,
+          data: { index, payload }
+        })
+      )
+    );
+
+    assert.equal(results.every((result) => result.ok), true);
+    const raw = await readFile(path.join(repo, ".hivemind", "log", "events.jsonl"), "utf8");
+    assert.equal(raw.endsWith("\n"), true);
+    const lines = raw.split("\n").filter((line) => line !== "");
+    assert.equal(lines.length, writerCount);
+    const parsed = lines.map((line) => JSON.parse(line) as { data: { index: number; payload: string } });
+    assert.deepEqual(
+      parsed.map((event) => event.data.index).sort((left, right) => left - right),
+      Array.from({ length: writerCount }, (_, index) => index)
+    );
+    assert.equal(parsed.every((event) => event.data.payload === payload), true);
+  });
+});
+
+test("concurrent task subsequences retain their invocation order", async () => {
+  await withTempRepo(async (repo) => {
+    const taskCount = 8;
+    const eventsPerTask = 20;
+    await Promise.all(
+      Array.from({ length: taskCount }, async (_, taskIndex) => {
+        const taskId = `T-ORDER-${taskIndex}`;
+        for (let sequence = 0; sequence < eventsPerTask; sequence += 1) {
+          const appended = await appendEvent(repo, {
+            type: "task.checkpointed",
+            task_id: taskId,
+            data: { sequence }
+          });
+          assert.equal(appended.ok, true);
+        }
+      })
+    );
+
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) return;
+    for (let taskIndex = 0; taskIndex < taskCount; taskIndex += 1) {
+      const taskId = `T-ORDER-${taskIndex}`;
+      assert.deepEqual(
+        events.value.filter((event) => event.task_id === taskId).map((event) => event.data.sequence),
+        Array.from({ length: eventsPerTask }, (_, sequence) => sequence)
+      );
+    }
+  });
+});
+
+test("readEvents detects a torn trailing event line even when its JSON is otherwise complete", async () => {
+  await withTempRepo(async (repo) => {
+    const appended = await appendEvent(repo, {
+      type: "task.created",
+      task_id: "T-TORN",
+      data: { complete: true }
+    });
+    assert.equal(appended.ok, true);
+    await appendFile(
+      path.join(repo, ".hivemind", "log", "events.jsonl"),
+      JSON.stringify({ ts: new Date().toISOString(), type: "task.started", task_id: "T-TORN", data: {} }),
+      "utf8"
+    );
+
+    const events = await readEvents(repo);
+    assert.deepEqual(events, { ok: false, reason: "events.jsonl ends with an incomplete event line" });
   });
 });
 

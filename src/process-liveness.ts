@@ -1,5 +1,18 @@
 export type ProcessLiveness = "alive" | "dead" | "unknown";
 
+export function createCachedProcessLivenessProbe(
+  probeLiveness: (pid: number) => ProcessLiveness = getProcessLiveness
+): (pid: number) => ProcessLiveness {
+  const observations = new Map<number, ProcessLiveness>();
+  return (pid) => {
+    const existing = observations.get(pid);
+    if (existing !== undefined) return existing;
+    const observed = probeLiveness(pid);
+    observations.set(pid, observed);
+    return observed;
+  };
+}
+
 export type ProcessSignalProbe = (pid: number) => void;
 
 // Implements PL-1 from Hivemind_AI_Overview.md. The Tauri shell carries a
