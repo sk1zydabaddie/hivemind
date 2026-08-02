@@ -1356,6 +1356,14 @@ The successful task pipeline is a durable-state machine, not a recurring judgmen
 
 This changes proposal cost, not authority. Worker routing remains the existing deterministic tier route, configurable interruptions still use exact pending identities and state hashes, every floor still fires, and adoption remains human-only. The driver stops at the first refusal, failure, timeout, quota pause, rejection, escalation, oracle block, stale input, or unprovable state. Those are genuine judgment boundaries, so the existing manager LLM handles redirect/cancel/re-plan/escalation rather than Core guessing. Human guidance also forces that next judgment boundary before further mechanical progress; it never mutates an in-flight worker or authorizes an action. For equivalent successful actions, the authoritative event trail is unchanged from LLM-proposed execution.
 
+### Concurrent task execution
+
+The deterministic happy-path driver turns concurrent execution primarily into a scheduling problem: Core no longer needs an LLM turn between each mechanical action. Concurrency remains bounded at two tasks by default and four at the hard maximum. A later scheduler may launch only a deterministic admitted wave and must preserve each task's authoritative event subsequence and gate outcomes exactly as serial execution would.
+
+Lease semantics do not change. Tasks in a parallel group must be explicitly `parallel_safe`, have every dependency already verified, and own pairwise-disjoint concrete grounded write scopes after canonical path resolution. Shared read-only dependencies are allowed. Each canonical task later acquires its ordinary real lease; there is no shared lease, speculative exception, or overlapping holder. Plan lint catches declared overlap early, and runtime admission canonicalizes again so an alias missed by lexical lint still refuses.
+
+M10.1 is admission only: it starts no worker and reserves no budget. Concurrent spawning remains forbidden until atomic token-budget reservation exists, because settled-usage ceilings alone let simultaneous calls pass against the same remaining balance. Concurrent failure handling must retain M6.7's degrade-don't-break behavior per task, PL-1 death proof before restart cleanup, cleanup-before-lease-release ordering, and deterministic trail equivalence defined as each task's ordered event subsequence plus identical gate outcomes rather than one global cross-task order.
+
 The full app should have these main pages or equivalent workspace surfaces.
 
 ### 1. Project Home

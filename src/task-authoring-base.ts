@@ -1,10 +1,10 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { TaskContract } from "./contract.js";
-import { readEvents } from "./events.js";
+import { readEvents, type HivemindEvent } from "./events.js";
 import { loadCurrentRatifiedPlan, type TentativePlan } from "./plan.js";
 import { requireActiveSpecRatified } from "./spec.js";
-import { loadVerificationSet, verificationInputsStillMatch } from "./verification-set.js";
+import { loadVerificationSet, verificationInputsStillMatch, type StoredVerificationSet } from "./verification-set.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -14,6 +14,11 @@ export interface TaskAuthoringBase {
   contract_base_commit: string;
   dependency_task_ids: string[];
   verification_id: string | null;
+}
+
+export interface CurrentVerifiedDependencySet {
+  task_ids: string[];
+  verification: StoredVerificationSet;
 }
 
 export async function resolveTaskAuthoringBase(
@@ -58,9 +63,9 @@ export async function resolveTaskAuthoringBase(
 
   const plan = await loadCurrentRatifiedPlan(repoRoot, spec.value.spec_id, `task ${contract.task_id} authoring base`);
   if (!plan.ok) return plan;
-  const dependencies = dependencyClosure(plan.value, contract.task_id);
+  const dependencies = await requireCurrentVerifiedDependencySet(repoRoot, plan.value, contract.task_id, events.value);
   if (!dependencies.ok) return dependencies;
-  if (dependencies.value.length === 0) {
+  if (dependencies.value === null) {
     return {
       ok: true,
       value: {
@@ -73,36 +78,10 @@ export async function resolveTaskAuthoringBase(
     };
   }
 
-  const expected = new Set(dependencies.value);
-  const verificationEvent = [...events.value].reverse().find((event) => {
-    if (event.type !== "integration.passed" || typeof event.data.verification_id !== "string") return false;
-    const applied = stringArray(event.data.applied);
-    return applied !== null && sameSet(applied, expected);
-  });
-  if (verificationEvent === undefined) {
-    return {
-      ok: false,
-      reason: `task ${contract.task_id} authoring base requires one current verification set for exactly dependencies: ${dependencies.value.join(", ")}`
-    };
-  }
-  const verificationId = String(verificationEvent.data.verification_id);
-  const stored = await loadVerificationSet(repoRoot, verificationId);
-  if (!stored.ok) return { ok: false, reason: `task ${contract.task_id} authoring base refused: ${stored.reason}` };
-  if (
-    verificationEvent.data.verification_manifest_path !== stored.value.manifest_path ||
-    verificationEvent.data.verification_manifest_sha256 !== stored.value.manifest_sha256
-  ) {
-    return { ok: false, reason: `task ${contract.task_id} authoring base refused: verification manifest identity does not match the durable event` };
-  }
-  const manifest = stored.value.manifest;
-  if (manifest.base_commit !== contractBase.stdout || !sameSet(manifest.task_ids, expected)) {
-    return { ok: false, reason: `task ${contract.task_id} authoring base refused: verification set does not match the contract base and exact dependency set` };
-  }
-  const current = await verificationInputsStillMatch(repoRoot, manifest);
-  if (!current.ok) return { ok: false, reason: `task ${contract.task_id} authoring base refused: ${current.reason}` };
-  const tree = await git(repoRoot, ["rev-parse", "--verify", `${manifest.result_tree}^{tree}`]);
-  if (!tree.ok || tree.stdout !== manifest.result_tree) {
-    return { ok: false, reason: `task ${contract.task_id} authoring base refused: verified result tree is unavailable` };
+  const manifest = dependencies.value.verification.manifest;
+  const verificationId = manifest.verification_id;
+  if (manifest.base_commit !== contractBase.stdout) {
+    return { ok: false, reason: `task ${contract.task_id} authoring base refused: verification set does not match the contract base` };
   }
 
   const commit = await git(
@@ -125,10 +104,52 @@ export async function resolveTaskAuthoringBase(
       commit: commit.stdout,
       tree: manifest.result_tree,
       contract_base_commit: contractBase.stdout,
-      dependency_task_ids: [...manifest.task_ids],
+      dependency_task_ids: [...dependencies.value.task_ids],
       verification_id: verificationId
     }
   };
+}
+
+export async function requireCurrentVerifiedDependencySet(
+  repoRoot: string,
+  plan: TentativePlan,
+  taskId: string,
+  existingEvents?: HivemindEvent[]
+): Promise<{ ok: true; value: CurrentVerifiedDependencySet | null } | { ok: false; reason: string }> {
+  const dependencies = dependencyClosure(plan, taskId);
+  if (!dependencies.ok) return dependencies;
+  if (dependencies.value.length === 0) return { ok: true, value: null };
+  const events = existingEvents === undefined ? await readEvents(repoRoot) : { ok: true as const, value: existingEvents };
+  if (!events.ok) return events;
+  const expected = new Set(dependencies.value);
+  const verificationEvent = [...events.value].reverse().find((event) => {
+    if (event.type !== "integration.passed" || typeof event.data.verification_id !== "string") return false;
+    const applied = stringArray(event.data.applied);
+    return applied !== null && sameSet(applied, expected);
+  });
+  if (verificationEvent === undefined) {
+    return { ok: false, reason: `task ${taskId} requires one current verification set for exactly dependencies: ${dependencies.value.join(", ")}` };
+  }
+  const verificationId = String(verificationEvent.data.verification_id);
+  const stored = await loadVerificationSet(repoRoot, verificationId);
+  if (!stored.ok) return { ok: false, reason: `task ${taskId} dependency verification refused: ${stored.reason}` };
+  if (
+    verificationEvent.data.verification_manifest_path !== stored.value.manifest_path ||
+    verificationEvent.data.verification_manifest_sha256 !== stored.value.manifest_sha256
+  ) {
+    return { ok: false, reason: `task ${taskId} dependency verification refused: manifest identity does not match the durable event` };
+  }
+  const manifest = stored.value.manifest;
+  if (manifest.base_commit !== plan.base_commit || !sameSet(manifest.task_ids, expected)) {
+    return { ok: false, reason: `task ${taskId} dependency verification refused: set does not match the plan base and exact dependency closure` };
+  }
+  const current = await verificationInputsStillMatch(repoRoot, manifest);
+  if (!current.ok) return { ok: false, reason: `task ${taskId} dependency verification refused: ${current.reason}` };
+  const tree = await git(repoRoot, ["rev-parse", "--verify", `${manifest.result_tree}^{tree}`]);
+  if (!tree.ok || tree.stdout !== manifest.result_tree) {
+    return { ok: false, reason: `task ${taskId} dependency verification refused: verified result tree is unavailable` };
+  }
+  return { ok: true, value: { task_ids: dependencies.value, verification: stored.value } };
 }
 
 function dependencyClosure(

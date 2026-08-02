@@ -1867,12 +1867,13 @@ function uniqueSorted(values: string[]): string[] {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right));
 }
 
-const planLintRuleCount = 7;
+const planLintRuleCount = 8;
 
 function runPlanLintRules(plan: TentativePlan, head: string, criticalGlobs: string[]): SpecResult<void> {
   const rules: Array<() => SpecResult<void>> = [
     () => lintGroundingRequired(plan),
     () => lintGroundingFreshness(plan, head),
+    () => lintParallelSafety(plan),
     () => lintParallelScopeOverlap(plan),
     () => lintDependencyCycle(plan),
     () => lintCriticalApproval(plan, criticalGlobs),
@@ -1975,6 +1976,23 @@ function lintGroundingFreshness(plan: TentativePlan, head: string): SpecResult<v
   for (const task of plan.tasks) {
     if (task.grounding_evidence?.base_commit !== plan.base_commit) {
       return { ok: false, reason: `GROUNDING_FRESHNESS: task ${task.task_id} grounding evidence is not derived from plan base ${plan.base_commit}` };
+    }
+  }
+  return { ok: true, value: undefined };
+}
+
+function lintParallelSafety(plan: TentativePlan): SpecResult<void> {
+  const tasksById = new Map(plan.tasks.map((task) => [task.task_id, task]));
+  for (const group of plan.execution_groups) {
+    if (group.mode !== "parallel") continue;
+    for (const taskId of group.task_ids) {
+      const task = tasksById.get(taskId);
+      if (task !== undefined && !task.parallel_safe) {
+        return {
+          ok: false,
+          reason: `PARALLEL_SAFETY_REQUIRED: group ${group.group_id} task ${taskId} is not marked parallel_safe`
+        };
+      }
     }
   }
   return { ok: true, value: undefined };

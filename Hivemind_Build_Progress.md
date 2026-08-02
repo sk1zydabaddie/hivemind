@@ -6,8 +6,8 @@ It is the project-local build ledger for Hivemind AI.
 ## Current State
 
 - Current milestone: M10 Concurrent Execution
-- Last completed subtask: M9.3 Deterministic happy-path driver
-- Next subtask: M10.1 Parallel-wave admission
+- Last completed subtask: M10.1 Parallel-wave admission
+- Next subtask: M10.2 atomic token-budget reservation; not started pending the next contract/approval
 - Current branch: `master`
 - M7 build-process decision: mandatory dogfooding remains deferred. M7 will be built by handing scoped contracts directly to the coding agent, as M5/M6 were. The current executor is serial and orchestrator actions consume paid calls, so building M7 through Hivemind would be slow and expensive and would conflate feature correctness with orchestration correctness. The orchestration thesis was already validated on trimr; a deliberate self-hosting demonstration remains available after M7 exists.
 - Latest completed implementation commit: this commit - `fix: harden isolated fixture setup`
@@ -16,6 +16,7 @@ It is the project-local build ledger for Hivemind AI.
 - Latest M7 implementation commit: this commit - `feat: add draft-refine quality strategy`
 - Latest M8 implementation commit: this commit - `feat: complete M8.6 memory and history workspace`
 - Latest M9 implementation commit: this commit - `feat: drive the manager happy path deterministically`
+- Latest M10 implementation commit: this commit - `feat: add parallel wave admission`
 - Restart reconciliation liveness closure: daemon startup now routes ordinary unfinished runs and open cancellations through one shared PL-1 decision. A live worker or any ambiguous/EPERM-style liveness result retains its lease, worktree, patch state, and future reservation; only a provably dead worker is reclaimed. Proven-dead cleanup removes or archives task-owned state before releasing the lease last, then records the appropriate terminal failure/cancellation. Missing or unprovable worker identity remains untouched rather than guessed dead. Adversarial tests exercise a separate live process, injected ambiguous liveness, and proven-dead ordinary/cancelled workers. Core build passed; focused restart tests passed 5/5; the full suite passed 519/519. No paid calls.
 - Latest M9 E2E remediation commit: `54e5ea8` - `fix: surface rejected workspace plans`
 - Desktop distribution closure: the M8.1 daemon lifecycle was correct, but the desktop was never packaged (`bundle.active` was false) and the release executable still used the console subsystem. Development launches necessarily keep Vite/Tauri attached to a terminal, while the raw release executable was not an installed application and created a `conhost.exe`. The desktop now builds an NSIS installer, uses the Windows GUI subsystem in release builds, packages the built Core runtime and dependencies, and resolves that immutable packaged Core rather than the source tree. The installed Start Menu application was verified with no console/dev-tool child, attached to a project daemon on a dynamic port, and left that daemon healthy after the shell closed. Two installed-layout defects were found only by this runtime proof and fixed: Tauri's Windows verbatim resource path is normalized before Node receives it, and the shell build identity is generated at bundle time instead of being recomputed from an absent source layout. The installed runtime currently requires system Node; shipping Node itself remains a future packaging choice.
@@ -264,6 +265,19 @@ It is the project-local build ledger for Hivemind AI.
 - **Adoption remains categorically human:** the autonomy enum cannot name adoption, manager has no adoption action, and guidance/prose cannot satisfy M8.7's pending adoption identity at any level.
 - **Live policy changes are forward-only:** each next interruption decision reloads repo-local config; completed decisions retain the level actually used, and History shows the run's ordered level sequence rather than rewriting it to the current setting.
 - **Spend and stopping remain visible:** Auto highlights approaching session exhaustion, quota/ceiling stops still enter `Needs you`, and typed Stop is reachable while the serialized manager queue owns a long worker call without creating a general queue bypass.
+
+## M10 - Concurrent Task Execution
+
+| Subtask | Status | Notes |
+| --- | --- | --- |
+| M10.1 - Parallel-wave admission | Complete | Added the deterministic permission gate only; no scheduler or concurrent launch exists yet. Plan lint now rejects `parallel_safe:false` inside a parallel group and still catches exact grounded write overlap. Runtime admission reloads the exact ratified plan, canonicalizes every concrete grounded `allowed_files` path, refuses aliases missed by lexical lint, ignores shared `read_only_files` for ownership, and preserves sequence groups at one next task. Dependency readiness reuses M9's hardened current-verification primitive: an exact immutable manifest, matching durable identity, exact transitive dependency set, current contract/patch/config hashes, and available result tree are required; a bare `integration.passed` event has zero authority. Admission appends no event, acquires no lease, reserves no budget, and starts no worker. Focused wave admission passed 5/5, full plan/dependency regression passed 37/37, Core build passed, and the full suite passed 525/525. No paid calls. |
+
+### M10 decisions
+
+- **Concurrency bound:** future concurrent scheduling defaults to two tasks and has a hard maximum of four. M10.1 launches nothing; the bound becomes executable only when the scheduler exists and cannot be raised above four by config or callers.
+- **Lease invariant unchanged:** parallel tasks must have disjoint canonical concrete write scopes and later acquire their ordinary task leases. M10 introduces no shared holder, lease exception, or speculative canonical write path.
+- **Trail equivalence:** concurrent and serial execution are equivalent when each task's ordered authoritative event subsequence and every gate outcome match. A global inter-task event order is neither promised nor treated as authority.
+- **Reservation prerequisite remains blocking:** no concurrent provider spawn may ship before atomic token-budget reservation prevents siblings from passing preflight against the same remaining balance.
 
 **Post-M8 subtraction pass:** Real E2E usage established Work as the act-now surface and Memory as the review-later surface. Work no longer duplicates Later, routing changes, or draft comparisons; its right side contains only blocking attention, and the task inspector exists only when a task is selected. Consecutive repeated activity is grouped, worker output defaults to concise highlights with the complete raw stream still available, and the prompt remains the final anchored grid row above tall content. Adoption review now carries the verification-time base branch and exact changed-file list, and loads each immutable task patch through the existing audited read-only `change.inspect` action so authorization can be judged without leaving the screen. Successful adoption feedback names the number of tasks and target branch. No action, authorization path, gate logic, or client-side authority was added. Final real-project screenshots are under `docs/evidence/ui/m8-subtraction-2026-08-01/`. No paid calls.
 

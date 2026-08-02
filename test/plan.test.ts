@@ -737,7 +737,7 @@ test("plan lint passes a clean grounded plan without executable task state", asy
       lint_status: "passed",
       base_commit: baseCommit,
       task_count: 3,
-      rule_count: 7
+      rule_count: 8
     });
     await assertMissing(path.join(repo, ".hivemind", "tasks", "T-WRITE.contract.json"));
     await assertMissing(path.join(repo, ".hivemind", "leases", "active.json"));
@@ -758,6 +758,20 @@ test("plan lint rejects overlapping parallel write scopes", async () => {
     await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
 
     await assertPlanRejects(repo, ["plan", "S-001", "--lint"], /PARALLEL_SCOPE_OVERLAP: group G-1 tasks T-ONE and T-TWO both allow README\.md/);
+  });
+});
+
+test("plan lint rejects a parallel group containing a non-parallel-safe task", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const planPath = await writePlan(repo, {
+      tasks: [task("T-UNSAFE", { parallel_safe: false })],
+      execution_groups: [group("G-1", "parallel", ["T-UNSAFE"])]
+    });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+
+    await assertPlanRejects(repo, ["plan", "S-001", "--lint"], /PARALLEL_SAFETY_REQUIRED: group G-1 task T-UNSAFE is not marked parallel_safe/);
   });
 });
 

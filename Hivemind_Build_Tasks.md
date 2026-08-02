@@ -783,6 +783,23 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
 
 ---
 
+## M10 — Concurrent Task Execution
+*Run independent plan tasks simultaneously without changing lease disjointness, deterministic gates, durable evidence, or failure isolation. Default concurrency is two tasks and the hard maximum is four.*
+
+### M10.1 — Parallel-wave admission
+- **Depends on:** M5.6, M7.8, M9.3.
+- **Read first:** Overview § *Concurrent task execution*; § *Single Source of Truth*; plan-lint parallel scope checks; canonical lease path handling; durable verification state.
+- **Goal:** Decide deterministically which tasks may enter one concurrent execution wave before any concurrent scheduler or worker launch exists.
+- **Behavior — exact (C4):**
+  - A plan-lint rule rejects any `parallel` execution group containing a task whose `parallel_safe` value is false. Sequence groups retain their existing serial semantics.
+  - Runtime admission reloads the exact ratified plan and durable verification trail. A task is eligible only after every declared dependency has current verified evidence. For a parallel group, admitted tasks must have pairwise-disjoint **concrete grounded `allowed_files`** after canonical path resolution. Shared `read_only_files` are permitted and do not create write ownership.
+  - Plan lint keeps its exact grounded-path overlap check, while runtime admission independently canonicalizes paths and refuses aliases or other conflicts that lexical lint did not detect. Invalid, missing, or unprovable plan, path, or verification evidence fails closed; changed verification inputs are stale and do not satisfy dependency readiness.
+  - Admission returns only the admitted and dependency-waiting task identities in stable plan order. It acquires no lease, starts no worker, reserves no budget, emits no lifecycle event, and changes no sequence execution. M10.1 is the deterministic permission gate that a later scheduler must call.
+  - Existing lease acquisition and stale-lock behavior are untouched. Independent tasks use the existing real leases only when later canonical execution starts; no exception permits overlapping holders.
+- **Acceptance test (binary):** A parallel group containing `parallel_safe:false` fails lint; overlapping concrete grounded writes fail lint/admission; a task with any unverified dependency is not admitted; two lexically distinct paths resolving to the same canonical target are refused at runtime; shared read-only dependencies remain admissible; and a sequence group still admits at most its next serial task. Tests prove admission launches no worker and mutates no lease state.
+
+---
+
 ## Beyond M8
 - **Native adapters** and **cloud/team mode** remain future productization. Their old Overview phase numbers are roadmap labels, not M8 Workspace contract numbers; decompose them into the same one-acceptance-test contracts when reached.
 - **Dogfooding** remains an available deliberate demonstration after M8, not the mechanism used to build M4–M8. When explicitly enabled, it exercises Hivemind's protected workflow against its own repo without replacing each feature's direct contract acceptance.
