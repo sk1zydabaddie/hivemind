@@ -7,6 +7,7 @@ import { writeJsonAtomic } from "./atomic.js";
 import { canonicalizeIntentPath } from "./canonicalize.js";
 import { loadContextPackForContract, taskKnowledgePath } from "./context-pack.js";
 import type { TaskContract } from "./contract.js";
+import { observableInterfaceKind } from "./acceptance-conformance.js";
 import { appendEvent } from "./events.js";
 import { readJsonFile } from "./json.js";
 import { resolveTaskAuthoringBase } from "./task-authoring-base.js";
@@ -21,6 +22,7 @@ const workerContextContractFields = [
   "routing_task_type",
   "base_commit",
   "acceptance_criterion",
+  "deterministic_validity_check",
   "allowed_files",
   "allowed_file_intents",
   "read_only_files",
@@ -310,6 +312,7 @@ export function buildContractTaskContextLayer(contract: TaskContract): string {
     `Routing task type: ${contract.routing_task_type}`,
     `Base commit: ${contract.base_commit}`,
     `Acceptance criterion: ${contract.acceptance_criterion}`,
+    `Deterministic validity check: ${contract.deterministic_validity_check ?? "(none)"}`,
     "",
     formatList("Allowed files", contract.allowed_files),
     formatAllowedFileIntents(contract.allowed_file_intents),
@@ -329,6 +332,12 @@ function validateWorkerContextContract(contract: TaskContract): { ok: true } | {
   }
   if (!Array.isArray(contract.patch_requirements) || !contract.patch_requirements.every((entry) => typeof entry === "string")) {
     return { ok: false, reason: "worker context refused: contract patch_requirements is missing or malformed" };
+  }
+  if (
+    observableInterfaceKind(contract.acceptance_criterion) !== null &&
+    (typeof contract.deterministic_validity_check !== "string" || contract.deterministic_validity_check.trim() === "")
+  ) {
+    return { ok: false, reason: "worker context refused: observable interface has no deterministic_validity_check" };
   }
   return { ok: true };
 }

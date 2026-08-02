@@ -27,6 +27,7 @@ export interface VerificationAudit {
   skipped_checks: Array<{ id: string; reason: string }>;
   graph_fingerprint: string | null;
   canon_ids: string[];
+  contract_validity_checks: Array<{ task_id: string; id: string; command: string }>;
   structural_oracle: StructuralOracleMeasurement;
 }
 
@@ -68,8 +69,17 @@ export async function runVerification(
   changedFiles: string[],
   qualityDraft?: QualityDraftVerificationContext
 ): Promise<VerificationResult<VerificationRunResult>> {
-  const audit = await selectVerificationChecks(repoRoot, config, taskIds, changedFiles);
+  const selectedAudit = await selectVerificationChecks(repoRoot, config, taskIds, changedFiles);
+  const contractChecks = await loadContractValidityChecks(repoRoot, taskIds);
+  if (!contractChecks.ok) return contractChecks;
+  const audit: VerificationAudit = {
+    ...selectedAudit,
+    contract_validity_checks: contractChecks.value
+  };
   const checks: VerificationCheckResult[] = [];
+  for (const check of audit.contract_validity_checks) {
+    checks.push(await runNamedCheck(worktreeRoot, check.id, check.command));
+  }
   for (const check of audit.selected_checks) {
     checks.push(await runNamedCheck(worktreeRoot, check.id, check.command));
   }
@@ -263,6 +273,7 @@ export async function selectVerificationChecks(
       .map((check) => ({ id: check.id, reason: "outside the resolved impact set" })),
     graph_fingerprint: graphResult.value.source_fingerprint,
     canon_ids: canonIds.sort(compareText),
+    contract_validity_checks: [],
     structural_oracle: structuralOracle
   };
 }
@@ -282,8 +293,28 @@ function fullSuiteAudit(
     skipped_checks: [],
     graph_fingerprint: null,
     canon_ids: [],
+    contract_validity_checks: [],
     structural_oracle: structuralOracle
   };
+}
+
+async function loadContractValidityChecks(
+  repoRoot: string,
+  taskIds: string[]
+): Promise<VerificationResult<Array<{ task_id: string; id: string; command: string }>>> {
+  const checks: Array<{ task_id: string; id: string; command: string }> = [];
+  for (const taskId of taskIds) {
+    const loaded = await loadAndValidateContract(repoRoot, taskId);
+    if (!loaded.ok) return { ok: false, reason: `contract validity check unavailable for ${taskId}: ${loaded.reason}` };
+    if (loaded.contract.deterministic_validity_check !== undefined) {
+      checks.push({
+        task_id: taskId,
+        id: `contract-validity:${taskId}`,
+        command: loaded.contract.deterministic_validity_check
+      });
+    }
+  }
+  return { ok: true, value: checks };
 }
 
 function measureStructuralOracle(

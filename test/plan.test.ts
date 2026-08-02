@@ -885,7 +885,7 @@ test("plan lint rejects generative skeleton-trap acceptance while preserving val
         tasks: [
           task("T-GEN-VALID", {
             task_type: "generative",
-            deterministic_validity_check: "Generated characterization test must pass on the base commit before it can be used.",
+            deterministic_validity_check: "node --test generated-characterization.test.js",
             acceptance_criterion: "Generated characterization test passes on base and fails on the injected regression.",
             required_tests: ["node --test generated-characterization.test.js"]
           })
@@ -911,6 +911,54 @@ test("plan lint rejects generative skeleton-trap acceptance while preserving val
     await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
     const deterministicLint = await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
     assert.equal(JSON.parse(deterministicLint.stdout).lint_status, "passed");
+  });
+});
+
+test("plan lint requires an independent validity check only when acceptance names an observable interface", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+
+    const missingCheck = await writePlan(repo, {
+      tasks: [task("T-CLI-MISSING", {
+        routing_task_type: "cli",
+        acceptance_criterion: "The CLI accepts --input <path>, supports optional --json, and emits sorted output.",
+        required_tests: ["node --test test/cli.test.js"]
+      })],
+      execution_groups: [group("G-1", "sequence", ["T-CLI-MISSING"])]
+    }, "observable-interface-missing-check.json");
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", missingCheck], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+    await assertPlanRejects(
+      repo,
+      ["plan", "S-001", "--lint"],
+      /SKELETON_TRAP_ACCEPTANCE: task T-CLI-MISSING names an observable named CLI flag but has no deterministic_validity_check/
+    );
+
+    const checked = await writePlan(repo, {
+      tasks: [task("T-CLI-CHECKED", {
+        routing_task_type: "cli",
+        acceptance_criterion: "The CLI accepts --input <path>, supports optional --json, and emits sorted output.",
+        deterministic_validity_check: "node verify-cli-interface.mjs",
+        required_tests: ["node --test test/cli.test.js"]
+      })],
+      execution_groups: [group("G-1", "sequence", ["T-CLI-CHECKED"])]
+    }, "observable-interface-checked.json");
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", checked], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+    const checkedLint = await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
+    assert.equal(JSON.parse(checkedLint.stdout).lint_status, "passed");
+
+    const proseOnly = await writePlan(repo, {
+      tasks: [task("T-PROSE", {
+        acceptance_criterion: "The implementation clearly preserves the intended workflow and remains maintainable.",
+        required_tests: ["npm test"]
+      })],
+      execution_groups: [group("G-1", "sequence", ["T-PROSE"])]
+    }, "prose-only-acceptance.json");
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", proseOnly], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+    const proseLint = await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
+    assert.equal(JSON.parse(proseLint.stdout).lint_status, "passed");
   });
 });
 

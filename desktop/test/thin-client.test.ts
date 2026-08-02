@@ -157,6 +157,15 @@ describe("React workspace boundary", () => {
     expect(work).toMatch(/type: "change\.inspect"/u);
   });
 
+  test("plan ratification exposes the plan-authored conformance check", async () => {
+    const work = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"),
+      "utf8"
+    );
+    expect(work).toContain("How it is checked");
+    expect(work).toMatch(/task\.deterministic_validity_check/u);
+  });
+
   test("prompt stays in the fixed Work layout and text does not truncate mid-word", async () => {
     const styles = await readFile(path.join(desktopRoot, "src", "styles.css"), "utf8");
     expect(styles).toMatch(/\.work-tab[\s\S]*grid-template-rows:[^;]*minmax\(0, 1fr\) auto/u);

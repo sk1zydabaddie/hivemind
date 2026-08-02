@@ -1,5 +1,6 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
+import { observableInterfaceKind, observableValidityCheckProblem } from "./acceptance-conformance.js";
 import { writeJsonAtomic } from "./atomic.js";
 import { appendTaskCreatedIfMissing } from "./events.js";
 import { readJsonFile } from "./json.js";
@@ -20,6 +21,7 @@ export interface TaskContract {
   routing_task_type: RoutingTaskType;
   base_commit: string;
   acceptance_criterion: string;
+  deterministic_validity_check?: string;
   allowed_files: string[];
   allowed_file_intents: Record<string, AllowedFileIntent>;
   read_only_files: string[];
@@ -56,6 +58,7 @@ const allowedContractFields = new Set([
   "routing_task_type",
   "base_commit",
   "acceptance_criterion",
+  "deterministic_validity_check",
   "allowed_files",
   "allowed_file_intents",
   "read_only_files",
@@ -202,6 +205,28 @@ export function validateContract(raw: unknown, expectedTaskId?: string): string[
   requireString(raw, "task_id", problems);
   requireString(raw, "base_commit", problems);
   requireString(raw, "acceptance_criterion", problems);
+  if ("deterministic_validity_check" in raw && (typeof raw.deterministic_validity_check !== "string" || raw.deterministic_validity_check.trim() === "")) {
+    problems.push("deterministic_validity_check must be a non-empty command when provided");
+  }
+  if (
+    typeof raw.acceptance_criterion === "string" &&
+    observableInterfaceKind(raw.acceptance_criterion) !== null &&
+    !(typeof raw.deterministic_validity_check === "string" && raw.deterministic_validity_check.trim() !== "")
+  ) {
+    problems.push("SKELETON_TRAP_ACCEPTANCE: observable interface requires deterministic_validity_check");
+  }
+  if (
+    typeof raw.acceptance_criterion === "string" &&
+    observableInterfaceKind(raw.acceptance_criterion) !== null &&
+    typeof raw.deterministic_validity_check === "string" &&
+    Array.isArray(raw.required_tests)
+  ) {
+    const validityProblem = observableValidityCheckProblem(
+      raw.deterministic_validity_check,
+      raw.required_tests.filter((entry): entry is string => typeof entry === "string")
+    );
+    if (validityProblem !== null) problems.push(`SKELETON_TRAP_ACCEPTANCE: ${validityProblem}`);
+  }
   if (!isRoutingTaskType(raw.routing_task_type)) {
     problems.push(`routing_task_type must be one of: ${routingTaskTypeExpectation()}`);
   }
@@ -285,6 +310,7 @@ export function normalizeContract(raw: unknown): TaskContract {
     routing_task_type: raw.routing_task_type as RoutingTaskType,
     base_commit: String(raw.base_commit),
     acceptance_criterion: typeof raw.acceptance_criterion === "string" ? raw.acceptance_criterion.trim() : "",
+    ...(typeof raw.deterministic_validity_check === "string" ? { deterministic_validity_check: raw.deterministic_validity_check.trim() } : {}),
     allowed_files: allowedFiles,
     allowed_file_intents: normalizeAllowedFileIntents(allowedFiles, raw.allowed_file_intents),
     read_only_files: normalizeStringArray(raw.read_only_files),

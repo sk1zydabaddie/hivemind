@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { observableInterfaceKind, observableValidityCheckProblem } from "./acceptance-conformance.js";
 import { writeJsonAtomic } from "./atomic.js";
 import { type AutonomyLevel } from "./autonomy-level.js";
 import { readProjectAutonomyLevel, recordAutonomyDecision } from "./autonomy.js";
@@ -1909,6 +1910,9 @@ function contractPlanMismatches(contract: TaskContract, task: TentativePlanTask,
   if (contract.acceptance_criterion !== task.acceptance_criterion) {
     mismatches.push("acceptance_criterion does not match plan task");
   }
+  if (contract.deterministic_validity_check !== task.deterministic_validity_check) {
+    mismatches.push("deterministic_validity_check does not match plan task");
+  }
   if (!sameArray(contract.allowed_files, scope.allowed_files)) {
     mismatches.push("allowed_files do not match grounded plan scope");
   }
@@ -2076,6 +2080,19 @@ function lintRightSizingAcceptance(plan: TentativePlan): SpecResult<void> {
 
 function lintSkeletonTrapAcceptance(plan: TentativePlan): SpecResult<void> {
   for (const task of plan.tasks) {
+    const observableInterface = observableInterfaceKind(task.acceptance_criterion);
+    if (observableInterface !== null && task.deterministic_validity_check === undefined) {
+      return {
+        ok: false,
+        reason: `SKELETON_TRAP_ACCEPTANCE: task ${task.task_id} names an observable ${observableInterface} but has no deterministic_validity_check`
+      };
+    }
+    if (observableInterface !== null && task.deterministic_validity_check !== undefined) {
+      const validityProblem = observableValidityCheckProblem(task.deterministic_validity_check, task.required_tests);
+      if (validityProblem !== null) {
+        return { ok: false, reason: `SKELETON_TRAP_ACCEPTANCE: task ${task.task_id} ${validityProblem}` };
+      }
+    }
     if (task.task_type !== "generative") {
       continue;
     }

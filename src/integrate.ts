@@ -411,6 +411,7 @@ function buildReport(
     lines.push(`runtime coverage unknown files: ${verification.runtime_coverage.unknown_files.join(", ") || "(none)"}`);
     lines.push(`runtime coverage unknown reasons: ${verification.runtime_coverage.unknown_reasons.join("; ") || "(none)"}`);
     lines.push(`selected checks: ${verification.audit.selected_checks.map((check) => check.id).join(", ")}`);
+    lines.push(`contract validity checks: ${verification.audit.contract_validity_checks.map((check) => check.id).join(", ") || "(none)"}`);
     lines.push(`skipped checks: ${verification.audit.skipped_checks.map((check) => check.id).join(", ") || "(none)"}`);
     for (const check of verification.checks) {
       lines.push(`check ${check.id}: ${check.command}`);

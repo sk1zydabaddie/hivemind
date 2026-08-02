@@ -40,6 +40,7 @@ test("assembleAgentPrompt keeps sibling shared prefixes byte-identical and stabl
     assert.doesNotMatch(first.value.shared_prefix, /Task ID: T-001/);
     assert.match(first.value.layers.task_context_pack, /Task ID: T-001/);
     assert.match(first.value.layers.task_context_pack, /Acceptance criterion: Prompt cache fixture assembles one prompt\./);
+    assert.match(first.value.layers.task_context_pack, /Deterministic validity check: \(none\)/);
     assert.match(first.value.layers.task_context_pack, /Allowed file intents:\n- README\.md: modify/);
     assert.match(first.value.layers.task_context_pack, /Patch requirements:/);
     assert.match(first.value.layers.repo_substrate, /Project instructions/);
@@ -76,6 +77,23 @@ test("worker context fails closed when the acceptance criterion or patch require
       /worker context refused: contract acceptance_criterion is missing/
     );
   });
+});
+
+test("worker context cannot omit a plan-authored observable-interface validity check", async () => {
+  const criterion = "The CLI accepts --input <path> and supports optional --json output.";
+  assert.throws(
+    () => buildContractTaskContextLayer(contractFor({ acceptance_criterion: criterion })),
+    /worker context refused: observable interface has no deterministic_validity_check/
+  );
+  assert.match(
+    buildContractTaskContextLayer(
+      contractFor({
+        acceptance_criterion: criterion,
+        deterministic_validity_check: "node verify-cli-interface.mjs"
+      })
+    ),
+    /Deterministic validity check: node verify-cli-interface\.mjs/
+  );
 });
 
 test("readCachedRepoFile records a miss then serves an unchanged exact-hash hit", async () => {

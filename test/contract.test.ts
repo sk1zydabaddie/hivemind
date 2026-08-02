@@ -56,6 +56,24 @@ test("contract validation requires exactly one acceptance criterion backed by a 
   ]);
 });
 
+test("observable-interface contracts require an independent deterministic validity check", () => {
+  const base = {
+    task_id: "T-CLI",
+    routing_task_type: "cli",
+    base_commit: "abc123",
+    acceptance_criterion: "The CLI accepts --input <path> and optional --json output.",
+    allowed_files: ["src/cli.ts"],
+    required_tests: ["npm test"]
+  };
+
+  assert.match(validateContract(base).join("; "), /observable interface requires deterministic_validity_check/);
+  assert.match(
+    validateContract({ ...base, deterministic_validity_check: "npm test" }).join("; "),
+    /must be independent of required_tests/
+  );
+  assert.deepEqual(validateContract({ ...base, deterministic_validity_check: "node verify-cli-interface.mjs" }), []);
+});
+
 test("missing allowed_files reports the exact problem", () => {
   const problems = validateContract({
     task_id: "T-001",

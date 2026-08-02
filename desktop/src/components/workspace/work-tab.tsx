@@ -70,6 +70,7 @@ interface AmendmentDraft {
   readOnlyFiles: string;
   dependencies: string;
   acceptance: string;
+  validityCheck: string;
   checks: string;
   groupId: string;
   groupMode: "parallel" | "sequence";
@@ -1050,7 +1051,7 @@ function PlanTaskCard({ task }: { task: WorkspacePlanTask }): React.JSX.Element 
   return (
     <article className="plan-task-card">
       <div className="plan-task-title"><span><strong>{task.task_id}</strong><h3>{task.title}</h3></span><Badge tone={tierTone(task.tier)}>{capitalize(task.tier)} risk</Badge></div>
-      <dl><div><dt>Changes</dt><dd>{task.scope.join(", ") || "No files"}</dd></div><div><dt>Reads</dt><dd>{task.read_only_scope.join(", ") || "No additional files"}</dd></div><div><dt>After</dt><dd>{task.depends_on.join(", ") || "Can start immediately"}</dd></div><div><dt>Done when</dt><dd>{task.acceptance_criterion}</dd></div></dl>
+      <dl><div><dt>Changes</dt><dd>{task.scope.join(", ") || "No files"}</dd></div><div><dt>Reads</dt><dd>{task.read_only_scope.join(", ") || "No additional files"}</dd></div><div><dt>After</dt><dd>{task.depends_on.join(", ") || "Can start immediately"}</dd></div><div><dt>Done when</dt><dd>{task.acceptance_criterion}</dd></div><div><dt>How it is checked</dt><dd>{task.deterministic_validity_check ?? "Project checks listed in the task"}</dd></div></dl>
     </article>
   );
 }
@@ -1069,6 +1070,7 @@ function AmendmentDialog({ value, plan, busy, onChange, onClose, onSubmit }: { v
           <label>Runs after<input value={value.draft.dependencies} onChange={(event) => update("dependencies", event.target.value)} placeholder="T-001, T-002" /></label>
           <label>Named check<input value={value.draft.checks} onChange={(event) => update("checks", event.target.value)} placeholder="npm test" /></label>
           <label className="span-two">Done when<textarea rows={2} value={value.draft.acceptance} onChange={(event) => update("acceptance", event.target.value)} /></label>
+          <label className="span-two">Interface check<input value={value.draft.validityCheck} onChange={(event) => update("validityCheck", event.target.value)} placeholder="Optional executable command for a named interface" /></label>
           {value.kind === "add_task" ? <><label>Work group<input value={value.draft.groupId} onChange={(event) => update("groupId", event.target.value)} /></label><label>Order<select value={value.draft.groupMode} onChange={(event) => update("groupMode", event.target.value)}><option value="sequence">In order</option><option value="parallel">At the same time</option></select></label></> : null}
         </div>
         <footer><span>Current plan: {plan.tasks.length} tasks</span><button className="button-primary" type="submit" disabled={busy}>{value.kind === "add_task" ? "Queue task" : "Queue edit"}</button></footer>
@@ -1084,12 +1086,12 @@ function TextActionDialog({ title, description, value, busy, submitLabel, onChan
 }
 
 function emptyAmendment(): AmendmentDraft {
-  return { taskId: "", title: "", files: "", readOnlyFiles: "", dependencies: "", acceptance: "", checks: "", groupId: "G-new", groupMode: "sequence" };
+  return { taskId: "", title: "", files: "", readOnlyFiles: "", dependencies: "", acceptance: "", validityCheck: "", checks: "", groupId: "G-new", groupMode: "sequence" };
 }
 
 function amendmentFromTask(task: WorkspacePlanTask, plan: WorkspacePlanReview | null): AmendmentDraft {
   const group = plan?.execution_groups.find((entry) => entry.task_ids.includes(task.task_id));
-  return { taskId: task.task_id, title: task.title, files: task.scope.join("\n"), readOnlyFiles: task.read_only_scope.join("\n"), dependencies: task.depends_on.join(", "), acceptance: task.acceptance_criterion, checks: task.required_tests.join("\n"), groupId: group?.group_id ?? "G-edit", groupMode: group?.mode ?? "sequence" };
+  return { taskId: task.task_id, title: task.title, files: task.scope.join("\n"), readOnlyFiles: task.read_only_scope.join("\n"), dependencies: task.depends_on.join(", "), acceptance: task.acceptance_criterion, validityCheck: task.deterministic_validity_check ?? "", checks: task.required_tests.join("\n"), groupId: group?.group_id ?? "G-edit", groupMode: group?.mode ?? "sequence" };
 }
 
 function buildAmendment(value: { kind: "add_task" | "edit_task"; draft: AmendmentDraft }, plan: WorkspacePlanReview): Record<string, unknown> {
@@ -1117,7 +1119,7 @@ function buildAmendment(value: { kind: "add_task" | "edit_task"; draft: Amendmen
     depends_on: splitList(value.draft.dependencies),
     parallel_safe: existing?.parallel_safe ?? false,
     acceptance_criterion: value.draft.acceptance.trim(),
-    ...(existing?.deterministic_validity_check ? { deterministic_validity_check: existing.deterministic_validity_check } : {}),
+    ...(value.draft.validityCheck.trim() ? { deterministic_validity_check: value.draft.validityCheck.trim() } : {}),
     required_tests: splitList(value.draft.checks),
     patch_requirements: existing?.patch_requirements ?? ["Submit only the requested scoped change."],
     critical_path_approved: existing?.critical_path_approved ?? false

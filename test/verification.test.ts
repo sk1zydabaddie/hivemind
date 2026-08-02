@@ -193,6 +193,71 @@ test("KNOWN LIMITATION: an implicit CLI contract can fail outside the graph-sele
   });
 });
 
+test("plan-authored CLI validity fails a wrong interface despite green worker-authored tests", async () => {
+  await withVerificationRepo(async ({ repo, worktree, config }) => {
+    const baseCommit = await gitStdout(repo, ["rev-parse", "HEAD"]);
+    const criterion = "The CLI accepts --input <path>, supports optional --json, and emits records sorted by key.";
+    const validityCommand = "node verify-cli-interface.mjs";
+    await writeContract(repo, "T-CLI", baseCommit, {
+      acceptanceCriterion: criterion,
+      deterministicValidityCheck: validityCommand,
+      allowedFiles: ["src/cli.js", "test/cli-self.test.js"],
+      requiredTests: ["node --test test/cli-self.test.js"]
+    });
+
+    const wrongCli = [
+      "const entries = process.argv.slice(2).map(value => value.split('='));",
+      "entries.sort(([a], [b]) => a.localeCompare(b));",
+      "process.stdout.write(entries.map(([key, value]) => `${key}=${value}`).join('\\n'));",
+      ""
+    ].join("\n");
+    const selfAuthoredTest = [
+      "import test from 'node:test';",
+      "import assert from 'node:assert/strict';",
+      "import { execFileSync } from 'node:child_process';",
+      "import { writeFileSync } from 'node:fs';",
+      "test('worker positional interface', () => {",
+      "  const output = execFileSync(process.execPath, ['src/cli.js', 'b=2', 'a=1'], { encoding: 'utf8' });",
+      "  assert.equal(output, 'a=1\\nb=2');",
+      "  writeFileSync('verify-cli-interface.mjs', 'process.exit(0);\\n');",
+      "});",
+      ""
+    ].join("\n");
+    await writeFile(path.join(worktree, "src", "cli.js"), wrongCli);
+    await writeFile(path.join(worktree, "test", "cli-self.test.js"), selfAuthoredTest);
+    await mkdir(path.join(worktree, ".hivemind", "tasks"), { recursive: true });
+    await writeFile(
+      path.join(worktree, ".hivemind", "tasks", "T-CLI.contract.json"),
+      `${JSON.stringify({ deterministic_validity_check: "node -e \"process.exit(0)\"" })}\n`
+    );
+
+    const result = await runVerification(
+      repo,
+      worktree,
+      {
+        ...config,
+        test_command: "node --test test/cli-self.test.js",
+        verification: { ...config.verification!, graph_enabled: false }
+      },
+      ["T-CLI"],
+      ["src/cli.js", "test/cli-self.test.js"]
+    );
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.deepEqual(result.value.audit.contract_validity_checks, [
+      { task_id: "T-CLI", id: "contract-validity:T-CLI", command: validityCommand }
+    ]);
+    assert.deepEqual(
+      result.value.checks.map((check) => ({ id: check.id, exit_code: check.exit_code })),
+      [
+        { id: "contract-validity:T-CLI", exit_code: 1 },
+        { id: "full-suite", exit_code: 0 }
+      ]
+    );
+    assert.equal(result.value.tests, "fail");
+  });
+});
+
 test("verification falls back to the full suite for graph uncertainty, blind spots, and high tiers", async () => {
   await withVerificationRepo(async ({ repo, config }) => {
     const localized = await selectVerificationChecks(repo, config, ["T-LOW"], ["src/math.js"]);
@@ -386,6 +451,19 @@ async function withVerificationRepo(
     );
     await writeFile(path.join(repo, "src", "smoke.js"), "export const smoke = true;\n");
     await writeFile(path.join(repo, "README.md"), "# Verification fixture\n");
+    await writeFile(
+      path.join(repo, "verify-cli-interface.mjs"),
+      [
+        "import { execFileSync } from 'node:child_process';",
+        "import { writeFileSync } from 'node:fs';",
+        "writeFileSync('cli-input.txt', 'b=2\\na=1\\n');",
+        "const text = execFileSync(process.execPath, ['src/cli.js', '--input', 'cli-input.txt'], { encoding: 'utf8' });",
+        "if (text.trim() !== 'a=1\\nb=2') process.exit(1);",
+        "const json = execFileSync(process.execPath, ['src/cli.js', '--input', 'cli-input.txt', '--json'], { encoding: 'utf8' });",
+        "if (json.trim() !== '{\"a\":\"1\",\"b\":\"2\"}') process.exit(1);",
+        ""
+      ].join("\n")
+    );
     await git(repo, ["add", "."]);
     await git(repo, ["commit", "-m", "initial"]);
     assert.equal(await initProject(repo), 0);
@@ -419,6 +497,7 @@ async function withVerificationRepo(
     assert.equal((await rebuildRepoGraph(repo)).ok, true);
     await cp(path.join(repo, "src"), path.join(worktree, "src"), { recursive: true });
     await cp(path.join(repo, "test"), path.join(worktree, "test"), { recursive: true });
+    await cp(path.join(repo, "verify-cli-interface.mjs"), path.join(worktree, "verify-cli-interface.mjs"));
     await run({ repo, worktree, config: loadedConfig.config });
   } finally {
     await rm(repo, { recursive: true, force: true, maxRetries: 3 });
@@ -426,7 +505,18 @@ async function withVerificationRepo(
   }
 }
 
-async function writeContract(repo: string, taskId: string, baseCommit: string): Promise<void> {
+async function writeContract(
+  repo: string,
+  taskId: string,
+  baseCommit: string,
+  options: {
+    acceptanceCriterion?: string;
+    deterministicValidityCheck?: string;
+    allowedFiles?: string[];
+    requiredTests?: string[];
+  } = {}
+): Promise<void> {
+  const allowedFiles = options.allowedFiles ?? ["src/math.js"];
   await mkdir(path.join(repo, ".hivemind", "tasks"), { recursive: true });
   await writeFile(
     path.join(repo, ".hivemind", "tasks", `${taskId}.contract.json`),
@@ -436,15 +526,16 @@ async function writeContract(repo: string, taskId: string, baseCommit: string): 
       agent_role: "builder",
       routing_task_type: "testing",
       base_commit: baseCommit,
-      acceptance_criterion: "The localized math test catches the regression.",
-      allowed_files: ["src/math.js"],
-      allowed_file_intents: { "src/math.js": "modify" },
+      acceptance_criterion: options.acceptanceCriterion ?? "The localized math test catches the regression.",
+      ...(options.deterministicValidityCheck === undefined ? {} : { deterministic_validity_check: options.deterministicValidityCheck }),
+      allowed_files: allowedFiles,
+      allowed_file_intents: Object.fromEntries(allowedFiles.map((file) => [file, "modify"])),
       read_only_files: ["test/math.test.js"],
       forbidden_files: [],
       allowed_symbols: [],
       forbidden_symbols: [],
       must_not_change: [],
-      required_tests: ["node --test test/math.test.js"],
+      required_tests: options.requiredTests ?? ["node --test test/math.test.js"],
       patch_requirements: []
     }, null, 2)}\n`
   );
