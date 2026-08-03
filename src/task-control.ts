@@ -29,6 +29,21 @@ export async function requestTaskStop(
   repoRoot: string,
   request: unknown
 ): Promise<ControlResult<TaskStopResult>> {
+  return requestTaskStopFromSource(repoRoot, request, "human");
+}
+
+export async function requestSystemTaskStop(
+  repoRoot: string,
+  request: unknown
+): Promise<ControlResult<TaskStopResult>> {
+  return requestTaskStopFromSource(repoRoot, request, "scheduler");
+}
+
+async function requestTaskStopFromSource(
+  repoRoot: string,
+  request: unknown,
+  requestedBy: "human" | "scheduler"
+): Promise<ControlResult<TaskStopResult>> {
   if (!isRecord(request)) return { ok: false, reason: "task stop request must be a JSON object" };
   const allowed = new Set(["task_id", "reason"]);
   const extra = Object.keys(request).filter((key) => !allowed.has(key));
@@ -52,7 +67,7 @@ export async function requestTaskStop(
     const requested = await appendEvent(repoRoot, {
       type: "task.cancel_requested",
       task_id: taskIdValue,
-      data: { version: 1, reason: request.reason.trim(), requested_by: "human", cleanup_required: true }
+      data: { version: 1, reason: request.reason.trim(), requested_by: requestedBy, cleanup_required: true }
     });
     if (!requested.ok) return requested;
   }

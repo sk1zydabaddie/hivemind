@@ -766,12 +766,14 @@ test("runTask stops after invocation when effective token usage exceeds the ceil
       return;
     }
     assert.equal(events.value.some((event) => event.type === "task.completed" && event.task_id === "T-001"), false);
+    assert.equal(events.value.some((event) => event.type === "task.failed" && event.task_id === "T-001"), false);
     assert.equal(
       events.value.some(
         (event) =>
-          event.type === "task.failed" &&
+          event.type === "task.paused" &&
           event.task_id === "T-001" &&
-          String(event.data.reason).includes("token budget exceeded")
+          event.data.reason === "quota_exhausted" &&
+          String(event.data.reroute_reason).includes("token budget exceeded")
       ),
       true
     );

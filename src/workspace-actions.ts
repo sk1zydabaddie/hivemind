@@ -8,7 +8,7 @@ import { callDaemonIfConfigured } from "./daemon-client.js";
 import { generateCharacterizationCandidate } from "./characterization-generator.js";
 import { generateDraftRefine } from "./draft-refine.js";
 import { recordHumanGuidance } from "./human-guidance.js";
-import { approvePendingManagerAction, continueAutonomousManagerLoop, retryBlockedManagerAction, startWorkspaceManagerSession } from "./manager.js";
+import { approvePendingManagerAction, cancelManagerRun, continueAutonomousManagerLoop, retryBlockedManagerAction, startWorkspaceManagerSession } from "./manager.js";
 import { authorizeManualTask, prepareWorkspaceTentativePlan, queuePlanAmendment, ratifyPlan, reviewManualTaskForAuthorization, reviewPlanForRatification } from "./plan.js";
 import { cancelQualityRun } from "./quality-control.js";
 import { reverifyQueuedPatchSet } from "./reverify.js";
@@ -33,6 +33,7 @@ export const workspaceActionTypes = [
   "manager.approve_pending",
   "task.redirect",
   "task.stop",
+  "run.stop",
   "status.inspect",
   "trail.inspect",
   "change.inspect",
@@ -102,6 +103,7 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
       : parsed;
   }
   if (raw.type === "task.stop") return requestTaskStop(repoRoot, payload);
+  if (raw.type === "run.stop") return cancelManagerRun(repoRoot, payload);
   if (raw.type === "quality.cancel") return cancelQualityRun(repoRoot, payload);
   if (raw.type === "status.inspect") {
     if (Object.keys(payload).length > 0) return { ok: false, reason: "status.inspect takes no fields" };

@@ -30,6 +30,7 @@ import { readJsonFile } from "./json.js";
 import { readActiveSpec } from "./spec.js";
 import { getStatus, type HivemindStatus } from "./status.js";
 import { inspectLatestAdoptionReadiness } from "./adoption.js";
+import { readTaskOutput } from "./output-stream.js";
 
 export interface WorkspaceQueueItem {
   id: string;
@@ -795,8 +796,7 @@ async function buildQueues(
       }
     });
   }
-  const stalled = await inspectRunStall(repoRoot, events, planReview, currentPlan, session, options);
-  if (stalled !== null) needsYou.push(stalled);
+  needsYou.push(...await inspectRunStalls(repoRoot, events, planReview, currentPlan, session, options));
   const adoption = await inspectLatestAdoptionReadiness(repoRoot);
   if (!adoption.ok) return adoption;
   if (adoption.value.status === "needs_reverification") {
@@ -886,24 +886,24 @@ async function buildQueues(
   };
 }
 
-async function inspectRunStall(
+async function inspectRunStalls(
   repoRoot: string,
   events: HivemindEvent[],
   planReview: WorkspacePlanReview | null,
   currentPlan: WorkspacePlanReview | null,
   session: ManagerWorkspaceSession | null,
   options: WorkspaceInspectionOptions
-): Promise<WorkspaceQueueItem | null> {
-  if (planReview !== null || currentPlan === null) return null;
+): Promise<WorkspaceQueueItem[]> {
+  if (planReview !== null || currentPlan === null) return [];
   const now = options.now ?? new Date();
   const stallIntervalMs = options.stallIntervalMs ?? DEFAULT_RUN_STALL_INTERVAL_MS;
-  if (!Number.isFinite(now.getTime()) || !Number.isInteger(stallIntervalMs) || stallIntervalMs <= 0) return null;
+  if (!Number.isFinite(now.getTime()) || !Number.isInteger(stallIntervalMs) || stallIntervalMs <= 0) return [];
   if (events.some((event) => {
     const taskIds = event.data.task_ids;
     return event.type === "adoption.completed" &&
       Array.isArray(taskIds) &&
       currentPlan.tasks.every((task) => taskIds.includes(task.task_id));
-  })) return null;
+  })) return [];
 
   if (session === null) {
     const ratified = [...events].reverse().find((event) =>
@@ -911,8 +911,8 @@ async function inspectRunStall(
       event.data.spec_id === currentPlan.spec_id &&
       event.data.plan_hash === currentPlan.plan_hash
     );
-    if (ratified === undefined || elapsedMs(now, ratified.ts) < stallIntervalMs) return null;
-    return {
+    if (ratified === undefined || elapsedMs(now, ratified.ts) < stallIntervalMs) return [];
+    return [{
       id: `run-stalled:start:${currentPlan.plan_hash}:${ratified.ts}`,
       kind: "run_stalled",
       title: "Approved work has not started",
@@ -923,23 +923,24 @@ async function inspectRunStall(
         type: "manager.start",
         payload: { message: "Continue the exact approved plan through the normal checks.", tool: "manager" }
       }
-    };
+    }];
   }
 
-  if (session.status !== "active" || !session.continuation_available) return null;
+  if (session.status !== "active" || !session.continuation_available) return [];
   const runEvents = events.filter((event) => event.ts >= session.created_at);
   const lastProgressAt = [...runEvents.map((event) => event.ts), session.last_activity_at]
     .filter((value) => !Number.isNaN(Date.parse(value)))
     .sort()
     .at(-1) ?? session.created_at;
-  if (elapsedMs(now, lastProgressAt) < stallIntervalMs) return null;
-
+  const workerAlerts: WorkspaceQueueItem[] = [];
+  let runningWorkers = 0;
   for (const task of currentPlan.tasks) {
     const state = latestTaskRunState(events, task.task_id);
     if (state.state !== "running") continue;
+    runningWorkers += 1;
     const worker = await inspectRunningWorkerStall(repoRoot, events, task.task_id, state.started, now, stallIntervalMs, options.processLiveness);
-    if (worker.status === "healthy_or_uncertain") return null;
-    return {
+    if (worker.status === "healthy_or_uncertain") continue;
+    workerAlerts.push({
       id: `run-stalled:worker:${task.task_id}:${worker.since}`,
       kind: "run_stalled",
       title: `${task.task_id} stopped making progress`,
@@ -947,10 +948,12 @@ async function inspectRunStall(
       created_at: worker.since,
       task_id: task.task_id,
       action: { type: "task.stop", payload: { task_id: task.task_id, reason: "Stop a stalled worker from the workspace." } }
-    };
+    });
   }
+  if (workerAlerts.length > 0) return workerAlerts;
+  if (runningWorkers > 0 || elapsedMs(now, lastProgressAt) < stallIntervalMs) return [];
 
-  return {
+  return [{
     id: `run-stalled:continue:${session.session_id}:${lastProgressAt}`,
     kind: "run_stalled",
     title: "The run stopped advancing",
@@ -961,7 +964,7 @@ async function inspectRunStall(
       type: "manager.continue",
       payload: { session_id: session.session_id, tool: session.tool, max_steps: 25 }
     }
-  };
+  }];
 }
 
 async function inspectRunningWorkerStall(
@@ -1005,6 +1008,12 @@ async function inspectRunningWorkerStall(
   if (tool === "") return { status: "healthy_or_uncertain" };
   const profile = await loadAdapterProfile(repoRoot, tool);
   if (!profile.ok || profile.profile.timeout_ms === undefined) return { status: "healthy_or_uncertain" };
+  const output = await readTaskOutput(repoRoot, taskId);
+  if (!output.ok) return { status: "healthy_or_uncertain" };
+  const latestOutputAt = output.value.map((record) => record.ts).sort().at(-1);
+  if (latestOutputAt !== undefined && elapsedMs(now, latestOutputAt) < stallIntervalMs) {
+    return { status: "healthy_or_uncertain" };
+  }
   return elapsedMs(now, processStarted.ts) >= profile.profile.timeout_ms + stallIntervalMs
     ? {
         status: "stalled",

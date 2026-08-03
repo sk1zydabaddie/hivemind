@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -40,6 +41,33 @@ export interface EnqueueIntegrationPatchResult {
   task_id: string;
   queue_path: string;
   queue: string[];
+}
+
+export interface IntegrationQueueExpectation {
+  expected_task_ids: string[];
+  expected_queue_sha256: string;
+}
+
+export async function captureIntegrationQueueExpectation(
+  repoRoot: string,
+  expectedTaskIds: string[]
+): Promise<{ ok: true; value: IntegrationQueueExpectation } | { ok: false; reason: string }> {
+  const queue = await loadIntegrationQueue(repoRoot);
+  if (!queue.ok) return queue;
+  const actualTaskIds = queue.value.map((entry) => entry.task_id);
+  if (!sameTaskIds(actualTaskIds, expectedTaskIds)) {
+    return {
+      ok: false,
+      reason: `integration queue identity mismatch: expected [${expectedTaskIds.join(", ")}], found [${actualTaskIds.join(", ")}]`
+    };
+  }
+  return {
+    ok: true,
+    value: {
+      expected_task_ids: [...actualTaskIds],
+      expected_queue_sha256: hashIntegrationQueue(actualTaskIds)
+    }
+  };
 }
 
 export async function runShadowVerification(
@@ -99,7 +127,8 @@ export async function integrateCommand(cwd: string, args: string[]): Promise<num
 }
 
 export async function integrateShadow(
-  repoRoot: string
+  repoRoot: string,
+  expectation?: IntegrationQueueExpectation
 ): Promise<{ ok: true; value: IntegrationStatus } | { ok: false; reason: string }> {
   const configResult = await loadConfig(repoRoot);
   if (!configResult.ok) {
@@ -112,6 +141,20 @@ export async function integrateShadow(
   }
   if (queueResult.value.length === 0) {
     return { ok: false, reason: "integration queue is empty" };
+  }
+  if (expectation !== undefined) {
+    const expected = validateIntegrationQueueExpectation(expectation);
+    if (!expected.ok) return expected;
+    const actualTaskIds = queueResult.value.map((entry) => entry.task_id);
+    if (
+      !sameTaskIds(actualTaskIds, expected.value.expected_task_ids) ||
+      hashIntegrationQueue(actualTaskIds) !== expected.value.expected_queue_sha256
+    ) {
+      return {
+        ok: false,
+        reason: `integration queue changed after survivor authorization: expected [${expected.value.expected_task_ids.join(", ")}], found [${actualTaskIds.join(", ")}]`
+      };
+    }
   }
   if (configResult.config.test_command.trim() === "") {
     return { ok: false, reason: "config.test_command must not be empty for shadow integration" };
@@ -295,6 +338,34 @@ export async function integrateShadow(
   }
 
   return outcome ?? { ok: false, reason: "shadow integration did not produce a result" };
+}
+
+function validateIntegrationQueueExpectation(
+  value: IntegrationQueueExpectation
+): { ok: true; value: IntegrationQueueExpectation } | { ok: false; reason: string } {
+  if (!Array.isArray(value.expected_task_ids) || value.expected_task_ids.length === 0) {
+    return { ok: false, reason: "integration queue expectation requires at least one expected task id" };
+  }
+  const unique = new Set<string>();
+  for (const taskId of value.expected_task_ids) {
+    const valid = validateRequestedTaskId(taskId);
+    if (!valid.ok || unique.has(taskId)) {
+      return { ok: false, reason: `integration queue expectation has invalid or duplicate task id: ${taskId}` };
+    }
+    unique.add(taskId);
+  }
+  if (!/^[a-f0-9]{64}$/u.test(value.expected_queue_sha256)) {
+    return { ok: false, reason: "integration queue expectation requires a SHA-256 queue identity" };
+  }
+  return { ok: true, value: { expected_task_ids: [...value.expected_task_ids], expected_queue_sha256: value.expected_queue_sha256 } };
+}
+
+function hashIntegrationQueue(taskIds: string[]): string {
+  return createHash("sha256").update(JSON.stringify({ version: 1, task_ids: taskIds })).digest("hex");
+}
+
+function sameTaskIds(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((taskId, index) => taskId === right[index]);
 }
 
 export async function enqueueIntegrationPatch(

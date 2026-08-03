@@ -418,6 +418,64 @@ test("a run with no durable progress surfaces recovery while a healthy long work
   });
 });
 
+test("stall inspection is per lane so a healthy worker cannot suppress a stalled sibling", async () => {
+  await withRepo(async (repo) => {
+    await prepareRatifiedWorkspacePlan(repo);
+    const session = await startManagerSession(repo, "Inspect concurrent worker health.", {
+      proposedAction: {
+        type: "proposed_actions",
+        source: "scripted",
+        reason: "Inspect the current state.",
+        actions: [{ type: "get_status" }],
+        human_approval_required_for: []
+      }
+    });
+    assert.equal(session.ok, true, session.ok ? undefined : session.reason);
+    if (!session.ok) return;
+    await writeFile(path.join(repo, ".hivemind", "adapters", "lane-worker.profile.json"), `${JSON.stringify({
+      tool: "lane-worker",
+      invoke: [process.execPath, "worker.mjs"],
+      prompt_arg: "stdin",
+      verified_on: "fixture",
+      context_window: 8_000,
+      timeout_ms: 1
+    }, null, 2)}\n`);
+    for (const [taskId, pid] of [["T-001", process.pid], ["T-002", process.pid + 10_000]] as const) {
+      await appendEvent(repo, { type: "task.started", task_id: taskId, data: { run_id: `R-${taskId}`, tool: "lane-worker" } });
+      await appendEvent(repo, {
+        type: "task.worker_process_started",
+        task_id: taskId,
+        data: { version: 1, run_id: `R-${taskId}`, tool: "lane-worker", pid, process_instance_id: `fixture-${taskId}` }
+      });
+    }
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) return;
+    const observedAt = events.value.at(-1)!.ts;
+    await mkdir(path.join(repo, ".hivemind", "log", "tasks"), { recursive: true });
+    await writeFile(
+      path.join(repo, ".hivemind", "log", "tasks", "T-001.output.jsonl"),
+      `${JSON.stringify({
+        ts: new Date(Date.parse(observedAt) + 85_000).toISOString(),
+        task_id: "T-001",
+        tool: "lane-worker",
+        stream: "stdout",
+        text: "still making durable progress"
+      })}\n`
+    );
+    const inspected = await inspectWorkspace(repo, {
+      now: new Date(Date.parse(observedAt) + 90_000),
+      stallIntervalMs: 45_000,
+      processLiveness: (pid) => pid === process.pid ? "alive" : "dead"
+    });
+    assert.equal(inspected.ok, true, inspected.ok ? undefined : inspected.reason);
+    if (!inspected.ok) return;
+    const alerts = inspected.value.needs_you.filter((item) => item.kind === "run_stalled");
+    assert.equal(alerts.some((item) => item.task_id === "T-001"), false);
+    assert.equal(alerts.some((item) => item.task_id === "T-002"), true);
+  });
+});
+
 test("workspace inspection remains current after the exact ratified plan is adopted", async () => {
   await withRepo(async (repo) => {
     await mkdir(path.join(repo, "src"), { recursive: true });

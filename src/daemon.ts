@@ -354,7 +354,7 @@ function routeHandler(repoRoot: string, method: string | undefined, url: string 
     };
   }
   if (method === "POST" && url === "/integrate/shadow") {
-    return async () => integrateShadow(repoRoot);
+    return async (payload) => integrateShadow(repoRoot, parseIntegrationQueueExpectation(payload));
   }
   if (method === "POST" && url === "/integration/enqueue") {
     return async (payload) => {
@@ -368,7 +368,17 @@ function routeHandler(repoRoot: string, method: string | undefined, url: string 
 function isQueueInterrupt(request: IncomingMessage, payload: DaemonPayload): boolean {
   return request.method === "POST" &&
     request.url === "/workspace/action" &&
-    (payload.type === "quality.cancel" || payload.type === "task.stop");
+    (payload.type === "quality.cancel" || payload.type === "task.stop" || payload.type === "run.stop");
+}
+
+function parseIntegrationQueueExpectation(payload: DaemonPayload) {
+  if (payload.expected_task_ids === undefined && payload.expected_queue_sha256 === undefined) return undefined;
+  return {
+    expected_task_ids: Array.isArray(payload.expected_task_ids)
+      ? payload.expected_task_ids.filter((entry): entry is string => typeof entry === "string")
+      : [],
+    expected_queue_sha256: typeof payload.expected_queue_sha256 === "string" ? payload.expected_queue_sha256 : ""
+  };
 }
 
 function parseDaemonOptions(args: string[]): { ok: true; value: DaemonOptions } | { ok: false; reason: string } {

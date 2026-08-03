@@ -16,7 +16,7 @@ import { createDaemonServer } from "../src/daemon.js";
 import { initProject } from "../src/init.js";
 import { integratedTaskIdsFromEvents } from "../src/integration-state.js";
 import { requestLease } from "../src/lease.js";
-import { readQuotaLedger, recordQuotaUsage } from "../src/resource-ledger.js";
+import { readQuotaLedger, readQuotaLedgerState, recordQuotaUsage, reserveMeteredCall } from "../src/resource-ledger.js";
 import { latestTaskRunState } from "../src/run-state.js";
 import {
   approvePendingManagerAction,
@@ -922,25 +922,184 @@ test("each concurrent setup action keeps its independent gate and setup order", 
   });
 });
 
-test("a concurrent worker failure stops later launches and cleans the failed task without corrupting siblings", async () => {
+test("a concurrent worker failure settles only its lane while independent siblings continue and keep their resources", async () => {
   await withTempRepo(async ({ repo }) => {
     const fixture = await prepareConcurrentManagerFixture(repo, 3, 2, "parallel", 2_500, 500_000, "T-WAVE-001");
     const started = await startWorkspaceManagerSession(repo, "Run the admitted wave until one worker fails.", "manager");
     assert.equal(started.ok, true, started.ok ? undefined : started.reason);
     if (!started.ok) return;
 
-    const result = await continueAutonomousManagerLoop(repo, started.value.session_id, { tool: "manager", maxSteps: 100 });
+    const continuation = continueAutonomousManagerLoop(repo, started.value.session_id, { tool: "manager", maxSteps: 100 });
+    await waitForDurableEvent(repo, "task.failed", fixture.taskIds[0]);
+    const duringFailure = await getStatus(repo);
+    assert.equal(duringFailure.ok, true, duringFailure.ok ? undefined : duringFailure.reason);
+    if (!duringFailure.ok) return;
+    assert.equal(duringFailure.value.leases[`${fixture.taskIds[1]}.txt`], fixture.taskIds[1]);
+    assert.notEqual(duringFailure.value.tasks.find((task) => task.task_id === fixture.taskIds[1])?.worktree, "missing");
+    const ledger = await readQuotaLedgerState(repo);
+    assert.equal(ledger.ok, true, ledger.ok ? undefined : ledger.reason);
+    if (ledger.ok) {
+      assert.equal(Object.values(ledger.value.reservations).some((reservation) =>
+        reservation.task_id === fixture.taskIds[1] && reservation.status === "active"
+      ), true);
+    }
+
+    const result = await continuation;
     assert.equal(result.ok, true, result.ok ? undefined : result.reason);
     if (!result.ok) return;
     assert.equal(result.value.status, "stopped");
 
     const events = await readRequiredEvents(repo);
     assert.equal(events.some((event) => event.type === "task.failed" && event.task_id === fixture.taskIds[0]), true);
-    assert.equal(events.some((event) => event.type === "scheduler.wave_stopped"), true);
-    assert.equal(events.some((event) => event.type === "task.worker_process_started" && event.task_id === fixture.taskIds[2]), false);
+    assert.equal(events.some((event) => event.type === "scheduler.wave_settled"), true);
+    assert.equal(events.some((event) => event.type === "task.worker_process_started" && event.task_id === fixture.taskIds[2]), true);
     assert.equal(result.value.final_status.leases[`${fixture.taskIds[0]}.txt`], undefined);
     await assertMissing(path.join(repo, ".hivemind", "worktrees", fixture.taskIds[0]));
     assert.equal(events.some((event) => event.type === "task.completed" && event.task_id === fixture.taskIds[1]), true);
+    assert.equal(events.some((event) => event.type === "task.completed" && event.task_id === fixture.taskIds[2]), true);
+    const survivorVerification = events.find((event) =>
+      event.type === "integration.passed" &&
+      Array.isArray(event.data.applied) &&
+      event.data.applied.includes(fixture.taskIds[1]) &&
+      event.data.applied.includes(fixture.taskIds[2])
+    );
+    assert.ok(survivorVerification, "the exact successful survivor set was not shadow-verified together");
+    assert.equal(Array.isArray(survivorVerification?.data.applied) && survivorVerification.data.applied.includes(fixture.taskIds[0]), false);
+  });
+});
+
+test("cancelling one concurrent task reuses task.stop and leaves its sibling running", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const fixture = await prepareConcurrentManagerFixture(repo, 2, 2, "parallel", 3_000, 500_000);
+    const started = await startWorkspaceManagerSession(repo, "Run two lanes and stop only one.", "manager");
+    assert.equal(started.ok, true, started.ok ? undefined : started.reason);
+    if (!started.ok) return;
+    const continuation = continueAutonomousManagerLoop(repo, started.value.session_id, { tool: "manager", maxSteps: 100 });
+    await waitForDurableEvent(repo, "task.worker_process_started", fixture.taskIds[0]);
+    await waitForDurableEvent(repo, "task.worker_process_started", fixture.taskIds[1]);
+    const stopped = await executeWorkspaceAction(repo, {
+      type: "task.stop",
+      payload: { task_id: fixture.taskIds[0], reason: "Cancel only this concurrent lane." }
+    });
+    assert.equal(stopped.ok, true, stopped.ok ? undefined : stopped.reason);
+    const afterStop = await getStatus(repo);
+    assert.equal(afterStop.ok, true, afterStop.ok ? undefined : afterStop.reason);
+    if (!afterStop.ok) return;
+    assert.equal(afterStop.value.leases[`${fixture.taskIds[1]}.txt`], fixture.taskIds[1]);
+    assert.notEqual(afterStop.value.tasks.find((task) => task.task_id === fixture.taskIds[1])?.worktree, "missing");
+    await continuation;
+    const events = await readRequiredEvents(repo);
+    assert.equal(events.filter((event) => event.type === "task.cancel_requested" && event.task_id === fixture.taskIds[0]).length, 1);
+    assert.equal(events.some((event) => event.type === "task.cancelled" && event.task_id === fixture.taskIds[0]), true);
+    assert.equal(events.some((event) => event.type === "task.completed" && event.task_id === fixture.taskIds[1]), true);
+  });
+});
+
+test("run cancellation prevents new launches before fanning out through task.stop exactly once", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const fixture = await prepareConcurrentManagerFixture(repo, 3, 2, "parallel", 1_000, 500_000);
+    const started = await startWorkspaceManagerSession(repo, "Cancel this concurrent run as a group.", "manager");
+    assert.equal(started.ok, true, started.ok ? undefined : started.reason);
+    if (!started.ok) return;
+    const baseCommit = await gitStdout(repo, ["rev-parse", "HEAD"]);
+    for (const [index, taskId] of fixture.taskIds.slice(0, 2).entries()) {
+      for (const action of [
+        { type: "create_task_contract", contract: managerContract(taskId, baseCommit, [`${taskId}.txt`]) },
+        { type: "request_lease", task_id: taskId },
+        { type: "check_write_intent", task_id: taskId, intent: intentFor(taskId, [`${taskId}.txt`]) },
+        { type: "create_worktree", task_id: taskId }
+      ] as ManagerAction[]) {
+        const executed = await executeManagerAction(repo, started.value.session_id, action);
+        assert.equal(executed.ok, true, executed.ok ? undefined : executed.reason);
+      }
+      const runId = `R-cancel-${index}`;
+      await appendEvent(repo, { type: "task.started", task_id: taskId, data: { run_id: runId, tool: "concurrent-worker" } });
+      await appendEvent(repo, {
+        type: "task.worker_process_started",
+        task_id: taskId,
+        data: { version: 1, run_id: runId, tool: "concurrent-worker", pid: 2_000_000_000 + index, process_instance_id: `dead-${index}` }
+      });
+      await appendEvent(repo, {
+        type: "task.worker_process_stopped",
+        task_id: taskId,
+        data: { version: 1, run_id: runId, tool: "concurrent-worker", pid: 2_000_000_000 + index, process_instance_id: `dead-${index}`, exit_code: 1 }
+      });
+    }
+    const cancelled = await executeWorkspaceAction(repo, {
+      type: "run.stop",
+      payload: { session_id: started.value.session_id, reason: "Stop the whole admitted run." }
+    });
+    assert.equal(cancelled.ok, true, cancelled.ok ? undefined : cancelled.reason);
+    const events = await readRequiredEvents(repo);
+    assert.equal(events.some((event) => event.type === "scheduler.run_cancel_requested"), true);
+    assert.equal(events.some((event) => event.type === "scheduler.run_cancelled"), true);
+    assert.equal(events.some((event) => event.type === "task.started" && event.task_id === fixture.taskIds[2]), false);
+    for (const taskId of fixture.taskIds.slice(0, 2)) {
+      assert.equal(events.filter((event) => event.type === "task.cancel_requested" && event.task_id === taskId).length, 1);
+      assert.equal(events.filter((event) => event.type === "task.cancelled" && event.task_id === taskId).length, 1);
+    }
+  });
+});
+
+test("a provider quota wall pauses only its lane while an already-reserved sibling completes", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const taskIds = ["T-WAVE-001", "T-WAVE-002"];
+    await prepareConcurrentManagerFixture(repo, 2, 2, "parallel", 2_000, 500_000, undefined, taskIds[0]);
+    const started = await startWorkspaceManagerSession(repo, "Run until one provider lane reaches its quota wall.", "manager");
+    assert.equal(started.ok, true, started.ok ? undefined : started.reason);
+    if (!started.ok) return;
+    const result = await continueAutonomousManagerLoop(repo, started.value.session_id, { tool: "manager", maxSteps: 100 });
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    const events = await readRequiredEvents(repo);
+    const pause = events.find((event) => event.type === "task.paused" && event.task_id === taskIds[0]);
+    assert.equal(pause?.data.reason, "quota_exhausted");
+    assert.equal(events.some((event) => event.type === "task.failed" && event.task_id === taskIds[0]), false);
+    assert.equal(events.some((event) => event.type === "task.completed" && event.task_id === taskIds[1]), true);
+    assert.equal(events.some((event) => event.type === "integration.passed" && Array.isArray(event.data.applied) && event.data.applied.includes(taskIds[1])), true);
+    const status = await getStatus(repo);
+    assert.equal(status.ok, true, status.ok ? undefined : status.reason);
+    if (status.ok) {
+      assert.equal(status.value.leases[`${taskIds[0]}.txt`], taskIds[0]);
+      assert.notEqual(status.value.tasks.find((task) => task.task_id === taskIds[0])?.worktree, "missing");
+    }
+  });
+});
+
+test("a spawn-time session reservation refusal stops new lanes without disturbing an in-flight sibling", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const fixture = await prepareConcurrentManagerFixture(repo, 3, 2, "parallel", 2_500, 300_000);
+    const started = await startWorkspaceManagerSession(repo, "Run until a concurrent budget race closes a slot.", "manager");
+    assert.equal(started.ok, true, started.ok ? undefined : started.reason);
+    if (!started.ok) return;
+
+    const continuation = continueAutonomousManagerLoop(repo, started.value.session_id, { tool: "manager", maxSteps: 100 });
+    await waitForDurableEvent(repo, "scheduler.wave_started", null);
+    const competingReservation = await reserveMeteredCall(repo, {
+      provider: "external-metered-call",
+      session_id: started.value.session_id,
+      run_id: "R-external-budget-race",
+      task_id: null,
+      daemon_instance_id: "test-external-budget-race",
+      estimated_input_tokens: 1
+    });
+    assert.equal(competingReservation.ok, true, competingReservation.ok ? undefined : competingReservation.reason);
+
+    const result = await continuation;
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    if (!result.ok) return;
+    assert.equal(result.value.status, "stopped");
+
+    const events = await readRequiredEvents(repo);
+    const startedWorkers = fixture.taskIds.slice(0, 2).filter((taskId) =>
+      events.some((event) => event.type === "task.worker_process_started" && event.task_id === taskId)
+    );
+    assert.equal(startedWorkers.length, 1, "spawn-time budget admission did not leave exactly one in-flight worker");
+    const survivorTaskId = startedWorkers[0];
+    assert.equal(events.some((event) => event.type === "task.completed" && event.task_id === survivorTaskId), true);
+    assert.equal(events.some((event) => event.type === "integration.passed" && Array.isArray(event.data.applied) && event.data.applied.includes(survivorTaskId)), true);
+    assert.equal(events.some((event) => event.type === "task.started" && event.task_id === fixture.taskIds[2]), false);
+    const stoppedWave = events.find((event) => event.type === "scheduler.wave_stopped");
+    assert.match(typeof stoppedWave?.data.reason === "string" ? stoppedWave.data.reason : "", /token budget exceeded: session/u);
   });
 });
 
@@ -2577,7 +2736,8 @@ async function prepareConcurrentManagerFixture(
   mode: "parallel" | "sequence",
   workerDelayMs: number,
   sessionCeiling: number,
-  failTaskId?: string
+  failTaskId?: string,
+  quotaTaskId?: string
 ): Promise<{ taskIds: string[] }> {
   await createRatifiedSpec(repo, "S-001");
   await setConfigManagerAutonomy(repo, { level: "auto" });
@@ -2598,6 +2758,15 @@ async function prepareConcurrentManagerFixture(
           `if (taskId === ${JSON.stringify(failTaskId)}) {`,
           `  await new Promise((resolve) => setTimeout(resolve, ${Math.max(1, Math.floor(workerDelayMs / 2))}));`,
           "  throw new Error('fixture worker failure');",
+          "}"
+        ]),
+    ...(quotaTaskId === undefined
+      ? []
+      : [
+          `if (taskId === ${JSON.stringify(quotaTaskId)}) {`,
+          `  await new Promise((resolve) => setTimeout(resolve, ${Math.max(1, Math.floor(workerDelayMs / 2))}));`,
+          "  console.error('429 rate limit exceeded; retry after provider reset');",
+          "  process.exit(1);",
           "}"
         ]),
     `await new Promise((resolve) => setTimeout(resolve, ${workerDelayMs}));`
@@ -3300,7 +3469,7 @@ async function listenServer(server: Server): Promise<void> {
   });
 }
 
-async function waitForDurableEvent(repo: string, type: string, taskId: string, timeoutMs = 10_000): Promise<void> {
+async function waitForDurableEvent(repo: string, type: string, taskId: string | null, timeoutMs = 10_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const events = await readEvents(repo);

@@ -10,7 +10,7 @@ import test from "node:test";
 import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { recordHumanGuidance } from "../src/human-guidance.js";
-import { enqueueIntegrationPatch, integrateShadow, type IntegrationStatus } from "../src/integrate.js";
+import { captureIntegrationQueueExpectation, enqueueIntegrationPatch, integrateShadow, type IntegrationStatus } from "../src/integrate.js";
 import { rebuildRepoGraph } from "../src/repo-graph.js";
 
 const execFileAsync = promisify(execFile);
@@ -79,6 +79,27 @@ test("integrateShadow applies accepted queued patches together, runs tests, repo
     assert.equal(events.value.at(-1)?.type, "integration.passed");
     assert.equal(events.value.at(-1)?.task_id, null);
     assert.deepEqual(events.value.at(-1)?.data.applied, ["T-001", "T-002"]);
+  });
+});
+
+test("shadow verification refuses a queue other than the exact authorized survivor set", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await setConfigTestCommand(repo, "node -e \"process.exit(0)\"", []);
+    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writeContract(repo, "T-002", baseCommit, ["src/feature.ts"]);
+    await writeQueue(repo, ["T-001"]);
+    const expectation = await captureIntegrationQueueExpectation(repo, ["T-001"]);
+    assert.equal(expectation.ok, true, expectation.ok ? undefined : expectation.reason);
+    if (!expectation.ok) return;
+    await writeQueue(repo, ["T-001", "T-002"]);
+
+    const result = await integrateShadow(repo, expectation.value);
+
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.reason, /queue changed after survivor authorization/u);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (events.ok) assert.equal(events.value.some((event) => event.type === "integration.started"), false);
   });
 });
 

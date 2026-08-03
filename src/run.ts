@@ -167,17 +167,16 @@ export async function markRunFailed(
     return { ok: true, value: { task_id: taskId, status: "failed", ...(existingReason === undefined ? {} : { reason: existingReason }) } };
   }
 
-  const released = await releaseLease(repoRoot, taskId);
-  if (!released.ok) {
-    return { ok: false, reason: `failed to release lease for failed task ${taskId}: ${released.reason}` };
-  }
-
   const event = await appendEvent(repoRoot, {
     type: "task.failed",
     task_id: taskId,
     data: {
       reason,
-      lease_released: released.value.released,
+      lease_released: [],
+      lease_held_for_retry: true,
+      stop_retryable: true,
+      cleanup_complete: false,
+      terminal: true,
       ...data
     }
   });
@@ -505,6 +504,10 @@ async function finishPreparedRunAttempt(
     return failed.ok ? failedStreamOutput : failed;
   }
   if (!invokeResult.ok) {
+    if (invokeResult.budget_exceeded === true) {
+      const paused = await emitRunQuotaPause(repoRoot, prepared, invokeResult.reason);
+      return paused.ok ? invokeResult : paused;
+    }
     const failed = await emitRunFailure(
       repoRoot,
       prepared,
@@ -512,7 +515,7 @@ async function finishPreparedRunAttempt(
       invokeResult.exitCode,
       undefined,
       undefined,
-      { preserveWorktree: invokeResult.budget_exceeded === true }
+      { preserveWorktree: false }
     );
     return failed.ok ? invokeResult : failed;
   }
@@ -547,16 +550,8 @@ async function finishPreparedRunAttempt(
   );
   if (!postRunResult.ok) {
     await recordRoutingObservationBestEffort(repoRoot, prepared, invokeResult.value, 0);
-    const failed = await emitRunFailure(
-      repoRoot,
-      prepared,
-      postRunResult.reason,
-      invokeResult.value.exitCode,
-      undefined,
-      undefined,
-      { preserveWorktree: true }
-    );
-    return failed.ok ? postRunResult : failed;
+    const paused = await emitRunQuotaPause(repoRoot, prepared, postRunResult.reason);
+    return paused.ok ? postRunResult : paused;
   }
 
   const diffResult = await captureDiff(repoRoot, prepared.worktree, prepared.taskId, prepared.baseCommit);
@@ -813,7 +808,11 @@ async function emitRunFailure(
             reason: `${reason}; failed-task log archival incomplete: ${archived.reason}`,
             lease_released: [],
             worktree_removed: false,
-            lease_held_for_retry: true
+            lease_held_for_retry: true,
+            stop_retryable: true,
+            cleanup_complete: false,
+            failure_stage: "log_archival",
+            terminal: true
           }
         },
         prepared.onEvent
@@ -834,6 +833,10 @@ async function emitRunFailure(
             lease_released: [],
             worktree_removed: false,
             lease_held_for_retry: true,
+            stop_retryable: true,
+            cleanup_complete: false,
+            failure_stage: "worktree_cleanup",
+            terminal: true,
             ...(toolExit === undefined ? {} : { tool_exit: toolExit }),
             ...(diffPath === undefined ? {} : { diff_path: diffPath }),
             ...(changedFiles === undefined ? {} : { changed_files: changedFiles })
@@ -847,7 +850,27 @@ async function emitRunFailure(
   if (options.preserveWorktree !== true) {
     const released = await releaseLease(repoRoot, prepared.taskId);
     if (!released.ok) {
-      return { ok: false, reason: `failed to release lease for failed task ${prepared.taskId}: ${released.reason}` };
+      return emitRunEvent(
+        repoRoot,
+        {
+          type: "task.failed",
+          task_id: prepared.taskId,
+          data: {
+            run_id: prepared.runId,
+            tool: prepared.tool,
+            routing_task_type: prepared.contract.routing_task_type,
+            reason: `${reason}; failed-task lease release incomplete: ${released.reason}`,
+            lease_released: [],
+            worktree_removed: true,
+            lease_held_for_retry: true,
+            stop_retryable: true,
+            cleanup_complete: false,
+            failure_stage: "lease_release",
+            terminal: true
+          }
+        },
+        prepared.onEvent
+      );
     }
     releasedFiles = released.value.released;
   }
@@ -865,9 +888,38 @@ async function emitRunFailure(
         ...(releasedFiles === undefined ? {} : { lease_released: releasedFiles }),
         worktree_removed: options.preserveWorktree !== true,
         lease_held_for_retry: options.preserveWorktree === true,
+        cleanup_complete: options.preserveWorktree !== true,
+        terminal: true,
         ...(toolExit === undefined ? {} : { tool_exit: toolExit }),
         ...(diffPath === undefined ? {} : { diff_path: diffPath }),
         ...(changedFiles === undefined ? {} : { changed_files: changedFiles })
+      }
+    },
+    prepared.onEvent
+  );
+}
+
+async function emitRunQuotaPause(
+  repoRoot: string,
+  prepared: PreparedRun,
+  reason: string
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  return emitRunEvent(
+    repoRoot,
+    {
+      type: "task.paused",
+      task_id: prepared.taskId,
+      data: {
+        version: 1,
+        run_id: prepared.runId,
+        tool: prepared.tool,
+        routing_task_type: prepared.contract.routing_task_type,
+        reason: "quota_exhausted",
+        reroute_reason: reason,
+        checkpoint_preserved: true,
+        worktree_preserved: true,
+        lease_preserved: true,
+        terminal: true
       }
     },
     prepared.onEvent

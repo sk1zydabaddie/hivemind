@@ -18,7 +18,14 @@ import { loadAndValidateContract, normalizeAllowedFileIntents, normalizeContract
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
 import { formatErrorDetail } from "./error-detail.js";
-import { enqueueIntegrationPatch, integrateShadow, type EnqueueIntegrationPatchResult, type IntegrationStatus } from "./integrate.js";
+import {
+  captureIntegrationQueueExpectation,
+  enqueueIntegrationPatch,
+  integrateShadow,
+  type EnqueueIntegrationPatchResult,
+  type IntegrationQueueExpectation,
+  type IntegrationStatus
+} from "./integrate.js";
 import { checkWriteIntent, type WriteIntentPass } from "./intent.js";
 import { requirePassedWriteIntent } from "./intent.js";
 import { extractJsonObject } from "./json.js";
@@ -38,6 +45,7 @@ import { loadSpecDocument } from "./spec-format.js";
 import { getStatus, type HivemindStatus } from "./status.js";
 import { submitTask, type SubmitResult } from "./submit.js";
 import { requestTaskRedirect } from "./supervision.js";
+import { requestSystemTaskStop } from "./task-control.js";
 import { admitValueQuality, type ValueQualityAdmission, type ValueQualityStrategy } from "./value-quality.js";
 import { admitExecutionWave } from "./wave-admission.js";
 import { createTaskWorktree, type WorktreeResult } from "./worktree.js";
@@ -159,7 +167,7 @@ export type ManagerAction =
   | { type: "analyze_patch"; task_id: string }
   | { type: "enqueue_patch"; task_id: string }
   | { type: "admit_value_quality"; task_id: string; strategy: ValueQualityStrategy; n?: number }
-  | { type: "integrate_shadow" };
+  | ({ type: "integrate_shadow" } & Partial<IntegrationQueueExpectation>);
 
 const MANAGER_BATCH_MAX_ACTIONS = 5;
 const PRE_WORKER_BATCH_SEQUENCE: ManagerAction["type"][] = [
@@ -532,6 +540,14 @@ interface ConcurrentWaveStep {
   result: ManagerActionExecutionRecord;
 }
 
+type ConcurrentLaneStatus = "completed" | "failed" | "cancelled" | "paused" | "setup_refused";
+
+interface ConcurrentLaneOutcome {
+  task_id: string;
+  status: ConcurrentLaneStatus;
+  reason: string;
+}
+
 type ConcurrentWaveDecision =
   | { kind: "not_applicable" }
   | {
@@ -541,6 +557,7 @@ type ConcurrentWaveDecision =
       configured_cap: number;
       effective_concurrency: number;
       steps: ConcurrentWaveStep[];
+      lane_outcomes: ConcurrentLaneOutcome[];
       failure?: { action: ManagerAction; result: Extract<ManagerActionExecutionRecord, { ok: false }> };
     }
   | { kind: "judgment"; reason: string };
@@ -618,6 +635,7 @@ async function deriveDeterministicHappyPathProposal(
   const orderedTasks = orderedPlanTasks(plan.value);
   if (!orderedTasks.ok) return { kind: "judgment", reason: orderedTasks.reason };
   const integrated = integratedTaskIdsFromEvents(events.value);
+  const settledParallelLanes = settledParallelLaneTaskIds(events.value);
   const taskStatus = new Map(status.value.tasks.map((task) => [task.task_id, task]));
   const planTaskIds = new Set(orderedTasks.value.map((task) => task.task_id));
 
@@ -638,6 +656,7 @@ async function deriveDeterministicHappyPathProposal(
 
     const runState = latestTaskRunState(events.value, task.task_id);
     if (runState.state === "failed" || runState.state === "cancelled") {
+      if (settledParallelLanes.has(task.task_id)) continue;
       const terminal = runState.state === "failed" ? runState.failed : runState.cancelled;
       const reason = typeof terminal.data.reason === "string" ? terminal.data.reason : runState.state;
       return { kind: "judgment", reason: `${task.task_id} is ${runState.state}: ${reason}` };
@@ -649,6 +668,7 @@ async function deriveDeterministicHappyPathProposal(
       continue;
     }
     if (runState.state === "running") {
+      if (latestQuotaPauseAfterLatestStart(events.value, task.task_id) !== null && settledParallelLanes.has(task.task_id)) continue;
       return { kind: "waiting", task_id: task.task_id };
     }
 
@@ -774,7 +794,10 @@ async function tryExecuteConcurrentWorkerWave(
   const events = await readEvents(repoRoot);
   if (!events.ok) return events;
   const integrated = integratedTaskIdsFromEvents(events.value);
-  const group = plan.value.execution_groups.find((entry) => entry.task_ids.some((taskId) => !integrated.has(taskId)));
+  const settledParallelLanes = settledParallelLaneTaskIds(events.value);
+  const group = plan.value.execution_groups.find((entry) =>
+    entry.task_ids.some((taskId) => !integrated.has(taskId) && !settledParallelLanes.has(taskId))
+  );
   if (group === undefined || group.mode !== "parallel") {
     return { ok: true, value: { kind: "not_applicable" } };
   }
@@ -787,6 +810,9 @@ async function tryExecuteConcurrentWorkerWave(
 
   const status = await getStatus(repoRoot);
   if (!status.ok) return status;
+  if (status.value.integration.queue.length > 0) {
+    return { ok: true, value: { kind: "not_applicable" } };
+  }
   const statusByTask = new Map(status.value.tasks.map((task) => [task.task_id, task]));
   const taskById = new Map(plan.value.tasks.map((task) => [task.task_id, task]));
   const runnable: Array<{ task: TentativePlanTask; actions: ManagerAction[] }> = [];
@@ -865,25 +891,28 @@ async function tryExecuteConcurrentWorkerWave(
   if (!waveStarted.ok) return waveStarted;
 
   const steps: ConcurrentWaveStep[] = [];
+  const laneOutcomes = new Map<string, ConcurrentLaneOutcome>();
   const active = new Map<string, Promise<{ taskId: string; action: ManagerAction; tier: ConcurrentWaveStep["tier"]; result: ManagerActionExecutionRecord }>>();
   let nextIndex = 0;
-  let failure: { action: ManagerAction; result: Extract<ManagerActionExecutionRecord, { ok: false }> } | undefined;
+  let stopNewLaunches: { action: ManagerAction; result: Extract<ManagerActionExecutionRecord, { ok: false }> } | undefined;
 
   while (nextIndex < runnable.length || active.size > 0) {
-    while (failure === undefined && active.size < effectiveConcurrency && nextIndex < runnable.length) {
+    while (stopNewLaunches === undefined && active.size < effectiveConcurrency && nextIndex < runnable.length) {
       const entry = runnable[nextIndex++];
-      const currentAdmission = await admitExecutionWave(repoRoot, session.spec_id, group.group_id);
-      if (!currentAdmission.ok || !currentAdmission.value.admitted_task_ids.includes(entry.task.task_id)) {
-        failure = {
+      if (await runCancellationRequested(repoRoot, session.session_id)) {
+        stopNewLaunches = {
           action: { type: "run_worker", task_id: entry.task.task_id },
-          result: {
-            ok: false,
-            reason: currentAdmission.ok
-              ? `concurrent scheduler re-admission no longer permits ${entry.task.task_id}`
-              : currentAdmission.reason
-          }
+          result: { ok: false, reason: `run ${session.session_id} was cancelled before ${entry.task.task_id} launched` }
         };
         break;
+      }
+      const currentAdmission = await admitExecutionWave(repoRoot, session.spec_id, group.group_id);
+      if (!currentAdmission.ok || !currentAdmission.value.admitted_task_ids.includes(entry.task.task_id)) {
+        const reason = currentAdmission.ok
+          ? `concurrent scheduler re-admission no longer permits ${entry.task.task_id}`
+          : currentAdmission.reason;
+        laneOutcomes.set(entry.task.task_id, { task_id: entry.task.task_id, status: "setup_refused", reason });
+        continue;
       }
 
       const refreshedStatus = await getStatus(repoRoot);
@@ -891,29 +920,40 @@ async function tryExecuteConcurrentWorkerWave(
       const refreshedCurrent = refreshedStatus.value.tasks.find((task) => task.task_id === entry.task.task_id);
       const refreshedActions = await derivePreWorkerActions(repoRoot, plan.value, entry.task, refreshedCurrent);
       if (!refreshedActions.ok) {
-        failure = { action: { type: "run_worker", task_id: entry.task.task_id }, result: { ok: false, reason: refreshedActions.reason } };
-        break;
+        laneOutcomes.set(entry.task.task_id, { task_id: entry.task.task_id, status: "setup_refused", reason: refreshedActions.reason });
+        continue;
       }
 
       const setupActions = refreshedActions.value.slice(0, -1);
+      let setupFailure: Extract<ManagerActionExecutionRecord, { ok: false }> | undefined;
       for (const action of setupActions) {
         const executed = await executeScheduledWaveAction(repoRoot, session.session_id, action, policy, "complete");
         if (!executed.ok) return executed;
         steps.push({ action, tier: executed.value.tier, result: executed.value.result });
         if (!executed.value.result.ok) {
-          failure = { action, result: executed.value.result };
+          setupFailure = executed.value.result;
           break;
         }
       }
-      if (failure !== undefined) break;
+      if (setupFailure !== undefined) {
+        laneOutcomes.set(entry.task.task_id, { task_id: entry.task.task_id, status: "setup_refused", reason: setupFailure.reason });
+        await cleanupRefusedConcurrentLane(repoRoot, entry.task.task_id, setupFailure.reason);
+        continue;
+      }
 
       const runAction: ManagerAction = { type: "run_worker", task_id: entry.task.task_id };
       const started = await executeScheduledWaveAction(repoRoot, session.session_id, runAction, policy, "start_worker");
       if (!started.ok) return started;
       if (!started.value.result.ok) {
         steps.push({ action: runAction, tier: started.value.tier, result: started.value.result });
-        failure = { action: runAction, result: started.value.result };
-        break;
+        const outcome = await classifyConcurrentLaneOutcome(repoRoot, entry.task.task_id, started.value.result.reason);
+        laneOutcomes.set(entry.task.task_id, outcome);
+        if (isSessionReservationRefusal(started.value.result.reason)) {
+          stopNewLaunches = { action: runAction, result: started.value.result };
+        } else if (outcome.status !== "paused") {
+          await cleanupRefusedConcurrentLane(repoRoot, entry.task.task_id, started.value.result.reason);
+        }
+        continue;
       }
       active.set(
         entry.task.task_id,
@@ -932,21 +972,120 @@ async function tryExecuteConcurrentWorkerWave(
     const completed = await Promise.race(active.values());
     active.delete(completed.taskId);
     steps.push({ action: completed.action, tier: completed.tier, result: completed.result });
-    if (!completed.result.ok && failure === undefined) {
-      failure = { action: completed.action, result: completed.result };
+    const outcome = completed.result.ok
+      ? { task_id: completed.taskId, status: "completed" as const, reason: "worker completed" }
+      : await classifyConcurrentLaneOutcome(repoRoot, completed.taskId, completed.result.reason);
+    laneOutcomes.set(completed.taskId, outcome);
+    if (
+      stopNewLaunches === undefined &&
+      outcome.status === "paused" &&
+      isSessionReservationRefusal(outcome.reason)
+    ) {
+      stopNewLaunches = { action: completed.action, result: completed.result.ok ? { ok: false, reason: outcome.reason } : completed.result };
     }
   }
 
-  if (active.size > 0) {
-    const remaining = await Promise.all(active.values());
-    for (const completed of remaining) {
-      steps.push({ action: completed.action, tier: completed.tier, result: completed.result });
-      if (!completed.result.ok && failure === undefined) failure = { action: completed.action, result: completed.result };
+  if (stopNewLaunches === undefined && await runCancellationRequested(repoRoot, session.session_id)) {
+    stopNewLaunches = {
+      action: { type: "run_worker", task_id: runnable.find((entry) => !laneOutcomes.has(entry.task.task_id))?.task.task_id ?? runnable[0].task.task_id },
+      result: { ok: false, reason: `run ${session.session_id} was cancelled; no new lane or verification action will start` }
+    };
+  }
+
+  const settledTaskIds = runnable.map((entry) => entry.task.task_id).filter((taskId) => laneOutcomes.has(taskId));
+  const workerSurvivors = runnable
+    .map((entry) => entry.task.task_id)
+    .filter((taskId) => laneOutcomes.get(taskId)?.status === "completed");
+  const waveSettled = await appendEvent(repoRoot, {
+    type: "scheduler.wave_settled",
+    task_id: null,
+    data: {
+      version: 1,
+      session_id: session.session_id,
+      group_id: group.group_id,
+      expected_task_ids: runnable.map((entry) => entry.task.task_id),
+      settled_task_ids: settledTaskIds,
+      worker_survivor_task_ids: workerSurvivors,
+      lane_outcomes: runnable.map((entry) => laneOutcomes.get(entry.task.task_id) ?? {
+        task_id: entry.task.task_id,
+        status: "not_launched",
+        reason: stopNewLaunches?.result.reason ?? "launching stopped"
+      })
+    }
+  });
+  if (!waveSettled.ok) return waveSettled;
+
+  const acceptedSurvivors: string[] = [];
+  for (const taskId of workerSurvivors) {
+    let survivorAccepted = true;
+    for (const action of [
+      { type: "submit_patch", task_id: taskId },
+      { type: "analyze_patch", task_id: taskId }
+    ] as ManagerAction[]) {
+      const executed = await executeScheduledWaveAction(repoRoot, session.session_id, action, policy, "complete");
+      if (!executed.ok) return executed;
+      steps.push({ action, tier: executed.value.tier, result: executed.value.result });
+      if (!executed.value.result.ok) {
+        survivorAccepted = false;
+        laneOutcomes.set(taskId, { task_id: taskId, status: "failed", reason: executed.value.result.reason });
+        break;
+      }
+    }
+    if (!survivorAccepted) continue;
+    const analyzedStatus = await getStatus(repoRoot);
+    if (!analyzedStatus.ok) return analyzedStatus;
+    const analyzedTask = analyzedStatus.value.tasks.find((task) => task.task_id === taskId);
+    if (analyzedTask?.patch.accepted !== true || analyzedTask.patch.verdict !== "accept") {
+      laneOutcomes.set(taskId, {
+        task_id: taskId,
+        status: "failed",
+        reason: analyzedTask?.patch.reason ?? "patch analysis did not accept the survivor"
+      });
+      continue;
+    }
+    const enqueueAction: ManagerAction = { type: "enqueue_patch", task_id: taskId };
+    const enqueued = await executeScheduledWaveAction(repoRoot, session.session_id, enqueueAction, policy, "complete");
+    if (!enqueued.ok) return enqueued;
+    steps.push({ action: enqueueAction, tier: enqueued.value.tier, result: enqueued.value.result });
+    if (!enqueued.value.result.ok) {
+      laneOutcomes.set(taskId, { task_id: taskId, status: "failed", reason: enqueued.value.result.reason });
+      continue;
+    }
+    acceptedSurvivors.push(taskId);
+  }
+
+  const budgetStoppedLaunches = stopNewLaunches !== undefined && isSessionReservationRefusal(stopNewLaunches.result.reason);
+  if (acceptedSurvivors.length > 0 && (stopNewLaunches === undefined || budgetStoppedLaunches)) {
+    const expectation = await captureIntegrationQueueExpectation(repoRoot, acceptedSurvivors);
+    if (!expectation.ok) {
+      stopNewLaunches = { action: { type: "integrate_shadow" }, result: { ok: false, reason: expectation.reason } };
+    } else {
+      const integrateAction: ManagerAction = { type: "integrate_shadow", ...expectation.value };
+      const integratedResult = await executeScheduledWaveAction(repoRoot, session.session_id, integrateAction, policy, "complete");
+      if (!integratedResult.ok) return integratedResult;
+      steps.push({ action: integrateAction, tier: integratedResult.value.tier, result: integratedResult.value.result });
+      if (!integratedResult.value.result.ok) {
+        stopNewLaunches = { action: integrateAction, result: integratedResult.value.result };
+      }
+    }
+  }
+  if (stopNewLaunches === undefined) {
+    const firstUnsuccessfulLane = runnable
+      .map((entry) => laneOutcomes.get(entry.task.task_id))
+      .find((entry) => entry !== undefined && entry.status !== "completed");
+    if (firstUnsuccessfulLane !== undefined) {
+      stopNewLaunches = {
+        action: { type: "run_worker", task_id: firstUnsuccessfulLane.task_id },
+        result: {
+          ok: false,
+          reason: `${firstUnsuccessfulLane.task_id} settled as ${firstUnsuccessfulLane.status}: ${firstUnsuccessfulLane.reason}; independent survivors completed and were verified before the run stopped for judgment`
+        }
+      };
     }
   }
 
   const waveFinished = await appendEvent(repoRoot, {
-    type: failure === undefined ? "scheduler.wave_completed" : "scheduler.wave_stopped",
+    type: stopNewLaunches === undefined ? "scheduler.wave_completed" : "scheduler.wave_stopped",
     task_id: null,
     data: {
       version: 1,
@@ -954,8 +1093,14 @@ async function tryExecuteConcurrentWorkerWave(
       group_id: group.group_id,
       task_ids: runnable.map((entry) => entry.task.task_id),
       binding_limit: bindingLimit,
-      result: failure === undefined ? "completed" : "stopped",
-      ...(failure === undefined ? {} : { reason: failure.result.reason })
+      result: stopNewLaunches === undefined ? "settled" : "stopped",
+      accepted_survivor_task_ids: acceptedSurvivors,
+      lane_outcomes: runnable.map((entry) => laneOutcomes.get(entry.task.task_id) ?? {
+        task_id: entry.task.task_id,
+        status: "not_launched",
+        reason: stopNewLaunches?.result.reason ?? "launching stopped"
+      }),
+      ...(stopNewLaunches === undefined ? {} : { reason: stopNewLaunches.result.reason })
     }
   });
   if (!waveFinished.ok) return waveFinished;
@@ -969,9 +1114,153 @@ async function tryExecuteConcurrentWorkerWave(
       configured_cap: configuredCap,
       effective_concurrency: effectiveConcurrency,
       steps,
-      ...(failure === undefined ? {} : { failure })
+      lane_outcomes: runnable.map((entry) => laneOutcomes.get(entry.task.task_id)).filter((entry): entry is ConcurrentLaneOutcome => entry !== undefined),
+      ...(stopNewLaunches === undefined ? {} : { failure: stopNewLaunches })
     }
   };
+}
+
+async function classifyConcurrentLaneOutcome(
+  repoRoot: string,
+  taskId: string,
+  fallbackReason: string
+): Promise<ConcurrentLaneOutcome> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return { task_id: taskId, status: "failed", reason: `${fallbackReason}; ${events.reason}` };
+  const pause = latestQuotaPauseAfterLatestStart(events.value, taskId);
+  if (pause !== null) {
+    return {
+      task_id: taskId,
+      status: "paused",
+      reason: typeof pause.data.reroute_reason === "string" ? pause.data.reroute_reason : fallbackReason
+    };
+  }
+  const state = latestTaskRunState(events.value, taskId);
+  if (state.state === "cancelled") {
+    return {
+      task_id: taskId,
+      status: "cancelled",
+      reason: typeof state.cancelled.data.reason === "string" ? state.cancelled.data.reason : fallbackReason
+    };
+  }
+  if (state.state === "failed") {
+    return {
+      task_id: taskId,
+      status: "failed",
+      reason: typeof state.failed.data.reason === "string" ? state.failed.data.reason : fallbackReason
+    };
+  }
+  return { task_id: taskId, status: "failed", reason: fallbackReason };
+}
+
+async function cleanupRefusedConcurrentLane(repoRoot: string, taskId: string, reason: string): Promise<void> {
+  const contract = await loadAndValidateContract(repoRoot, taskId);
+  if (!contract.ok) return;
+  const stopped = await requestSystemTaskStop(repoRoot, {
+    task_id: taskId,
+    reason: `Concurrent lane stopped after an independently gated action was refused: ${reason}`
+  });
+  if (!stopped.ok && !/already terminal/u.test(stopped.reason)) {
+    console.error(`warning: concurrent lane cleanup remains retryable for ${taskId}: ${stopped.reason}`);
+  }
+}
+
+function isSessionReservationRefusal(reason: string): boolean {
+  return /token budget exceeded: session .+another \d+-token call would exceed ceiling/iu.test(reason);
+}
+
+function settledParallelLaneTaskIds(events: HivemindEvent[]): Set<string> {
+  const settled = new Set<string>();
+  for (const event of events) {
+    if (!["scheduler.wave_settled", "scheduler.wave_completed", "scheduler.wave_stopped"].includes(event.type) || !Array.isArray(event.data.lane_outcomes)) continue;
+    for (const raw of event.data.lane_outcomes) {
+      if (!isRecord(raw) || typeof raw.task_id !== "string" || typeof raw.status !== "string") continue;
+      if (["failed", "cancelled", "paused", "setup_refused"].includes(raw.status)) settled.add(raw.task_id);
+    }
+  }
+  return settled;
+}
+
+async function runCancellationRequested(repoRoot: string, sessionId: string): Promise<boolean> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return true;
+  let requested = false;
+  for (const event of events.value) {
+    if (event.data.session_id !== sessionId) continue;
+    if (event.type === "scheduler.run_cancel_requested" || event.type === "scheduler.run_cancelled") requested = true;
+  }
+  return requested;
+}
+
+export async function cancelManagerRun(
+  repoRoot: string,
+  request: unknown
+): Promise<SpecResult<{ session_id: string; stopped_task_ids: string[]; status: "cancelled" }>> {
+  if (!isRecord(request)) return { ok: false, reason: "run stop request must be a JSON object" };
+  if (Object.keys(request).some((key) => key !== "session_id" && key !== "reason")) {
+    return { ok: false, reason: "run stop request contains an unsupported authority field" };
+  }
+  if (typeof request.session_id !== "string" || request.session_id.trim() === "") {
+    return { ok: false, reason: "run stop session_id is required" };
+  }
+  if (typeof request.reason !== "string" || request.reason.trim() === "" || request.reason.length > 2000) {
+    return { ok: false, reason: "run stop reason must be a non-empty string of at most 2000 characters" };
+  }
+  const sessionId = request.session_id.trim();
+  const session = await loadManagerSession(repoRoot, sessionId);
+  if (!session.ok) return session;
+  const plan = await loadCurrentRatifiedPlan(repoRoot, session.value.spec_id, "run cancellation");
+  if (!plan.ok) return plan;
+  const requested = await appendEvent(repoRoot, {
+    type: "scheduler.run_cancel_requested",
+    task_id: null,
+    data: {
+      version: 1,
+      session_id: sessionId,
+      reason: request.reason.trim(),
+      requested_by: "human",
+      new_launches_permitted: false
+    }
+  });
+  if (!requested.ok) return requested;
+
+  const stoppedTaskIds: string[] = [];
+  const failures: string[] = [];
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return events;
+  const status = await getStatus(repoRoot);
+  if (!status.ok) return status;
+  const statusByTask = new Map(status.value.tasks.map((task) => [task.task_id, task]));
+  for (const task of plan.value.tasks) {
+    const state = latestTaskRunState(events.value, task.task_id);
+    const current = statusByTask.get(task.task_id);
+    const hasCanonicalResources = current !== undefined && (current.lease.held === true || current.worktree !== "missing");
+    if (
+      state.state !== "running" &&
+      !(state.state === "failed" && state.failed.data.stop_retryable === true) &&
+      !(state.state === "not_started" && hasCanonicalResources)
+    ) continue;
+    const stopped = await requestSystemTaskStop(repoRoot, { task_id: task.task_id, reason: request.reason.trim() });
+    if (stopped.ok) stoppedTaskIds.push(task.task_id);
+    else failures.push(`${task.task_id}: ${stopped.reason}`);
+  }
+  const terminal = await appendEvent(repoRoot, {
+    type: failures.length === 0 ? "scheduler.run_cancelled" : "scheduler.run_cancel_failed",
+    task_id: null,
+    data: {
+      version: 1,
+      session_id: sessionId,
+      reason: request.reason.trim(),
+      stopped_task_ids: stoppedTaskIds,
+      failures,
+      terminal: true,
+      retryable: failures.length > 0
+    }
+  });
+  if (!terminal.ok) return terminal;
+  return failures.length === 0
+    ? { ok: true, value: { session_id: sessionId, stopped_task_ids: stoppedTaskIds, status: "cancelled" } }
+    : { ok: false, reason: `run cancellation incomplete and retryable: ${failures.join("; ")}` };
 }
 
 async function executeScheduledWaveAction(
@@ -2828,7 +3117,17 @@ async function executeDeterministicAction(
       )
     );
   }
-  return recordResult(await routeMutatingAction<IntegrationStatus>(repoRoot, "/integrate/shadow", {}, () => integrateShadow(repoRoot)));
+  const expectation = action.expected_task_ids === undefined || action.expected_queue_sha256 === undefined
+    ? undefined
+    : { expected_task_ids: action.expected_task_ids, expected_queue_sha256: action.expected_queue_sha256 };
+  return recordResult(
+    await routeMutatingAction<IntegrationStatus>(
+      repoRoot,
+      "/integrate/shadow",
+      expectation ?? {},
+      () => integrateShadow(repoRoot, expectation)
+    )
+  );
 }
 
 async function waitForTaskRunCompletion(repoRoot: string, taskId: string): Promise<{ ok: true; value: RunResult } | { ok: false; reason: string }> {
@@ -2878,6 +3177,16 @@ async function recordRunWaitTimeout(repoRoot: string, taskId: string, reason: st
   );
   if (!marked.ok) {
     return { ok: false, reason: `${reason}; failed to record durable task.failed event: ${marked.reason}` };
+  }
+  const contract = await loadAndValidateContract(repoRoot, taskId);
+  if (contract.ok) {
+    const stopped = await requestSystemTaskStop(repoRoot, {
+      task_id: taskId,
+      reason: `Bounded worker observation timed out: ${reason}`
+    });
+    if (!stopped.ok) {
+      return { ok: false, reason: `${reason}; cleanup remains retryable with the lease held: ${stopped.reason}` };
+    }
   }
 
   const events = await readEvents(repoRoot);
@@ -3329,8 +3638,28 @@ function parseManagerAction(raw: unknown): SpecResult<ManagerAction> {
   if (!isRecord(raw) || typeof raw.type !== "string") {
     return { ok: false, reason: "manager action must be a JSON object with a string type" };
   }
-  if (raw.type === "get_status" || raw.type === "integrate_shadow") {
+  if (raw.type === "get_status") {
     return Object.keys(raw).length === 1 ? { ok: true, value: { type: raw.type } } : { ok: false, reason: `${raw.type} action must not include extra fields` };
+  }
+  if (raw.type === "integrate_shadow") {
+    const keys = Object.keys(raw);
+    if (keys.length === 1) return { ok: true, value: { type: "integrate_shadow" } };
+    if (
+      keys.some((key) => !["type", "expected_task_ids", "expected_queue_sha256"].includes(key)) ||
+      !Array.isArray(raw.expected_task_ids) ||
+      !raw.expected_task_ids.every((entry) => typeof entry === "string") ||
+      typeof raw.expected_queue_sha256 !== "string"
+    ) {
+      return { ok: false, reason: "integrate_shadow expectation requires only expected_task_ids and expected_queue_sha256" };
+    }
+    return {
+      ok: true,
+      value: {
+        type: "integrate_shadow",
+        expected_task_ids: raw.expected_task_ids,
+        expected_queue_sha256: raw.expected_queue_sha256
+      }
+    };
   }
   if (raw.type === "create_task_contract") {
     return isRecord(raw.contract) && Object.keys(raw).length === 2
