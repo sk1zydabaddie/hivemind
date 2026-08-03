@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { TaskProjection } from "./projection";
 
 export type AutonomyLevel = "auto" | "review_plan" | "review_everything";
 
@@ -66,6 +67,19 @@ export interface WorkspacePlanReview {
 }
 
 export interface WorkspaceInspection {
+  tasks: TaskProjection[];
+  execution_groups: Array<{
+    group_id: string;
+    mode: "parallel" | "sequence";
+    task_ids: string[];
+    label: string;
+    counts: { working: number; waiting: number; needs_you: number; done: number };
+    configured_cap: number | null;
+    effective_concurrency: number | null;
+    binding_limit: "configured_cap" | "budget" | "ready_count" | null;
+    capacity_note: string | null;
+  }>;
+  task_titles: Record<string, string>;
   active_spec_id: string | null;
   manager_session: null | {
     session_id: string;
@@ -97,6 +111,8 @@ export interface WorkspaceInspection {
     session_id: string | null;
     calls: number;
     effective_tokens: number;
+    reserved_tokens: number;
+    committed_tokens: number;
     run_ceiling_tokens: number;
     session_ceiling_tokens: number;
     near_session_ceiling: boolean;
@@ -222,6 +238,7 @@ export type WorkspaceAction = {
     | "manager.approve_pending"
     | "task.redirect"
     | "task.stop"
+    | "run.stop"
     | "status.inspect"
     | "trail.inspect"
     | "change.inspect"

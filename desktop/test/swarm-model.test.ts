@@ -28,7 +28,8 @@ describe("Swarm presentation model", () => {
     }
 
     const tree = buildSwarmTree(projection, inspection);
-    expect(tree.groups.map((group) => group.label)).toEqual(["3 at once", "6 in order"]);
+    expect(tree.groups.map((group) => group.label)).toEqual(["2 working, 1 waiting", "1 needs you, 5 waiting"]);
+    expect(tree.groups[0]?.capacity_note).toBe("Budget allows 2 workers right now; the project limit is 4.");
     expect(tree.task_count).toBe(9);
     expect(tree.subagent_count).toBe(3);
     expect(tree.state).toBe("needs-you");
@@ -81,6 +82,30 @@ function fixtureInspection(taskCount: number): WorkspaceInspection {
     ]
   };
   return {
+    tasks: tasks.map((task, index) => ({
+      task_id: task.task_id,
+      title: task.title,
+      state: index < 2 ? "running" as const : index === 3 ? "failed" as const : "planned" as const,
+      agent: index < 2 ? "fixture" : null,
+      worktree: index < 2 ? `.hivemind/worktrees/${task.task_id}` : null,
+      lease_files: index < 2 ? task.scope : [],
+      patch: { submitted: false, analyzed: false, verdict: null, reason: null, changed_files: null },
+      integration: "not queued",
+      issue: index === 3 ? "worker stopped" : null,
+      stalled: false,
+      last_event: null,
+      last_event_at: null,
+      execution_group: index < 3 ? "G-1" : "G-2",
+      group_mode: index < 3 ? "parallel" as const : "sequence" as const,
+      depends_on: task.depends_on,
+      started_at: index < 2 ? "2026-07-31T12:00:00.000Z" : null,
+      worker_finished_at: index === 3 ? "2026-07-31T12:00:00.000Z" : null
+    })),
+    execution_groups: [
+      { group_id: "G-1", mode: "parallel", task_ids: tasks.slice(0, 3).map((task) => task.task_id), label: "2 working, 1 waiting", counts: { working: 2, waiting: 1, needs_you: 0, done: 0 }, configured_cap: 4, effective_concurrency: 2, binding_limit: "budget", capacity_note: "Budget allows 2 workers right now; the project limit is 4." },
+      { group_id: "G-2", mode: "sequence", task_ids: tasks.slice(3).map((task) => task.task_id), label: "1 needs you, 5 waiting", counts: { working: 0, waiting: 5, needs_you: 1, done: 0 }, configured_cap: null, effective_concurrency: null, binding_limit: null, capacity_note: null }
+    ],
+    task_titles: Object.fromEntries(tasks.map((task) => [task.task_id, task.title])),
     active_spec_id: "S-001",
     manager_session: null,
     autonomy: { configured_level: "auto", run_levels: [] },
@@ -89,7 +114,7 @@ function fixtureInspection(taskCount: number): WorkspaceInspection {
     integration_failure: null,
     needs_you: [],
     later: [],
-    spend: { session_id: null, calls: 0, effective_tokens: 0, run_ceiling_tokens: 150_000, session_ceiling_tokens: 500_000, near_session_ceiling: false },
+    spend: { session_id: null, calls: 0, effective_tokens: 0, reserved_tokens: 0, committed_tokens: 0, run_ceiling_tokens: 150_000, session_ceiling_tokens: 500_000, near_session_ceiling: false },
     swarm: {
       characterizations: [{
         candidate_id: "C-001",

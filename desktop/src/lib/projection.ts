@@ -58,6 +58,7 @@ export interface TaskProjection {
   };
   integration: string;
   issue: string | null;
+  stalled: boolean;
   last_event: string | null;
   last_event_at: string | null;
   execution_group: string | null;
@@ -674,6 +675,7 @@ function ensureTask(
       },
       integration: "not queued",
       issue: null,
+      stalled: false,
       last_event: null,
       last_event_at: null,
       execution_group: null,

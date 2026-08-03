@@ -1374,6 +1374,8 @@ M10.5 replaces M10.4's provisional first-failure boundary with all-settled lane 
 
 Shadow verification consumes survivors as one exact set. After workers settle, each successful lane passes the existing submit/analyze gates, only accepted lanes are queued, and the scheduler binds the ordered task IDs plus queue hash before invoking the existing verifier. A changed or accidental queue refuses before checks. Timeouts and restarts retain the established dangerous-direction rules: no direct lease release, PL-1 death proof, cleanup before lease release last, and independent reservation/worktree/lease reconciliation per worker. M10.5 changes no lease semantics and adds no LLM judgment.
 
+M10.6 projects that concurrent truth through one Core-owned workspace view. Work and Swarm consume the same durable per-task state; the renderer does not reconstruct lifecycle truth from separate event reducers. Groups show actual working, waiting, stopped, and completed counts, with lane-local stalls and failures attached to the affected task. Settled and actively reserved tokens are shown together against the session ceiling, and scheduler evidence names budget when reservation capacity rather than the configured worker cap limits a wave. Task titles lead on human-facing surfaces while durable IDs remain available as secondary evidence. Stop-one and stop-run controls remain distinct typed calls to the existing audited task disposer and run fan-out. The client schedules nothing, evaluates no gate, and infers no authority.
+
 The full app should have these main pages or equivalent workspace surfaces.
 
 ### 1. Project Home

@@ -49,7 +49,7 @@ type Selection =
   | { type: "task"; id: string }
   | { type: "subagent"; id: string };
 
-type ActionMode = "redirect" | "stop" | "cancel-quality" | null;
+type ActionMode = "redirect" | "stop" | "stop-group" | "cancel-quality" | null;
 
 export function SwarmTab({
   projection,
@@ -246,8 +246,8 @@ function TaskBranch({
       >
         {task.state === "needs-you" ? <AlertTriangle size={15} aria-hidden="true" /> : <Bot size={15} aria-hidden="true" />}
         <span>
-          <strong>{task.task.task_id}</strong>
-          <small>{task.task.title}</small>
+          <strong>{task.task.title}</strong>
+          <small>{task.task.task_id}</small>
         </span>
         <i className="node-state-dot" aria-hidden="true" />
       </button>
@@ -356,12 +356,17 @@ function AgentInspector({
           ) : selected.type === "subagent" ? (
             <SubagentInspector agent={selected.node} onCancel={() => setMode("cancel-quality")} />
           ) : selected.type === "group" ? (
-            <GroupInspector group={selected.node} />
+            <GroupInspector
+              group={selected.node}
+              busy={busy}
+              canStop={inspection?.manager_session !== null && inspection?.manager_session !== undefined}
+              onStop={() => setMode("stop-group")}
+            />
           ) : (
             <RootInspector tree={tree} inspection={inspection} />
           )}
 
-          {mode && (selected.type === "task" || selected.type === "subagent") ? (
+          {mode && (selected.type === "task" || selected.type === "subagent" || selected.type === "group") ? (
             <ActionComposer
               mode={mode}
               value={message}
@@ -373,6 +378,8 @@ function AgentInspector({
                   void runAction({ type: "task.redirect", payload: { task_id: selected.node.task.task_id, correction: message } }, "Guidance was sent to the worker's safe correction point.");
                 } else if (selected.type === "task" && mode === "stop") {
                   void runAction({ type: "task.stop", payload: { task_id: selected.node.task.task_id, reason: message } }, "The task stopped and its owned work was cleaned up.");
+                } else if (selected.type === "group" && mode === "stop-group" && inspection?.manager_session) {
+                  void runAction({ type: "run.stop", payload: { session_id: inspection.manager_session.session_id, reason: message } }, "New work was stopped and each active task was cleaned up through the normal task stop.");
                 } else if (selected.type === "subagent" && mode === "cancel-quality" && selected.node.quality_run_id) {
                   void runAction({ type: "quality.cancel", payload: { quality_run_id: selected.node.quality_run_id, reason: message } }, "The entire draft run was stopped. Completed evidence remains available.");
                 }
@@ -405,6 +412,7 @@ function TaskInspector({ task, output, now, onRedirect, onStop, onSeeChange, bus
     <>
       <p className="agent-current-work">{taskWorkLabel(task)}</p>
       <dl className="agent-facts">
+        <div><dt>Task</dt><dd>{task.task_id}</dd></div>
         <div><dt>Agent</dt><dd>{task.agent ?? "Not assigned"}</dd></div>
         <div><dt>Running</dt><dd>{formatDuration(task.started_at, task.worker_finished_at, now)}</dd></div>
         <div><dt>Files</dt><dd>{task.lease_files.length || "None yet"}</dd></div>
@@ -432,7 +440,7 @@ function SubagentInspector({ agent, onCancel }: { agent: SwarmSubagentNode; onCa
     <>
       <p className="agent-current-work">{agent.detail ?? agent.status}</p>
       <dl className="agent-facts">
-        <div><dt>Parent task</dt><dd>{agent.task_id}</dd></div>
+        <div><dt>Parent task</dt><dd title={agent.task_id}>{agent.task_title}<small>{agent.task_id}</small></dd></div>
         <div><dt>Agent</dt><dd>{agent.tool ?? plainSubagentKind(agent.kind)}</dd></div>
         <div><dt>Status</dt><dd>{agent.status}</dd></div>
         <div><dt>Files</dt><dd>{agent.files.length || "Evidence only"}</dd></div>
@@ -449,8 +457,8 @@ function SubagentInspector({ agent, onCancel }: { agent: SwarmSubagentNode; onCa
   );
 }
 
-function GroupInspector({ group }: { group: SwarmGroupNode }): React.JSX.Element {
-  return <><p className="agent-current-work">{group.mode === "parallel" ? "These tasks may work at the same time when their real run events overlap." : "These tasks follow their dependency order."}</p><dl className="agent-facts"><div><dt>Tasks</dt><dd>{group.tasks.length}</dd></div><div><dt>Working now</dt><dd>{group.tasks.filter((task) => task.task.state === "running").length}</dd></div><div><dt>Verified</dt><dd>{group.tasks.filter((task) => task.task.state === "verified").length}</dd></div><div><dt>Merged</dt><dd>{group.tasks.filter((task) => task.task.state === "merged").length}</dd></div><div><dt>Needs you</dt><dd>{group.tasks.filter((task) => task.state === "needs-you").length}</dd></div></dl></>;
+function GroupInspector({ group, busy, canStop, onStop }: { group: SwarmGroupNode; busy: boolean; canStop: boolean; onStop: () => void }): React.JSX.Element {
+  return <><p className="agent-current-work">{group.mode === "parallel" ? "These independent tasks can keep working when one sibling stops." : "These tasks follow their dependency order."}</p>{group.capacity_note ? <p className="group-capacity-note">{group.capacity_note}</p> : null}<dl className="agent-facts"><div><dt>Tasks</dt><dd>{group.tasks.length}</dd></div><div><dt>Working now</dt><dd>{group.tasks.filter((task) => task.task.state === "running").length}</dd></div><div><dt>Verified</dt><dd>{group.tasks.filter((task) => task.task.state === "verified").length}</dd></div><div><dt>Merged</dt><dd>{group.tasks.filter((task) => task.task.state === "merged").length}</dd></div><div><dt>Needs you</dt><dd>{group.tasks.filter((task) => task.state === "needs-you").length}</dd></div></dl><section className="group-stop-boundary"><strong>Stop this whole run</strong><p>{canStop ? "This prevents new tasks from starting, then stops every active task through the normal per-task cleanup." : "There is no active run to stop."}</p><button className="button-secondary danger-button group-stop-button" type="button" disabled={busy || !canStop} onClick={onStop}><CircleStop size={14} /> Stop all working tasks</button></section></>;
 }
 
 function RootInspector({ tree, inspection }: { tree: SwarmTree; inspection: WorkspaceInspection | null }): React.JSX.Element {
@@ -462,6 +470,8 @@ function ActionComposer({ mode, value, busy, onChange, onClose, onSubmit }: { mo
     ? { title: "Guide at the safe boundary", note: "This does not approve a file change.", submit: "Send guidance" }
     : mode === "stop"
       ? { title: "Stop this task", note: "The task keeps ownership until cleanup is proven complete.", submit: "Stop task" }
+      : mode === "stop-group"
+        ? { title: "Stop the whole run", note: "No new task starts; every active task uses its own proven cleanup path.", submit: "Stop all tasks" }
       : { title: "Stop this draft run", note: "Individual drafts are not steerable.", submit: "Stop run" };
   return <section className="inspector-composer"><header><strong>{labels.title}</strong><button className="icon-button" type="button" onClick={onClose} aria-label="Close"><X size={13} /></button></header><textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder="Give a clear reason or correction..." rows={4} /><footer><span>{labels.note}</span><button className="button-primary" type="button" disabled={busy || value.trim() === ""} onClick={onSubmit}>{mode === "redirect" ? <Send size={13} /> : <CircleStop size={13} />}{labels.submit}</button></footer></section>;
 }
@@ -504,7 +514,7 @@ function selectionLabel(selected: ReturnType<typeof resolveSelection>): string {
 function selectionTitle(selected: ReturnType<typeof resolveSelection>): string {
   if (selected.type === "root") return "Orchestrator";
   if (selected.type === "group") return selected.node.label;
-  if (selected.type === "task") return `${selected.node.task.task_id} ${selected.node.task.title}`;
+  if (selected.type === "task") return selected.node.task.title;
   return selected.node.label;
 }
 

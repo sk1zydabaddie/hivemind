@@ -16,7 +16,7 @@ import { executeWorkspaceAction, workspaceActionTypes } from "../src/workspace-a
 import { loadAdmittedValueQualityRun } from "../src/value-quality.js";
 import { runAdapterProcess, type AdapterProfile } from "../src/adapter.js";
 import { createTentativePlan, groundTentativePlan, lintTentativePlan } from "../src/plan.js";
-import { readQuotaLedger } from "../src/resource-ledger.js";
+import { readQuotaLedger, reserveMeteredCall } from "../src/resource-ledger.js";
 import { inspectWorkspace } from "../src/workspace-inspection.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
@@ -473,6 +473,60 @@ test("stall inspection is per lane so a healthy worker cannot suppress a stalled
     const alerts = inspected.value.needs_you.filter((item) => item.kind === "run_stalled");
     assert.equal(alerts.some((item) => item.task_id === "T-001"), false);
     assert.equal(alerts.some((item) => item.task_id === "T-002"), true);
+    assert.equal(inspected.value.tasks.find((task) => task.task_id === "T-001")?.stalled, false);
+    assert.equal(inspected.value.tasks.find((task) => task.task_id === "T-002")?.stalled, true);
+  });
+});
+
+test("workspace inspection publishes one concurrent task projection with actual counts, lane-local failure, and reserved spend", async () => {
+  await withRepo(async (repo) => {
+    await prepareConcurrentWorkspacePlan(repo);
+    const session = await startManagerSession(repo, "Inspect concurrent work.", {
+      proposedAction: {
+        type: "proposed_actions",
+        source: "scripted",
+        reason: "Inspect the current state.",
+        actions: [{ type: "get_status" }],
+        human_approval_required_for: []
+      }
+    });
+    assert.equal(session.ok, true, session.ok ? undefined : session.reason);
+    if (!session.ok) return;
+    for (const taskId of ["T-001", "T-002", "T-003"]) {
+      assert.equal((await appendEvent(repo, { type: "task.started", task_id: taskId, data: { run_id: `R-${taskId}`, tool: "fixture-worker" } })).ok, true);
+    }
+    assert.equal((await appendEvent(repo, { type: "task.failed", task_id: "T-002", data: { reason: "fixture worker exited" } })).ok, true);
+    assert.equal((await appendEvent(repo, {
+      type: "scheduler.wave_started",
+      task_id: null,
+      data: { version: 1, session_id: session.value.session_id, group_id: "G-1", task_ids: ["T-001", "T-002", "T-003"], configured_cap: 4, effective_concurrency: 2, binding_limit: "budget", budget_available_reservations: 2 }
+    })).ok, true);
+    const reserved = await reserveMeteredCall(repo, {
+      provider: "fixture-worker",
+      session_id: session.value.session_id,
+      run_id: "R-T-001",
+      task_id: "T-001",
+      daemon_instance_id: "fixture-daemon",
+      estimated_input_tokens: 1
+    });
+    assert.equal(reserved.ok, true, reserved.ok ? undefined : reserved.reason);
+
+    const inspected = await inspectWorkspace(repo, { processLiveness: () => "unknown" });
+    assert.equal(inspected.ok, true, inspected.ok ? undefined : inspected.reason);
+    if (!inspected.ok) return;
+    assert.deepEqual(inspected.value.tasks.map((task) => [task.task_id, task.title, task.state]), [
+      ["T-001", "Build the parser", "running"],
+      ["T-002", "Add validation", "failed"],
+      ["T-003", "Write integration tests", "running"]
+    ]);
+    assert.deepEqual(inspected.value.execution_groups[0]?.counts, { working: 2, waiting: 0, needs_you: 1, done: 0 });
+    assert.equal(inspected.value.execution_groups[0]?.label, "2 working, 1 needs you");
+    assert.equal(inspected.value.execution_groups[0]?.capacity_note, "Budget allows 2 workers right now; the project limit is 4.");
+    const failed = inspected.value.needs_you.find((item) => item.task_id === "T-002" && item.kind === "task_attention");
+    assert.equal(failed?.title, "Add validation stopped");
+    assert.match(failed?.detail ?? "", /^T-002 stopped; 2 other tasks are continuing\./u);
+    assert.equal(inspected.value.spend.reserved_tokens, 150_000);
+    assert.equal(inspected.value.spend.committed_tokens, inspected.value.spend.effective_tokens + 150_000);
   });
 });
 
@@ -1280,7 +1334,7 @@ test("Work tab drives configured interruption policy through typed actions and k
   assert.match(source, /managerStartAvailable[\s\S]*type: "manager\.start"/u);
   assert.match(source, /Typed guidance cannot approve it/u);
   assert.match(source, /type: "autonomy\.set"/u);
-  assert.match(source, /type: "task\.stop"/u);
+  assert.match(source, /type: "run\.stop"/u);
   assert.doesNotMatch(source, /type: "plan\.ratify"[\s\S]{0,220}(composer|message)/u);
 
   const hookSource = await readFile(path.resolve("desktop/src/hooks/use-workspace.ts"), "utf8");
@@ -1385,6 +1439,51 @@ async function prepareRatifiedWorkspacePlan(repo: string): Promise<void> {
     type: "plan.ratify",
     payload: { spec_id: "S-001", expected_plan_hash: (review.value as { plan_hash: string }).plan_hash }
   });
+  assert.equal(ratified.ok, true, ratified.ok ? undefined : ratified.reason);
+}
+
+async function prepareConcurrentWorkspacePlan(repo: string): Promise<void> {
+  await mkdir(path.join(repo, "src"), { recursive: true });
+  await mkdir(path.join(repo, "test"), { recursive: true });
+  for (const [file, content] of [
+    ["src/parser.ts", "export const parse = () => [];\n"],
+    ["src/validate.ts", "export const validate = () => true;\n"],
+    ["test/integration.test.ts", "export const covered = true;\n"]
+  ]) await writeFile(path.join(repo, file), content);
+  await execFileAsync("git", ["add", "src/parser.ts", "src/validate.ts", "test/integration.test.ts"], { cwd: repo, windowsHide: true });
+  await execFileAsync("git", ["commit", "-m", "add concurrent fixture"], { cwd: repo, windowsHide: true });
+  await createRatifiedSpec(repo, "S-001");
+  await setTierGlobs(repo);
+  const task = (taskId: string, title: string, file: string) => ({
+    task_id: taskId,
+    title,
+    task_type: "deterministic",
+    routing_task_type: "testing",
+    mode: "write",
+    agent_role: "builder",
+    draft_scope: { allowed_files: [file], read_only_files: [], forbidden_files: [], must_not_change: [] },
+    depends_on: [],
+    parallel_safe: true,
+    acceptance_criterion: `${title} is complete.`,
+    required_tests: ["node -e \"process.exit(0)\""],
+    patch_requirements: [],
+    critical_path_approved: false
+  });
+  const plan = {
+    tasks: [
+      task("T-001", "Build the parser", "src/parser.ts"),
+      task("T-002", "Add validation", "src/validate.ts"),
+      task("T-003", "Write integration tests", "test/integration.test.ts")
+    ],
+    execution_groups: [{ group_id: "G-1", mode: "parallel", task_ids: ["T-001", "T-002", "T-003"] }]
+  };
+  assert.equal((await createTentativePlan(repo, "S-001", plan)).ok, true);
+  assert.equal((await groundTentativePlan(repo, "S-001")).ok, true);
+  assert.equal((await lintTentativePlan(repo, "S-001")).ok, true);
+  const review = await executeWorkspaceAction(repo, { type: "plan.review", payload: { spec_id: "S-001" } });
+  assert.equal(review.ok, true, review.ok ? undefined : review.reason);
+  if (!review.ok) return;
+  const ratified = await executeWorkspaceAction(repo, { type: "plan.ratify", payload: { spec_id: "S-001", expected_plan_hash: (review.value as { plan_hash: string }).plan_hash } });
   assert.equal(ratified.ok, true, ratified.ok ? undefined : ratified.reason);
 }
 

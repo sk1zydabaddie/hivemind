@@ -66,7 +66,7 @@ export function HistoryTab({ inspection, onAction }: { inspection: WorkspaceInsp
           </header>
           <ScrollArea className="history-scroll">
             <div className="history-run-list">
-              {history?.runs.length ? history.runs.map((run) => <RunCard key={run.session_id} run={run} />) : (
+              {history?.runs.length ? history.runs.map((run) => <RunCard key={run.session_id} run={run} taskTitles={inspection?.task_titles ?? {}} />) : (
                 <div className="history-empty">
                   <span><TimerReset size={25} /></span>
                   <h3>No completed runs yet</h3>
@@ -124,7 +124,7 @@ export function HistoryTab({ inspection, onAction }: { inspection: WorkspaceInsp
   );
 }
 
-function RunCard({ run }: { run: WorkspaceHistoryRun }): React.JSX.Element {
+function RunCard({ run, taskTitles }: { run: WorkspaceHistoryRun; taskTitles: Record<string, string> }): React.JSX.Element {
   const tone = run.outcome === "completed" ? "good" : run.outcome === "active" ? "live" : run.outcome === "paused" ? "warning" : "danger";
   return (
     <article className={`history-run-card run-${run.outcome}`}>
@@ -145,15 +145,15 @@ function RunCard({ run }: { run: WorkspaceHistoryRun }): React.JSX.Element {
       <div className="run-detail-grid">
         <section>
           <h3><BadgeCheck size={14} />Passed project checks <Badge tone="good">{run.verified_tasks.length}</Badge></h3>
-          {run.verified_tasks.length ? <ul>{run.verified_tasks.map((taskId) => <li key={taskId}><CheckCircle2 size={12} />{taskId}</li>)}</ul> : <p>No task passed the project checks in this run.</p>}
+          {run.verified_tasks.length ? <ul>{run.verified_tasks.map((taskId) => <li key={taskId} title={taskId}><CheckCircle2 size={12} /><span>{taskTitles[taskId] ?? taskId}<small>{taskId}</small></span></li>)}</ul> : <p>No task passed the project checks in this run.</p>}
         </section>
         <section>
           <h3><CheckCircle2 size={14} />Merged <Badge tone="good">{run.merged_tasks.length}</Badge></h3>
-          {run.merged_tasks.length ? <ul>{run.merged_tasks.map((taskId) => <li key={taskId}><CheckCircle2 size={12} />{taskId}</li>)}</ul> : <p>No verified change was merged into the project branch.</p>}
+          {run.merged_tasks.length ? <ul>{run.merged_tasks.map((taskId) => <li key={taskId} title={taskId}><CheckCircle2 size={12} /><span>{taskTitles[taskId] ?? taskId}<small>{taskId}</small></span></li>)}</ul> : <p>No verified change was merged into the project branch.</p>}
         </section>
         <section>
           <h3><AlertTriangle size={14} />Stopped <Badge tone={run.stopped_tasks.length ? "danger" : "neutral"}>{run.stopped_tasks.length}</Badge></h3>
-          {run.stopped_tasks.length ? <ul>{run.stopped_tasks.map((task) => <li key={task.task_id}><span><strong>{task.task_id}</strong><small>{plainStoppedState(task.state)}</small></span><p>{task.reason}</p></li>)}</ul> : <p>No stopped tasks in this run.</p>}
+          {run.stopped_tasks.length ? <ul>{run.stopped_tasks.map((task) => <li key={task.task_id}><span title={task.task_id}><strong>{taskTitles[task.task_id] ?? task.task_id}</strong><small>{task.task_id} / {plainStoppedState(task.state)}</small></span><p>{task.reason}</p></li>)}</ul> : <p>No stopped tasks in this run.</p>}
         </section>
         <section className="run-spend-section">
           <h3><ReceiptText size={14} />Spend</h3>

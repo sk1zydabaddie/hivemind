@@ -23,9 +23,6 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  leaseRows,
-  taskRows,
-  taskStateCounts,
   type BoardProjection,
   type HivemindEvent,
   type TaskProjection,
@@ -103,9 +100,9 @@ export function WorkTab({
   onSelectTask,
   onAction
 }: WorkTabProps): React.JSX.Element {
-  const tasks = taskRows(projection);
+  const tasks = inspection?.tasks ?? [];
   const selected = projection.selectedTaskId
-    ? projection.tasks[projection.selectedTaskId] ?? null
+    ? tasks.find((task) => task.task_id === projection.selectedTaskId) ?? null
     : null;
   const [dismissedAttention, setDismissedAttention] = useState<string[]>([]);
   const [dismissedPlanHash, setDismissedPlanHash] = useState<string | null>(null);
@@ -319,36 +316,37 @@ export function WorkTab({
 
   return (
     <div className="work-tab">
-      {showPlanBanner ? (
-        <PlanBanner
-          plan={plan}
-          onReview={() => void openPlanReview()}
-          onDismiss={() => setDismissedPlanHash(plan.plan_hash)}
-        />
-      ) : null}
+      <div className="work-banners">
+        {showPlanBanner ? (
+          <PlanBanner
+            plan={plan}
+            onReview={() => void openPlanReview()}
+            onDismiss={() => setDismissedPlanHash(plan.plan_hash)}
+          />
+        ) : null}
 
-      {runActive && activeAutonomyLevel === "auto" && inspection?.current_plan ? (
-        <AutoRunBanner
-          taskCount={inspection.current_plan.tasks.length}
-          stopBusy={stopBusy}
-          onStop={async () => {
-            const runningTask = tasks.find((task) => task.state === "running");
-            if (!runningTask) {
-              setFeedback("No worker is active at this instant. The Stop control remains available when one starts.");
-              return;
-            }
-            setStopBusy(true);
-            try {
-              await onAction({ type: "task.stop", payload: { task_id: runningTask.task_id, reason: "Stopped from the Auto run banner" } });
-              setFeedback(`${runningTask.task_id} stopped; its cleanup and ownership release were recorded.`);
-            } catch (error) {
-              setFeedback(plainActionError(error));
-            } finally {
-              setStopBusy(false);
-            }
-          }}
-        />
-      ) : null}
+        {runActive && activeAutonomyLevel === "auto" && inspection?.current_plan ? (
+          <AutoRunBanner
+            taskCount={inspection.current_plan.tasks.length}
+            stopBusy={stopBusy}
+            onStop={async () => {
+              if (!managerSession) {
+                setFeedback("No project run is active to stop.");
+                return;
+              }
+              setStopBusy(true);
+              try {
+                await onAction({ type: "run.stop", payload: { session_id: managerSession.session_id, reason: "Stopped from the Auto run banner" } });
+                setFeedback("The run stopped; each active task was cleaned up through the normal stop path.");
+              } catch (error) {
+                setFeedback(plainActionError(error));
+              } finally {
+                setStopBusy(false);
+              }
+            }}
+          />
+        ) : null}
+      </div>
 
       <RunSummary
         projection={projection}
@@ -399,6 +397,7 @@ export function WorkTab({
           <div className="work-reading-grid">
             <CurrentWork
               tasks={tasks}
+              groups={inspection?.execution_groups ?? []}
               integrationFailure={inspection?.integration_failure ?? null}
               selectedTaskId={projection.selectedTaskId}
               onSelectTask={onSelectTask}
@@ -419,7 +418,7 @@ export function WorkTab({
                 }
               }}
             />
-            <ActivityStream events={projection.recentEvents} endRef={activityEndRef} />
+            <ActivityStream events={projection.recentEvents} taskTitles={inspection?.task_titles ?? {}} endRef={activityEndRef} />
           </div>
 
           {selected ? (
@@ -538,7 +537,7 @@ export function WorkTab({
 
       {redirectOpen && selected ? (
         <TextActionDialog
-          title={`Guide ${selected.task_id}`}
+          title={`Guide ${selected.title}`}
           description="This reaches the worker at its next safe correction point. File and project checks still apply."
           value={redirectText}
           busy={busy}
@@ -634,10 +633,10 @@ function RunSummary({
   onOpenPlan: () => void;
   onLevelChange: (level: AutonomyLevel) => Promise<void>;
 }): React.JSX.Element {
-  const counts = taskStateCounts(projection);
-  const active = counts.running + counts.submitted + counts.accepted + counts.paused;
+  const tasks = inspection?.tasks ?? [];
+  const active = tasks.filter((task) => ["running", "submitted", "accepted", "paused"].includes(task.state)).length;
   const attention = inspection?.needs_you.length ?? 0;
-  const files = leaseRows(projection).length;
+  const files = tasks.reduce((count, task) => count + task.lease_files.length, 0);
   const verification = integrationLanguage(projection.integration.status);
   return (
     <section className="run-summary" aria-label="Current run">
@@ -722,6 +721,7 @@ function AttentionCard({
 
 function CurrentWork({
   tasks,
+  groups,
   integrationFailure,
   selectedTaskId,
   onSelectTask,
@@ -729,20 +729,17 @@ function CurrentWork({
   onEdit
 }: {
   tasks: TaskProjection[];
+  groups: WorkspaceInspection["execution_groups"];
   integrationFailure: WorkspaceInspection["integration_failure"];
   selectedTaskId: string | null;
   onSelectTask: (taskId: string) => void;
   onAdd: () => void;
   onEdit: () => void;
 }): React.JSX.Element {
-  const groups = useMemo(() => {
-    const value = new Map<string, TaskProjection[]>();
-    for (const task of tasks) {
-      const key = task.execution_group ?? "independent";
-      value.set(key, [...(value.get(key) ?? []), task]);
-    }
-    return [...value.entries()];
-  }, [tasks]);
+  const groupedTasks = useMemo(() => groups.map((group) => ({
+    group,
+    tasks: group.task_ids.map((taskId) => tasks.find((task) => task.task_id === taskId)).filter((task): task is TaskProjection => task !== undefined)
+  })), [groups, tasks]);
   return (
     <section className="surface current-work" aria-labelledby="current-work-title">
       <header className="section-heading">
@@ -768,12 +765,10 @@ function CurrentWork({
       ) : (
         <ScrollArea className="task-list-scroll">
           <div className="task-groups">
-            {groups.map(([group, groupTasks]) => {
-              const mode = groupTasks.find((task) => task.group_mode)?.group_mode ?? "sequence";
-              const label = mode === "parallel" ? `${groupTasks.length} at once` : `${groupTasks.length} in order`;
+            {groupedTasks.map(({ group, tasks: groupTasks }) => {
               return (
-                <section className="task-group" key={group}>
-                  <header><strong>{label}</strong><span>{group === "independent" ? "Independent" : group}</span></header>
+                <section className="task-group" key={group.group_id}>
+                  <header><strong>{group.label}</strong><span>{group.capacity_note ?? (group.mode === "parallel" ? "Independent tasks" : "Runs in order")}</span></header>
                   <div className="task-lanes">
                     {groupTasks.map((task) => (
                       <TaskLane
@@ -802,7 +797,7 @@ function TaskLane({ task, integrationFailure, selected, onSelect }: { task: Task
   return (
     <button type="button" className={`task-lane state-${task.state}${selected ? " is-selected" : ""}`} onClick={onSelect} aria-pressed={selected}>
       <span className="task-lane-head">
-        <span className="task-identity"><strong>{task.task_id}</strong><span>{task.title}</span></span>
+        <span className="task-identity" title={task.task_id}><strong>{task.title}</strong><span>{task.task_id}</span></span>
         <Badge tone={language.tone}>{language.label}</Badge>
       </span>
       <span className="phase-rail" aria-label={`${task.task_id} progress`}>
@@ -826,9 +821,11 @@ function TaskLane({ task, integrationFailure, selected, onSelect }: { task: Task
 
 function ActivityStream({
   events,
+  taskTitles,
   endRef
 }: {
   events: BoardProjection["recentEvents"];
+  taskTitles: Record<string, string>;
   endRef: React.RefObject<HTMLDivElement | null>;
 }): React.JSX.Element {
   const groups = groupConsecutiveActivity(events);
@@ -844,7 +841,7 @@ function ActivityStream({
               <li key={`${event.ts}-${event.type}-${index}`}>
                 <time>{formatClock(event.ts)}</time>
                 <span className={`activity-dot event-${eventTone(event.type)}`} />
-                <span>{eventDescription(event)}{count > 1 ? <small className="activity-count">{count} similar updates</small> : null}</span>
+                <span>{eventDescription(event, taskTitles)}{count > 1 ? <small className="activity-count">{count} similar updates</small> : null}</span>
               </li>
             ))}
             <div ref={endRef} />
@@ -866,14 +863,14 @@ function TaskDetails({
 }): React.JSX.Element {
   const [outputMode, setOutputMode] = useState<"summary" | "raw">("summary");
   useEffect(() => setOutputMode("summary"), [task.task_id]);
-  const files = leaseRows(projection).filter((lease) => lease.taskId === task.task_id);
+  const files = task.lease_files;
   const output = outputMode === "summary"
     ? summarizeWorkerOutput(projection.selectedOutput)
     : projection.selectedOutput.map((record) => `[${formatClock(record.ts)}] ${record.text}`).join("\n");
   return (
     <section className="surface task-details">
       <header className="section-heading">
-        <div><h2>{task.task_id}</h2><span>{task.title}</span></div>
+        <div><h2>{task.title}</h2><span>{task.task_id}</span></div>
         <button className="button-secondary" type="button" onClick={onRedirect}><MessageSquareText size={14} />Guide worker</button>
       </header>
       <div className="task-detail-grid">
@@ -892,7 +889,7 @@ function TaskDetails({
         <div className="task-file-panel">
           <div className="subheading"><span><FileCode2 size={13} />Files being edited</span><small>{files.length}</small></div>
           {files.length === 0 ? <p className="panel-empty">No files are being edited by this task.</p> : (
-            <ul>{files.map((file) => <li key={file.filePath}><code>{file.filePath}</code></li>)}</ul>
+            <ul>{files.map((file) => <li key={file}><code>{file}</code></li>)}</ul>
           )}
         </div>
       </div>
@@ -1018,12 +1015,12 @@ function PromptComposer({
 
 function SpendIndicator({ spend }: { spend: WorkspaceInspection["spend"] | null }): React.JSX.Element {
   if (!spend) return <span className="spend-indicator"><Clock3 size={13} />No active spend</span>;
-  const ratio = spend.session_ceiling_tokens > 0 ? Math.min(100, (spend.effective_tokens / spend.session_ceiling_tokens) * 100) : 0;
+  const ratio = spend.session_ceiling_tokens > 0 ? Math.min(100, (spend.committed_tokens / spend.session_ceiling_tokens) * 100) : 0;
   return (
     <span className={`spend-indicator ${spend.near_session_ceiling ? "is-near-ceiling" : ""}`} title={`${spend.run_ceiling_tokens.toLocaleString()} tokens maximum per call`}>
       <span>{spend.calls} calls</span>
       <span className="spend-track"><i style={{ width: `${ratio}%` }} /></span>
-      <span>{formatCompact(spend.effective_tokens)} / {formatCompact(spend.session_ceiling_tokens)} tokens</span>
+      <span>{formatCompact(spend.effective_tokens)} used + {formatCompact(spend.reserved_tokens)} reserved / {formatCompact(spend.session_ceiling_tokens)}</span>
     </span>
   );
 }
@@ -1062,7 +1059,7 @@ function PlanTakeover({ plan, busy, ratificationPending, onClose, onRatify }: { 
 function PlanTaskCard({ task }: { task: WorkspacePlanTask }): React.JSX.Element {
   return (
     <article className="plan-task-card">
-      <div className="plan-task-title"><span><strong>{task.task_id}</strong><h3>{task.title}</h3></span><Badge tone={tierTone(task.tier)}>{capitalize(task.tier)} risk</Badge></div>
+      <div className="plan-task-title"><span title={task.task_id}><h3>{task.title}</h3><strong>{task.task_id}</strong></span><Badge tone={tierTone(task.tier)}>{capitalize(task.tier)} risk</Badge></div>
       <dl><div><dt>Changes</dt><dd>{task.scope.join(", ") || "No files"}</dd></div><div><dt>Reads</dt><dd>{task.read_only_scope.join(", ") || "No additional files"}</dd></div><div><dt>After</dt><dd>{task.depends_on.join(", ") || "Can start immediately"}</dd></div><div><dt>Done when</dt><dd>{task.acceptance_criterion}</dd></div><div><dt>How it is checked</dt><dd>{task.deterministic_validity_check ?? "Project checks listed in the task"}</dd></div></dl>
     </article>
   );
@@ -1164,8 +1161,8 @@ function phaseDetail(task: TaskProjection, phase: string): string {
   return task.integration === "passed" ? "Project checks passed; ready for explicit adoption" : "Not verified against the project yet";
 }
 
-function eventDescription(event: HivemindEvent): string {
-  const subject = event.task_id ? `${event.task_id} ` : "";
+function eventDescription(event: HivemindEvent, taskTitles: Record<string, string>): string {
+  const subject = event.task_id ? `${taskTitles[event.task_id] ?? "Task"} ` : "";
   if (event.type === "adoption.completed") {
     const taskCount = Array.isArray(event.data.task_ids) ? event.data.task_ids.length : 0;
     return `Adopted ${taskCount} ${taskCount === 1 ? "task" : "tasks"} into the project branch`;

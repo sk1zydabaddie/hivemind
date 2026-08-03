@@ -18,7 +18,7 @@ import {
   type PlanRatificationResult,
   type TentativePlan
 } from "./plan.js";
-import { readQuotaLedger, type QuotaLedger } from "./resource-ledger.js";
+import { readQuotaLedgerState, type QuotaLedger } from "./resource-ledger.js";
 import { readPromotedRoutingPolicy } from "./learned-routing.js";
 import { loadAdapterProfile } from "./adapter.js";
 import { getProcessLiveness, type ProcessLiveness } from "./process-liveness.js";
@@ -82,6 +82,9 @@ export interface WorkspacePlanReview {
 
 export interface WorkspaceInspection {
   status: HivemindStatus;
+  tasks: WorkspaceTaskProjection[];
+  execution_groups: WorkspaceExecutionGroupProjection[];
+  task_titles: Record<string, string>;
   active_spec_id: string | null;
   manager_session: ManagerWorkspaceSession | null;
   autonomy: {
@@ -100,6 +103,8 @@ export interface WorkspaceInspection {
     session_id: string | null;
     calls: number;
     effective_tokens: number;
+    reserved_tokens: number;
+    committed_tokens: number;
     run_ceiling_tokens: number;
     session_ceiling_tokens: number;
     near_session_ceiling: boolean;
@@ -110,6 +115,62 @@ export interface WorkspaceInspection {
   };
   memory: WorkspaceMemoryInspection;
   history: WorkspaceHistoryInspection;
+}
+
+export type WorkspaceTaskState =
+  | "planned"
+  | "running"
+  | "paused"
+  | "submitted"
+  | "accepted"
+  | "rejected"
+  | "blocked"
+  | "failed"
+  | "cancelled"
+  | "verified"
+  | "merged";
+
+export interface WorkspaceTaskProjection {
+  task_id: string;
+  title: string;
+  state: WorkspaceTaskState;
+  agent: string | null;
+  worktree: string | null;
+  lease_files: string[];
+  patch: {
+    submitted: boolean;
+    analyzed: boolean;
+    verdict: string | null;
+    reason: string | null;
+    changed_files: number | null;
+  };
+  integration: string;
+  issue: string | null;
+  stalled: boolean;
+  last_event: string | null;
+  last_event_at: string | null;
+  execution_group: string | null;
+  group_mode: "parallel" | "sequence" | null;
+  depends_on: string[];
+  started_at: string | null;
+  worker_finished_at: string | null;
+}
+
+export interface WorkspaceExecutionGroupProjection {
+  group_id: string;
+  mode: "parallel" | "sequence";
+  task_ids: string[];
+  label: string;
+  counts: {
+    working: number;
+    waiting: number;
+    needs_you: number;
+    done: number;
+  };
+  configured_cap: number | null;
+  effective_concurrency: number | null;
+  binding_limit: "configured_cap" | "budget" | "ready_count" | null;
+  capacity_note: string | null;
 }
 
 export interface WorkspaceCharacterization {
@@ -252,12 +313,12 @@ export async function inspectWorkspace(
     options
   );
   if (!queues.ok) return queues;
-  const ledger = await readQuotaLedger(repoRoot);
+  const ledger = await readQuotaLedgerState(repoRoot);
   if (!ledger.ok) return ledger;
   const swarm = await inspectCharacterizations(repoRoot);
   const memory = await inspectMemory(repoRoot, events.value, swarm.characterizations);
   if (!memory.ok) return memory;
-  const history = await inspectHistory(repoRoot, events.value, ledger.value, config.config);
+  const history = await inspectHistory(repoRoot, events.value, ledger.value.providers, config.config);
   if (!history.ok) return history;
   const preparedPlanSession = planState.current === null
     ? null
@@ -266,7 +327,7 @@ export async function inspectWorkspace(
   let calls = 0;
   let effectiveTokens = 0;
   if (sessionId !== null) {
-    for (const entry of Object.values(ledger.value)) {
+    for (const entry of Object.values(ledger.value.providers)) {
       const usage = entry.session_usage[sessionId];
       if (usage !== undefined && !entry.unmetered) {
         calls += usage.requests;
@@ -274,10 +335,21 @@ export async function inspectWorkspace(
       }
     }
   }
+  const reservedTokens = sessionId === null
+    ? 0
+    : Object.values(ledger.value.reservations).reduce((total, reservation) =>
+      total + (reservation.status === "active" && reservation.session_id === sessionId ? reservation.reserved_tokens : 0), 0);
+  const committedTokens = effectiveTokens + reservedTokens;
+  const tasks = buildWorkspaceTasks(status.value, events.value, planState.current ?? planState.review, queues.value.needsYou);
+  const executionGroups = buildWorkspaceExecutionGroups(tasks, planState.current ?? planState.review, events.value);
+  const taskTitles = Object.fromEntries(tasks.map((task) => [task.task_id, task.title]));
   return {
     ok: true,
     value: {
       status: status.value,
+      tasks,
+      execution_groups: executionGroups,
+      task_titles: taskTitles,
       active_spec_id: specId,
       manager_session: session.value,
       autonomy: {
@@ -293,9 +365,11 @@ export async function inspectWorkspace(
         session_id: sessionId,
         calls,
         effective_tokens: effectiveTokens,
+        reserved_tokens: reservedTokens,
+        committed_tokens: committedTokens,
         run_ceiling_tokens: config.config.resource_policy?.run_ceiling?.tokens ?? 150_000,
         session_ceiling_tokens: config.config.resource_policy?.session_ceiling?.tokens ?? 500_000,
-        near_session_ceiling: effectiveTokens >= (config.config.resource_policy?.session_ceiling?.tokens ?? 500_000) * 0.8
+        near_session_ceiling: committedTokens >= (config.config.resource_policy?.session_ceiling?.tokens ?? 500_000) * 0.8
       },
       swarm,
       memory: memory.value,
@@ -316,6 +390,219 @@ function latestPreparedPlanSession(
   return typeof prepared?.data.usage_session_id === "string"
     ? prepared.data.usage_session_id
     : null;
+}
+
+function buildWorkspaceTasks(
+  status: HivemindStatus,
+  events: HivemindEvent[],
+  plan: WorkspacePlanReview | null,
+  needsYou: WorkspaceQueueItem[]
+): WorkspaceTaskProjection[] {
+  const planTasks = new Map((plan?.tasks ?? []).map((task) => [task.task_id, task]));
+  const statusTasks = new Map(status.tasks.map((task) => [task.task_id, task]));
+  const orderedIds = [
+    ...(plan?.tasks.map((task) => task.task_id) ?? []),
+    ...status.tasks.map((task) => task.task_id).filter((taskId) => !planTasks.has(taskId))
+  ];
+  const stalled = new Set(needsYou.filter((item) => item.kind === "run_stalled" && item.task_id !== null).map((item) => item.task_id!));
+  const observed = new Map<string, WorkspaceTaskProjection>();
+
+  for (const taskId of orderedIds) {
+    const planned = planTasks.get(taskId);
+    const durable = statusTasks.get(taskId);
+    const group = plan?.execution_groups.find((candidate) => candidate.task_ids.includes(taskId));
+    observed.set(taskId, {
+      task_id: taskId,
+      title: planned?.title ?? durable?.title ?? taskId,
+      state: "planned",
+      agent: null,
+      worktree: durable?.worktree === "present" ? ".hivemind/worktrees/" + taskId : null,
+      lease_files: [...(durable?.lease.files ?? [])],
+      patch: {
+        submitted: durable?.patch.submitted ?? false,
+        analyzed: durable?.patch.analyzed ?? false,
+        verdict: durable?.patch.verdict ?? null,
+        reason: durable?.patch.reason ?? null,
+        changed_files: null
+      },
+      integration: durable?.integrated ? "verified" : durable?.queued ? "queued" : "not queued",
+      issue: null,
+      stalled: stalled.has(taskId),
+      last_event: null,
+      last_event_at: null,
+      execution_group: group?.group_id ?? null,
+      group_mode: group?.mode ?? null,
+      depends_on: [...(planned?.depends_on ?? [])],
+      started_at: null,
+      worker_finished_at: null
+    });
+  }
+
+  for (const event of events) {
+    const direct = event.task_id === null ? null : observed.get(event.task_id);
+    if (direct !== null && direct !== undefined) {
+      direct.last_event = event.type;
+      direct.last_event_at = event.ts;
+      applyWorkspaceTaskEvent(direct, event);
+    }
+    if (event.type === "integration.passed" && Array.isArray(event.data.applied)) {
+      for (const taskId of event.data.applied) {
+        if (typeof taskId !== "string") continue;
+        const task = observed.get(taskId);
+        if (task === undefined) continue;
+        task.state = "verified";
+        task.integration = "verified";
+        task.issue = null;
+      }
+    }
+    if (event.type === "adoption.completed" && Array.isArray(event.data.task_ids)) {
+      for (const taskId of event.data.task_ids) {
+        if (typeof taskId !== "string") continue;
+        const task = observed.get(taskId);
+        if (task === undefined) continue;
+        task.state = "merged";
+        task.integration = "merged";
+        task.issue = null;
+      }
+    }
+  }
+  return orderedIds.map((taskId) => observed.get(taskId)!).filter(Boolean);
+}
+
+function applyWorkspaceTaskEvent(task: WorkspaceTaskProjection, event: HivemindEvent): void {
+  if (event.type === "task.created") {
+    task.title = readNonEmptyString(event.data.title) ?? readNonEmptyString(event.data.goal) ?? task.title;
+    return;
+  }
+  if (event.type === "task.assigned") {
+    task.agent = readNonEmptyString(event.data.agent) ?? readNonEmptyString(event.data.tool) ?? task.agent;
+    return;
+  }
+  if (["task.started", "task.resumed", "task.redirected"].includes(event.type)) {
+    task.state = "running";
+    task.agent = readNonEmptyString(event.data.tool) ?? task.agent;
+    task.worktree = readNonEmptyString(event.data.worktree) ?? task.worktree;
+    task.issue = null;
+    task.started_at ??= event.ts;
+    return;
+  }
+  if (event.type === "task.completed") {
+    task.state = "submitted";
+    task.worker_finished_at = event.ts;
+    return;
+  }
+  if (event.type === "task.paused") task.state = "paused";
+  if (event.type === "task.cancelled") task.state = "cancelled";
+  if (event.type === "task.blocked") task.state = "blocked";
+  if (event.type === "task.failed") task.state = "failed";
+  if (["task.paused", "task.cancelled", "task.blocked", "task.failed"].includes(event.type)) {
+    task.issue = plainEvidence(event);
+    task.worker_finished_at = event.ts;
+    return;
+  }
+  if (event.type === "patch.submitted") {
+    task.state = "submitted";
+    task.patch.submitted = true;
+    task.patch.changed_files = readSafeNumber(event.data.changed_files);
+    return;
+  }
+  if (event.type === "patch.accepted") {
+    task.state = "accepted";
+    task.patch.analyzed = true;
+    task.patch.verdict = "accept";
+    task.patch.reason = readNonEmptyString(event.data.reason);
+    task.issue = null;
+    return;
+  }
+  if (event.type === "patch.rejected") {
+    task.state = "rejected";
+    task.patch.analyzed = true;
+    task.patch.verdict = readNonEmptyString(event.data.verdict) ?? "reject";
+    task.patch.reason = readNonEmptyString(event.data.reason);
+    task.issue = task.patch.reason;
+    return;
+  }
+  if (event.type === "task.integrated") {
+    task.state = "verified";
+    task.integration = "verified";
+    task.issue = null;
+  }
+}
+
+function buildWorkspaceExecutionGroups(
+  tasks: WorkspaceTaskProjection[],
+  plan: WorkspacePlanReview | null,
+  events: HivemindEvent[]
+): WorkspaceExecutionGroupProjection[] {
+  const definitions = plan?.execution_groups ?? fallbackWorkspaceGroups(tasks);
+  return definitions.map((group) => {
+    const groupTasks = group.task_ids.map((taskId) => tasks.find((task) => task.task_id === taskId)).filter((task): task is WorkspaceTaskProjection => task !== undefined);
+    const groupStates = groupTasks.map(classifyWorkspaceGroupTask);
+    const counts = {
+      working: groupStates.filter((state) => state === "working").length,
+      waiting: groupStates.filter((state) => state === "waiting").length,
+      needs_you: groupStates.filter((state) => state === "needs_you").length,
+      done: groupStates.filter((state) => state === "done").length
+    };
+    const wave = latestWaveForGroup(events, group.group_id);
+    const configuredCap = readSafeNumber(wave?.data.configured_cap);
+    const effectiveConcurrency = readSafeNumber(wave?.data.effective_concurrency);
+    const binding = wave?.data.binding_limit;
+    const bindingLimit = binding === "configured_cap" || binding === "budget" || binding === "ready_count" ? binding : null;
+    return {
+      group_id: group.group_id,
+      mode: group.mode,
+      task_ids: [...group.task_ids],
+      label: actualGroupLabel(counts),
+      counts,
+      configured_cap: configuredCap,
+      effective_concurrency: effectiveConcurrency,
+      binding_limit: bindingLimit,
+      capacity_note: bindingLimit === "budget" && configuredCap !== null && effectiveConcurrency !== null
+        ? `Budget allows ${effectiveConcurrency} worker${effectiveConcurrency === 1 ? "" : "s"} right now; the project limit is ${configuredCap}.`
+        : null
+    };
+  });
+}
+
+function classifyWorkspaceGroupTask(task: WorkspaceTaskProjection): keyof WorkspaceExecutionGroupProjection["counts"] {
+  if (task.stalled || ["failed", "blocked", "rejected"].includes(task.state)) return "needs_you";
+  if (["verified", "merged", "cancelled"].includes(task.state)) return "done";
+  if (["running", "submitted", "accepted"].includes(task.state)) return "working";
+  return "waiting";
+}
+
+function fallbackWorkspaceGroups(tasks: WorkspaceTaskProjection[]): Array<{ group_id: string; mode: "parallel" | "sequence"; task_ids: string[] }> {
+  const grouped = new Map<string, { group_id: string; mode: "parallel" | "sequence"; task_ids: string[] }>();
+  for (const task of tasks) {
+    const groupId = task.execution_group ?? "current-work";
+    const value = grouped.get(groupId) ?? { group_id: groupId, mode: task.group_mode ?? "sequence", task_ids: [] };
+    value.task_ids.push(task.task_id);
+    grouped.set(groupId, value);
+  }
+  return [...grouped.values()];
+}
+
+function latestWaveForGroup(events: HivemindEvent[], groupId: string): HivemindEvent | undefined {
+  return [...events].reverse().find((event) => event.type === "scheduler.wave_started" && event.data.group_id === groupId);
+}
+
+function actualGroupLabel(counts: WorkspaceExecutionGroupProjection["counts"]): string {
+  const parts = [
+    [counts.working, "working"],
+    [counts.waiting, "waiting"],
+    [counts.needs_you, "needs you"],
+    [counts.done, "done"]
+  ] as const;
+  return parts.filter(([count]) => count > 0).map(([count, label]) => `${count} ${label}`).join(", ") || "No active tasks";
+}
+
+function readNonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
+function readSafeNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
 async function inspectCharacterizations(repoRoot: string): Promise<WorkspaceInspection["swarm"]> {
@@ -852,7 +1139,12 @@ async function buildQueues(
     });
   }
   for (const event of latestTaskAttention(events)) {
-    needsYou.push(queueEvent(event, "task_attention", taskAttentionTitle(event), plainEvidence(event)));
+    needsYou.push(queueEvent(
+      event,
+      "task_attention",
+      taskAttentionTitle(event, currentPlan ?? planReview),
+      taskAttentionDetail(event, events, currentPlan ?? planReview)
+    ));
   }
   const exhausted = [...events].reverse().find((event) => event.type === "quota.exhausted" && event.data.source === "token_ceiling");
   if (exhausted !== undefined) {
@@ -943,7 +1235,7 @@ async function inspectRunStalls(
     workerAlerts.push({
       id: `run-stalled:worker:${task.task_id}:${worker.since}`,
       kind: "run_stalled",
-      title: `${task.task_id} stopped making progress`,
+      title: `${task.title} stopped making progress`,
       detail: `${worker.reason} Expected next: stop the worker cleanly, then retry or re-plan.`,
       created_at: worker.since,
       task_id: task.task_id,
@@ -1089,11 +1381,23 @@ function plainIntegrationFailureReason(reason: string): string {
   return reason;
 }
 
-function taskAttentionTitle(event: HivemindEvent): string {
-  if (event.type === "patch.rejected") return `${event.task_id} needs a revision`;
-  if (event.type === "task.blocked") return `${event.task_id} cannot continue`;
-  if (event.type === "task.paused") return `${event.task_id} is waiting for capacity`;
-  return `${event.task_id} stopped unexpectedly`;
+function taskAttentionTitle(event: HivemindEvent, plan: WorkspacePlanReview | null): string {
+  const title = plan?.tasks.find((task) => task.task_id === event.task_id)?.title ?? event.task_id ?? "Task";
+  if (event.type === "patch.rejected") return `${title} needs a revision`;
+  if (event.type === "task.blocked") return `${title} cannot continue`;
+  if (event.type === "task.paused") return `${title} is waiting for capacity`;
+  return `${title} stopped`;
+}
+
+function taskAttentionDetail(event: HivemindEvent, events: HivemindEvent[], plan: WorkspacePlanReview | null): string {
+  if (event.type !== "task.failed" || event.task_id === null || plan === null) return plainEvidence(event);
+  const failedTaskId = event.task_id;
+  const group = plan.execution_groups.find((candidate) => candidate.task_ids.includes(failedTaskId));
+  const continuing = (group?.task_ids ?? []).filter((taskId) => taskId !== failedTaskId && latestTaskRunState(events, taskId).state === "running").length;
+  const continuity = continuing === 0
+    ? "No other task in this group is currently working."
+    : `${continuing} other task${continuing === 1 ? " is" : "s are"} continuing.`;
+  return `${event.task_id} stopped; ${continuity} ${plainEvidence(event)}`;
 }
 
 function runAutonomyLevels(events: HivemindEvent[], startingLevel: AutonomyLevel): AutonomyLevel[] {

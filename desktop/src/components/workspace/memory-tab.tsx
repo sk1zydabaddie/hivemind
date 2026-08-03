@@ -68,7 +68,7 @@ export function MemoryTab({ inspection }: { inspection: WorkspaceInspection | nu
               count={memory?.draft_tests.length ?? 0}
               empty="No draft test has been generated for review."
             >
-              {memory?.draft_tests.map((candidate) => <DraftTestCard key={candidate.candidate_id} candidate={candidate} />)}
+              {memory?.draft_tests.map((candidate) => <DraftTestCard key={candidate.candidate_id} candidate={candidate} taskTitle={inspection?.task_titles[candidate.task_id] ?? candidate.task_id} />)}
             </ReviewColumn>
           </div>
         </section>
@@ -194,11 +194,11 @@ function ProviderMetric({ provider }: { provider: WorkspaceRoutingProvider }): R
   );
 }
 
-function DraftTestCard({ candidate }: { candidate: WorkspaceCharacterization }): React.JSX.Element {
+function DraftTestCard({ candidate, taskTitle }: { candidate: WorkspaceCharacterization; taskTitle: string }): React.JSX.Element {
   const tone = candidate.classification === "valid_characterization" ? "good" : candidate.classification === "regression_signal" ? "warning" : "danger";
   return (
     <article className="review-card draft-test-card">
-      <header><strong>{candidate.task_id} test draft</strong><Badge tone={tone}>{plainClassification(candidate.classification)}</Badge></header>
+      <header><strong title={candidate.task_id}>{taskTitle} test draft <small>{candidate.task_id}</small></strong><Badge tone={tone}>{plainClassification(candidate.classification)}</Badge></header>
       <p>{candidate.reason}</p>
       <div className="test-verdicts">
         <Verdict label="Before change" outcome={candidate.base_outcome} />

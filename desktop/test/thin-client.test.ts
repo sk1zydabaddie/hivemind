@@ -137,7 +137,7 @@ describe("React workspace boundary", () => {
       "plan.ratify",
       "plan.review",
       "task.redirect",
-      "task.stop"
+      "run.stop"
     ]));
     for (const action of actions) expect(audit).toContain(`\`${action}\``);
     const inspection = await readFile(path.resolve(desktopRoot, "..", "src", "workspace-inspection.ts"), "utf8");
@@ -173,9 +173,11 @@ describe("React workspace boundary", () => {
 
   test("prompt stays in the fixed Work layout and text does not truncate mid-word", async () => {
     const styles = await readFile(path.join(desktopRoot, "src", "styles.css"), "utf8");
+    const work = await readFile(path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"), "utf8");
     expect(styles).toMatch(/\.work-tab[\s\S]*grid-template-rows:[^;]*minmax\(0, 1fr\) auto/u);
-    expect(styles).toMatch(/\.prompt-dock\s*\{[^}]*z-index:\s*20/u);
+    expect(styles).toMatch(/\.prompt-dock\s*\{[^}]*min-height:\s*88px[^}]*z-index:\s*20[^}]*align-self:\s*end/u);
     expect(styles).toMatch(/\.work-layout\s*\{[^}]*overflow:\s*hidden/u);
+    expect(work).toMatch(/<div className="work-banners">[\s\S]*<PlanBanner[\s\S]*<AutoRunBanner/u);
     expect(styles).not.toMatch(/text-overflow:\s*ellipsis/u);
   });
 
@@ -197,16 +199,36 @@ describe("React workspace boundary", () => {
     expect(new Set(actions)).toEqual(new Set([
       "change.inspect",
       "quality.cancel",
+      "run.stop",
       "task.redirect",
       "task.stop"
     ]));
     for (const action of actions) expect(audit).toContain(`\`${action}\``);
     expect(swarm).not.toMatch(/runGate|integrateShadow|requestLease|reviewMemoryProposal/u);
     expect(swarm).toMatch(/const tree = buildSwarmTree\(projection, inspection\)/u);
+    expect(swarm).toMatch(/type: "task\.stop"/u);
+    expect(swarm).toMatch(/type: "run\.stop"/u);
+    expect(swarm).toContain("Stop all working tasks");
     expect(swarm).not.toMatch(/useMemo\(\s*\(\) => buildSwarmTree/u);
     expect(projection).toMatch(/message\.source === "live"[\s\S]*recordArtifactMovements/u);
     expect(styles).toMatch(/\.artifact-marker[\s\S]*animation:\s*artifact-travel/u);
     expect(styles).toMatch(/prefers-reduced-motion[\s\S]*\.artifact-marker\s*\{\s*display:\s*none/u);
+  });
+
+  test("Work and Swarm share the daemon task projection and lead with task titles", async () => {
+    const work = await readFile(path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"), "utf8");
+    const swarm = await readFile(path.join(desktopRoot, "src", "components", "workspace", "swarm-tab.tsx"), "utf8");
+    const model = await readFile(path.join(desktopRoot, "src", "lib", "swarm-model.ts"), "utf8");
+    const memory = await readFile(path.join(desktopRoot, "src", "components", "workspace", "memory-tab.tsx"), "utf8");
+    const history = await readFile(path.join(desktopRoot, "src", "components", "workspace", "history-tab.tsx"), "utf8");
+    expect(work).toMatch(/const tasks = inspection\?\.tasks \?\? \[\]/u);
+    expect(model).toMatch(/inspection\?\.tasks \?\? \[\]/u);
+    expect(work).not.toMatch(/taskRows\(projection\)|projection\.tasks/u);
+    expect(model).not.toMatch(/taskRows\(projection\)|projection\.tasks/u);
+    expect(work).toMatch(/<strong>\{task\.title\}<\/strong><span>\{task\.task_id\}<\/span>/u);
+    expect(swarm).toMatch(/<strong>\{task\.task\.title\}<\/strong>\s*<small>\{task\.task\.task_id\}<\/small>/u);
+    expect(memory).toMatch(/taskTitle\} test draft/u);
+    expect(history).toMatch(/taskTitles\[taskId\] \?\? taskId/u);
   });
 
   test("Memory has no promotion surface and History exposes only the audited read-only trail", async () => {

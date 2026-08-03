@@ -859,6 +859,21 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
 
 ---
 
+### M10.6 - Concurrent UI projection
+- **Depends on:** M8.2, M8.4, M8.5, M10.2, M10.4, M10.5.
+- **Read first:** Overview section *Concurrent task execution*; M8 governing rules; M8.3 action-routing audit; durable workspace inspection; M10 scheduler/reservation events.
+- **Goal:** Present genuine concurrent work accurately from one durable Core projection without moving scheduling, gates, or inferred authority into the renderer.
+- **Behavior - exact (C4 projection; read-only client):**
+  - Core publishes one durable per-task and per-group projection consumed by both Work and Swarm. Group summaries report actual current counts such as `2 working, 1 waiting`, not planned parallelism. A failed lane enters `Needs you` immediately and states that independent siblings continue. Stall alerts remain per task.
+  - Selecting a task subscribes only to that worker's output. Each task's artifact motion derives only from that task's real durable gate, verification, or adoption events.
+  - Stop-task and stop-group are visibly distinct typed actions. Group stop is the existing audited `run.stop` fan-out; it is not a renderer-owned loop or second disposer.
+  - Spend presents settled usage plus active reservations against the session ceiling. Reservations contribute to near-ceiling warnings, and scheduler evidence states when budget rather than the configured worker cap limits concurrency.
+  - User-facing surfaces lead with task titles; durable task IDs remain secondary detail. This applies to Work, Swarm, Memory, History, and plan review. Layout remains composed without overlap at the standard desktop window size.
+  - React remains a thin client: it performs no scheduling, gate evaluation, state authority, or inferred durable truth. Existing action routing and lease semantics are unchanged.
+- **Acceptance test (binary):** A concurrent mixed-state fixture renders actual group counts, one lane-local failure with unaffected-sibling wording, independent stall alerts, task-scoped output, used-plus-reserved spend, and a budget-bound concurrency reason from one Core projection shared by Work and Swarm. Stop-task and stop-group resolve to their distinct audited primitives. Event-bound motion cannot cross task identities. Title-first presentation and no-overlap checks cover the standard populated desktop layout, while structural tests retain the thin-client boundary.
+
+---
+
 ## Beyond M8
 - **Native adapters** and **cloud/team mode** remain future productization. Their old Overview phase numbers are roadmap labels, not M8 Workspace contract numbers; decompose them into the same one-acceptance-test contracts when reached.
 - **Dogfooding** remains an available deliberate demonstration after M8, not the mechanism used to build M4–M8. When explicitly enabled, it exercises Hivemind's protected workflow against its own repo without replacing each feature's direct contract acceptance.
