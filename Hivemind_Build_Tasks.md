@@ -888,6 +888,21 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
 
 ---
 
+### M10.8 - Real concurrent workspace demonstration
+- **Depends on:** M8.7, M9.1, M9.3, M10.1-M10.6.
+- **Read first:** Overview section *Concurrent task execution*; M10.4 scheduler; M10.5 all-settled and exact-survivor verification; M8.3 action-routing audit; M8.7 exact-set adoption.
+- **Goal:** Demonstrate through the real desktop workspace that two genuinely independent canonical workers overlap in time, preserve every deterministic floor and durable event invariant, verify as the exact authorized survivor set, and adopt only after explicit human authorization.
+- **Behavior - exact (C4 floors; behavioral runtime evidence):**
+  - Use a fresh scratch TypeScript repository whose actual checked-out base branch is recorded at setup. A real generated plan contains at least two dependency-free `parallel_safe` tasks in one parallel group with pairwise-disjoint concrete write scopes. Auto autonomy and `execution.max_concurrent_workers=2` apply.
+  - Both tasks are configured High for this controlled baseline so `routeTaskProvider()` selects the explicitly pinned Sol profile. This isolates scheduler concurrency from unproven cheap-tier reliability; it grants no broader routing exception and does not change production tier floors.
+  - The run is driven through the installed desktop UI from prompt through non-blocking plan, concurrent workers, exact-set shadow verification, typed adoption authorization, and final repository write. Auto may not interrupt before adoption unless an always-surface stop actually fires. Adoption remains explicit and typed.
+  - Measure each worker process start/end window, their overlap, concurrent elapsed time, and the serial equivalent obtained by summing the same observed worker durations. Record calls, provider usage, cached/uncached input, session reservations, and whether ready work, configured cap, or budget bound the wave. Concurrency is not expected to reduce token use; any material token-cost difference is a finding rather than credited as scheduler value.
+  - Verify simultaneous disjoint leases, serialized setup, per-task event subsequences with complete parseable lines, exact authorized surviving-set verification, lane-local UI projection, no false stalls, and cleanup of worktrees, branches, leases, and reservations. Independently verify the base ref and tests after adoption rather than trusting the UI label.
+  - The native shell executable must be newer than the implementation/evidence commit before any provider call. The approved one-off token ceilings are restored immediately after the run. Screenshots and a factual experience report are retained as evidence; no result is tuned or retried merely to improve the demonstration.
+- **Acceptance test (behavioral, one separately approved paid run):** Two real Sol workers with disjoint scopes have overlapping measured execution windows at concurrency two; the observed concurrent window is shorter than the sum of their same-run durations; configured cap rather than budget binds; both lanes retain correct leases and ordered durable subsequences; the exact accepted pair passes one expectation-bound shadow verification; Auto requests no human action before adoption and raises no false stall; typed adoption changes the independently observed base ref and leaves the expected tests in the base tree; cleanup leaves no task worktree, branch, lease, or reservation. The report includes token/cache/call totals and an honest Swarm/UI assessment.
+
+---
+
 ## Beyond M8
 - **Native adapters** and **cloud/team mode** remain future productization. Their old Overview phase numbers are roadmap labels, not M8 Workspace contract numbers; decompose them into the same one-acceptance-test contracts when reached.
 - **Dogfooding** remains an available deliberate demonstration after M8, not the mechanism used to build M4–M8. When explicitly enabled, it exercises Hivemind's protected workflow against its own repo without replacing each feature's direct contract acceptance.
