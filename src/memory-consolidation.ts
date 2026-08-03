@@ -64,7 +64,7 @@ export async function consolidateMemory(
       return { ok: false, reason: formatAdapterProcessFailure(tool, processResult.value, "consolidation adapter") };
     }
 
-    const parsed = parseConsolidationOutput(processResult.value.stdout, new Set(evidence.map((item) => item.ref)));
+    const parsed = parseConsolidationOutput(processResult.value.modelOutput, new Set(evidence.map((item) => item.ref)));
     if (!parsed.ok) {
       return parsed;
     }

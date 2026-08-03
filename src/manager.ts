@@ -505,7 +505,7 @@ export async function generateManagerProposal(
     return { ok: false, reason: formatAdapterProcessFailure(tool, processResult.value, "manager adapter") };
   }
 
-  const proposal = parseGeneratedManagerProposal(processResult.value.stdout);
+  const proposal = parseGeneratedManagerProposal(processResult.value.modelOutput);
   if (!proposal.ok) {
     return proposal;
   }
@@ -1440,7 +1440,7 @@ async function generateRedirectCorrection(
     return { ok: false, reason: formatAdapterProcessFailure(tool, processResult.value, "redirect correction adapter") };
   }
 
-  const correction = parseRedirectCorrection(processResult.value.stdout);
+  const correction = parseRedirectCorrection(processResult.value.modelOutput);
   if (!correction.ok) {
     return correction;
   }

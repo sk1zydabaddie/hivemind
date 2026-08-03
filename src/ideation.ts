@@ -301,7 +301,7 @@ export async function generateIdeationRound(
     return { ok: false, reason: formatAdapterProcessFailure(tool, processResult.value, "ideation adapter") };
   }
 
-  const proposal = parseGeneratedRound(processResult.value.stdout, loaded.value.rounds.length === 0);
+  const proposal = parseGeneratedRound(processResult.value.modelOutput, loaded.value.rounds.length === 0);
   if (!proposal.ok) {
     return proposal;
   }

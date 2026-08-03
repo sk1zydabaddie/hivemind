@@ -390,7 +390,7 @@ async function generateTentativePlanWithSession(
     return { ok: false, reason: formatAdapterProcessFailure(tool, processResult.value, "planning adapter") };
   }
 
-  const proposal = parseGeneratedPlan(processResult.value.stdout);
+  const proposal = parseGeneratedPlan(processResult.value.modelOutput);
   if (!proposal.ok) {
     return proposal;
   }

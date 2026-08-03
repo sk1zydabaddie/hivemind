@@ -358,6 +358,25 @@ test("plan generator writes an adapter proposal that still goes through ground a
   });
 });
 
+test("plan generator consumes normalized model output instead of Codex JSONL transport records", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await writeFakeJsonlPlanningAdapter(repo, validPlan());
+
+    const generated = await execFileAsync(
+      process.execPath,
+      [cliPath, "plan", "S-001", "--generate", "--tool", "fake-jsonl-planner", "--out", "generated-plan.json"],
+      { cwd: repo, windowsHide: true }
+    );
+
+    const result = JSON.parse(generated.stdout) as { task_count: number; tool: string };
+    assert.equal(result.task_count, 3);
+    assert.equal(result.tool, "fake-jsonl-planner");
+    const proposal = JSON.parse(await readFile(path.join(repo, "generated-plan.json"), "utf8")) as Record<string, unknown>;
+    assert.deepEqual(Object.keys(proposal).sort(), ["execution_groups", "tasks"]);
+  });
+});
+
 test("plan generator cannot self-ratify mark lint passed or skip deterministic storage checks", async () => {
   await withTempRepo(async ({ repo }) => {
     await createRatifiedSpec(repo, "S-001");
@@ -1249,6 +1268,37 @@ async function writeFakePlanningAdapter(repo: string, body: unknown): Promise<vo
         prompt_arg: "stdin",
         verified_on: "2026-06-16",
         context_window: 8000
+      },
+      null,
+      2
+    )}\n`
+  );
+}
+
+async function writeFakeJsonlPlanningAdapter(repo: string, body: unknown): Promise<void> {
+  const agentPath = path.join(repo, "fake-jsonl-planner.mjs");
+  await writeFile(
+    agentPath,
+    [
+      "import { readFileSync } from 'node:fs';",
+      "readFileSync(0, 'utf8');",
+      "console.log(JSON.stringify({ type: 'thread.started', thread_id: 'fixture-thread' }));",
+      `console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: ${JSON.stringify(JSON.stringify(body))} } }));`,
+      "console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 10, reasoning_output_tokens: 2 } }));"
+    ].join("\n")
+  );
+  const adapterDir = path.join(repo, ".hivemind", "adapters");
+  await mkdir(adapterDir, { recursive: true });
+  await writeFile(
+    path.join(adapterDir, "fake-jsonl-planner.profile.json"),
+    `${JSON.stringify(
+      {
+        tool: "fake-jsonl-planner",
+        invoke: ["node", "fake-jsonl-planner.mjs"],
+        prompt_arg: "stdin",
+        verified_on: "2026-08-03",
+        context_window: 8000,
+        usage_parser: "codex-jsonl"
       },
       null,
       2

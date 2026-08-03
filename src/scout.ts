@@ -128,7 +128,7 @@ export async function runScout(
     tool: profileResult.profile.tool,
     createdAt: new Date().toISOString(),
     reads: promptResult.value.reads,
-    stdout: processResult.value.stdout,
+    stdout: processResult.value.modelOutput,
     stderr: processResult.value.stderr
   });
   if (!written.ok) {
