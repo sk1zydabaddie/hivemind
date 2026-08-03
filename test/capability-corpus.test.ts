@@ -153,6 +153,65 @@ test("fake Codex corpus uses the real disposer and exposes cost per successful t
   });
 });
 
+test("capability corpus repeats one selected profile in fresh immutable iterations", async () => {
+  await withHostRepo(async (repo) => {
+    const fakeBin = path.join(repo, "fake-bin");
+    const tracePath = path.join(fakeBin, "calls.jsonl");
+    await mkdir(fakeBin, { recursive: true });
+    await writeFile(path.join(fakeBin, "fake-codex.mjs"), fakeCodexSource(tracePath), "utf8");
+    await writeFile(
+      path.join(fakeBin, "codex.cmd"),
+      `@echo off\r\n"${process.execPath}" "%~dp0fake-codex.mjs" %*\r\n`,
+      "utf8"
+    );
+    await installProfiles(repo, path.join(fakeBin, "codex.cmd"));
+
+    const result = await runCapabilityCorpus(repo, {
+      corpusRunId: "CC-REPETITION",
+      tools: ["codex-luna"],
+      iterations: 2
+    });
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    if (!result.ok) return;
+
+    assert.deepEqual(result.value.selected_tools, ["codex-luna"]);
+    assert.equal(result.value.iterations, 2);
+    assert.equal(result.value.attempts.length, 6);
+    assert.deepEqual(result.value.attempts.map((attempt) => attempt.iteration), [1, 1, 1, 2, 2, 2]);
+    assert.deepEqual(result.value.providers.map((provider) => provider.tool), ["codex-luna"]);
+    assert.equal(new Set(result.value.attempts.map((attempt) => attempt.artifact_path)).size, 6);
+    assert.equal(result.value.attempts.every((attempt) => attempt.artifact_path.includes(`iteration-${String(attempt.iteration).padStart(3, "0")}`)), true);
+    const calls = (await readFile(tracePath, "utf8")).trim().split(/\r?\n/u).map((line) => JSON.parse(line));
+    assert.deepEqual(calls.map((call) => call.task), ["T-001", "T-002", "T-003", "T-001", "T-002", "T-003"]);
+  });
+});
+
+test("capability corpus rejects unbounded or invalid repetition requests before spawn", async () => {
+  await withHostRepo(async (repo) => {
+    const fakeBin = path.join(repo, "fake-bin");
+    const tracePath = path.join(fakeBin, "calls.jsonl");
+    await mkdir(fakeBin, { recursive: true });
+    await writeFile(path.join(fakeBin, "fake-codex.mjs"), fakeCodexSource(tracePath), "utf8");
+    await writeFile(
+      path.join(fakeBin, "codex.cmd"),
+      `@echo off\r\n"${process.execPath}" "%~dp0fake-codex.mjs" %*\r\n`,
+      "utf8"
+    );
+    await installProfiles(repo, path.join(fakeBin, "codex.cmd"));
+
+    for (const options of [
+      { tools: ["codex-luna"], iterations: 0 },
+      { tools: ["codex-luna"], iterations: 11 },
+      { tools: ["codex-luna", "codex-luna"], iterations: 1 },
+      { tools: ["codex-unknown"], iterations: 1 }
+    ]) {
+      const result = await runCapabilityCorpus(repo, options);
+      assert.equal(result.ok, false);
+    }
+    assert.equal(await existsForTest(tracePath), false);
+  });
+});
+
 test("capability corpus retains usage, cache economics, and overshoot evidence when output is refused", async () => {
   await withHostRepo(async (repo) => {
     const fakeBin = path.join(repo, "fake-bin");
@@ -216,6 +275,16 @@ async function withHostRepo(run: (repo: string) => Promise<void>): Promise<void>
     await run(repo);
   } finally {
     await rm(repo, { recursive: true, force: true });
+  }
+}
+
+async function existsForTest(target: string): Promise<boolean> {
+  try {
+    await stat(target);
+    return true;
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
   }
 }
 

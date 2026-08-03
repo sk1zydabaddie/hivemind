@@ -33,6 +33,7 @@ import { runShadowVerification, type VerificationRunResult } from "./integrate.j
 const execFileAsync = promisify(execFile);
 const corpusVersion = 1;
 const strongTool = "codex";
+const maxCorpusIterations = 10;
 
 interface CorpusProfileSpec {
   tool: string;
@@ -95,6 +96,7 @@ export type CorpusAttemptStatus =
 export interface CapabilityCorpusAttempt {
   version: 1;
   corpus_run_id: string;
+  iteration: number;
   tool: string;
   model: string;
   provider_tier: ProviderRoutingTier;
@@ -169,6 +171,8 @@ export interface CapabilityCorpusReport {
   shadow_only: true;
   routing_authority: false;
   session_id: string;
+  selected_tools: string[];
+  iterations: number;
   attempts: CapabilityCorpusAttempt[];
   providers: ProviderCorpusSummary[];
   artifact_path: string;
@@ -275,11 +279,28 @@ export function describeCapabilityCorpus(): CapabilityCorpusDescription {
   };
 }
 
+function describeCapabilityCorpusRun(
+  selectedProfiles: readonly CorpusProfileSpec[],
+  iterations: number
+): CapabilityCorpusDescription {
+  const description = describeCapabilityCorpus();
+  return {
+    ...description,
+    expected_provider_calls: selectedProfiles.length * corpusTasks.length * iterations,
+    profiles: selectedProfiles.map((profile) => ({ ...profile, price: { ...profile.price } }))
+  };
+}
+
 export async function validateCapabilityCorpusProfiles(
-  repoRoot: string
+  repoRoot: string,
+  selectedTools: readonly string[] = profileSpecs.map((profile) => profile.tool)
 ): Promise<{ ok: true; value: Array<{ spec: CorpusProfileSpec; profile: AdapterProfile }> } | { ok: false; reason: string }> {
+  const requested = new Set(selectedTools);
+  const unknown = [...requested].filter((tool) => !profileSpecs.some((profile) => profile.tool === tool));
+  if (requested.size === 0) return { ok: false, reason: "capability corpus requires at least one provider profile" };
+  if (unknown.length > 0) return { ok: false, reason: `unknown capability corpus profile: ${unknown.join(", ")}` };
   const profiles: Array<{ spec: CorpusProfileSpec; profile: AdapterProfile }> = [];
-  for (const spec of profileSpecs) {
+  for (const spec of profileSpecs.filter((profile) => requested.has(profile.tool))) {
     const loaded = await loadAdapterProfile(repoRoot, spec.tool);
     if (!loaded.ok) return loaded;
     const problem = capabilityProfileProblem(loaded.profile, spec);
@@ -291,9 +312,17 @@ export async function validateCapabilityCorpusProfiles(
 
 export async function runCapabilityCorpus(
   repoRoot: string,
-  options: { corpusRunId?: string } = {}
+  options: { corpusRunId?: string; tools?: string[]; iterations?: number } = {}
 ): Promise<{ ok: true; value: CapabilityCorpusReport } | { ok: false; reason: string }> {
-  const validatedProfiles = await validateCapabilityCorpusProfiles(repoRoot);
+  const iterations = options.iterations ?? 1;
+  if (!Number.isInteger(iterations) || iterations < 1 || iterations > maxCorpusIterations) {
+    return { ok: false, reason: `capability corpus iterations must be an integer from 1 to ${maxCorpusIterations}` };
+  }
+  const selectedTools = options.tools ?? profileSpecs.map((profile) => profile.tool);
+  if (new Set(selectedTools).size !== selectedTools.length) {
+    return { ok: false, reason: "capability corpus profile selection contains duplicates" };
+  }
+  const validatedProfiles = await validateCapabilityCorpusProfiles(repoRoot, selectedTools);
   if (!validatedProfiles.ok) return validatedProfiles;
   const corpusRunId = options.corpusRunId ?? `CC-${new Date().toISOString().replace(/[-:.TZ]/gu, "").slice(0, 14)}-${randomUUID()}`;
   if (!/^CC-[A-Za-z0-9-]+$/u.test(corpusRunId)) {
@@ -303,7 +332,7 @@ export async function runCapabilityCorpus(
   if (await exists(corpusRoot)) return { ok: false, reason: `capability corpus run already exists: ${corpusRunId}` };
   await mkdir(corpusRoot, { recursive: true });
   const startedAt = new Date().toISOString();
-  const description = describeCapabilityCorpus();
+  const description = describeCapabilityCorpusRun(validatedProfiles.value.map(({ spec }) => spec), iterations);
   await writeExclusiveJson(path.join(corpusRoot, "manifest.json"), {
     version: corpusVersion,
     corpus_run_id: corpusRunId,
@@ -318,12 +347,14 @@ export async function runCapabilityCorpus(
   const attempts: CapabilityCorpusAttempt[] = [];
   try {
     for (const entry of validatedProfiles.value) {
-      const providerAttempts = await withProjectTempDirectory(repoRoot, "capability", async ({ path: tempRoot }) => {
-        const sampleRepo = path.join(tempRoot, "repo");
-        await initializeCorpusRepository(sampleRepo);
-        return runProfileCorpus(repoRoot, sampleRepo, corpusRoot, corpusRunId, entry.spec, entry.profile);
-      });
-      attempts.push(...providerAttempts);
+      for (let iteration = 1; iteration <= iterations; iteration += 1) {
+        const providerAttempts = await withProjectTempDirectory(repoRoot, "capability", async ({ path: tempRoot }) => {
+          const sampleRepo = path.join(tempRoot, "repo");
+          await initializeCorpusRepository(sampleRepo);
+          return runProfileCorpus(repoRoot, sampleRepo, corpusRoot, corpusRunId, iteration, entry.spec, entry.profile);
+        });
+        attempts.push(...providerAttempts);
+      }
     }
     const completedAt = new Date().toISOString();
     const report: CapabilityCorpusReport = {
@@ -336,6 +367,8 @@ export async function runCapabilityCorpus(
       shadow_only: true,
       routing_authority: false,
       session_id: corpusRunId,
+      selected_tools: validatedProfiles.value.map(({ spec }) => spec.tool),
+      iterations,
       attempts,
       providers: summarizeProviders(attempts),
       artifact_path: artifactPath(repoRoot, corpusRoot)
@@ -356,8 +389,8 @@ export async function runCapabilityCorpus(
 
 export async function capabilityCorpusCommand(cwd: string, args: string[]): Promise<number> {
   const [action, ...rest] = args;
-  if ((action !== "describe" && action !== "run") || rest.length > 0) {
-    console.error("error: usage: hivemind routing corpus describe | run");
+  if (action !== "describe" && action !== "run") {
+    console.error("error: usage: hivemind routing corpus describe | run [--tool <profile>] [--iterations <1-10>]");
     return 1;
   }
   const repoRoot = await findGitRoot(cwd);
@@ -366,10 +399,19 @@ export async function capabilityCorpusCommand(cwd: string, args: string[]): Prom
     return 1;
   }
   if (action === "describe") {
+    if (rest.length > 0) {
+      console.error("error: usage: hivemind routing corpus describe");
+      return 1;
+    }
     console.log(JSON.stringify(describeCapabilityCorpus(), null, 2));
     return 0;
   }
-  const result = await runCapabilityCorpus(repoRoot);
+  const parsed = parseCorpusRunOptions(rest);
+  if (!parsed.ok) {
+    console.error(`error: ${parsed.reason}`);
+    return 1;
+  }
+  const result = await runCapabilityCorpus(repoRoot, parsed.value);
   if (!result.ok) {
     console.error(`error: ${result.reason}`);
     return 1;
@@ -378,11 +420,42 @@ export async function capabilityCorpusCommand(cwd: string, args: string[]): Prom
   return 0;
 }
 
+function parseCorpusRunOptions(
+  args: string[]
+): { ok: true; value: { tools?: string[]; iterations?: number } } | { ok: false; reason: string } {
+  const tools: string[] = [];
+  let iterations: number | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    const flag = args[index];
+    const value = args[index + 1];
+    if (flag === "--tool" && value !== undefined) {
+      tools.push(value);
+      index += 1;
+      continue;
+    }
+    if (flag === "--iterations" && value !== undefined) {
+      if (iterations !== undefined) return { ok: false, reason: "--iterations may be provided only once" };
+      iterations = Number(value);
+      index += 1;
+      continue;
+    }
+    return { ok: false, reason: `usage: hivemind routing corpus run [--tool <profile>] [--iterations <1-${maxCorpusIterations}>]` };
+  }
+  return {
+    ok: true,
+    value: {
+      ...(tools.length > 0 ? { tools } : {}),
+      ...(iterations !== undefined ? { iterations } : {})
+    }
+  };
+}
+
 async function runProfileCorpus(
   ledgerRepo: string,
   sampleRepo: string,
   corpusRoot: string,
   corpusRunId: string,
+  iteration: number,
   spec: CorpusProfileSpec,
   profile: AdapterProfile
 ): Promise<CapabilityCorpusAttempt[]> {
@@ -393,12 +466,12 @@ async function runProfileCorpus(
     const taskTier = inferTaskTier(buildContract(task, baseCommit), sampleConfig(sampleRepo));
     if (taskTier !== task.expected_tier) throw new Error(`${task.case_id} inferred ${taskTier}, expected ${task.expected_tier}`);
     if (task.depends_on.some((dependency) => !successful.has(dependency))) {
-      const blocked = blockedAttempt(corpusRunId, spec, task, baseCommit, corpusRoot, ledgerRepo);
+      const blocked = blockedAttempt(corpusRunId, iteration, spec, task, baseCommit, corpusRoot, ledgerRepo);
       await persistAttempt(corpusRoot, blocked, "");
       attempts.push(blocked);
       continue;
     }
-    const attempt = await runCorpusAttempt(ledgerRepo, sampleRepo, corpusRoot, corpusRunId, spec, profile, task, baseCommit);
+    const attempt = await runCorpusAttempt(ledgerRepo, sampleRepo, corpusRoot, corpusRunId, iteration, spec, profile, task, baseCommit);
     attempts.push(attempt);
     if (attempt.success) {
       await applyAcceptedCorpusPatch(sampleRepo, path.join(ledgerRepo, attempt.artifact_path, "diff.patch"), task);
@@ -413,6 +486,7 @@ async function runCorpusAttempt(
   sampleRepo: string,
   corpusRoot: string,
   corpusRunId: string,
+  iteration: number,
   spec: CorpusProfileSpec,
   profile: AdapterProfile,
   task: CorpusTaskDefinition,
@@ -431,7 +505,7 @@ async function runCorpusAttempt(
     const processResult = await runAdapterProcess(ledgerRepo, profile, checkoutPath, prompt.value.full_prompt, {
       usageSessionId: corpusRunId,
       usageRunId: corpusRunId,
-      usageTaskId: `${spec.tool}-${task.task_id}`,
+      usageTaskId: `${spec.tool}-iteration-${String(iteration).padStart(3, "0")}-${task.task_id}`,
       outputLogPath: path.join(attemptTemp, "adapter.log")
     });
     if (!processResult.ok) {
@@ -469,6 +543,7 @@ async function runCorpusAttempt(
   const attempt: CapabilityCorpusAttempt = {
     version: corpusVersion,
     corpus_run_id: corpusRunId,
+    iteration,
     tool: spec.tool,
     model: spec.model,
     provider_tier: spec.routing_tier,
@@ -496,10 +571,10 @@ async function runCorpusAttempt(
     cache_economics: usage === null ? null : cacheEconomics([usage]),
     budget_overshoot: metering?.budgetOvershoot ?? null,
     cost_usd: usage === null ? null : usageCost(usage, spec.price),
-    artifact_path: artifactPath(ledgerRepo, finalAttemptPath(corpusRoot, spec.tool, task.task_id))
+    artifact_path: artifactPath(ledgerRepo, finalAttemptPath(corpusRoot, spec.tool, iteration, task.task_id))
   };
   await writeJsonAtomic(path.join(attemptTemp, "result.json"), attempt);
-  await finalizeAttemptDirectory(corpusRoot, attemptTemp, spec.tool, task.task_id);
+  await finalizeAttemptDirectory(corpusRoot, attemptTemp, spec.tool, iteration, task.task_id);
   return attempt;
 }
 
@@ -525,6 +600,7 @@ function classifyAttempt(result: {
 
 function blockedAttempt(
   corpusRunId: string,
+  iteration: number,
   spec: CorpusProfileSpec,
   task: CorpusTaskDefinition,
   baseCommit: string,
@@ -534,6 +610,7 @@ function blockedAttempt(
   return {
     version: corpusVersion,
     corpus_run_id: corpusRunId,
+    iteration,
     tool: spec.tool,
     model: spec.model,
     provider_tier: spec.routing_tier,
@@ -561,7 +638,7 @@ function blockedAttempt(
     cache_economics: null,
     budget_overshoot: null,
     cost_usd: 0,
-    artifact_path: artifactPath(repoRoot, finalAttemptPath(corpusRoot, spec.tool, task.task_id))
+    artifact_path: artifactPath(repoRoot, finalAttemptPath(corpusRoot, spec.tool, iteration, task.task_id))
   };
 }
 
@@ -570,23 +647,23 @@ async function persistAttempt(corpusRoot: string, attempt: CapabilityCorpusAttem
   await mkdir(temp, { recursive: true });
   await writeFile(path.join(temp, "diff.patch"), diff, { encoding: "utf8", flag: "wx" });
   await writeJsonAtomic(path.join(temp, "result.json"), attempt);
-  await finalizeAttemptDirectory(corpusRoot, temp, attempt.tool, attempt.task_id);
+  await finalizeAttemptDirectory(corpusRoot, temp, attempt.tool, attempt.iteration, attempt.task_id);
 }
 
-async function finalizeAttemptDirectory(corpusRoot: string, tempPath: string, tool: string, taskId: string): Promise<void> {
-  const destination = finalAttemptPath(corpusRoot, tool, taskId);
+async function finalizeAttemptDirectory(corpusRoot: string, tempPath: string, tool: string, iteration: number, taskId: string): Promise<void> {
+  const destination = finalAttemptPath(corpusRoot, tool, iteration, taskId);
   await mkdir(path.dirname(destination), { recursive: true });
-  if (await exists(destination)) throw new Error(`capability attempt artifact already exists: ${tool}/${taskId}`);
+  if (await exists(destination)) throw new Error(`capability attempt artifact already exists: ${tool}/iteration-${iteration}/${taskId}`);
   await rename(tempPath, destination);
 }
 
-function finalAttemptPath(corpusRoot: string, tool: string, taskId: string): string {
-  return path.join(corpusRoot, "attempts", tool, taskId);
+function finalAttemptPath(corpusRoot: string, tool: string, iteration: number, taskId: string): string {
+  return path.join(corpusRoot, "attempts", tool, `iteration-${String(iteration).padStart(3, "0")}`, taskId);
 }
 
 function summarizeProviders(attempts: CapabilityCorpusAttempt[]): ProviderCorpusSummary[] {
   const solByCase = new Map(attempts.filter((attempt) => attempt.tool === strongTool).map((attempt) => [attempt.case_id, attempt]));
-  return profileSpecs.map((profile) => {
+  return profileSpecs.filter((profile) => attempts.some((attempt) => attempt.tool === profile.tool)).map((profile) => {
     const own = attempts.filter((attempt) => attempt.tool === profile.tool);
     const ownCost = completeCost(own);
     const successes = own.filter((attempt) => attempt.success).length;
