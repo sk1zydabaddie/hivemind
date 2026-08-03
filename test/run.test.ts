@@ -758,7 +758,7 @@ test("runTask stops after invocation when effective token usage exceeds the ceil
     if (result.ok) {
       return;
     }
-    assert.match(result.reason, /token budget exceeded: fake call used 2000 effective tokens against run ceiling 1000/);
+    assert.match(result.reason, /post-call token overshoot: fake used 2000 effective tokens.*1000-token admission reservation by 1000.*output was refused/u);
     assert.match(await readFile(path.join(repo, ".hivemind", "worktrees", "T-001", "README.md"), "utf8"), /changed before token ceiling stop/);
     const events = await readEvents(repo);
     assert.equal(events.ok, true);

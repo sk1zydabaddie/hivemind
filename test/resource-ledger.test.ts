@@ -155,7 +155,7 @@ test("run token ceiling records usage then stops on provider-reported effective 
       return;
     }
     assert.equal(result.budget_exceeded, true);
-    assert.match(result.reason, /used 20 effective tokens against run ceiling 10/);
+    assert.match(result.reason, /post-call token overshoot.*used 20 effective tokens.*10-token admission reservation by 10.*output was refused/u);
     const ledger = await readQuotaLedger(repo);
     assert.equal(ledger.ok, true);
     if (!ledger.ok) {
@@ -188,7 +188,7 @@ test("run token ceiling falls back to self-measured tokens when provider usage i
       return;
     }
     assert.equal(result.budget_exceeded, true);
-    assert.match(result.reason, /used 3 effective tokens against run ceiling 2/);
+    assert.match(result.reason, /post-call token overshoot.*used 3 effective tokens.*2-token admission reservation by 1.*output was refused/u);
     const ledger = await readQuotaLedger(repo);
     assert.equal(ledger.ok, true);
     if (!ledger.ok) {

@@ -11,7 +11,9 @@ import {
   normalizeProfileRoutingTier,
   runAdapterProcess,
   type AdapterProfile,
+  type AdapterProcessFailure,
   type AdapterProcessResult,
+  type AdapterBudgetOvershoot,
   type ProviderRoutingTier
 } from "./adapter.js";
 import { writeJsonAtomic } from "./atomic.js";
@@ -117,6 +119,8 @@ export interface CapabilityCorpusAttempt {
   provider_reported_usage: ProviderReportedUsage | null;
   provider_usage_status: ProviderUsageCapture["status"] | null;
   accounting_source: "provider_reported" | "self_measured" | null;
+  cache_economics: CacheEconomics | null;
+  budget_overshoot: AdapterBudgetOvershoot | null;
   cost_usd: number | null;
   artifact_path: string;
 }
@@ -130,6 +134,7 @@ interface ProviderCorpusSummary {
   revision_count: number;
   provider_reported_attempt_count: number;
   total_effective_tokens: number;
+  cache_economics: CacheEconomics | null;
   total_cost_usd: number | null;
   direct_cost_per_successful_task_usd: number | null;
   sol_fallback: {
@@ -145,6 +150,13 @@ interface ProviderCorpusSummary {
       premium_over_starting_sol_usd: number | null;
     }>;
   } | null;
+}
+
+interface CacheEconomics {
+  input_tokens: number;
+  cached_input_tokens: number;
+  uncached_input_tokens: number;
+  cached_input_ratio: number;
 }
 
 export interface CapabilityCorpusReport {
@@ -170,9 +182,9 @@ const profileSpecs: readonly CorpusProfileSpec[] = [
     cost_rank: 4,
     price: {
       input_usd_per_million: 0.1,
-      cached_input_usd_per_million: 0.1,
+      cached_input_usd_per_million: 0.01,
       output_usd_per_million: 0.6,
-      basis: "operator-supplied current Luna promotion; cached input conservatively charged at the promotional input rate"
+      basis: "operator-supplied current Luna promotion with OpenAI's documented 90% GPT-5.6 cache-read discount, 2026-08-03"
     }
   },
   {
@@ -259,7 +271,7 @@ export function describeCapabilityCorpus(): CapabilityCorpusDescription {
     expected_provider_calls: profileSpecs.length * corpusTasks.length,
     profiles: profileSpecs.map((profile) => ({ ...profile, price: { ...profile.price } })),
     tasks: corpusTasks.map(cloneTask),
-    pricing_note: "Dollar cost is emitted only for captured provider input/cached-input/output usage. Missing or unparseable usage remains null rather than estimated."
+    pricing_note: "Dollar cost is emitted only for captured provider input/cached-input/output usage. GPT-5.6 cache reads use the documented 90% input discount; cache writes would require their separately reported rate. Missing or unparseable usage remains null rather than estimated."
   };
 }
 
@@ -446,7 +458,14 @@ async function runCorpusAttempt(
   const result = checkout.value;
   if (!(await exists(patchPath))) await writeFile(patchPath, result.diff, { encoding: "utf8", flag: "wx" });
   const classified = classifyAttempt(result);
-  const usage = result.process?.providerUsageCapture.status === "captured" ? result.process.providerUsageCapture.usage : null;
+  const metering = result.process === null
+    ? result.process_failure?.metering ?? null
+    : {
+        providerUsageCapture: result.process.providerUsageCapture,
+        quotaRequest: result.process.quotaRequest,
+        budgetOvershoot: result.process.budgetOvershoot
+      };
+  const usage = metering?.providerUsageCapture.status === "captured" ? metering.providerUsageCapture.usage : null;
   const attempt: CapabilityCorpusAttempt = {
     version: corpusVersion,
     corpus_run_id: corpusRunId,
@@ -470,10 +489,12 @@ async function runCorpusAttempt(
     revision_count: 0,
     exit_code: result.process?.exitCode ?? result.process_failure?.exitCode ?? null,
     wall_time_ms: result.process?.wallTimeMs ?? result.process_failure?.wallTimeMs ?? 0,
-    self_measured_tokens: result.process?.quotaRequest.self_measured_tokens ?? null,
+    self_measured_tokens: metering?.quotaRequest.self_measured_tokens ?? null,
     provider_reported_usage: usage,
-    provider_usage_status: result.process?.providerUsageCapture.status ?? null,
-    accounting_source: result.process?.quotaRequest.accounting_source ?? null,
+    provider_usage_status: metering?.providerUsageCapture.status ?? null,
+    accounting_source: metering?.quotaRequest.accounting_source ?? null,
+    cache_economics: usage === null ? null : cacheEconomics([usage]),
+    budget_overshoot: metering?.budgetOvershoot ?? null,
     cost_usd: usage === null ? null : usageCost(usage, spec.price),
     artifact_path: artifactPath(ledgerRepo, finalAttemptPath(corpusRoot, spec.tool, task.task_id))
   };
@@ -484,7 +505,7 @@ async function runCorpusAttempt(
 
 function classifyAttempt(result: {
   process: AdapterProcessResult | null;
-  process_failure: { reason: string; exitCode?: number; wallTimeMs?: number } | null;
+  process_failure: AdapterProcessFailure | null;
   diff: string;
   gate: GateResult | null;
   verification: Awaited<ReturnType<typeof runShadowVerification>> | null;
@@ -537,6 +558,8 @@ function blockedAttempt(
     provider_reported_usage: null,
     provider_usage_status: null,
     accounting_source: null,
+    cache_economics: null,
+    budget_overshoot: null,
     cost_usd: 0,
     artifact_path: artifactPath(repoRoot, finalAttemptPath(corpusRoot, spec.tool, task.task_id))
   };
@@ -576,11 +599,31 @@ function summarizeProviders(attempts: CapabilityCorpusAttempt[]): ProviderCorpus
       revision_count: own.reduce((total, attempt) => total + attempt.revision_count, 0),
       provider_reported_attempt_count: own.filter((attempt) => attempt.provider_reported_usage !== null).length,
       total_effective_tokens: own.reduce((total, attempt) => total + (attempt.provider_reported_usage?.total_tokens ?? attempt.self_measured_tokens ?? 0), 0),
+      cache_economics: cacheEconomics(own.flatMap((attempt) => attempt.provider_reported_usage === null ? [] : [attempt.provider_reported_usage])),
       total_cost_usd: ownCost,
       direct_cost_per_successful_task_usd: ownCost === null || successes === 0 ? null : roundUsd(ownCost / successes),
       sol_fallback: profile.tool === strongTool ? null : buildSolFallback(own, solByCase)
     };
   });
+}
+
+function cacheEconomics(usages: ProviderReportedUsage[]): CacheEconomics | null {
+  if (usages.length === 0 || usages.some((usage) => usage.input_tokens === null || usage.cached_input_tokens === null)) return null;
+  const inputTokens = usages.reduce((total, usage) => total + (usage.input_tokens ?? 0), 0);
+  const cachedInputTokens = usages.reduce(
+    (total, usage) => total + Math.min(usage.cached_input_tokens ?? 0, usage.input_tokens ?? 0),
+    0
+  );
+  return {
+    input_tokens: inputTokens,
+    cached_input_tokens: cachedInputTokens,
+    uncached_input_tokens: inputTokens - cachedInputTokens,
+    cached_input_ratio: inputTokens === 0 ? 0 : roundRatio(cachedInputTokens / inputTokens)
+  };
+}
+
+function roundRatio(value: number): number {
+  return Math.round(value * 10_000) / 10_000;
 }
 
 function buildSolFallback(

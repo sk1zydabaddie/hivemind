@@ -683,9 +683,10 @@ function validateSettledBudget(
   const effectiveTokens = entry.last_request?.effective_tokens ?? 0;
   const runTokenCeiling = config.resource_policy?.run_ceiling?.tokens;
   if (runTokenCeiling !== undefined && effectiveTokens > runTokenCeiling) {
+    const overshoot = effectiveTokens - runTokenCeiling;
     return {
       ok: false,
-      reason: `token budget exceeded: ${reservation?.provider ?? "provider"} call used ${effectiveTokens} effective tokens against run ceiling ${runTokenCeiling}`,
+      reason: `token budget exceeded: post-call token overshoot: ${reservation?.provider ?? "provider"} used ${effectiveTokens} effective tokens after completion, exceeding its ${runTokenCeiling}-token admission reservation by ${overshoot}; provider usage is unavailable until completion, so the output was refused and the full usage was charged`,
       budget_exceeded: true
     };
   }

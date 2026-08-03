@@ -210,8 +210,7 @@ test("adapter usage parsers normalize Codex text, Codex JSONL, and Claude JSON i
             input_tokens: 120,
             cached_input_tokens: 40,
             output_tokens: 80,
-            output_tokens_details: { reasoning_tokens: 50 },
-            total_tokens: 200
+            reasoning_output_tokens: 50
           }
         })
       ].join("\n"),
@@ -247,6 +246,60 @@ test("adapter usage parsers normalize Codex text, Codex JSONL, and Claude JSON i
       total_tokens: 190
     }
   );
+});
+
+test("completed Codex usage above the admission reservation is refused and surfaced with normalized metering", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await setResourcePolicy(repo, {
+      run_ceiling: { tokens: 100 },
+      session_ceiling: { tokens: 1_000 }
+    });
+    const logPath = path.join(repo, ".hivemind", "log", "overshoot.adapter.log");
+    const result = await runAdapterProcess(
+      repo,
+      {
+        tool: "codex-fixture",
+        invoke: [
+          process.execPath,
+          "--eval",
+          `console.log(JSON.stringify({type:"turn.completed",usage:{input_tokens:120,cached_input_tokens:100,output_tokens:30,reasoning_output_tokens:12}}))`
+        ],
+        prompt_arg: "stdin",
+        verified_on: "2026-08-03",
+        context_window: 1_024,
+        usage_parser: "codex-jsonl"
+      },
+      repo,
+      "small prompt",
+      { outputLogPath: logPath, usageSessionId: "overshoot-session" }
+    );
+
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.budget_exceeded, true);
+    assert.match(result.reason, /post-call token overshoot.*exceeding its 100-token admission reservation by 50/u);
+    assert.equal(result.metering?.providerUsageCapture.status, "captured");
+    assert.equal(result.metering?.providerUsageCapture.status === "captured"
+      ? result.metering.providerUsageCapture.usage.reasoning_tokens
+      : null, 12);
+    assert.deepEqual(result.metering?.budgetOvershoot, {
+      enforcement: "post_completion_refusal",
+      reserved_tokens: 100,
+      effective_tokens: 150,
+      overshoot_tokens: 50
+    });
+    const log = await readFile(logPath, "utf8");
+    assert.match(log, /metering_enforcement: admission_reservation_then_post_completion_refusal/u);
+    assert.match(log, /reserved_tokens: 100/u);
+    assert.match(log, /post_completion_overshoot_tokens: 50/u);
+    const ledger = await readQuotaLedgerState(repo);
+    assert.equal(ledger.ok, true, ledger.ok ? undefined : ledger.reason);
+    if (ledger.ok) {
+      const reservation = Object.values(ledger.value.reservations)[0];
+      assert.equal(reservation.status, "settled");
+      assert.equal(reservation.settlement?.charged_tokens, 150);
+    }
+  });
 });
 
 test("adapter selects provider parsers from tool invocation while unknown tools keep self-metered fallback", () => {

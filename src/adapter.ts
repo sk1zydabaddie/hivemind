@@ -61,6 +61,7 @@ export interface InvokeAgentFailure {
   exitCode?: number;
   wallTimeMs?: number;
   effectiveTokens?: number;
+  metering?: AdapterFailureMetering;
 }
 
 export interface AdapterStreamChunk {
@@ -89,6 +90,23 @@ export interface AdapterProcessResult {
   timedOut: boolean;
   cancelled?: boolean;
   outputLogPath: string | null;
+  reservedTokens: number | null;
+  budgetOvershoot: AdapterBudgetOvershoot | null;
+}
+
+export interface AdapterBudgetOvershoot {
+  enforcement: "post_completion_refusal";
+  reserved_tokens: number;
+  effective_tokens: number;
+  overshoot_tokens: number;
+}
+
+export interface AdapterFailureMetering {
+  providerUsageCapture: ProviderUsageCapture;
+  quotaRequest: LastQuotaRequest;
+  reservationId: string | null;
+  outputLogPath: string | null;
+  budgetOvershoot: AdapterBudgetOvershoot | null;
 }
 
 export interface AdapterProcessOptions {
@@ -101,13 +119,14 @@ export interface AdapterProcessOptions {
   onProcessStart?: (identity: DurableProcessIdentity) => Promise<{ ok: true } | { ok: false; reason: string }>;
 }
 
-type AdapterProcessFailure = {
+export type AdapterProcessFailure = {
   ok: false;
   reason: string;
   budget_exceeded?: true;
   exitCode?: number;
   wallTimeMs?: number;
   effectiveTokens?: number;
+  metering?: AdapterFailureMetering;
 };
 
 type AdapterProcessExecutionResult = { ok: true; value: AdapterProcessResult } | AdapterProcessFailure;
@@ -450,6 +469,15 @@ export async function runAdapterProcess(
         const capturedStdout = Buffer.concat(stdout).toString("utf8");
         const exitCode = cancelled ? 130 : timedOut ? 124 : code ?? 1;
         const normalized = normalizeAdapterResult(resolveAdapterUsageParser(profile), capturedStdout, capturedStderr, exitCode);
+        const quotaRequest = buildUnmeteredQuotaRequest(prompt, normalized.modelOutput, normalized.providerUsageCapture);
+        const budgetOvershoot = reservation !== null && quotaRequest.effective_tokens > reservation.reserved_tokens
+          ? {
+              enforcement: "post_completion_refusal" as const,
+              reserved_tokens: reservation.reserved_tokens,
+              effective_tokens: quotaRequest.effective_tokens,
+              overshoot_tokens: quotaRequest.effective_tokens - reservation.reserved_tokens
+            }
+          : null;
         const result: AdapterProcessResult = {
           exitCode,
           stdout: capturedStdout,
@@ -461,11 +489,13 @@ export async function runAdapterProcess(
           providerUsageCapture: normalized.providerUsageCapture,
           usageSessionId: reservation === null && options.usageSessionId === undefined ? null : usageSessionId,
           reservationId: reservation?.reservation_id ?? null,
-          quotaRequest: buildUnmeteredQuotaRequest(prompt, normalized.modelOutput, normalized.providerUsageCapture),
+          quotaRequest,
           wallTimeMs: Date.now() - startedAt,
           timedOut,
           cancelled,
-          outputLogPath: options.outputLogPath ?? null
+          outputLogPath: options.outputLogPath ?? null,
+          reservedTokens: reservation?.reserved_tokens ?? null,
+          budgetOvershoot
         };
         void resolveProcessResult(
           repoRoot,
@@ -599,6 +629,7 @@ export function parseAdapterProviderUsage(
     const output = tokenField(usage, "output_tokens");
     const reasoning =
       tokenField(usage, "reasoning_tokens") ??
+      tokenField(usage, "reasoning_output_tokens") ??
       tokenField(isRecord(usage.output_tokens_details) ? usage.output_tokens_details : {}, "reasoning_tokens");
     const total = tokenField(usage, "total_tokens") ?? sumKnown(input, output);
     if (total !== null) {
@@ -713,6 +744,13 @@ async function resolveProcessResult(
     resolve({
       ok: false,
       reason: failures.join("; "),
+      metering: {
+        providerUsageCapture: result.providerUsageCapture,
+        quotaRequest: settledResult.quotaRequest,
+        reservationId: result.reservationId,
+        outputLogPath: result.outputLogPath,
+        budgetOvershoot: result.budgetOvershoot
+      },
       ...(budgetExceeded
         ? {
             budget_exceeded: true as const,
@@ -776,6 +814,10 @@ async function writeAdapterProcessLog(logPath: string, tool: string, result: Ada
       `tool: ${tool}`,
       `exit_code: ${result.exitCode}`,
       `timed_out: ${result.timedOut}`,
+      `metering_enforcement: ${result.reservationId === null ? "unmetered" : "admission_reservation_then_post_completion_refusal"}`,
+      `reserved_tokens: ${result.reservedTokens ?? "unmetered"}`,
+      `effective_tokens: ${result.quotaRequest.effective_tokens}`,
+      `post_completion_overshoot_tokens: ${result.budgetOvershoot?.overshoot_tokens ?? 0}`,
       "",
       "## stdout",
       result.stdout,

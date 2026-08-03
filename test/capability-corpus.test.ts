@@ -61,6 +61,10 @@ test("capability corpus description is fixed, shadow-only, and dependency-aware"
   assert.deepEqual(description.tasks.map((task) => task.case_id), ["documentation", "library", "dependent_cli"]);
   assert.deepEqual(description.tasks[2].depends_on, ["T-002"]);
   assert.match(description.tasks[2].deterministic_validity_check, /dependent_cli/u);
+  assert.equal(
+    description.profiles.every((profile) => profile.price.cached_input_usd_per_million === profile.price.input_usd_per_million / 10),
+    true
+  );
 });
 
 test("fake Codex corpus uses the real disposer and exposes cost per successful task", async () => {
@@ -125,6 +129,9 @@ test("fake Codex corpus uses the real disposer and exposes cost per successful t
     assert.equal(terra?.success_count, 3);
     assert.equal(sol?.success_count, 3);
     assert.equal(report.providers.every((provider) => provider.provider_reported_attempt_count === 3), true);
+    assert.equal(report.attempts.every((attempt) => attempt.provider_reported_usage?.reasoning_tokens === 10), true);
+    assert.equal(report.attempts.every((attempt) => attempt.cache_economics?.cached_input_ratio === 0.2), true);
+    assert.equal(report.providers.every((provider) => provider.cache_economics?.cached_input_ratio === 0.2), true);
 
     const ledger = await readQuotaLedgerState(repo);
     assert.equal(ledger.ok, true, ledger.ok ? undefined : ledger.reason);
@@ -143,6 +150,51 @@ test("fake Codex corpus uses the real disposer and exposes cost per successful t
     assert.equal(duplicate.ok, false);
     assert.match(duplicate.ok ? "" : duplicate.reason, /already exists/u);
     assert.equal(await readFile(tracePath, "utf8"), traceBeforeRetry);
+  });
+});
+
+test("capability corpus retains usage, cache economics, and overshoot evidence when output is refused", async () => {
+  await withHostRepo(async (repo) => {
+    const fakeBin = path.join(repo, "fake-bin");
+    const tracePath = path.join(fakeBin, "calls.jsonl");
+    await mkdir(fakeBin, { recursive: true });
+    await writeFile(
+      path.join(fakeBin, "fake-codex.mjs"),
+      fakeCodexSource(tracePath, {
+        input_tokens: 1_800,
+        cached_input_tokens: 1_440,
+        output_tokens: 200,
+        reasoning_output_tokens: 10
+      }),
+      "utf8"
+    );
+    await writeFile(
+      path.join(fakeBin, "codex.cmd"),
+      `@echo off\r\n"${process.execPath}" "%~dp0fake-codex.mjs" %*\r\n`,
+      "utf8"
+    );
+    await installProfiles(repo, path.join(fakeBin, "codex.cmd"));
+    const configPath = path.join(repo, ".hivemind", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    config.resource_policy = {
+      run_ceiling: { tokens: 1_500 },
+      session_ceiling: { tokens: 20_000 }
+    };
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+    const result = await runCapabilityCorpus(repo, { corpusRunId: "CC-OVERSHOOT" });
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    if (!result.ok) return;
+    const attempted = result.value.attempts.filter((attempt) => attempt.status !== "dependency_blocked");
+    assert.equal(attempted.length, 6);
+    assert.equal(attempted.every((attempt) => attempt.status === "adapter_failed"), true);
+    assert.equal(attempted.every((attempt) => attempt.provider_reported_usage?.total_tokens === 2_000), true);
+    assert.equal(attempted.every((attempt) => attempt.provider_reported_usage?.reasoning_tokens === 10), true);
+    assert.equal(attempted.every((attempt) => attempt.cache_economics?.cached_input_ratio === 0.8), true);
+    assert.equal(attempted.every((attempt) => attempt.budget_overshoot?.overshoot_tokens === 500), true);
+    assert.equal(attempted.every((attempt) => attempt.cost_usd !== null), true);
+    assert.equal(result.value.providers.every((provider) => provider.provider_reported_attempt_count === 2), true);
+    assert.equal(result.value.providers.every((provider) => provider.total_effective_tokens === 4_000), true);
   });
 });
 
@@ -246,7 +298,15 @@ async function gitOutput(cwd: string, args: string[]): Promise<string> {
   return result.stdout.trim();
 }
 
-function fakeCodexSource(tracePath: string): string {
+function fakeCodexSource(
+  tracePath: string,
+  usage = {
+    input_tokens: 100,
+    cached_input_tokens: 20,
+    output_tokens: 50,
+    reasoning_output_tokens: 10
+  }
+): string {
   return `import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 let prompt = "";
 for await (const chunk of process.stdin) prompt += chunk;
@@ -273,6 +333,6 @@ if (task === "T-001") {
   throw new Error("unknown task in fixture prompt");
 }
 console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "fixture patch ready" } }));
-console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 100, cached_input_tokens: 20, output_tokens: 50, output_tokens_details: { reasoning_tokens: 10 }, total_tokens: 150 } }));
+console.log(JSON.stringify({ type: "turn.completed", usage: ${JSON.stringify(usage)} }));
 `;
 }
