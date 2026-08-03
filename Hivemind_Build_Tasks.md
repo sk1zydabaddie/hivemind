@@ -874,6 +874,20 @@ Deterministic enforcement is structural: a task contract has exactly one `accept
 
 ---
 
+### M10.7 - Tiered Codex profiles and capability corpus
+- **Depends on:** M4.6, M7.5, M7.8, M10.2.
+- **Read first:** Overview sections *Agent Scorecards*, *Resource & Continuity Manager*, and *Value-Gated Quality Strategy*; M7.5's Tier-2 policy boundary; adapter confinement and refused-mode rules.
+- **Goal:** Configure real cheap/standard/strong Codex choices and produce repeatable shadow-only evidence about their cost per successful task without granting that evidence routing authority.
+- **Behavior - exact (C4 for confinement, floors, and measurement):**
+  - Project-owned profiles explicitly pin Luna=`gpt-5.6-luna`/cheap/4, Terra=`gpt-5.6-terra`/standard/10, and Sol=`gpt-5.6-sol`/strong/20. They explicitly select `workspace-write`, high effort, ephemeral JSONL output, and contain no approval/sandbox bypass, ignored-policy flag, ultra/ultracode setting, or dependency on the user's default model. Production tier floors remain unchanged: Low may select Luna, Medium requires Terra or stronger, and High/Critical requires Sol/strong.
+  - `hivemind routing corpus describe|run` is explicit and on-demand. Version 1 runs the same fixed matrix for each profile in project-namespaced disposable repositories: a Low documentation change, a Medium exported library behavior with independent conformance, and a High CLI interface depending on the verified library result. Comparing an out-of-tier model inside this fixed disposable corpus never makes that model production-eligible.
+  - Each attempt uses the existing adapter process, atomic ledger reservation/settlement, complete worker context, diff capture, `runGate()`, contract-owned deterministic validity check, and shadow verifier. The corpus never adopts, promotes, leases canonical project files, modifies the project worktree, or emits learned policy. Results are immutable artifacts under `.hivemind/resource/capability-corpus/<corpus_run_id>/`.
+  - Per attempt record model/profile provenance, inferred task tier, gate and validity/shadow outcomes, revision count, wall time, provider usage and accounting source. Cost is computed only when provider input/cached-input/output usage is captured against the run's explicit price snapshot. Reports include direct cost per successful task and the matched Sol-retry cost for each cheaper-model failure, so a failed cheap attempt's retry premium is visible rather than averaged away.
+  - Corpus evidence remains Tier-1 measurement only. It has zero routing influence until a separate human promotion through M7.3/M7.5's single Tier-2 door.
+- **Acceptance test (binary, free mechanism):** Checked-in profiles validate as explicit, confined, non-ultra pins and route Low/Medium/High to Luna/Terra/Sol without breaching the tier floor. A fake-Codex corpus run executes the exact fixed matrix through the real adapter/ledger/gate/validity/shadow path, catches a deliberately wrong cheap CLI despite green self-authored tests, preserves dependency order, writes immutable evidence, computes direct and Sol-retry cost per success from provider usage, and leaves the canonical project worktree/canon/leases unchanged. `describe` and all fixture tests make no provider call. One separately approved live corpus run is required before any scorecard promotion.
+
+---
+
 ## Beyond M8
 - **Native adapters** and **cloud/team mode** remain future productization. Their old Overview phase numbers are roadmap labels, not M8 Workspace contract numbers; decompose them into the same one-acceptance-test contracts when reached.
 - **Dogfooding** remains an available deliberate demonstration after M8, not the mechanism used to build M4–M8. When explicitly enabled, it exercises Hivemind's protected workflow against its own repo without replacing each feature's direct contract acceptance.

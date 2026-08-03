@@ -75,6 +75,10 @@ async function main(argv: string[]): Promise<number> {
   }
 
   if (command === "routing") {
+    if (rest[0] === "corpus") {
+      const { capabilityCorpusCommand } = await import("./capability-corpus.js");
+      return capabilityCorpusCommand(process.cwd(), rest.slice(1));
+    }
     return routingCommand(process.cwd(), rest);
   }
 

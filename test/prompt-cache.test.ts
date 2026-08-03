@@ -10,7 +10,13 @@ import { invokeAgent } from "../src/adapter.js";
 import type { TaskContract } from "../src/contract.js";
 import { readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
-import { assembleAgentPrompt, buildContractTaskContextLayer, readCachedRepoFile, readCacheMetrics } from "../src/prompt-cache.js";
+import {
+  assembleAgentPrompt,
+  assembleAgentPromptFromVerifiedCheckout,
+  buildContractTaskContextLayer,
+  readCachedRepoFile,
+  readCacheMetrics
+} from "../src/prompt-cache.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
 
@@ -184,6 +190,23 @@ test("assembleAgentPrompt reads write-context files from the task base worktree 
     }
     assert.match(prompt.value.full_prompt, /# Fixture/);
     assert.doesNotMatch(prompt.value.full_prompt, /newer root content/);
+  });
+});
+
+test("an alternate prompt checkout is refused unless its HEAD is the verified authoring base", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeFile(path.join(repo, "README.md"), "advanced root\n");
+    await git(repo, ["add", "README.md"]);
+    await git(repo, ["commit", "-m", "advance root for mismatch"]);
+
+    const prompt = await assembleAgentPromptFromVerifiedCheckout(
+      repo,
+      contractFor({ task_id: "T-ALT", base_commit: baseCommit, allowed_files: ["README.md"] }),
+      repo
+    );
+
+    assert.equal(prompt.ok, false);
+    assert.match(prompt.ok ? "" : prompt.reason, /expected verified authoring base/u);
   });
 });
 

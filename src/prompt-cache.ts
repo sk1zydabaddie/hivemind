@@ -67,15 +67,39 @@ interface ReadCacheEntry {
 }
 
 export async function assembleAgentPrompt(repoRoot: string, contract: TaskContract): Promise<{ ok: true; value: AssembledPrompt } | { ok: false; reason: string }> {
+  const sourceRootResult = await resolveTaskPromptSourceRoot(repoRoot, contract);
+  if (!sourceRootResult.ok) {
+    return sourceRootResult;
+  }
+  return assembleAgentPromptFromVerifiedCheckout(repoRoot, contract, sourceRootResult.value);
+}
+
+export async function assembleAgentPromptFromVerifiedCheckout(
+  repoRoot: string,
+  contract: TaskContract,
+  sourceRoot: string
+): Promise<{ ok: true; value: AssembledPrompt } | { ok: false; reason: string }> {
   const contractContextResult = validateWorkerContextContract(contract);
   if (!contractContextResult.ok) {
     return contractContextResult;
+  }
+  const sourceHead = await gitStdout(sourceRoot, ["rev-parse", "HEAD"]);
+  if (!sourceHead.ok) {
+    return { ok: false, reason: `worker prompt source is not a readable git checkout (${sourceHead.reason})` };
+  }
+  const authoringBase = await resolveTaskAuthoringBase(repoRoot, contract);
+  if (!authoringBase.ok) return authoringBase;
+  if (sourceHead.stdout !== authoringBase.value.commit) {
+    return {
+      ok: false,
+      reason: `worker prompt source is at ${sourceHead.stdout}, expected verified authoring base ${authoringBase.value.commit}`
+    };
   }
   const substrateResult = await buildRepoSubstrateLayer(repoRoot);
   if (!substrateResult.ok) {
     return substrateResult;
   }
-  const taskContextResult = await buildTaskContextPackLayer(repoRoot, contract);
+  const taskContextResult = await buildTaskContextPackLayer(repoRoot, contract, sourceRoot);
   if (!taskContextResult.ok) {
     return taskContextResult;
   }
@@ -236,12 +260,11 @@ async function readOptionalSubstrateFile(repoRoot: string, repoPath: string): Pr
   }
 }
 
-async function buildTaskContextPackLayer(repoRoot: string, contract: TaskContract): Promise<{ ok: true; value: string } | { ok: false; reason: string }> {
-  const sourceRootResult = await resolveTaskPromptSourceRoot(repoRoot, contract);
-  if (!sourceRootResult.ok) {
-    return sourceRootResult;
-  }
-
+async function buildTaskContextPackLayer(
+  repoRoot: string,
+  contract: TaskContract,
+  sourceRoot: string
+): Promise<{ ok: true; value: string } | { ok: false; reason: string }> {
   const sections = [buildContractTaskContextLayer(contract)];
   const contextPackResult = await loadContextPackForContract(repoRoot, contract);
   if (!contextPackResult.ok) {
@@ -257,7 +280,7 @@ async function buildTaskContextPackLayer(repoRoot: string, contract: TaskContrac
       sections.push(formatContentBlock("Task Knowledge", knowledgeResult.value));
     }
     for (const citedFile of contextPackResult.value.cited_files) {
-      const readResult = await readCachedRepoFile(repoRoot, citedFile.path, { taskId: contract.task_id, mode: "write-context", sourceRoot: sourceRootResult.value });
+      const readResult = await readCachedRepoFile(repoRoot, citedFile.path, { taskId: contract.task_id, mode: "write-context", sourceRoot });
       if (!readResult.ok) {
         return readResult;
       }
@@ -273,7 +296,7 @@ async function buildTaskContextPackLayer(repoRoot: string, contract: TaskContrac
   }
 
   for (const repoPath of taskContextReadPaths(contract)) {
-    const readResult = await readCachedRepoFile(repoRoot, repoPath, { taskId: contract.task_id, mode: "write-context", sourceRoot: sourceRootResult.value });
+    const readResult = await readCachedRepoFile(repoRoot, repoPath, { taskId: contract.task_id, mode: "write-context", sourceRoot });
     if (!readResult.ok) {
       sections.push(`Cached read ${repoPath}:\n- ${readResult.reason}`);
       continue;

@@ -17,7 +17,7 @@ const execFileAsync = promisify(execFile);
 // disposable checkout roots short and fail loudly if the environment cannot.
 export const WINDOWS_DISPOSABLE_ROOT_BUDGET = 120;
 
-export type ProjectTempPurpose = "checkout" | "changeset" | "consolidation";
+export type ProjectTempPurpose = "checkout" | "changeset" | "consolidation" | "capability";
 
 interface ProjectIdentity {
   canonical_root: string;
@@ -79,7 +79,8 @@ export interface ProjectTempReconciliation {
 const purposeCodes: Record<ProjectTempPurpose, string> = {
   checkout: "co",
   changeset: "cs",
-  consolidation: "mc"
+  consolidation: "mc",
+  capability: "cp"
 };
 
 export async function withProjectTempDirectory<T>(
@@ -476,7 +477,7 @@ function disposableDirectoryName(namespaceId: string, purpose: ProjectTempPurpos
 }
 
 function isDisposableDirectoryName(value: string): boolean {
-  return /^hvm-[a-z0-9]{1,32}-(?:co|cs|mc)-[A-Za-z0-9-]{1,64}$/u.test(value);
+  return /^hvm-[a-z0-9]{1,32}-(?:co|cs|mc|cp)-[A-Za-z0-9-]{1,64}$/u.test(value);
 }
 
 function projectTempManifestPath(directoryPath: string): string {
@@ -520,7 +521,7 @@ function sameFileIdentity(left: FileIdentity, right: FileIdentity): boolean {
 }
 
 function isProjectTempPurpose(value: unknown): value is ProjectTempPurpose {
-  return value === "checkout" || value === "changeset" || value === "consolidation";
+  return value === "checkout" || value === "changeset" || value === "consolidation" || value === "capability";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
