@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import {
@@ -20,6 +20,7 @@ import { writeJsonAtomic } from "./atomic.js";
 import { captureWorktreeDiff } from "./diff-capture.js";
 import { runGate, type GateResult } from "./gate.js";
 import { inferTaskTier, type TaskTier } from "./routing.js";
+import { isRoutingTaskType } from "./routing-task-type.js";
 import { findGitRoot } from "./repo.js";
 import { withDetachedCheckout } from "./changeset.js";
 import { withProjectTempDirectory } from "./project-temp.js";
@@ -50,7 +51,7 @@ interface CorpusPrice {
   basis: string;
 }
 
-interface CorpusTaskDefinition {
+export interface CorpusTaskDefinition {
   task_id: string;
   case_id: "documentation" | "library" | "dependent_cli";
   title: string;

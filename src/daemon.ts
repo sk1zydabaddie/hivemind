@@ -13,7 +13,7 @@ import { appendEvent, readEvents } from "./events.js";
 import { enqueueIntegrationPatch, integrateShadow } from "./integrate.js";
 import { checkWriteIntent } from "./intent.js";
 import { requestLeaseForContract, releaseLease } from "./lease.js";
-import { proposeLearnedRoutingPolicy } from "./learned-routing.js";
+import { ingestCapabilityCorpusEvidence, proposeLearnedRoutingPolicy } from "./learned-routing.js";
 import { proposeMemoryLesson } from "./memory-log.js";
 import { reconcileProjectTempDirectories } from "./project-temp.js";
 import { preflightQualityCancellationReconciliation, reconcileQualityCancellationsOnStartup } from "./quality-control.js";
@@ -212,6 +212,15 @@ function routeHandler(repoRoot: string, method: string | undefined, url: string 
   }
   if (method === "POST" && url === "/routing/derive") {
     return async () => proposeLearnedRoutingPolicy(repoRoot);
+  }
+  if (method === "POST" && url === "/routing/corpus/ingest") {
+    return async (payload) => {
+      const corpusRunId = typeof payload.corpus_run_id === "string" ? payload.corpus_run_id : "";
+      const includedProviders = Array.isArray(payload.included_providers)
+        ? payload.included_providers.filter((provider): provider is string => typeof provider === "string")
+        : undefined;
+      return ingestCapabilityCorpusEvidence(repoRoot, corpusRunId, includedProviders);
+    };
   }
   if (method === "POST" && url === "/quality/admit") {
     return async (payload) => {

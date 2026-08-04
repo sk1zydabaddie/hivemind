@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import { promisify } from "node:util";
 import test from "node:test";
 
@@ -11,9 +12,20 @@ import {
   runCapabilityCorpus,
   validateCapabilityCorpusProfiles
 } from "../src/capability-corpus.js";
+import { readVerifiedCapabilityCorpusReport } from "../src/capability-corpus-evidence.js";
 import type { HivemindConfig } from "../src/config.js";
 import type { TaskContract } from "../src/contract.js";
 import { readQuotaLedgerState } from "../src/resource-ledger.js";
+import { appendEvent, readEvents } from "../src/events.js";
+import {
+  appendRoutingObservation,
+  deriveLearnedRoutingPolicy,
+  ingestCapabilityCorpusEvidence,
+  proposeLearnedRoutingPolicy,
+  readPromotedRoutingPolicy
+} from "../src/learned-routing.js";
+import { proposeMemoryLesson } from "../src/memory-log.js";
+import { reviewMemoryProposalInteractively } from "../src/memory-review.js";
 import { routeTaskProvider } from "../src/routing.js";
 
 const execFileAsync = promisify(execFile);
@@ -150,6 +162,26 @@ test("fake Codex corpus uses the real disposer and exposes cost per successful t
     assert.equal(duplicate.ok, false);
     assert.match(duplicate.ok ? "" : duplicate.reason, /already exists/u);
     assert.equal(await readFile(tracePath, "utf8"), traceBeforeRetry);
+
+    assert.equal((await ingestCapabilityCorpusEvidence(repo, report.corpus_run_id)).ok, true);
+    const routingProposal = await proposeLearnedRoutingPolicy(repo);
+    assert.equal(routingProposal.ok, true, routingProposal.ok ? undefined : routingProposal.reason);
+    if (!routingProposal.ok) return;
+    assert.equal((await runInteractiveReview(repo, routingProposal.value.proposal_id)).ok, true);
+    const lowRoute = await routeTaskProvider(repo, routeContract("README.md", "documentation"), hostConfig(repo));
+    const mediumRoute = await routeTaskProvider(repo, routeContract("src/library.mjs", "data_model"), hostConfig(repo));
+    const highRoute = await routeTaskProvider(repo, routeContract("src/cli.mjs", "cli"), hostConfig(repo));
+    assert.equal(lowRoute.ok, true, lowRoute.ok ? undefined : lowRoute.reason);
+    assert.equal(mediumRoute.ok, true, mediumRoute.ok ? undefined : mediumRoute.reason);
+    assert.equal(highRoute.ok, true, highRoute.ok ? undefined : highRoute.reason);
+    if (lowRoute.ok && mediumRoute.ok && highRoute.ok) {
+      assert.equal(lowRoute.value.tool, "codex-luna");
+      assert.equal(mediumRoute.value.tool, "codex-terra");
+      assert.equal(highRoute.value.tool, "codex");
+      assert.equal(lowRoute.value.learned_policy?.status, "applied");
+      assert.equal(mediumRoute.value.learned_policy?.status, "applied");
+      assert.equal(highRoute.value.learned_policy?.status, "applied");
+    }
   });
 });
 
@@ -209,6 +241,138 @@ test("capability corpus rejects unbounded or invalid repetition requests before 
       assert.equal(result.ok, false);
     }
     assert.equal(await existsForTest(tracePath), false);
+  });
+});
+
+test("registered corpus evidence is hash-bound, source-labeled, and cannot use an unrelated policy identity", async () => {
+  await withHostRepo(async (repo) => {
+    const fakeBin = path.join(repo, "fake-bin");
+    const tracePath = path.join(fakeBin, "calls.jsonl");
+    await mkdir(fakeBin, { recursive: true });
+    await writeFile(path.join(fakeBin, "fake-codex.mjs"), fakeCodexSource(tracePath), "utf8");
+    await writeFile(path.join(fakeBin, "codex.cmd"), `@echo off\r\n"${process.execPath}" "%~dp0fake-codex.mjs" %*\r\n`, "utf8");
+    await installProfiles(repo, path.join(fakeBin, "codex.cmd"));
+    const corpus = await runCapabilityCorpus(repo, {
+      corpusRunId: "CC-ROUTING-EVIDENCE",
+      tools: ["codex-luna", "codex-terra"]
+    });
+    assert.equal(corpus.ok, true, corpus.ok ? undefined : corpus.reason);
+    if (!corpus.ok) return;
+
+    const unknownProvider = await ingestCapabilityCorpusEvidence(repo, corpus.value.corpus_run_id, ["missing-provider"]);
+    assert.equal(unknownProvider.ok, false);
+    const ingested = await ingestCapabilityCorpusEvidence(repo, corpus.value.corpus_run_id, ["codex-luna", "codex-terra"]);
+    assert.equal(ingested.ok, true, ingested.ok ? undefined : ingested.reason);
+    if (ingested.ok) {
+      assert.deepEqual(ingested.value.included_providers, ["codex-luna", "codex-terra"]);
+      assert.equal(ingested.value.attempt_count, 6);
+    }
+    const derived = await deriveLearnedRoutingPolicy(repo);
+    assert.equal(derived.ok, true, derived.ok ? undefined : derived.reason);
+    if (!derived.ok) return;
+    assert.equal(derived.value.corpus_evidence.length, 1);
+    assert.equal(derived.value.corpus_evidence[0].corpus_run_id, "CC-ROUTING-EVIDENCE");
+    assert.equal(derived.value.source_event_count, 1);
+    const documentation = derived.value.task_types.find((entry) => entry.routing_task_type === "documentation");
+    assert.equal(documentation?.provenance.selected_source, "corpus_shadow");
+    assert.equal(documentation?.provenance.production.sample_count, 0);
+    assert.equal(documentation?.provenance.corpus_shadow.sample_count, 2);
+    assert.equal(documentation?.providers[0].evidence_source, "corpus_shadow");
+    assert.equal(documentation?.providers[0].integrated_count, 0);
+    assert.equal((documentation?.providers[0].shadow_validated_diff_bytes ?? 0) > 0, true);
+    assert.deepEqual(documentation?.providers[0].model_ids, ["gpt-5.6-luna"]);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (events.ok) {
+      assert.deepEqual(events.value.map((event) => event.type), ["routing.corpus_registered"]);
+    }
+
+    assert.equal((await appendRoutingObservation(repo, "T-PROD-LUNA", {
+      version: 1,
+      run_id: "production-luna",
+      provider: "codex-luna",
+      routing_task_type: "documentation",
+      request_count: 1,
+      wall_time_ms: 1_000,
+      self_measured_tokens: 100,
+      provider_reported_tokens: 1_000,
+      effective_tokens: 1_000,
+      cost_source: "provider_reported",
+      diff_bytes: 100,
+      exit_code: 1,
+      timed_out: false,
+      handoff_from: null
+    })).ok, true);
+    assert.equal((await appendEvent(repo, { type: "patch.rejected", task_id: "T-PROD-LUNA", data: { reason: "production failure" } })).ok, true);
+    assert.equal((await appendEvent(repo, { type: "task.failed", task_id: "T-PROD-LUNA", data: { reason: "production failure" } })).ok, true);
+    assert.equal((await appendRoutingObservation(repo, "T-PROD-TERRA", {
+      version: 1,
+      run_id: "production-terra",
+      provider: "codex-terra",
+      routing_task_type: "documentation",
+      request_count: 1,
+      wall_time_ms: 1_000,
+      self_measured_tokens: 100,
+      provider_reported_tokens: 1_000,
+      effective_tokens: 1_000,
+      cost_source: "provider_reported",
+      diff_bytes: 100,
+      exit_code: 0,
+      timed_out: false,
+      handoff_from: null
+    })).ok, true);
+    assert.equal((await appendEvent(repo, { type: "patch.accepted", task_id: "T-PROD-TERRA", data: { changed_files: ["README.md"] } })).ok, true);
+    assert.equal((await appendEvent(repo, { type: "task.completed", task_id: "T-PROD-TERRA", data: {} })).ok, true);
+    assert.equal((await appendEvent(repo, { type: "integration.passed", task_id: null, data: { applied: ["T-PROD-TERRA"] } })).ok, true);
+    const compared = await deriveLearnedRoutingPolicy(repo);
+    assert.equal(compared.ok, true, compared.ok ? undefined : compared.reason);
+    if (!compared.ok) return;
+    const comparedDocumentation = compared.value.task_types.find((entry) => entry.routing_task_type === "documentation");
+    assert.equal(comparedDocumentation?.provenance.selected_source, "production");
+    assert.equal(comparedDocumentation?.provenance.production.sample_count, 2);
+    assert.equal(comparedDocumentation?.provenance.corpus_shadow.sample_count, 2);
+    assert.equal(comparedDocumentation?.provenance.rankings_disagree, true);
+
+    const unrelated = await proposeMemoryLesson(repo, {
+      title: "Wrong corpus identity",
+      lesson: "This policy must remain stale because its hash does not bind the cited corpus.",
+      evidence: [`capability-corpus:${corpus.value.corpus_run_id}`],
+      routing_policy: { ...compared.value, source_evidence_hash: "a".repeat(64) }
+    });
+    assert.equal(unrelated.ok, true, unrelated.ok ? undefined : unrelated.reason);
+    if (!unrelated.ok) return;
+    const refusedReview = await runInteractiveReview(repo, unrelated.value.proposal_id);
+    assert.equal(refusedReview.ok, false);
+    assert.match(refusedReview.ok ? "" : refusedReview.reason, /does not bind/u);
+    const promoted = await readPromotedRoutingPolicy(repo);
+    assert.equal(promoted.promoted, "absent");
+    assert.equal(promoted.active_policy, null);
+  });
+});
+
+test("tampering with a corpus report is refused by verification and routing derivation", async () => {
+  await withHostRepo(async (repo) => {
+    const fakeBin = path.join(repo, "fake-bin");
+    const tracePath = path.join(fakeBin, "calls.jsonl");
+    await mkdir(fakeBin, { recursive: true });
+    await writeFile(path.join(fakeBin, "fake-codex.mjs"), fakeCodexSource(tracePath), "utf8");
+    await writeFile(path.join(fakeBin, "codex.cmd"), `@echo off\r\n"${process.execPath}" "%~dp0fake-codex.mjs" %*\r\n`, "utf8");
+    await installProfiles(repo, path.join(fakeBin, "codex.cmd"));
+    const corpus = await runCapabilityCorpus(repo, { corpusRunId: "CC-TAMPER", tools: ["codex-terra"] });
+    assert.equal(corpus.ok, true, corpus.ok ? undefined : corpus.reason);
+    if (!corpus.ok) return;
+    assert.equal((await ingestCapabilityCorpusEvidence(repo, corpus.value.corpus_run_id)).ok, true);
+    const reportPath = path.join(repo, corpus.value.artifact_path, "report.json");
+    const report = JSON.parse(await readFile(reportPath, "utf8"));
+    report.attempts[0].cost_usd += 1;
+    await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+
+    const verified = await readVerifiedCapabilityCorpusReport(repo, corpus.value.corpus_run_id);
+    assert.equal(verified.ok, false);
+    assert.match(verified.ok ? "" : verified.reason, /does not match its immutable result/u);
+    const derived = await deriveLearnedRoutingPolicy(repo);
+    assert.equal(derived.ok, false);
+    assert.match(derived.ok ? "" : derived.reason, /does not match its immutable result/u);
   });
 });
 
@@ -288,6 +452,28 @@ async function existsForTest(target: string): Promise<boolean> {
   }
 }
 
+async function runInteractiveReview(repo: string, proposalId: string) {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  Object.defineProperty(input, "isTTY", { value: true });
+  Object.defineProperty(output, "isTTY", { value: true });
+  output.resume();
+  const stdinDescriptor = Object.getOwnPropertyDescriptor(process, "stdin");
+  const stderrDescriptor = Object.getOwnPropertyDescriptor(process, "stderr");
+  if (stdinDescriptor === undefined || stderrDescriptor === undefined) {
+    throw new Error("process stdio descriptors are unavailable");
+  }
+  Object.defineProperty(process, "stdin", { configurable: true, enumerable: true, get: () => input });
+  Object.defineProperty(process, "stderr", { configurable: true, enumerable: true, get: () => output });
+  input.end(`approve ${proposalId}\n`);
+  try {
+    return await reviewMemoryProposalInteractively(repo, proposalId);
+  } finally {
+    Object.defineProperty(process, "stdin", stdinDescriptor);
+    Object.defineProperty(process, "stderr", stderrDescriptor);
+  }
+}
+
 async function installProfiles(repo: string, fakeCodexPath: string): Promise<void> {
   await mkdir(path.dirname(fakeCodexPath), { recursive: true });
   for (const tool of ["codex-luna", "codex-terra", "codex"]) {
@@ -322,12 +508,12 @@ function hostConfig(repo: string): HivemindConfig {
   };
 }
 
-function routeContract(file: string): TaskContract {
+function routeContract(file: string, routingTaskType: TaskContract["routing_task_type"] = "other"): TaskContract {
   return {
     task_id: "T-ROUTE",
     title: "Route fixture",
     agent_role: "builder",
-    routing_task_type: "other",
+    routing_task_type: routingTaskType,
     base_commit: "0123456789012345678901234567890123456789",
     acceptance_criterion: "The route is selected.",
     allowed_files: [file],

@@ -950,11 +950,14 @@ test("workspace inspection presents authoritative plan detail and daemon-derived
         kind: "learned_routing_policy",
         source_evidence_hash: "b".repeat(64),
         source_event_count: 2,
-        formula: { effective_throughput: 0.4, merged_diff_per_quota: 0.4, handoff_safety: 0.2 },
+        formula: { effective_throughput: 0.4, merged_diff_per_quota: 0.4, handoff_safety: 0.2, corpus_shadow_success_rate: 1 },
+        corpus_evidence: [],
         task_types: [{
           routing_task_type: "ui",
           providers: [{
             provider: "fixture-codex",
+            evidence_source: "production",
+            model_ids: [],
             weight: 0.82,
             sample_count: 2,
             request_count: 2,
@@ -968,15 +971,31 @@ test("workspace inspection presents authoritative plan detail and daemon-derived
             handoff_success_count: 0,
             wall_time_ms: 2_000,
             merged_diff_bytes: 1_800,
+            shadow_validated_diff_bytes: 0,
+            successful_diff_bytes: 1_800,
             effective_tokens: 38_000,
             effective_throughput_bytes_per_second: 0.9,
             merged_diff_bytes_per_1k_tokens: 47.37,
+            successful_diff_bytes_per_1k_tokens: 47.37,
+            success_rate: 1,
+            cost_per_success_usd: null,
             handoff_safety_rate: null,
             cost_source: "provider_reported",
             provider_reported_sample_count: 2,
             self_measured_sample_count: 0,
             evidence: ["routing observation R-001", "routing observation R-002"]
-          }]
+          }],
+          provenance: {
+            selected_source: "production",
+            production: {
+              source: "production",
+              sample_count: 2,
+              ranking: [{ provider: "fixture-codex", weight: 0.82, sample_count: 2, success_rate: 1, cost_per_success_usd: null }],
+              evidence: ["routing observation R-001", "routing observation R-002"]
+            },
+            corpus_shadow: { source: "corpus_shadow", sample_count: 0, ranking: [], evidence: [] },
+            rankings_disagree: null
+          }
         }]
       }
     });

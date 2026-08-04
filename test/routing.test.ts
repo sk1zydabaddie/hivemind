@@ -178,7 +178,8 @@ test("metric-derived routing is inspectable, scoped, and inert until human promo
     assert.deepEqual(derived.value.formula, {
       effective_throughput: 0.4,
       merged_diff_per_quota: 0.4,
-      handoff_safety: 0.2
+      handoff_safety: 0.2,
+      corpus_shadow_success_rate: 1
     });
 
     const beforePromotion = await routeTaskProvider(

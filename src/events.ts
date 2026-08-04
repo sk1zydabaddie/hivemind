@@ -59,6 +59,7 @@ export const eventTypes = [
   "memory.proposed",
   "memory.accepted",
   "routing.observed",
+  "routing.corpus_registered",
   "quality.admission_decided",
   "quality.draft_started",
   "quality.worker_process_started",

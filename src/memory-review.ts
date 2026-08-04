@@ -5,6 +5,7 @@ import { writeJsonAtomic } from "./atomic.js";
 import type { CanonMemoryEntry } from "./memory-canon.js";
 import { readMemoryProposal } from "./memory-log.js";
 import type { MemoryResult } from "./memory-types.js";
+import { validateRoutingPolicyEvidenceIdentity } from "./learned-routing.js";
 
 export async function reviewMemoryProposalInteractively(
   repoRoot: string,
@@ -13,6 +14,10 @@ export async function reviewMemoryProposalInteractively(
   const proposal = await readMemoryProposal(repoRoot, proposalId);
   if (!proposal.ok) {
     return proposal;
+  }
+  if (proposal.value.routing_policy !== null) {
+    const evidenceIdentity = await validateRoutingPolicyEvidenceIdentity(repoRoot, proposal.value.routing_policy);
+    if (!evidenceIdentity.ok) return evidenceIdentity;
   }
   if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) {
     return {
