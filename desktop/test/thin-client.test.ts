@@ -76,11 +76,87 @@ describe("React workspace boundary", () => {
     const app = await readFile(path.join(desktopRoot, "src", "App.tsx"), "utf8");
 
     expect(config).toMatch(/ui\.shadcn\.com/u);
-    expect(styles).toMatch(/--field-ivory/u);
-    expect(styles).toMatch(/--meridian/u);
     expect(styles).toMatch(/prefers-reduced-motion/u);
     for (const tab of ["Work", "Swarm", "Memory", "History"]) {
       expect(app).toContain(tab);
+    }
+  });
+
+  test("Tailwind is the single styling path and the shadcn CLI is wired to it", async () => {
+    const styles = await readFile(path.join(desktopRoot, "src", "styles.css"), "utf8");
+    const legacy = await readFile(path.join(desktopRoot, "src", "legacy.css"), "utf8");
+    const config = JSON.parse(
+      await readFile(path.join(desktopRoot, "components.json"), "utf8")
+    ) as {
+      tailwind?: { config?: string; css?: string; cssVariables?: boolean };
+      aliases?: Record<string, string>;
+      iconLibrary?: string;
+    };
+    const tsconfig = await readFile(path.join(desktopRoot, "tsconfig.json"), "utf8");
+    const vite = await readFile(path.join(desktopRoot, "vite.config.ts"), "utf8");
+    const packageJson = JSON.parse(
+      await readFile(path.join(desktopRoot, "package.json"), "utf8")
+    ) as { dependencies: Record<string, string> };
+
+    expect(styles).toMatch(/@import "tailwindcss"/u);
+    expect(vite).toMatch(/tailwindcss\(\)/u);
+    expect(packageJson.dependencies).toHaveProperty("tailwindcss");
+
+    // A CLI-added component resolves `@/…` and lands on this palette without edits.
+    expect(config.tailwind?.config).toBe("");
+    expect(config.tailwind?.css).toBe("src/styles.css");
+    expect(config.tailwind?.cssVariables).toBe(true);
+    expect(config.iconLibrary).toBe("lucide");
+    expect(config.aliases).toMatchObject({
+      components: "@/components",
+      utils: "@/lib/utils",
+      ui: "@/components/ui"
+    });
+    expect(tsconfig).toMatch(/"@\/\*":\s*\["\.\/src\/\*"\]/u);
+    expect(vite).toMatch(/"@":\s*path\.resolve/u);
+    for (const token of [
+      "--primary",
+      "--background",
+      "--foreground",
+      "--border",
+      "--ring",
+      "--radius"
+    ]) {
+      expect(styles).toContain(`${token}:`);
+    }
+
+    // Logo palette, and only the logo palette.
+    for (const token of ["--ink: #1f2328", "--navy: #1b3a6b", "--amber: #b88936", "--clay: #b65b4f"]) {
+      expect(styles).toContain(token);
+    }
+    expect(styles).not.toMatch(/--field-ivory|--meridian|linear-gradient|backdrop-filter/u);
+
+    // The untouched tabs keep their class names, quarantined below Tailwind.
+    expect(styles).toMatch(/@layer theme, base, legacy, components, utilities;/u);
+    expect(legacy).toMatch(/@layer legacy \{/u);
+    expect(legacy).toMatch(/--meridian: var\(--navy\)/u);
+  });
+
+  test("the four hand-ported primitives are Tailwind-native", async () => {
+    const legacy = await readFile(path.join(desktopRoot, "src", "legacy.css"), "utf8");
+    for (const component of ["badge", "scroll-area", "tabs", "tooltip"]) {
+      const source = await readFile(
+        path.join(desktopRoot, "src", "components", "ui", `${component}.tsx`),
+        "utf8"
+      );
+      expect(source).toMatch(/from "@\/lib\/utils"/u);
+      expect(source).toMatch(/data-slot=/u);
+      // Styled by utilities on the shared tokens, not by a hand-written rule.
+      expect(source).toMatch(/(?:text|bg|border|rounded)-[a-z]/u);
+    }
+    for (const dead of [
+      ".badge-neutral",
+      ".scroll-area",
+      ".tabs-trigger",
+      ".tabs-content",
+      ".tooltip-content"
+    ]) {
+      expect(legacy).not.toContain(dead);
     }
   });
 
@@ -153,7 +229,7 @@ describe("React workspace boundary", () => {
     expect(work).toMatch(/Guidance is read on the next step and does not change work already in progress/u);
     expect(work).toMatch(/Nothing starts until you review and approve this exact plan/u);
     expect(work).not.toMatch(/title="Later"|<h2>Routing<\/h2>|<h2>Draft comparisons<\/h2>/u);
-    expect(work).toMatch(/change_set\.changed_files\.map/u);
+    expect(work).toMatch(/change_set\??\.changed_files\.map/u);
     expect(work).toMatch(/type: "change\.inspect"/u);
   });
 
@@ -171,14 +247,69 @@ describe("React workspace boundary", () => {
     expect(work).toMatch(/task\.integration === "merged" \|\| task\.state === "merged"/u);
   });
 
-  test("prompt stays in the fixed Work layout and text does not truncate mid-word", async () => {
+  test("prompt is a fixed row of the work column and text does not truncate mid-word", async () => {
     const styles = await readFile(path.join(desktopRoot, "src", "styles.css"), "utf8");
     const work = await readFile(path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"), "utf8");
-    expect(styles).toMatch(/\.work-tab[\s\S]*grid-template-rows:[^;]*minmax\(0, 1fr\) auto/u);
-    expect(styles).toMatch(/\.prompt-dock\s*\{[^}]*min-height:\s*88px[^}]*z-index:\s*20[^}]*align-self:\s*end/u);
-    expect(styles).toMatch(/\.work-layout\s*\{[^}]*overflow:\s*hidden/u);
-    expect(work).toMatch(/<div className="work-banners">[\s\S]*<PlanBanner[\s\S]*<AutoRunBanner/u);
+
+    // Two fixed rows: the interruption slot and the body. The body splits into the
+    // work panel and the rail, and the work panel owns the composer as its own
+    // trailing row, so tall content cannot displace it.
+    expect(work).toMatch(
+      /grid h-full min-h-0 grid-rows-\[auto_minmax\(0,1fr\)\] overflow-hidden/u
+    );
+    expect(work).toMatch(/grid min-h-0 grid-cols-\[minmax\(0,1fr\)_360px\] gap-4 overflow-hidden/u);
+    expect(work).toMatch(
+      /<Panel className="grid-rows-\[auto_minmax\(0,1fr\)_auto\]">[\s\S]*<PromptDock/u
+    );
+    // The interruption row is always rendered, even when empty, so the grid keeps
+    // its shape and nothing below it can shift.
+    expect(work).toMatch(/<div className="min-w-0">\s*\{shipItem \? \([\s\S]*<ShipBar/u);
+    expect(work).toMatch(/<ShipBar[\s\S]*<AttentionBar[\s\S]*<PlanWaitingBar/u);
+
+    // Content wraps; it never gets clipped mid-word.
     expect(styles).not.toMatch(/text-overflow:\s*ellipsis/u);
+    expect(work).not.toMatch(/\btruncate\b|text-ellipsis|line-clamp/u);
+  });
+
+  test("no internal vocabulary reaches a primary Work or shell surface", async () => {
+    const app = await readFile(path.join(desktopRoot, "src", "App.tsx"), "utf8");
+    const work = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"),
+      "utf8"
+    );
+    const source = `${app}\n${work}`;
+
+    // Everything a person can actually read: JSX text runs plus the attributes
+    // that get spoken or shown on hover.
+    const readable = [
+      ...[...source.matchAll(/>([^<>{}\n]+)</gu)].map((match) => match[1]),
+      ...[...source.matchAll(/(?:placeholder|title|aria-label)="([^"]+)"/gu)].map(
+        (match) => match[1]
+      )
+    ]
+      .join(" | ")
+      .toLowerCase();
+
+    for (const banned of [
+      "lease",
+      "canon",
+      "oracle",
+      "tier-1",
+      "tier-2",
+      "write-intent",
+      "write intent",
+      "integrate_shadow",
+      "adoption",
+      "adopt",
+      "execution group",
+      "worktree",
+      "task_type",
+      "routing policy",
+      "quality run",
+      "admission"
+    ]) {
+      expect(readable).not.toContain(banned);
+    }
   });
 
   test("Swarm controls use only audited actions and motion is event-bound", async () => {
@@ -211,7 +342,8 @@ describe("React workspace boundary", () => {
     expect(swarm).toContain("Stop all working tasks");
     expect(swarm).not.toMatch(/useMemo\(\s*\(\) => buildSwarmTree/u);
     expect(projection).toMatch(/message\.source === "live"[\s\S]*recordArtifactMovements/u);
-    expect(styles).toMatch(/\.artifact-marker[\s\S]*animation:\s*artifact-travel/u);
+    const legacy = await readFile(path.join(desktopRoot, "src", "legacy.css"), "utf8");
+    expect(legacy).toMatch(/\.artifact-marker[\s\S]*animation:\s*artifact-travel/u);
     expect(styles).toMatch(/prefers-reduced-motion[\s\S]*\.artifact-marker\s*\{\s*display:\s*none/u);
   });
 
@@ -225,7 +357,9 @@ describe("React workspace boundary", () => {
     expect(model).toMatch(/inspection\?\.tasks \?\? \[\]/u);
     expect(work).not.toMatch(/taskRows\(projection\)|projection\.tasks/u);
     expect(model).not.toMatch(/taskRows\(projection\)|projection\.tasks/u);
-    expect(work).toMatch(/<strong>\{task\.title\}<\/strong><span>\{task\.task_id\}<\/span>/u);
+    // Rows lead with the title; the id is secondary metadata beneath it.
+    expect(work).toMatch(/\{task\.title\}[\s\S]{0,500}\{task\.task_id\}/u);
+    expect(work).not.toMatch(/\{task\.task_id\}[\s\S]{0,120}\{task\.title\}/u);
     expect(swarm).toMatch(/<strong>\{task\.task\.title\}<\/strong>\s*<small>\{task\.task\.task_id\}<\/small>/u);
     expect(memory).toMatch(/taskTitle\} test draft/u);
     expect(history).toMatch(/taskTitles\[taskId\] \?\? taskId/u);
