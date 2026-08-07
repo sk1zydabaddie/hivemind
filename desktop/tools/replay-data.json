@@ -1,0 +1,2280 @@
+{
+  "generated_from": "docs/evidence",
+  "scenarios": [
+    {
+      "id": "final-run-transcript-4",
+      "source": "docs/evidence/m5/final-run-transcript-4.md",
+      "events": [
+        {
+          "ts": "2026-06-17T20:17:24.419Z",
+          "type": "task.created",
+          "task_id": "T-002",
+          "data": {
+            "title": "Implement strict ledger file loading and saving",
+            "agent_role": "builder",
+            "base_commit": "31877dff5697f36ca64cdd39c4e2447240ce2061",
+            "acceptance_criterion": "ledger storage rejects malformed or unsupported JSON and writes a deterministic v1 ledger object without silently repairing invalid input.",
+            "allowed_files": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ],
+            "contract_path": ".hivemind/tasks/T-002.contract.json",
+            "source": "contract.create"
+          }
+        },
+        {
+          "ts": "2026-06-17T20:17:34.786Z",
+          "type": "lease.approved",
+          "task_id": "T-002",
+          "data": {
+            "requested_files": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ],
+            "granted": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ]
+          }
+        },
+        {
+          "ts": "2026-06-17T20:18:33.520Z",
+          "type": "cache.read",
+          "task_id": "T-002",
+          "data": {
+            "path": ".hivemind/spec/S-001.md",
+            "content_hash": "82cb6f8cc182d76663775c6b8f0112c46bdb6498b04ba3b3956067c93d7a6b4c",
+            "bytes": 4376,
+            "result": "miss",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-06-17T20:18:33.523Z",
+          "type": "cache.read",
+          "task_id": "T-002",
+          "data": {
+            "path": "package.json",
+            "content_hash": "5d92f98a11ee37b5cdb057c602bc4ea9967e3ce0e20a61a7ebee32ae7f4a2b85",
+            "bytes": 141,
+            "result": "miss",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-06-17T20:18:46.387Z",
+          "type": "patch.submitted",
+          "task_id": "T-002",
+          "data": {
+            "bundle_path": ".hivemind/patches/T-002",
+            "files": [
+              "diff.patch",
+              "summary.md",
+              "files_changed.json",
+              "symbols_changed.json",
+              "tests_run.json",
+              "risks.md",
+              "memory_proposals.json"
+            ],
+            "changed_files": 2
+          }
+        },
+        {
+          "ts": "2026-06-17T20:18:57.457Z",
+          "type": "patch.accepted",
+          "task_id": "T-002",
+          "data": {
+            "verdict": "accept",
+            "reason": "all changes are within scope"
+          }
+        },
+        {
+          "ts": "2026-06-17T20:19:09.420Z",
+          "type": "integration.queued",
+          "task_id": "T-002",
+          "data": {
+            "queue_path": ".hivemind/integration/queue.json",
+            "position": 1,
+            "queue": [
+              "T-002"
+            ]
+          }
+        },
+        {
+          "ts": "2026-06-17T20:19:19.962Z",
+          "type": "patch.accepted",
+          "task_id": "T-002",
+          "data": {
+            "verdict": "accept",
+            "reason": "all changes are within scope"
+          }
+        },
+        {
+          "ts": "2026-06-17T20:19:20.481Z",
+          "type": "integration.passed",
+          "task_id": null,
+          "data": {
+            "branch": "integration/20260617-201919963Z",
+            "applied": [
+              "T-002"
+            ],
+            "tests": "pass",
+            "report": "gate results:\n- T-002: accept (all changes are within scope)\ntest command: node --test test/ledger.test.js\ntest exit code: 0\nstdout:\nTAP version 13\n# Subtest: createEmptyLedger returns deterministic v1 shape\nok 1 - createEmptyLedger returns deterministic v1 shape\n  ---\n  duration_ms: 1.2087\n  type: 'test'\n  ...\n# Subtest: validateLedger accepts equal-split expenses with known people\nok 2 - validateLedger accepts equal-split expenses with known people\n  ---\n  duration_ms: 0.8079\n  type: 'test'\n  ...\n# Subtest: validateLedger rejects malformed and unsupported ledgers\nok 3 - validateLedger rejects malformed and unsupported ledgers\n  ---\n  duration_ms: 0.5537\n  type: 'test'\n  ...\n# Subtest: loadLedger fails closed on malformed JSON and saveLedger writes stable JSON\nok 4 - loadLedger fails closed on malformed JSON and saveLedger writes stable JSON\n  ---\n  duration_ms: 25.8938\n  type: 'test'\n  ...\n1..4\n# tests 4\n# suites 0\n# pass 4\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 145.2826\nstderr:\n\n"
+          }
+        },
+        {
+          "ts": "2026-06-17T20:21:30.953Z",
+          "type": "task.created",
+          "task_id": "T-001",
+          "data": {
+            "title": "Initialize CLI package metadata and usage docs",
+            "agent_role": "builder",
+            "base_commit": "31877dff5697f36ca64cdd39c4e2447240ce2061",
+            "acceptance_criterion": "package.json exposes a local trimr CLI entry and README documents the v1 JSON-ledger workflow commands from the ratified spec.",
+            "allowed_files": [
+              "package.json",
+              "README.md"
+            ],
+            "contract_path": ".hivemind/tasks/T-001.contract.json",
+            "source": "contract.create"
+          }
+        },
+        {
+          "ts": "2026-06-17T20:21:41.454Z",
+          "type": "lease.approved",
+          "task_id": "T-001",
+          "data": {
+            "requested_files": [
+              "package.json",
+              "README.md"
+            ],
+            "granted": [
+              "package.json",
+              "README.md"
+            ]
+          }
+        },
+        {
+          "ts": "2026-06-17T20:22:38.606Z",
+          "type": "cache.read",
+          "task_id": "T-001",
+          "data": {
+            "path": "package.json",
+            "content_hash": "5d92f98a11ee37b5cdb057c602bc4ea9967e3ce0e20a61a7ebee32ae7f4a2b85",
+            "bytes": 141,
+            "result": "hit",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-06-17T20:22:38.609Z",
+          "type": "cache.read",
+          "task_id": "T-001",
+          "data": {
+            "path": "README.md",
+            "content_hash": "72f2fa595bf36cfe0453cee53b7a218e5d35a48f29a8e4e5f6b27c67e7a69b6e",
+            "bytes": 125,
+            "result": "miss",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-06-17T20:22:38.620Z",
+          "type": "cache.read",
+          "task_id": "T-001",
+          "data": {
+            "path": ".hivemind/spec/S-001.md",
+            "content_hash": "82cb6f8cc182d76663775c6b8f0112c46bdb6498b04ba3b3956067c93d7a6b4c",
+            "bytes": 4376,
+            "result": "hit",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-06-17T20:22:49.812Z",
+          "type": "patch.submitted",
+          "task_id": "T-001",
+          "data": {
+            "bundle_path": ".hivemind/patches/T-001",
+            "files": [
+              "diff.patch",
+              "summary.md",
+              "files_changed.json",
+              "symbols_changed.json",
+              "tests_run.json",
+              "risks.md",
+              "memory_proposals.json"
+            ],
+            "changed_files": 2
+          }
+        },
+        {
+          "ts": "2026-06-17T20:23:01.629Z",
+          "type": "patch.rejected",
+          "task_id": "T-001",
+          "data": {
+            "verdict": "reject",
+            "reason": "rejected add src/ledger.js"
+          }
+        }
+      ],
+      "span_ms": 337210,
+      "inspection": {
+        "status": {
+          "tasks": [
+            {
+              "task_id": "T-001",
+              "title": "Initialize CLI package metadata and usage docs",
+              "allowed_files": [
+                "package.json",
+                "README.md"
+              ],
+              "lease": {
+                "held": false,
+                "files": []
+              },
+              "worktree": "missing",
+              "patch": {
+                "bundle": "absent",
+                "submitted": false,
+                "analyzed": false,
+                "accepted": false,
+                "verdict": null,
+                "reason": "patch bundle not found",
+                "submitted_at": null,
+                "analyzed_at": null
+              },
+              "queued": false,
+              "integrated": false
+            },
+            {
+              "task_id": "T-002",
+              "title": "Implement strict ledger file loading and saving",
+              "allowed_files": [
+                "src/ledger.js",
+                "test/ledger.test.js"
+              ],
+              "lease": {
+                "held": false,
+                "files": []
+              },
+              "worktree": "missing",
+              "patch": {
+                "bundle": "absent",
+                "submitted": false,
+                "analyzed": false,
+                "accepted": false,
+                "verdict": null,
+                "reason": "patch bundle not found",
+                "submitted_at": null,
+                "analyzed_at": null
+              },
+              "queued": false,
+              "integrated": true
+            }
+          ],
+          "leases": {},
+          "integration": {
+            "queue": [],
+            "status": null
+          },
+          "replans": []
+        },
+        "tasks": [
+          {
+            "task_id": "T-001",
+            "title": "Initialize CLI package metadata and usage docs",
+            "state": "rejected",
+            "agent": null,
+            "worktree": null,
+            "lease_files": [],
+            "patch": {
+              "submitted": true,
+              "analyzed": true,
+              "verdict": "reject",
+              "reason": "rejected add src/ledger.js",
+              "changed_files": 2
+            },
+            "integration": "not queued",
+            "issue": "rejected add src/ledger.js",
+            "stalled": false,
+            "last_event": "patch.rejected",
+            "last_event_at": "2026-06-17T20:23:01.629Z",
+            "execution_group": null,
+            "group_mode": null,
+            "depends_on": [],
+            "started_at": null,
+            "worker_finished_at": null
+          },
+          {
+            "task_id": "T-002",
+            "title": "Implement strict ledger file loading and saving",
+            "state": "verified",
+            "agent": null,
+            "worktree": null,
+            "lease_files": [],
+            "patch": {
+              "submitted": true,
+              "analyzed": true,
+              "verdict": "accept",
+              "reason": "all changes are within scope",
+              "changed_files": 2
+            },
+            "integration": "verified",
+            "issue": null,
+            "stalled": false,
+            "last_event": "patch.accepted",
+            "last_event_at": "2026-06-17T20:19:19.962Z",
+            "execution_group": null,
+            "group_mode": null,
+            "depends_on": [],
+            "started_at": null,
+            "worker_finished_at": null
+          }
+        ],
+        "execution_groups": [
+          {
+            "group_id": "current-work",
+            "mode": "sequence",
+            "task_ids": [
+              "T-001",
+              "T-002"
+            ],
+            "label": "1 needs you, 1 done",
+            "counts": {
+              "working": 0,
+              "waiting": 0,
+              "needs_you": 1,
+              "done": 1
+            },
+            "configured_cap": null,
+            "effective_concurrency": null,
+            "binding_limit": null,
+            "capacity_note": null
+          }
+        ],
+        "task_titles": {
+          "T-001": "Initialize CLI package metadata and usage docs",
+          "T-002": "Implement strict ledger file loading and saving"
+        },
+        "active_spec_id": null,
+        "active_spec_title": null,
+        "manager_session": null,
+        "autonomy": {
+          "configured_level": "auto",
+          "run_levels": []
+        },
+        "plan_review": null,
+        "current_plan": null,
+        "integration_failure": null,
+        "needs_you": [
+          {
+            "id": "task_attention:T-001:2026-06-17T20:23:01.629Z",
+            "kind": "task_attention",
+            "title": "T-001 needs a revision",
+            "detail": "rejected add src/ledger.js",
+            "created_at": "2026-06-17T20:23:01.629Z",
+            "task_id": "T-001",
+            "action": null
+          },
+          {
+            "id": "reverify:2026-06-17T20:19:20.481Z:missing_provenance",
+            "kind": "reverification_required",
+            "title": "This change needs fresh checks before it can merge",
+            "detail": "These checks predate verified-set provenance. Run the real project checks again before adoption. Fresh checks will re-evaluate T-002; they will not reuse or alter the old result.",
+            "created_at": "2026-06-17T20:19:20.481Z",
+            "task_id": "T-002",
+            "action": {
+              "type": "verification.rerun",
+              "payload": {}
+            }
+          }
+        ],
+        "later": [],
+        "spend": {
+          "session_id": null,
+          "calls": 0,
+          "effective_tokens": 0,
+          "reserved_tokens": 0,
+          "committed_tokens": 0,
+          "run_ceiling_tokens": 150000,
+          "session_ceiling_tokens": 500000,
+          "near_session_ceiling": false
+        },
+        "swarm": {
+          "characterizations": [],
+          "warnings": []
+        },
+        "memory": {
+          "pending_lessons": [],
+          "routing_changes": [],
+          "draft_tests": [],
+          "canon": [],
+          "active_routing": {
+            "status": "absent",
+            "canon_id": null,
+            "reason": "no human-promoted learned routing policy exists",
+            "task_types": []
+          },
+          "warnings": []
+        },
+        "history": {
+          "runs": [],
+          "run_ceiling_tokens": 150000,
+          "session_ceiling_tokens": 500000,
+          "warnings": []
+        }
+      },
+      "inspection_error": null
+    },
+    {
+      "id": "m6-2-async-events",
+      "source": "docs/evidence/m6/m6-2-async-events.jsonl",
+      "events": [
+        {
+          "ts": "2026-06-18T22:37:55.736Z",
+          "type": "task.created",
+          "task_id": "T-001",
+          "data": {
+            "title": "Implement strict JSON ledger storage helpers",
+            "agent_role": "builder",
+            "base_commit": "31877dff5697f36ca64cdd39c4e2447240ce2061",
+            "acceptance_criterion": "node --test test/ledger.test.js exits 0 and proves strict JSON ledger loading/saving behavior.",
+            "allowed_files": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ],
+            "contract_path": ".hivemind/tasks/T-001.contract.json",
+            "source": "contract.create"
+          }
+        },
+        {
+          "ts": "2026-06-18T22:38:03.612Z",
+          "type": "lease.approved",
+          "task_id": "T-001",
+          "data": {
+            "requested_files": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ],
+            "granted": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ]
+          }
+        },
+        {
+          "ts": "2026-06-18T22:38:46.825Z",
+          "type": "task.run_accepted",
+          "task_id": "T-001",
+          "data": {
+            "tool": "codex-worker",
+            "worktree": "D:\\Projects\\trimr-m6-2-async-live-20260618-152954\\.hivemind\\worktrees\\T-001"
+          }
+        },
+        {
+          "ts": "2026-06-18T22:38:46.826Z",
+          "type": "task.started",
+          "task_id": "T-001",
+          "data": {
+            "tool": "codex-worker",
+            "worktree": "D:\\Projects\\trimr-m6-2-async-live-20260618-152954\\.hivemind\\worktrees\\T-001"
+          }
+        },
+        {
+          "ts": "2026-06-18T22:38:46.928Z",
+          "type": "cache.read",
+          "task_id": "T-001",
+          "data": {
+            "path": ".hivemind/spec/S-001.md",
+            "content_hash": "82cb6f8cc182d76663775c6b8f0112c46bdb6498b04ba3b3956067c93d7a6b4c",
+            "bytes": 4376,
+            "result": "miss",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-06-18T22:38:46.930Z",
+          "type": "cache.read",
+          "task_id": "T-001",
+          "data": {
+            "path": "package.json",
+            "content_hash": "5d92f98a11ee37b5cdb057c602bc4ea9967e3ce0e20a61a7ebee32ae7f4a2b85",
+            "bytes": 141,
+            "result": "miss",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-06-18T22:38:46.933Z",
+          "type": "cache.read",
+          "task_id": "T-001",
+          "data": {
+            "path": "README.md",
+            "content_hash": "72f2fa595bf36cfe0453cee53b7a218e5d35a48f29a8e4e5f6b27c67e7a69b6e",
+            "bytes": 125,
+            "result": "miss",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-06-18T22:44:41.119Z",
+          "type": "task.completed",
+          "task_id": "T-001",
+          "data": {
+            "task_id": "T-001",
+            "status": "completed",
+            "tool": "codex-worker",
+            "diff_path": "D:\\Projects\\trimr-m6-2-async-live-20260618-152954\\.hivemind\\patches\\T-001\\diff.patch",
+            "tool_exit": 0,
+            "changed_files": 2
+          }
+        },
+        {
+          "ts": "2026-06-18T22:44:49.149Z",
+          "type": "patch.submitted",
+          "task_id": "T-001",
+          "data": {
+            "bundle_path": ".hivemind/patches/T-001",
+            "files": [
+              "diff.patch",
+              "summary.md",
+              "files_changed.json",
+              "symbols_changed.json",
+              "tests_run.json",
+              "risks.md",
+              "memory_proposals.json"
+            ],
+            "changed_files": 2
+          }
+        },
+        {
+          "ts": "2026-06-18T22:45:57.245Z",
+          "type": "patch.accepted",
+          "task_id": "T-001",
+          "data": {
+            "verdict": "accept",
+            "reason": "all changes are within scope"
+          }
+        },
+        {
+          "ts": "2026-06-18T22:46:08.316Z",
+          "type": "integration.queued",
+          "task_id": "T-001",
+          "data": {
+            "queue_path": ".hivemind/integration/queue.json",
+            "position": 1,
+            "queue": [
+              "T-001"
+            ]
+          }
+        },
+        {
+          "ts": "2026-06-18T22:46:17.215Z",
+          "type": "patch.accepted",
+          "task_id": "T-001",
+          "data": {
+            "verdict": "accept",
+            "reason": "all changes are within scope"
+          }
+        },
+        {
+          "ts": "2026-06-18T22:46:17.680Z",
+          "type": "integration.passed",
+          "task_id": null,
+          "data": {
+            "branch": "integration/20260618-224617216Z",
+            "applied": [
+              "T-001"
+            ],
+            "tests": "pass",
+            "report": "gate results:\n- T-001: accept (all changes are within scope)\ntest command: node --test test/ledger.test.js\ntest exit code: 0\nstdout:\nTAP version 13\n# Subtest: validates and loads valid v1 ledgers\nok 1 - validates and loads valid v1 ledgers\n  ---\n  duration_ms: 5.6713\n  type: 'test'\n  ...\n# Subtest: creates an empty v1 ledger shape\nok 2 - creates an empty v1 ledger shape\n  ---\n  duration_ms: 0.2352\n  type: 'test'\n  ...\n# Subtest: rejects malformed JSON\nok 3 - rejects malformed JSON\n  ---\n  duration_ms: 0.4536\n  type: 'test'\n  ...\n# Subtest: rejects unsupported ledger versions\nok 4 - rejects unsupported ledger versions\n  ---\n  duration_ms: 0.1606\n  type: 'test'\n  ...\n# Subtest: rejects expenses with unknown payers or participants\nok 5 - rejects expenses with unknown payers or participants\n  ---\n  duration_ms: 0.2331\n  type: 'test'\n  ...\n# Subtest: rejects unsupported split methods\nok 6 - rejects unsupported split methods\n  ---\n  duration_ms: 0.1511\n  type: 'test'\n  ...\n# Subtest: saves deterministic JSON output\nok 7 - saves deterministic JSON output\n  ---\n  duration_ms: 2.1966\n  type: 'test'\n  ...\n1..7\n# tests 7\n# suites 0\n# pass 7\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 124.2799\nstderr:\n\n"
+          }
+        }
+      ],
+      "span_ms": 501944,
+      "inspection": {
+        "status": {
+          "tasks": [
+            {
+              "task_id": "T-001",
+              "title": "Implement strict JSON ledger storage helpers",
+              "allowed_files": [
+                "src/ledger.js",
+                "test/ledger.test.js"
+              ],
+              "lease": {
+                "held": false,
+                "files": []
+              },
+              "worktree": "missing",
+              "patch": {
+                "bundle": "absent",
+                "submitted": false,
+                "analyzed": false,
+                "accepted": false,
+                "verdict": null,
+                "reason": "patch bundle not found",
+                "submitted_at": null,
+                "analyzed_at": null
+              },
+              "queued": false,
+              "integrated": true
+            }
+          ],
+          "leases": {},
+          "integration": {
+            "queue": [],
+            "status": null
+          },
+          "replans": []
+        },
+        "tasks": [
+          {
+            "task_id": "T-001",
+            "title": "Implement strict JSON ledger storage helpers",
+            "state": "verified",
+            "agent": "codex-worker",
+            "worktree": "D:\\Projects\\trimr-m6-2-async-live-20260618-152954\\.hivemind\\worktrees\\T-001",
+            "lease_files": [],
+            "patch": {
+              "submitted": true,
+              "analyzed": true,
+              "verdict": "accept",
+              "reason": "all changes are within scope",
+              "changed_files": 2
+            },
+            "integration": "verified",
+            "issue": null,
+            "stalled": false,
+            "last_event": "patch.accepted",
+            "last_event_at": "2026-06-18T22:46:17.215Z",
+            "execution_group": null,
+            "group_mode": null,
+            "depends_on": [],
+            "started_at": "2026-06-18T22:38:46.826Z",
+            "worker_finished_at": "2026-06-18T22:44:41.119Z"
+          }
+        ],
+        "execution_groups": [
+          {
+            "group_id": "current-work",
+            "mode": "sequence",
+            "task_ids": [
+              "T-001"
+            ],
+            "label": "1 done",
+            "counts": {
+              "working": 0,
+              "waiting": 0,
+              "needs_you": 0,
+              "done": 1
+            },
+            "configured_cap": null,
+            "effective_concurrency": null,
+            "binding_limit": null,
+            "capacity_note": null
+          }
+        ],
+        "task_titles": {
+          "T-001": "Implement strict JSON ledger storage helpers"
+        },
+        "active_spec_id": null,
+        "active_spec_title": null,
+        "manager_session": null,
+        "autonomy": {
+          "configured_level": "auto",
+          "run_levels": []
+        },
+        "plan_review": null,
+        "current_plan": null,
+        "integration_failure": null,
+        "needs_you": [
+          {
+            "id": "reverify:2026-06-18T22:46:17.680Z:missing_provenance",
+            "kind": "reverification_required",
+            "title": "This change needs fresh checks before it can merge",
+            "detail": "These checks predate verified-set provenance. Run the real project checks again before adoption. Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
+            "created_at": "2026-06-18T22:46:17.680Z",
+            "task_id": "T-001",
+            "action": {
+              "type": "verification.rerun",
+              "payload": {}
+            }
+          }
+        ],
+        "later": [],
+        "spend": {
+          "session_id": null,
+          "calls": 0,
+          "effective_tokens": 0,
+          "reserved_tokens": 0,
+          "committed_tokens": 0,
+          "run_ceiling_tokens": 150000,
+          "session_ceiling_tokens": 500000,
+          "near_session_ceiling": false
+        },
+        "swarm": {
+          "characterizations": [],
+          "warnings": []
+        },
+        "memory": {
+          "pending_lessons": [],
+          "routing_changes": [],
+          "draft_tests": [],
+          "canon": [],
+          "active_routing": {
+            "status": "absent",
+            "canon_id": null,
+            "reason": "no human-promoted learned routing policy exists",
+            "task_types": []
+          },
+          "warnings": []
+        },
+        "history": {
+          "runs": [],
+          "run_ceiling_tokens": 150000,
+          "session_ceiling_tokens": 500000,
+          "warnings": []
+        }
+      },
+      "inspection_error": null
+    },
+    {
+      "id": "m7-4-consolidation-behavioral",
+      "source": "docs/evidence/m7/m7-4-consolidation-behavioral.md",
+      "events": [
+        {
+          "ts": "2026-07-28T03:36:45.818Z",
+          "type": "patch.rejected",
+          "task_id": "T-101",
+          "data": {
+            "run_id": "run-2026-07-02-01",
+            "task_type": "schema_migration",
+            "allowed_files": [
+              "src/migrations/add-profile-v2.ts"
+            ],
+            "read_only_files": [
+              "src/schema/profile.ts"
+            ],
+            "changed_files": [
+              "src/migrations/add-profile-v2.ts",
+              "src/schema/profile.ts"
+            ],
+            "rejected_file": "src/schema/profile.ts",
+            "reason": "path is read-only under the granted lease"
+          }
+        },
+        {
+          "ts": "2026-07-28T03:36:45.819Z",
+          "type": "patch.rejected",
+          "task_id": "T-107",
+          "data": {
+            "run_id": "run-2026-07-05-03",
+            "task_type": "schema_migration",
+            "allowed_files": [
+              "src/migrations/add-ledger-v3.ts"
+            ],
+            "read_only_files": [
+              "src/schema/ledger.ts"
+            ],
+            "changed_files": [
+              "src/migrations/add-ledger-v3.ts",
+              "src/schema/ledger.ts"
+            ],
+            "rejected_file": "src/schema/ledger.ts",
+            "reason": "path is read-only under the granted lease"
+          }
+        },
+        {
+          "ts": "2026-07-28T03:36:45.819Z",
+          "type": "patch.rejected",
+          "task_id": "T-112",
+          "data": {
+            "run_id": "run-2026-07-09-02",
+            "task_type": "schema_migration",
+            "allowed_files": [
+              "src/migrations/add-group-v2.ts"
+            ],
+            "read_only_files": [
+              "src/schema/group.ts"
+            ],
+            "changed_files": [
+              "src/migrations/add-group-v2.ts",
+              "src/schema/group.ts"
+            ],
+            "rejected_file": "src/schema/group.ts",
+            "reason": "path is read-only under the granted lease"
+          }
+        },
+        {
+          "ts": "2026-07-28T03:36:45.820Z",
+          "type": "task.completed",
+          "task_id": "T-201",
+          "data": {
+            "run_id": "run-2026-07-11-01",
+            "provider": "codex",
+            "model": "gpt-5.5",
+            "task_type": "small_cli_command",
+            "wall_time_ms": 42118,
+            "input_tokens": 5310,
+            "output_tokens": 1842,
+            "revision_count": 0,
+            "patch_outcome": "accepted",
+            "integration_outcome": "passed",
+            "changed_files": [
+              "src/commands/add-person.ts",
+              "test/add-person.test.ts"
+            ]
+          }
+        },
+        {
+          "ts": "2026-07-28T03:36:45.820Z",
+          "type": "task.completed",
+          "task_id": "T-204",
+          "data": {
+            "run_id": "run-2026-07-12-04",
+            "provider": "codex",
+            "model": "gpt-5.5",
+            "task_type": "small_cli_command",
+            "wall_time_ms": 47266,
+            "input_tokens": 5688,
+            "output_tokens": 2031,
+            "revision_count": 0,
+            "patch_outcome": "accepted",
+            "integration_outcome": "passed",
+            "changed_files": [
+              "src/commands/list-people.ts",
+              "test/list-people.test.ts"
+            ]
+          }
+        },
+        {
+          "ts": "2026-07-28T03:36:45.821Z",
+          "type": "task.failed",
+          "task_id": "T-209",
+          "data": {
+            "run_id": "run-2026-07-14-02",
+            "provider": "claude",
+            "model": "claude-sonnet",
+            "task_type": "small_cli_command",
+            "wall_time_ms": 120000,
+            "input_tokens": 7044,
+            "output_tokens": 196,
+            "revision_count": 0,
+            "adapter_exit_code": 124,
+            "reason": "adapter timed out before producing a patch",
+            "changed_files": []
+          }
+        },
+        {
+          "ts": "2026-07-28T03:36:45.821Z",
+          "type": "task.completed",
+          "task_id": "T-213",
+          "data": {
+            "run_id": "run-2026-07-16-01",
+            "provider": "claude",
+            "model": "claude-sonnet",
+            "task_type": "small_cli_command",
+            "wall_time_ms": 138412,
+            "input_tokens": 9162,
+            "output_tokens": 3180,
+            "revision_count": 2,
+            "patch_outcome": "rejected",
+            "integration_outcome": "not_run",
+            "changed_files": [
+              "src/commands/settle.ts",
+              "src/ledger.ts",
+              "package.json"
+            ]
+          }
+        },
+        {
+          "ts": "2026-07-28T03:36:45.822Z",
+          "type": "integration.failed",
+          "task_id": "T-301",
+          "data": {
+            "run_id": "run-2026-07-18-01",
+            "task_type": "mission_type_change",
+            "changed_files": [
+              "src/missions/types.ts"
+            ],
+            "test_command": "npm run test:save",
+            "failed_test": "loads persisted mission fixture v3",
+            "error": "fixture v3 missing required field missionKind",
+            "exit_code": 1
+          }
+        },
+        {
+          "ts": "2026-07-28T03:36:45.822Z",
+          "type": "integration.failed",
+          "task_id": "T-305",
+          "data": {
+            "run_id": "run-2026-07-20-02",
+            "task_type": "mission_type_change",
+            "changed_files": [
+              "src/missions/generator.ts",
+              "src/missions/types.ts"
+            ],
+            "test_command": "npm run test:save",
+            "failed_test": "loads persisted mission fixture v2",
+            "error": "unknown mission type daily_combo while loading save v2",
+            "exit_code": 1
+          }
+        },
+        {
+          "ts": "2026-07-28T03:36:45.823Z",
+          "type": "integration.failed",
+          "task_id": "T-308",
+          "data": {
+            "run_id": "run-2026-07-21-03",
+            "task_type": "mission_type_change",
+            "changed_files": [
+              "src/missions/rewards.ts",
+              "src/missions/types.ts"
+            ],
+            "test_command": "npm run test:save",
+            "failed_test": "round-trips persisted mission fixture v3",
+            "error": "persisted rewardScale value does not satisfy the current mission schema",
+            "exit_code": 1
+          }
+        },
+        {
+          "ts": "2026-07-28T03:36:45.824Z",
+          "type": "integration.passed",
+          "task_id": "T-309",
+          "data": {
+            "run_id": "run-2026-07-22-01",
+            "task_type": "mission_type_change",
+            "changed_files": [
+              "src/missions/types.ts",
+              "src/save/migrations/v4.ts",
+              "test/missions/types.test.ts",
+              "test/save/migrations-v4.test.ts"
+            ],
+            "test_commands": [
+              "npm run test:missions",
+              "npm run test:save"
+            ],
+            "test_count": 38,
+            "exit_code": 0
+          }
+        },
+        {
+          "ts": "2026-07-28T03:36:45.824Z",
+          "type": "integration.passed",
+          "task_id": "T-315",
+          "data": {
+            "run_id": "run-2026-07-25-02",
+            "task_type": "mission_type_change",
+            "changed_files": [
+              "src/missions/rewards.ts",
+              "src/save/migrations/v5.ts",
+              "test/missions/rewards.test.ts",
+              "test/save/migrations-v5.test.ts"
+            ],
+            "test_commands": [
+              "npm run test:missions",
+              "npm run test:save"
+            ],
+            "test_count": 42,
+            "exit_code": 0
+          }
+        }
+      ],
+      "span_ms": 6,
+      "inspection": {
+        "status": {
+          "tasks": [],
+          "leases": {},
+          "integration": {
+            "queue": [],
+            "status": null
+          },
+          "replans": []
+        },
+        "tasks": [],
+        "execution_groups": [],
+        "task_titles": {},
+        "active_spec_id": null,
+        "active_spec_title": null,
+        "manager_session": null,
+        "autonomy": {
+          "configured_level": "auto",
+          "run_levels": []
+        },
+        "plan_review": null,
+        "current_plan": null,
+        "integration_failure": null,
+        "needs_you": [
+          {
+            "id": "reverify:2026-07-28T03:36:45.824Z:missing_provenance",
+            "kind": "reverification_required",
+            "title": "This change needs fresh checks before it can merge",
+            "detail": "These checks predate verified-set provenance. Run the real project checks again before adoption. Fresh checks will re-evaluate the queued changes; they will not reuse or alter the old result.",
+            "created_at": "2026-07-28T03:36:45.824Z",
+            "task_id": null,
+            "action": {
+              "type": "verification.rerun",
+              "payload": {}
+            }
+          },
+          {
+            "id": "task_attention:T-209:2026-07-28T03:36:45.821Z",
+            "kind": "task_attention",
+            "title": "T-209 stopped",
+            "detail": "adapter timed out before producing a patch",
+            "created_at": "2026-07-28T03:36:45.821Z",
+            "task_id": "T-209",
+            "action": null
+          },
+          {
+            "id": "task_attention:T-107:2026-07-28T03:36:45.819Z",
+            "kind": "task_attention",
+            "title": "T-107 needs a revision",
+            "detail": "path is read-only under the granted lease",
+            "created_at": "2026-07-28T03:36:45.819Z",
+            "task_id": "T-107",
+            "action": null
+          },
+          {
+            "id": "task_attention:T-112:2026-07-28T03:36:45.819Z",
+            "kind": "task_attention",
+            "title": "T-112 needs a revision",
+            "detail": "path is read-only under the granted lease",
+            "created_at": "2026-07-28T03:36:45.819Z",
+            "task_id": "T-112",
+            "action": null
+          },
+          {
+            "id": "task_attention:T-101:2026-07-28T03:36:45.818Z",
+            "kind": "task_attention",
+            "title": "T-101 needs a revision",
+            "detail": "path is read-only under the granted lease",
+            "created_at": "2026-07-28T03:36:45.818Z",
+            "task_id": "T-101",
+            "action": null
+          }
+        ],
+        "later": [],
+        "spend": {
+          "session_id": null,
+          "calls": 0,
+          "effective_tokens": 0,
+          "reserved_tokens": 0,
+          "committed_tokens": 0,
+          "run_ceiling_tokens": 150000,
+          "session_ceiling_tokens": 500000,
+          "near_session_ceiling": false
+        },
+        "swarm": {
+          "characterizations": [],
+          "warnings": []
+        },
+        "memory": {
+          "pending_lessons": [],
+          "routing_changes": [],
+          "draft_tests": [],
+          "canon": [],
+          "active_routing": {
+            "status": "absent",
+            "canon_id": null,
+            "reason": "no human-promoted learned routing policy exists",
+            "task_types": []
+          },
+          "warnings": []
+        },
+        "history": {
+          "runs": [],
+          "run_ceiling_tokens": 150000,
+          "session_ceiling_tokens": 500000,
+          "warnings": []
+        }
+      },
+      "inspection_error": null
+    },
+    {
+      "id": "worker-sandbox-fix-transcript",
+      "source": "docs/evidence/m5/worker-sandbox-fix-transcript.md",
+      "events": [
+        {
+          "ts": "2026-06-17T22:30:33.461Z",
+          "type": "task.created",
+          "task_id": "T-001",
+          "data": {
+            "title": "Implement strict JSON ledger storage",
+            "agent_role": "builder",
+            "base_commit": "b9ced08f91d4db4e0cfe13f139ffe02f2929f845",
+            "acceptance_criterion": "ledger storage rejects malformed or unsupported JSON and writes a deterministic v1 ledger object without silently repairing invalid input.",
+            "allowed_files": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ],
+            "contract_path": ".hivemind/tasks/T-001.contract.json",
+            "source": "contract.create"
+          }
+        },
+        {
+          "ts": "2026-06-17T22:30:45.478Z",
+          "type": "lease.approved",
+          "task_id": "T-001",
+          "data": {
+            "requested_files": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ],
+            "granted": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ]
+          }
+        },
+        {
+          "ts": "2026-06-17T22:31:22.694Z",
+          "type": "cache.read",
+          "task_id": "T-001",
+          "data": {
+            "path": "package.json",
+            "content_hash": "5d92f98a11ee37b5cdb057c602bc4ea9967e3ce0e20a61a7ebee32ae7f4a2b85",
+            "bytes": 141,
+            "result": "miss",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-06-17T22:31:22.698Z",
+          "type": "cache.read",
+          "task_id": "T-001",
+          "data": {
+            "path": "README.md",
+            "content_hash": "72f2fa595bf36cfe0453cee53b7a218e5d35a48f29a8e4e5f6b27c67e7a69b6e",
+            "bytes": 125,
+            "result": "miss",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-06-17T22:39:05.665Z",
+          "type": "patch.submitted",
+          "task_id": "T-001",
+          "data": {
+            "bundle_path": ".hivemind/patches/T-001",
+            "files": [
+              "diff.patch",
+              "summary.md",
+              "files_changed.json",
+              "symbols_changed.json",
+              "tests_run.json",
+              "risks.md",
+              "memory_proposals.json"
+            ],
+            "changed_files": 2
+          }
+        },
+        {
+          "ts": "2026-06-17T22:39:19.319Z",
+          "type": "patch.accepted",
+          "task_id": "T-001",
+          "data": {
+            "verdict": "accept",
+            "reason": "all changes are within scope"
+          }
+        },
+        {
+          "ts": "2026-06-17T22:39:31.399Z",
+          "type": "integration.queued",
+          "task_id": "T-001",
+          "data": {
+            "queue_path": ".hivemind/integration/queue.json",
+            "position": 1,
+            "queue": [
+              "T-001"
+            ]
+          }
+        },
+        {
+          "ts": "2026-06-17T22:39:46.175Z",
+          "type": "patch.accepted",
+          "task_id": "T-001",
+          "data": {
+            "verdict": "accept",
+            "reason": "all changes are within scope"
+          }
+        },
+        {
+          "ts": "2026-06-17T22:39:46.957Z",
+          "type": "integration.passed",
+          "task_id": null,
+          "data": {
+            "branch": "integration/20260617-223946176Z",
+            "applied": [
+              "T-001"
+            ],
+            "tests": "pass",
+            "report": "gate results:\n- T-001: accept (all changes are within scope)\ntest command: node --test test/ledger.test.js\ntest exit code: 0\nstdout:\nTAP version 13\n# Subtest: JSON ledger storage\n    # Subtest: persists the ledger as deterministic JSON and uses the file as the source of truth\n    ok 1 - persists the ledger as deterministic JSON and uses the file as the source of truth\n      ---\n      duration_ms: 37.5013\n      type: 'test'\n      ...\n    # Subtest: calculates balances and settlements from the validated ledger\n    ok 2 - calculates balances and settlements from the validated ledger\n      ---\n      duration_ms: 9.5295\n      type: 'test'\n      ...\n    1..2\nok 1 - JSON ledger storage\n  ---\n  duration_ms: 48.9539\n  type: 'suite'\n  ...\n# Subtest: fail-closed validation\n    # Subtest: rejects malformed JSON\n    ok 1 - rejects malformed JSON\n      ---\n      duration_ms: 11.2345\n      type: 'test'\n      ...\n    # Subtest: rejects missing required ledger structure\n    ok 2 - rejects missing required ledger structure\n      ---\n      duration_ms: 6.6834\n      type: 'test'\n      ...\n    # Subtest: rejects duplicate exact participant names\n    ok 3 - rejects duplicate exact participant names\n      ---\n      duration_ms: 1.949\n      type: 'test'\n      ...\n    # Subtest: rejects unknown paidBy references\n    ok 4 - rejects unknown paidBy references\n      ---\n      duration_ms: 1.8174\n      type: 'test'\n      ...\n    # Subtest: rejects unknown split participant references\n    ok 5 - rejects unknown split participant references\n      ---\n      duration_ms: 2.2666\n      type: 'test'\n      ...\n    # Subtest: rejects non-positive amounts\n    ok 6 - rejects non-positive amounts\n      ---\n      duration_ms: 1.9888\n      type: 'test'\n      ...\n    # Subtest: rejects empty split participant lists\n    ok 7 - rejects empty split participant lists\n      ---\n      duration_ms: 2.1857\n      type: 'test'\n      ...\n    # Subtest: rejects unsupported split types\n    ok 8 - rejects unsupported split types\n      ---\n      duration_ms: 1.7449\n      type: 'test'\n      ...\n    1..8\nok 2 - fail-closed validation\n  ---\n  duration_ms: 31.2051\n  type: 'suite'\n  ...\n1..2\n# tests 10\n# suites 2\n# pass 10\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 281.3409\nstderr:\n\n"
+          }
+        }
+      ],
+      "span_ms": 553496,
+      "inspection": {
+        "status": {
+          "tasks": [
+            {
+              "task_id": "T-001",
+              "title": "Implement strict JSON ledger storage",
+              "allowed_files": [
+                "src/ledger.js",
+                "test/ledger.test.js"
+              ],
+              "lease": {
+                "held": false,
+                "files": []
+              },
+              "worktree": "missing",
+              "patch": {
+                "bundle": "absent",
+                "submitted": false,
+                "analyzed": false,
+                "accepted": false,
+                "verdict": null,
+                "reason": "patch bundle not found",
+                "submitted_at": null,
+                "analyzed_at": null
+              },
+              "queued": false,
+              "integrated": true
+            }
+          ],
+          "leases": {},
+          "integration": {
+            "queue": [],
+            "status": null
+          },
+          "replans": []
+        },
+        "tasks": [
+          {
+            "task_id": "T-001",
+            "title": "Implement strict JSON ledger storage",
+            "state": "verified",
+            "agent": null,
+            "worktree": null,
+            "lease_files": [],
+            "patch": {
+              "submitted": true,
+              "analyzed": true,
+              "verdict": "accept",
+              "reason": "all changes are within scope",
+              "changed_files": 2
+            },
+            "integration": "verified",
+            "issue": null,
+            "stalled": false,
+            "last_event": "patch.accepted",
+            "last_event_at": "2026-06-17T22:39:46.175Z",
+            "execution_group": null,
+            "group_mode": null,
+            "depends_on": [],
+            "started_at": null,
+            "worker_finished_at": null
+          }
+        ],
+        "execution_groups": [
+          {
+            "group_id": "current-work",
+            "mode": "sequence",
+            "task_ids": [
+              "T-001"
+            ],
+            "label": "1 done",
+            "counts": {
+              "working": 0,
+              "waiting": 0,
+              "needs_you": 0,
+              "done": 1
+            },
+            "configured_cap": null,
+            "effective_concurrency": null,
+            "binding_limit": null,
+            "capacity_note": null
+          }
+        ],
+        "task_titles": {
+          "T-001": "Implement strict JSON ledger storage"
+        },
+        "active_spec_id": null,
+        "active_spec_title": null,
+        "manager_session": null,
+        "autonomy": {
+          "configured_level": "auto",
+          "run_levels": []
+        },
+        "plan_review": null,
+        "current_plan": null,
+        "integration_failure": null,
+        "needs_you": [
+          {
+            "id": "reverify:2026-06-17T22:39:46.957Z:missing_provenance",
+            "kind": "reverification_required",
+            "title": "This change needs fresh checks before it can merge",
+            "detail": "These checks predate verified-set provenance. Run the real project checks again before adoption. Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
+            "created_at": "2026-06-17T22:39:46.957Z",
+            "task_id": "T-001",
+            "action": {
+              "type": "verification.rerun",
+              "payload": {}
+            }
+          }
+        ],
+        "later": [],
+        "spend": {
+          "session_id": null,
+          "calls": 0,
+          "effective_tokens": 0,
+          "reserved_tokens": 0,
+          "committed_tokens": 0,
+          "run_ceiling_tokens": 150000,
+          "session_ceiling_tokens": 500000,
+          "near_session_ceiling": false
+        },
+        "swarm": {
+          "characterizations": [],
+          "warnings": []
+        },
+        "memory": {
+          "pending_lessons": [],
+          "routing_changes": [],
+          "draft_tests": [],
+          "canon": [],
+          "active_routing": {
+            "status": "absent",
+            "canon_id": null,
+            "reason": "no human-promoted learned routing policy exists",
+            "task_types": []
+          },
+          "warnings": []
+        },
+        "history": {
+          "runs": [],
+          "run_ceiling_tokens": 150000,
+          "session_ceiling_tokens": 500000,
+          "warnings": []
+        }
+      },
+      "inspection_error": null
+    },
+    {
+      "id": "full-plan-run-transcript",
+      "source": "docs/evidence/m5/full-plan-run-transcript.md",
+      "events": [
+        {
+          "ts": "2026-06-17T21:47:11.435Z",
+          "type": "task.created",
+          "task_id": "T-001",
+          "data": {
+            "title": "Implement JSON ledger storage and validation",
+            "agent_role": "builder",
+            "base_commit": "31877dff5697f36ca64cdd39c4e2447240ce2061",
+            "acceptance_criterion": "Ledger storage tests prove creating, loading, saving, and rejecting malformed or unsupported JSON ledger data works deterministically.",
+            "allowed_files": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ],
+            "contract_path": ".hivemind/tasks/T-001.contract.json",
+            "source": "contract.create"
+          }
+        },
+        {
+          "ts": "2026-06-17T21:47:22.115Z",
+          "type": "lease.approved",
+          "task_id": "T-001",
+          "data": {
+            "requested_files": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ],
+            "granted": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ]
+          }
+        },
+        {
+          "ts": "2026-06-17T21:48:02.781Z",
+          "type": "cache.read",
+          "task_id": "T-001",
+          "data": {
+            "path": ".hivemind/spec/S-001.md",
+            "content_hash": "82cb6f8cc182d76663775c6b8f0112c46bdb6498b04ba3b3956067c93d7a6b4c",
+            "bytes": 4376,
+            "result": "miss",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-06-17T21:48:02.783Z",
+          "type": "cache.read",
+          "task_id": "T-001",
+          "data": {
+            "path": "package.json",
+            "content_hash": "5d92f98a11ee37b5cdb057c602bc4ea9967e3ce0e20a61a7ebee32ae7f4a2b85",
+            "bytes": 141,
+            "result": "miss",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-06-17T21:50:00.141Z",
+          "type": "patch.submitted",
+          "task_id": "T-001",
+          "data": {
+            "bundle_path": ".hivemind/patches/T-001",
+            "files": [
+              "diff.patch",
+              "summary.md",
+              "files_changed.json",
+              "symbols_changed.json",
+              "tests_run.json",
+              "risks.md",
+              "memory_proposals.json"
+            ],
+            "changed_files": 0
+          }
+        },
+        {
+          "ts": "2026-06-17T21:50:10.780Z",
+          "type": "patch.rejected",
+          "task_id": "T-001",
+          "data": {
+            "verdict": "reject",
+            "reason": "empty patch: no changes to analyze"
+          }
+        },
+        {
+          "ts": "2026-06-17T21:50:39.927Z",
+          "type": "cache.read",
+          "task_id": "T-001",
+          "data": {
+            "path": ".hivemind/spec/S-001.md",
+            "content_hash": "82cb6f8cc182d76663775c6b8f0112c46bdb6498b04ba3b3956067c93d7a6b4c",
+            "bytes": 4376,
+            "result": "hit",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-06-17T21:50:39.935Z",
+          "type": "cache.read",
+          "task_id": "T-001",
+          "data": {
+            "path": "package.json",
+            "content_hash": "5d92f98a11ee37b5cdb057c602bc4ea9967e3ce0e20a61a7ebee32ae7f4a2b85",
+            "bytes": 141,
+            "result": "hit",
+            "mode": "write-context"
+          }
+        }
+      ],
+      "span_ms": 208500,
+      "inspection": {
+        "status": {
+          "tasks": [
+            {
+              "task_id": "T-001",
+              "title": "Implement JSON ledger storage and validation",
+              "allowed_files": [
+                "src/ledger.js",
+                "test/ledger.test.js"
+              ],
+              "lease": {
+                "held": false,
+                "files": []
+              },
+              "worktree": "missing",
+              "patch": {
+                "bundle": "absent",
+                "submitted": false,
+                "analyzed": false,
+                "accepted": false,
+                "verdict": null,
+                "reason": "patch bundle not found",
+                "submitted_at": null,
+                "analyzed_at": null
+              },
+              "queued": false,
+              "integrated": false
+            }
+          ],
+          "leases": {},
+          "integration": {
+            "queue": [],
+            "status": null
+          },
+          "replans": []
+        },
+        "tasks": [
+          {
+            "task_id": "T-001",
+            "title": "Implement JSON ledger storage and validation",
+            "state": "rejected",
+            "agent": null,
+            "worktree": null,
+            "lease_files": [],
+            "patch": {
+              "submitted": true,
+              "analyzed": true,
+              "verdict": "reject",
+              "reason": "empty patch: no changes to analyze",
+              "changed_files": 0
+            },
+            "integration": "not queued",
+            "issue": "empty patch: no changes to analyze",
+            "stalled": false,
+            "last_event": "cache.read",
+            "last_event_at": "2026-06-17T21:50:39.935Z",
+            "execution_group": null,
+            "group_mode": null,
+            "depends_on": [],
+            "started_at": null,
+            "worker_finished_at": null
+          }
+        ],
+        "execution_groups": [
+          {
+            "group_id": "current-work",
+            "mode": "sequence",
+            "task_ids": [
+              "T-001"
+            ],
+            "label": "1 needs you",
+            "counts": {
+              "working": 0,
+              "waiting": 0,
+              "needs_you": 1,
+              "done": 0
+            },
+            "configured_cap": null,
+            "effective_concurrency": null,
+            "binding_limit": null,
+            "capacity_note": null
+          }
+        ],
+        "task_titles": {
+          "T-001": "Implement JSON ledger storage and validation"
+        },
+        "active_spec_id": null,
+        "active_spec_title": null,
+        "manager_session": null,
+        "autonomy": {
+          "configured_level": "auto",
+          "run_levels": []
+        },
+        "plan_review": null,
+        "current_plan": null,
+        "integration_failure": null,
+        "needs_you": [
+          {
+            "id": "task_attention:T-001:2026-06-17T21:50:10.780Z",
+            "kind": "task_attention",
+            "title": "T-001 needs a revision",
+            "detail": "empty patch: no changes to analyze",
+            "created_at": "2026-06-17T21:50:10.780Z",
+            "task_id": "T-001",
+            "action": null
+          }
+        ],
+        "later": [],
+        "spend": {
+          "session_id": null,
+          "calls": 0,
+          "effective_tokens": 0,
+          "reserved_tokens": 0,
+          "committed_tokens": 0,
+          "run_ceiling_tokens": 150000,
+          "session_ceiling_tokens": 500000,
+          "near_session_ceiling": false
+        },
+        "swarm": {
+          "characterizations": [],
+          "warnings": []
+        },
+        "memory": {
+          "pending_lessons": [],
+          "routing_changes": [],
+          "draft_tests": [],
+          "canon": [],
+          "active_routing": {
+            "status": "absent",
+            "canon_id": null,
+            "reason": "no human-promoted learned routing policy exists",
+            "task_types": []
+          },
+          "warnings": []
+        },
+        "history": {
+          "runs": [],
+          "run_ceiling_tokens": 150000,
+          "session_ceiling_tokens": 500000,
+          "warnings": []
+        }
+      },
+      "inspection_error": null
+    },
+    {
+      "id": "manager-transcript",
+      "source": "docs/evidence/m5/manager-transcript.md",
+      "events": [
+        {
+          "ts": "2026-06-17T04:11:44.288Z",
+          "type": "task.created",
+          "task_id": "T-002",
+          "data": {
+            "title": "Implement strict ledger file loading and saving",
+            "agent_role": "builder",
+            "base_commit": "31877dff5697f36ca64cdd39c4e2447240ce2061",
+            "acceptance_criterion": "ledger storage rejects malformed or unsupported JSON and writes a deterministic v1 ledger object without silently repairing invalid input.",
+            "allowed_files": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ],
+            "contract_path": ".hivemind/tasks/T-002.contract.json",
+            "source": "contract.create"
+          }
+        },
+        {
+          "ts": "2026-06-17T04:11:44.577Z",
+          "type": "lease.approved",
+          "task_id": "T-002",
+          "data": {
+            "requested_files": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ],
+            "granted": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ]
+          }
+        },
+        {
+          "ts": "2026-06-17T04:12:15.296Z",
+          "type": "cache.read",
+          "task_id": "T-002",
+          "data": {
+            "path": ".hivemind/spec/S-001.md",
+            "content_hash": "82cb6f8cc182d76663775c6b8f0112c46bdb6498b04ba3b3956067c93d7a6b4c",
+            "bytes": 4376,
+            "result": "miss",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-06-17T04:12:15.299Z",
+          "type": "cache.read",
+          "task_id": "T-002",
+          "data": {
+            "path": "package.json",
+            "content_hash": "5d92f98a11ee37b5cdb057c602bc4ea9967e3ce0e20a61a7ebee32ae7f4a2b85",
+            "bytes": 141,
+            "result": "miss",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-06-17T04:12:16.032Z",
+          "type": "patch.submitted",
+          "task_id": "T-002",
+          "data": {
+            "bundle_path": ".hivemind/patches/T-002",
+            "files": [
+              "diff.patch",
+              "summary.md",
+              "files_changed.json",
+              "symbols_changed.json",
+              "tests_run.json",
+              "risks.md",
+              "memory_proposals.json"
+            ],
+            "changed_files": 2
+          }
+        },
+        {
+          "ts": "2026-06-17T04:12:17.284Z",
+          "type": "patch.accepted",
+          "task_id": "T-002",
+          "data": {
+            "verdict": "accept",
+            "reason": "all changes are within scope"
+          }
+        },
+        {
+          "ts": "2026-06-17T04:12:17.598Z",
+          "type": "integration.queued",
+          "task_id": "T-002",
+          "data": {
+            "queue_path": ".hivemind/integration/queue.json",
+            "position": 1,
+            "queue": [
+              "T-002"
+            ]
+          }
+        }
+      ],
+      "span_ms": 33310,
+      "inspection": {
+        "status": {
+          "tasks": [
+            {
+              "task_id": "T-002",
+              "title": "Implement strict ledger file loading and saving",
+              "allowed_files": [
+                "src/ledger.js",
+                "test/ledger.test.js"
+              ],
+              "lease": {
+                "held": false,
+                "files": []
+              },
+              "worktree": "missing",
+              "patch": {
+                "bundle": "absent",
+                "submitted": false,
+                "analyzed": false,
+                "accepted": false,
+                "verdict": null,
+                "reason": "patch bundle not found",
+                "submitted_at": null,
+                "analyzed_at": null
+              },
+              "queued": false,
+              "integrated": false
+            }
+          ],
+          "leases": {},
+          "integration": {
+            "queue": [],
+            "status": null
+          },
+          "replans": []
+        },
+        "tasks": [
+          {
+            "task_id": "T-002",
+            "title": "Implement strict ledger file loading and saving",
+            "state": "accepted",
+            "agent": null,
+            "worktree": null,
+            "lease_files": [],
+            "patch": {
+              "submitted": true,
+              "analyzed": true,
+              "verdict": "accept",
+              "reason": "all changes are within scope",
+              "changed_files": 2
+            },
+            "integration": "not queued",
+            "issue": null,
+            "stalled": false,
+            "last_event": "integration.queued",
+            "last_event_at": "2026-06-17T04:12:17.598Z",
+            "execution_group": null,
+            "group_mode": null,
+            "depends_on": [],
+            "started_at": null,
+            "worker_finished_at": null
+          }
+        ],
+        "execution_groups": [
+          {
+            "group_id": "current-work",
+            "mode": "sequence",
+            "task_ids": [
+              "T-002"
+            ],
+            "label": "1 working",
+            "counts": {
+              "working": 1,
+              "waiting": 0,
+              "needs_you": 0,
+              "done": 0
+            },
+            "configured_cap": null,
+            "effective_concurrency": null,
+            "binding_limit": null,
+            "capacity_note": null
+          }
+        ],
+        "task_titles": {
+          "T-002": "Implement strict ledger file loading and saving"
+        },
+        "active_spec_id": null,
+        "active_spec_title": null,
+        "manager_session": null,
+        "autonomy": {
+          "configured_level": "auto",
+          "run_levels": []
+        },
+        "plan_review": null,
+        "current_plan": null,
+        "integration_failure": null,
+        "needs_you": [],
+        "later": [],
+        "spend": {
+          "session_id": null,
+          "calls": 0,
+          "effective_tokens": 0,
+          "reserved_tokens": 0,
+          "committed_tokens": 0,
+          "run_ceiling_tokens": 150000,
+          "session_ceiling_tokens": 500000,
+          "near_session_ceiling": false
+        },
+        "swarm": {
+          "characterizations": [],
+          "warnings": []
+        },
+        "memory": {
+          "pending_lessons": [],
+          "routing_changes": [],
+          "draft_tests": [],
+          "canon": [],
+          "active_routing": {
+            "status": "absent",
+            "canon_id": null,
+            "reason": "no human-promoted learned routing policy exists",
+            "task_types": []
+          },
+          "warnings": []
+        },
+        "history": {
+          "runs": [],
+          "run_ceiling_tokens": 150000,
+          "session_ceiling_tokens": 500000,
+          "warnings": []
+        }
+      },
+      "inspection_error": null
+    },
+    {
+      "id": "full-plan-real-green-transcript",
+      "source": "docs/evidence/m5/full-plan-real-green-transcript.md",
+      "events": [
+        {
+          "ts": "2026-06-17T23:04:00.365Z",
+          "type": "task.created",
+          "task_id": "T-001",
+          "data": {
+            "title": "Scaffold npm CLI entrypoint",
+            "agent_role": "builder",
+            "base_commit": "b9ced08f91d4db4e0cfe13f139ffe02f2929f845",
+            "acceptance_criterion": "`npm test -- --test-name-pattern scaffold` exits 0 and `node bin/trimr.js --help` exits 0 with command usage text.",
+            "allowed_files": [
+              "bin/trimr.js",
+              "package.json",
+              "src/cli.js"
+            ],
+            "contract_path": ".hivemind/tasks/T-001.contract.json",
+            "source": "contract.create"
+          }
+        },
+        {
+          "ts": "2026-06-17T23:04:14.441Z",
+          "type": "lease.approved",
+          "task_id": "T-001",
+          "data": {
+            "requested_files": [
+              "bin/trimr.js",
+              "package.json",
+              "src/cli.js"
+            ],
+            "granted": [
+              "bin/trimr.js",
+              "package.json",
+              "src/cli.js"
+            ]
+          }
+        },
+        {
+          "ts": "2026-06-17T23:04:58.202Z",
+          "type": "cache.read",
+          "task_id": "T-001",
+          "data": {
+            "path": "package.json",
+            "content_hash": "5d92f98a11ee37b5cdb057c602bc4ea9967e3ce0e20a61a7ebee32ae7f4a2b85",
+            "bytes": 141,
+            "result": "miss",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-06-17T23:10:41.116Z",
+          "type": "patch.submitted",
+          "task_id": "T-001",
+          "data": {
+            "bundle_path": ".hivemind/patches/T-001",
+            "files": [
+              "diff.patch",
+              "summary.md",
+              "files_changed.json",
+              "symbols_changed.json",
+              "tests_run.json",
+              "risks.md",
+              "memory_proposals.json"
+            ],
+            "changed_files": 3
+          }
+        },
+        {
+          "ts": "2026-06-17T23:10:56.106Z",
+          "type": "patch.rejected",
+          "task_id": "T-001",
+          "data": {
+            "verdict": "escalate",
+            "reason": "escalated modify package.json"
+          }
+        }
+      ],
+      "span_ms": 415741,
+      "inspection": {
+        "status": {
+          "tasks": [
+            {
+              "task_id": "T-001",
+              "title": "Scaffold npm CLI entrypoint",
+              "allowed_files": [
+                "bin/trimr.js",
+                "package.json",
+                "src/cli.js"
+              ],
+              "lease": {
+                "held": false,
+                "files": []
+              },
+              "worktree": "missing",
+              "patch": {
+                "bundle": "absent",
+                "submitted": false,
+                "analyzed": false,
+                "accepted": false,
+                "verdict": null,
+                "reason": "patch bundle not found",
+                "submitted_at": null,
+                "analyzed_at": null
+              },
+              "queued": false,
+              "integrated": false
+            }
+          ],
+          "leases": {},
+          "integration": {
+            "queue": [],
+            "status": null
+          },
+          "replans": []
+        },
+        "tasks": [
+          {
+            "task_id": "T-001",
+            "title": "Scaffold npm CLI entrypoint",
+            "state": "rejected",
+            "agent": null,
+            "worktree": null,
+            "lease_files": [],
+            "patch": {
+              "submitted": true,
+              "analyzed": true,
+              "verdict": "escalate",
+              "reason": "escalated modify package.json",
+              "changed_files": 3
+            },
+            "integration": "not queued",
+            "issue": "escalated modify package.json",
+            "stalled": false,
+            "last_event": "patch.rejected",
+            "last_event_at": "2026-06-17T23:10:56.106Z",
+            "execution_group": null,
+            "group_mode": null,
+            "depends_on": [],
+            "started_at": null,
+            "worker_finished_at": null
+          }
+        ],
+        "execution_groups": [
+          {
+            "group_id": "current-work",
+            "mode": "sequence",
+            "task_ids": [
+              "T-001"
+            ],
+            "label": "1 needs you",
+            "counts": {
+              "working": 0,
+              "waiting": 0,
+              "needs_you": 1,
+              "done": 0
+            },
+            "configured_cap": null,
+            "effective_concurrency": null,
+            "binding_limit": null,
+            "capacity_note": null
+          }
+        ],
+        "task_titles": {
+          "T-001": "Scaffold npm CLI entrypoint"
+        },
+        "active_spec_id": null,
+        "active_spec_title": null,
+        "manager_session": null,
+        "autonomy": {
+          "configured_level": "auto",
+          "run_levels": []
+        },
+        "plan_review": null,
+        "current_plan": null,
+        "integration_failure": null,
+        "needs_you": [
+          {
+            "id": "task_attention:T-001:2026-06-17T23:10:56.106Z",
+            "kind": "task_attention",
+            "title": "T-001 needs a revision",
+            "detail": "escalated modify package.json",
+            "created_at": "2026-06-17T23:10:56.106Z",
+            "task_id": "T-001",
+            "action": null
+          }
+        ],
+        "later": [],
+        "spend": {
+          "session_id": null,
+          "calls": 0,
+          "effective_tokens": 0,
+          "reserved_tokens": 0,
+          "committed_tokens": 0,
+          "run_ceiling_tokens": 150000,
+          "session_ceiling_tokens": 500000,
+          "near_session_ceiling": false
+        },
+        "swarm": {
+          "characterizations": [],
+          "warnings": []
+        },
+        "memory": {
+          "pending_lessons": [],
+          "routing_changes": [],
+          "draft_tests": [],
+          "canon": [],
+          "active_routing": {
+            "status": "absent",
+            "canon_id": null,
+            "reason": "no human-promoted learned routing policy exists",
+            "task_types": []
+          },
+          "warnings": []
+        },
+        "history": {
+          "runs": [],
+          "run_ceiling_tokens": 150000,
+          "session_ceiling_tokens": 500000,
+          "warnings": []
+        }
+      },
+      "inspection_error": null
+    },
+    {
+      "id": "final-run-transcript-3",
+      "source": "docs/evidence/m5/final-run-transcript-3.md",
+      "events": [
+        {
+          "ts": "2026-06-17T19:30:06.809Z",
+          "type": "task.created",
+          "task_id": "T-002",
+          "data": {
+            "title": "Implement strict ledger file loading and saving",
+            "agent_role": "builder",
+            "base_commit": "31877dff5697f36ca64cdd39c4e2447240ce2061",
+            "acceptance_criterion": "ledger storage rejects malformed or unsupported JSON and writes a deterministic v1 ledger object without silently repairing invalid input.",
+            "allowed_files": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ],
+            "contract_path": ".hivemind/tasks/T-002.contract.json",
+            "source": "contract.create"
+          }
+        },
+        {
+          "ts": "2026-06-17T19:30:17.272Z",
+          "type": "lease.approved",
+          "task_id": "T-002",
+          "data": {
+            "requested_files": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ],
+            "granted": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ]
+          }
+        },
+        {
+          "ts": "2026-06-17T19:31:11.867Z",
+          "type": "cache.read",
+          "task_id": "T-002",
+          "data": {
+            "path": ".hivemind/spec/S-001.md",
+            "content_hash": "82cb6f8cc182d76663775c6b8f0112c46bdb6498b04ba3b3956067c93d7a6b4c",
+            "bytes": 4376,
+            "result": "miss",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-06-17T19:31:11.872Z",
+          "type": "cache.read",
+          "task_id": "T-002",
+          "data": {
+            "path": "package.json",
+            "content_hash": "5d92f98a11ee37b5cdb057c602bc4ea9967e3ce0e20a61a7ebee32ae7f4a2b85",
+            "bytes": 141,
+            "result": "miss",
+            "mode": "write-context"
+          }
+        }
+      ],
+      "span_ms": 65063,
+      "inspection": {
+        "status": {
+          "tasks": [
+            {
+              "task_id": "T-002",
+              "title": "Implement strict ledger file loading and saving",
+              "allowed_files": [
+                "src/ledger.js",
+                "test/ledger.test.js"
+              ],
+              "lease": {
+                "held": false,
+                "files": []
+              },
+              "worktree": "missing",
+              "patch": {
+                "bundle": "absent",
+                "submitted": false,
+                "analyzed": false,
+                "accepted": false,
+                "verdict": null,
+                "reason": "patch bundle not found",
+                "submitted_at": null,
+                "analyzed_at": null
+              },
+              "queued": false,
+              "integrated": false
+            }
+          ],
+          "leases": {},
+          "integration": {
+            "queue": [],
+            "status": null
+          },
+          "replans": []
+        },
+        "tasks": [
+          {
+            "task_id": "T-002",
+            "title": "Implement strict ledger file loading and saving",
+            "state": "planned",
+            "agent": null,
+            "worktree": null,
+            "lease_files": [],
+            "patch": {
+              "submitted": false,
+              "analyzed": false,
+              "verdict": null,
+              "reason": "patch bundle not found",
+              "changed_files": null
+            },
+            "integration": "not queued",
+            "issue": null,
+            "stalled": false,
+            "last_event": "cache.read",
+            "last_event_at": "2026-06-17T19:31:11.872Z",
+            "execution_group": null,
+            "group_mode": null,
+            "depends_on": [],
+            "started_at": null,
+            "worker_finished_at": null
+          }
+        ],
+        "execution_groups": [
+          {
+            "group_id": "current-work",
+            "mode": "sequence",
+            "task_ids": [
+              "T-002"
+            ],
+            "label": "1 waiting",
+            "counts": {
+              "working": 0,
+              "waiting": 1,
+              "needs_you": 0,
+              "done": 0
+            },
+            "configured_cap": null,
+            "effective_concurrency": null,
+            "binding_limit": null,
+            "capacity_note": null
+          }
+        ],
+        "task_titles": {
+          "T-002": "Implement strict ledger file loading and saving"
+        },
+        "active_spec_id": null,
+        "active_spec_title": null,
+        "manager_session": null,
+        "autonomy": {
+          "configured_level": "auto",
+          "run_levels": []
+        },
+        "plan_review": null,
+        "current_plan": null,
+        "integration_failure": null,
+        "needs_you": [],
+        "later": [],
+        "spend": {
+          "session_id": null,
+          "calls": 0,
+          "effective_tokens": 0,
+          "reserved_tokens": 0,
+          "committed_tokens": 0,
+          "run_ceiling_tokens": 150000,
+          "session_ceiling_tokens": 500000,
+          "near_session_ceiling": false
+        },
+        "swarm": {
+          "characterizations": [],
+          "warnings": []
+        },
+        "memory": {
+          "pending_lessons": [],
+          "routing_changes": [],
+          "draft_tests": [],
+          "canon": [],
+          "active_routing": {
+            "status": "absent",
+            "canon_id": null,
+            "reason": "no human-promoted learned routing policy exists",
+            "task_types": []
+          },
+          "warnings": []
+        },
+        "history": {
+          "runs": [],
+          "run_ceiling_tokens": 150000,
+          "session_ceiling_tokens": 500000,
+          "warnings": []
+        }
+      },
+      "inspection_error": null
+    }
+  ]
+}
