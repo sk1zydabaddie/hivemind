@@ -96,7 +96,49 @@ That would take the shell to two tabs: **Work** (the run) and **Project** (its
 history). Deferred because it is a larger IA change than the hole it fixes, not
 because the reasoning is weak.
 
-### A known class of bug: Core records it, the UI never shows it
+### Standing rule: the trail must be able to REBUILD the state, not just attest it
+
+A durable event is not enough because it proves something happened. It has to
+carry what is needed to reconstruct the state it describes. Ask of every new
+event: **could the state be rebuilt from this alone?** If not, the trail is a
+receipt, not a record.
+
+This has now bitten four times:
+
+1. a checkpoint that could not be resumed from,
+2. a pre-M8.7 verification that could not be adopted from,
+3. `plan.prepared` storing the request as a hash, so the run could not say what
+   was asked for,
+4. `task.created` omitting `required_tests`, `deterministic_validity_check` and
+   `routing_task_type`, so **Core's own contract validation refuses a contract
+   rebuilt from Core's own log** — found by replaying the trail through the UI.
+
+The fourth is the sharpest statement of the rule: the system cannot reconstruct
+its own state from its own durable record. Adding those three fields to
+`task.created` closes this instance; the rule is what prevents the fifth.
+
+## Standing rule: capture the trail, not just the picture
+
+Every verification run keeps its JSONL trail alongside its screenshots. A
+screenshot cannot be replayed into a redesigned UI; the trail can, and it is the
+only artefact that stays useful after the surface changes.
+
+The M10.8 concurrent run and the M8 end-to-end runs are lost to replay because
+only PNGs and prose were kept. Their durations, their nine-task plan and their
+adoption refs exist as numbers in a README and cannot be rendered by anything.
+
+## Standing rule: real trails verify, fixtures only lay out
+
+`npm run replay:collect` then `/replay.html?scenario=<id>` is permanent
+infrastructure. **Any UI change is replayed against real trails before it counts
+as verified.** The fixture harness is a layout tool for arranging surfaces that
+have no captured data yet — nothing more.
+
+Five passes of green fixtures produced a UI that rendered "A task has to revise
+its change ×3" on real data, merging three different failing tasks into one row.
+No fixture caught it because every fixture had a title for every task.
+
+## A known class of bug: Core records it, the UI never shows it
 
 The chat hole was `human.guidance_recorded` having no display. A later audit
 found the same shape four more times. Treat this as a class, not a series of
@@ -260,6 +302,42 @@ directly.
 **Role names.** The client hardcodes `planner` and `manager`. Either Core should
 report the roles it expects in `config.inspect`, or config should carry a
 role→tool mapping. Today the only thing tying them together is a desktop test.
+
+### Core-side copy the client cannot repair
+
+Found by replay: the client is not the only thing writing user-facing text, and
+what Core writes is gate output. Three fixes, all in Core.
+
+**Gate reasons need a plain-language field.** These strings render verbatim today,
+in the attention bar and in the task row:
+
+| Recorded reason | What it means to the person |
+| --- | --- |
+| `rejected add src/ledger.js` | it tried to create a file that is not its to create |
+| `escalated modify package.json` | the change reaches a file that needs your say-so |
+| `empty patch: no changes to analyze` | it finished without changing anything |
+| `path is read-only under the granted lease` | it tried to edit a file another task owns |
+| `adapter timed out before producing a patch` | the agent stopped responding before it finished |
+
+The durable `reason` must stay exactly as it is — it is evidence. The fix is a
+sibling field, `plain_reason`, written where the reason is produced, carrying one
+sentence in the second column's voice. `plainEvidence` in
+`workspace-inspection.ts` already prefers `plain_reason` when present, so queue
+items light up as soon as the producers write it; `plainTaskIssue` in the client
+should then be deleted rather than extended. This is the third time this has come
+up. More regex in the client cannot work: the client is guessing at strings it
+does not own.
+
+**`taskAttentionTitle` must stop leading with IDs.** It composes "T-001 needs a
+revision" while the row beside it reads "Initialize CLI package metadata and usage
+docs". Core has the title in the contract it just loaded. Lead with it, and keep
+the ID as secondary detail — the same rule the client follows.
+
+**Core should adopt the client's vocabulary.** Core-composed copy says *merge*
+("This change needs fresh checks before it can merge"); every client surface says
+*ship*. Both appear on screen at once. The language pass settled on *ship*
+because it is what a non-technical person calls the decision, and the client
+cannot rewrite Core's sentences without guessing at their meaning.
 
 ### Actions with no way to reach them
 
