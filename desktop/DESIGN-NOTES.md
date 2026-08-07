@@ -96,6 +96,85 @@ That would take the shell to two tabs: **Work** (the run) and **Project** (its
 history). Deferred because it is a larger IA change than the hole it fixes, not
 because the reasoning is weak.
 
+### A known class of bug: Core records it, the UI never shows it
+
+The chat hole was `human.guidance_recorded` having no display. A later audit
+found the same shape four more times. Treat this as a class, not a series of
+one-offs: **when Core appends an event, something must either render it or
+deliberately suppress it.** An event with no reader is a silent state.
+
+Two are outstanding, both needing Core to surface state it already records.
+
+#### `adoption.indeterminate` — the most dangerous silence in the app
+
+Emitted by `src/adoption.ts` (`appendIndeterminate`) when the live base ref
+matches neither the pre-adoption ref nor the candidate ref, when the candidate's
+tree does not match the adoption intent, when HEAD cannot be read, or when the
+adoption intent is malformed. It means **Hivemind cannot tell whether your code
+landed on your branch.**
+
+Today the reconciliation loop records it, `continue`s, and returns
+`{ok: true, value: {reconciled}}`. `inspectLatestAdoptionReadiness` does not
+consider it, so the workspace shows nothing at all — or worse, re-offers the
+ship bar as though the attempt never happened.
+
+Needed from Core, in `buildQueues`:
+
+```
+kind:   "adoption_indeterminate"          // new WorkspaceQueueItem kind
+title:  "Hivemind cannot tell whether this change landed"
+detail: the recorded reason, plus the two refs it compared
+action: null                              // there is no safe automatic recovery
+change_set: the verification_id, task_ids and changed_files it was adopting
+```
+
+The item must also carry the refs (`pre_adoption_ref`, `adopted_ref`,
+observed HEAD) so the client can show a person exactly what to check. This is
+the one place where the honest UI is "we do not know; here is how to find out",
+and inventing a recovery action would be worse than saying nothing.
+
+`adoption.failed` (phases `precondition`, `base_transition`, `reconciliation`)
+needs the same treatment at lower severity: a failed ship currently folds back
+into `exactReview = false`, so the bar silently reverts to "Fresh checks passed;
+review the change set" with no mention that the previous attempt failed. A
+`needs_you` item with the failure reason and a `verification.rerun` action would
+close it.
+
+#### `scheduler.run_cancel_failed` — Stop that half-worked
+
+`src/manager.ts` emits this when some workers refuse to stop, carrying
+`failures`, `stopped_task_ids` and `retryable: true`. Nothing surfaces it. The
+run.stop call returns `{ok: false, reason: "run cancellation incomplete and
+retryable: …"}`, and `plainActionError` pattern-matches `/already terminal/`
+inside that aggregate string — so a partial run-level failure can report the
+per-task message "This task has already finished and cannot be stopped again."
+Wrong, and it hides that workers are still alive.
+
+Needed from Core:
+
+```
+kind:   "run_stalled"                     // existing kind is a fine fit
+title:  "Some work could not be stopped"
+detail: which tasks, and why each refused
+action: { type: "run.stop", payload: { session_id, reason } }   // retryable
+```
+
+Separately, `plainActionError` must stop matching patterns inside aggregated
+reasons. The durable fix is the plain-language field on the daemon error noted
+below; until then the client should not infer meaning from a substring.
+
+### Actions with no way to reach them
+
+Four audited workspace actions have no control anywhere in the desktop. Not
+bugs, but a real product gap:
+
+- `manual_task.review` / `manual_task.authorize` — manually authored tasks have
+  no surface at all.
+- `verify.characterize` — no way to ask for a characterization test.
+- `quality.best_of_n` / `quality.draft_refine` — you can **cancel** a quality run
+  from the Swarm tab but you cannot **start** one from anywhere, which is the
+  wrong half to expose.
+
 ### Waiting on Core
 
 - **Durations.** There is no elapsed time anywhere, and "how long will this
@@ -118,6 +197,29 @@ registers and deregisters its commands as its state changes. That is the right
 shape, and it is worth doing deliberately rather than reaching down into a
 child's state from the shell. Until it exists, the palette should not pretend to
 offer actions it cannot perform.
+
+### Core tests must not assert desktop copy
+
+`test/workspace-actions.test.ts` reads desktop source and, until recently,
+asserted literal UI labels. That coupling is brittle in three separate ways:
+
+- it breaks on every language pass, which is exactly the work this client needs
+  most and the one thing the brief keeps asking for;
+- when it breaks it *looks* like a Core regression, because it fails in Core's
+  suite under a Core test name;
+- it went undetected across three commits, because it lives in a suite the
+  desktop work never runs — desktop iterates on `npm test` inside `desktop/`,
+  and the Core suite takes eleven minutes.
+
+The split that holds: **Core asserts behaviour** — that the client dispatches
+only audited action types, that an affordance exists and is wired to the right
+handler, that no mutation route or Core import crosses the boundary. **Desktop
+asserts its own copy** — labels, plain language, and the absence of internal
+vocabulary, in `desktop/test/thin-client.test.ts` where a language change and
+its test move together.
+
+If a Core test needs to know a control exists, it should match the condition and
+the handler, never the words on the button.
 
 ### Verification debt
 

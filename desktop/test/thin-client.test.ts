@@ -271,6 +271,32 @@ describe("React workspace boundary", () => {
     expect(work).not.toMatch(/\btruncate\b|text-ellipsis|line-clamp/u);
   });
 
+  test("a finished plan never captures the next request, and a pending plan has an exit", async () => {
+    const work = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"),
+      "utf8"
+    );
+
+    // A plan with nothing left to do must not swallow a new request: the composer
+    // routes on unfinished work, not on whether a plan exists at all.
+    expect(work).toMatch(/const planHasWorkLeft =/u);
+    expect(work).toMatch(/task\.state !== "merged" && task\.state !== "cancelled"/u);
+    expect(work).toMatch(/\} else if \(!planHasWorkLeft\) \{\s*await preparePlan\(message\);/u);
+    expect(work).not.toMatch(
+      /else if \(inspection\?\.current_plan === null \|\| inspection\?\.current_plan === undefined\)/u
+    );
+
+    // A plan the person does not want is not a dead end: their text becomes the
+    // start of a different plan instead of being refused.
+    expect(work).toMatch(/setReplanText\(message\);\s*setReplanOpen\(true\);/u);
+    expect(work).toMatch(/Start over with a different plan/u);
+    expect(work).toMatch(/onStartOver/u);
+    expect(work).toMatch(/const preparePlan[\s\S]{0,400}type: "plan\.prepare"/u);
+
+    // Nothing offers a control that cannot do anything.
+    expect(work).toMatch(/if \(!canOpenAttention\(item\)\) return null;/u);
+  });
+
   test("the run thread is built from durable daemon events, not client memory", async () => {
     const work = await readFile(
       path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"),
