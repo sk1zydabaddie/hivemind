@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import type { HivemindEvent } from "../src/lib/projection";
-import { buildRunThread } from "../src/lib/work-thread";
+import { buildRunThread, runSpanMs } from "../src/lib/work-thread";
 
 const TITLES = { "T-001": "Dark mode toggle", "T-002": "Theme tokens" };
 
@@ -95,6 +95,62 @@ describe("run thread", () => {
     ]);
   });
 
+  test("never renders an unnamed task as an indefinite article", () => {
+    // Real trails carry events for tasks the projection cannot name.
+    const thread = buildRunThread(
+      newestFirst([event("task.failed", "T-209", {}), event("patch.rejected", "T-107", {})]),
+      {}
+    );
+
+    expect(thread).toMatchObject([
+      { kind: "milestone", text: "T-209 stopped unexpectedly", taskId: "T-209" },
+      { kind: "milestone", text: "T-107 has to revise its change", taskId: "T-107" }
+    ]);
+    for (const entry of thread) {
+      expect(entry.kind === "milestone" ? entry.text : "").not.toMatch(/^A task/u);
+    }
+  });
+
+  test("never merges different tasks into one count", () => {
+    // Same wording, three different tasks: on a real trail this collapsed into
+    // "A task has to revise its change x3", which reads as one task retrying.
+    const thread = buildRunThread(
+      newestFirst([
+        event("patch.rejected", "T-101", {}),
+        event("patch.rejected", "T-107", {}),
+        event("patch.rejected", "T-112", {})
+      ]),
+      {}
+    );
+
+    expect(thread).toHaveLength(3);
+    expect(thread.map((entry) => (entry.kind === "milestone" ? entry.taskId : null))).toEqual([
+      "T-101",
+      "T-107",
+      "T-112"
+    ]);
+  });
+
+  test("measures how long work took from the durable timestamps", () => {
+    const thread = buildRunThread(
+      newestFirst([
+        at("2026-06-18T22:38:46.826Z", "task.started", "T-001"),
+        at("2026-06-18T22:44:41.119Z", "task.completed", "T-001")
+      ]),
+      { "T-001": "Implement strict JSON ledger storage helpers" }
+    );
+
+    const finished = thread.find(
+      (entry) => entry.kind === "milestone" && /finished its work/u.test(entry.text)
+    );
+    // The real M6.2 worker ran 5m54s; the thread showed two adjacent lines.
+    expect(finished).toMatchObject({ durationMs: 354_293 });
+    expect(runSpanMs(newestFirst([
+      at("2026-06-18T22:37:55.736Z", "task.created", "T-001"),
+      at("2026-06-18T22:46:17.680Z", "integration.passed", null)
+    ]))).toBe(501_944);
+  });
+
   test("collapses consecutive identical milestones", () => {
     const thread = buildRunThread(
       newestFirst([
@@ -146,4 +202,8 @@ function event(
   data: Record<string, unknown>
 ): HivemindEvent {
   return { ts: "2026-08-06T14:00:00.000Z", type, task_id: taskId, data };
+}
+
+function at(ts: string, type: string, taskId: string | null): HivemindEvent {
+  return { ts, type, task_id: taskId, data: {} };
 }

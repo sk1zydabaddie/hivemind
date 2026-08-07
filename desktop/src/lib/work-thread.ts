@@ -44,6 +44,10 @@ export interface ThreadMilestone {
   text: string;
   tone: ThreadTone;
   count: number;
+  /** The task this describes, so identical wording never merges two of them. */
+  taskId: string | null;
+  /** Time between this task's last start and this event, when both are durable. */
+  durationMs: number | null;
 }
 
 export interface ThreadShipped {
@@ -119,12 +123,42 @@ const SUPPRESSED = new Set([
   "verification.completed"
 ]);
 
+/* A task the projection cannot name is still a specific task. Naming it by its
+   identifier keeps two failing tasks apart; "A task" does not. */
+export function taskLabel(taskId: string, taskTitles: Record<string, string>): string {
+  const title = taskTitles[taskId];
+  return title === undefined || title.trim() === "" || title === taskId ? taskId : title;
+}
+
+const STARTED_TYPES = new Set(["task.started", "task.resumed", "task.run_accepted"]);
+const FINISHED_TYPES = new Set([
+  "task.completed",
+  "task.failed",
+  "task.blocked",
+  "task.cancelled"
+]);
+
+/** Wall time the trail covers, first durable event to last. */
+export function runSpanMs(events: HivemindEvent[]): number | null {
+  if (events.length === 0) return null;
+  const stamps = events
+    .map((event) => Date.parse(event.ts))
+    .filter((value) => Number.isFinite(value))
+    .sort((left, right) => left - right);
+  if (stamps.length < 2) return null;
+  const span = stamps[stamps.length - 1]! - stamps[0]!;
+  /* Sub-second spans are an artefact of a trail written in one burst, not a
+     measurement worth showing. */
+  return span >= 1000 ? span : null;
+}
+
 export function buildRunThread(
   eventsNewestFirst: HivemindEvent[],
   taskTitles: Record<string, string>
 ): ThreadEntry[] {
   const entries: ThreadEntry[] = [];
   const appliedGuidance = new Set<string>();
+  const startedAt = new Map<string, string>();
 
   for (const event of eventsNewestFirst) {
     if (event.type !== "human.guidance_consumed") continue;
@@ -204,22 +238,37 @@ export function buildRunThread(
       continue;
     }
 
+    if (event.task_id !== null && STARTED_TYPES.has(event.type)) {
+      startedAt.set(event.task_id, event.ts);
+    }
+
     const runMilestone = RUN_MILESTONES[event.type];
     if (runMilestone) {
-      pushMilestone(entries, { kind: "milestone", id, at: event.ts, count: 1, ...runMilestone });
+      pushMilestone(entries, {
+        kind: "milestone",
+        id,
+        at: event.ts,
+        count: 1,
+        taskId: null,
+        durationMs: null,
+        ...runMilestone
+      });
       continue;
     }
 
     const taskMilestone = TASK_MILESTONES[event.type];
     if (taskMilestone && event.task_id !== null) {
-      const subject = taskTitles[event.task_id] ?? "A task";
       pushMilestone(entries, {
         kind: "milestone",
         id,
         at: event.ts,
-        text: `${subject} ${taskMilestone.text}`,
+        text: `${taskLabel(event.task_id, taskTitles)} ${taskMilestone.text}`,
         tone: taskMilestone.tone,
-        count: 1
+        count: 1,
+        taskId: event.task_id,
+        durationMs: FINISHED_TYPES.has(event.type)
+          ? elapsed(startedAt.get(event.task_id), event.ts)
+          : null
       });
     }
   }
@@ -227,16 +276,28 @@ export function buildRunThread(
   return entries;
 }
 
-/* Consecutive identical milestones collapse, so ten workers starting reads as
-   one line with a count rather than ten rows. */
+/* Consecutive milestones collapse only when they are the same thing happening to
+   the same task. Keying on rendered text merged three different failing tasks
+   into one "x3" row on a real trail, which reads as one task retrying. */
 function pushMilestone(entries: ThreadEntry[], milestone: ThreadMilestone): void {
   const previous = entries.at(-1);
-  if (previous?.kind === "milestone" && previous.text === milestone.text) {
+  if (
+    previous?.kind === "milestone" &&
+    previous.text === milestone.text &&
+    previous.taskId === milestone.taskId
+  ) {
     previous.count += 1;
     previous.at = milestone.at;
+    previous.durationMs = milestone.durationMs ?? previous.durationMs;
     return;
   }
   entries.push(milestone);
+}
+
+function elapsed(from: string | undefined, to: string): number | null {
+  if (from === undefined) return null;
+  const span = Date.parse(to) - Date.parse(from);
+  return Number.isFinite(span) && span > 0 ? span : null;
 }
 
 function readString(value: unknown): string | null {

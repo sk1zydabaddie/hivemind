@@ -49,7 +49,13 @@ import {
   type TaskProjection,
   type TaskState
 } from "@/lib/projection";
-import { buildRunThread, type ThreadEntry, type ThreadTone } from "@/lib/work-thread";
+import {
+  buildRunThread,
+  runSpanMs,
+  taskLabel,
+  type ThreadEntry,
+  type ThreadTone
+} from "@/lib/work-thread";
 import { summarizeWorkerOutput } from "@/lib/work-presentation";
 import type {
   AutonomyLevel,
@@ -509,10 +515,12 @@ export function WorkTab({
         <div className="grid min-h-0 overflow-hidden">
           <Panel className="grid-rows-[auto_minmax(0,1fr)_auto]">
             <RunHeader
+              attentionCount={openQueue.length}
               configuredLevel={inspection?.autonomy.configured_level ?? "auto"}
               busy={busy}
               subject={inspection?.active_spec_title ?? null}
               integrationStatus={projection.integration.status}
+              spanMs={runSpanMs(projection.recentEvents)}
               planAvailable={displayedPlan !== null}
               runActive={runActive}
               stopBusy={stopBusy}
@@ -1075,6 +1083,8 @@ function PlanWaitingBar({
 function RunHeader({
   tasks,
   subject,
+  attentionCount,
+  spanMs,
   runActive,
   planAvailable,
   integrationStatus,
@@ -1087,6 +1097,8 @@ function RunHeader({
 }: {
   tasks: TaskProjection[];
   subject: string | null;
+  attentionCount: number;
+  spanMs: number | null;
   runActive: boolean;
   planAvailable: boolean;
   integrationStatus: string;
@@ -1111,7 +1123,9 @@ function RunHeader({
         : runActive
           ? "Waiting on the next task"
           : done === tasks.length
-            ? "All tasks finished"
+            ? attentionCount > 0
+              ? "All tasks finished, with something to decide"
+              : "All tasks finished"
             : `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"} in this run`;
   const progress = tasks.length === 0 ? 0 : Math.round((done / tasks.length) * 100);
 
@@ -1133,7 +1147,19 @@ function RunHeader({
               {done}/{tasks.length} done
             </span>
           ) : null}
-          {integrationStatus !== "idle" && tasks.length > 0 ? (
+          {spanMs === null ? null : (
+            <span className="font-mono text-[12px]">
+              {runActive ? `running ${formatDuration(spanMs)}` : `took ${formatDuration(spanMs)}`}
+            </span>
+          )}
+          {/* One projection decides the top-level claim. Core's queue is the
+              authority on whether anything is waiting, so the header never says
+              "Ready to ship" over an attention bar saying it cannot merge. */}
+          {attentionCount > 0 ? (
+            <span className="font-medium text-amber">
+              {attentionCount === 1 ? "1 thing needs you" : `${attentionCount} things need you`}
+            </span>
+          ) : integrationStatus !== "idle" && tasks.length > 0 ? (
             <span className={`font-medium ${toneText[verification.tone]}`}>
               {verification.label}
             </span>
@@ -1298,8 +1324,8 @@ function TaskBoard({
     <ScrollArea className="min-h-0">
       <div className="pb-4">
         {lanes.length === 0 ? (
-          <p className="m-0 px-5 py-6 text-[14px] text-muted">
-            The plan is being prepared. Nothing is running yet.
+          <p className="m-0 px-5 py-6 text-[14px] leading-relaxed text-muted">
+            No tasks in this run yet.
           </p>
         ) : null}
         {lanes.map((lane) => (
@@ -1351,7 +1377,7 @@ function TaskRow({
      started?" */
   const waitingFor =
     task.state === "planned" || task.state === "paused"
-      ? task.depends_on.map((taskId) => taskTitles[taskId] ?? taskId).join(", ")
+      ? task.depends_on.map((taskId) => taskLabel(taskId, taskTitles)).join(", ")
       : "";
   return (
     <button
@@ -1644,6 +1670,11 @@ function ThreadRow({
       />
       <span className="min-w-0 flex-1 text-[14px] leading-snug break-words text-ink">
         {entry.text}
+        {entry.durationMs === null ? null : (
+          <span className="ml-1.5 font-mono text-[12px] text-muted">
+            {formatDuration(entry.durationMs)}
+          </span>
+        )}
         {entry.count > 1 ? (
           <span className="ml-1.5 font-mono text-[12px] text-muted">×{entry.count}</span>
         ) : null}
@@ -2509,6 +2540,20 @@ function formatClock(value: string): string {
   return Number.isNaN(date.valueOf())
     ? "--:--"
     : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/* Derived presentation of two durable timestamps, not client-held state: it
+   rebuilds identically from the replayed trail. Only spans that ended are shown
+   — a live elapsed counter would need a ticking clock, and a stale one that only
+   moves when an unrelated event arrives would be worse than none. */
+function formatDuration(ms: number): string {
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  if (minutes < 60) return rest === 0 ? `${minutes}m` : `${minutes}m ${rest}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
 }
 
 function formatCompact(value: number): string {
