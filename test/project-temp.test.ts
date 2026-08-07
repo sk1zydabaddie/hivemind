@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -115,6 +115,36 @@ test("live and ambiguous disposable owners are never reclaimed", async () => {
   });
 });
 
+test("pre-upgrade flat-layout disposables are reclaimed only when the owner is provably dead", async () => {
+  await withRepo(async ({ repo, tempRoot }) => {
+    // Relocating real disposables into the old flat layout keeps their genuine
+    // ownership manifests, so this exercises the migration sweep rather than a
+    // hand-written approximation of it.
+    const toLegacy = async (directory: { path: string; manifest: { namespace_id: string } }): Promise<string> => {
+      const legacyPath = path.join(tempRoot, `hvm-${directory.manifest.namespace_id}-${path.basename(directory.path)}`);
+      await rename(directory.path, legacyPath);
+      return legacyPath;
+    };
+    const dead = await toLegacy(
+      await createProjectTempDirectory(repo, "consolidation", { tempRoot, reconcile: false, pid: 900_011 })
+    );
+    const uncertain = await toLegacy(
+      await createProjectTempDirectory(repo, "consolidation", { tempRoot, reconcile: false, pid: 900_012 })
+    );
+
+    const result = await reconcileProjectTempDirectories(repo, {
+      tempRoot,
+      probeLiveness: (pid) => (pid === 900_011 ? "dead" : "unknown")
+    });
+
+    assert.deepEqual(result.removed, [dead]);
+    assert.equal(await exists(dead), false);
+    // The dangerous direction: ambiguous liveness is not death, in either layout.
+    assert.equal(result.removed.includes(uncertain), false);
+    assert.equal(await exists(uncertain), true);
+  });
+});
+
 test("missing, malformed, and identity-mismatched ownership remains fail-closed", async () => {
   await withRepo(async ({ repo, tempRoot }) => {
     const missing = await createProjectTempDirectory(repo, "consolidation", {
@@ -218,7 +248,12 @@ test("disposable cleanup holds on success, exception, and timeout-shaped failure
     for (const directoryPath of paths) {
       assert.equal(await exists(directoryPath), false);
     }
-    assert.deepEqual(await readdir(tempRoot), []);
+    // Disposables live under one per-project namespace directory, which is
+    // reused rather than recreated. No disposable residue may survive inside it.
+    const roots = await readdir(tempRoot);
+    assert.equal(roots.length, 1, `unexpected temp residue: ${roots.join(", ")}`);
+    assert.match(roots[0], /^hvm-[a-z0-9]{1,32}$/u);
+    assert.deepEqual(await readdir(path.join(tempRoot, roots[0])), []);
   });
 });
 

@@ -137,11 +137,11 @@ export async function createProjectTempDirectory(
     throw new Error("project disposable owner pid must be a positive safe integer");
   }
 
-  const directoryPath = path.join(
-    options.tempRoot ?? tmpdir(),
-    disposableDirectoryName(manifest.namespace_id, purpose, manifest.instance_id)
-  );
+  const namespaceRoot = projectTempRoot(options.tempRoot ?? tmpdir(), manifest.namespace_id);
+  const directoryPath = path.join(namespaceRoot, disposableDirectoryName(purpose, manifest.instance_id));
   assertDisposablePathBudget(directoryPath, options.platform);
+  await mkdir(namespaceRoot, { recursive: true });
+  // Non-recursive: creation must still fail if this exact instance already exists.
   await mkdir(directoryPath);
   try {
     await writeJsonAtomic(projectTempManifestPath(directoryPath), manifest);
@@ -158,24 +158,30 @@ export async function reconcileProjectTempDirectories(
 ): Promise<ProjectTempReconciliation> {
   const identity = await resolveProjectIdentity(repoRoot, options.namespaceId);
   const tempRoot = options.tempRoot ?? tmpdir();
-  const prefix = `hvm-${identity.namespace_id}-`;
+  const namespaceRoot = projectTempRoot(tempRoot, identity.namespace_id);
   const result: ProjectTempReconciliation = { removed: [], retained: [] };
 
-  let names: string[];
-  try {
-    names = await readdir(tempRoot);
-  } catch (error: unknown) {
-    if (isNodeError(error, "ENOENT")) {
-      return result;
+  const candidates: string[] = [];
+  // Bounded by this project's own disposables, not by the size of the OS temp
+  // directory. Entries left by the previous flat layout are swept once per
+  // process so a crash that predates the upgrade is still recovered.
+  for (const [root, accept] of [
+    [namespaceRoot, isDisposableDirectoryName],
+    ...(consumeLegacySweep(tempRoot) ? [[tempRoot, isLegacyDisposableDirectoryName] as const] : [])
+  ] as Array<readonly [string, (value: string) => boolean]>) {
+    let names: string[];
+    try {
+      names = await readdir(root);
+    } catch (error: unknown) {
+      if (isNodeError(error, "ENOENT")) continue;
+      throw error;
     }
-    throw error;
+    for (const name of names.sort()) {
+      if (accept(name)) candidates.push(path.join(root, name));
+    }
   }
 
-  for (const name of names.sort()) {
-    if (!name.startsWith(prefix) || !isDisposableDirectoryName(name)) {
-      continue;
-    }
-    const directoryPath = path.join(tempRoot, name);
+  for (const directoryPath of candidates) {
     const inspection = await inspectProjectTempDirectory(directoryPath);
     if (inspection.status !== "valid") {
       result.retained.push({
@@ -341,7 +347,7 @@ async function inspectProjectTempDirectory(directoryPath: string): Promise<Proje
   if (manifest === null) {
     return { status: "uncertain", reason: "project disposable ownership manifest is empty, partial, or invalid" };
   }
-  if (path.basename(directoryPath) !== disposableDirectoryName(manifest.namespace_id, manifest.purpose, manifest.instance_id)) {
+  if (!pathMatchesManifest(directoryPath, manifest)) {
     return { status: "uncertain", reason: "project disposable path does not match its ownership manifest" };
   }
   return {
@@ -355,12 +361,38 @@ async function inspectProjectTempDirectory(directoryPath: string): Promise<Proje
   };
 }
 
-async function resolveProjectIdentity(repoRoot: string, namespaceOverride?: string): Promise<ProjectIdentity> {
-  const gitRoot = await findGitRoot(repoRoot);
-  if (gitRoot === null) {
-    throw new Error("project disposable state requires a git repository");
+// Resolving identity spawns `git rev-parse`, measured at ~40ms on Windows, and
+// every disposable resolves it three times: on create, on the reconcile that
+// create performs, and again on removal. The canonical root of a path does not
+// change within a process, so it is resolved once and reused. This is a cache
+// of a pure lookup only; every ownership decision still re-reads the manifest
+// and re-proves liveness against the live filesystem.
+const canonicalRootCache = new Map<string, Promise<string>>();
+
+async function resolveCanonicalRoot(repoRoot: string): Promise<string> {
+  const key = normalizeComparablePath(repoRoot);
+  const cached = canonicalRootCache.get(key);
+  if (cached !== undefined) return cached;
+  const resolved = (async () => {
+    const gitRoot = await findGitRoot(repoRoot);
+    if (gitRoot === null) {
+      throw new Error("project disposable state requires a git repository");
+    }
+    return normalizeCanonicalRoot(await realpath(gitRoot));
+  })();
+  canonicalRootCache.set(key, resolved);
+  try {
+    return await resolved;
+  } catch (error: unknown) {
+    // A failed lookup must not be cached, or a repository created after this
+    // call would keep failing for the life of the process.
+    canonicalRootCache.delete(key);
+    throw error;
   }
-  const canonicalRoot = normalizeCanonicalRoot(await realpath(gitRoot));
+}
+
+async function resolveProjectIdentity(repoRoot: string, namespaceOverride?: string): Promise<ProjectIdentity> {
+  const canonicalRoot = await resolveCanonicalRoot(repoRoot);
   const projectHash = createHash("sha256").update(canonicalRoot).digest("hex");
   const namespaceId = namespaceOverride ?? projectHash.slice(0, 24);
   if (!/^[a-z0-9]{1,32}$/u.test(namespaceId)) {
@@ -472,12 +504,52 @@ function sameManifest(left: ProjectTempManifest, right: ProjectTempManifest): bo
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function disposableDirectoryName(namespaceId: string, purpose: ProjectTempPurpose, instanceId: string): string {
-  return `hvm-${namespaceId}-${purposeCodes[purpose]}-${instanceId}`;
+// Disposables live under one per-project directory so reconciliation reads only
+// Hivemind's own entries instead of the whole OS temp directory, whose size the
+// user controls. The namespace moved from the child name into the parent name,
+// so the total path length -- and the Windows root budget above -- is unchanged.
+function projectTempRoot(tempRoot: string, namespaceId: string): string {
+  return path.join(tempRoot, `hvm-${namespaceId}`);
+}
+
+function disposableDirectoryName(purpose: ProjectTempPurpose, instanceId: string): string {
+  return `${purposeCodes[purpose]}-${instanceId}`;
 }
 
 function isDisposableDirectoryName(value: string): boolean {
+  return /^(?:co|cs|mc|cp)-[A-Za-z0-9-]{1,64}$/u.test(value);
+}
+
+function isLegacyDisposableDirectoryName(value: string): boolean {
   return /^hvm-[a-z0-9]{1,32}-(?:co|cs|mc|cp)-[A-Za-z0-9-]{1,64}$/u.test(value);
+}
+
+/**
+ * The directory name must still name the manifest's namespace, purpose, and
+ * instance, so a directory cannot be reclaimed under another's identity. The
+ * nested layout carries the namespace in the parent name; the flat layout left
+ * by earlier versions carries it in the entry name.
+ */
+function pathMatchesManifest(directoryPath: string, manifest: ProjectTempManifest): boolean {
+  const base = path.basename(directoryPath);
+  const nested =
+    base === disposableDirectoryName(manifest.purpose, manifest.instance_id) &&
+    path.basename(path.dirname(directoryPath)) === `hvm-${manifest.namespace_id}`;
+  const legacy =
+    base === `hvm-${manifest.namespace_id}-${purposeCodes[manifest.purpose]}-${manifest.instance_id}`;
+  return nested || legacy;
+}
+
+// The flat layout is only swept once per process per temp root: it is a
+// migration path, not the steady state, and it is the only remaining read of
+// the whole OS temp directory.
+const sweptLegacyRoots = new Set<string>();
+
+function consumeLegacySweep(tempRoot: string): boolean {
+  const key = normalizeComparablePath(tempRoot);
+  if (sweptLegacyRoots.has(key)) return false;
+  sweptLegacyRoots.add(key);
+  return true;
 }
 
 function projectTempManifestPath(directoryPath: string): string {
