@@ -12,6 +12,7 @@ import { initProject } from "../src/init.js";
 import { recordHumanGuidance } from "../src/human-guidance.js";
 import { captureIntegrationQueueExpectation, enqueueIntegrationPatch, integrateShadow, type IntegrationStatus } from "../src/integrate.js";
 import { rebuildRepoGraph } from "../src/repo-graph.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -704,24 +705,29 @@ async function withTempRepo(
   run: (context: { repo: string; baseCommit: string }) => Promise<void>,
   baseBranch = "main"
 ): Promise<void> {
-  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-integrate-test-"));
-  try {
-    await git(repo, ["init"]);
-    await git(repo, ["config", "user.name", "Hivemind Test"]);
-    await git(repo, ["config", "user.email", "hivemind@example.test"]);
-    await git(repo, ["checkout", "-b", baseBranch]);
-    await mkdir(path.join(repo, "src"), { recursive: true });
-    await writeFile(path.join(repo, "README.md"), "# Fixture\n");
-    await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = 'base';\n");
-    await writeFile(path.join(repo, "outside.txt"), "outside\n");
-    await git(repo, ["add", "README.md", "src/feature.ts", "outside.txt"]);
-    await git(repo, ["commit", "-m", "initial"]);
-    await initProject(repo);
-    await mkdir(path.join(repo, ".hivemind", "integration"), { recursive: true });
-    await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
-  } finally {
-    await cleanupTempRepo(repo);
-  }
+  // The base branch is part of the fixture shape, so it keys the template.
+  await withTemplateRepo(
+    `integrate:${baseBranch}`,
+    async (repo) => {
+      await git(repo, ["init"]);
+      await git(repo, ["config", "user.name", "Hivemind Test"]);
+      await git(repo, ["config", "user.email", "hivemind@example.test"]);
+      await git(repo, ["checkout", "-b", baseBranch]);
+      await mkdir(path.join(repo, "src"), { recursive: true });
+      await writeFile(path.join(repo, "README.md"), "# Fixture\n");
+      await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = 'base';\n");
+      await writeFile(path.join(repo, "outside.txt"), "outside\n");
+      await git(repo, ["add", "README.md", "src/feature.ts", "outside.txt"]);
+      await git(repo, ["commit", "-m", "initial"]);
+      await initProject(repo);
+      await mkdir(path.join(repo, ".hivemind", "integration"), { recursive: true });
+    },
+    async (repo) => {
+      await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
+    },
+    "hivemind-integrate-test-",
+    async (repo) => { await cleanupTempRepo(repo); }
+  );
 }
 
 async function writeVerifier(repo: string): Promise<void> {
