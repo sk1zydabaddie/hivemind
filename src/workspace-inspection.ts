@@ -28,6 +28,7 @@ import type { ValueQualityPolicy } from "./value-quality-policy-schema.js";
 import { inferAllowedFilesTier, type TaskTier } from "./routing.js";
 import { readJsonFile } from "./json.js";
 import { readActiveSpec } from "./spec.js";
+import { loadSpecDocument } from "./spec-format.js";
 import { getStatus, type HivemindStatus } from "./status.js";
 import { inspectLatestAdoptionReadiness } from "./adoption.js";
 import { readTaskOutput } from "./output-stream.js";
@@ -86,6 +87,7 @@ export interface WorkspaceInspection {
   execution_groups: WorkspaceExecutionGroupProjection[];
   task_titles: Record<string, string>;
   active_spec_id: string | null;
+  active_spec_title: string | null;
   manager_session: ManagerWorkspaceSession | null;
   autonomy: {
     configured_level: AutonomyLevel;
@@ -291,6 +293,13 @@ export async function inspectWorkspace(
   const activeSpec = await readActiveSpec(repoRoot);
   if (!activeSpec.ok && !activeSpec.reason.startsWith("no active spec;")) return activeSpec;
   const specId = activeSpec.ok ? activeSpec.value.spec_id : null;
+  /* Read-only, and never fatal: a project without a readable spec document still
+     reports the rest of its state. */
+  const specDocument = specId === null ? null : await loadSpecDocument(repoRoot, specId);
+  const specTitle =
+    specDocument !== null && specDocument.ok && specDocument.value.title.trim() !== ""
+      ? specDocument.value.title.trim()
+      : null;
   const session = specId === null ? { ok: true as const, value: null } : await inspectLatestManagerSession(repoRoot, specId);
   if (!session.ok) return session;
   const currentSession = session.value;
@@ -351,6 +360,7 @@ export async function inspectWorkspace(
       execution_groups: executionGroups,
       task_titles: taskTitles,
       active_spec_id: specId,
+      active_spec_title: specTitle,
       manager_session: session.value,
       autonomy: {
         configured_level: config.config.manager_autonomy?.level ?? DEFAULT_AUTONOMY_LEVEL,

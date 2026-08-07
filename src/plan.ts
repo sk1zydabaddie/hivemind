@@ -421,6 +421,9 @@ export async function prepareWorkspaceTentativePlan(
   if (normalizedPrompt === "") {
     return { ok: false, reason: "planning prompt must not be empty" };
   }
+  if (prompt.length > 20_000) {
+    return { ok: false, reason: "planning prompt must be a non-empty string of at most 20000 characters" };
+  }
   const activeSpec = await requireActiveSpecRatified(repoRoot);
   if (!activeSpec.ok) return activeSpec;
 
@@ -462,6 +465,7 @@ export async function prepareWorkspaceTentativePlan(
       proposal_path: generated.value.proposal_path,
       usage_session_id: usageSessionId,
       tool,
+      prompt: normalizedPrompt,
       prompt_hash: createHash("sha256").update(normalizedPrompt).digest("hex"),
       autonomy_level: autonomy.value,
       status: "awaiting_ratification",

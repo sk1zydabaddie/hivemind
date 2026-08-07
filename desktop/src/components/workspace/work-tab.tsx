@@ -43,6 +43,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { plainActionError } from "@/lib/plain-language";
 import {
+  RECENT_EVENT_LIMIT,
   type BoardProjection,
   type TaskProjection,
   type TaskState
@@ -273,7 +274,7 @@ export function WorkTab({
         });
         setFeedback("Saved for the next step. Work already in progress was not changed.");
       } else if (plan !== null) {
-        setFeedback("Review the prepared plan first. Typed notes cannot approve it.");
+        setFeedback("Review the prepared plan first. Typed guidance cannot approve it.");
         setReviewOpen(true);
         return;
       } else if (inspection?.current_plan === null || inspection?.current_plan === undefined) {
@@ -479,6 +480,7 @@ export function WorkTab({
             <RunHeader
               configuredLevel={inspection?.autonomy.configured_level ?? "auto"}
               busy={busy}
+              subject={inspection?.active_spec_title ?? null}
               integrationStatus={projection.integration.status}
               planAvailable={displayedPlan !== null}
               runActive={runActive}
@@ -916,6 +918,7 @@ function PlanWaitingBar({
 
 function RunHeader({
   tasks,
+  subject,
   runActive,
   planAvailable,
   integrationStatus,
@@ -927,6 +930,7 @@ function RunHeader({
   onLevelChange
 }: {
   tasks: TaskProjection[];
+  subject: string | null;
   runActive: boolean;
   planAvailable: boolean;
   integrationStatus: string;
@@ -958,6 +962,9 @@ function RunHeader({
   return (
     <div className="relative flex min-h-[60px] shrink-0 items-center gap-4 border-b border-rule-soft px-5 py-3.5">
       <div className="min-w-0">
+        {subject === null ? null : (
+          <span className="mb-0.5 block text-[12px] break-words text-muted">{subject}</span>
+        )}
         <h2 className="m-0 text-[16px] leading-tight font-semibold tracking-[-0.015em] text-ink">
           {headline}
         </h2>
@@ -1356,6 +1363,11 @@ function RunThread({
   return (
     <ScrollArea aria-label="What has happened in this run" className="min-h-0">
       <div className="grid gap-4 px-6 py-5">
+        {events.length >= RECENT_EVENT_LIMIT ? (
+          <p className="m-0 text-[12px] text-muted">
+            This run is long enough that its earliest activity is no longer shown.
+          </p>
+        ) : null}
         {entries.length === 0 ? (
           <p className="m-0 text-[14px] leading-relaxed text-muted">
             Nothing has happened yet. Describe what you want below and Hivemind

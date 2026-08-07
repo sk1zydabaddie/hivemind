@@ -81,6 +81,7 @@ export interface WorkspaceInspection {
   }>;
   task_titles: Record<string, string>;
   active_spec_id: string | null;
+  active_spec_title: string | null;
   manager_session: null | {
     session_id: string;
     spec_id: string;

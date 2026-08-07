@@ -14,6 +14,9 @@ export const TASK_STATES = [
 
 export type TaskState = (typeof TASK_STATES)[number];
 
+/** How many replayed events the client keeps. See applyEventMessage. */
+export const RECENT_EVENT_LIMIT = 4000;
+
 export interface HivemindEvent {
   ts: string;
   type: string;
@@ -202,8 +205,15 @@ export function applyEventMessage(
     typeof message.seq === "number" ? message.seq : projection.lastSeq;
   projection.recentEvents.unshift(event);
   /* The daemon replays the whole durable history when the stream opens, so the
-     run thread can be rebuilt after a reload. The cap only bounds memory. */
-  projection.recentEvents = projection.recentEvents.slice(0, 400);
+     run thread can be rebuilt after a reload.
+     The cap only bounds memory, but it evicts the OLDEST events, which is the
+     head of the thread — the plan card and the first request. A busy task emits
+     roughly 15-25 events (lifecycle, scout, lease, write-intent, patch, routing,
+     verification), so a 15-task run lands near 400. This is set an order of
+     magnitude above that, ~1MB of small objects, so eviction stays theoretical
+     for real runs; RECENT_EVENT_LIMIT is surfaced so the thread can say when it
+     has happened rather than silently losing its beginning. */
+  projection.recentEvents = projection.recentEvents.slice(0, RECENT_EVENT_LIMIT);
 
   const task = event.task_id
     ? ensureTask(projection, event.task_id)
