@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { HivemindEvent } from "./events.js";
+import { readEvents, type HivemindEvent } from "./events.js";
 import { readJsonFile } from "./json.js";
 import { validateRequestedTaskId } from "./task-id.js";
 
@@ -74,6 +74,45 @@ export function integratedTaskIdsFromEvents(events: HivemindEvent[]): Set<string
   return integrated;
 }
 
+/**
+ * The queue holds patches that are accepted and not yet on the base branch.
+ *
+ * Only adoption puts a patch on that branch. A passing shadow verification is a
+ * rehearsal in a worktree that is deleted immediately, and the human may never
+ * authorize the set it verified, so `integration.passed` must not drain an
+ * entry -- doing so would leave the patch pending with nothing left to
+ * re-enqueue it.
+ *
+ * An entry is therefore pending unless an adoption durably took it, and it
+ * becomes pending again if a newer patch was submitted for that task after that
+ * adoption. Anything uncertain stays queued: this may retain an entry that is
+ * already integrated, which costs a re-gate, but it can never drop a patch that
+ * is still waiting.
+ */
+export function pendingQueueEntries(
+  entries: IntegrationQueueEntry[],
+  events: HivemindEvent[]
+): IntegrationQueueEntry[] {
+  const adoptedAt = new Map<string, number>();
+  const submittedAt = new Map<string, number>();
+  for (const [index, event] of events.entries()) {
+    if (event.type === "adoption.completed") {
+      for (const taskId of eventTaskIds(event)) adoptedAt.set(taskId, index);
+      continue;
+    }
+    if (event.type === "patch.submitted" && event.task_id !== null) {
+      submittedAt.set(event.task_id, index);
+    }
+  }
+
+  return entries.filter((entry) => {
+    const adopted = adoptedAt.get(entry.task_id);
+    if (adopted === undefined) return true;
+    const submitted = submittedAt.get(entry.task_id);
+    return submitted !== undefined && submitted > adopted;
+  });
+}
+
 export async function loadIntegrationQueue(
   repoRoot: string
 ): Promise<{ ok: true; value: IntegrationQueueEntry[] } | { ok: false; reason: string }> {
@@ -110,7 +149,17 @@ export async function loadIntegrationQueue(
     entries.push({ task_id: entry.task_id });
   }
 
-  return problems.length === 0 ? { ok: true, value: entries } : { ok: false, reason: problems.join("; ") };
+  if (problems.length > 0) {
+    return { ok: false, reason: problems.join("; ") };
+  }
+
+  // The trail decides what is still pending. An unreadable trail fails the load
+  // closed rather than reporting an undrained queue as current.
+  const events = await readEvents(repoRoot);
+  if (!events.ok) {
+    return events;
+  }
+  return { ok: true, value: pendingQueueEntries(entries, events.value) };
 }
 
 function hasAcceptedCurrentPatch(trail: PatchTrail | undefined): boolean {
@@ -120,6 +169,11 @@ function hasAcceptedCurrentPatch(trail: PatchTrail | undefined): boolean {
 function eventAppliedTaskIds(event: HivemindEvent): string[] {
   const applied = event.data.applied;
   return Array.isArray(applied) ? applied.filter((entry): entry is string => typeof entry === "string") : [];
+}
+
+function eventTaskIds(event: HivemindEvent): string[] {
+  const taskIds = event.data.task_ids;
+  return Array.isArray(taskIds) ? taskIds.filter((entry): entry is string => typeof entry === "string") : [];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -400,6 +400,10 @@ export async function enqueueIntegrationPatch(
     return { ok: false, reason: `integration queue already contains ${taskId}` };
   }
 
+  // loadIntegrationQueue already dropped entries the trail shows as adopted, so
+  // writing the loaded list back is what physically compacts the file. This is
+  // deliberately the only writer: adoption runs inside the lease lock and cannot
+  // take it again to drain, and a second unguarded writer here would race this one.
   const nextQueue = [...queueResult.value, { task_id: taskId }];
   const queuePath = path.join(repoRoot, ".hivemind", "integration", "queue.json");
   await writeJsonAtomic(queuePath, nextQueue);
