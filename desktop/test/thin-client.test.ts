@@ -271,6 +271,31 @@ describe("React workspace boundary", () => {
     expect(work).not.toMatch(/\btruncate\b|text-ellipsis|line-clamp/u);
   });
 
+  test("the run thread is built from durable daemon events, not client memory", async () => {
+    const work = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"),
+      "utf8"
+    );
+    const thread = await readFile(path.join(desktopRoot, "src", "lib", "work-thread.ts"), "utf8");
+
+    // The thread renders the replayed event history, so it survives a reload.
+    expect(work).toMatch(/buildRunThread\(events, taskTitles\)/u);
+    expect(work).toMatch(/events=\{projection\.recentEvents\}/u);
+    expect(thread).not.toMatch(/localStorage|sessionStorage|useState|fetch\(/u);
+
+    // Guidance text and the shipped manifest come from the events themselves.
+    expect(thread).toMatch(/event\.type === "human\.guidance_recorded"/u);
+    expect(thread).toMatch(/readString\(event\.data\.message\)/u);
+    expect(thread).toMatch(/event\.type === "adoption\.completed"/u);
+    expect(thread).toMatch(/readStringArray\(event\.data\.changed_files\)/u);
+    expect(thread).toMatch(/readString\(event\.data\.base_branch\)/u);
+
+    // Core records only `prompt_hash` on plan.prepared today. The request entry
+    // must stay hidden until Core emits the text — never reconstructed here.
+    expect(thread).toMatch(/readString\(event\.data\.prompt\)/u);
+    expect(thread).toMatch(/if \(text !== null\)/u);
+  });
+
   test("no internal vocabulary reaches a primary Work or shell surface", async () => {
     const app = await readFile(path.join(desktopRoot, "src", "App.tsx"), "utf8");
     const work = await readFile(

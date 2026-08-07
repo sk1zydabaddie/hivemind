@@ -201,7 +201,9 @@ export function applyEventMessage(
   projection.lastSeq =
     typeof message.seq === "number" ? message.seq : projection.lastSeq;
   projection.recentEvents.unshift(event);
-  projection.recentEvents = projection.recentEvents.slice(0, 40);
+  /* The daemon replays the whole durable history when the stream opens, so the
+     run thread can be rebuilt after a reload. The cap only bounds memory. */
+  projection.recentEvents = projection.recentEvents.slice(0, 400);
 
   const task = event.task_id
     ? ensureTask(projection, event.task_id)

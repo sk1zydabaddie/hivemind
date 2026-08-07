@@ -44,14 +44,11 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { plainActionError } from "@/lib/plain-language";
 import {
   type BoardProjection,
-  type HivemindEvent,
   type TaskProjection,
   type TaskState
 } from "@/lib/projection";
-import {
-  groupConsecutiveActivity,
-  summarizeWorkerOutput
-} from "@/lib/work-presentation";
+import { buildRunThread, type ThreadEntry, type ThreadTone } from "@/lib/work-thread";
+import { summarizeWorkerOutput } from "@/lib/work-presentation";
 import type {
   AutonomyLevel,
   WorkspaceAction,
@@ -132,6 +129,14 @@ const toneEdge: Record<Tone, string> = {
   danger: "bg-clay"
 };
 
+const toneDot: Record<ThreadTone, string> = {
+  neutral: "bg-rule",
+  live: "bg-navy/55",
+  good: "bg-navy",
+  warning: "bg-amber",
+  danger: "bg-clay"
+};
+
 export function WorkTab({
   projection,
   inspection,
@@ -167,10 +172,39 @@ export function WorkTab({
   const [changeSetPatchLoading, setChangeSetPatchLoading] = useState(false);
   const [stopBusy, setStopBusy] = useState(false);
   const activityEndRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const attentionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     activityEndRef.current?.scrollIntoView({ block: "nearest" });
   }, [projection.eventCount]);
+
+  /* `/` reaches the composer from anywhere, Escape sets the current
+     interruption aside. Both stay out of the way while you are typing. */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target !== null &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable);
+      if (event.key === "/" && !typing && !event.metaKey && !event.ctrlKey) {
+        event.preventDefault();
+        composerRef.current?.focus();
+        return;
+      }
+      if (event.key === "Escape" && !typing) {
+        setDismissedAttention((items) =>
+          attentionIdRef.current === null || items.includes(attentionIdRef.current)
+            ? items
+            : [...items, attentionIdRef.current]
+        );
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const connectionAttention: WorkspaceQueueItem | null =
     connectionState === "connection interrupted" || connectionState === "connection error"
@@ -190,6 +224,7 @@ export function WorkTab({
   /* The daemon decides what matters most; shipping only takes the bar when it is
      already at the front of the queue. */
   const shipItem = attention?.kind === "adoption_ready" ? attention : null;
+  attentionIdRef.current = attention?.id ?? null;
   const plan = inspection?.plan_review ?? null;
   const currentPlan = inspection?.current_plan ?? null;
   const displayedPlan = plan ?? currentPlan;
@@ -467,18 +502,18 @@ export function WorkTab({
             {idle ? (
               <IdleBoard onPick={setComposer} />
             ) : (
-              <TaskBoard
-                groups={inspection?.execution_groups ?? []}
-                integrationFailure={inspection?.integration_failure ?? null}
-                selectedTaskId={projection.selectedTaskId}
+              <RunThread
+                endRef={activityEndRef}
+                events={projection.recentEvents}
+                plan={displayedPlan}
                 taskTitles={inspection?.task_titles ?? {}}
-                tasks={tasks}
-                onSelectTask={onSelectTask}
+                onOpenPlan={() => void openPlanReview()}
               />
             )}
 
             <PromptDock
               busy={busy}
+              composerRef={composerRef}
               continuationAvailable={continuationAvailable}
               feedback={feedback || plainActionError(actionError)}
               idle={idle}
@@ -510,11 +545,26 @@ export function WorkTab({
           </Panel>
         </div>
 
+        {/* The rail holds state you glance at: what is running, and — only when
+            you ask for it — what one agent is saying. */}
         <aside
           className={`grid min-h-0 gap-4 ${
-            selected ? "grid-rows-[minmax(0,1.15fr)_minmax(0,1fr)]" : "grid-rows-[minmax(0,1fr)]"
+            selected ? "grid-rows-[minmax(0,1fr)_minmax(0,1.1fr)]" : "grid-rows-[minmax(0,1fr)]"
           }`}
         >
+          <Panel>
+            <header className="flex shrink-0 items-baseline justify-between gap-2 border-b border-rule-soft px-4 py-3">
+              <h2 className="m-0 text-[14px] font-semibold text-ink">Current work</h2>
+              <span className="font-mono text-[12px] text-muted">{tasks.length}</span>
+            </header>
+            <TaskBoard
+              groups={inspection?.execution_groups ?? []}
+              integrationFailure={inspection?.integration_failure ?? null}
+              selectedTaskId={projection.selectedTaskId}
+              tasks={tasks}
+              onSelectTask={onSelectTask}
+            />
+          </Panel>
           {selected ? (
             <Panel>
               <InspectorPane
@@ -524,13 +574,6 @@ export function WorkTab({
               />
             </Panel>
           ) : null}
-          <Panel>
-            <ActivityStream
-              endRef={activityEndRef}
-              events={projection.recentEvents}
-              taskTitles={inspection?.task_titles ?? {}}
-            />
-          </Panel>
         </aside>
       </div>
 
@@ -1051,14 +1094,12 @@ function IdleBoard({ onPick }: { onPick: (value: string) => void }): React.JSX.E
 function TaskBoard({
   tasks,
   groups,
-  taskTitles,
   integrationFailure,
   selectedTaskId,
   onSelectTask
 }: {
   tasks: TaskProjection[];
   groups: WorkspaceInspection["execution_groups"];
-  taskTitles: Record<string, string>;
   integrationFailure: WorkspaceInspection["integration_failure"];
   selectedTaskId: string | null;
   onSelectTask: (taskId: string) => void;
@@ -1112,7 +1153,6 @@ function TaskBoard({
                 }
                 selected={task.task_id === selectedTaskId}
                 task={task}
-                taskTitles={taskTitles}
                 onSelect={() => onSelectTask(task.task_id)}
               />
             ))}
@@ -1125,13 +1165,11 @@ function TaskBoard({
 
 function TaskRow({
   task,
-  taskTitles,
   integrationFailure,
   selected,
   onSelect
 }: {
   task: TaskProjection;
-  taskTitles: Record<string, string>;
   integrationFailure: string | null;
   selected: boolean;
   onSelect: () => void;
@@ -1141,13 +1179,10 @@ function TaskRow({
       ? stateLanguage[task.state]
       : { label: "Project checks blocked", tone: "danger" as const };
   const issue = integrationFailure ?? task.issue;
-  const dependencies = task.depends_on
-    .map((taskId) => taskTitles[taskId] ?? taskId)
-    .join(", ");
   return (
     <button
       aria-pressed={selected}
-      className={`relative flex w-full items-start gap-4 border-b border-rule-soft px-5 py-3.5 text-left transition-colors ${
+      className={`relative flex w-full items-start gap-3 border-b border-rule-soft px-4 py-3 text-left transition-colors ${
         selected ? "bg-navy-wash" : "bg-transparent hover:bg-canvas"
       }`}
       type="button"
@@ -1155,29 +1190,30 @@ function TaskRow({
     >
       <span
         aria-hidden="true"
-        className={`mt-[7px] size-2 shrink-0 rounded-full ${toneEdge[language.tone]}`}
+        className={`mt-[6px] size-2 shrink-0 rounded-full ${toneEdge[language.tone]}`}
       />
       <span className="min-w-0 flex-1">
-        <span className="block text-[14px] leading-snug font-medium break-words text-ink">
-          {task.title}
+        <span className="flex items-baseline justify-between gap-3">
+          <span className="min-w-0 text-[13px] leading-snug font-medium break-words text-ink">
+            {task.title}
+          </span>
+          <span className={`shrink-0 text-[12px] font-medium ${toneText[language.tone]}`}>
+            {language.label}
+          </span>
         </span>
-        <span className="mt-1 block text-[13px] break-words text-muted">
-          <span className="font-mono text-[12px]" title={task.task_id}>
+        <span className="mt-1 block text-[12px] break-words text-muted">
+          <span className="font-mono" title={task.task_id}>
             {task.task_id}
           </span>
           {task.lease_files.length > 0
             ? ` · editing ${task.lease_files.length} ${task.lease_files.length === 1 ? "file" : "files"}`
             : ""}
-          {dependencies !== "" ? ` · after ${dependencies}` : ""}
         </span>
         {issue ? (
-          <span className="mt-2 block rounded-md bg-clay-wash px-2.5 py-1.5 text-[13px] leading-snug break-words text-clay">
+          <span className="mt-2 block rounded-md bg-clay-wash px-2.5 py-1.5 text-[12px] leading-snug break-words text-clay">
             {plainTaskIssue(issue)}
           </span>
         ) : null}
-      </span>
-      <span className={`shrink-0 text-[13px] font-medium ${toneText[language.tone]}`}>
-        {language.label}
       </span>
     </button>
   );
@@ -1298,56 +1334,225 @@ function InspectorPane({
   );
 }
 
-function ActivityStream({
+/* ── The run, told as one story ──────────────────────────────────────────── */
+
+function RunThread({
   events,
   taskTitles,
-  endRef
+  plan,
+  endRef,
+  onOpenPlan
 }: {
   events: BoardProjection["recentEvents"];
   taskTitles: Record<string, string>;
+  plan: WorkspacePlanReview | null;
   endRef: React.RefObject<HTMLDivElement | null>;
+  onOpenPlan: () => void;
 }): React.JSX.Element {
-  const groups = groupConsecutiveActivity(events);
+  const entries = useMemo(
+    () => buildRunThread(events, taskTitles),
+    [events, taskTitles]
+  );
   return (
-    <>
-      <header className="flex shrink-0 items-baseline justify-between gap-2 border-b border-rule-soft px-4 py-3">
-        <h2 className="m-0 text-[14px] font-semibold text-ink" id="activity-title">
-          Activity
-        </h2>
-        <span className="text-[12px] text-muted">newest at the bottom</span>
-      </header>
-      <ScrollArea aria-labelledby="activity-title" className="min-h-0">
-        {groups.length === 0 ? (
-          <p className="m-0 px-4 py-4 text-[13px] leading-relaxed text-muted">
-            Quiet for now. Updates land here as they happen.
+    <ScrollArea aria-label="What has happened in this run" className="min-h-0">
+      <div className="grid gap-4 px-6 py-5">
+        {entries.length === 0 ? (
+          <p className="m-0 text-[14px] leading-relaxed text-muted">
+            Nothing has happened yet. Describe what you want below and Hivemind
+            will prepare a plan.
           </p>
-        ) : (
-          <ol className="m-0 list-none p-0">
-            {groups.map(({ event, count }, index) => (
-              <li
-                className="flex items-baseline gap-2.5 px-4 py-2"
-                key={`${event.ts}-${event.type}-${index}`}
-              >
-                <time className="shrink-0 font-mono text-[12px] text-muted">
-                  {formatClock(event.ts)}
-                </time>
-                <span
-                  aria-hidden="true"
-                  className={`mt-1.5 size-1.5 shrink-0 rounded-full ${eventDot(event.type)}`}
-                />
-                <span className="min-w-0 flex-1 text-[13px] leading-snug break-words text-ink">
-                  {eventDescription(event, taskTitles)}
-                  {count > 1 ? (
-                    <span className="ml-1.5 font-mono text-[12px] text-muted">×{count}</span>
-                  ) : null}
+        ) : null}
+        {entries.map((entry) => (
+          <ThreadRow
+            entry={entry}
+            key={entry.id}
+            plan={plan}
+            taskTitles={taskTitles}
+            onOpenPlan={onOpenPlan}
+          />
+        ))}
+        <div ref={endRef} />
+      </div>
+    </ScrollArea>
+  );
+}
+
+function ThreadRow({
+  entry,
+  plan,
+  taskTitles,
+  onOpenPlan
+}: {
+  entry: ThreadEntry;
+  plan: WorkspacePlanReview | null;
+  taskTitles: Record<string, string>;
+  onOpenPlan: () => void;
+}): React.JSX.Element {
+  if (entry.kind === "request" || entry.kind === "guidance") {
+    const guidance = entry.kind === "guidance";
+    return (
+      <article className="grid justify-items-end gap-1">
+        <div className="max-w-[560px] rounded-lg rounded-br-sm bg-canvas px-4 py-3">
+          <p className="m-0 text-[14px] leading-relaxed break-words text-ink">{entry.text}</p>
+        </div>
+        <span className="text-[12px] text-muted">
+          You · {formatClock(entry.at)}
+          {guidance
+            ? entry.applied
+              ? " · used on the next step"
+              : " · will be used on the next step"
+            : ""}
+        </span>
+      </article>
+    );
+  }
+
+  if (entry.kind === "plan") {
+    const matches = plan !== null && (entry.planHash === null || plan.plan_hash === entry.planHash);
+    const steps = matches ? plan.tasks.length : null;
+    const stages = matches ? plan.execution_groups.length : null;
+    return (
+      <article className="max-w-[640px] rounded-lg border border-rule bg-panel p-4">
+        <div className="flex items-start gap-3">
+          <span
+            aria-hidden="true"
+            className={`grid size-7 shrink-0 place-items-center rounded-md ${
+              entry.approved ? "bg-navy text-panel" : "bg-navy-wash text-navy"
+            }`}
+          >
+            {entry.approved ? <Check className="size-4" /> : <Layers3 className="size-4" />}
+          </span>
+          <div className="min-w-0 flex-1">
+            <strong className="block text-[14px] leading-snug font-semibold text-ink">
+              {steps === null
+                ? entry.approved
+                  ? "You approved the plan"
+                  : "A plan is ready to review"
+                : entry.approved
+                  ? `You approved a ${steps}-step plan`
+                  : `A ${steps}-step plan is ready to review`}
+            </strong>
+            <span className="mt-0.5 block text-[13px] text-muted">
+              {stages !== null
+                ? `${stages} ${stages === 1 ? "stage" : "stages"} · `
+                : ""}
+              {formatClock(entry.at)}
+            </span>
+          </div>
+          {plan !== null ? (
+            <Button size="sm" type="button" variant="outline" onClick={onOpenPlan}>
+              {entry.approved ? "See the plan" : "Review the plan"}
+            </Button>
+          ) : null}
+        </div>
+      </article>
+    );
+  }
+
+  if (entry.kind === "shipped") {
+    return <ShippedCard entry={entry} plan={plan} taskTitles={taskTitles} />;
+  }
+
+  return (
+    <div className="flex items-baseline gap-3">
+      <time className="shrink-0 font-mono text-[12px] text-muted">
+        {formatClock(entry.at)}
+      </time>
+      <span
+        aria-hidden="true"
+        className={`mt-1.5 size-1.5 shrink-0 rounded-full ${toneDot[entry.tone]}`}
+      />
+      <span className="min-w-0 flex-1 text-[14px] leading-snug break-words text-ink">
+        {entry.text}
+        {entry.count > 1 ? (
+          <span className="ml-1.5 font-mono text-[12px] text-muted">×{entry.count}</span>
+        ) : null}
+      </span>
+    </div>
+  );
+}
+
+/* The payoff. What each task set out to do, and where it landed. */
+function ShippedCard({
+  entry,
+  plan,
+  taskTitles
+}: {
+  entry: Extract<ThreadEntry, { kind: "shipped" }>;
+  plan: WorkspacePlanReview | null;
+  taskTitles: Record<string, string>;
+}): React.JSX.Element {
+  const [filesOpen, setFilesOpen] = useState(false);
+  return (
+    <article className="max-w-[720px] rounded-lg border border-navy/20 bg-navy-wash p-5">
+      <div className="flex items-center gap-3">
+        <span
+          aria-hidden="true"
+          className="grid size-8 shrink-0 place-items-center rounded-md bg-navy text-panel"
+        >
+          <Check className="size-[18px]" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <strong className="block text-[16px] leading-snug font-semibold tracking-[-0.01em] text-ink">
+            Shipped {entry.taskIds.length}{" "}
+            {entry.taskIds.length === 1 ? "task" : "tasks"}
+            {entry.branch ? ` to ${entry.branch}` : ""}
+          </strong>
+          <span className="mt-0.5 block text-[13px] text-muted">
+            {formatClock(entry.at)} · this is now part of your project
+          </span>
+        </div>
+      </div>
+
+      <ul className="mt-4 mb-0 grid list-none gap-3 border-t border-navy/15 p-0 pt-4">
+        {entry.taskIds.map((taskId) => {
+          const planned = plan?.tasks.find((task) => task.task_id === taskId);
+          return (
+            <li key={taskId}>
+              <strong className="block text-[14px] leading-snug font-medium break-words text-ink">
+                {planned?.title ?? taskTitles[taskId] ?? taskId}
+              </strong>
+              {planned?.acceptance_criterion ? (
+                <span className="mt-0.5 block text-[13px] leading-relaxed break-words text-muted">
+                  {planned.acceptance_criterion}
                 </span>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+
+      <Collapsible open={filesOpen} onOpenChange={setFilesOpen}>
+        <div className="mt-4 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-navy/15 pt-3 text-[13px] text-muted">
+          <CollapsibleTrigger asChild>
+            <button
+              className="font-medium text-navy underline decoration-navy/30 underline-offset-2 hover:decoration-navy"
+              type="button"
+            >
+              {entry.changedFiles.length}{" "}
+              {entry.changedFiles.length === 1 ? "file" : "files"} changed
+            </button>
+          </CollapsibleTrigger>
+          {entry.adoptedRef ? (
+            <span>
+              · landed as{" "}
+              <span className="font-mono text-[12px] text-ink">
+                {entry.adoptedRef.slice(0, 10)}
+              </span>
+            </span>
+          ) : null}
+        </div>
+        <CollapsibleContent>
+          <ul className="mt-2 mb-0 flex list-none flex-wrap gap-x-5 gap-y-1.5 p-0">
+            {entry.changedFiles.map((file) => (
+              <li className="font-mono text-[12px] break-all text-muted" key={file}>
+                {file}
               </li>
             ))}
-            <div ref={endRef} />
-          </ol>
-        )}
-      </ScrollArea>
-    </>
+          </ul>
+        </CollapsibleContent>
+      </Collapsible>
+    </article>
   );
 }
 
@@ -1355,6 +1560,7 @@ function ActivityStream({
 
 function PromptDock({
   value,
+  composerRef,
   idle,
   runActive,
   continuationAvailable,
@@ -1368,6 +1574,7 @@ function PromptDock({
   onStartManager
 }: {
   value: string;
+  composerRef: React.RefObject<HTMLTextAreaElement | null>;
   idle: boolean;
   runActive: boolean;
   continuationAvailable: boolean;
@@ -1386,6 +1593,7 @@ function PromptDock({
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2 rounded-md border border-rule bg-canvas p-2 transition-colors focus-within:border-navy/40 focus-within:bg-panel">
           <textarea
             className="max-h-[180px] min-h-[40px] w-full resize-y border-0 bg-transparent px-1.5 py-1.5 text-[15px] leading-[1.55] text-ink outline-none placeholder:text-muted"
+            id="work-composer"
             placeholder={
               runActive
                 ? "Add guidance for the next step…"
@@ -1393,9 +1601,16 @@ function PromptDock({
                   ? "Describe what you want built…"
                   : "Describe the next change you want…"
             }
+            ref={composerRef}
             rows={idle ? 3 : 2}
             value={value}
             onChange={(event) => onChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+              }
+            }}
           />
           <Button
             className={idle ? "h-11 px-5 text-[14px]" : "size-11"}
@@ -1427,6 +1642,9 @@ function PromptDock({
               ? "Guidance is read on the next step and does not change work already in progress."
               : "Typing describes work. Nothing runs until Hivemind has a plan it can check."}
           </span>
+          <kbd className="shrink-0 rounded-sm border border-rule px-1.5 py-0.5 font-mono text-[11px] text-muted">
+            ⌘↵
+          </kbd>
           {managerStartAvailable ? (
             <Button disabled={busy} size="sm" type="button" variant="outline" onClick={() => void onStartManager()}>
               Start the approved plan
@@ -1952,62 +2170,6 @@ function autonomyLabel(level: AutonomyLevel): string {
 
 function shipped(task: TaskProjection): boolean {
   return task.integration === "merged" || task.state === "merged";
-}
-
-/* Two vocabularies: things a task did (read after its title) and things the run
-   did (read on their own). Mixing them is what made the old stream unreadable. */
-const TASK_EVENT_LABELS: Record<string, string> = {
-  "task.created": "was added to the plan",
-  "task.started": "started working",
-  "task.completed": "finished its work",
-  "task.failed": "stopped unexpectedly",
-  "task.paused": "paused for capacity",
-  "task.resumed": "picked up where it left off",
-  "task.blocked": "needs help before it can continue",
-  "task.redirected": "received new guidance",
-  "lease.approved": "started editing its files",
-  "lease.released": "finished editing its files",
-  "patch.submitted": "sent its change for checking",
-  "patch.accepted": "passed its file checks",
-  "patch.rejected": "has to revise its change",
-  "routing.observed": "used a model",
-  "quality.draft_started": "started a second attempt",
-  "quality.draft_verified": "checked its second attempt"
-};
-
-const RUN_EVENT_LABELS: Record<string, string> = {
-  "human.guidance_recorded": "Your guidance was saved for the next step",
-  "plan.prepared": "A plan was prepared for you to review",
-  "plan.ratified": "You approved the plan",
-  "plan.amendment_queued": "A plan change was queued for review",
-  "integration.blocked": "Project checks are blocked",
-  "integration.low_confidence": "A change has thin test coverage",
-  "integration.passed": "Changes passed the project checks and are ready to ship",
-  "quality.selection_decided": "A candidate change was picked for review"
-};
-
-function eventDescription(
-  event: HivemindEvent,
-  taskTitles: Record<string, string>
-): string {
-  if (event.type === "adoption.completed") {
-    const taskCount = Array.isArray(event.data.task_ids) ? event.data.task_ids.length : 0;
-    return `Shipped ${taskCount} ${taskCount === 1 ? "task" : "tasks"} to your branch`;
-  }
-  const runLabel = RUN_EVENT_LABELS[event.type];
-  if (runLabel) return runLabel;
-  const taskLabel = TASK_EVENT_LABELS[event.type];
-  if (taskLabel && event.task_id) {
-    return `${taskTitles[event.task_id] ?? "A task"} ${taskLabel}`;
-  }
-  return taskLabel ?? "Project state was updated";
-}
-
-function eventDot(type: string): string {
-  if (/failed|blocked|rejected|cancel_failed/u.test(type)) return "bg-clay";
-  if (/passed|accepted|integrated|ratified/u.test(type)) return "bg-navy";
-  if (/started|submitted|guidance|draft/u.test(type)) return "bg-navy/55";
-  return "bg-rule";
 }
 
 function plainPrimaryDetail(detail: string, kind: WorkspaceQueueItem["kind"]): string {
