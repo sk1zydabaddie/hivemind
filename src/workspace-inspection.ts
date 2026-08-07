@@ -3,6 +3,7 @@ import path from "node:path";
 import { DEFAULT_AUTONOMY_LEVEL, isAutonomyLevel, type AutonomyLevel } from "./autonomy-level.js";
 import { loadConfig, type HivemindConfig } from "./config.js";
 import { readEvents, type HivemindEvent } from "./events.js";
+import { integratedTaskIdsFromEvents } from "./integration-state.js";
 import {
   inspectLatestManagerSession,
   inspectManagerSessionHistory,
@@ -35,7 +36,7 @@ import { readTaskOutput } from "./output-stream.js";
 
 export interface WorkspaceQueueItem {
   id: string;
-  kind: "plan_review" | "manager_approval" | "verification_blocked" | "reverification_required" | "run_stalled" | "task_attention" | "quality_cancel_failed" | "memory_review" | "quality_review" | "plan_amendment" | "adoption_ready";
+  kind: "plan_review" | "manager_approval" | "verification_blocked" | "reverification_required" | "run_stalled" | "task_attention" | "quality_cancel_failed" | "memory_review" | "quality_review" | "plan_amendment" | "adoption_ready" | "adoption_failed" | "adoption_indeterminate";
   title: string;
   detail: string;
   created_at: string;
@@ -327,7 +328,10 @@ export async function inspectWorkspace(
   const swarm = await inspectCharacterizations(repoRoot);
   const memory = await inspectMemory(repoRoot, events.value, swarm.characterizations);
   if (!memory.ok) return memory;
-  const history = await inspectHistory(repoRoot, events.value, ledger.value.providers, config.config);
+  // One answer to "which tasks are verified", derived once over the whole
+  // durable log and shared by every surface below. Nothing here re-derives it.
+  const integrated = integratedTaskIdsFromEvents(events.value);
+  const history = await inspectHistory(repoRoot, events.value, ledger.value.providers, config.config, integrated);
   if (!history.ok) return history;
   const preparedPlanSession = planState.current === null
     ? null
@@ -349,7 +353,7 @@ export async function inspectWorkspace(
     : Object.values(ledger.value.reservations).reduce((total, reservation) =>
       total + (reservation.status === "active" && reservation.session_id === sessionId ? reservation.reserved_tokens : 0), 0);
   const committedTokens = effectiveTokens + reservedTokens;
-  const tasks = buildWorkspaceTasks(status.value, events.value, planState.current ?? planState.review, queues.value.needsYou);
+  const tasks = buildWorkspaceTasks(status.value, events.value, planState.current ?? planState.review, queues.value.needsYou, integrated);
   const executionGroups = buildWorkspaceExecutionGroups(tasks, planState.current ?? planState.review, events.value);
   const taskTitles = Object.fromEntries(tasks.map((task) => [task.task_id, task.title]));
   return {
@@ -406,7 +410,8 @@ function buildWorkspaceTasks(
   status: HivemindStatus,
   events: HivemindEvent[],
   plan: WorkspacePlanReview | null,
-  needsYou: WorkspaceQueueItem[]
+  needsYou: WorkspaceQueueItem[],
+  integrated: Set<string>
 ): WorkspaceTaskProjection[] {
   const planTasks = new Map((plan?.tasks ?? []).map((task) => [task.task_id, task]));
   const statusTasks = new Map(status.tasks.map((task) => [task.task_id, task]));
@@ -457,7 +462,10 @@ function buildWorkspaceTasks(
     }
     if (event.type === "integration.passed" && Array.isArray(event.data.applied)) {
       for (const taskId of event.data.applied) {
-        if (typeof taskId !== "string") continue;
+        // An integration.passed only stands while the durable trail still backs
+        // it. A later rejection, superseding submit, or failed integration
+        // retracts it, so gate on the shared set rather than latching here.
+        if (typeof taskId !== "string" || !integrated.has(taskId)) continue;
         const task = observed.get(taskId);
         if (task === undefined) continue;
         task.state = "verified";
@@ -473,6 +481,19 @@ function buildWorkspaceTasks(
         task.state = "merged";
         task.integration = "merged";
         task.issue = null;
+      }
+    }
+    // A verified set whose adoption failed or could not be determined must not
+    // keep reading as verified: the rehearsal passed, but the transition it was
+    // rehearsing did not happen, or nobody can say whether it did.
+    if ((event.type === "adoption.failed" || event.type === "adoption.indeterminate") && Array.isArray(event.data.task_ids)) {
+      for (const taskId of event.data.task_ids) {
+        if (typeof taskId !== "string") continue;
+        const task = observed.get(taskId);
+        if (task === undefined || task.state === "merged") continue;
+        task.state = "blocked";
+        task.integration = event.type === "adoption.indeterminate" ? "adoption indeterminate" : "adoption failed";
+        task.issue = plainEvidence(event);
       }
     }
   }
@@ -530,12 +551,6 @@ function applyWorkspaceTaskEvent(task: WorkspaceTaskProjection, event: HivemindE
     task.patch.verdict = readNonEmptyString(event.data.verdict) ?? "reject";
     task.patch.reason = readNonEmptyString(event.data.reason);
     task.issue = task.patch.reason;
-    return;
-  }
-  if (event.type === "task.integrated") {
-    task.state = "verified";
-    task.integration = "verified";
-    task.issue = null;
   }
 }
 
@@ -707,7 +722,8 @@ async function inspectHistory(
   repoRoot: string,
   events: HivemindEvent[],
   ledger: QuotaLedger,
-  config: HivemindConfig
+  config: HivemindConfig,
+  integrated: Set<string>
 ): Promise<{ ok: true; value: WorkspaceHistoryInspection } | { ok: false; reason: string }> {
   const sessions = await inspectManagerSessionHistory(repoRoot);
   if (!sessions.ok) return sessions;
@@ -715,7 +731,7 @@ async function inspectHistory(
   const runs = await Promise.all(ascending.map(async (session, index) => {
     const nextStart = ascending[index + 1]?.created_at;
     const runEvents = events.filter((event) => event.ts >= session.created_at && (nextStart === undefined || event.ts < nextStart));
-    const verifiedTasks = verifiedTaskIds(runEvents);
+    const verifiedTasks = runVerifiedTaskIds(runEvents, integrated);
     const mergedTasks = mergedTaskIds(runEvents);
     const stoppedTasks = stoppedTaskStates(runEvents);
     const plannedTaskIds = await ratifiedTaskIds(repoRoot, events, session.spec_id, session.created_at);
@@ -827,12 +843,16 @@ function attemptOutcome(
   return exitCodes.every((exitCode) => exitCode === 0) ? "pass" : exitCodes.every((exitCode) => typeof exitCode === "number" && exitCode !== 0) ? "fail" : "unknown";
 }
 
-function verifiedTaskIds(events: HivemindEvent[]): string[] {
+// Scope only. This decides which run a verified task is attributed to; whether
+// the task is verified at all is decided solely by the caller's
+// integratedTaskIdsFromEvents set, so History and `hivemind status` cannot
+// disagree — including after a retraction the run window alone cannot see.
+function runVerifiedTaskIds(runEvents: HivemindEvent[], integrated: Set<string>): string[] {
   const ids = new Set<string>();
-  for (const event of events) {
-    if (event.type === "task.integrated" && event.task_id !== null) ids.add(event.task_id);
-    if (event.type === "integration.passed" && Array.isArray(event.data.applied)) {
-      for (const value of event.data.applied) if (typeof value === "string") ids.add(value);
+  for (const event of runEvents) {
+    if (event.type !== "integration.passed" || !Array.isArray(event.data.applied)) continue;
+    for (const value of event.data.applied) {
+      if (typeof value === "string" && integrated.has(value)) ids.add(value);
     }
   }
   return [...ids].sort();
@@ -861,7 +881,7 @@ function stoppedTaskStates(events: HivemindEvent[]): WorkspaceHistoryRun["stoppe
     if (event.task_id !== null && state !== undefined) {
       terminal.set(event.task_id, { task_id: event.task_id, state, reason: plainEvidence(event) });
     }
-    if (event.task_id !== null && ["task.started", "task.completed", "task.integrated"].includes(event.type)) terminal.delete(event.task_id);
+    if (event.task_id !== null && ["task.started", "task.completed"].includes(event.type)) terminal.delete(event.task_id);
   }
   return [...terminal.values()].sort((left, right) => left.task_id.localeCompare(right.task_id));
 }
@@ -1094,6 +1114,7 @@ async function buildQueues(
     });
   }
   needsYou.push(...await inspectRunStalls(repoRoot, events, planReview, currentPlan, session, options));
+  needsYou.push(...unresolvedAdoptionOutcomes(events));
   const adoption = await inspectLatestAdoptionReadiness(repoRoot);
   if (!adoption.ok) return adoption;
   if (adoption.value.status === "needs_reverification") {
@@ -1330,10 +1351,50 @@ function elapsedMs(now: Date, timestamp: string): number {
   return Number.isNaN(then) ? 0 : Math.max(0, now.getTime() - then);
 }
 
+/**
+ * Adoption is the only transition that touches the user's own branch, so a
+ * failed or indeterminate one must never be silent. An indeterminate outcome
+ * carries no action: the system has concluded it cannot tell whether the branch
+ * moved, and there is no safe automatic recovery, so it hands the human the refs
+ * to check by hand instead of offering a button that might do it twice.
+ */
+function unresolvedAdoptionOutcomes(events: HivemindEvent[]): WorkspaceQueueItem[] {
+  const superseded = new Set(
+    events.filter((event) => event.type === "adoption.completed").map((event) => event.data.verification_id)
+  );
+  const items: WorkspaceQueueItem[] = [];
+  for (const event of events) {
+    if (event.type !== "adoption.failed" && event.type !== "adoption.indeterminate") continue;
+    // A later successful adoption of the same verified set resolves it.
+    if (superseded.has(event.data.verification_id)) continue;
+    const taskIds = (Array.isArray(event.data.task_ids) ? event.data.task_ids : []).filter(
+      (entry): entry is string => typeof entry === "string"
+    );
+    const scope = taskIds.length === 0 ? "the verified change set" : taskIds.join(" + ");
+    const indeterminate = event.type === "adoption.indeterminate";
+    items.push({
+      id: `${event.type}:${String(event.data.adoption_id ?? event.ts)}`,
+      kind: indeterminate ? "adoption_indeterminate" : "adoption_failed",
+      title: indeterminate ? "We cannot tell whether this landed" : "The merge did not happen",
+      detail: indeterminate
+        ? `${scope} could not be confirmed either way. Check your branch by hand: it was at ${refSummary(event.data.pre_adoption_ref)} before, the change would have made it ${refSummary(event.data.adopted_ref ?? event.data.candidate_commit)}, and it now reads ${refSummary(event.data.observed_head)}. ${plainEvidence(event)}`
+        : `${scope} was not merged and your branch is unchanged. ${plainEvidence(event)}`,
+      created_at: event.ts,
+      task_id: taskIds[0] ?? null,
+      action: null
+    });
+  }
+  return items;
+}
+
+function refSummary(value: unknown): string {
+  return typeof value === "string" && value.trim() !== "" ? value.slice(0, 12) : "an unknown commit";
+}
+
 function latestTaskAttention(events: HivemindEvent[]): HivemindEvent[] {
   const latest = new Map<string, HivemindEvent>();
   const relevant = new Set([
-    "task.started", "task.resumed", "task.redirected", "task.completed", "task.integrated", "task.cancelled",
+    "task.started", "task.resumed", "task.redirected", "task.completed", "task.cancelled",
     "task.failed", "task.blocked", "task.paused", "patch.rejected", "patch.accepted"
   ]);
   for (const event of events) {

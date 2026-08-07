@@ -97,7 +97,15 @@ const RUN_MILESTONES: Record<string, { text: string; tone: ThreadTone }> = {
   },
   "quota.low": { text: "The model provider is running low on capacity", tone: "warning" },
   "quota.exhausted": { text: "The model provider is out of capacity", tone: "danger" },
-  "context.low": { text: "An agent is running out of room to work", tone: "warning" }
+  "context.low": { text: "An agent is running out of room to work", tone: "warning" },
+  /* adoption.started is suppressed as mechanical, but its outcomes are not: the
+     thread previously said "merging" and then went quiet whichever way it went. */
+  "adoption.failed": { text: "The merge did not happen and your branch is unchanged", tone: "danger" },
+  "adoption.indeterminate": {
+    text: "We cannot tell whether this landed on your branch — check it by hand",
+    tone: "danger"
+  },
+  "verification.rerun_failed": { text: "The re-check did not complete", tone: "danger" }
 };
 
 /* Mechanical steps a person never asked to see. The pipeline these describe is

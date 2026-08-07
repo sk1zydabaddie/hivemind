@@ -17,8 +17,10 @@ import { loadAdmittedValueQualityRun } from "../src/value-quality.js";
 import { runAdapterProcess, type AdapterProfile } from "../src/adapter.js";
 import { createTentativePlan, groundTentativePlan, lintTentativePlan } from "../src/plan.js";
 import { readQuotaLedger, reserveMeteredCall } from "../src/resource-ledger.js";
+import { getStatus } from "../src/status.js";
 import { inspectWorkspace } from "../src/workspace-inspection.js";
 import { createRatifiedSpec } from "./support/spec.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -1129,6 +1131,23 @@ test("History stays active until every ratified task is durably verified, then b
     });
     assert.equal(session.ok, true, session.ok ? undefined : session.reason);
 
+    // An integration.passed is not on its own proof that a task is verified:
+    // the durable derivation requires an accepted patch that no later submit or
+    // rejection superseded. Emit the trail a real run produces so this fixture
+    // exercises the same path the product does.
+    for (const taskId of ["T-001", "T-002", "T-999"]) {
+      assert.equal((await appendEvent(repo, {
+        type: "patch.submitted",
+        task_id: taskId,
+        data: { changed_files: ["src/app.ts"] }
+      })).ok, true, taskId);
+      assert.equal((await appendEvent(repo, {
+        type: "patch.accepted",
+        task_id: taskId,
+        data: { verdict: "accept", reason: "all changes are within scope" }
+      })).ok, true, taskId);
+    }
+
     await appendEvent(repo, {
       type: "integration.passed",
       task_id: null,
@@ -1166,6 +1185,135 @@ test("History stays active until every ratified task is durably verified, then b
     assert.equal(adoptedRun?.outcome, "completed");
     assert.equal(adoptedRun?.outcome_detail, "All 2 planned tasks merged into the project.");
     assert.deepEqual(adoptedRun?.merged_tasks, ["T-001", "T-002"]);
+  });
+});
+
+test("History and status never disagree about a verified task, including after a retraction", async () => {
+  await withRepo(async (repo) => {
+    await prepareRatifiedWorkspacePlan(repo);
+    await writeContract(repo, "T-001", ["src/app.ts"]);
+    const session = await startManagerSession(repo, "Pin History against status.", {
+      proposedAction: {
+        type: "proposed_actions",
+        source: "scripted",
+        reason: "Inspect the run after project checks.",
+        actions: [{ type: "get_status" }],
+        human_approval_required_for: []
+      }
+    });
+    assert.equal(session.ok, true, session.ok ? undefined : session.reason);
+
+    const historyVerified = async (): Promise<string[]> => {
+      const inspected = await inspectWorkspace(repo);
+      assert.equal(inspected.ok, true, inspected.ok ? undefined : inspected.reason);
+      return inspected.ok ? inspected.value.history.runs.at(-1)?.verified_tasks ?? [] : [];
+    };
+    const statusIntegrated = async (): Promise<string[]> => {
+      const status = await getStatus(repo);
+      assert.equal(status.ok, true, status.ok ? undefined : status.reason);
+      return status.ok
+        ? status.value.tasks.filter((task) => task.integrated).map((task) => task.task_id).sort()
+        : [];
+    };
+
+    // An integration.passed with no accepted patch behind it proves nothing.
+    await appendEvent(repo, { type: "integration.passed", task_id: null, data: { applied: ["T-001"] } });
+    assert.deepEqual(await historyVerified(), [], "bare integration.passed must not read as verified");
+    assert.deepEqual(await statusIntegrated(), []);
+
+    await appendEvent(repo, { type: "patch.submitted", task_id: "T-001", data: { changed_files: ["src/app.ts"] } });
+    await appendEvent(repo, { type: "patch.accepted", task_id: "T-001", data: { verdict: "accept", reason: "in scope" } });
+    await appendEvent(repo, { type: "integration.passed", task_id: null, data: { applied: ["T-001"] } });
+    assert.deepEqual(await historyVerified(), ["T-001"]);
+    assert.deepEqual(await statusIntegrated(), ["T-001"]);
+
+    // The dangerous direction, and the actual bug: History reported a task
+    // verified forever. A retraction must remove it from BOTH surfaces.
+    await appendEvent(repo, { type: "integration.failed", task_id: null, data: { applied: ["T-001"], tests: "fail" } });
+    assert.deepEqual(await statusIntegrated(), []);
+    assert.deepEqual(await historyVerified(), [], "integration.failed must retract History's verified claim");
+
+    // A superseding submit retracts too, and must retract on both surfaces.
+    await appendEvent(repo, { type: "patch.accepted", task_id: "T-001", data: { verdict: "accept", reason: "in scope" } });
+    await appendEvent(repo, { type: "integration.passed", task_id: null, data: { applied: ["T-001"] } });
+    assert.deepEqual(await historyVerified(), ["T-001"]);
+    await appendEvent(repo, { type: "patch.submitted", task_id: "T-001", data: { changed_files: ["src/app.ts"] } });
+    assert.deepEqual(await statusIntegrated(), []);
+    assert.deepEqual(await historyVerified(), [], "a superseding submit must retract History's verified claim");
+  });
+});
+
+test("the Work tab task state agrees with History and status about verification, including after a retraction", async () => {
+  await withRepo(async (repo) => {
+    await prepareRatifiedWorkspacePlan(repo);
+    await writeContract(repo, "T-001", ["src/app.ts"]);
+    const session = await startManagerSession(repo, "Pin the Work tab against History and status.", {
+      proposedAction: {
+        type: "proposed_actions",
+        source: "scripted",
+        reason: "Inspect the run after project checks.",
+        actions: [{ type: "get_status" }],
+        human_approval_required_for: []
+      }
+    });
+    assert.equal(session.ok, true, session.ok ? undefined : session.reason);
+
+    // Every surface answers the same question; none may disagree at any point.
+    const surfaces = async (): Promise<{ work: boolean; workState: string; history: boolean; status: boolean }> => {
+      const inspected = await inspectWorkspace(repo);
+      assert.equal(inspected.ok, true, inspected.ok ? undefined : inspected.reason);
+      const status = await getStatus(repo);
+      assert.equal(status.ok, true, status.ok ? undefined : status.reason);
+      if (!inspected.ok || !status.ok) throw new Error("inspection unavailable");
+      const workTask = inspected.value.tasks.find((task) => task.task_id === "T-001");
+      return {
+        work: workTask?.integration === "verified",
+        workState: workTask?.state ?? "absent",
+        history: (inspected.value.history.runs.at(-1)?.verified_tasks ?? []).includes("T-001"),
+        status: status.value.tasks.some((task) => task.task_id === "T-001" && task.integrated)
+      };
+    };
+
+    await appendEvent(repo, { type: "integration.passed", task_id: null, data: { applied: ["T-001"] } });
+    let seen = await surfaces();
+    assert.deepEqual(
+      { work: seen.work, history: seen.history, status: seen.status },
+      { work: false, history: false, status: false },
+      "bare integration.passed must not read as verified on any surface"
+    );
+    assert.notEqual(seen.workState, "verified");
+
+    await appendEvent(repo, { type: "patch.submitted", task_id: "T-001", data: { changed_files: ["src/app.ts"] } });
+    await appendEvent(repo, { type: "patch.accepted", task_id: "T-001", data: { verdict: "accept", reason: "in scope" } });
+    await appendEvent(repo, { type: "integration.passed", task_id: null, data: { applied: ["T-001"] } });
+    seen = await surfaces();
+    assert.deepEqual(
+      { work: seen.work, history: seen.history, status: seen.status },
+      { work: true, history: true, status: true }
+    );
+    assert.equal(seen.workState, "verified");
+
+    // The dangerous direction: the Work tab latched on verified forever.
+    await appendEvent(repo, { type: "integration.failed", task_id: null, data: { applied: ["T-001"], tests: "fail" } });
+    seen = await surfaces();
+    assert.deepEqual(
+      { work: seen.work, history: seen.history, status: seen.status },
+      { work: false, history: false, status: false },
+      "integration.failed must retract the Work tab's verified claim"
+    );
+    assert.notEqual(seen.workState, "verified");
+
+    await appendEvent(repo, { type: "patch.accepted", task_id: "T-001", data: { verdict: "accept", reason: "in scope" } });
+    await appendEvent(repo, { type: "integration.passed", task_id: null, data: { applied: ["T-001"] } });
+    assert.equal((await surfaces()).work, true);
+    await appendEvent(repo, { type: "patch.submitted", task_id: "T-001", data: { changed_files: ["src/app.ts"] } });
+    seen = await surfaces();
+    assert.deepEqual(
+      { work: seen.work, history: seen.history, status: seen.status },
+      { work: false, history: false, status: false },
+      "a superseding submit must retract the Work tab's verified claim"
+    );
+    assert.notEqual(seen.workState, "verified");
   });
 });
 
@@ -1404,19 +1552,22 @@ test("Memory and History inspection never crosses the selected project boundary"
 });
 
 async function withRepo(run: (repo: string) => Promise<void>): Promise<void> {
-  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-workspace-action-test-"));
-  try {
-    await execFileAsync("git", ["init"], { cwd: repo, windowsHide: true });
-    await execFileAsync("git", ["config", "user.name", "Hivemind Test"], { cwd: repo, windowsHide: true });
-    await execFileAsync("git", ["config", "user.email", "hivemind@example.test"], { cwd: repo, windowsHide: true });
-    await writeFile(path.join(repo, "README.md"), "# Fixture\n");
-    await execFileAsync("git", ["add", "README.md"], { cwd: repo, windowsHide: true });
-    await execFileAsync("git", ["commit", "-m", "initial"], { cwd: repo, windowsHide: true });
-    await initProject(repo);
-    await run(repo);
-  } finally {
-    await rm(repo, { recursive: true, force: true, maxRetries: 3 });
-  }
+  await withTemplateRepo(
+    "workspace-actions",
+    async (repo) => {
+      await execFileAsync("git", ["init"], { cwd: repo, windowsHide: true });
+      await execFileAsync("git", ["config", "user.name", "Hivemind Test"], { cwd: repo, windowsHide: true });
+      await execFileAsync("git", ["config", "user.email", "hivemind@example.test"], { cwd: repo, windowsHide: true });
+      await writeFile(path.join(repo, "README.md"), "# Fixture\n");
+      await execFileAsync("git", ["add", "README.md"], { cwd: repo, windowsHide: true });
+      await execFileAsync("git", ["commit", "-m", "initial"], { cwd: repo, windowsHide: true });
+      await initProject(repo);
+    },
+    async (repo) => {
+      await run(repo);
+    },
+    "hivemind-workspace-action-test-"
+  );
 }
 
 async function writeContract(repo: string, taskId: string, allowedFiles: string[]): Promise<void> {

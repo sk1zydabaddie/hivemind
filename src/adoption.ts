@@ -234,14 +234,18 @@ export async function adoptVerifiedSet(
       return recordIndeterminateAttempt(
         repoRoot,
         startedData,
-        `adoption transitioned the base but finalization is incomplete: ${guarded.reason}`
+        `adoption transitioned the base but finalization is incomplete: ${guarded.reason}`,
+        candidate.value.commit,
+        true
       );
     }
     if (!head.ok || head.stdout.trim() !== manifest.base_commit) {
       return recordIndeterminateAttempt(
         repoRoot,
         startedData,
-        `adoption base state is indeterminate after failure: ${guarded.reason}`
+        `adoption base state is indeterminate after failure: ${guarded.reason}`,
+        head.ok ? head.stdout.trim() : null,
+        false
       );
     }
     return recordStartedFailure(repoRoot, startedData, guarded.reason);
@@ -259,13 +263,13 @@ export async function reconcileAdoptionsOnStartup(repoRoot: string): Promise<Ado
     const candidateTree = requiredEventString(started, "candidate_tree");
     const oldRef = requiredEventString(started, "pre_adoption_ref");
     if (!candidate.ok || !candidateTree.ok || !oldRef.ok) {
-      const recorded = await appendIndeterminate(repoRoot, started, "adoption intent is malformed");
+      const recorded = await appendIndeterminate(repoRoot, started, "adoption intent is malformed", null, false);
       if (!recorded.ok) return recorded;
       continue;
     }
     const head = await git(repoRoot, ["rev-parse", "HEAD"]);
     if (!head.ok) {
-      const recorded = await appendIndeterminate(repoRoot, started, `cannot read live base ref: ${head.reason}`);
+      const recorded = await appendIndeterminate(repoRoot, started, `cannot read live base ref: ${head.reason}`, null, true);
       if (!recorded.ok) return recorded;
       continue;
     }
@@ -279,13 +283,13 @@ export async function reconcileAdoptionsOnStartup(repoRoot: string): Promise<Ado
       continue;
     }
     if (head.stdout.trim() !== candidate.value) {
-      const recorded = await appendIndeterminate(repoRoot, started, "live base ref matches neither the pre-adoption nor candidate ref");
+      const recorded = await appendIndeterminate(repoRoot, started, "live base ref matches neither the pre-adoption nor candidate ref", head.stdout.trim(), false);
       if (!recorded.ok) return recorded;
       continue;
     }
     const tree = await git(repoRoot, ["rev-parse", "HEAD^{tree}"]);
     if (!tree.ok || tree.stdout.trim() !== candidateTree.value) {
-      const recorded = await appendIndeterminate(repoRoot, started, "candidate ref is present but its tree does not match the adoption intent");
+      const recorded = await appendIndeterminate(repoRoot, started, "candidate ref is present but its tree does not match the adoption intent", head.stdout.trim(), false);
       if (!recorded.ok) return recorded;
       continue;
     }
@@ -558,19 +562,76 @@ async function recordStartedFailure<T>(repoRoot: string, started: Record<string,
   return event.ok ? { ok: false, reason } : { ok: false, reason: `${reason}; failed to record adoption failure: ${event.reason}` };
 }
 
-async function recordIndeterminateAttempt<T>(repoRoot: string, started: Record<string, unknown>, reason: string): Promise<AdoptionResult<T>> {
-  const event = await appendEvent(repoRoot, { type: "adoption.indeterminate", task_id: null, data: { ...started, reason } });
+// The observed HEAD is what makes an indeterminate record actionable by hand:
+// with pre_adoption_ref, candidate_commit, and what HEAD actually is, a human
+// can decide for themselves whether the change landed.
+async function recordIndeterminateAttempt<T>(
+  repoRoot: string,
+  started: Record<string, unknown>,
+  reason: string,
+  observedHead: string | null,
+  resolvable: boolean
+): Promise<AdoptionResult<T>> {
+  const event = await appendEvent(repoRoot, {
+    type: "adoption.indeterminate",
+    task_id: null,
+    data: { ...started, reason, observed_head: observedHead, resolvable }
+  });
   return event.ok ? { ok: false, reason } : { ok: false, reason: `${reason}; failed to record indeterminate adoption: ${event.reason}` };
 }
 
-async function appendIndeterminate(repoRoot: string, started: HivemindEvent, reason: string): Promise<AdoptionResult<true>> {
-  const event = await appendEvent(repoRoot, { type: "adoption.indeterminate", task_id: null, data: { ...started.data, reason } });
+async function appendIndeterminate(
+  repoRoot: string,
+  started: HivemindEvent,
+  reason: string,
+  observedHead: string | null,
+  resolvable: boolean
+): Promise<AdoptionResult<true>> {
+  const event = await appendEvent(repoRoot, {
+    type: "adoption.indeterminate",
+    task_id: null,
+    data: { ...started.data, reason, observed_head: observedHead, resolvable }
+  });
   return event.ok ? { ok: true, value: true } : { ok: false, reason: `failed to record indeterminate adoption: ${event.reason}` };
 }
 
+/**
+ * An indeterminate outcome is not one thing.
+ *
+ * When the base provably transitioned and only finalization is incomplete,
+ * later evidence really can resolve it -- clearing whatever blocked cleanup
+ * lets reconciliation finish the adoption -- so that record stays open.
+ *
+ * When the system cannot determine the outcome at all (a malformed intent, a
+ * HEAD matching neither ref, a tree that contradicts the intent), reprocessing
+ * cannot turn "cannot determine" into a determination. It only re-appends the
+ * same conclusion on every daemon start, without bound. Those are terminal.
+ *
+ * Resolvable records are still bounded, so a condition that never clears -- and
+ * a record written before this field existed -- cannot append forever either.
+ */
+const MAX_INDETERMINATE_ATTEMPTS = 3;
+
 function openAdoptionStarts(events: HivemindEvent[]): HivemindEvent[] {
-  const terminal = new Set(events.filter((event) => ["adoption.completed", "adoption.failed"].includes(event.type)).map((event) => event.data.adoption_id));
-  return events.filter((event) => event.type === "adoption.started" && !terminal.has(event.data.adoption_id));
+  const resolved = new Set<unknown>();
+  const unresolvable = new Set<unknown>();
+  const attempts = new Map<unknown, number>();
+  for (const event of events) {
+    if (event.type === "adoption.completed" || event.type === "adoption.failed") {
+      resolved.add(event.data.adoption_id);
+      continue;
+    }
+    if (event.type !== "adoption.indeterminate") continue;
+    const id = event.data.adoption_id;
+    attempts.set(id, (attempts.get(id) ?? 0) + 1);
+    if (event.data.resolvable !== true) unresolvable.add(id);
+  }
+  return events.filter((event) =>
+    event.type === "adoption.started" &&
+    !resolved.has(event.data.adoption_id) &&
+    !unresolvable.has(event.data.adoption_id) &&
+    (attempts.get(event.data.adoption_id) ?? 0) < MAX_INDETERMINATE_ATTEMPTS
+  );
 }
 
 function reviewMatchesAuthorization(event: HivemindEvent, value: AdoptionAuthorization): boolean {

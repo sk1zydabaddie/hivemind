@@ -11,9 +11,11 @@ import { adoptVerifiedSet, inspectLatestAdoptionReadiness, reconcileAdoptionsOnS
 import { createDaemonServer } from "../src/daemon.js";
 import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
-import { integrateShadow } from "../src/integrate.js";
+import { captureIntegrationQueueExpectation, enqueueIntegrationPatch, integrateShadow } from "../src/integrate.js";
+import { loadIntegrationQueue } from "../src/integration-state.js";
 import { executeWorkspaceAction } from "../src/workspace-actions.js";
 import { inspectWorkspace } from "../src/workspace-inspection.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -92,6 +94,213 @@ test("a two-task verification set adopts through one commit or not at all", asyn
     const completed = (await requireEvents(repo)).filter((event) => event.type === "adoption.completed");
     assert.equal(completed.length, 1);
     assert.deepEqual(completed[0].data.task_ids, ["T-001", "T-002"]);
+  });
+});
+
+test("a second wave after a successful adoption integrates instead of mismatching on the drained queue", async () => {
+  await withAdoptionFixture(async ({ repo, verificationId }) => {
+    const review = await reviewVerifiedSetAdoption(repo, verificationId);
+    assert.equal(review.ok, true, review.ok ? undefined : review.reason);
+    if (!review.ok) return;
+    const adopted = await adoptVerifiedSet(repo, {
+      pending_adoption_id: review.value.pending_adoption_id,
+      verification_id: verificationId,
+      expected_base_head: review.value.expected_base_head,
+      expected_state_hash: review.value.expected_state_hash
+    });
+    assert.equal(adopted.ok, true, adopted.ok ? undefined : adopted.reason);
+
+    // The adopted entry is gone; nothing else has to remove it.
+    const drained = await loadIntegrationQueue(repo);
+    assert.equal(drained.ok, true, drained.ok ? undefined : drained.reason);
+    if (drained.ok) assert.deepEqual(drained.value, []);
+
+    const secondBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
+    await prepareSecondTask(repo, secondBase);
+    const queued = await enqueueIntegrationPatch(repo, "T-002");
+    assert.equal(queued.ok, true, queued.ok ? undefined : queued.reason);
+    assert.deepEqual(queued.ok ? queued.value.queue : [], ["T-002"], "the adopted task was not compacted out of the file");
+
+    // This is the exact check that failed wave two: the survivor identity must
+    // match the queue, which a never-drained queue made impossible.
+    const expectation = await captureIntegrationQueueExpectation(repo, ["T-002"]);
+    assert.equal(expectation.ok, true, expectation.ok ? undefined : expectation.reason);
+    if (!expectation.ok) return;
+
+    const second = await integrateShadow(repo, expectation.value);
+    assert.equal(second.ok, true, second.ok ? undefined : second.reason);
+    if (!second.ok) return;
+    assert.deepEqual(second.value.applied, ["T-002"]);
+    assert.equal(second.value.tests, "pass");
+    const passed = [...await requireEvents(repo)].reverse().find((event) => event.type === "integration.passed");
+    assert.deepEqual(passed?.data.applied, ["T-002"], "the second wave re-gated an already-adopted patch");
+  });
+});
+
+test("only adoption drains the queue; verification, failure, and indeterminacy leave it pending", async () => {
+  await withAdoptionFixture(async ({ repo }) => {
+    const pending = async (): Promise<string[]> => {
+      const queue = await loadIntegrationQueue(repo);
+      assert.equal(queue.ok, true, queue.ok ? undefined : queue.reason);
+      return queue.ok ? queue.value.map((entry) => entry.task_id) : [];
+    };
+    // withAdoptionFixture already ran a passing shadow verification.
+    assert.deepEqual(await pending(), ["T-001"], "a rehearsal must not drain an entry");
+
+    for (const type of ["adoption.failed", "adoption.indeterminate"] as const) {
+      await appendEvent(repo, {
+        type,
+        task_id: null,
+        data: { adoption_id: `A-${type}`, task_ids: ["T-001"], reason: "fixture" }
+      });
+      assert.deepEqual(await pending(), ["T-001"], `${type} must leave the patch pending`);
+    }
+
+    await appendEvent(repo, {
+      type: "adoption.completed",
+      task_id: null,
+      data: { adoption_id: "A-done", task_ids: ["T-001"], pre_adoption_ref: "a".repeat(40), adopted_ref: "b".repeat(40) }
+    });
+    assert.deepEqual(await pending(), [], "adoption did not drain the entry");
+
+    // A newer patch for an already-adopted task is pending again, so a drain
+    // can never swallow work submitted after the adoption.
+    await appendEvent(repo, { type: "patch.submitted", task_id: "T-001", data: { changed_files: 1 } });
+    assert.deepEqual(await pending(), ["T-001"], "a patch submitted after adoption was dropped");
+  });
+});
+
+test("an indeterminate adoption is terminal, surfaces once, and never re-appends across startups", async () => {
+  await withAdoptionFixture(async ({ repo, verificationId }) => {
+    // An adoption intent that reconciliation cannot resolve either way: the
+    // start is open, and its candidate ref is not what HEAD reads.
+    await appendEvent(repo, {
+      type: "adoption.started",
+      task_id: null,
+      data: {
+        adoption_id: "A-stuck",
+        pending_adoption_id: "PA-stuck",
+        verification_id: verificationId,
+        base_branch: "main",
+        pre_adoption_ref: "a".repeat(40),
+        candidate_commit: "b".repeat(40),
+        candidate_tree: "c".repeat(40),
+        task_ids: ["T-001"],
+        lease_requirements: []
+      }
+    });
+
+    const first = await reconcileAdoptionsOnStartup(repo);
+    assert.equal(first.ok, true, first.ok ? undefined : first.reason);
+    const afterFirst = (await requireEvents(repo)).filter((event) => event.type === "adoption.indeterminate");
+    assert.equal(afterFirst.length, 1, "the first startup did not record the indeterminate outcome");
+    assert.equal(afterFirst[0].data.adoption_id, "A-stuck");
+    // The refs a human needs to check by hand are on the record.
+    assert.equal(afterFirst[0].data.pre_adoption_ref, "a".repeat(40));
+    assert.equal(afterFirst[0].data.candidate_commit, "b".repeat(40));
+    assert.equal(typeof afterFirst[0].data.observed_head, "string");
+
+    // The dangerous direction: a second startup must add nothing. Before this
+    // fix every launch appended another record, forever.
+    const second = await reconcileAdoptionsOnStartup(repo);
+    assert.equal(second.ok, true, second.ok ? undefined : second.reason);
+    const afterSecond = (await requireEvents(repo)).filter((event) => event.type === "adoption.indeterminate");
+    assert.equal(afterSecond.length, 1, "a second startup re-appended an indeterminate outcome");
+
+    const view = await inspectWorkspace(repo);
+    assert.equal(view.ok, true, view.ok ? undefined : view.reason);
+    if (!view.ok) return;
+    const item = view.value.needs_you.find((entry) => entry.kind === "adoption_indeterminate");
+    assert.ok(item, "an indeterminate adoption was not surfaced to the user");
+    assert.equal(item?.action, null, "an indeterminate adoption must offer no automatic recovery");
+    assert.match(item?.detail ?? "", /check your branch by hand/iu);
+    assert.equal(view.value.needs_you.filter((entry) => entry.kind === "adoption_indeterminate").length, 1);
+
+    const task = view.value.tasks.find((entry) => entry.task_id === "T-001");
+    assert.notEqual(task?.state, "merged", "an unresolved adoption must never read as merged");
+    assert.notEqual(task?.state, "verified", "an unresolved adoption must never read as verified");
+  });
+});
+
+test("a resolvable indeterminate adoption that never resolves stops re-appending at its bound", async () => {
+  await withAdoptionFixture(async ({ repo, verificationId }) => {
+    // "cannot read live base ref" is the resolvable kind: a transient probe
+    // failure really can clear. It still may not append without bound.
+    await appendEvent(repo, {
+      type: "adoption.started",
+      task_id: null,
+      data: {
+        adoption_id: "A-transient",
+        pending_adoption_id: "PA-transient",
+        verification_id: verificationId,
+        base_branch: "main",
+        pre_adoption_ref: "a".repeat(40),
+        candidate_commit: "b".repeat(40),
+        candidate_tree: "c".repeat(40),
+        task_ids: ["T-001"],
+        lease_requirements: []
+      }
+    });
+    // Reconciliation resolves this one as unresolvable-by-HEAD, so drive the
+    // resolvable branch directly by recording repeated transient outcomes.
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const open = (await requireEvents(repo)).filter(
+        (event) => event.type === "adoption.indeterminate" && event.data.adoption_id === "A-transient"
+      ).length;
+      if (open >= 3) break;
+      await appendEvent(repo, {
+        type: "adoption.indeterminate",
+        task_id: null,
+        data: { adoption_id: "A-transient", verification_id: verificationId, task_ids: ["T-001"], reason: "cannot read live base ref", resolvable: true }
+      });
+    }
+
+    const before = (await requireEvents(repo)).length;
+    const reconciled = await reconcileAdoptionsOnStartup(repo);
+    assert.equal(reconciled.ok, true, reconciled.ok ? undefined : reconciled.reason);
+    assert.equal((await requireEvents(repo)).length, before, "a bounded-out adoption still re-appended on startup");
+  });
+});
+
+test("a failed adoption retracts the verified claim and a successful one still reads merged", async () => {
+  await withAdoptionFixture(async ({ repo, verificationId }) => {
+    const taskState = async (): Promise<string | undefined> => {
+      const view = await inspectWorkspace(repo);
+      assert.equal(view.ok, true, view.ok ? undefined : view.reason);
+      return view.ok ? view.value.tasks.find((entry) => entry.task_id === "T-001")?.state : undefined;
+    };
+    assert.equal(await taskState(), "verified", "the passing rehearsal should read verified before adoption");
+
+    await appendEvent(repo, {
+      type: "adoption.failed",
+      task_id: null,
+      data: { adoption_id: "A-fail", verification_id: verificationId, task_ids: ["T-001"], phase: "base_transition", reason: "fixture refusal" }
+    });
+    assert.equal(await taskState(), "blocked", "a failed adoption still read as verified");
+
+    const failedView = await inspectWorkspace(repo);
+    assert.equal(failedView.ok, true);
+    if (failedView.ok) {
+      const item = failedView.value.needs_you.find((entry) => entry.kind === "adoption_failed");
+      assert.ok(item, "a failed adoption was not surfaced");
+      assert.equal(item?.action, null);
+    }
+
+    // A later successful adoption of the same set resolves it and reads merged.
+    await appendEvent(repo, {
+      type: "adoption.completed",
+      task_id: null,
+      data: {
+        adoption_id: "A-ok", verification_id: verificationId, task_ids: ["T-001"],
+        pre_adoption_ref: "a".repeat(40), adopted_ref: "b".repeat(40)
+      }
+    });
+    assert.equal(await taskState(), "merged", "a successful adoption must read merged");
+    const resolved = await inspectWorkspace(repo);
+    assert.equal(resolved.ok, true);
+    if (resolved.ok) {
+      assert.equal(resolved.value.needs_you.some((entry) => entry.kind === "adoption_failed"), false, "a resolved failure still demands attention");
+    }
   });
 });
 
@@ -480,6 +689,22 @@ test("manager and MCP cannot launch the fresh-check action", async () => {
   assert.doesNotMatch(mcp, /verification\.rerun|reverifyQueuedPatchSet/u);
 });
 
+async function prepareSecondTask(repo: string, baseCommit: string): Promise<void> {
+  await mkdir(path.join(repo, ".hivemind", "patches", "T-002"), { recursive: true });
+  await writeFile(path.join(repo, ".hivemind", "tasks", "T-002.contract.json"), `${JSON.stringify({
+    task_id: "T-002", title: "Second wave", agent_role: "builder", routing_task_type: "integration",
+    base_commit: baseCommit, acceptance_criterion: "The second wave is adopted.",
+    allowed_files: ["feature.txt"], allowed_file_intents: { "feature.txt": "modify" }, read_only_files: [], forbidden_files: [],
+    allowed_symbols: [], forbidden_symbols: [], must_not_change: [], required_tests: ["node -e \"process.exit(0)\""], patch_requirements: []
+  }, null, 2)}\n`);
+  await writeFile(path.join(repo, "feature.txt"), "base feature\nsecond wave\n");
+  const patch = await gitRaw(repo, ["diff", "--no-renames", baseCommit]);
+  await writeFile(path.join(repo, ".hivemind", "patches", "T-002", "diff.patch"), patch);
+  await git(repo, ["reset", "--hard", baseCommit]);
+  await appendEvent(repo, { type: "patch.submitted", task_id: "T-002", data: { patch_path: ".hivemind/patches/T-002/diff.patch", changed_files: 1 } });
+  await appendEvent(repo, { type: "patch.accepted", task_id: "T-002", data: { verdict: "accept", reason: "scope accepted" } });
+}
+
 async function withAdoptionFixture(run: (input: { repo: string; baseCommit: string; verificationId: string }) => Promise<void>): Promise<void> {
   await withRepo(async ({ repo, baseCommit }) => {
     await prepareTask(repo, baseCommit);
@@ -493,26 +718,30 @@ async function withAdoptionFixture(run: (input: { repo: string; baseCommit: stri
 }
 
 async function withRepo(run: (input: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
-  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-adoption-test-"));
-  try {
-    await git(repo, ["init"]);
-    await git(repo, ["config", "user.name", "Hivemind Test"]);
-    await git(repo, ["config", "user.email", "hivemind@example.test"]);
-    await git(repo, ["checkout", "-b", "main"]);
-    await writeFile(path.join(repo, "README.md"), "# Fixture\n");
-    await writeFile(path.join(repo, "feature.txt"), "base feature\n");
-    await git(repo, ["add", "README.md", "feature.txt"]);
-    await git(repo, ["commit", "-m", "initial"]);
-    await initProject(repo);
-    await mkdir(path.join(repo, ".hivemind", "integration"), { recursive: true });
-    const configPath = path.join(repo, ".hivemind", "config.json");
-    const config = JSON.parse(await readFile(configPath, "utf8"));
-    config.test_command = "node -e \"process.exit(0)\"";
-    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
-    await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
-  } finally {
-    await cleanup(repo);
-  }
+  await withTemplateRepo(
+    "adoption",
+    async (repo) => {
+      await git(repo, ["init"]);
+      await git(repo, ["config", "user.name", "Hivemind Test"]);
+      await git(repo, ["config", "user.email", "hivemind@example.test"]);
+      await git(repo, ["checkout", "-b", "main"]);
+      await writeFile(path.join(repo, "README.md"), "# Fixture\n");
+      await writeFile(path.join(repo, "feature.txt"), "base feature\n");
+      await git(repo, ["add", "README.md", "feature.txt"]);
+      await git(repo, ["commit", "-m", "initial"]);
+      await initProject(repo);
+      await mkdir(path.join(repo, ".hivemind", "integration"), { recursive: true });
+      const configPath = path.join(repo, ".hivemind", "config.json");
+      const config = JSON.parse(await readFile(configPath, "utf8"));
+      config.test_command = "node -e \"process.exit(0)\"";
+      await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+    },
+    async (repo) => {
+      await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
+    },
+    "hivemind-adoption-test-",
+    async (repo) => { await cleanup(repo); }
+  );
 }
 
 async function prepareTask(repo: string, baseCommit: string): Promise<void> {

@@ -325,6 +325,11 @@ export function applyEventMessage(
       if (task) {
         task.state = "submitted";
         task.patch.submitted = true;
+        // A new patch supersedes the previous analysis. Without this reset the
+        // stale verdict would keep reading "accept" and re-verify the task.
+        task.patch.analyzed = false;
+        task.patch.verdict = null;
+        task.patch.reason = null;
         task.patch.changed_files =
           readNumber(event.data.changed_files) ?? task.patch.changed_files;
       }
@@ -399,6 +404,9 @@ export function applyEventMessage(
       projection.integration.lastEvent = event;
       for (const taskId of projection.integration.applied) {
         const appliedTask = ensureTask(projection, taskId);
+        // Mirrors Core's integratedTaskIdsFromEvents: an integration.passed is
+        // only proof while an accepted current patch still backs it.
+        if (appliedTask.patch.verdict !== "accept") continue;
         appliedTask.state = "verified";
         appliedTask.integration = "passed";
       }
@@ -413,6 +421,38 @@ export function applyEventMessage(
         adoptedTask.issue = null;
       }
       break;
+    case "adoption.failed":
+    case "adoption.indeterminate": {
+      // Adoption is the only transition that touches the user's branch. A
+      // failed or undeterminable one must retract the verified claim the
+      // earlier integration.passed made, not fall silent behind it.
+      const indeterminate = event.type === "adoption.indeterminate";
+      projection.integration.status = indeterminate ? "adoption indeterminate" : "adoption failed";
+      projection.integration.lastEvent = event;
+      for (const taskId of readStringArray(event.data.task_ids) ?? []) {
+        const affected = ensureTask(projection, taskId);
+        if (affected.state === "merged") continue;
+        affected.state = "blocked";
+        affected.integration = projection.integration.status;
+        affected.issue =
+          readString(event.data.plain_reason) ??
+          readString(event.data.reason) ??
+          (indeterminate ? "We cannot tell whether this landed" : "The merge did not happen");
+      }
+      break;
+    }
+    case "verification.rerun_failed":
+      // A re-check the user explicitly asked for must report its outcome.
+      projection.integration.status = "recheck failed";
+      projection.integration.lastEvent = event;
+      for (const taskId of readStringArray(event.data.task_ids) ?? []) {
+        const affected = ensureTask(projection, taskId);
+        if (affected.state === "merged") continue;
+        affected.state = "blocked";
+        affected.integration = "recheck failed";
+        affected.issue = readString(event.data.reason) ?? "The re-check did not complete";
+      }
+      break;
     case "integration.failed":
     case "integration.blocked":
       projection.integration.status =
@@ -424,6 +464,17 @@ export function applyEventMessage(
       projection.integration.lastEvent = event;
       if (task) {
         task.integration = projection.integration.status;
+      }
+      // A failed or blocked integration retracts the verified claim it made.
+      // These events carry task_id null, so the applied list is the only place
+      // the affected tasks appear.
+      for (const taskId of readStringArray(event.data.applied) ?? []) {
+        const appliedTask = projection.tasks[taskId];
+        if (appliedTask === undefined) continue;
+        appliedTask.integration = projection.integration.status;
+        if (appliedTask.state === "verified") {
+          appliedTask.state = appliedTask.patch.verdict === "accept" ? "accepted" : "submitted";
+        }
       }
       break;
     case "integration.low_confidence":
