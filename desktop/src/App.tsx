@@ -1,6 +1,18 @@
-import { BrainCircuit, Check, FolderGit2, History, LayoutList, Network } from "lucide-react";
+import {
+  BrainCircuit,
+  Check,
+  FolderGit2,
+  History,
+  LayoutList,
+  Network,
+  Settings,
+  Terminal
+} from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { AgentSetupDialog } from "@/components/agent-setup-dialog";
+import { SettingsDialog } from "@/components/settings-dialog";
+import { SetupScreen } from "@/components/workspace/setup-screen";
 import { HistoryTab } from "@/components/workspace/history-tab";
 import { MemoryTab } from "@/components/workspace/memory-tab";
 import { SwarmTab } from "@/components/workspace/swarm-tab";
@@ -38,6 +50,8 @@ export default function App(): React.JSX.Element {
   const [projectOpen, setProjectOpen] = useState(false);
   const [section, setSection] = useState("work");
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [agentOpen, setAgentOpen] = useState(false);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -70,6 +84,9 @@ export default function App(): React.JSX.Element {
   );
   const projectName = projectNameFromPath(visibleProjectPath);
   const shellUpdateRequired = workspace.connectionState === "update required";
+  /* Only the daemon answering with real project state counts as ready. Until
+     then this is a setup problem, not an empty workspace. */
+  const ready = workspace.inspection !== null;
 
   return (
     <TooltipProvider delayDuration={180}>
@@ -88,6 +105,7 @@ export default function App(): React.JSX.Element {
             </span>
           </div>
 
+          {ready ? (
           <TabsList aria-label="Workspace sections">
             <TabsTrigger value="work">
               <LayoutList aria-hidden="true" />
@@ -106,12 +124,28 @@ export default function App(): React.JSX.Element {
               History
             </TabsTrigger>
           </TabsList>
+          ) : null}
 
           <div className="ml-auto flex items-center gap-2.5">
             <ConnectionReadout
               detail={workspace.connectionDetail}
               state={workspace.connectionState}
             />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  aria-label="Settings"
+                  className="size-9 bg-panel shadow-panel"
+                  size="icon"
+                  type="button"
+                  variant="outline"
+                  onClick={() => setSettingsOpen(true)}
+                >
+                  <Settings aria-hidden="true" className="text-muted" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Settings</TooltipContent>
+            </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -148,6 +182,18 @@ export default function App(): React.JSX.Element {
           </section>
         ) : null}
 
+        {ready ? null : (
+          <SetupScreen
+            connectionDetail={workspace.connectionDetail}
+            connectionState={workspace.connectionState}
+            projectPath={visibleProjectPath}
+            onChooseProject={() => setProjectOpen(true)}
+            onConnectAgent={() => setAgentOpen(true)}
+          />
+        )}
+
+        {ready ? (
+        <>
         <TabsContent value="work">
           <WorkTab
             actionError={workspace.actionError}
@@ -182,7 +228,28 @@ export default function App(): React.JSX.Element {
             onAction={workspace.performAction}
           />
         </TabsContent>
+        </>
+        ) : null}
       </Tabs>
+
+      <SettingsDialog
+        busy={false}
+        inspection={workspace.inspection}
+        open={settingsOpen}
+        projectPath={visibleProjectPath}
+        onAction={workspace.performAction}
+        onChooseProject={() => {
+          setSettingsOpen(false);
+          setProjectOpen(true);
+        }}
+        onConnectAgent={() => {
+          setSettingsOpen(false);
+          setAgentOpen(true);
+        }}
+        onOpenChange={setSettingsOpen}
+      />
+
+      <AgentSetupDialog open={agentOpen} onOpenChange={setAgentOpen} />
 
       <CommandDialog
         description="Jump to a section or open a project"
@@ -211,6 +278,14 @@ export default function App(): React.JSX.Element {
             <CommandItem onSelect={() => runCommand(() => setProjectOpen(true))}>
               <FolderGit2 aria-hidden="true" />
               Open a different project
+            </CommandItem>
+            <CommandItem onSelect={() => runCommand(() => setAgentOpen(true))}>
+              <Terminal aria-hidden="true" />
+              Set up a coding agent
+            </CommandItem>
+            <CommandItem onSelect={() => runCommand(() => setSettingsOpen(true))}>
+              <Settings aria-hidden="true" />
+              Settings
             </CommandItem>
           </CommandGroup>
           <CommandGroup heading="Go to">

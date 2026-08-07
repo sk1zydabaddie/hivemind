@@ -30,7 +30,12 @@ describe("React workspace boundary", () => {
       "src/hooks/use-workspace.ts",
       "src/lib/projection.ts",
       "src/lib/project-session.ts",
-      "src/lib/swarm-model.ts"
+      "src/lib/swarm-model.ts",
+      "src/lib/providers.ts",
+      "src/lib/work-thread.ts",
+      "src/components/settings-dialog.tsx",
+      "src/components/agent-setup-dialog.tsx",
+      "src/components/workspace/setup-screen.tsx"
     ];
     const source = (
       await Promise.all(
@@ -295,6 +300,35 @@ describe("React workspace boundary", () => {
 
     // Nothing offers a control that cannot do anything.
     expect(work).toMatch(/if \(!canOpenAttention\(item\)\) return null;/u);
+  });
+
+  test("setup offers only what actually works, and asks for the roles the app really uses", async () => {
+    const providers = await readFile(path.join(desktopRoot, "src", "lib", "providers.ts"), "utf8");
+    const work = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"),
+      "utf8"
+    );
+    const { PROVIDERS, REQUIRED_ROLES } = (await import("../src/lib/providers")) as typeof import("../src/lib/providers");
+
+    // No provider picker implying integrations that do not exist: anything not
+    // supported carries a specific reason and offers no profile to install.
+    expect(PROVIDERS.filter((provider) => provider.status === "supported")).toHaveLength(1);
+    for (const provider of PROVIDERS) {
+      if (provider.status === "supported") {
+        expect(provider.profile).not.toBeNull();
+        continue;
+      }
+      expect(provider.profile).toBeNull();
+      expect(provider.caveat ?? "").not.toBe("");
+    }
+
+    // Core resolves an adapter profile by the tool name the client sends, so the
+    // setup instructions must name exactly the roles the Work tab asks for.
+    const requested = [...work.matchAll(/tool: "([a-z]+)"/gu)].map((match) => match[1]);
+    expect(new Set(requested)).toEqual(new Set(REQUIRED_ROLES.map((role) => role.tool)));
+
+    // The catalogue is data, not a hard-coded shape in the UI.
+    expect(providers).toMatch(/export const PROVIDERS/u);
   });
 
   test("the run thread is built from durable daemon events, not client memory", async () => {
