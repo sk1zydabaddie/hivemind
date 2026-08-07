@@ -1,5 +1,5 @@
 import { BrainCircuit, Check, FolderGit2, History, LayoutList, Network } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { HistoryTab } from "@/components/workspace/history-tab";
 import { MemoryTab } from "@/components/workspace/memory-tab";
@@ -14,6 +14,14 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog";
+import {
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList
+} from "@/components/ui/command";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Tooltip,
@@ -28,6 +36,24 @@ export default function App(): React.JSX.Element {
   const workspace = useWorkspace();
   const [projectInput, setProjectInput] = useState("");
   const [projectOpen, setProjectOpen] = useState(false);
+  const [section, setSection] = useState("work");
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const runCommand = (command: () => void): void => {
+    setPaletteOpen(false);
+    command();
+  };
 
   const submitProject = async (
     event: React.FormEvent<HTMLFormElement>
@@ -49,7 +75,11 @@ export default function App(): React.JSX.Element {
     <TooltipProvider delayDuration={180}>
       {/* One toolbar on the canvas carries the brand, the sections, the project
           and the connection. Everything below it is a panel. */}
-      <Tabs className="h-screen overflow-hidden bg-canvas" defaultValue="work">
+      <Tabs
+        className="h-screen overflow-hidden bg-canvas"
+        value={section}
+        onValueChange={setSection}
+      >
         <header className="flex h-14 shrink-0 items-center gap-7 px-5">
           <div className="flex items-center gap-2.5 pr-1">
             <BrandMark />
@@ -153,6 +183,54 @@ export default function App(): React.JSX.Element {
           />
         </TabsContent>
       </Tabs>
+
+      <CommandDialog
+        description="Jump to a section or open a project"
+        open={paletteOpen}
+        title="Commands"
+        onOpenChange={setPaletteOpen}
+      >
+        <CommandInput placeholder="What do you want to do?" />
+        <CommandList>
+          <CommandEmpty>Nothing matches that.</CommandEmpty>
+          <CommandGroup heading="Work">
+            <CommandItem
+              onSelect={() =>
+                runCommand(() => {
+                  setSection("work");
+                  window.setTimeout(
+                    () => document.getElementById("work-composer")?.focus(),
+                    0
+                  );
+                })
+              }
+            >
+              <LayoutList aria-hidden="true" />
+              Describe what you want built
+            </CommandItem>
+            <CommandItem onSelect={() => runCommand(() => setProjectOpen(true))}>
+              <FolderGit2 aria-hidden="true" />
+              Open a different project
+            </CommandItem>
+          </CommandGroup>
+          <CommandGroup heading="Go to">
+            {[
+              { value: "work", label: "Work", icon: <LayoutList aria-hidden="true" /> },
+              { value: "swarm", label: "Swarm", icon: <Network aria-hidden="true" /> },
+              { value: "memory", label: "Memory", icon: <BrainCircuit aria-hidden="true" /> },
+              { value: "history", label: "History", icon: <History aria-hidden="true" /> }
+            ].map((entry) => (
+              <CommandItem
+                key={entry.value}
+                onSelect={() => runCommand(() => setSection(entry.value))}
+              >
+                {entry.icon}
+                {entry.label}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        </CommandList>
+      </CommandDialog>
 
       <Dialog open={projectOpen} onOpenChange={setProjectOpen}>
         <DialogContent className="sm:max-w-[540px]">
