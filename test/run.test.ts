@@ -30,6 +30,7 @@ import { authorizeManualTask, reviewManualTaskForAuthorization } from "../src/pl
 import { reconcileTaskRunOnStartup, reconcileTaskRunsOnStartup, requestTaskStop } from "../src/task-control.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -1253,20 +1254,24 @@ async function waitForEvent(repo: string, type: string, taskId: string): Promise
 }
 
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
-  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-run-test-"));
-  try {
-    await git(repo, ["init"]);
-    await git(repo, ["config", "user.name", "Hivemind Test"]);
-    await git(repo, ["config", "user.email", "hivemind@example.test"]);
-    await writeFile(path.join(repo, "README.md"), "# Fixture\n");
-    await git(repo, ["add", "README.md"]);
-    await git(repo, ["commit", "-m", "initial"]);
-    await initProject(repo);
-    await createRatifiedSpec(repo);
-    await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
-  } finally {
-    await cleanupTempRepo(repo);
-  }
+  await withTemplateRepo(
+    "run",
+    async (repo) => {
+      await git(repo, ["init"]);
+      await git(repo, ["config", "user.name", "Hivemind Test"]);
+      await git(repo, ["config", "user.email", "hivemind@example.test"]);
+      await writeFile(path.join(repo, "README.md"), "# Fixture\n");
+      await git(repo, ["add", "README.md"]);
+      await git(repo, ["commit", "-m", "initial"]);
+      await initProject(repo);
+      await createRatifiedSpec(repo);
+    },
+    async (repo) => {
+      await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
+    },
+    "hivemind-run-test-",
+    async (repo) => { await cleanupTempRepo(repo); }
+  );
 }
 
 async function cleanupTempRepo(repo: string): Promise<void> {

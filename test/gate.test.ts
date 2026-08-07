@@ -9,6 +9,7 @@ import test from "node:test";
 import type { TaskContract } from "../src/contract.js";
 import type { DecisionConfig } from "../src/decision.js";
 import { runGate } from "../src/gate.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -232,21 +233,25 @@ function configFor(repo: string): DecisionConfig {
 }
 
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
-  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-gate-test-"));
-  try {
-    await git(repo, ["init"]);
-    await git(repo, ["config", "user.name", "Hivemind Test"]);
-    await git(repo, ["config", "user.email", "hivemind@example.test"]);
-    await writeFile(path.join(repo, "README.md"), "# Fixture\n");
-    await writeFile(path.join(repo, "delete-me.txt"), "delete me\n");
-    await writeFile(path.join(repo, "outside.txt"), "outside\n");
-    await writeFile(path.join(repo, "script.sh"), "#!/bin/sh\necho fixture\n");
-    await git(repo, ["add", "README.md", "delete-me.txt", "outside.txt", "script.sh"]);
-    await git(repo, ["commit", "-m", "initial"]);
-    await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
-  } finally {
-    await cleanupTempRepo(repo);
-  }
+  await withTemplateRepo(
+    "gate",
+    async (repo) => {
+      await git(repo, ["init"]);
+      await git(repo, ["config", "user.name", "Hivemind Test"]);
+      await git(repo, ["config", "user.email", "hivemind@example.test"]);
+      await writeFile(path.join(repo, "README.md"), "# Fixture\n");
+      await writeFile(path.join(repo, "delete-me.txt"), "delete me\n");
+      await writeFile(path.join(repo, "outside.txt"), "outside\n");
+      await writeFile(path.join(repo, "script.sh"), "#!/bin/sh\necho fixture\n");
+      await git(repo, ["add", "README.md", "delete-me.txt", "outside.txt", "script.sh"]);
+      await git(repo, ["commit", "-m", "initial"]);
+    },
+    async (repo) => {
+      await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
+    },
+    "hivemind-gate-test-",
+    async (repo) => { await cleanupTempRepo(repo); }
+  );
 }
 
 async function cleanupTempRepo(repo: string): Promise<void> {

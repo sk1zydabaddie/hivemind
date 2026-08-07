@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { appendEvent, readEvents } from "../src/events.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 test("appendEvent writes newline-delimited JSON and preserves existing events", async () => {
   await withTempRepo(async (repo) => {
@@ -161,10 +162,14 @@ test("appendEvent rejects invalid event shape before writing", async () => {
 });
 
 async function withTempRepo(run: (repo: string) => Promise<void>): Promise<void> {
-  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-events-test-"));
-  try {
-    await run(repo);
-  } finally {
-    await rm(repo, { recursive: true, force: true });
-  }
+  await withTemplateRepo(
+    "events",
+    async (repo) => {
+
+    },
+    async (repo) => {
+      await run(repo);
+    },
+    "hivemind-events-test-"
+  );
 }

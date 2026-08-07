@@ -24,6 +24,7 @@ import {
   writeMeteredUsageArtifact,
   type QuotaLedger
 } from "../src/resource-ledger.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -725,19 +726,22 @@ test("quota CLI rejects invalid usage", async () => {
 });
 
 async function withTempRepo(run: (context: { repo: string }) => Promise<void>): Promise<void> {
-  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-resource-ledger-test-"));
-  try {
-    await git(repo, ["init"]);
-    await git(repo, ["config", "user.name", "Hivemind Test"]);
-    await git(repo, ["config", "user.email", "hivemind@example.test"]);
-    await writeFile(path.join(repo, "README.md"), "# Fixture\n");
-    await git(repo, ["add", "README.md"]);
-    await git(repo, ["commit", "-m", "initial"]);
-    await initProject(repo);
-    await run({ repo });
-  } finally {
-    await rm(repo, { recursive: true, force: true, maxRetries: 3 });
-  }
+  await withTemplateRepo(
+    "resource-ledger",
+    async (repo) => {
+      await git(repo, ["init"]);
+      await git(repo, ["config", "user.name", "Hivemind Test"]);
+      await git(repo, ["config", "user.email", "hivemind@example.test"]);
+      await writeFile(path.join(repo, "README.md"), "# Fixture\n");
+      await git(repo, ["add", "README.md"]);
+      await git(repo, ["commit", "-m", "initial"]);
+      await initProject(repo);
+    },
+    async (repo) => {
+      await run({ repo });
+    },
+    "hivemind-resource-ledger-test-"
+  );
 }
 
 async function setResourcePolicy(repo: string, resourcePolicy: Record<string, unknown>): Promise<void> {

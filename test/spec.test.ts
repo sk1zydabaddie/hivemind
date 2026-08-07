@@ -11,6 +11,7 @@ import { markIdeationConvergence, recordIdeationRound, startIdeationSession } fr
 import { initProject } from "../src/init.js";
 import { createSpec, ratifySpec } from "../src/spec.js";
 import { authorizePlanlessManualTaskIfEligible } from "./support/manual-task.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -153,19 +154,22 @@ test("draft spec blocks planning and lease grants until ratified", async () => {
 });
 
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
-  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-spec-test-"));
-  try {
-    await git(repo, ["init"]);
-    await git(repo, ["config", "user.name", "Hivemind Test"]);
-    await git(repo, ["config", "user.email", "hivemind@example.test"]);
-    await writeFile(path.join(repo, "README.md"), "# Fixture\n");
-    await git(repo, ["add", "README.md"]);
-    await git(repo, ["commit", "-m", "initial"]);
-    await initProject(repo);
-    await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
-  } finally {
-    await rm(repo, { recursive: true, force: true, maxRetries: 3 });
-  }
+  await withTemplateRepo(
+    "spec",
+    async (repo) => {
+      await git(repo, ["init"]);
+      await git(repo, ["config", "user.name", "Hivemind Test"]);
+      await git(repo, ["config", "user.email", "hivemind@example.test"]);
+      await writeFile(path.join(repo, "README.md"), "# Fixture\n");
+      await git(repo, ["add", "README.md"]);
+      await git(repo, ["commit", "-m", "initial"]);
+      await initProject(repo);
+    },
+    async (repo) => {
+      await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
+    },
+    "hivemind-spec-test-"
+  );
 }
 
 async function writeContract(repo: string, taskId: string, baseCommit: string, allowedFiles: string[]): Promise<void> {

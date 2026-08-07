@@ -21,6 +21,7 @@ import {
 import { createSpec, ratifySpec } from "../src/spec.js";
 import { captureVerificationInputs, writeVerificationSet } from "../src/verification-set.js";
 import { admitExecutionWave } from "../src/wave-admission.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -170,24 +171,27 @@ test("sequence admission preserves one-at-a-time plan order", async () => {
 });
 
 async function withTempRepo(run: (context: { repo: string }) => Promise<void>): Promise<void> {
-  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-wave-admission-test-"));
-  try {
-    await git(repo, ["init"]);
-    await git(repo, ["config", "user.name", "Hivemind Test"]);
-    await git(repo, ["config", "user.email", "hivemind@example.test"]);
-    await mkdir(path.join(repo, "src"), { recursive: true });
-    await writeFile(path.join(repo, "README.md"), "# Fixture\n");
-    await writeFile(path.join(repo, "src", "one.ts"), "export const one = 1;\n");
-    await writeFile(path.join(repo, "src", "two.ts"), "export const two = 2;\n");
-    await writeFile(path.join(repo, "src", "shared.ts"), "export const shared = true;\n");
-    await git(repo, ["add", "."]);
-    await git(repo, ["commit", "-m", "initial"]);
-    await initProject(repo);
-    await createRatifiedSpec(repo);
-    await run({ repo });
-  } finally {
-    await rm(repo, { recursive: true, force: true, maxRetries: 3 });
-  }
+  await withTemplateRepo(
+    "wave-admission",
+    async (repo) => {
+      await git(repo, ["init"]);
+      await git(repo, ["config", "user.name", "Hivemind Test"]);
+      await git(repo, ["config", "user.email", "hivemind@example.test"]);
+      await mkdir(path.join(repo, "src"), { recursive: true });
+      await writeFile(path.join(repo, "README.md"), "# Fixture\n");
+      await writeFile(path.join(repo, "src", "one.ts"), "export const one = 1;\n");
+      await writeFile(path.join(repo, "src", "two.ts"), "export const two = 2;\n");
+      await writeFile(path.join(repo, "src", "shared.ts"), "export const shared = true;\n");
+      await git(repo, ["add", "."]);
+      await git(repo, ["commit", "-m", "initial"]);
+      await initProject(repo);
+      await createRatifiedSpec(repo);
+    },
+    async (repo) => {
+      await run({ repo });
+    },
+    "hivemind-wave-admission-test-"
+  );
 }
 
 async function prepareRatifiedPlan(repo: string, proposal: Record<string, unknown>): Promise<void> {

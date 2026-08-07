@@ -9,6 +9,7 @@ import test from "node:test";
 
 import { loadContract, normalizeContract, validateContract } from "../src/contract.js";
 import { initProject } from "../src/init.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -292,13 +293,16 @@ test("CLI contract validate reports missing contract files", async () => {
 });
 
 async function withTempRepo(run: (repo: string) => Promise<void>): Promise<void> {
-  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-contract-test-"));
-  try {
-    await git(repo, ["init"]);
-    await run(repo);
-  } finally {
-    await rm(repo, { recursive: true, force: true });
-  }
+  await withTemplateRepo(
+    "contract",
+    async (repo) => {
+      await git(repo, ["init"]);
+    },
+    async (repo) => {
+      await run(repo);
+    },
+    "hivemind-contract-test-"
+  );
 }
 
 async function writeContract(repo: string, taskId: string, contract: unknown, bom = false): Promise<void> {

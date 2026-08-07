@@ -20,6 +20,7 @@ import { releaseLease, requestLease, requestLeaseForContract } from "../src/leas
 import { getProcessLiveness } from "../src/process-liveness.js";
 import { createRatifiedSpec } from "./support/spec.js";
 import { authorizePlanlessManualTaskIfEligible } from "./support/manual-task.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -463,23 +464,26 @@ test("CLI lease rejects invalid usage", async () => {
 });
 
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
-  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-lease-test-"));
-  try {
-    await git(repo, ["init"]);
-    await git(repo, ["config", "user.name", "Hivemind Test"]);
-    await git(repo, ["config", "user.email", "hivemind@example.test"]);
-    await mkdir(path.join(repo, "src"), { recursive: true });
-    await writeFile(path.join(repo, "README.md"), "# Fixture\n");
-    await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = true;\n");
-    await writeFile(path.join(repo, "src", "other.ts"), "export const other = true;\n");
-    await git(repo, ["add", "README.md", "src/feature.ts", "src/other.ts"]);
-    await git(repo, ["commit", "-m", "initial"]);
-    await initProject(repo);
-    await createRatifiedSpec(repo);
-    await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
-  } finally {
-    await rm(repo, { recursive: true, force: true });
-  }
+  await withTemplateRepo(
+    "lease",
+    async (repo) => {
+      await git(repo, ["init"]);
+      await git(repo, ["config", "user.name", "Hivemind Test"]);
+      await git(repo, ["config", "user.email", "hivemind@example.test"]);
+      await mkdir(path.join(repo, "src"), { recursive: true });
+      await writeFile(path.join(repo, "README.md"), "# Fixture\n");
+      await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = true;\n");
+      await writeFile(path.join(repo, "src", "other.ts"), "export const other = true;\n");
+      await git(repo, ["add", "README.md", "src/feature.ts", "src/other.ts"]);
+      await git(repo, ["commit", "-m", "initial"]);
+      await initProject(repo);
+      await createRatifiedSpec(repo);
+    },
+    async (repo) => {
+      await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
+    },
+    "hivemind-lease-test-"
+  );
 }
 
 async function writeContract(

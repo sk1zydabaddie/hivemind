@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { initProject } from "../src/init.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -63,21 +64,25 @@ test("protected merge allows an in-scope Hivemind change to merge", async () => 
 });
 
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
-  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-self-protect-test-"));
-  try {
-    await git(repo, ["init"]);
-    await git(repo, ["config", "user.name", "Hivemind Test"]);
-    await git(repo, ["config", "user.email", "hivemind@example.test"]);
-    await git(repo, ["checkout", "-b", "main"]);
-    await writeFile(path.join(repo, "README.md"), "# Fixture\n");
-    await writeFile(path.join(repo, "outside.txt"), "outside base\n");
-    await git(repo, ["add", "README.md", "outside.txt"]);
-    await git(repo, ["commit", "-m", "initial"]);
-    await initProject(repo);
-    await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
-  } finally {
-    await cleanupTempRepo(repo);
-  }
+  await withTemplateRepo(
+    "self-protect",
+    async (repo) => {
+      await git(repo, ["init"]);
+      await git(repo, ["config", "user.name", "Hivemind Test"]);
+      await git(repo, ["config", "user.email", "hivemind@example.test"]);
+      await git(repo, ["checkout", "-b", "main"]);
+      await writeFile(path.join(repo, "README.md"), "# Fixture\n");
+      await writeFile(path.join(repo, "outside.txt"), "outside base\n");
+      await git(repo, ["add", "README.md", "outside.txt"]);
+      await git(repo, ["commit", "-m", "initial"]);
+      await initProject(repo);
+    },
+    async (repo) => {
+      await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
+    },
+    "hivemind-self-protect-test-",
+    async (repo) => { await cleanupTempRepo(repo); }
+  );
 }
 
 async function createFeatureBranch(repo: string, branch: string, edit: () => Promise<void>): Promise<string> {

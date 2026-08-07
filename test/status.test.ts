@@ -19,6 +19,7 @@ import { submitTask } from "../src/submit.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
 import { authorizePlanlessManualTaskIfEligible } from "./support/manual-task.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -373,24 +374,28 @@ test("M2.6 MVP gate runs two fake agents in parallel, rejects out-of-scope work,
 });
 
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
-  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-status-test-"));
-  try {
-    await git(repo, ["init"]);
-    await git(repo, ["config", "user.name", "Hivemind Test"]);
-    await git(repo, ["config", "user.email", "hivemind@example.test"]);
-    await git(repo, ["checkout", "-b", "main"]);
-    await mkdir(path.join(repo, "src"), { recursive: true });
-    await writeFile(path.join(repo, "README.md"), "# Fixture\n");
-    await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = 'base';\n");
-    await git(repo, ["add", "README.md", "src/feature.ts"]);
-    await git(repo, ["commit", "-m", "initial"]);
-    await initProject(repo);
-    await createRatifiedSpec(repo);
-    await mkdir(path.join(repo, ".hivemind", "integration"), { recursive: true });
-    await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
-  } finally {
-    await cleanupTempRepo(repo);
-  }
+  await withTemplateRepo(
+    "status",
+    async (repo) => {
+      await git(repo, ["init"]);
+      await git(repo, ["config", "user.name", "Hivemind Test"]);
+      await git(repo, ["config", "user.email", "hivemind@example.test"]);
+      await git(repo, ["checkout", "-b", "main"]);
+      await mkdir(path.join(repo, "src"), { recursive: true });
+      await writeFile(path.join(repo, "README.md"), "# Fixture\n");
+      await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = 'base';\n");
+      await git(repo, ["add", "README.md", "src/feature.ts"]);
+      await git(repo, ["commit", "-m", "initial"]);
+      await initProject(repo);
+      await createRatifiedSpec(repo);
+      await mkdir(path.join(repo, ".hivemind", "integration"), { recursive: true });
+    },
+    async (repo) => {
+      await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
+    },
+    "hivemind-status-test-",
+    async (repo) => { await cleanupTempRepo(repo); }
+  );
 }
 
 async function writeVerifier(repo: string): Promise<void> {

@@ -15,6 +15,7 @@ import { appendTaskOutput, readTaskOutput } from "../src/output-stream.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
 import { authorizePlanlessManualTaskIfEligible } from "./support/manual-task.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -320,20 +321,24 @@ test("daemon startup preserves quota-paused runs instead of marking them failed"
 });
 
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
-  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-daemon-test-"));
-  try {
-    await git(repo, ["init"]);
-    await git(repo, ["config", "user.name", "Hivemind Test"]);
-    await git(repo, ["config", "user.email", "hivemind@example.test"]);
-    await writeFile(path.join(repo, "README.md"), "# Fixture\n");
-    await git(repo, ["add", "README.md"]);
-    await git(repo, ["commit", "-m", "initial"]);
-    await initProject(repo);
-    await createRatifiedSpec(repo);
-    await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
-  } finally {
-    await cleanupTempRepo(repo);
-  }
+  await withTemplateRepo(
+    "daemon",
+    async (repo) => {
+      await git(repo, ["init"]);
+      await git(repo, ["config", "user.name", "Hivemind Test"]);
+      await git(repo, ["config", "user.email", "hivemind@example.test"]);
+      await writeFile(path.join(repo, "README.md"), "# Fixture\n");
+      await git(repo, ["add", "README.md"]);
+      await git(repo, ["commit", "-m", "initial"]);
+      await initProject(repo);
+      await createRatifiedSpec(repo);
+    },
+    async (repo) => {
+      await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
+    },
+    "hivemind-daemon-test-",
+    async (repo) => { await cleanupTempRepo(repo); }
+  );
 }
 
 async function startDaemon(repo: string): Promise<DaemonProcess> {

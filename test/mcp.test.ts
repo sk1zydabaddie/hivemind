@@ -16,6 +16,7 @@ import { appendEvent, readEvents } from "../src/events.js";
 import { mcpToolDefinitions } from "../src/mcp.js";
 import { createSpec } from "../src/spec.js";
 import { createRatifiedSpec } from "./support/spec.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -475,22 +476,26 @@ interface DaemonProcess {
 }
 
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
-  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-mcp-test-"));
-  try {
-    await git(repo, ["init"]);
-    await git(repo, ["config", "user.name", "Hivemind Test"]);
-    await git(repo, ["config", "user.email", "hivemind@example.test"]);
-    await git(repo, ["checkout", "-b", "main"]);
-    await writeFile(path.join(repo, "README.md"), "# Fixture\n");
-    await writeFile(path.join(repo, "outside.txt"), "outside\n");
-    await git(repo, ["add", "README.md", "outside.txt"]);
-    await git(repo, ["commit", "-m", "initial"]);
-    await initProject(repo);
-    await createRatifiedSpec(repo);
-    await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
-  } finally {
-    await cleanupTempRepo(repo);
-  }
+  await withTemplateRepo(
+    "mcp",
+    async (repo) => {
+      await git(repo, ["init"]);
+      await git(repo, ["config", "user.name", "Hivemind Test"]);
+      await git(repo, ["config", "user.email", "hivemind@example.test"]);
+      await git(repo, ["checkout", "-b", "main"]);
+      await writeFile(path.join(repo, "README.md"), "# Fixture\n");
+      await writeFile(path.join(repo, "outside.txt"), "outside\n");
+      await git(repo, ["add", "README.md", "outside.txt"]);
+      await git(repo, ["commit", "-m", "initial"]);
+      await initProject(repo);
+      await createRatifiedSpec(repo);
+    },
+    async (repo) => {
+      await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
+    },
+    "hivemind-mcp-test-",
+    async (repo) => { await cleanupTempRepo(repo); }
+  );
 }
 
 async function startHttpMcp(repo: string, env: Record<string, string> = { HIVEMIND_DAEMON_URL: "" }): Promise<HttpMcpProcess> {

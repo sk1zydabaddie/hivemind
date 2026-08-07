@@ -10,6 +10,7 @@ import test from "node:test";
 import { analyzeTask } from "../src/analyze.js";
 import { readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -231,21 +232,25 @@ test("CLI analyze fails closed when config repo_root points at another repositor
 });
 
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
-  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-analyze-test-"));
-  try {
-    await git(repo, ["init"]);
-    await git(repo, ["config", "user.name", "Hivemind Test"]);
-    await git(repo, ["config", "user.email", "hivemind@example.test"]);
-    await writeFile(path.join(repo, "README.md"), "# Fixture\n");
-    await writeFile(path.join(repo, "outside.txt"), "outside\n");
-    await writeFile(path.join(repo, "script.sh"), "#!/bin/sh\necho fixture\n");
-    await git(repo, ["add", "README.md", "outside.txt", "script.sh"]);
-    await git(repo, ["commit", "-m", "initial"]);
-    await initProject(repo);
-    await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
-  } finally {
-    await cleanupTempRepo(repo);
-  }
+  await withTemplateRepo(
+    "analyze",
+    async (repo) => {
+      await git(repo, ["init"]);
+      await git(repo, ["config", "user.name", "Hivemind Test"]);
+      await git(repo, ["config", "user.email", "hivemind@example.test"]);
+      await writeFile(path.join(repo, "README.md"), "# Fixture\n");
+      await writeFile(path.join(repo, "outside.txt"), "outside\n");
+      await writeFile(path.join(repo, "script.sh"), "#!/bin/sh\necho fixture\n");
+      await git(repo, ["add", "README.md", "outside.txt", "script.sh"]);
+      await git(repo, ["commit", "-m", "initial"]);
+      await initProject(repo);
+    },
+    async (repo) => {
+      await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
+    },
+    "hivemind-analyze-test-",
+    async (repo) => { await cleanupTempRepo(repo); }
+  );
 }
 
 async function writeContract(repo: string, taskId: string, baseCommit: string, allowedFiles: string[]): Promise<void> {

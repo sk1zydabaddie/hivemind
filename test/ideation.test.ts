@@ -10,6 +10,7 @@ import test from "node:test";
 import { markIdeationConvergence, recordIdeationRound, startIdeationSession } from "../src/ideation.js";
 import { initProject } from "../src/init.js";
 import { ratifySpec } from "../src/spec.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -329,19 +330,22 @@ test("CLI ideation generator rejects dangerous adapter profiles before invocatio
 });
 
 async function withTempRepo(run: (context: { repo: string }) => Promise<void>): Promise<void> {
-  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-ideation-test-"));
-  try {
-    await git(repo, ["init"]);
-    await git(repo, ["config", "user.name", "Hivemind Test"]);
-    await git(repo, ["config", "user.email", "hivemind@example.test"]);
-    await writeFile(path.join(repo, "README.md"), "# Fixture\n");
-    await git(repo, ["add", "README.md"]);
-    await git(repo, ["commit", "-m", "initial"]);
-    await initProject(repo);
-    await run({ repo });
-  } finally {
-    await rm(repo, { recursive: true, force: true, maxRetries: 3 });
-  }
+  await withTemplateRepo(
+    "ideation",
+    async (repo) => {
+      await git(repo, ["init"]);
+      await git(repo, ["config", "user.name", "Hivemind Test"]);
+      await git(repo, ["config", "user.email", "hivemind@example.test"]);
+      await writeFile(path.join(repo, "README.md"), "# Fixture\n");
+      await git(repo, ["add", "README.md"]);
+      await git(repo, ["commit", "-m", "initial"]);
+      await initProject(repo);
+    },
+    async (repo) => {
+      await run({ repo });
+    },
+    "hivemind-ideation-test-"
+  );
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {

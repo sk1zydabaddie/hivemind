@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { resolveChangeset, withDetachedCheckout } from "../src/changeset.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -129,20 +130,24 @@ test("detached checkout cleanup holds when the operation throws unexpectedly", a
 });
 
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
-  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-resolver-test-"));
-  try {
-    await git(repo, ["init"]);
-    await git(repo, ["config", "user.name", "Hivemind Test"]);
-    await git(repo, ["config", "user.email", "hivemind@example.test"]);
-    await writeFile(path.join(repo, "README.md"), "# Fixture\n");
-    await writeFile(path.join(repo, "delete-me.txt"), "delete me\n");
-    await writeFile(path.join(repo, "script.sh"), "#!/bin/sh\necho fixture\n");
-    await git(repo, ["add", "README.md", "delete-me.txt", "script.sh"]);
-    await git(repo, ["commit", "-m", "initial"]);
-    await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
-  } finally {
-    await cleanupTempRepo(repo);
-  }
+  await withTemplateRepo(
+    "changeset",
+    async (repo) => {
+      await git(repo, ["init"]);
+      await git(repo, ["config", "user.name", "Hivemind Test"]);
+      await git(repo, ["config", "user.email", "hivemind@example.test"]);
+      await writeFile(path.join(repo, "README.md"), "# Fixture\n");
+      await writeFile(path.join(repo, "delete-me.txt"), "delete me\n");
+      await writeFile(path.join(repo, "script.sh"), "#!/bin/sh\necho fixture\n");
+      await git(repo, ["add", "README.md", "delete-me.txt", "script.sh"]);
+      await git(repo, ["commit", "-m", "initial"]);
+    },
+    async (repo) => {
+      await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
+    },
+    "hivemind-resolver-test-",
+    async (repo) => { await cleanupTempRepo(repo); }
+  );
 }
 
 async function cleanupTempRepo(repo: string): Promise<void> {

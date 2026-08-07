@@ -19,6 +19,7 @@ import { proposeMemoryLesson } from "../src/memory-log.js";
 import { reviewMemoryProposalInteractively } from "../src/memory-review.js";
 import { recordQuotaUsage } from "../src/resource-ledger.js";
 import { inferTaskTier, routeTaskProvider } from "../src/routing.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 test("routeTaskProvider never downgrades a Critical task below the strong provider floor", async () => {
   await withTempRepo(async ({ repo, config }) => {
@@ -331,14 +332,18 @@ test("promoted learned policy that would downgrade Critical work is refused by t
 });
 
 async function withTempRepo(run: (context: { repo: string; config: HivemindConfig }) => Promise<void>): Promise<void> {
-  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-routing-test-"));
-  try {
-    const config = configFor(repo);
-    await writeConfig(repo, config);
-    await run({ repo, config });
-  } finally {
-    await rm(repo, { recursive: true, force: true, maxRetries: 3 });
-  }
+  await withTemplateRepo(
+    "routing",
+    async (repo) => {
+      await writeConfig(repo, configFor(repo));
+    },
+    async (repo) => {
+      // configFor is a pure function of the repo path, so the copy recomputes
+      // it rather than carrying the template's path forward.
+      await run({ repo, config: configFor(repo) });
+    },
+    "hivemind-routing-test-"
+  );
 }
 
 async function appendSuccessfulSample(

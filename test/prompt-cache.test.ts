@@ -19,6 +19,7 @@ import {
 } from "../src/prompt-cache.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -251,23 +252,26 @@ async function withTempDir(run: (repo: string) => Promise<void>): Promise<void> 
 }
 
 async function withTempRepo(run: (context: { repo: string; baseCommit: string }) => Promise<void>): Promise<void> {
-  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-prompt-cache-adapter-test-"));
-  try {
-    await git(repo, ["init"]);
-    await git(repo, ["config", "user.name", "Hivemind Test"]);
-    await git(repo, ["config", "user.email", "hivemind@example.test"]);
-    await writeFile(path.join(repo, "AGENTS.md"), "Project instructions\n");
-    await writeFile(path.join(repo, "README.md"), "# Fixture\n");
-    await mkdir(path.join(repo, "src"), { recursive: true });
-    await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = true;\n");
-    await git(repo, ["add", "AGENTS.md", "README.md", "src/feature.ts"]);
-    await git(repo, ["commit", "-m", "initial"]);
-    await initProject(repo);
-    await createRatifiedSpec(repo);
-    await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
-  } finally {
-    await rm(repo, { recursive: true, force: true, maxRetries: 3 });
-  }
+  await withTemplateRepo(
+    "prompt-cache",
+    async (repo) => {
+      await git(repo, ["init"]);
+      await git(repo, ["config", "user.name", "Hivemind Test"]);
+      await git(repo, ["config", "user.email", "hivemind@example.test"]);
+      await writeFile(path.join(repo, "AGENTS.md"), "Project instructions\n");
+      await writeFile(path.join(repo, "README.md"), "# Fixture\n");
+      await mkdir(path.join(repo, "src"), { recursive: true });
+      await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = true;\n");
+      await git(repo, ["add", "AGENTS.md", "README.md", "src/feature.ts"]);
+      await git(repo, ["commit", "-m", "initial"]);
+      await initProject(repo);
+      await createRatifiedSpec(repo);
+    },
+    async (repo) => {
+      await run({ repo, baseCommit: await gitStdout(repo, ["rev-parse", "HEAD"]) });
+    },
+    "hivemind-prompt-cache-adapter-test-"
+  );
 }
 
 function contractFor(overrides: Partial<TaskContract> = {}): TaskContract {
