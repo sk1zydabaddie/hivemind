@@ -221,8 +221,18 @@ Hivemind never holds provider credentials.
 arbitrary JSON.
 
 **`project.init`** — write. Wrap `initProject` so the desktop can set up a folder
-it has been pointed at, and write the default tier globs above at the same time.
-This is the single change that removes the terminal from first run.
+it has been pointed at, and in the same call:
+
+- write the default tier globs above, so the project does not start in its
+  most expensive configuration;
+- write `.hivemind/adapters/planner.profile.json` and
+  `.hivemind/adapters/manager.profile.json` for the chosen provider, because
+  those two names are what `plan.prepare` and `manager.start` resolve and a
+  project without them cannot take a first prompt.
+
+This is the single change that removes the terminal from first run. Queued
+second, after `config.inspect`, because the client should be able to read the
+result of what it just wrote.
 
 **`adapter.connect`** — write **and verify**. This is the one that must not be a
 declaration. Accept `{ role, provider_id }`, build the profile server-side, run
@@ -311,11 +321,36 @@ the handler, never the words on the button.
 
 ### Verification debt
 
-Every screenshot and every design judgement so far comes from a fixture harness
-that stubs the Tauri IPC and the SSE transport. The redesign has never been seen
-against a live daemon. Long titles, real error text, 15-task plans, real
-durations and real failures will find edges the fixtures cannot. Treat the
-fixture harness as a layout tool, never as verification.
+Every design judgement through five passes came from a fixture harness that
+stubs the Tauri IPC and the SSE transport. `tools/collect-replay.mjs` now closes
+part of that gap: it reads captured trails out of `docs/evidence` (never writing
+to them), replays each into a scratch repository, and runs Core's real
+`inspectWorkspace` over it, so `replay.html` drives the app against a projection
+Core actually produced. That is still not a live daemon — no worker output, no
+live leases, no spend — so treat both harnesses as instruments, never as
+verification.
+
+#### What the evidence corpus does not contain
+
+Across all eight replayable trails there is **no `plan.*` event, no `adoption.*`
+event, and no routing, quota or resource event**. `task.started` appears exactly
+once. So the two decisions the whole redesign is built around — approving a plan
+and shipping a verified change — have never been rendered from real data, and
+the spend meter reads zero for runs that cost real money.
+
+The M10.8 concurrent run and the M8 end-to-end runs were retained as screenshots
+and prose. Their durable trails — the 52-record M10.8 log, the 9-task E2E plan —
+are not in the repository, so they cannot be replayed. Whatever process captures
+evidence should keep the JSONL alongside the PNGs; a screenshot cannot be
+replayed into a different UI, and the trail can.
+
+`task.created` records `title`, `agent_role`, `base_commit`,
+`acceptance_criterion` and `allowed_files`, but **not** `required_tests`,
+`deterministic_validity_check` or `routing_task_type`. Core's own contract
+validation refuses a contract rebuilt from the trail without them, which means
+the durable log is not sufficient to reconstruct the workspace state it
+describes. The collector fills only `required_tests`, from the command the
+acceptance criterion names, and marks it.
 
 ### Client-side, not yet done
 
