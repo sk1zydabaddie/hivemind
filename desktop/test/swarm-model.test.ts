@@ -107,6 +107,7 @@ function fixtureInspection(taskCount: number): WorkspaceInspection {
     ],
     task_titles: Object.fromEntries(tasks.map((task) => [task.task_id, task.title])),
     active_spec_id: "S-001",
+    active_spec_title: "Test spec",
     manager_session: null,
     autonomy: { configured_level: "auto", run_levels: [] },
     plan_review: plan,

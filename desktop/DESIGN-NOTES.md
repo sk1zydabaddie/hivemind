@@ -40,29 +40,41 @@ Two rules that keep it honest:
   `src/lib/work-thread.ts` is a pure function over the replayed event history,
   so the thread survives a reload. Nothing in the thread is remembered in React.
 
-## Known gap: the original request is not recorded
+## What the thread is allowed to know
 
-Core records only `prompt_hash` (SHA-256) on `plan.prepared`. The text a person
-typed to start a run is not durable anywhere:
+Every entry maps to a durable event:
 
-- the planning proposal JSON holds only `tasks` and `execution_groups`
-  (extra top-level fields are rejected),
-- `manager.start`'s `message` derives the proposal and is never persisted into
-  the session file.
+| Entry | Source |
+| --- | --- |
+| your request | `plan.prepared.data.prompt` |
+| the plan | `plan.prepared` / `plan.ratified`, counts from `status.inspect` |
+| your guidance | `human.guidance_recorded.data.message` |
+| whether guidance was used | `human.guidance_consumed.data.guidance_ids` |
+| milestones | task, integration and quota events |
+| the ship summary | `adoption.completed` + the plan's acceptance wording |
+| the run subject | `status.inspect.active_spec_title` |
 
-So the thread cannot show you what you asked for. Mid-run **guidance** is fine —
-`human.guidance_recorded.data.message` is durable, and `human.guidance_consumed`
-tells us whether it has been used yet.
+`plan.prepared` originally recorded only `prompt_hash`, so the thread could not
+show what you asked for. Core now records the normalized `prompt` alongside the
+hash, capped at 20,000 characters exactly as `human.guidance_recorded` caps its
+message — one pattern for the same problem, and the request is rejected rather
+than truncated so the text and the hash can never disagree.
 
-`buildRunThread` already reads `event.data.prompt` and renders the request entry
-the moment Core emits it. The ask, mirroring the shape guidance already uses:
-
-```
-plan.prepared.data.prompt   // the normalized request text, same 20k cap as guidance
-```
-
-Do not reconstruct this client-side. A thread rebuilt from React state
+Do not reconstruct any of this client-side. A thread rebuilt from React state
 disappears on reload, which is worse than not having it.
+
+## The client's event buffer
+
+`RECENT_EVENT_LIMIT` in `src/lib/projection.ts` bounds how much replayed history
+the client holds. It evicts the **oldest** events, which is the head of the
+thread — the request and the plan card — so it is deliberately set an order of
+magnitude above a realistic run rather than just above it.
+
+A busy task emits roughly 15–25 events across its lifecycle, scout, lease,
+write-intent, patch, routing and verification records, so a 15-task run lands
+near 400. The limit is 4,000 (~1MB of small objects). When the buffer has
+actually dropped events, the thread says so instead of silently losing its
+beginning.
 
 ## Deferred, with reasoning
 
@@ -94,6 +106,26 @@ because the reasoning is weak.
   known Core failures to plain sentences with a fixed regex list. Anything
   unmapped renders raw. The correct fix is a plain-language field on the daemon
   error, not a longer list of regexes here.
+
+### The command palette needs a command registry
+
+⌘K currently covers navigation, opening a project, and jumping to the composer.
+The commands people would actually want — ship it, stop the run, review the plan
+— live in the Work tab's state, and the palette lives in the shell above it.
+
+Wiring them needs a small registry: the shell owns a command list, and each tab
+registers and deregisters its commands as its state changes. That is the right
+shape, and it is worth doing deliberately rather than reaching down into a
+child's state from the shell. Until it exists, the palette should not pretend to
+offer actions it cannot perform.
+
+### Verification debt
+
+Every screenshot and every design judgement so far comes from a fixture harness
+that stubs the Tauri IPC and the SSE transport. The redesign has never been seen
+against a live daemon. Long titles, real error text, 15-task plans, real
+durations and real failures will find edges the fixtures cannot. Treat the
+fixture harness as a layout tool, never as verification.
 
 ### Client-side, not yet done
 
