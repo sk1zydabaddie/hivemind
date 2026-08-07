@@ -163,6 +163,94 @@ Separately, `plainActionError` must stop matching patterns inside aggregated
 reasons. The durable fix is the plain-language field on the daemon error noted
 below; until then the client should not infer meaning from a substring.
 
+## First run, and why it still needs a terminal
+
+Nobody had walked a clean install. What actually happens:
+
+1. The app opens on `.`, `select_project` canonicalises a git root, and
+   `desktop/src-tauri/src/project.rs` refuses with **"selected repository is not
+   initialized for Hivemind"** unless `.hivemind/config.json` already exists. The
+   desktop cannot initialise a project. A first-time user must run
+   `hivemind init` in a terminal before the app is of any use.
+2. `initProject` writes no tier globs and no adapter profiles.
+3. The Work tab asks Core for two tools **by name** — `plan.prepare` sends
+   `tool: "planner"`, `manager.start` sends `tool: "manager"` — and Core resolves
+   each with `loadAdapterProfile`, i.e. `.hivemind/adapters/<tool>.profile.json`.
+   Neither file exists after init, so the first prompt fails on a missing adapter
+   profile with no UI anywhere that explains which files are wanted.
+
+The setup screen and the agent dialog make steps 2 and 3 comprehensible and hand
+over the exact files, but the app still cannot apply them. Everything below is
+what Core would need for a first run without a text editor.
+
+### The cost defect in an unconfigured project
+
+`inferScopeTier` (src/routing.ts) returns **`"high"`** for any path matching no
+configured glob, and `initProject` configures none. `minimumProviderRank.high`
+is `providerTierRank.strong`, and `checkTierEligibility` **refuses** any
+candidate below that floor — so on a fresh project cheaper providers are not
+merely deprioritised, they are ineligible. Every task routes to the strongest,
+most expensive provider, and `compareCandidates` sorts high/critical by provider
+rank descending, so it picks the strongest of those too.
+
+A new user's first run is the worst-case configuration, and nothing in the
+product tells them. The fix is one change in `initProject`: write ordinary
+default globs so that documentation is low, source and tests are medium, and
+build/CI/auth paths are high or critical. `COST_DEFAULT_GLOBS` in
+`desktop/src/lib/providers.ts` is the set the setup dialog hands to people today
+and is a reasonable starting shape.
+
+### Core actions the settings surface needs
+
+Named to match the existing dispatcher style. All would be additions to
+`workspaceActionTypes`.
+
+**`config.inspect`** — read. Unblocks everything else; without it the client
+cannot show what is configured, only what it was told at runtime. Should return
+the resolved `HivemindConfig` (tier globs, `test_command`, `base_branch`,
+`execution`, `resource_policy`, `verification`) plus, for each file in
+`.hivemind/adapters`, the validated profile and any problems
+`validateAdapterProfile` found. Read-only; no secrets are involved because
+Hivemind never holds provider credentials.
+
+**`config.set`** — write, narrow. Accept only a whitelist —
+`low_globs`/`medium_globs`/`high_globs`/`critical_globs`,
+`resource_policy.run_ceiling.tokens`, `resource_policy.session_ceiling.tokens`,
+`execution.max_concurrent_workers` — and validate through the existing
+`validateConfig` before writing. Refuse anything else rather than merging
+arbitrary JSON.
+
+**`project.init`** — write. Wrap `initProject` so the desktop can set up a folder
+it has been pointed at, and write the default tier globs above at the same time.
+This is the single change that removes the terminal from first run.
+
+**`adapter.connect`** — write **and verify**. This is the one that must not be a
+declaration. Accept `{ role, provider_id }`, build the profile server-side, run
+`validateAdapterProfile` and `findDangerousAdapterArgs`, then **probe** before
+recording anything.
+
+The probe must read back what the provider reports **at startup**, and compare it
+to what was asked for. A flag being accepted is not evidence it took effect —
+both known regressions were exactly that shape: `--ignore-user-config` silently
+forced a read-only sandbox, and separately silently pinned an old model. So:
+
+| Capability | What the probe must confirm |
+| --- | --- |
+| Runs one exact model | the model the provider *reports running* equals the pinned one |
+| Stays inside the project | the sandbox mode the provider *reports* is the workspace-write one, not a silently downgraded read-only |
+| Runs without prompting | a trivial prompt exits without waiting on input, within the profile timeout |
+| Reports usage | the configured `usage_parser` finds real token counts in that run's output |
+| Carries no bypass flags | already enforced; keep refusing at preflight |
+
+Connection should fail with the specific missing capability, not a generic error,
+and nothing should be written when the probe fails. The desktop already renders
+this list — `CAPABILITIES` in `providers.ts` — so a probe result maps onto it
+directly.
+
+**Role names.** The client hardcodes `planner` and `manager`. Either Core should
+report the roles it expects in `config.inspect`, or config should carry a
+role→tool mapping. Today the only thing tying them together is a desktop test.
+
 ### Actions with no way to reach them
 
 Four audited workspace actions have no control anywhere in the desktop. Not
