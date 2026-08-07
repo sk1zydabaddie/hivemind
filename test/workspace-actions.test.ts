@@ -1349,7 +1349,10 @@ test("Work tab drives configured interruption policy through typed actions and k
   assert.match(source, /const startManager[\s\S]*type: "manager\.start"/u);
   assert.match(source, /type: "plan\.ratify"[\s\S]*await startManager\(\)/u);
   assert.match(source, /Approve and start/u);
-  assert.match(source, /Retry manager/u);
+  // Affordance, not copy: a ratified plan with no live manager session must
+  // render a control wired to the manager-start handler. The wording of that
+  // control is desktop copy and is asserted in the desktop suite.
+  assert.match(source, /managerStartAvailable \? \([\s\S]{0,400}onStartManager\(\)/u);
   assert.match(source, /managerStartAvailable[\s\S]*type: "manager\.start"/u);
   assert.match(source, /Typed guidance cannot approve it/u);
   assert.match(source, /type: "autonomy\.set"/u);

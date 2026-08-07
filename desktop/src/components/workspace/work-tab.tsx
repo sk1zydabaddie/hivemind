@@ -10,6 +10,7 @@ import {
   Layers3,
   MessageSquareText,
   Plus,
+  RotateCcw,
   Send,
   SlidersHorizontal,
   X
@@ -164,6 +165,8 @@ export function WorkTab({
   } | null>(null);
   const [redirectOpen, setRedirectOpen] = useState(false);
   const [redirectText, setRedirectText] = useState("");
+  const [replanOpen, setReplanOpen] = useState(false);
+  const [replanText, setReplanText] = useState("");
   const [patchOpen, setPatchOpen] = useState(false);
   const [changeSetPatch, setChangeSetPatch] = useState<{
     verificationId: string;
@@ -242,6 +245,14 @@ export function WorkTab({
     inspection?.current_plan !== undefined &&
     plan === null &&
     (managerSession === null || managerSession === undefined);
+  /* A plan that has nothing left to do must not capture the next request. A task
+     the daemon has not projected yet has not finished either. */
+  const planHasWorkLeft =
+    currentPlan !== null &&
+    currentPlan.tasks.some((planned) => {
+      const task = tasks.find((entry) => entry.task_id === planned.task_id);
+      return task === undefined || (task.state !== "merged" && task.state !== "cancelled");
+    });
 
   const startManager = async (
     message = "Execute the exact ratified plan through the normal checks."
@@ -256,6 +267,28 @@ export function WorkTab({
       type: "manager.continue",
       payload: { session_id: sessionId, tool: "manager", max_steps: 25 }
     });
+  };
+
+  /* One request, one plan. Used by the composer when nothing is left to do, and
+     by "Start over" when a prepared plan is not what the person wanted. */
+  const preparePlan = async (message: string): Promise<void> => {
+    const prepared = await onAction<{
+      status: "awaiting_ratification" | "ratified_by_policy";
+      autonomy_level: AutonomyLevel;
+      task_count: number;
+    }>({
+      type: "plan.prepare",
+      payload: { prompt: message, tool: "planner" }
+    });
+    if (prepared.status === "ratified_by_policy") {
+      const started = await startManager(message);
+      await continueSession(started.session_id);
+      setFeedback(
+        `${prepared.task_count} ${prepared.task_count === 1 ? "task" : "tasks"}, working. You can stop at any time.`
+      );
+    } else {
+      setFeedback("A plan is ready for you to look at. Nothing has started.");
+    }
   };
 
   const submitPrompt = async (
@@ -274,27 +307,16 @@ export function WorkTab({
         });
         setFeedback("Saved for the next step. Work already in progress was not changed.");
       } else if (plan !== null) {
-        setFeedback("Review the prepared plan first. Typed guidance cannot approve it.");
-        setReviewOpen(true);
+        /* A plan you do not want is not a dead end: the text becomes the start of
+           a different plan instead of being thrown away. */
+        setReplanText(message);
+        setReplanOpen(true);
+        setFeedback(
+          "Review the prepared plan first. Typed guidance cannot approve it — start over below if you want a different plan."
+        );
         return;
-      } else if (inspection?.current_plan === null || inspection?.current_plan === undefined) {
-        const prepared = await onAction<{
-          status: "awaiting_ratification" | "ratified_by_policy";
-          autonomy_level: AutonomyLevel;
-          task_count: number;
-        }>({
-          type: "plan.prepare",
-          payload: { prompt: message, tool: "planner" }
-        });
-        if (prepared.status === "ratified_by_policy") {
-          const started = await startManager(message);
-          await continueSession(started.session_id);
-          setFeedback(
-            `${prepared.task_count} ${prepared.task_count === 1 ? "task" : "tasks"}, working. You can stop at any time.`
-          );
-        } else {
-          setFeedback("A plan is ready for you to look at. Nothing has started.");
-        }
+      } else if (!planHasWorkLeft) {
+        await preparePlan(message);
       } else {
         const started = await startManager(message);
         if (inspection?.autonomy.configured_level === "review_everything") {
@@ -457,17 +479,26 @@ export function WorkTab({
           <AttentionBar
             busy={busy}
             item={attention}
-            moreCount={Math.max(0, openQueue.length - 1)}
             planWaiting={planWaiting}
+            rest={openQueue.filter((entry) => entry.id !== attention.id)}
             onApprove={() => void approveQueueItem(attention)}
+            onApproveOther={(other) => void approveQueueItem(other)}
             onDismiss={() => setDismissedAttention((items) => [...items, attention.id])}
+            onDismissOther={(other) =>
+              setDismissedAttention((items) => [...items, other.id])
+            }
             onOpen={() => openAttentionTarget(attention)}
+            onOpenOther={(other) => openAttentionTarget(other)}
           />
         ) : planWaiting && plan ? (
           <PlanWaitingBar
             plan={plan}
             onDismiss={() => setDismissedPlanHash(plan.plan_hash)}
             onReview={() => void openPlanReview()}
+            onStartOver={() => {
+              setReplanText("");
+              setReplanOpen(true);
+            }}
           />
         ) : null}
       </div>
@@ -563,6 +594,7 @@ export function WorkTab({
               groups={inspection?.execution_groups ?? []}
               integrationFailure={inspection?.integration_failure ?? null}
               selectedTaskId={projection.selectedTaskId}
+              taskTitles={inspection?.task_titles ?? {}}
               tasks={tasks}
               onSelectTask={onSelectTask}
             />
@@ -581,10 +613,15 @@ export function WorkTab({
 
       {displayedPlan ? (
         <PlanTakeover
+          amendments={(inspection?.later ?? []).filter((item) => item.kind === "plan_amendment")}
           busy={busy}
           open={reviewOpen}
           plan={displayedPlan}
           ratificationPending={plan !== null}
+          onStartOver={() => {
+            setReplanText("");
+            setReplanOpen(true);
+          }}
           onAdd={() => setAmendment({ kind: "add_task", draft: emptyAmendment() })}
           onEdit={(task) =>
             setAmendment({
@@ -677,6 +714,35 @@ export function WorkTab({
           }}
         />
       ) : null}
+
+      <TextActionDialog
+        busy={busy}
+        description="Hivemind will prepare a different plan from this description. The plan waiting now is replaced, and nothing starts until you approve the new one."
+        open={replanOpen}
+        note="Nothing runs until you approve the new plan."
+        submitLabel="Prepare a different plan"
+        title="Start over with a different plan"
+        value={replanText}
+        onChange={setReplanText}
+        onOpenChange={setReplanOpen}
+        onSubmit={async () => {
+          const message = replanText.trim();
+          if (message === "") return;
+          setBusy(true);
+          setFeedback("");
+          try {
+            await preparePlan(message);
+            setReplanText("");
+            setReplanOpen(false);
+            setReviewOpen(false);
+            setComposer("");
+          } catch (error) {
+            setFeedback(plainActionError(error));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
 
       <PatchDialog
         error={changeSetPatchError}
@@ -798,20 +864,26 @@ function ShipBar({
 
 function AttentionBar({
   item,
+  rest,
   busy,
-  moreCount,
   planWaiting,
   onApprove,
+  onApproveOther,
   onDismiss,
-  onOpen
+  onDismissOther,
+  onOpen,
+  onOpenOther
 }: {
   item: WorkspaceQueueItem;
+  rest: WorkspaceQueueItem[];
   busy: boolean;
-  moreCount: number;
   planWaiting: boolean;
   onApprove: () => void;
+  onApproveOther: (item: WorkspaceQueueItem) => void;
   onDismiss: () => void;
+  onDismissOther: (item: WorkspaceQueueItem) => void;
   onOpen: () => void;
+  onOpenOther: (item: WorkspaceQueueItem) => void;
 }): React.JSX.Element {
   const failing = /failed|stopped|blocked|rejected/iu.test(`${item.kind} ${item.title}`);
   const skin = failing
@@ -819,63 +891,144 @@ function AttentionBar({
     : "border-amber/25 bg-amber-wash";
   const mark = failing ? "text-clay" : "text-amber";
   return (
-    <section
-      aria-label="Needs you"
-      className={`mb-4 flex items-start gap-4 rounded-lg border px-5 py-4 shadow-panel ${skin}`}
-    >
-      <span
-        aria-hidden="true"
-        className={`grid size-8 shrink-0 place-items-center rounded-md bg-panel/70 ${mark}`}
+    <Collapsible asChild>
+      <section
+        aria-label="Needs you"
+        className={`mb-4 rounded-lg border px-5 py-4 shadow-panel ${skin}`}
       >
-        <AlertTriangle className="size-[18px]" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline gap-x-2.5">
-          <span className={`text-[12px] font-semibold ${mark}`}>Needs you</span>
-          {moreCount > 0 ? (
-            <span className="text-[12px] text-muted">{moreCount} more after this</span>
-          ) : null}
-          {planWaiting ? (
-            <span className="text-[12px] text-muted">a plan is also waiting</span>
-          ) : null}
+        <div className="flex items-start gap-4">
+          <span
+            aria-hidden="true"
+            className={`grid size-8 shrink-0 place-items-center rounded-md bg-panel/70 ${mark}`}
+          >
+            <AlertTriangle className="size-[18px]" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-baseline gap-x-2.5">
+              <span className={`text-[12px] font-semibold ${mark}`}>Needs you</span>
+              {rest.length > 0 ? (
+                <CollapsibleTrigger asChild>
+                  <button
+                    className="text-[12px] text-muted underline decoration-muted/40 underline-offset-2 hover:text-ink"
+                    type="button"
+                  >
+                    {rest.length} more after this
+                  </button>
+                </CollapsibleTrigger>
+              ) : null}
+              {planWaiting ? (
+                <span className="text-[12px] text-muted">a plan is also waiting</span>
+              ) : null}
+            </div>
+            <strong className="mt-1 block text-[15px] leading-snug font-semibold tracking-[-0.01em] text-ink">
+              {item.title}
+            </strong>
+            <p className="mt-1.5 mb-0 max-w-[760px] text-[13px] leading-relaxed break-words text-muted">
+              {plainPrimaryDetail(item.detail, item.kind)}
+            </p>
+          </div>
+          <AttentionActions
+            busy={busy}
+            item={item}
+            onApprove={onApprove}
+            onOpen={onOpen}
+          />
+          <Button
+            aria-label="Set this aside"
+            size="icon"
+            title="Set this aside"
+            type="button"
+            variant="ghost"
+            onClick={onDismiss}
+          >
+            <X aria-hidden="true" />
+          </Button>
         </div>
-        <strong className="mt-1 block text-[15px] leading-snug font-semibold tracking-[-0.01em] text-ink">
-          {item.title}
-        </strong>
-        <p className="mt-1.5 mb-0 max-w-[760px] text-[13px] leading-relaxed break-words text-muted">
-          {plainPrimaryDetail(item.detail, item.kind)}
-        </p>
-      </div>
-      {item.action ? (
-        <Button disabled={busy} type="button" onClick={onApprove}>
-          {queueActionLabel(item.action.type)}
-        </Button>
-      ) : (
-        <Button className="bg-panel/70" type="button" variant="outline" onClick={onOpen}>
-          Show me
-        </Button>
-      )}
-      <Button
-        aria-label="Set this aside"
-        size="icon"
-        title="Set this aside"
-        type="button"
-        variant="ghost"
-        onClick={onDismiss}
-      >
-        <X aria-hidden="true" />
+
+        <CollapsibleContent>
+          <ul className="mt-4 mb-0 grid list-none gap-3 border-t border-ink/10 p-0 pt-4">
+            {rest.map((other) => (
+              <li className="flex items-start gap-3" key={other.id}>
+                <div className="min-w-0 flex-1">
+                  <strong className="block text-[13px] leading-snug font-medium break-words text-ink">
+                    {other.title}
+                  </strong>
+                  <span className="mt-0.5 block text-[12px] leading-relaxed break-words text-muted">
+                    {plainPrimaryDetail(other.detail, other.kind)}
+                  </span>
+                </div>
+                <AttentionActions
+                  busy={busy}
+                  item={other}
+                  size="sm"
+                  onApprove={() => onApproveOther(other)}
+                  onOpen={() => onOpenOther(other)}
+                />
+                <Button
+                  aria-label={`Set aside ${other.title}`}
+                  size="icon-sm"
+                  type="button"
+                  variant="ghost"
+                  onClick={() => onDismissOther(other)}
+                >
+                  <X aria-hidden="true" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </CollapsibleContent>
+      </section>
+    </Collapsible>
+  );
+}
+
+/* Only offer a control when there is something behind it. An item with no action
+   and nothing to open is information, not a button. */
+function AttentionActions({
+  item,
+  busy,
+  size = "default",
+  onApprove,
+  onOpen
+}: {
+  item: WorkspaceQueueItem;
+  busy: boolean;
+  size?: "default" | "sm";
+  onApprove: () => void;
+  onOpen: () => void;
+}): React.JSX.Element | null {
+  if (item.action) {
+    return (
+      <Button disabled={busy} size={size} type="button" onClick={onApprove}>
+        {queueActionLabel(item.action.type)}
       </Button>
-    </section>
+    );
+  }
+  if (!canOpenAttention(item)) return null;
+  return (
+    <Button className="bg-panel/70" size={size} type="button" variant="outline" onClick={onOpen}>
+      Show me
+    </Button>
+  );
+}
+
+function canOpenAttention(item: WorkspaceQueueItem): boolean {
+  return (
+    item.id === "connection-interrupted" ||
+    item.kind === "plan_review" ||
+    item.task_id !== null
   );
 }
 
 function PlanWaitingBar({
   plan,
   onReview,
+  onStartOver,
   onDismiss
 }: {
   plan: WorkspacePlanReview;
   onReview: () => void;
+  onStartOver: () => void;
   onDismiss: () => void;
 }): React.JSX.Element {
   return (
@@ -897,6 +1050,9 @@ function PlanWaitingBar({
           Nothing starts until you review and approve this exact plan.
         </span>
       </div>
+      <Button type="button" variant="outline" onClick={onStartOver}>
+        Start over
+      </Button>
       <Button type="button" onClick={onReview}>
         Review the plan
         <ChevronRight aria-hidden="true" />
@@ -1101,12 +1257,14 @@ function IdleBoard({ onPick }: { onPick: (value: string) => void }): React.JSX.E
 function TaskBoard({
   tasks,
   groups,
+  taskTitles,
   integrationFailure,
   selectedTaskId,
   onSelectTask
 }: {
   tasks: TaskProjection[];
   groups: WorkspaceInspection["execution_groups"];
+  taskTitles: Record<string, string>;
   integrationFailure: WorkspaceInspection["integration_failure"];
   selectedTaskId: string | null;
   onSelectTask: (taskId: string) => void;
@@ -1160,6 +1318,7 @@ function TaskBoard({
                 }
                 selected={task.task_id === selectedTaskId}
                 task={task}
+                taskTitles={taskTitles}
                 onSelect={() => onSelectTask(task.task_id)}
               />
             ))}
@@ -1172,11 +1331,13 @@ function TaskBoard({
 
 function TaskRow({
   task,
+  taskTitles,
   integrationFailure,
   selected,
   onSelect
 }: {
   task: TaskProjection;
+  taskTitles: Record<string, string>;
   integrationFailure: string | null;
   selected: boolean;
   onSelect: () => void;
@@ -1186,6 +1347,12 @@ function TaskRow({
       ? stateLanguage[task.state]
       : { label: "Project checks blocked", tone: "danger" as const };
   const issue = integrationFailure ?? task.issue;
+  /* The only row where a dependency answers a real question: "why has this not
+     started?" */
+  const waitingFor =
+    task.state === "planned" || task.state === "paused"
+      ? task.depends_on.map((taskId) => taskTitles[taskId] ?? taskId).join(", ")
+      : "";
   return (
     <button
       aria-pressed={selected}
@@ -1215,6 +1382,7 @@ function TaskRow({
           {task.lease_files.length > 0
             ? ` · editing ${task.lease_files.length} ${task.lease_files.length === 1 ? "file" : "files"}`
             : ""}
+          {waitingFor === "" ? "" : ` · after ${waitingFor}`}
         </span>
         {issue ? (
           <span className="mt-2 block rounded-md bg-clay-wash px-2.5 py-1.5 text-[12px] leading-snug break-words text-clay">
@@ -1715,19 +1883,23 @@ function PlanTakeover({
   open,
   busy,
   ratificationPending,
+  amendments,
   onOpenChange,
   onRatify,
   onAdd,
-  onEdit
+  onEdit,
+  onStartOver
 }: {
   plan: WorkspacePlanReview;
   open: boolean;
   busy: boolean;
   ratificationPending: boolean;
+  amendments: WorkspaceQueueItem[];
   onOpenChange: (open: boolean) => void;
   onRatify: () => Promise<void>;
   onAdd: () => void;
   onEdit: (task: WorkspacePlanTask) => void;
+  onStartOver: () => void;
 }): React.JSX.Element {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1754,6 +1926,28 @@ function PlanTakeover({
 
         <ScrollArea className="min-h-0 bg-canvas">
           <div className="px-8 py-6">
+            {amendments.length > 0 ? (
+              <section className="mb-6 rounded-lg border border-amber/25 bg-amber-wash px-5 py-4">
+                <strong className="block text-[14px] font-semibold text-ink">
+                  {amendments.length === 1
+                    ? "One change to this plan is queued"
+                    : `${amendments.length} changes to this plan are queued`}
+                </strong>
+                <span className="mt-0.5 block text-[13px] text-muted">
+                  Queued changes take effect only after they pass the normal checks
+                  and you approve the updated plan. The plan below does not include
+                  them yet.
+                </span>
+                <ul className="mt-3 mb-0 grid list-none gap-2 p-0">
+                  {amendments.map((amendment) => (
+                    <li className="text-[13px] break-words text-ink" key={amendment.id}>
+                      {amendment.title}
+                      <span className="block text-[12px] text-muted">{amendment.detail}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
             {plan.execution_groups.map((group, groupIndex) => (
               <section
                 className="grid grid-cols-[172px_minmax(0,1fr)] gap-6 pb-6"
@@ -1804,6 +1998,12 @@ function PlanTakeover({
             </span>
           </div>
           <div className="flex items-center gap-2.5">
+            {ratificationPending ? (
+              <Button type="button" variant="outline" onClick={onStartOver}>
+                <RotateCcw aria-hidden="true" />
+                Start over
+              </Button>
+            ) : null}
             <Button type="button" variant="outline" onClick={onAdd}>
               <Plus aria-hidden="true" />
               Add a step
@@ -2058,6 +2258,7 @@ function TextActionDialog({
   open,
   busy,
   submitLabel,
+  note = "Guidance cannot approve a change or ship anything.",
   onChange,
   onOpenChange,
   onSubmit
@@ -2068,6 +2269,7 @@ function TextActionDialog({
   open: boolean;
   busy: boolean;
   submitLabel: string;
+  note?: string;
   onChange: (value: string) => void;
   onOpenChange: (open: boolean) => void;
   onSubmit: () => Promise<void>;
@@ -2096,9 +2298,7 @@ function TextActionDialog({
             onChange={(event) => onChange(event.target.value)}
           />
           <DialogFooter className="items-center justify-between sm:justify-between">
-            <span className="text-[13px] text-muted">
-              Guidance cannot approve a change or ship anything.
-            </span>
+            <span className="text-[13px] text-muted">{note}</span>
             <Button disabled={busy || value.trim() === ""} type="submit">
               {submitLabel}
             </Button>
