@@ -129,7 +129,8 @@ export async function generateBestOfN(
           checkoutPath,
           prompt,
           qualityRunId,
-          draftId
+          draftId,
+          parsed.value.task_id
         );
         return execution.producer_result;
       }

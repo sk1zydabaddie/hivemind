@@ -37,7 +37,8 @@ export async function runQualityProvider(
   checkoutPath: string,
   prompt: string,
   qualityRunId: string,
-  draftId: string
+  draftId: string,
+  taskId: string
 ): Promise<QualityProviderExecution> {
   const output: SpeculativeDraftOutput[] = [];
   const startedAt = Date.now();
@@ -53,7 +54,9 @@ export async function runQualityProvider(
       onProcessStart: async (identity) => {
         const recorded = await appendEvent(repoRoot, {
           type: "quality.worker_process_started",
-          task_id: null,
+          // The event is about a task; emitting null made every reader that
+          // scopes by task drop it silently.
+          task_id: taskId,
           data: {
             version: 1,
             quality_run_id: qualityRunId,

@@ -121,7 +121,8 @@ export async function generateDraftRefine(
     qualityRunId,
     "D-001",
     draftPrompt,
-    draftAuthorization.value
+    draftAuthorization.value,
+    parsed.value.task_id
   );
   if (!draft.ok) {
     return { ...draft, quality_run_id: qualityRunId };
@@ -159,7 +160,8 @@ export async function generateDraftRefine(
     qualityRunId,
     "R-001",
     refinePrompt,
-    refineAuthorization.value
+    refineAuthorization.value,
+    parsed.value.task_id
   );
   if (!refinement.ok) {
     return { ...refinement, quality_run_id: qualityRunId };
@@ -308,7 +310,8 @@ async function runStage(
   qualityRunId: string,
   draftId: "D-001" | "R-001",
   prompt: string,
-  route: RouteDecision
+  route: RouteDecision,
+  taskId: string
 ): Promise<{
   ok: true;
   value: { artifact: SpeculativeDraftArtifact; model_output: string };
@@ -324,7 +327,8 @@ async function runStage(
         checkoutPath,
         prompt,
         qualityRunId,
-        draftId
+        draftId,
+        taskId
       );
       modelOutput = execution.model_output;
       return execution.producer_result;
