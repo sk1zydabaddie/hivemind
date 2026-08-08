@@ -534,6 +534,13 @@ function applyWorkspaceTaskEvent(task: WorkspaceTaskProjection, event: HivemindE
   if (event.type === "patch.submitted") {
     task.state = "submitted";
     task.patch.submitted = true;
+    // A new patch supersedes the previous analysis. status.ts's
+    // latestPatchEventState already resets here; without this the two Core
+    // readers disagree and the Work tab shows a stale "accept" verdict for a
+    // patch that was never analyzed.
+    task.patch.analyzed = false;
+    task.patch.verdict = null;
+    task.patch.reason = null;
     task.patch.changed_files = readSafeNumber(event.data.changed_files);
     return;
   }
