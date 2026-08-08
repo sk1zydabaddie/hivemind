@@ -39,6 +39,49 @@ export function processIsLiveOrUnknown(pid: number): boolean {
   return getProcessLiveness(pid) !== "dead";
 }
 
+/**
+ * PL-1 applied to a whole process group.
+ *
+ * `kill(-pgid, 0)` asks the kernel whether ANY process in the group exists,
+ * which is the only question worth asking when the thing being proven dead is
+ * a tree. Signalling a single pid can only ever prove one process absent, and
+ * an agent CLI's own children -- a shell, a node, a git -- outlive it.
+ *
+ * Deliberately built on `kill` rather than /proc, because macOS and the BSDs
+ * have no /proc and are port targets. The three outcomes:
+ *
+ * - ESRCH  -> no process in the group exists. Dead, and only this proves it.
+ * - EPERM  -> at least one process exists but is not ours to signal. Alive.
+ * - success -> the group exists. Alive.
+ *
+ * Anything else is "unknown", which per PL-1 is treated as alive: nothing is
+ * reclaimed on a maybe.
+ */
+export function getProcessGroupLiveness(
+  processGroupId: number | null | undefined,
+  probe: ProcessSignalProbe = (candidatePgid) => {
+    process.kill(-candidatePgid, 0);
+  }
+): ProcessLiveness {
+  if (typeof processGroupId !== "number" || !Number.isInteger(processGroupId) || processGroupId <= 0) {
+    return "unknown";
+  }
+  if (process.platform === "win32") {
+    // Windows has no process groups in this sense. Callers must use the
+    // platform's own tree primitive rather than pretend this answered.
+    return "unknown";
+  }
+
+  try {
+    probe(processGroupId);
+    return "alive";
+  } catch (error: unknown) {
+    if (isNodeError(error, "ESRCH")) return "dead";
+    if (isNodeError(error, "EPERM")) return "alive";
+    return "unknown";
+  }
+}
+
 function isNodeError(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

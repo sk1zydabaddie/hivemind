@@ -423,10 +423,34 @@ export async function runAdapterProcess(
   return new Promise((resolve) => {
     const [command, ...baseArgs] = profile.invoke;
     const args = profile.prompt_arg === "arg" ? [...baseArgs, prompt] : baseArgs;
-    const child = spawn(command, args, { cwd, windowsHide: true });
+    // `detached` on POSIX calls setsid(), so the worker leads its own process
+    // group and `kill(-pgid)` reaches the agent CLI's own children. Without it
+    // there is no group to signal and only the named process dies.
+    //
+    // What else it changes, deliberately accepted:
+    // - stdio is unaffected. `detached` only alters stdio when paired with
+    //   `stdio: "ignore"`; with the default pipes, stdout/stderr/stdin behave
+    //   exactly as before, which the streaming and prompt paths depend on.
+    // - the child no longer receives signals sent to OUR group, so an
+    //   interactive Ctrl-C no longer reaches it. Termination must go through
+    //   terminateProcessTreeAndVerify -- which is the point: that path proves
+    //   what it killed, and a stray Ctrl-C never did.
+    // - the parent will not be held open by it, because we never unref() and
+    //   already await the child.
+    // - NOT set on Windows, where `detached` means a new console window and
+    //   `taskkill /t` is already the correct tree primitive.
+    const detached = process.platform !== "win32";
+    const child = spawn(command, args, { cwd, windowsHide: true, detached });
     const processIdentity: DurableProcessIdentity | null = child.pid === undefined
       ? null
-      : { pid: child.pid, process_instance_id: randomUUID() };
+      : {
+          pid: child.pid,
+          process_instance_id: randomUUID(),
+          // setsid() makes the child a group leader, so its pgid is its pid.
+          // Recorded rather than re-derived, because a reader of the durable
+          // trail must not have to assume how it was spawned.
+          process_group_id: detached ? child.pid : null
+        };
     const processBinding = bindAdapterProcessReservation(repoRoot, reservation, processIdentity);
     const processStart = processBinding.then((bound) =>
       !bound.ok || processIdentity === null || options.onProcessStart === undefined

@@ -294,9 +294,21 @@ function workerIdentityForLatestRun(
   ) {
     return { ok: false, reason: `task stop cannot establish durable worker process identity for ${taskId} run ${runId}` };
   }
+  // Absent for any worker recorded before the group was written, and null on
+  // Windows. Either way it is carried through as null rather than guessed at:
+  // on POSIX that makes the stop refuse instead of killing one process and
+  // reporting a tree termination it cannot prove.
+  const recordedGroup = processEvent.data.process_group_id;
+  const processGroupId = Number.isSafeInteger(recordedGroup) && Number(recordedGroup) > 0
+    ? Number(recordedGroup)
+    : null;
   return {
     ok: true,
-    value: { pid: Number(processEvent.data.pid), process_instance_id: processEvent.data.process_instance_id }
+    value: {
+      pid: Number(processEvent.data.pid),
+      process_instance_id: processEvent.data.process_instance_id,
+      process_group_id: processGroupId
+    }
   };
 }
 

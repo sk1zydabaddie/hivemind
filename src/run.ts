@@ -4,6 +4,7 @@ import { copyFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { findDangerousAdapterArgs, invokeAgent, type InvokeAgentResult } from "./adapter.js";
+import type { DurableProcessIdentity } from "./process-control.js";
 import { writeFileAtomic } from "./atomic.js";
 import { checkpointTask, loadTaskCheckpointResumeState } from "./checkpoint.js";
 import { loadConfig, type HivemindConfig, type RunCeiling } from "./config.js";
@@ -436,7 +437,7 @@ async function finishPreparedRunAttempt(
 > {
   const streamOutputWrites: Array<Promise<{ ok: true } | { ok: false; reason: string }>> = [];
   let streamOutputTail: Promise<{ ok: true } | { ok: false; reason: string }> = Promise.resolve({ ok: true });
-  const workerProcessIdentities: Array<{ pid: number; process_instance_id: string }> = [];
+  const workerProcessIdentities: DurableProcessIdentity[] = [];
   const invokeResult = await invokeAgent(repoRoot, prepared.taskId, prepared.tool, {
     allowDangerousAdapter: prepared.allowDangerousAdapter,
     usageSessionId: prepared.usageSessionId,
@@ -452,7 +453,11 @@ async function finishPreparedRunAttempt(
             run_id: prepared.runId,
             tool: prepared.tool,
             pid: identity.pid,
-            process_instance_id: identity.process_instance_id
+            process_instance_id: identity.process_instance_id,
+            // Recorded so a later stop can prove the whole TREE dead. Without
+            // it the trail cannot say what group the worker led, and a stop
+            // has to refuse rather than kill one process and call it done.
+            process_group_id: identity.process_group_id ?? null
           }
         },
         prepared.onEvent

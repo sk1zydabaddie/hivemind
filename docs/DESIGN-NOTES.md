@@ -3,6 +3,117 @@
 Durable notes about behaviour that is deliberate, and about known conditions that
 should not be re-diagnosed from scratch when they recur.
 
+## Worker termination proves a TREE, not a process
+
+### The invariant
+
+> Proving a worker dead means proving its entire process **tree** is dead, on
+> every platform. The same code path that releases a lease and resets a
+> worktree depends on that proof, and a tree that outlives its parent is
+> exactly the condition the lease was protecting against. Anything short of
+> proof is `unknown`, which per PL-1 is treated as alive — nothing is
+> reclaimed.
+
+### What was wrong
+
+Windows ran `taskkill /pid N /t /f` and killed the tree. POSIX sent SIGTERM
+then SIGKILL to a **single pid**, and `adapter.ts` spawned with no `detached`
+and no process group — so there was no group to signal and the agent CLI's own
+subprocesses (a shell, a node, a git) survived. `terminateProcessTreeAndVerify`
+then confirmed the *named* pid absent, returned `"dead"`, and the caller reset
+the worktree and released the lease while orphaned grandchildren were still
+writing into it.
+
+### The fix
+
+- The adapter spawns with `detached` on POSIX, so `setsid()` makes the worker a
+  process-group leader and the group id is the pid.
+- Termination signals `kill(-pgid, …)`, which reaches every process in the
+  group.
+- Verification asks `getProcessGroupLiveness`, built on `kill(-pgid, 0)`:
+  `ESRCH` → dead (the only thing that proves a tree gone), `EPERM` → alive
+  (present but not ours), otherwise unknown. Deliberately **not** `/proc`,
+  because macOS and the BSDs have none and are port targets.
+- One entry point. The platform branch lives inside it, the way PL-1 keeps
+  liveness in one place, so the two cannot drift into a pair that disagrees
+  about what "dead" means. Windows is unchanged.
+
+### What `detached: true` also changes
+
+Stated because it was relied on, not assumed away:
+
+- **stdio is unaffected.** `detached` only alters stdio when paired with
+  `stdio: "ignore"`; with the default pipes, stdout/stderr/stdin behave exactly
+  as before — which the streaming and prompt paths depend on.
+- **The child no longer receives signals sent to our group**, so an interactive
+  Ctrl-C no longer reaches it. That is the point: termination must go through
+  the path that proves what it killed, and a stray Ctrl-C never did.
+- The parent is not held open, because `unref()` is never called and the child
+  is already awaited.
+- **Not set on Windows**, where `detached` means a new console window.
+
+### A worker with no recorded group is never reported dead
+
+`process_group_id` is written into `task.worker_process_started`. It is absent
+for any worker started before this existed, and null on Windows. On POSIX a
+missing group means the tree **cannot** be proven dead, so the stop refuses —
+even when the root pid is definitively absent, because that says nothing about
+its orphans.
+
+The cost is real and deliberate: a POSIX worker already in flight across this
+upgrade can never be proven dead, so its stop will not reclaim. That is the
+fail-closed answer, and it is the correct one.
+
+### Verification status
+
+| Platform | Status |
+| --- | --- |
+| Windows | **Verified.** Full Core suite; the two POSIX-only tests skip. |
+| Linux | **Verified on a real kernel.** WSL2 Ubuntu-22.04, kernel 6.6.87.2. |
+| macOS / BSD | **UNVERIFIED-ON-MACOS.** |
+
+The Linux run is not a simulation — WSL2 is a real kernel, so `setsid`,
+`kill(-pgid)` and signal delivery are native. The load-bearing test spawns an
+actual worker that forks three grandchildren which ignore SIGTERM, terminates
+it, and asserts every grandchild is gone. Reverted to the single-pid kill it
+fails on Linux with `grandchild 390 outlived a termination that reported
+success` — the defect reproduced, then closed.
+
+**macOS is not covered.** It is POSIX and a port target, and it differs (no
+`/proc`). The implementation uses only `kill(-pgid, 0)`, which is portable, so
+there is reason to expect it to hold — but expectation is not verification, and
+this table should not be read as though it were. Anyone porting to macOS should
+run `test/process-control.test.ts` there first; it is self-contained and needs
+no fixtures.
+
+### How to run the suite on Linux from a Windows box
+
+`wsl -d Ubuntu-22.04`, a user-local Node under `~/.local/node` (the Windows
+`node.exe` on the PATH is not a Linux binary), and the Windows-built `dist/`
+read straight from `/mnt/d`. No second `npm install` — the pure-JS dependencies
+resolve from the existing `node_modules`, and the native modules that were
+built for Windows are not reached by these tests.
+
+Note that a full-suite run this way is very slow: the git-heavy fixtures cross
+the 9p mount, and it managed ~130 tests in 25 minutes. Run targeted files, not
+the whole suite.
+
+### Six tests already fail on Linux, and none of them are about termination
+
+Running the suite on Linux for the first time surfaced pre-existing platform
+gaps. Confirmed identical with and without the termination change — same six,
+same names — so they are **not** regressions from it:
+
+| Test | Cause |
+| --- | --- |
+| `capability-corpus` × 4 | The fixture installs its fake agent as `codex.cmd`, a Windows batch file. On Linux it never executes, so `calls.jsonl` is never written. |
+| `resolveChangeset classifies mode-only changes as chmod` | File-mode semantics differ; the fixture encodes the Windows outcome. |
+| `CLI analyze prints escalate JSON…` | Not yet diagnosed. |
+
+These are Windows-only fixtures rather than product defects, but they mean the
+suite cannot currently gate a POSIX port. Worth fixing before the port, and
+worth knowing that "green" today means "green on Windows".
+
 ## JSONL trails: what is guaranteed, and what PIPE_BUF has to do with it (nothing)
 
 ### The invariant
@@ -52,11 +163,19 @@ characters), and a task-output record is one pipe read, bounded by the stream
 high-water mark. The largest line in the repository's captured evidence is
 23,408 bytes.
 
-That is why the lock is worth having anyway: without it, correctness depends on
-an undocumented buffer-chunking threshold staying above an input cap nobody
-checks against it. The regression test in `test/events.test.ts` therefore uses
-a 600,000-byte payload deliberately — a test that passes both with and against
-the fix proves nothing, and a realistic payload would.
+**So the lock is defence in depth, not a fix for an observed failure.** No torn
+write was ever reproduced at the sizes this system writes, and none is known to
+have happened. What the lock buys is that correctness stops depending on an
+undocumented buffer-chunking threshold staying above an input cap nobody checks
+against it — today those two numbers are 512KB and 40KB, and nothing enforces
+the gap.
+
+The regression test in `test/events.test.ts` therefore uses a 600,000-byte
+payload deliberately — a test that passes both with and against the fix proves
+nothing, and a realistic payload would.
+
+**Do not re-derive this from the PIPE_BUF claim.** It was relayed from an audit
+and is wrong; this entry exists so the measurement is not repeated.
 
 ### Recovery
 
