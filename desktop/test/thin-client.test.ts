@@ -203,7 +203,11 @@ describe("React workspace boundary", () => {
     expect(visibleSource).not.toMatch(/High-tier oracle floor|fake-metered reported this state/u);
     expect(visibleSource).not.toMatch(/Reached merge|Waiting to merge|blocked before merge|merge checks/iu);
     expect(work).toMatch(/merged:\s*\{ label: "Merged"/u);
-    expect(projection).toMatch(/case "adoption\.completed":[\s\S]*state = "merged"/u);
+    // Merged still traces to adoption.completed and never to verification, but
+    // it is now Core's answer read from the inspection payload. The projection
+    // carries only the board banner and must not derive per-task state again.
+    expect(projection).toMatch(/case "adoption\.completed":[\s\S]*integration\.status = "merged"/u);
+    expect(projection).not.toMatch(/\.state = "merged"|\.state = "verified"/u);
 
     const audit = await readFile(path.resolve(desktopRoot, "..", "docs", "m8-action-routing-audit.md"), "utf8");
     const actions = [...work.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);

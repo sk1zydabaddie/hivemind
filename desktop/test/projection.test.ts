@@ -43,7 +43,9 @@ describe("read-only event projection", () => {
 
     const rows = taskRows(state);
     expect(rows).toHaveLength(1);
-    expect(rows[0].state).toBe("verified");
+    // Verification is Core's answer, read from the inspection payload. The
+    // projection stops at what the live stream itself observed.
+    expect(rows[0].state).toBe("accepted");
     expect(rows[0].patch.submitted).toBe(true);
     expect(rows[0].patch.verdict).toBe("accept");
     expect(leaseRows(state)).toEqual([
@@ -94,7 +96,7 @@ describe("read-only event projection", () => {
     ]) {
       applyEventMessage(state, { kind: "event", source: "history", event });
     }
-    expect(state.tasks["T-ADOPT"].state).toBe("verified");
+    expect(state.integration.status).toBe("passed");
     applyEventMessage(state, {
       kind: "event",
       source: "history",
@@ -104,7 +106,6 @@ describe("read-only event projection", () => {
         adopted_ref: "b".repeat(40)
       })
     });
-    expect(state.tasks["T-ADOPT"].state).toBe("merged");
     expect(state.integration.status).toBe("merged");
     expect(state.integration.lastEvent?.type).toBe("adoption.completed");
   });
@@ -276,7 +277,7 @@ describe("read-only event projection", () => {
     expect(state.selectedOutput[0].text).toBe("hello");
   });
 
-  test("adoption failure and indeterminacy retract the verified claim and are never silent", () => {
+  test("adoption and re-check outcomes are never silent on the board", () => {
     const replay = (events: ReturnType<typeof makeEvent>[]) => {
       const state = createBoardProjection();
       for (const event of events) {
@@ -289,79 +290,38 @@ describe("read-only event projection", () => {
       makeEvent("patch.accepted", "T-001", { verdict: "accept", reason: "in scope" }),
       makeEvent("integration.passed", null, { applied: ["T-001"], tests: "pass" })
     ];
-    expect(replay(verified).tasks["T-001"].state).toBe("verified");
+    expect(replay(verified).integration.status).toBe("passed");
 
+    // The thread previously said "merging" and then fell silent whichever way
+    // adoption went, and a re-check the user asked for reported nothing.
     for (const [type, status] of [
       ["adoption.failed", "adoption failed"],
       ["adoption.indeterminate", "adoption indeterminate"],
       ["verification.rerun_failed", "recheck failed"]
     ] as const) {
       const state = replay([...verified, makeEvent(type, null, { task_ids: ["T-001"], reason: "fixture" })]);
-      expect(state.tasks["T-001"].state).not.toBe("verified");
-      expect(state.tasks["T-001"].state).not.toBe("merged");
-      expect(state.tasks["T-001"].integration).toBe(status);
-      expect(state.tasks["T-001"].issue).toBe("fixture");
       expect(state.integration.status).toBe(status);
+      expect(state.integration.lastEvent?.type).toBe(type);
     }
-
-    // A successful adoption still reads merged.
-    const merged = replay([
-      ...verified,
-      makeEvent("adoption.completed", null, { task_ids: ["T-001"], pre_adoption_ref: "a".repeat(40), adopted_ref: "b".repeat(40) })
-    ]);
-    expect(merged.tasks["T-001"].state).toBe("merged");
   });
 
-  test("a verified task is retracted when the durable trail stops backing it", () => {
-    // Mirrors Core's integratedTaskIdsFromEvents. The Work tab used to latch on
-    // verified and never let go, disagreeing with `hivemind status`.
-    const replay = (events: ReturnType<typeof makeEvent>[]) => {
-      const state = createBoardProjection();
-      for (const event of events) {
-        applyEventMessage(state, { kind: "event", source: "history", event });
-      }
-      return state;
-    };
-    const submitted = makeEvent("patch.submitted", "T-001", { changed_files: 2 });
-    const accepted = makeEvent("patch.accepted", "T-001", { verdict: "accept", reason: "in scope" });
-    const passed = makeEvent("integration.passed", null, { applied: ["T-001"], tests: "pass" });
-
-    const bare = replay([makeEvent("task.created", "T-001", { title: "Ledger" }), passed]);
-    expect(bare.tasks["T-001"].state).not.toBe("verified");
-
-    const verified = replay([submitted, accepted, passed]);
-    expect(verified.tasks["T-001"].state).toBe("verified");
-
-    const failed = replay([
-      submitted,
-      accepted,
-      passed,
-      makeEvent("integration.failed", null, { applied: ["T-001"], tests: "fail" })
-    ]);
-    expect(failed.tasks["T-001"].state).not.toBe("verified");
-    expect(failed.tasks["T-001"].integration).toBe("failed");
-
-    const blocked = replay([
-      submitted,
-      accepted,
-      passed,
-      makeEvent("integration.blocked", null, { applied: ["T-001"], tests: "blocked" })
-    ]);
-    expect(blocked.tasks["T-001"].state).not.toBe("verified");
-
-    const superseded = replay([submitted, accepted, passed, submitted]);
-    expect(superseded.tasks["T-001"].state).not.toBe("verified");
-    expect(superseded.tasks["T-001"].patch.verdict).toBeNull();
-
-    const rejected = replay([
-      submitted,
-      accepted,
-      passed,
-      submitted,
-      makeEvent("patch.rejected", "T-001", { verdict: "reject", reason: "out of scope" }),
-      passed
-    ]);
-    expect(rejected.tasks["T-001"].state).not.toBe("verified");
+  test("the projection never answers whether a task is verified or merged", () => {
+    // Core derives verification once and the desktop reads it from the
+    // inspection payload. A second answer here is what made every retraction
+    // need writing twice, so reintroducing one must fail loudly.
+    const state = createBoardProjection();
+    for (const event of [
+      makeEvent("patch.submitted", "T-001", { changed_files: 1 }),
+      makeEvent("patch.accepted", "T-001", { verdict: "accept", reason: "in scope" }),
+      makeEvent("integration.passed", null, { applied: ["T-001"], tests: "pass" }),
+      makeEvent("adoption.completed", null, { task_ids: ["T-001"], adopted_ref: "b".repeat(40) })
+    ]) {
+      applyEventMessage(state, { kind: "event", source: "history", event });
+    }
+    for (const task of taskRows(state)) {
+      expect(task.state).not.toBe("verified");
+      expect(task.state).not.toBe("merged");
+    }
   });
 });
 
