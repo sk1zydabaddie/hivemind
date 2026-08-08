@@ -13,6 +13,7 @@ import {
   type IntegrationQueueEntry,
   type IntegrationStatus
 } from "./integration-state.js";
+import { withLeaseLock } from "./lease-lock.js";
 import { requireTaskDependenciesIntegrated } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { requireActiveSpecRatified } from "./spec.js";
@@ -392,21 +393,30 @@ export async function enqueueIntegrationPatch(
     return acceptedResult;
   }
 
-  const queueResult = await loadQueueOrEmpty(repoRoot);
-  if (!queueResult.ok) {
-    return queueResult;
-  }
-  if (queueResult.value.some((entry) => entry.task_id === taskId)) {
-    return { ok: false, reason: `integration queue already contains ${taskId}` };
-  }
-
+  // Load, duplicate-check and write are one read-modify-write on a shared file,
+  // so they hold the same lock lease.ts uses for the identical pattern.
+  // Reentrancy is not a concern here: adoption is the only caller that runs
+  // inside the lease lock, and it never enqueues.
+  //
   // loadIntegrationQueue already dropped entries the trail shows as adopted, so
-  // writing the loaded list back is what physically compacts the file. This is
-  // deliberately the only writer: adoption runs inside the lease lock and cannot
-  // take it again to drain, and a second unguarded writer here would race this one.
-  const nextQueue = [...queueResult.value, { task_id: taskId }];
+  // writing the loaded list back is also what physically compacts the file.
   const queuePath = path.join(repoRoot, ".hivemind", "integration", "queue.json");
-  await writeJsonAtomic(queuePath, nextQueue);
+  const guarded = await withLeaseLock<IntegrationQueueEntry[]>(repoRoot, async () => {
+    const queueResult = await loadQueueOrEmpty(repoRoot);
+    if (!queueResult.ok) {
+      return queueResult;
+    }
+    if (queueResult.value.some((entry) => entry.task_id === taskId)) {
+      return { ok: false, reason: `integration queue already contains ${taskId}` };
+    }
+    const next = [...queueResult.value, { task_id: taskId }];
+    await writeJsonAtomic(queuePath, next);
+    return { ok: true, value: next };
+  });
+  if (!guarded.ok) {
+    return guarded;
+  }
+  const nextQueue = guarded.value;
   const eventResult = await appendEvent(repoRoot, {
     type: "integration.queued",
     task_id: taskId,

@@ -11,6 +11,7 @@ import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { recordHumanGuidance } from "../src/human-guidance.js";
 import { captureIntegrationQueueExpectation, enqueueIntegrationPatch, integrateShadow, type IntegrationStatus } from "../src/integrate.js";
+import { loadIntegrationQueue } from "../src/integration-state.js";
 import { rebuildRepoGraph } from "../src/repo-graph.js";
 import { withTemplateRepo } from "./support/fixture-repo.js";
 
@@ -927,3 +928,30 @@ async function gitRawStdout(cwd: string, args: string[]): Promise<string> {
 function normalizeNewlines(value: string): string {
   return value.replace(/\r\n/g, "\n");
 }
+
+test("concurrent enqueues of different tasks never lose one", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    const taskIds = ["T-A01", "T-A02", "T-A03", "T-A04"];
+    for (const [index, taskId] of taskIds.entries()) {
+      await writeContract(repo, taskId, baseCommit, ["src/feature.ts"]);
+      await writePatchFromEdit(repo, taskId, baseCommit, async () => {
+        await writeFile(path.join(repo, "src", "feature.ts"), `export const feature = 'v${index}';
+`);
+      });
+      await appendEvent(repo, { type: "patch.submitted", task_id: taskId, data: { changed_files: 1 } });
+      await appendEvent(repo, { type: "patch.accepted", task_id: taskId, data: { verdict: "accept", reason: "in scope" } });
+    }
+
+    // Load, duplicate-check and write are one read-modify-write on a shared
+    // file. Unguarded, a concurrent enqueue reads the pre-write list and its
+    // own write drops whichever sibling landed in between.
+    const results = await Promise.all(taskIds.map((taskId) => enqueueIntegrationPatch(repo, taskId)));
+    assert.deepEqual(results.map((result) => result.ok), [true, true, true, true], JSON.stringify(results));
+
+    const queue = await loadIntegrationQueue(repo);
+    assert.equal(queue.ok, true, queue.ok ? undefined : queue.reason);
+    if (queue.ok) {
+      assert.deepEqual(queue.value.map((entry) => entry.task_id).sort(), taskIds);
+    }
+  });
+});
