@@ -445,6 +445,40 @@ Tailwind v4 (CSS-first, no config file) with the shadcn token set mapped onto
 the logo palette in `src/styles.css`, so `npx shadcn add <x>` lands on the
 palette with no edits.
 
+### The token contract, and why it has a test
+
+A shadcn component is styled *entirely* through the semantic token names. A
+token that is missing does not fall back to something reasonable — it generates
+**no CSS at all**, and the element renders unstyled. That failure is silent:
+the class is on the element, it just does nothing.
+
+This had already happened. `--muted-foreground` was declared in `:root` but
+never exposed in `@theme inline`, so `text-muted-foreground` — the most common
+text utility in generated components — emitted nothing. It was live in three
+components already shipped: the command palette's group headings, input
+placeholder and shortcut hints; the dialog description; the dropdown menu's
+icons and shortcuts. All of them rendered at full `--ink` instead of muted.
+
+The cause is a name collision worth remembering. shadcn's `muted` is a **pair**
+— `--muted` is a *surface*, `--muted-foreground` is *text*. The logo palette's
+Muted (`#667085`) is a text colour, and it had taken the surface's name. So
+`bg-muted` resolved to a dark grey block, and the text half was never mapped.
+The fix maps them separately (`--color-muted` → Surface, `--color-muted-foreground`
+→ Muted) and renames the app's own `text-muted` to `text-muted-foreground` —
+87 occurrences, identical rendered colour, and it aligns the app with the
+vocabulary the CLI emits rather than fighting it.
+
+`test/design-tokens.test.ts` asserts every token a generated component can
+reference is present in `@theme inline` **and** resolves to the palette value it
+should. Adding a token to `:root` alone will not satisfy it, because that is
+exactly the mistake that was made.
+
+**Chart tokens are deliberately absent**, and the test asserts their absence so
+it stays deliberate. `--chart-1` through `--chart-5` need five mutually
+distinguishable hues; the palette has two colours that carry meaning and none
+that are decorative. A chart component needs a palette decision first, and
+should fail visibly rather than silently pick something.
+
 - **Panels on a canvas.** Content lives in rounded panels with real padding on a
   `--canvas` ground. Grouping comes from the container, not from a grid of
   full-bleed rules.

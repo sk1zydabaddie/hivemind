@@ -45,6 +45,7 @@
   --primary-foreground: var(--ground);
   --secondary: var(--surface);
   --secondary-foreground: var(--ink);
+  --muted-surface: var(--surface);
   --muted-foreground: var(--muted);
   --accent: var(--navy-wash);
   --accent-foreground: var(--navy);
@@ -53,6 +54,18 @@
   --border: var(--rule);
   --input: var(--rule);
   --ring: var(--navy);
+
+  /* The sidebar group, so a generated sidebar is not the one component that
+     arrives unstyled. Every value is an existing palette value -- the group
+     introduces no colour of its own. */
+  --sidebar: var(--surface);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--navy);
+  --sidebar-primary-foreground: var(--ground);
+  --sidebar-accent: var(--navy-wash);
+  --sidebar-accent-foreground: var(--navy);
+  --sidebar-border: var(--rule);
+  --sidebar-ring: var(--navy);
 }
 
 @theme inline {
@@ -67,7 +80,6 @@
   --color-navy: var(--navy);
   --color-rule: var(--rule);
   --color-rule-soft: var(--rule-soft);
-  --color-muted: var(--muted);
   --color-amber: var(--amber);
   --color-clay: var(--clay);
   --color-navy-wash: var(--navy-wash);
@@ -84,6 +96,12 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
+  /* shadcn's `muted` pair is a SURFACE and a TEXT colour, not one value. The
+     palette's Muted is the text half; the surface half is Surface. Mapping
+     only the text half left `text-muted-foreground` -- the most common text
+     utility in generated components -- compiling to nothing at all. */
+  --color-muted: var(--muted-surface);
+  --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
@@ -91,6 +109,15 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
 
   /* Softly rounded, never pill-shaped: 6px chips, 8px controls, 10px panels. */
   --radius-xs: 4px;

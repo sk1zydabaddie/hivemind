@@ -74,7 +74,7 @@ export function AgentSetupDialog({
                     <strong className="block text-[14px] font-semibold text-ink">
                       {provider.label} is not something you can pick yet
                     </strong>
-                    <p className="mt-1.5 mb-0 text-[13px] leading-relaxed text-muted">
+                    <p className="mt-1.5 mb-0 text-[13px] leading-relaxed text-muted-foreground">
                       {provider.caveat}
                     </p>
                   </div>
@@ -116,7 +116,7 @@ function ProviderCard({
           {provider.status === "supported" ? "Ready to use" : "Not available yet"}
         </span>
       </div>
-      <span className="mt-1 block text-[13px] leading-relaxed text-muted">
+      <span className="mt-1 block text-[13px] leading-relaxed text-muted-foreground">
         {provider.summary}
       </span>
     </button>
@@ -130,7 +130,7 @@ function SupportedProvider({ provider }: { provider: ProviderOption }): React.JS
         <h3 className="m-0 text-[14px] font-semibold text-ink">
           What Hivemind requires of it
         </h3>
-        <p className="mt-1 mb-3 text-[13px] leading-relaxed text-muted">
+        <p className="mt-1 mb-3 text-[13px] leading-relaxed text-muted-foreground">
           These are the properties the run depends on. Hivemind refuses a profile
           that carries bypass flags before it ever starts the agent; the rest are
           set by the file below.
@@ -147,7 +147,7 @@ function SupportedProvider({ provider }: { provider: ProviderOption }): React.JS
                   <strong className="block text-[13px] font-medium text-ink">
                     {capability.label}
                   </strong>
-                  <span className="mt-0.5 block text-[12px] leading-relaxed text-muted">
+                  <span className="mt-0.5 block text-[12px] leading-relaxed text-muted-foreground">
                     {capability.why}
                   </span>
                 </div>
@@ -164,7 +164,7 @@ function SupportedProvider({ provider }: { provider: ProviderOption }): React.JS
         <h3 className="m-0 text-[14px] font-semibold text-ink">
           Create these two files in your project
         </h3>
-        <p className="mt-1 mb-3 text-[13px] leading-relaxed text-muted">
+        <p className="mt-1 mb-3 text-[13px] leading-relaxed text-muted-foreground">
           Hivemind asks for two roles by name. Both run {provider.label}; they are
           separate files so you can point them at different models later.
         </p>
@@ -184,7 +184,7 @@ function SupportedProvider({ provider }: { provider: ProviderOption }): React.JS
         <h3 className="m-0 text-[14px] font-semibold text-ink">
           Then add these cost defaults
         </h3>
-        <p className="mt-1 mb-3 max-w-[640px] text-[13px] leading-relaxed text-muted">
+        <p className="mt-1 mb-3 max-w-[640px] text-[13px] leading-relaxed text-muted-foreground">
           Without them Hivemind treats every file as high-risk, and high-risk work
           refuses anything below the strongest model — so a new project runs
           everything on the most expensive setting it has. Add these keys to{" "}
@@ -216,7 +216,7 @@ function CopyBlock({
       <div className="flex items-center gap-3 border-b border-rule-soft px-4 py-2.5">
         <div className="min-w-0 flex-1">
           <code className="block font-mono text-[12px] break-all text-ink">{label}</code>
-          <span className="mt-0.5 block text-[12px] text-muted">{note}</span>
+          <span className="mt-0.5 block text-[12px] text-muted-foreground">{note}</span>
         </div>
         <Button
           size="sm"

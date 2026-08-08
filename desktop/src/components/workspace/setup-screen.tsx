@@ -36,7 +36,7 @@ export function SetupScreen({
       <div className="px-8 py-10">
         <div className="max-w-[680px]">
           {connecting ? (
-            <p className="m-0 flex items-center gap-2 text-[14px] text-muted">
+            <p className="m-0 flex items-center gap-2 text-[14px] text-muted-foreground">
               <Loader aria-hidden="true" className="size-4 animate-spin text-navy" />
               Opening {visiblePath}…
             </p>
@@ -45,7 +45,7 @@ export function SetupScreen({
               <h2 className="m-0 text-[32px] leading-[1.15] font-semibold tracking-[-0.025em] text-ink">
                 Set up this project.
               </h2>
-              <p className="mt-4 mb-0 max-w-[560px] text-[15px] leading-[1.6] text-muted">
+              <p className="mt-4 mb-0 max-w-[560px] text-[15px] leading-[1.6] text-muted-foreground">
                 Hivemind builds inside one project folder, using the coding agent
                 you already pay for. Three things need to be in place before the
                 first run.
@@ -56,7 +56,7 @@ export function SetupScreen({
                   <strong className="block text-[14px] font-semibold text-ink">
                     {problem.title}
                   </strong>
-                  <p className="mt-1 mb-0 text-[13px] leading-relaxed text-muted">
+                  <p className="mt-1 mb-0 text-[13px] leading-relaxed text-muted-foreground">
                     {problem.detail}
                   </p>
                   {problem.action === "initialize" ? (
@@ -76,10 +76,10 @@ export function SetupScreen({
                   )}
                   {connectionDetail === "" || problem.detail === connectionDetail ? null : (
                     <details className="mt-3">
-                      <summary className="cursor-pointer text-[12px] text-muted">
+                      <summary className="cursor-pointer text-[12px] text-muted-foreground">
                         What Hivemind reported
                       </summary>
-                      <code className="mt-2 block font-mono text-[12px] break-all text-muted">
+                      <code className="mt-2 block font-mono text-[12px] break-all text-muted-foreground">
                         {connectionDetail}
                       </code>
                     </details>
@@ -127,7 +127,7 @@ export function SetupScreen({
                 />
               </ol>
 
-              <p className="mt-6 mb-0 max-w-[560px] text-[13px] leading-relaxed text-muted">
+              <p className="mt-6 mb-0 max-w-[560px] text-[13px] leading-relaxed text-muted-foreground">
                 Steps 2 and 3 are files in your project. Hivemind cannot write them
                 for you yet, so it hands you exactly what to paste.
               </p>
@@ -154,13 +154,13 @@ function SetupStep({
     <li className="flex items-center gap-4 bg-panel px-5 py-4">
       <span
         aria-hidden="true"
-        className="grid size-6 shrink-0 place-items-center rounded-md bg-canvas font-mono text-[12px] text-muted"
+        className="grid size-6 shrink-0 place-items-center rounded-md bg-canvas font-mono text-[12px] text-muted-foreground"
       >
         {index}
       </span>
       <div className="min-w-0 flex-1">
         <strong className="block text-[14px] font-medium text-ink">{title}</strong>
-        <span className="mt-0.5 block text-[13px] leading-relaxed break-words text-muted">
+        <span className="mt-0.5 block text-[13px] leading-relaxed break-words text-muted-foreground">
           {detail}
         </span>
       </div>

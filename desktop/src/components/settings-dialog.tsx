@@ -105,7 +105,7 @@ export function SettingsDialog({
                     <strong className="block text-[13px] font-medium text-ink">
                       {entry.label}
                     </strong>
-                    <span className="mt-0.5 block text-[12px] leading-relaxed text-muted">
+                    <span className="mt-0.5 block text-[12px] leading-relaxed text-muted-foreground">
                       {entry.detail}
                     </span>
                   </button>
@@ -114,13 +114,13 @@ export function SettingsDialog({
             </Section>
 
             <Section title="Your coding agent">
-              <p className="m-0 text-[13px] leading-relaxed text-muted">
+              <p className="m-0 text-[13px] leading-relaxed text-muted-foreground">
                 Hivemind starts the agent you already pay for. It reads how to do
                 that from two files in your project:
               </p>
               <ul className="mt-2 mb-3 grid list-none gap-1 p-0">
                 {REQUIRED_ROLES.map((role) => (
-                  <li className="font-mono text-[12px] break-all text-muted" key={role.tool}>
+                  <li className="font-mono text-[12px] break-all text-muted-foreground" key={role.tool}>
                     {profilePathFor(role)}
                   </li>
                 ))}
@@ -130,7 +130,7 @@ export function SettingsDialog({
                   <Terminal aria-hidden="true" />
                   Set up an agent
                 </Button>
-                <span className="text-[12px] text-muted">
+                <span className="text-[12px] text-muted-foreground">
                   Hivemind cannot read these from here yet.
                 </span>
               </div>
@@ -138,7 +138,7 @@ export function SettingsDialog({
 
             <Section title="Spending">
               {spend === null ? (
-                <p className="m-0 text-[13px] text-muted">
+                <p className="m-0 text-[13px] text-muted-foreground">
                   Open a project to see its limits.
                 </p>
               ) : (
@@ -149,7 +149,7 @@ export function SettingsDialog({
                     <Fact label="Used so far" value={`${spend.effective_tokens.toLocaleString()} tokens`} />
                     <Fact label="Calls so far" value={`${spend.calls}`} />
                   </dl>
-                  <p className="mt-3 mb-0 text-[12px] leading-relaxed text-muted">
+                  <p className="mt-3 mb-0 text-[12px] leading-relaxed text-muted-foreground">
                     Limits stop a run before it overspends. Changing them means
                     editing <code className="font-mono text-ink">.hivemind/config.json</code>;
                     the app cannot change them yet.
@@ -182,7 +182,7 @@ function Section({
 function Fact({ label, value }: { label: string; value: string }): React.JSX.Element {
   return (
     <div className="rounded-md bg-canvas px-3 py-2.5">
-      <dt className="text-[12px] text-muted">{label}</dt>
+      <dt className="text-[12px] text-muted-foreground">{label}</dt>
       <dd className="m-0 mt-0.5 font-mono text-[13px] text-ink">{value}</dd>
     </div>
   );

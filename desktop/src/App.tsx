@@ -141,7 +141,7 @@ export default function App(): React.JSX.Element {
                   variant="outline"
                   onClick={() => setSettingsOpen(true)}
                 >
-                  <Settings aria-hidden="true" className="text-muted" />
+                  <Settings aria-hidden="true" className="text-muted-foreground" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom">Settings</TooltipContent>
@@ -154,7 +154,7 @@ export default function App(): React.JSX.Element {
                   variant="outline"
                   onClick={() => setProjectOpen(true)}
                 >
-                  <FolderGit2 aria-hidden="true" className="text-muted" />
+                  <FolderGit2 aria-hidden="true" className="text-muted-foreground" />
                   <span className="text-[13px] font-medium">{projectName}</span>
                 </Button>
               </TooltipTrigger>
@@ -332,7 +332,7 @@ export default function App(): React.JSX.Element {
                 value={projectInput}
               />
             </label>
-            <p className="m-0 flex flex-wrap items-baseline gap-x-2 text-[13px] text-muted">
+            <p className="m-0 flex flex-wrap items-baseline gap-x-2 text-[13px] text-muted-foreground">
               <span className="font-medium text-ink">Currently open</span>
               <span className="min-w-0 break-all font-mono text-[12px]">
                 {visibleProjectPath}
@@ -380,7 +380,7 @@ function ConnectionReadout({
       <TooltipTrigger asChild>
         <span
           aria-live="polite"
-          className="flex cursor-default items-center gap-2 rounded-md px-2 py-1 text-[13px] text-muted"
+          className="flex cursor-default items-center gap-2 rounded-md px-2 py-1 text-[13px] text-muted-foreground"
         >
           <span aria-hidden="true" className={`size-[7px] rounded-full ${dot}`} />
           <span className="font-medium text-ink first-letter:uppercase">{state}</span>

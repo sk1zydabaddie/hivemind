@@ -10,7 +10,7 @@ const badgeVariants = cva(
   {
     variants: {
       tone: {
-        neutral: "border-rule bg-surface text-muted",
+        neutral: "border-rule bg-surface text-muted-foreground",
         live: "border-navy/25 bg-navy-wash text-navy",
         good: "border-navy/25 bg-navy-wash text-navy",
         warning: "border-amber/35 bg-amber-wash text-amber",

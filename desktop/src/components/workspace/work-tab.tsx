@@ -122,7 +122,7 @@ const EXAMPLE_ASKS = [
 ];
 
 const toneText: Record<Tone, string> = {
-  neutral: "text-muted",
+  neutral: "text-muted-foreground",
   live: "text-navy",
   good: "text-navy",
   warning: "text-amber",
@@ -596,7 +596,7 @@ export function WorkTab({
           <Panel>
             <header className="flex shrink-0 items-baseline justify-between gap-2 border-b border-rule-soft px-4 py-3">
               <h2 className="m-0 text-[14px] font-semibold text-ink">Current work</h2>
-              <span className="font-mono text-[12px] text-muted">{tasks.length}</span>
+              <span className="font-mono text-[12px] text-muted-foreground">{tasks.length}</span>
             </header>
             <TaskBoard
               groups={inspection?.execution_groups ?? []}
@@ -814,7 +814,7 @@ function ShipBar({
               {item.title}
             </strong>
             {changeSet ? (
-              <span className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 text-[13px] text-muted">
+              <span className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 text-[13px] text-muted-foreground">
                 <span>
                   {changeSet.task_ids.length}{" "}
                   {changeSet.task_ids.length === 1 ? "task" : "tasks"} ·
@@ -832,7 +832,7 @@ function ShipBar({
                 </span>
               </span>
             ) : (
-              <span className="mt-0.5 block text-[13px] break-words text-muted">
+              <span className="mt-0.5 block text-[13px] break-words text-muted-foreground">
                 {plainPrimaryDetail(item.detail, item.kind)}
               </span>
             )}
@@ -857,7 +857,7 @@ function ShipBar({
         <CollapsibleContent>
           <ul className="mt-3.5 mb-0 flex list-none flex-wrap gap-x-5 gap-y-1.5 border-t border-navy/15 p-0 pt-3.5">
             {item.change_set?.changed_files.map((file) => (
-              <li className="font-mono text-[12px] break-all text-muted" key={file}>
+              <li className="font-mono text-[12px] break-all text-muted-foreground" key={file}>
                 {file}
               </li>
             ))}
@@ -917,7 +917,7 @@ function AttentionBar({
               {rest.length > 0 ? (
                 <CollapsibleTrigger asChild>
                   <button
-                    className="text-[12px] text-muted underline decoration-muted/40 underline-offset-2 hover:text-ink"
+                    className="text-[12px] text-muted-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:text-ink"
                     type="button"
                   >
                     {rest.length} more after this
@@ -925,13 +925,13 @@ function AttentionBar({
                 </CollapsibleTrigger>
               ) : null}
               {planWaiting ? (
-                <span className="text-[12px] text-muted">a plan is also waiting</span>
+                <span className="text-[12px] text-muted-foreground">a plan is also waiting</span>
               ) : null}
             </div>
             <strong className="mt-1 block text-[15px] leading-snug font-semibold tracking-[-0.01em] text-ink">
               {item.title}
             </strong>
-            <p className="mt-1.5 mb-0 max-w-[760px] text-[13px] leading-relaxed break-words text-muted">
+            <p className="mt-1.5 mb-0 max-w-[760px] text-[13px] leading-relaxed break-words text-muted-foreground">
               {plainPrimaryDetail(item.detail, item.kind)}
             </p>
           </div>
@@ -961,7 +961,7 @@ function AttentionBar({
                   <strong className="block text-[13px] leading-snug font-medium break-words text-ink">
                     {other.title}
                   </strong>
-                  <span className="mt-0.5 block text-[12px] leading-relaxed break-words text-muted">
+                  <span className="mt-0.5 block text-[12px] leading-relaxed break-words text-muted-foreground">
                     {plainPrimaryDetail(other.detail, other.kind)}
                   </span>
                 </div>
@@ -1054,7 +1054,7 @@ function PlanWaitingBar({
         <strong className="block text-[15px] leading-snug font-semibold tracking-[-0.01em] text-ink">
           A {plan.tasks.length}-step plan is ready
         </strong>
-        <span className="mt-0.5 block text-[13px] text-muted">
+        <span className="mt-0.5 block text-[13px] text-muted-foreground">
           Nothing starts until you review and approve this exact plan.
         </span>
       </div>
@@ -1133,12 +1133,12 @@ function RunHeader({
     <div className="relative flex min-h-[60px] shrink-0 items-center gap-4 border-b border-rule-soft px-5 py-3.5">
       <div className="min-w-0">
         {subject === null ? null : (
-          <span className="mb-0.5 block text-[12px] break-words text-muted">{subject}</span>
+          <span className="mb-0.5 block text-[12px] break-words text-muted-foreground">{subject}</span>
         )}
         <h2 className="m-0 text-[16px] leading-tight font-semibold tracking-[-0.015em] text-ink">
           {headline}
         </h2>
-        <div className="mt-1 flex flex-wrap items-baseline gap-x-2.5 text-[13px] text-muted">
+        <div className="mt-1 flex flex-wrap items-baseline gap-x-2.5 text-[13px] text-muted-foreground">
           {files > 0 ? (
             <span>{files === 1 ? "1 file" : `${files} files`} being edited</span>
           ) : null}
@@ -1191,18 +1191,18 @@ function RunHeader({
           <DropdownMenuTrigger asChild>
             <Button
               aria-label="How often Hivemind interrupts you"
-              className="text-muted"
+              className="text-muted-foreground"
               size="sm"
               type="button"
               variant="ghost"
             >
               <SlidersHorizontal aria-hidden="true" />
               {autonomyLabel(configuredLevel)}
-              <ChevronDown aria-hidden="true" className="text-muted" />
+              <ChevronDown aria-hidden="true" className="text-muted-foreground" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-[260px]">
-            <DropdownMenuLabel className="text-muted">Interrupt me for</DropdownMenuLabel>
+            <DropdownMenuLabel className="text-muted-foreground">Interrupt me for</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuRadioGroup
               value={configuredLevel}
@@ -1245,12 +1245,12 @@ function IdleBoard({ onPick }: { onPick: (value: string) => void }): React.JSX.E
           <br />
           want built.
         </h2>
-        <p className="mt-4 mb-0 max-w-[520px] text-[15px] leading-[1.6] text-muted">
+        <p className="mt-4 mb-0 max-w-[520px] text-[15px] leading-[1.6] text-muted-foreground">
           Hivemind splits the work across agents, keeps each one inside its own
           files, and checks every change. You step in twice: now, and when it
           asks you to ship.
         </p>
-        <p className="mt-10 mb-3 text-[12px] font-medium text-muted">Try one of these</p>
+        <p className="mt-10 mb-3 text-[12px] font-medium text-muted-foreground">Try one of these</p>
         <ul className="m-0 grid list-none gap-2 p-0">
           {EXAMPLE_ASKS.map((ask, index) => (
             <li key={ask}>
@@ -1259,7 +1259,7 @@ function IdleBoard({ onPick }: { onPick: (value: string) => void }): React.JSX.E
                 type="button"
                 onClick={() => onPick(ask)}
               >
-                <span className="font-mono text-[12px] text-muted">
+                <span className="font-mono text-[12px] text-muted-foreground">
                   {String(index + 1).padStart(2, "0")}
                 </span>
                 <span className="min-w-0 flex-1 text-[14px] break-words text-ink group-hover:text-navy">
@@ -1267,7 +1267,7 @@ function IdleBoard({ onPick }: { onPick: (value: string) => void }): React.JSX.E
                 </span>
                 <ArrowUpRight
                   aria-hidden="true"
-                  className="size-4 shrink-0 text-muted opacity-0 transition-opacity group-hover:opacity-100"
+                  className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
                 />
               </button>
             </li>
@@ -1324,15 +1324,15 @@ function TaskBoard({
     <ScrollArea className="min-h-0">
       <div className="pb-4">
         {lanes.length === 0 ? (
-          <p className="m-0 px-5 py-6 text-[14px] leading-relaxed text-muted">
+          <p className="m-0 px-5 py-6 text-[14px] leading-relaxed text-muted-foreground">
             No tasks in this run yet.
           </p>
         ) : null}
         {lanes.map((lane) => (
           <section key={lane.key}>
             <header className="sticky top-0 z-1 flex items-baseline justify-between gap-3 border-b border-rule-soft bg-canvas px-5 py-2">
-              <span className="text-[12px] font-medium text-muted">{lane.label}</span>
-              <span className="font-mono text-[12px] text-muted">{lane.tasks.length}</span>
+              <span className="text-[12px] font-medium text-muted-foreground">{lane.label}</span>
+              <span className="font-mono text-[12px] text-muted-foreground">{lane.tasks.length}</span>
             </header>
             {lane.tasks.map((task) => (
               <TaskRow
@@ -1401,7 +1401,7 @@ function TaskRow({
             {language.label}
           </span>
         </span>
-        <span className="mt-1 block text-[12px] break-words text-muted">
+        <span className="mt-1 block text-[12px] break-words text-muted-foreground">
           <span className="font-mono" title={task.task_id}>
             {task.task_id}
           </span>
@@ -1448,7 +1448,7 @@ function InspectorPane({
             <strong className="block text-[14px] leading-snug font-semibold break-words text-ink">
               {task.title}
             </strong>
-            <span className="mt-0.5 block text-[13px] break-words text-muted">
+            <span className="mt-0.5 block text-[13px] break-words text-muted-foreground">
               <span className="font-mono text-[12px]">{task.task_id}</span>
               {task.agent ? ` · ${task.agent}` : " · no agent yet"}
             </span>
@@ -1465,7 +1465,7 @@ function InspectorPane({
           </Button>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[12px] font-medium text-muted">Live output</span>
+          <span className="text-[12px] font-medium text-muted-foreground">Live output</span>
           <span
             aria-label="How much output to show"
             className="ml-auto inline-flex gap-0.5 rounded-md bg-canvas p-0.5"
@@ -1476,7 +1476,7 @@ function InspectorPane({
                 className={`rounded-sm px-2 py-1 text-[12px] font-medium transition-colors ${
                   mode === option
                     ? "bg-panel text-ink shadow-panel"
-                    : "text-muted hover:text-ink"
+                    : "text-muted-foreground hover:text-ink"
                 }`}
                 key={option}
                 type="button"
@@ -1502,25 +1502,25 @@ function InspectorPane({
               className="flex w-full items-center gap-2 border-t border-rule-soft px-4 py-2.5 text-left hover:bg-canvas"
               type="button"
             >
-              <FileCode2 aria-hidden="true" className="size-4 text-muted" />
+              <FileCode2 aria-hidden="true" className="size-4 text-muted-foreground" />
               <span className="text-[13px] text-ink">Files being edited</span>
-              <span className="ml-auto font-mono text-[12px] text-muted">{files.length}</span>
+              <span className="ml-auto font-mono text-[12px] text-muted-foreground">{files.length}</span>
               <ChevronRight
                 aria-hidden="true"
-                className={`size-4 text-muted transition-transform ${filesOpen ? "rotate-90" : ""}`}
+                className={`size-4 text-muted-foreground transition-transform ${filesOpen ? "rotate-90" : ""}`}
               />
             </button>
           </CollapsibleTrigger>
           <CollapsibleContent>
             {files.length === 0 ? (
-              <p className="m-0 px-4 pb-3 text-[13px] text-muted">
+              <p className="m-0 px-4 pb-3 text-[13px] text-muted-foreground">
                 This task is not editing any file yet.
               </p>
             ) : (
               <ul className="m-0 max-h-[140px] list-none overflow-auto p-0 pb-2">
                 {files.map((file) => (
                   <li
-                    className="px-4 py-1 font-mono text-[12px] break-all text-muted"
+                    className="px-4 py-1 font-mono text-[12px] break-all text-muted-foreground"
                     key={file}
                   >
                     {file}
@@ -1558,12 +1558,12 @@ function RunThread({
     <ScrollArea aria-label="What has happened in this run" className="min-h-0">
       <div className="grid gap-4 px-6 py-5">
         {events.length >= RECENT_EVENT_LIMIT ? (
-          <p className="m-0 text-[12px] text-muted">
+          <p className="m-0 text-[12px] text-muted-foreground">
             This run is long enough that its earliest activity is no longer shown.
           </p>
         ) : null}
         {entries.length === 0 ? (
-          <p className="m-0 text-[14px] leading-relaxed text-muted">
+          <p className="m-0 text-[14px] leading-relaxed text-muted-foreground">
             Nothing has happened yet. Describe what you want below and Hivemind
             will prepare a plan.
           </p>
@@ -1601,7 +1601,7 @@ function ThreadRow({
         <div className="max-w-[560px] rounded-lg rounded-br-sm bg-canvas px-4 py-3">
           <p className="m-0 text-[14px] leading-relaxed break-words text-ink">{entry.text}</p>
         </div>
-        <span className="text-[12px] text-muted">
+        <span className="text-[12px] text-muted-foreground">
           You · {formatClock(entry.at)}
           {guidance
             ? entry.applied
@@ -1638,7 +1638,7 @@ function ThreadRow({
                   ? `You approved a ${steps}-step plan`
                   : `A ${steps}-step plan is ready to review`}
             </strong>
-            <span className="mt-0.5 block text-[13px] text-muted">
+            <span className="mt-0.5 block text-[13px] text-muted-foreground">
               {stages !== null
                 ? `${stages} ${stages === 1 ? "stage" : "stages"} · `
                 : ""}
@@ -1661,7 +1661,7 @@ function ThreadRow({
 
   return (
     <div className="flex items-baseline gap-3">
-      <time className="shrink-0 font-mono text-[12px] text-muted">
+      <time className="shrink-0 font-mono text-[12px] text-muted-foreground">
         {formatClock(entry.at)}
       </time>
       <span
@@ -1671,12 +1671,12 @@ function ThreadRow({
       <span className="min-w-0 flex-1 text-[14px] leading-snug break-words text-ink">
         {entry.text}
         {entry.durationMs === null ? null : (
-          <span className="ml-1.5 font-mono text-[12px] text-muted">
+          <span className="ml-1.5 font-mono text-[12px] text-muted-foreground">
             {formatDuration(entry.durationMs)}
           </span>
         )}
         {entry.count > 1 ? (
-          <span className="ml-1.5 font-mono text-[12px] text-muted">×{entry.count}</span>
+          <span className="ml-1.5 font-mono text-[12px] text-muted-foreground">×{entry.count}</span>
         ) : null}
       </span>
     </div>
@@ -1709,7 +1709,7 @@ function ShippedCard({
             {entry.taskIds.length === 1 ? "task" : "tasks"}
             {entry.branch ? ` to ${entry.branch}` : ""}
           </strong>
-          <span className="mt-0.5 block text-[13px] text-muted">
+          <span className="mt-0.5 block text-[13px] text-muted-foreground">
             {formatClock(entry.at)} · this is now part of your project
           </span>
         </div>
@@ -1724,7 +1724,7 @@ function ShippedCard({
                 {planned?.title ?? taskTitles[taskId] ?? taskId}
               </strong>
               {planned?.acceptance_criterion ? (
-                <span className="mt-0.5 block text-[13px] leading-relaxed break-words text-muted">
+                <span className="mt-0.5 block text-[13px] leading-relaxed break-words text-muted-foreground">
                   {planned.acceptance_criterion}
                 </span>
               ) : null}
@@ -1734,7 +1734,7 @@ function ShippedCard({
       </ul>
 
       <Collapsible open={filesOpen} onOpenChange={setFilesOpen}>
-        <div className="mt-4 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-navy/15 pt-3 text-[13px] text-muted">
+        <div className="mt-4 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-navy/15 pt-3 text-[13px] text-muted-foreground">
           <CollapsibleTrigger asChild>
             <button
               className="font-medium text-navy underline decoration-navy/30 underline-offset-2 hover:decoration-navy"
@@ -1756,7 +1756,7 @@ function ShippedCard({
         <CollapsibleContent>
           <ul className="mt-2 mb-0 flex list-none flex-wrap gap-x-5 gap-y-1.5 p-0">
             {entry.changedFiles.map((file) => (
-              <li className="font-mono text-[12px] break-all text-muted" key={file}>
+              <li className="font-mono text-[12px] break-all text-muted-foreground" key={file}>
                 {file}
               </li>
             ))}
@@ -1803,7 +1803,7 @@ function PromptDock({
       <form className="grid gap-2.5" onSubmit={(event) => void onSubmit(event)}>
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2 rounded-md border border-rule bg-canvas p-2 transition-colors focus-within:border-navy/40 focus-within:bg-panel">
           <textarea
-            className="max-h-[180px] min-h-[40px] w-full resize-y border-0 bg-transparent px-1.5 py-1.5 text-[15px] leading-[1.55] text-ink outline-none placeholder:text-muted"
+            className="max-h-[180px] min-h-[40px] w-full resize-y border-0 bg-transparent px-1.5 py-1.5 text-[15px] leading-[1.55] text-ink outline-none placeholder:text-muted-foreground"
             id="work-composer"
             placeholder={
               runActive
@@ -1848,12 +1848,12 @@ function PromptDock({
           </p>
         ) : null}
         <div className="flex items-center gap-3 px-2">
-          <span className="min-w-0 flex-1 text-[12px] leading-snug break-words text-muted">
+          <span className="min-w-0 flex-1 text-[12px] leading-snug break-words text-muted-foreground">
             {runActive
               ? "Guidance is read on the next step and does not change work already in progress."
               : "Typing describes work. Nothing runs until Hivemind has a plan it can check."}
           </span>
-          <kbd className="shrink-0 rounded-sm border border-rule px-1.5 py-0.5 font-mono text-[11px] text-muted">
+          <kbd className="shrink-0 rounded-sm border border-rule px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
             ⌘↵
           </kbd>
           {managerStartAvailable ? (
@@ -1879,7 +1879,7 @@ function SpendMeter({
   spend: WorkspaceInspection["spend"] | null;
 }): React.JSX.Element {
   if (!spend) {
-    return <span className="shrink-0 text-[12px] text-muted">no spend yet</span>;
+    return <span className="shrink-0 text-[12px] text-muted-foreground">no spend yet</span>;
   }
   const ratio =
     spend.session_ceiling_tokens > 0
@@ -1888,7 +1888,7 @@ function SpendMeter({
   return (
     <span
       className={`flex shrink-0 items-center gap-2.5 rounded-md px-2 py-1 font-mono text-[12px] ${
-        spend.near_session_ceiling ? "bg-amber-wash text-amber" : "text-muted"
+        spend.near_session_ceiling ? "bg-amber-wash text-amber" : "text-muted-foreground"
       }`}
       title={`${spend.run_ceiling_tokens.toLocaleString()} tokens maximum per call`}
     >
@@ -1964,7 +1964,7 @@ function PlanTakeover({
                     ? "One change to this plan is queued"
                     : `${amendments.length} changes to this plan are queued`}
                 </strong>
-                <span className="mt-0.5 block text-[13px] text-muted">
+                <span className="mt-0.5 block text-[13px] text-muted-foreground">
                   Queued changes take effect only after they pass the normal checks
                   and you approve the updated plan. The plan below does not include
                   them yet.
@@ -1973,7 +1973,7 @@ function PlanTakeover({
                   {amendments.map((amendment) => (
                     <li className="text-[13px] break-words text-ink" key={amendment.id}>
                       {amendment.title}
-                      <span className="block text-[12px] text-muted">{amendment.detail}</span>
+                      <span className="block text-[12px] text-muted-foreground">{amendment.detail}</span>
                     </li>
                   ))}
                 </ul>
@@ -1994,7 +1994,7 @@ function PlanTakeover({
                         ? `${group.task_ids.length} at the same time`
                         : `${group.task_ids.length} in order`}
                     </strong>
-                    <span className="mt-1 block font-mono text-[12px] break-words text-muted">
+                    <span className="mt-1 block font-mono text-[12px] break-words text-muted-foreground">
                       {group.group_id}
                     </span>
                   </div>
@@ -2019,10 +2019,10 @@ function PlanTakeover({
 
         <DialogFooter className="items-center justify-between border-t border-rule-soft bg-panel px-8 py-4 sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            <code className="rounded-sm bg-canvas px-2 py-1 font-mono text-[12px] text-muted">
+            <code className="rounded-sm bg-canvas px-2 py-1 font-mono text-[12px] text-muted-foreground">
               {plan.plan_hash.slice(0, 12)}
             </code>
-            <span className="text-[13px] text-muted">
+            <span className="text-[13px] text-muted-foreground">
               {ratificationPending
                 ? "Any regenerated or edited plan needs a fresh approval."
                 : "Read-only record of the exact approved plan."}
@@ -2075,7 +2075,7 @@ function PlanTaskCard({
           <h3 className="m-0 text-[15px] leading-snug font-semibold break-words text-ink">
             {task.title}
           </h3>
-          <span className="mt-1 block font-mono text-[12px] text-muted">{task.task_id}</span>
+          <span className="mt-1 block font-mono text-[12px] text-muted-foreground">{task.task_id}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {task.tier === "high" || task.tier === "critical" ? (
@@ -2121,7 +2121,7 @@ function PlanFact({
 }): React.JSX.Element {
   return (
     <div className="grid grid-cols-[104px_minmax(0,1fr)] gap-4 border-t border-rule-soft pt-3">
-      <dt className="text-[13px] text-muted">{label}</dt>
+      <dt className="text-[13px] text-muted-foreground">{label}</dt>
       <dd
         className={`m-0 break-words text-ink ${mono ? "font-mono text-[12px] leading-relaxed" : "text-[13px] leading-snug"}`}
       >
@@ -2269,7 +2269,7 @@ function AmendmentDialog({
             ) : null}
           </div>
           <DialogFooter className="items-center justify-between border-t border-rule-soft bg-canvas px-6 py-4 sm:justify-between">
-            <span className="text-[13px] text-muted">
+            <span className="text-[13px] text-muted-foreground">
               Current plan: {plan.tasks.length} {plan.tasks.length === 1 ? "step" : "steps"}
             </span>
             <Button disabled={busy} type="submit">
@@ -2329,7 +2329,7 @@ function TextActionDialog({
             onChange={(event) => onChange(event.target.value)}
           />
           <DialogFooter className="items-center justify-between sm:justify-between">
-            <span className="text-[13px] text-muted">{note}</span>
+            <span className="text-[13px] text-muted-foreground">{note}</span>
             <Button disabled={busy || value.trim() === ""} type="submit">
               {submitLabel}
             </Button>
@@ -2366,7 +2366,7 @@ function PatchDialog({
         </DialogHeader>
         <ScrollArea className="min-h-0 bg-canvas">
           {loading ? (
-            <p className="m-0 px-6 py-5 text-[13px] text-muted">Loading the checked changes…</p>
+            <p className="m-0 px-6 py-5 text-[13px] text-muted-foreground">Loading the checked changes…</p>
           ) : null}
           {error ? (
             <p className="m-0 px-6 py-5 text-[13px] text-clay" role="status">

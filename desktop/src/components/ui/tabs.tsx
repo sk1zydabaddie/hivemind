@@ -38,10 +38,10 @@ export function TabsTrigger({
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        "inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-transparent bg-transparent px-3 text-[13px] font-medium text-muted transition-colors",
+        "inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-transparent bg-transparent px-3 text-[13px] font-medium text-muted-foreground transition-colors",
         "hover:text-ink",
         "data-[state=active]:border-rule data-[state=active]:bg-panel data-[state=active]:text-ink data-[state=active]:shadow-panel",
-        "[&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted data-[state=active]:[&>svg]:text-navy",
+        "[&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground data-[state=active]:[&>svg]:text-navy",
         className
       )}
       {...props}
