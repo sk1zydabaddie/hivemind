@@ -100,6 +100,10 @@ the whole suite.
 
 ### Six tests already fail on Linux, and none of them are about termination
 
+Recorded as finding **F-1** in [AUDIT-FINDINGS.md](AUDIT-FINDINGS.md), because
+it changes the cross-platform plan rather than being a bug list. Summary here;
+severity and consequences there.
+
 Running the suite on Linux for the first time surfaced pre-existing platform
 gaps. Confirmed identical with and without the termination change — same six,
 same names — so they are **not** regressions from it:
