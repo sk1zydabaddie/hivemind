@@ -701,6 +701,12 @@ async function withSpeculativeRepo(
 async function configureRepo(repo: string): Promise<void> {
   const configPath = path.join(repo, ".hivemind", "config.json");
   const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+  // Declare the tier these cases exercise. Speculative drafting is admitted
+  // for High without a promoted value-quality policy, which is the behaviour
+  // every case below depends on. Init's default globs route src/** to Medium,
+  // so the High intent is stated here instead of inherited from the
+  // unmatched-path fallback.
+  config.high_globs = ["src/**"];
   config.test_command = "node --check src/value.js";
   config.verification = {
     checks: [{ id: "syntax", command: "node --check src/value.js", entry_files: ["src/value.js"] }]

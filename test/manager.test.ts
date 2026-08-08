@@ -1378,6 +1378,10 @@ test("manager autonomous loop hard-stops on gate rejection without retrying or c
       "await appendFile('README.md', 'weak provider should not run\\n');"
     ]);
     await writeProfile(repo, "weak", agentPath, "local", 1);
+    // The provider floor being asserted below is the High floor, so the scope
+    // has to be declared High. Init's default globs put README.md in Low,
+    // where a local-tier provider is eligible and no rejection ever happens.
+    await setTierPatterns(repo, { high_globs: ["README.md"] });
     const contract = managerContract("T-REJECT", baseCommit, ["README.md"]);
     await prepareLintedPlan(repo, contract);
     await writeReactiveManagerProposalProfile(repo, {
@@ -1845,6 +1849,7 @@ test("manager cannot bypass the configured High oracle floor at integration", as
     await createRatifiedSpec(repo, "S-001");
     await allowFixtureManagerCalls(repo);
     await setUnknownCoverageConfig(repo);
+    await setTierPatterns(repo, { high_globs: ["README.md"] });
     await writeContract(repo, "T-MANAGER-FLOOR", baseCommit, ["README.md"]);
     await writeAcceptedPatchBundle(repo, "T-MANAGER-FLOOR", baseCommit, async () => {
       await writeFile(path.join(repo, "README.md"), "# Fixture\nmanager floor attempt\n");

@@ -34,7 +34,7 @@ import { executeWorkspaceAction } from "../../src/workspace-actions.js";
 import { admitExecutionWave } from "../../src/wave-admission.js";
 import { authorizePlanlessManualTaskIfEligible } from "./manual-task.js";
 import { createRatifiedSpec } from "./spec.js";
-import { withTemplateRepo } from "./fixture-repo.js";
+import { useOnlyFixtureAdapterProfiles, withTemplateRepo } from "./fixture-repo.js";
 
 export const execFileAsync = promisify(execFile);
 export const testDir = dirname(fileURLToPath(import.meta.url));
@@ -58,6 +58,7 @@ export async function withTempRepo(run: (context: { repo: string; baseCommit: st
       await git(repo, ["add", "README.md"]);
       await git(repo, ["commit", "-m", "initial"]);
       await initProject(repo);
+      await useOnlyFixtureAdapterProfiles(repo);
       await setConfigManagerAutonomy(repo, { level: "review_everything" });
     },
     async (repo) => {
@@ -639,10 +640,23 @@ export async function setConfigExecution(repo: string, maxConcurrentWorkers: num
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
-export async function setTierPatterns(repo: string, patterns: Record<string, string[]>): Promise<void> {
+/**
+ * Replaces the whole tier map rather than merging into it, so a caller naming
+ * one tier gets exactly that tier. Tier inference stops at the first match in
+ * critical -> high -> medium -> low order, so merging left init's defaults
+ * shadowing whichever tier the caller was trying to declare.
+ */
+export async function setTierPatterns(
+  repo: string,
+  patterns: { low_globs?: string[]; medium_globs?: string[]; high_globs?: string[]; critical_globs?: string[] }
+): Promise<void> {
   const configPath = path.join(repo, ".hivemind", "config.json");
   const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
-  await writeFile(configPath, `${JSON.stringify({ ...config, ...patterns }, null, 2)}\n`);
+  config.low_globs = patterns.low_globs ?? [];
+  config.medium_globs = patterns.medium_globs ?? [];
+  config.high_globs = patterns.high_globs ?? [];
+  config.critical_globs = patterns.critical_globs ?? [];
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 export async function setResourceSessionCeiling(repo: string, tokens: number): Promise<void> {

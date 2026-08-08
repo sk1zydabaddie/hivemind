@@ -96,10 +96,7 @@ test("MCP tool calls fail closed without a configured daemon", async () => {
 
 test("MCP cannot bypass Low-tier value-quality admission through the daemon", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
-    const configPath = path.join(repo, ".hivemind", "config.json");
-    const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
-    config.low_globs = ["README.md"];
-    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+    await setTierGlobs(repo, { low_globs: ["README.md"] });
     const tasksDir = path.join(repo, ".hivemind", "tasks");
     await mkdir(tasksDir, { recursive: true });
     await writeFile(
@@ -221,6 +218,7 @@ test("MCP tools route through daemon and match the core task/worktree/patch/stat
 test("MCP cannot bypass the configured High oracle floor at integration", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await setUnknownCoverageConfig(repo);
+    await setTierGlobs(repo, { high_globs: ["README.md"] });
     const contract = buildContract("T-MCP-FLOOR", baseCommit, ["README.md"]);
     await writeContractFile(repo, contract);
     await writePatchFromRootEdit(repo, "T-MCP-FLOOR", baseCommit, async () => {
@@ -762,6 +760,25 @@ async function setUnknownCoverageConfig(repo: string): Promise<void> {
       format: "lcov"
     }
   };
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+/**
+ * Replaces the whole tier map, so a caller naming one tier gets exactly that
+ * tier. Init writes default globs for all four, and inference stops at the
+ * first match in critical -> high -> medium -> low order, so a merge would
+ * leave a default shadowing the tier under test.
+ */
+async function setTierGlobs(
+  repo: string,
+  tiers: { low_globs?: string[]; medium_globs?: string[]; high_globs?: string[]; critical_globs?: string[] }
+): Promise<void> {
+  const configPath = path.join(repo, ".hivemind", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+  config.low_globs = tiers.low_globs ?? [];
+  config.medium_globs = tiers.medium_globs ?? [];
+  config.high_globs = tiers.high_globs ?? [];
+  config.critical_globs = tiers.critical_globs ?? [];
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 

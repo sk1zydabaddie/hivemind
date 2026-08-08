@@ -239,6 +239,7 @@ test("configured unknown coverage blocks High integration with a distinct could-
     await git(repo, ["commit", "-m", "add unknown coverage fixture"]);
     const integrationBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
     await setRuntimeCoverageConfig(repo, "node -e \"process.exit(0)\"");
+    await setTierGlobs(repo, { high_globs: ["src/feature.ts"] });
     assert.equal((await rebuildRepoGraph(repo)).ok, true);
     await writeContract(repo, "T-004", integrationBase, ["src/feature.ts"]);
     await writePatchFromEdit(repo, "T-004", integrationBase, async () => {
@@ -279,6 +280,7 @@ test("configured strong runtime and structural evidence permits High integration
     await writeCoverageFixture(repo, 1);
     const integrationBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
     await setRuntimeCoverageConfig(repo);
+    await setTierGlobs(repo, { high_globs: ["src/feature.ts"] });
     await writeContract(repo, "T-STRONG", integrationBase, ["src/feature.ts"]);
     await writePatchFromEdit(repo, "T-STRONG", integrationBase, async () => {
       await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = 'changed';\n");
@@ -402,6 +404,7 @@ test("structural-only evidence never upgrades configured High coverage to strong
     await git(repo, ["commit", "-m", "add structural gap fixture"]);
     const integrationBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
     await setRuntimeCoverageConfig(repo);
+    await setTierGlobs(repo, { high_globs: ["src/feature.ts"] });
     await writeContract(repo, "T-STRUCTURAL-FLOOR", integrationBase, ["src/feature.ts"]);
     await writePatchFromEdit(repo, "T-STRUCTURAL-FLOOR", integrationBase, async () => {
       await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = 'changed';\n");
@@ -435,6 +438,7 @@ test("CLI cannot bypass the configured High oracle floor", async () => {
     const integrationBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
     await setRuntimeCoverageConfig(repo);
     await setOracleBypassClaims(repo);
+    await setTierGlobs(repo, { high_globs: ["src/feature.ts"] });
     await writeContract(repo, "T-CLI-FLOOR", integrationBase, ["src/feature.ts"]);
     await writePatchFromEdit(repo, "T-CLI-FLOOR", integrationBase, async () => {
       await writeFile(path.join(repo, "src", "feature.ts"), "export const feature = 'changed';\n");
@@ -798,13 +802,23 @@ async function setRuntimeCoverageConfig(repo: string, command = "node write-cove
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
+/**
+ * Replaces the whole tier map rather than merging into it, so a caller naming
+ * one tier gets exactly that tier. Merging left init's defaults in place for
+ * the tiers the caller did not name, and inference stops at the first match in
+ * critical -> high -> medium -> low order, so a caller asking for Low on
+ * src/feature.ts silently got Medium from the default src/** entry.
+ */
 async function setTierGlobs(
   repo: string,
   tiers: { low_globs?: string[]; medium_globs?: string[]; high_globs?: string[]; critical_globs?: string[] }
 ): Promise<void> {
   const configPath = path.join(repo, ".hivemind", "config.json");
   const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
-  Object.assign(config, tiers);
+  config.low_globs = tiers.low_globs ?? [];
+  config.medium_globs = tiers.medium_globs ?? [];
+  config.high_globs = tiers.high_globs ?? [];
+  config.critical_globs = tiers.critical_globs ?? [];
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 

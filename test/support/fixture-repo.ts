@@ -3,6 +3,8 @@ import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { REQUIRED_ADAPTER_TOOLS } from "../../src/project-defaults.js";
+
 /**
  * Building a fixture repository costs about ten process spawns (git init,
  * two config writes, add, commit, then initProject's own git calls). Measured
@@ -72,6 +74,23 @@ async function rebindRepoRoot(repo: string): Promise<void> {
   const config = JSON.parse(raw) as Record<string, unknown>;
   config.repo_root = repo;
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+}
+
+/**
+ * Removes the planner and manager profiles init writes so a fresh project can
+ * reach a first run.
+ *
+ * A fixture that writes its own adapter profiles is declaring its provider
+ * set, and routing chooses from every profile on disk. Left in place, the two
+ * init defaults are candidates the fixture never named -- which is the
+ * difference between "no eligible provider remains" and "rerouted to a
+ * provider the test did not write". Call this from any fixture whose
+ * assertions depend on which providers exist.
+ */
+export async function useOnlyFixtureAdapterProfiles(repo: string): Promise<void> {
+  for (const tool of REQUIRED_ADAPTER_TOOLS) {
+    await rm(path.join(repo, ".hivemind", "adapters", `${tool}.profile.json`), { force: true });
+  }
 }
 
 /**

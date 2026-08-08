@@ -1,9 +1,7 @@
 # Handoff — first-run defaults
 
-**State: INCOMPLETE. The Core suite is RED at 548/577 with 29 known fixture
-failures.** The product change is believed correct and the failures are
-understood; what remains is fixture work in nine test files. Do not treat this
-branch as finished.
+**State: COMPLETE. The Core suite is GREEN at 577/577.** The fixture work is
+done; see "The 28 failures — root cause" below for what they actually were.
 
 Desktop suite: 46/46 green. `cargo check` on `desktop/src-tauri`: clean.
 
@@ -94,10 +92,17 @@ strengthened to assert both profiles exist.
 
 ---
 
-## The 29 failures — root cause
+## The 28 failures — root cause
 
-**Every one is a fixture that received `"high"` ONLY because nothing matched and
-the fallback was High.**
+The measured count was **28**, not 29, and they had **two** root causes, not
+one. The original diagnosis below covers 22 of them; the remaining 6 came from
+the *adapter profiles* half of the same change and are described in
+"Second root cause" further down.
+
+### First root cause — tier globs (22 failures)
+
+**Each is a fixture that received `"high"` ONLY because nothing matched and the
+fallback was High.**
 
 Worked example: `integrate.test.ts:221`
 (`configured strong runtime and structural evidence permits High integration`)
@@ -113,32 +118,67 @@ declares its intent explicitly:
 { ...config, low_globs: [], high_globs: ["src/**"] }
 ```
 
-### Per-file failure counts
+### Per-file failure counts (as measured)
 
-| File | Failures |
-|---|---|
-| `speculative-draft.test.ts` | 9 |
-| `integrate.test.ts` | 5 |
-| `best-of-n.test.ts` | 4 |
-| `draft-refine.test.ts` | 3 |
-| `run.test.ts` | 2 |
-| `manager.test.ts` | 2 |
-| `workspace-actions.test.ts` | 1 |
-| `mcp.test.ts` | 1 |
-| `manager-concurrency.test.ts` | 1 |
+| File | Tier globs | Adapter profiles |
+|---|---|---|
+| `speculative-draft.test.ts` | 9 | — |
+| `integrate.test.ts` | 5 | — |
+| `best-of-n.test.ts` | 4 | — |
+| `manager.test.ts` | 2 | — |
+| `workspace-actions.test.ts` | 1 | — |
+| `mcp.test.ts` | 1 | — |
+| `draft-refine.test.ts` | — | 3 |
+| `run.test.ts` | — | 2 |
+| `manager-concurrency.test.ts` | — | 1 |
 
-### The fix
+### The tier-glob fix
 
-**Each affected fixture must DECLARE the tier it exercises**, the way
+**Each affected fixture DECLARES the tier it exercises**, the way
 `verification.test.ts` already does. That is a correction, not a weakening: the
-test was always about High-tier behaviour, and it should say so rather than
-depend on a global default that was itself the defect.
+test was always about High-tier behaviour, and it now says so rather than
+depending on a global default that was itself the defect.
 
-**Do not change any product tier logic to make tests pass.** Specifically, do
-not relax `minimumProviderRank`, do not alter `checkTierEligibility`, and do not
-change the unmatched-path fallback from `"high"`. If a fixture is genuinely
-testing Medium-tier behaviour, assert Medium; if it is testing High, give it
-`high_globs` that cover its scope.
+One thing the original diagnosis missed: a fixture that names *one* tier is not
+enough, because inference stops at the first match in
+`critical -> high -> medium -> low` order. `integrate.test.ts`'s "Low weak"
+subtest already said `low_globs: ["src/feature.ts"]` and still resolved to
+Medium, because the default `medium_globs` entry `src/**` is consulted first.
+Every tier helper in the affected fixtures now **replaces the whole four-key
+map** rather than merging into it, so naming one tier yields exactly that tier:
+`setTierGlobs` (`integrate.test.ts`, `mcp.test.ts`, `workspace-actions.test.ts`)
+and `setTierPatterns` (`test/support/manager-fixture.ts`).
+
+No product tier logic was changed. `minimumProviderRank` is untouched,
+`checkTierEligibility` is untouched, and the unmatched-path fallback is still
+`"high"`.
+
+### Second root cause — default adapter profiles (6 failures)
+
+`ensureRequiredAdapterProfiles` writes `planner.profile.json` and
+`manager.profile.json`, both `routing_tier: "strong"`. Routing chooses from
+every profile on disk, so any fixture that builds its repo with `initProject`
+and then writes its own profiles now has **two candidate providers it never
+declared**. Before this branch, `init` wrote no profiles at all, so no
+pre-existing test can have depended on them.
+
+That turns three assertions into their opposites:
+
+- `run.test.ts` — a quota-walled `primary` used to leave
+  `routeTaskProvider(..., { excludeTools: ["primary"] })` with nothing, which is
+  the `task.paused` / `quota_exhausted` path both tests assert. With the
+  defaults present it reroutes to `planner` and the task completes.
+- `manager-concurrency.test.ts` — same reroute, so the walled lane never pauses.
+- `draft-refine.test.ts` — the refinement phase routes with preference
+  `strongest` and picked `manager` over the fixture's own `strong-fixture`.
+
+**The fix** is `useOnlyFixtureAdapterProfiles(repo)` in
+`test/support/fixture-repo.ts`, which removes the `REQUIRED_ADAPTER_TOOLS`
+profiles (imported from `src/project-defaults.ts`, so it cannot drift). It is
+called from the fixture builders in `run.test.ts`,
+`test/support/manager-fixture.ts`, and `draft-refine.test.ts` — the fixtures
+whose assertions depend on which providers exist. This restores each fixture's
+pre-branch provider set; it changes no product behaviour.
 
 ---
 
@@ -166,11 +206,19 @@ also selects between them, and both are strong-tier. Functionally fine — same
 binary, same model — but a user who wants a cheaper worker still adds a profile.
 Not a blocker, and not hidden.
 
+**Second caveat, found while finishing this:** those two profiles are ordinary
+routing candidates the moment they exist. In a fresh project that is the point.
+But it means a quota-walled provider now has somewhere to reroute to where it
+previously paused, and a `strongest` routing preference can pick `manager` over
+a provider the operator configured deliberately. Both are correct given the
+profiles are real, and neither weakens a gate — but the behaviour is new, and
+worth knowing before adding more defaults.
+
 ---
 
-## Standards to hold when finishing this
+## Standards held while finishing this
 
-These were held for every other finding in this audit and should not drop here:
+These were held for every other finding in this audit and were not dropped here:
 
 - **State the invariant before changing anything**, and say how the change
   preserves it.

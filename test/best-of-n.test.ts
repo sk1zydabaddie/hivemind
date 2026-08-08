@@ -366,6 +366,13 @@ async function withBestOfNRepo(
     const baseCommit = await gitStdout(repo, ["rev-parse", "HEAD"]);
     assert.equal(await initProject(repo), 0);
     await updateConfig(repo, (config) => {
+      // Declare the tier these cases exercise. Every scenario here is about
+      // High-tier behaviour: High is the tier value-quality admits without a
+      // promoted policy, and the "below required floor" refusal is the High
+      // provider floor. Init's default globs put src/** in Medium, so the
+      // High intent has to be stated rather than inherited from the
+      // unmatched-path fallback.
+      config.high_globs = ["src/**"];
       config.test_command = "node --check src/value.js";
       config.verification = {
         checks: [

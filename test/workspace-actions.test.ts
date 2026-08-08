@@ -778,11 +778,7 @@ test("the UI quality path cannot breach the provider tier floor or per-call toke
     const marker = path.join(repo, "quality-bypass-marker.txt");
     const agent = path.join(repo, "quality-bypass-agent.mjs");
     await writeFile(agent, `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "spawned");\n`);
-    const configPath = path.join(repo, ".hivemind", "config.json");
-    const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, any>;
-    config.low_globs = [];
-    config.high_globs = ["README.md"];
-    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+    await setTierGlobs(repo, { high_globs: ["README.md"] });
     const profilePath = path.join(repo, ".hivemind", "adapters", "quality-marker.profile.json");
     const profile = {
       tool: "quality-marker",
@@ -805,8 +801,10 @@ test("the UI quality path cannot breach the provider tier floor or per-call toke
     await assert.rejects(stat(marker));
 
     profile.routing_tier = "strong";
-    config.resource_policy.run_ceiling.tokens = 0;
     await writeFile(profilePath, `${JSON.stringify(profile, null, 2)}\n`);
+    const configPath = path.join(repo, ".hivemind", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, any>;
+    config.resource_policy.run_ceiling.tokens = 0;
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
     const overCeiling = await executeWorkspaceAction(repo, {
       type: "quality.best_of_n",
@@ -890,6 +888,9 @@ test("the daemon workspace route calls the shared dispatcher and rejects crafted
 test("workspace inspection presents authoritative plan detail and daemon-derived queues without adding authority", async () => {
   await withRepo(async (repo) => {
     await createRatifiedSpec(repo, "S-001");
+    // The plan detail asserted below reports a tier, so this fixture states
+    // the tier it means rather than inheriting the unmatched-path fallback.
+    await setTierGlobs(repo, { high_globs: ["README.md"] });
     const proposal = {
       tasks: [{
         task_id: "T-001",
@@ -1754,15 +1755,35 @@ async function writeWorkspaceManagerAdapter(
   }, null, 2)}\n`);
 }
 
-async function setTierGlobs(repo: string): Promise<void> {
+interface TierGlobOverrides {
+  low_globs?: string[];
+  medium_globs?: string[];
+  high_globs?: string[];
+  critical_globs?: string[];
+}
+
+const fixtureTierGlobs: Required<TierGlobOverrides> = {
+  low_globs: ["README.md", "docs/**"],
+  medium_globs: ["src/**", "test/**"],
+  high_globs: ["package.json"],
+  critical_globs: ["src/gates/**"]
+};
+
+/**
+ * Replaces the whole tier map. Init writes defaults for all four keys and
+ * inference stops at the first match in critical -> high -> medium -> low
+ * order, so anything less than a replacement leaves a default shadowing the
+ * tier the caller is declaring.
+ */
+async function setTierGlobs(repo: string, tiers?: TierGlobOverrides): Promise<void> {
   const configPath = path.join(repo, ".hivemind", "config.json");
   const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
   await writeFile(configPath, `${JSON.stringify({
     ...config,
-    low_globs: ["README.md", "docs/**"],
-    medium_globs: ["src/**", "test/**"],
-    high_globs: ["package.json"],
-    critical_globs: ["src/gates/**"]
+    low_globs: tiers === undefined ? fixtureTierGlobs.low_globs : tiers.low_globs ?? [],
+    medium_globs: tiers === undefined ? fixtureTierGlobs.medium_globs : tiers.medium_globs ?? [],
+    high_globs: tiers === undefined ? fixtureTierGlobs.high_globs : tiers.high_globs ?? [],
+    critical_globs: tiers === undefined ? fixtureTierGlobs.critical_globs : tiers.critical_globs ?? []
   }, null, 2)}\n`);
 }
 
