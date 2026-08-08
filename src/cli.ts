@@ -131,6 +131,11 @@ async function main(argv: string[]): Promise<number> {
     return checkpointCommand(process.cwd(), rest);
   }
 
+  if (command === "events") {
+    const { eventsCommand } = await import("./trail-repair.js");
+    return eventsCommand(process.cwd(), rest);
+  }
+
   if (command === "quota") {
     return quotaCommand(process.cwd(), rest);
   }

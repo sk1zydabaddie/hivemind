@@ -1,8 +1,22 @@
-import { appendFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  appendTrailLine,
+  readTrail,
+  repairTrail,
+  type TrailDamage,
+  type TrailRepair
+} from "./jsonl-trail.js";
 import { validateRequestedTaskId } from "./task-id.js";
 
+/**
+ * Serialises appends inside this process before they reach the cross-process
+ * lock. Not a correctness mechanism on its own -- the daemon, the CLI and the
+ * MCP server are separate processes -- but it keeps a busy process from
+ * fighting itself for the file lock.
+ */
 const eventAppendQueues = new Map<string, Promise<void>>();
+
+export const eventTrailRepairCommand = "hivemind events repair";
 
 export const eventTypes = [
   "task.created",
@@ -94,7 +108,10 @@ export const eventTypes = [
   "spec.ratified",
   "context.low",
   "orchestrator.checkpointed",
-  "orchestrator.resumed"
+  "orchestrator.resumed",
+  // A repair that leaves no trace makes the trail unable to explain its own
+  // gap. This records what was removed and where the quarantined copy went.
+  "trail.repaired"
 ] as const;
 
 export type HivemindEventType = (typeof eventTypes)[number];
@@ -132,43 +149,66 @@ export async function appendEvent(repoRoot: string, input: HivemindEventInput): 
     return { ok: false, reason: "event data must be JSON serializable" };
   }
 
-  const eventPath = eventLogPath(repoRoot);
-  await appendCompleteEventLine(eventPath, line);
+  const appended = await appendCompleteEventLine(eventLogPath(repoRoot), line);
+  if (!appended.ok) {
+    return appended;
+  }
   return { ok: true, value: event };
 }
 
-export async function readEvents(repoRoot: string): Promise<{ ok: true; value: HivemindEvent[] } | { ok: false; reason: string }> {
-  let content: string;
-  try {
-    content = await readFile(eventLogPath(repoRoot), "utf8");
-  } catch (error: unknown) {
-    if (isNodeError(error, "ENOENT")) {
-      return { ok: true, value: [] };
-    }
-    throw error;
-  }
+export async function readEvents(
+  repoRoot: string
+): Promise<{ ok: true; value: HivemindEvent[] } | { ok: false; reason: string; damage?: TrailDamage }> {
+  return readTrail<HivemindEvent>(
+    repoRoot,
+    eventLogPath(repoRoot),
+    eventTrailRelativePath,
+    validateEventShape,
+    eventTrailRepairCommand
+  );
+}
 
-  if (content.length > 0 && !content.endsWith("\n")) {
-    return { ok: false, reason: "events.jsonl ends with an incomplete event line" };
+/**
+ * Removes an interrupted trailing append from the event trail, and records
+ * that it did.
+ *
+ * A repair that leaves no trace makes the trail unable to explain its own
+ * gap, so the removal is appended back to the trail it just repaired.
+ */
+export async function repairEventTrail(
+  repoRoot: string
+): Promise<{ ok: true; value: TrailRepair | null } | { ok: false; reason: string }> {
+  const read = await readEvents(repoRoot);
+  if (read.ok) {
+    return { ok: true, value: null };
   }
-
-  const events: HivemindEvent[] = [];
-  const lines = content.split(/\r?\n/).filter((line) => line.length > 0);
-  for (const [index, line] of lines.entries()) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      return { ok: false, reason: `invalid JSON in events.jsonl line ${index + 1}` };
-    }
-    const validation = validateEventShape(parsed);
-    if (!validation.ok) {
-      return { ok: false, reason: `invalid event in events.jsonl line ${index + 1}: ${validation.reason}` };
-    }
-    events.push(parsed as HivemindEvent);
+  if (read.damage === undefined) {
+    return { ok: false, reason: read.reason };
   }
-
-  return { ok: true, value: events };
+  const repaired = await repairTrail(
+    eventLogPath(repoRoot),
+    eventTrailRelativePath,
+    read.damage,
+    new Date().toISOString().replaceAll(":", "-")
+  );
+  if (!repaired.ok) {
+    return repaired;
+  }
+  const recorded = await appendEvent(repoRoot, {
+    type: "trail.repaired",
+    task_id: null,
+    data: {
+      version: 1,
+      file: repaired.value.file,
+      quarantine_path: path.relative(repoRoot, repaired.value.quarantine_path).replaceAll("\\", "/"),
+      removed_bytes: repaired.value.removed_bytes,
+      intact_records: repaired.value.intact_records
+    }
+  });
+  if (!recorded.ok) {
+    return recorded;
+  }
+  return repaired;
 }
 
 export async function appendTaskCreatedIfMissing(
@@ -221,11 +261,16 @@ function validateEventShape(value: unknown): { ok: true } | { ok: false; reason:
   return { ok: true };
 }
 
+const eventTrailRelativePath = ".hivemind/log/events.jsonl";
+
 function eventLogPath(repoRoot: string): string {
   return path.join(repoRoot, ".hivemind", "log", "events.jsonl");
 }
 
-async function appendCompleteEventLine(eventPath: string, line: string): Promise<void> {
+async function appendCompleteEventLine(
+  eventPath: string,
+  line: string
+): Promise<{ ok: true } | { ok: false; reason: string }> {
   const key = eventQueueKey(eventPath);
   const previous = eventAppendQueues.get(key) ?? Promise.resolve();
   let release!: () => void;
@@ -237,9 +282,11 @@ async function appendCompleteEventLine(eventPath: string, line: string): Promise
 
   await previous.catch(() => undefined);
   try {
-    await mkdir(path.dirname(eventPath), { recursive: true });
-    // C3's append-only exception: one complete JSON line in one O_APPEND write.
-    await appendFile(eventPath, line, "utf8");
+    // C3's append-only exception, now actually enforced: one complete JSON
+    // line, one write, under a lock every process honours. The in-process
+    // queue above only keeps this process from queueing on its own file lock.
+    const appended = await appendTrailLine(eventPath, line);
+    return appended.ok ? { ok: true } : appended;
   } finally {
     release();
     if (eventAppendQueues.get(key) === next) {

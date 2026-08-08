@@ -1,5 +1,11 @@
-import { appendFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  appendTrailLine,
+  readTrail,
+  repairTrail,
+  type TrailDamage,
+  type TrailRepair
+} from "./jsonl-trail.js";
 import { validateRequestedTaskId } from "./task-id.js";
 
 export type TaskOutputStream = "stdout" | "stderr";
@@ -43,48 +49,64 @@ export async function appendTaskOutput(
     return { ok: false, reason: "task output data must be JSON serializable" };
   }
 
-  const outputPath = taskOutputLogPath(repoRoot, input.task_id);
-  await mkdir(path.dirname(outputPath), { recursive: true });
-  await appendFile(outputPath, line, "utf8");
+  // Worker stdout is the largest thing written anywhere in the system -- lines
+  // of 23,408 bytes are in this repository's own captured trail -- and this
+  // path previously had no serialisation at all, not even in-process.
+  const appended = await appendTrailLine(taskOutputLogPath(repoRoot, input.task_id), line);
+  if (!appended.ok) {
+    return appended;
+  }
   return { ok: true, value: record };
 }
 
 export async function readTaskOutput(
   repoRoot: string,
   taskId: string
-): Promise<{ ok: true; value: TaskOutputRecord[] } | { ok: false; reason: string }> {
+): Promise<{ ok: true; value: TaskOutputRecord[] } | { ok: false; reason: string; damage?: TrailDamage }> {
   const taskIdResult = validateRequestedTaskId(taskId);
   if (!taskIdResult.ok) {
     return { ok: false, reason: taskIdResult.reason };
   }
 
-  let content: string;
-  try {
-    content = await readFile(taskOutputLogPath(repoRoot, taskId), "utf8");
-  } catch (error: unknown) {
-    if (isNodeError(error, "ENOENT")) {
-      return { ok: true, value: [] };
-    }
-    throw error;
-  }
+  return readTrail<TaskOutputRecord>(
+    repoRoot,
+    taskOutputLogPath(repoRoot, taskId),
+    taskOutputRelativePath(taskId),
+    (value) => validateTaskOutputShape(value, taskId),
+    taskOutputRepairCommand(taskId)
+  );
+}
 
-  const records: TaskOutputRecord[] = [];
-  const lines = content.split(/\r?\n/).filter((line) => line.length > 0);
-  for (const [index, line] of lines.entries()) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      return { ok: false, reason: `invalid JSON in ${taskOutputRelativePath(taskId)} line ${index + 1}` };
-    }
-    const validation = validateTaskOutputShape(parsed, taskId);
-    if (!validation.ok) {
-      return { ok: false, reason: `invalid task output in ${taskOutputRelativePath(taskId)} line ${index + 1}: ${validation.reason}` };
-    }
-    records.push(parsed as TaskOutputRecord);
-  }
+export function taskOutputRepairCommand(taskId: string): string {
+  return `hivemind events repair --task ${taskId}`;
+}
 
-  return { ok: true, value: records };
+/**
+ * Removes an interrupted trailing append from a task's output stream.
+ *
+ * Unlike the event trail this does not record itself, because the output
+ * stream is a record of what a provider printed rather than a record anything
+ * derives a guarantee from -- and appending a repair notice into a worker's
+ * stdout would put a Hivemind sentence in the provider's mouth. The event
+ * trail is where the repair is recorded.
+ */
+export async function repairTaskOutput(
+  repoRoot: string,
+  taskId: string
+): Promise<{ ok: true; value: TrailRepair | null } | { ok: false; reason: string }> {
+  const read = await readTaskOutput(repoRoot, taskId);
+  if (read.ok) {
+    return { ok: true, value: null };
+  }
+  if (read.damage === undefined) {
+    return { ok: false, reason: read.reason };
+  }
+  return repairTrail(
+    taskOutputLogPath(repoRoot, taskId),
+    taskOutputRelativePath(taskId),
+    read.damage,
+    new Date().toISOString().replaceAll(":", "-")
+  );
 }
 
 export function taskOutputRelativePath(taskId: string): string {

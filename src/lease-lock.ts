@@ -47,8 +47,26 @@ export async function withLeaseLock<T>(
   action: () => Promise<LeaseLockResult<T>>,
   options: LeaseLockOptions = {}
 ): Promise<LeaseLockResult<T>> {
-  const lockPath = activeLeaseLockPath(repoRoot);
-  const reaperPath = leaseLockReaperPath(repoRoot);
+  return withPathLock(activeLeaseLockPath(repoRoot), action, options);
+}
+
+/**
+ * The same link()-based exclusion the lease store uses, against any path.
+ *
+ * Exclusion comes from link() failing when the target exists, which is atomic
+ * on every filesystem this runs on and works across processes -- the in-process
+ * promise queues elsewhere in the codebase do not, because the daemon, the CLI
+ * and the MCP server are separate processes appending to the same files.
+ *
+ * A holder that dies is reaped by PID liveness rather than by a timeout, so a
+ * crashed writer does not wedge every later one.
+ */
+export async function withPathLock<T>(
+  lockPath: string,
+  action: () => Promise<LeaseLockResult<T>>,
+  options: LeaseLockOptions = {}
+): Promise<LeaseLockResult<T>> {
+  const reaperPath = `${lockPath}.reaper`;
   const retryMs = options.retryMs ?? defaultRetryMs;
   const deadline = Date.now() + (options.timeoutMs ?? defaultTimeoutMs);
   await mkdir(path.dirname(lockPath), { recursive: true });
@@ -67,7 +85,7 @@ export async function withLeaseLock<T>(
       if (await pathExistsOrIsUncertain(reaperPath)) {
         const released = await removeLockIfUnchanged(lockPath, acquired);
         if (!released) {
-          return { ok: false, reason: "lease lock ownership changed while yielding to stale-lock cleanup" };
+          return { ok: false, reason: `lock ownership changed while yielding to stale-lock cleanup: ${lockPath}` };
         }
         const waitResult = await waitForLeaseLock(deadline, retryMs);
         if (!waitResult.ok) {
@@ -81,7 +99,7 @@ export async function withLeaseLock<T>(
       } finally {
         const released = await removeLockIfUnchanged(lockPath, acquired);
         if (!released) {
-          throw new Error("lease lock ownership changed before release");
+          throw new Error(`lock ownership changed before release: ${lockPath}`);
         }
       }
     }

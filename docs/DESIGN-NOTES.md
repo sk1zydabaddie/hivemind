@@ -3,6 +3,95 @@
 Durable notes about behaviour that is deliberate, and about known conditions that
 should not be re-diagnosed from scratch when they recur.
 
+## JSONL trails: what is guaranteed, and what PIPE_BUF has to do with it (nothing)
+
+### The invariant
+
+> A trail is the durable record something else derives a guarantee from. A
+> partial write must never be observable — a reader sees all of a record or
+> none of it — and a damaged trail must be **recoverable rather than terminal**.
+
+This covers `.hivemind/log/events.jsonl` and
+`.hivemind/log/tasks/<id>.output.jsonl`. Both go through `src/jsonl-trail.ts`.
+
+### Prevention
+
+Appends take a cross-process lock (`withPathLock`, the same `link()`-based
+exclusion the lease store uses, reaped by PID liveness rather than a timeout).
+The line is written with **one** `write()` on an `O_APPEND` handle, the byte
+count is checked so a short write is reported instead of silently retried into
+a torn line, and the handle is `fsync`ed before the lock is released.
+
+The in-process promise queue in `events.ts` is kept, but it is not a
+correctness mechanism — the daemon, the CLI and the MCP server are separate
+processes. It only stops one process queueing against its own file lock.
+
+### PIPE_BUF is the wrong threshold, and the measured one is much higher
+
+An audit finding described events as exceeding `PIPE_BUF` (4096) and therefore
+being at risk. **That reasoning does not apply.** `PIPE_BUF` governs pipes and
+FIFOs. For a regular file, a single `write()` is serialised by the Linux inode
+lock and by Windows `FILE_APPEND_DATA`.
+
+The real hazard is Node chunking a large buffer into several `write()` calls
+that another process can land between. Measured on Windows/NTFS, 12 processes
+× 20 appends through the **pre-fix** `appendFile` path:
+
+| bytes per line | result |
+|---|---|
+| 131,072 | clean |
+| 262,144 | clean |
+| 524,288 | **tore** — 128 of 240 lines unparseable |
+| 2,097,152 | **tore** — 115 of 144 unparseable |
+
+So the threshold is between 256KB and 512KB, not 4KB.
+
+**Nothing the system writes today reaches it.** Events are capped near 40,000
+bytes (`plan.ts` and `human-guidance.ts` both cap their text at 20,000
+characters), and a task-output record is one pipe read, bounded by the stream
+high-water mark. The largest line in the repository's captured evidence is
+23,408 bytes.
+
+That is why the lock is worth having anyway: without it, correctness depends on
+an undocumented buffer-chunking threshold staying above an input cap nobody
+checks against it. The regression test in `test/events.test.ts` therefore uses
+a 600,000-byte payload deliberately — a test that passes both with and against
+the fix proves nothing, and a realistic payload would.
+
+### Recovery
+
+The severe half is not the tear, it is that a damaged trail was **terminal**.
+`readEvents` refused on any malformed line, 69 call sites across 15 modules
+depend on it, and `event-bus.ts` calls it on every SSE connect — so one bad
+line made the durable record unreadable, the daemon stream dead, and there was
+no repair, truncate or salvage path. The system bricked fail-closed.
+
+- `readEvents` / `readTaskOutput` still **never skip a record** — a skipped
+  event is a lost guarantee. They now return a `TrailDamage` alongside the
+  reason: file, line, byte offset, kind, how many records are intact, whether
+  it is repairable, and the command to run.
+- A **trailing** incomplete line is the only thing repaired automatically, and
+  only by an explicit `hivemind events repair`. It is provably an interrupted
+  append — `readTrail` refuses a file not ending in a newline, so no reader can
+  ever have observed it, and nothing durably committed is lost.
+- Damage **anywhere else** is refused. Its bytes may belong to two interleaved
+  records, so discarding it could discard a record that really happened.
+- Repair copies the whole trail to `<name>.damaged-<timestamp>` **before**
+  touching it, takes the append lock, and re-checks under that lock — a
+  "partial" line that the racing writer has since completed is left alone.
+- The event trail records its own repair as `trail.repaired`, because a repair
+  that leaves no trace makes the trail unable to explain its own gap. A task
+  output stream does **not**: it is a record of what a provider printed, and
+  putting a Hivemind sentence into a worker's stdout would be a lie about the
+  provider.
+
+### Reading races an append; that is normal and not damage
+
+A reader that catches a live append sees a trailing partial line, and so does a
+reader looking at crash residue. They are indistinguishable in one glance, so
+`readTrail` re-reads a trailing partial a few times before calling it damage.
+A live append resolves in milliseconds; crash residue does not.
+
 ## Adoption indeterminacy is two conditions, not one
 
 An `adoption.indeterminate` record does not always mean the same thing, and
