@@ -77,15 +77,16 @@ async function rebindRepoRoot(repo: string): Promise<void> {
 }
 
 /**
- * Removes the planner and manager profiles init writes so a fresh project can
- * reach a first run.
+ * Removes the profiles init writes so a fresh project can reach a first run.
  *
  * A fixture that writes its own adapter profiles is declaring its provider
- * set, and routing chooses from every profile on disk. Left in place, the two
- * init defaults are candidates the fixture never named -- which is the
- * difference between "no eligible provider remains" and "rerouted to a
- * provider the test did not write". Call this from any fixture whose
- * assertions depend on which providers exist.
+ * set, and routing chooses from every worker profile on disk. A fixture whose
+ * assertion is "nothing eligible remains" cannot leave init's default worker
+ * behind, or it is asserting against a provider it never named.
+ *
+ * This is not a workaround for the default worker outranking anything -- it is
+ * ranked last on purpose and cannot. It is only for fixtures that need the set
+ * to be *exactly* what they wrote.
  */
 export async function useOnlyFixtureAdapterProfiles(repo: string): Promise<void> {
   for (const tool of REQUIRED_ADAPTER_TOOLS) {

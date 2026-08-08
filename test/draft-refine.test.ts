@@ -24,7 +24,6 @@ import { proposeMemoryLesson } from "../src/memory-log.js";
 import { reviewMemoryProposalInteractively } from "../src/memory-review.js";
 import { readPromotedValueQualityPolicy } from "../src/learned-routing.js";
 import { readQuotaLedger } from "../src/resource-ledger.js";
-import { useOnlyFixtureAdapterProfiles } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -296,9 +295,6 @@ async function withDraftRefineRepo(
     await git(repo, ["commit", "-m", "draft-refine fixture"]);
     const baseCommit = await gitStdout(repo, ["rev-parse", "HEAD"]);
     assert.equal(await initProject(repo), 0);
-    // This fixture declares its own two-provider set and asserts which one
-    // each phase routes to, so init's planner and manager defaults have to go.
-    await useOnlyFixtureAdapterProfiles(repo);
     await updateConfig(repo, (config) => {
       config.test_command = "node --check src/value.js";
       config.low_globs = [];

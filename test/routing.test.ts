@@ -124,6 +124,121 @@ test("explicit quality routing preferences choose cheapest and strongest only wi
   });
 });
 
+test("an orchestrator-scoped profile never wins the worker search, at any preference", async () => {
+  await withTempRepo(async ({ repo, config }) => {
+    config.medium_globs = ["src/medium.ts"];
+    // Shaped like init's defaults: strong tier, cheaper cost_rank than the
+    // provider the operator configured. Before roles existed this won
+    // `strongest` outright and displaced a deliberate choice.
+    await writeProfile(repo, "manager", "strong", 20, { roles: ["orchestrator"] });
+    await writeProfile(repo, "operator-strong", "strong", 50);
+    await writeProfile(repo, "operator-cheap", "standard", 1);
+    const contract = contractFor({ allowed_files: ["src/medium.ts"] });
+
+    for (const preference of ["default", "cheapest", "strongest"] as const) {
+      const result = await routeTaskProvider(repo, contract, config, undefined, { preference });
+      assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+      if (result.ok) {
+        assert.notEqual(result.value.tool, "manager", `${preference} selected the orchestrator profile`);
+      }
+    }
+
+    const strongest = await routeTaskProvider(repo, contract, config, undefined, { preference: "strongest" });
+    assert.equal(strongest.ok, true, strongest.ok ? undefined : strongest.reason);
+    if (strongest.ok) {
+      assert.equal(strongest.value.tool, "operator-strong");
+    }
+  });
+});
+
+test("a quota-walled worker pauses rather than rerouting onto an orchestrator profile", async () => {
+  await withTempRepo(async ({ repo, config }) => {
+    // The reroute path excludes the walled tool and re-searches. With only an
+    // orchestrator profile left there is no worker to fall to, and the caller
+    // has to pause -- which is the behaviour the quota wall exists to produce.
+    await writeProfile(repo, "worker", "strong", 1);
+    await writeProfile(repo, "manager", "strong", 20, { roles: ["orchestrator"] });
+
+    const rerouted = await routeTaskProvider(
+      repo,
+      contractFor({ allowed_files: ["src/schema.ts"] }),
+      config,
+      undefined,
+      { excludeTools: ["worker"] }
+    );
+
+    assert.equal(rerouted.ok, false);
+    if (rerouted.ok) {
+      return;
+    }
+    assert.match(rerouted.reason, /no eligible provider for critical task tier/);
+    // The pause records this reason durably, so it has to name both the walled
+    // worker and the profile that was skipped rather than just being empty.
+    assert.match(rerouted.reason, /worker excluded from this decision/);
+    assert.match(rerouted.reason, /manager not selectable as a worker/);
+  });
+});
+
+test("roles narrow only what routing picks on its own, never a named tool or a floor", async () => {
+  await withTempRepo(async ({ repo, config }) => {
+    await writeProfile(repo, "manager", "strong", 20, { roles: ["orchestrator"] });
+
+    // Naming the tool is somebody's decision, so it is honoured.
+    const named = await routeTaskProvider(
+      repo,
+      contractFor({ allowed_files: ["src/schema.ts"] }),
+      config,
+      "manager"
+    );
+    assert.equal(named.ok, true, named.ok ? undefined : named.reason);
+    if (named.ok) {
+      assert.equal(named.value.tool, "manager");
+      assert.equal(named.value.task_tier, "critical");
+    }
+
+    // ...and the tier floor still refuses it exactly as before, so scoping did
+    // not become a way around eligibility.
+    await writeProfile(repo, "weak-manager", "cheap", 20, { roles: ["orchestrator"] });
+    const belowFloor = await routeTaskProvider(
+      repo,
+      contractFor({ allowed_files: ["src/schema.ts"] }),
+      config,
+      "weak-manager"
+    );
+    assert.equal(belowFloor.ok, false);
+    if (!belowFloor.ok) {
+      assert.match(belowFloor.reason, /below required floor for critical task tier/);
+    }
+  });
+});
+
+test("a profile that names no role is unchanged, and an empty role list is refused", async () => {
+  await withTempRepo(async ({ repo, config }) => {
+    // Absence is not a statement: every profile written before roles existed
+    // must keep routing exactly as it did.
+    await writeProfile(repo, "silent", "strong", 1);
+    const silent = await routeTaskProvider(repo, contractFor({ allowed_files: ["src/schema.ts"] }), config);
+    assert.equal(silent.ok, true, silent.ok ? undefined : silent.reason);
+    if (silent.ok) {
+      assert.equal(silent.value.tool, "silent");
+    }
+
+    await writeProfile(repo, "nothing", "strong", 1, { roles: [] });
+    const empty = await routeTaskProvider(repo, contractFor({ allowed_files: ["src/schema.ts"] }), config, "nothing");
+    assert.equal(empty.ok, false);
+    if (!empty.ok) {
+      assert.match(empty.reason, /roles must be a non-empty array of unique values/);
+    }
+
+    await writeProfile(repo, "bogus", "strong", 1, { roles: ["supervisor"] });
+    const bogus = await routeTaskProvider(repo, contractFor({ allowed_files: ["src/schema.ts"] }), config, "bogus");
+    assert.equal(bogus.ok, false);
+    if (!bogus.ok) {
+      assert.match(bogus.reason, /roles must be a non-empty array of unique values/);
+    }
+  });
+});
+
 test("routeTaskProvider fails closed on malformed auto-route provider metadata", async () => {
   await withTempRepo(async ({ repo, config }) => {
     await writeProfile(repo, "bad", "standard", 1, { routing_tier: "tiny" });

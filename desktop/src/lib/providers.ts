@@ -32,13 +32,26 @@ export interface ProviderOption {
 export interface ProviderRole {
   tool: string;
   purpose: string;
+  /**
+   * True when the client sends this tool name to Core and Core resolves the
+   * profile by it. False when Core's routing has to *find* the profile,
+   * because the action never names a tool -- which is a different failure if
+   * the file is missing, and a different thing for setup to explain.
+   */
+  requestedByName: boolean;
 }
 
-/* The desktop asks Core for these tools by name. Core resolves each to
-   `.hivemind/adapters/<tool>.profile.json`, so both files must exist. */
+/* Core resolves each to `.hivemind/adapters/<tool>.profile.json`, so all three
+   files must exist. Core's init writes all three, ranked last on cost so
+   anything configured here wins over them. */
 export const REQUIRED_ROLES: ProviderRole[] = [
-  { tool: "planner", purpose: "Turns what you type into a plan" },
-  { tool: "manager", purpose: "Decides the next step when something is unexpected" }
+  { tool: "planner", purpose: "Turns what you type into a plan", requestedByName: true },
+  {
+    tool: "manager",
+    purpose: "Decides the next step when something is unexpected",
+    requestedByName: true
+  },
+  { tool: "worker", purpose: "Writes the code for each task", requestedByName: false }
 ];
 
 export const CAPABILITIES: ProviderCapability[] = [

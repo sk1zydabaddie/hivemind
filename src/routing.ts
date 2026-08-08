@@ -5,6 +5,7 @@ import {
   loadAdapterProfile,
   normalizeProfileCostRank,
   normalizeProfileRoutingTier,
+  profileAdmitsRole,
   type ProviderRoutingTier
 } from "./adapter.js";
 import type { HivemindConfig } from "./config.js";
@@ -77,6 +78,9 @@ export async function routeTaskProvider(
   }
   const excluded = new Set(options.excludeTools ?? []);
 
+  // A named tool is somebody's decision, so roles do not filter it -- roles
+  // narrow what routing *picks on its own*, not what an operator may ask for.
+  // The tier floor below still applies to a named tool exactly as before.
   if (requestedTool !== undefined) {
     if (excluded.has(requestedTool)) {
       return { ok: false, reason: `provider "${requestedTool}" is excluded from this routing decision` };
@@ -105,9 +109,10 @@ export async function routeTaskProvider(
   if (!candidatesResult.ok) {
     return candidatesResult;
   }
-  const eligible = candidatesResult.value.filter((candidate) => !excluded.has(candidate.tool) && checkTierEligibility(taskTier, candidate).ok);
+  const { candidates, excludedByRole } = candidatesResult.value;
+  const eligible = candidates.filter((candidate) => !excluded.has(candidate.tool) && checkTierEligibility(taskTier, candidate).ok);
   if (eligible.length === 0) {
-    return { ok: false, reason: `no eligible provider for ${taskTier} task tier` };
+    return { ok: false, reason: noEligibleProviderReason(taskTier, candidates, excluded, excludedByRole) };
   }
 
   const nonPressured = eligible.filter((candidate) => !candidate.pressured);
@@ -129,7 +134,7 @@ export async function routeTaskProvider(
       }
     };
   }
-  const learned = await chooseWithPromotedPolicy(repoRoot, contract, taskTier, candidatesResult.value, pool);
+  const learned = await chooseWithPromotedPolicy(repoRoot, contract, taskTier, candidates, pool);
   const selected = learned.selected;
   return {
     ok: true,
@@ -274,7 +279,10 @@ function scopeMatchesPatterns(scope: string, patterns: string[]): boolean {
 async function loadProviderCandidates(
   repoRoot: string,
   ledger: QuotaLedger
-): Promise<{ ok: true; value: ProviderCandidate[] } | { ok: false; reason: string }> {
+): Promise<
+  | { ok: true; value: { candidates: ProviderCandidate[]; excludedByRole: string[] } }
+  | { ok: false; reason: string }
+> {
   let entries: string[];
   try {
     entries = await readdir(path.join(repoRoot, ".hivemind", "adapters"));
@@ -294,14 +302,57 @@ async function loadProviderCandidates(
   }
 
   const candidates: ProviderCandidate[] = [];
+  const excludedByRole: string[] = [];
   for (const tool of tools) {
     const profileResult = await loadAdapterProfile(repoRoot, tool);
     if (!profileResult.ok) {
       return profileResult;
     }
+    // Narrowing only. A profile that names no roles is unchanged, and a
+    // profile removed here was never made eligible by anything else -- so this
+    // can refuse a provider, never admit one. The tier floor is applied
+    // separately and is untouched.
+    if (!profileAdmitsRole(profileResult.profile, "worker")) {
+      excludedByRole.push(tool);
+      continue;
+    }
     candidates.push(candidateFromProfile(profileResult.profile, ledger));
   }
-  return { ok: true, value: candidates };
+  return { ok: true, value: { candidates, excludedByRole } };
+}
+
+/**
+ * Says what happened to each profile, not just that nothing was left.
+ *
+ * This reason is what a quota pause records durably, so it is the whole of
+ * what an operator gets. Naming only one cause misleads whenever there are
+ * two: a below-floor worker and a skipped orchestrator produce the same empty
+ * pool for completely different reasons, and only one of them is fixable by
+ * adding a role.
+ */
+function noEligibleProviderReason(
+  taskTier: TaskTier,
+  candidates: ProviderCandidate[],
+  excluded: Set<string>,
+  excludedByRole: string[]
+): string {
+  const notes: string[] = [];
+  const belowFloor = candidates
+    .filter((candidate) => !excluded.has(candidate.tool) && !checkTierEligibility(taskTier, candidate).ok)
+    .map((candidate) => candidate.tool);
+  const walled = candidates.filter((candidate) => excluded.has(candidate.tool)).map((candidate) => candidate.tool);
+  if (belowFloor.length > 0) {
+    notes.push(`${belowFloor.join(", ")} below the ${taskTier} provider floor`);
+  }
+  if (walled.length > 0) {
+    notes.push(`${walled.join(", ")} excluded from this decision`);
+  }
+  if (excludedByRole.length > 0) {
+    notes.push(`${excludedByRole.join(", ")} not selectable as a worker`);
+  }
+  return notes.length === 0
+    ? `no eligible provider for ${taskTier} task tier`
+    : `no eligible provider for ${taskTier} task tier (${notes.join("; ")})`;
 }
 
 function candidateFromProfile(profile: AdapterProfile, ledger: QuotaLedger): ProviderCandidate {

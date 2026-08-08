@@ -34,11 +34,42 @@ export const TIER_GLOB_KEYS: Array<keyof TierGlobs> = [
 ];
 
 /**
- * The desktop asks Core for these two tools by name, and Core resolves each to
- * .hivemind/adapters/<tool>.profile.json. Without them a first prompt fails on
- * a missing file whose name appears in no screen and no document.
+ * The two tools the desktop asks Core for BY NAME -- `plan.prepare` sends
+ * `tool: "planner"`, `manager.start` sends `tool: "manager"` -- each resolved
+ * to .hivemind/adapters/<tool>.profile.json. Without them a first prompt fails
+ * on a missing file whose name appears in no screen and no document.
  */
-export const REQUIRED_ADAPTER_TOOLS = ["planner", "manager"] as const;
+export const ORCHESTRATOR_ADAPTER_TOOLS = ["planner", "manager"] as const;
+
+/**
+ * The default worker.
+ *
+ * The manager proposes `run_worker` without naming a tool, so executing a task
+ * depends on routing *finding* a worker. The orchestrator profiles above are
+ * scoped out of that search deliberately -- a default has no business
+ * outranking a provider an operator configured, and a quota-walled worker must
+ * pause rather than reroute onto the planner. That scoping is only safe
+ * because a worker-scoped default exists to be found; without it a clean
+ * install could plan but never build.
+ */
+export const DEFAULT_WORKER_TOOL = "worker";
+
+/**
+ * Every comparison routing makes -- default, `cheapest`, `strongest` -- ends in
+ * `cost_rank` ascending, and a profile that omits it sits at 100. Ranking the
+ * default worker far below that makes it the last thing chosen: present so a
+ * clean install can build, and beaten by anything an operator configures.
+ *
+ * A default that can outrank a deliberately configured provider is the same
+ * defect as an orchestrator profile winning the worker search. Scoping fixed
+ * the second; this fixes the first.
+ */
+const LAST_RESORT_COST_RANK = 1_000;
+
+export const REQUIRED_ADAPTER_TOOLS = [
+  ...ORCHESTRATOR_ADAPTER_TOOLS,
+  DEFAULT_WORKER_TOOL
+] as const;
 
 /**
  * Every setting this profile depends on is stated. An unstated setting stays
@@ -70,8 +101,12 @@ export function defaultAdapterProfile(
         : ["codex", ...CODEX_INVOKE_TAIL],
     prompt_arg: "stdin",
     verified_on: "configured-by-init",
+    // Every default states its role. The orchestrator profiles are resolved by
+    // name and must never be *found* by the worker search; the worker profile
+    // exists precisely to be found there.
+    roles: tool === DEFAULT_WORKER_TOOL ? ["worker"] : ["orchestrator"],
     routing_tier: "strong",
-    cost_rank: 20,
+    cost_rank: LAST_RESORT_COST_RANK,
     context_window: 272_000,
     timeout_ms: 120_000,
     usage_parser: "codex-jsonl"

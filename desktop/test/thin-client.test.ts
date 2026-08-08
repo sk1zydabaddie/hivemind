@@ -326,10 +326,18 @@ describe("React workspace boundary", () => {
       expect(provider.caveat ?? "").not.toBe("");
     }
 
-    // Core resolves an adapter profile by the tool name the client sends, so the
-    // setup instructions must name exactly the roles the Work tab asks for.
+    // Core resolves an adapter profile by the tool name the client sends, so
+    // every name the Work tab sends must have a setup instruction -- and every
+    // role marked as sent by name must actually be sent by name.
     const requested = [...work.matchAll(/tool: "([a-z]+)"/gu)].map((match) => match[1]);
-    expect(new Set(requested)).toEqual(new Set(REQUIRED_ROLES.map((role) => role.tool)));
+    expect(new Set(requested)).toEqual(
+      new Set(REQUIRED_ROLES.filter((role) => role.requestedByName).map((role) => role.tool))
+    );
+    // A role the client never names still needs its profile on disk, because
+    // routing has to find it. Setup has to hand it over even though no screen
+    // sends its name.
+    expect(REQUIRED_ROLES.filter((role) => !role.requestedByName).map((role) => role.tool))
+      .toEqual(["worker"]);
 
     // The catalogue is data, not a hard-coded shape in the UI.
     expect(providers).toMatch(/export const PROVIDERS/u);

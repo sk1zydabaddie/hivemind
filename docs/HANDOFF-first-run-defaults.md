@@ -206,13 +206,85 @@ also selects between them, and both are strong-tier. Functionally fine — same
 binary, same model — but a user who wants a cheaper worker still adds a profile.
 Not a blocker, and not hidden.
 
-**Second caveat, found while finishing this:** those two profiles are ordinary
-routing candidates the moment they exist. In a fresh project that is the point.
-But it means a quota-walled provider now has somewhere to reroute to where it
-previously paused, and a `strongest` routing preference can pick `manager` over
-a provider the operator configured deliberately. Both are correct given the
-profiles are real, and neither weakens a gate — but the behaviour is new, and
-worth knowing before adding more defaults.
+**Second caveat, found while finishing this — since fixed, see below.** Those
+two profiles were ordinary routing candidates the moment they existed, so a
+quota-walled provider had somewhere to reroute to where it previously paused,
+and a `strongest` preference could pick `manager` over a provider the operator
+configured deliberately.
+
+---
+
+## Roles: what a profile may be *selected* for
+
+### The invariant
+
+> Role scoping is a **candidate-set narrowing, never a floor change**.
+> `minimumProviderRank` and `checkTierEligibility` are untouched, so nothing
+> that was ineligible becomes eligible. A profile that declares no role makes
+> no claim — absence is not a restriction, exactly as with tier globs.
+
+`AdapterProfile.roles` is an optional list of `worker` | `orchestrator`.
+
+- **Absent** → selectable for everything, exactly as before. Every profile
+  written before the field existed is unchanged, which is why this can refuse a
+  provider but never admit one.
+- **Present** → selectable only for the roles named. An empty list is refused
+  rather than honoured: "selectable for nothing" is a mistake, not a decision.
+
+`routeTaskProvider`'s **open search** — the only place a provider is *chosen*
+rather than *asked for* — considers worker-scoped candidates only. A **named**
+tool is somebody's decision and is still honoured; the tier floor applies to it
+exactly as before.
+
+### Why it is not cosmetic
+
+Both defects were silent and neither was anyone's choice:
+
+- **A safety-adjacent path changed.** `checkpointAndRerouteTask` re-searches
+  with the walled tool excluded. An orchestrator profile in that pool turned a
+  `task.paused` / `quota_exhausted` into a reroute — the quota wall stopped
+  producing the pause it exists to produce.
+- **A default outranked an operator.** Every comparison ends in `cost_rank`
+  ascending, and the defaults were rank 20, so `strongest` picked `manager`
+  over a deliberately configured strong provider.
+
+### The third default, and why it exists
+
+Scoping planner and manager out of the worker search broke the first-run
+journey, because `run_worker` is proposed **without a tool** — the manager
+names no provider, so executing any task depends on routing *finding* one. With
+only orchestrator profiles present, a clean install could plan but never build.
+
+So init now writes a third profile, `worker`, scoped `roles: ["worker"]`.
+
+It is ranked `cost_rank: 1000`. A profile that omits `cost_rank` sits at 100,
+and every comparison ends in `cost_rank` ascending, so the default worker is
+the **last** thing chosen: present so a clean install can build, and beaten by
+anything an operator configures. *A default that can outrank a deliberately
+configured provider is the same defect as an orchestrator winning the worker
+search* — scoping fixed the second, ranking fixes the first.
+
+`desktop/src/lib/providers.ts` lists all three, with `requestedByName` marking
+the two the client actually sends by name. A profile the client never names
+still has to exist, and setup has to hand it over.
+
+### Acceptance: the journey, not the unit tests
+
+Walked against a real clean install — an actual git repository with `src/`,
+`docs/`, `.github/workflows/` and no `.hivemind`, running Core's own `init` and
+then the real routing code. **31/31 checks.** The load-bearing ones:
+
+```
+worker routing finds a worker on a clean install          -> worker
+no search at any tier or preference selects planner/manager
+naming planner still routes (medium scope)                -> planner
+naming manager still routes (critical scope)              -> manager
+default / cheapest / strongest: operator's provider wins   -> builder
+Critical work never lands on a below-floor provider        -> strong
+unmatched path still falls to High                         -> high/strong
+a walled worker may reroute to another worker              -> worker
+with every worker walled it pauses, never reaching an orchestrator
+```
 
 ---
 

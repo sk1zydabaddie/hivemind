@@ -28,6 +28,24 @@ export type PromptArgMode = "stdin" | "arg";
 export type ProviderRoutingTier = "local" | "cheap" | "standard" | "strong";
 export type AdapterUsageParser = "codex-jsonl" | "codex-text" | "claude-json";
 
+/**
+ * What a profile may be *selected* for.
+ *
+ * - `worker` profiles are the pool `routeTaskProvider` searches when no tool is
+ *   named. That search is the only place a provider is chosen rather than
+ *   asked for by name.
+ * - `orchestrator` profiles are resolved by name -- `planner`, `manager` -- by
+ *   the caller that needs them, so they never need to win a search.
+ *
+ * The distinction exists because a profile that appears in the worker search
+ * can be selected for work nobody chose it for. Two behaviours made that
+ * concrete: a quota-walled worker rerouted to an orchestrator profile instead
+ * of pausing, and a `strongest` preference outranked an operator's deliberately
+ * configured provider.
+ */
+export const adapterRoles = ["worker", "orchestrator"] as const;
+export type AdapterRole = (typeof adapterRoles)[number];
+
 export interface AdapterProfile {
   tool: string;
   invoke: string[];
@@ -38,6 +56,18 @@ export interface AdapterProfile {
   routing_tier?: ProviderRoutingTier;
   cost_rank?: number;
   usage_parser?: AdapterUsageParser;
+  roles?: AdapterRole[];
+}
+
+/**
+ * Absence is not a statement. A profile written before this field existed made
+ * no claim about what it may be selected for, and reading silence as a refusal
+ * would reject providers that work today. Only a profile that names its roles
+ * is narrowed by them -- which is why this can never turn an eligible provider
+ * into an ineligible one without someone having said so.
+ */
+export function profileAdmitsRole(profile: AdapterProfile, role: AdapterRole): boolean {
+  return profile.roles === undefined || profile.roles.includes(role);
 }
 
 export interface InvokeAgentResult {
@@ -140,7 +170,8 @@ const ADAPTER_PROFILE_FIELDS = new Set([
   "timeout_ms",
   "routing_tier",
   "cost_rank",
-  "usage_parser"
+  "usage_parser",
+  "roles"
 ]);
 
 export async function invokeAgent(
@@ -298,8 +329,27 @@ export function validateAdapterProfile(raw: unknown, expectedTool?: string): str
   if ("usage_parser" in raw && !isAdapterUsageParser(raw.usage_parser)) {
     problems.push("usage_parser must be one of codex-jsonl, codex-text, claude-json when provided");
   }
+  if ("roles" in raw) {
+    // An empty list would mean "selectable for nothing", which is a profile
+    // that cannot be used at all. That is a mistake, not a decision, so it is
+    // refused rather than silently honoured.
+    if (
+      !Array.isArray(raw.roles) ||
+      raw.roles.length === 0 ||
+      !raw.roles.every((entry) => isAdapterRole(entry)) ||
+      new Set(raw.roles).size !== raw.roles.length
+    ) {
+      problems.push(
+        `roles must be a non-empty array of unique values from ${adapterRoles.join(", ")} when provided`
+      );
+    }
+  }
 
   return problems;
+}
+
+function isAdapterRole(value: unknown): value is AdapterRole {
+  return typeof value === "string" && (adapterRoles as readonly string[]).includes(value);
 }
 
 export function normalizeProfileRoutingTier(profile: AdapterProfile): ProviderRoutingTier {

@@ -14,7 +14,12 @@ import {
   DEFAULT_SESSION_TOKEN_CEILING,
   loadConfig
 } from "../src/config.js";
-import { findDangerousAdapterArgs, findRefusedAdapterModes, loadAdapterProfile } from "../src/adapter.js";
+import {
+  findDangerousAdapterArgs,
+  findRefusedAdapterModes,
+  loadAdapterProfile,
+  profileAdmitsRole
+} from "../src/adapter.js";
 import { initProject } from "../src/init.js";
 import { inferAllowedFilesTier } from "../src/routing.js";
 
@@ -40,6 +45,10 @@ test("init creates the M0.1 .hivemind scaffold inside a git repo", async () => {
     // The desktop asks Core for these two tools by name on a first prompt.
     await assertExists(path.join(repo, ".hivemind", "adapters", "planner.profile.json"));
     await assertExists(path.join(repo, ".hivemind", "adapters", "manager.profile.json"));
+    // The manager proposes run_worker without naming a tool, so routing has to
+    // be able to FIND a worker. Without this the orchestrator scoping below
+    // would leave a clean install able to plan but never build.
+    await assertExists(path.join(repo, ".hivemind", "adapters", "worker.profile.json"));
 
     const config = JSON.parse(await readFile(path.join(repo, ".hivemind", "config.json"), "utf8")) as {
       version: number;
@@ -372,7 +381,7 @@ test("a fresh project can reach a first run without hand-written adapter profile
     await git(repo, ["init"]);
     assert.equal(await initProject(repo), 0);
 
-    for (const tool of ["planner", "manager"]) {
+    for (const tool of ["planner", "manager", "worker"]) {
       const loaded = await loadAdapterProfile(repo, tool);
       assert.equal(loaded.ok, true, loaded.ok ? undefined : loaded.reason);
       if (!loaded.ok) continue;
@@ -385,6 +394,15 @@ test("a fresh project can reach a first run without hand-written adapter profile
       assert.equal(loaded.profile.invoke.includes("workspace-write"), true);
       assert.equal(loaded.profile.invoke.some((arg) => /ultra|ignore-user-config/iu.test(arg)), false);
       assert.deepEqual(findRefusedAdapterModes(loaded.profile), []);
+      // Every default states its role. planner and manager are resolved by
+      // name and must never be FOUND by the worker search: offering them as
+      // worker candidates let a default outrank a deliberately configured
+      // provider, and turned a quota pause into a reroute, both without
+      // anyone choosing it.
+      const expected = tool === "worker" ? ["worker"] : ["orchestrator"];
+      assert.deepEqual(loaded.profile.roles, expected);
+      assert.equal(profileAdmitsRole(loaded.profile, "worker"), tool === "worker");
+      assert.equal(profileAdmitsRole(loaded.profile, "orchestrator"), tool !== "worker");
     }
   });
 });

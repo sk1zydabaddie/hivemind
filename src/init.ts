@@ -107,8 +107,9 @@ async function ensureTierGlobsRecorded(configPath: string): Promise<{ ok: true }
 }
 
 /**
- * The desktop asks Core for these tools by name on a first prompt. A profile
- * that already exists is a choice made in setup, so it is never rewritten.
+ * Two are resolved by name on a first prompt; the third is the worker routing
+ * has to be able to find, since `run_worker` names no tool. A profile that
+ * already exists is a choice made in setup, so it is never rewritten.
  */
 async function ensureRequiredAdapterProfiles(hivemindRoot: string): Promise<void> {
   const adaptersDir = path.join(hivemindRoot, "adapters");
