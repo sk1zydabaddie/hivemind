@@ -4,6 +4,7 @@ import { isMemoryProposalId, type MemoryResult } from "./memory-types.js";
 import { validateLearnedRoutingPolicy, type LearnedRoutingPolicy } from "./routing-policy-schema.js";
 import { validateValueQualityPolicy, type ValueQualityPolicy } from "./value-quality-policy-schema.js";
 import { validateVerificationPolicy, type VerificationPolicy } from "./verification-policy-schema.js";
+import { checkFormatVersion, formatVersions } from "./format-version.js";
 
 export interface CanonMemoryEntry {
   version: 1;
@@ -105,8 +106,11 @@ function validateCanonMemoryEntry(value: unknown): MemoryResult<CanonMemoryEntry
   const valueQualityPolicy = value.value_quality_policy === undefined || value.value_quality_policy === null
     ? { ok: true as const, value: null }
     : validateValueQualityPolicy(value.value_quality_policy);
+  const gated = checkFormatVersion(value, formatVersions.memoryCanon, "the memory canon record");
+  if (!gated.ok) {
+    return { ok: false, reason: gated.reason };
+  }
   if (
-    value.version !== 1 ||
     typeof value.canon_id !== "string" ||
     value.canon_id !== value.proposal_id ||
     typeof value.proposal_id !== "string" ||

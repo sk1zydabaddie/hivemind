@@ -1,4 +1,5 @@
 import { isRoutingTaskType, type RoutingTaskType } from "./routing-task-type.js";
+import { checkFormatVersion, formatVersions } from "./format-version.js";
 
 export interface ValueQualityPolicy {
   version: 1;
@@ -11,9 +12,12 @@ export interface ValueQualityPolicy {
 export function validateValueQualityPolicy(
   value: unknown
 ): { ok: true; value: ValueQualityPolicy } | { ok: false; reason: string } {
+  const gated = checkFormatVersion(value, formatVersions.valueQualityPolicy, "the promoted value-quality policy");
+  if (!gated.ok) {
+    return { ok: false, reason: gated.reason };
+  }
   if (
     !isRecord(value) ||
-    value.version !== 1 ||
     value.kind !== "value_quality_policy" ||
     typeof value.source_evidence_hash !== "string" ||
     !/^[a-f0-9]{64}$/u.test(value.source_evidence_hash) ||

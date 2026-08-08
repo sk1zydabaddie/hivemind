@@ -22,6 +22,7 @@ import {
 } from "./routing-policy-schema.js";
 import { isRoutingTaskType, type RoutingTaskType } from "./routing-task-type.js";
 import type { ValueQualityPolicy } from "./value-quality-policy-schema.js";
+import { checkFormatVersion, formatVersions } from "./format-version.js";
 
 export interface RoutingObservation {
   version: 1;
@@ -634,9 +635,12 @@ function registrationFromVerifiedReport(
 function parseCorpusRegistration(
   value: unknown
 ): { ok: true; value: CorpusRegistration } | { ok: false; reason: string } {
+  const gated = checkFormatVersion(value, formatVersions.capabilityCorpusEvidence, "the corpus registration");
+  if (!gated.ok) {
+    return { ok: false, reason: gated.reason };
+  }
   if (
     !isRecord(value) ||
-    value.version !== 1 ||
     typeof value.corpus_run_id !== "string" ||
     !/^CC-[A-Za-z0-9-]+$/u.test(value.corpus_run_id) ||
     typeof value.report_path !== "string" ||
@@ -780,9 +784,12 @@ function compareNullableCost(left: number | null, right: number | null): number 
 }
 
 function parseRoutingObservation(value: unknown): { ok: true; value: RoutingObservation } | { ok: false; reason: string } {
+  const gated = checkFormatVersion(value, formatVersions.routingObservation, "the routing observation");
+  if (!gated.ok) {
+    return { ok: false, reason: gated.reason };
+  }
   if (
     !isRecord(value) ||
-    value.version !== 1 ||
     typeof value.run_id !== "string" ||
     value.run_id.trim() === "" ||
     typeof value.provider !== "string" ||

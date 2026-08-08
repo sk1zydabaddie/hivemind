@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { TaskTier } from "./routing.js";
 import { writeImmutableJsonArtifact } from "./immutable-artifact.js";
+import { checkFormatVersion, formatVersions } from "./format-version.js";
 
 export interface VerificationSetInput {
   task_id: string;
@@ -125,6 +126,12 @@ export async function loadVerificationSet(
   try {
     const rawText = await readFile(absolutePath, "utf8");
     const raw: unknown = JSON.parse(rawText);
+    // Version before shape. A manifest from a newer build would otherwise be
+    // reported as "malformed", which is both wrong and unactionable.
+    const gated = checkFormatVersion(raw, formatVersions.verificationSet, manifestPath);
+    if (!gated.ok) {
+      return { ok: false, reason: gated.reason };
+    }
     if (!isVerificationSetManifest(raw) || raw.verification_id !== verificationId) {
       return { ok: false, reason: `verification-set manifest is malformed for ${verificationId}` };
     }
@@ -133,6 +140,11 @@ export async function loadVerificationSet(
       value: {
         manifest: raw,
         manifest_path: manifestPath,
+        // THE HASH IS A PROPERTY OF THE FILE, NEVER OF THE PARSED OBJECT.
+        // It is taken over the exact bytes read, before any parse or upcast,
+        // because adoption binds to it and an upcast shape would not
+        // round-trip to the same bytes. Anything that re-derives this from a
+        // parsed manifest is a bug; test/verification-set.test.ts pins it.
         manifest_sha256: sha256(Buffer.from(rawText, "utf8"))
       }
     };
@@ -180,7 +192,7 @@ function sha256(value: Buffer): string {
 
 function isVerificationSetManifest(value: unknown): value is VerificationSetManifest {
   if (!isRecord(value)) return false;
-  if (value.version !== 1 || typeof value.verification_id !== "string" || typeof value.created_at !== "string") return false;
+  if (typeof value.verification_id !== "string" || typeof value.created_at !== "string") return false;
   if (typeof value.base_branch !== "string" || !isHash(value.base_commit) || !isHash(value.result_tree)) return false;
   if (!Array.isArray(value.task_ids) || !value.task_ids.every(nonEmptyString)) return false;
   const taskIds: string[] = value.task_ids;

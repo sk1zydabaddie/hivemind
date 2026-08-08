@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { isRoutingTaskType, type RoutingTaskType } from "./routing-task-type.js";
+import { checkFormatVersion, formatVersions } from "./format-version.js";
 
 interface VerifiedCorpusTask {
   task_id: string;
@@ -85,8 +86,11 @@ export async function readVerifiedCapabilityCorpusReport(
     return { ok: false, reason: "capability corpus manifest has an invalid definition" };
   }
   const definitionHash = hashJson(definition);
+  const gatedManifest = checkFormatVersion(manifest, formatVersions.capabilityCorpusManifest, "the capability corpus manifest");
+  if (!gatedManifest.ok) {
+    return { ok: false, reason: gatedManifest.reason };
+  }
   if (
-    manifest.version !== 1 ||
     manifest.corpus_run_id !== corpusRunId ||
     manifest.definition_sha256 !== definitionHash ||
     manifest.advisory_only !== true ||
@@ -95,8 +99,11 @@ export async function readVerifiedCapabilityCorpusReport(
   ) {
     return { ok: false, reason: "capability corpus manifest identity or safety fields do not verify" };
   }
+  const gatedReport = checkFormatVersion(rawReport, formatVersions.capabilityCorpusReport, "the capability corpus report");
+  if (!gatedReport.ok) {
+    return { ok: false, reason: gatedReport.reason };
+  }
   if (
-    rawReport.version !== 1 ||
     rawReport.corpus_run_id !== corpusRunId ||
     rawReport.corpus_definition_sha256 !== definitionHash ||
     rawReport.advisory_only !== true ||

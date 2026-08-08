@@ -86,13 +86,46 @@ that grants anything.
 
 ### What is deliberately left alone
 
+Every durable format now runs `checkFormatVersion` (`src/format-version.ts`)
+**before** any shape validation, and `formatVersions` is the single reviewable
+list of what is gated. Applying it was deliberately behaviour-preserving:
+every one of these has always stamped its version, so absence means damage
+rather than age (`whenAbsent: "refuse"`) and existing records get exactly the
+outcome they already got. What changed is that a refusal is legible and there
+is now one obvious place to put an upcast.
+
+Only task contracts have a real pre-versioning era, and only they carry an
+upcast today.
+
 | Format | Treatment | Why |
 | --- | --- | --- |
-| Task contracts | Versioned, read-time upcast | Gates seven subsystems; a pre-upgrade contract was permanently unusable |
-| `daemon.json`, `/health` | Tolerate unknown fields | Cross-language, cross-version, authorizes nothing |
-| config, plans, memory canon, promoted policies | **Not yet** — same pattern, latent | Work-bearing; next pass |
-| Verification manifests and other immutable artifacts | **Not yet** — read-time upcast when needed | Hash is over the original bytes and must stay so; `loadVerificationSet` already hashes the raw text before parsing, so an upcast slots between parse and validate without touching it |
+| Task contracts | Versioned + read-time upcast | Gates seven subsystems; a pre-upgrade contract was permanently unusable |
+| config, spec, tentative plans, replan, ideation, write-intent | Gated | Work-bearing |
+| memory canon, routing / value-quality / verification policies | Gated | Human-promoted, permanent |
+| verification-set manifests, quality draft + selection manifests | Gated | Immutable evidence; hash rules below |
+| capability corpus manifest / report / evidence, routing observations | Gated | Evidence |
+| quota ledger reservations, manager sessions, `daemon.json` | Gated | Durable state |
+| `daemon.json` + `/health` **in the Rust shell** | Tolerate unknown fields | Cross-language, cross-version, authorizes nothing |
+| Characterization candidate manifests | **Nothing** — no reader exists | Written by `characterization.ts` and never read back by Core. Gating a format nobody parses is ceremony. If a reader is ever added, gate it then |
+| `memory.proposed` and `quality.admission_decided` payloads | **Not gated** | These are event *payloads* validated by boolean predicates, not file loaders. An event payload version bump is a question about the event trail's own format, which is a different mechanism; restructuring the predicates to carry a reason would be a real change, not a move |
+| `isCapabilityCorpusDescription`, `readMeteredUsageArtifact` | **Not gated** | Both return `boolean` / `null` with no channel for a reason, so a gate could refuse but not explain — the whole point. Changing their signatures is a real refactor with callers to follow, not part of this move. Both already fail in the safe direction: an unrecognised corpus description is invalid, and unreadable usage is simply not credited |
 | lease-lock record, `project-temp/owner.json` | **Nothing, deliberately** | Ephemeral. An unparseable lock is already reaped as stale; an owner mismatch already means "not mine", which is the correct fail-closed answer. Versioning adds ceremony and no safety |
+
+### Immutable evidence: the hash belongs to the file
+
+A verification manifest is written once, hashed, and bound to by adoption, so
+it can never be rewritten — read-time upcasting is the only migration
+available to it, and that stays sound only while:
+
+> **The hash is a property of the FILE, never of the parsed object.**
+
+`loadVerificationSet` takes it over the exact bytes read, before parse or
+upcast. Anything that re-derives it from a parsed manifest is a bug: an upcast
+shape would not round-trip to the same bytes, so adoption's binding would break
+on a record nobody touched. `test/format-version.test.ts` pins this with a
+manifest written at four-space indent — semantically identical to its
+re-serialization, byte-for-byte different — and asserts the loaded hash matches
+the file and *not* the re-serialization.
 
 ## Worker termination proves a TREE, not a process
 

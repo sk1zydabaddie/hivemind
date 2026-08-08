@@ -1,3 +1,5 @@
+import { checkFormatVersion, formatVersions } from "./format-version.js";
+
 export interface VerificationPolicy {
   version: 1;
   mappings: VerificationMapping[];
@@ -16,8 +18,12 @@ export function validateVerificationPolicy(value: unknown): VerificationPolicyRe
   if (value === null) {
     return { ok: true, value: null };
   }
-  if (!isRecord(value) || value.version !== 1 || !Array.isArray(value.mappings)) {
-    return { ok: false, reason: "verification policy must be a version 1 object with mappings" };
+  const gated = checkFormatVersion(value, formatVersions.verificationPolicy, "the verification policy");
+  if (!gated.ok) {
+    return { ok: false, reason: gated.reason };
+  }
+  if (!isRecord(value) || !Array.isArray(value.mappings)) {
+    return { ok: false, reason: "verification policy must be an object with mappings" };
   }
   const mappings: VerificationMapping[] = [];
   for (const [index, mapping] of value.mappings.entries()) {

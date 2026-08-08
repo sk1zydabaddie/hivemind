@@ -49,6 +49,7 @@ import { requestSystemTaskStop } from "./task-control.js";
 import { admitValueQuality, type ValueQualityAdmission, type ValueQualityStrategy } from "./value-quality.js";
 import { admitExecutionWave } from "./wave-admission.js";
 import { createTaskWorktree, type WorktreeResult } from "./worktree.js";
+import { checkFormatVersion, formatVersions } from "./format-version.js";
 
 interface ManagerSession {
   version: 1;
@@ -3502,8 +3503,9 @@ function validateManagerSession(value: unknown, sessionId: string): SpecResult<M
   if (!isRecord(value)) {
     return { ok: false, reason: "manager session must be a JSON object" };
   }
-  if (value.version !== 1) {
-    return { ok: false, reason: "manager session version must be 1" };
+  const gated = checkFormatVersion(value, formatVersions.managerSession, "manager session");
+  if (!gated.ok) {
+    return { ok: false, reason: gated.reason };
   }
   if (value.session_id !== sessionId) {
     return { ok: false, reason: "manager session id does not match requested session" };

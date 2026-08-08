@@ -10,6 +10,7 @@ import {
 } from "./adapter.js";
 import { extractJsonObject, readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
+import { checkFormatVersion, formatVersions } from "./format-version.js";
 import {
   activeSpecPath,
   buildSpecTemplate,
@@ -624,8 +625,9 @@ function parseIdeationState(value: unknown, specId: string): SpecResult<Ideation
   if (!isRecord(value)) {
     return { ok: false, reason: "ideation state must be a JSON object" };
   }
-  if (value.version !== 1) {
-    return { ok: false, reason: "ideation state version must be 1" };
+  const gated = checkFormatVersion(value, formatVersions.ideation, "ideation state");
+  if (!gated.ok) {
+    return { ok: false, reason: gated.reason };
   }
   if (value.spec_id !== specId) {
     return { ok: false, reason: `ideation state spec_id must be ${specId}` };

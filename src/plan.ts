@@ -31,6 +31,7 @@ import { loadSpecDocument, type SpecResult, validateRequestedSpecId } from "./sp
 import { validateRequestedTaskId } from "./task-id.js";
 import { latestTaskRunState } from "./run-state.js";
 import { workerProtectedPathReason, workerProtectedScopeReason } from "./worker-protected-paths.js";
+import { checkFormatVersion, formatVersions } from "./format-version.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -1315,12 +1316,17 @@ function validateStoredTentativePlan(raw: unknown, specId: string): SpecResult<T
     "tasks",
     "execution_groups"
   ]);
+  // Version before the field set, not after. A plan from a newer build carries
+  // fields this build has never heard of, so the closed-world check would
+  // report "unsupported field: x" -- which reads as a malformed plan rather
+  // than as a format this build cannot read.
+  const gated = checkFormatVersion(raw, formatVersions.tentativePlan, "the tentative plan");
+  if (!gated.ok) {
+    return { ok: false, reason: gated.reason };
+  }
   const extra = Object.keys(raw).filter((key) => !allowedKeys.has(key));
   if (extra.length > 0) {
     return { ok: false, reason: `tentative plan contains unsupported field: ${extra[0]}` };
-  }
-  if (raw.version !== 1) {
-    return { ok: false, reason: "tentative plan version must be 1" };
   }
   if (raw.spec_id !== specId) {
     return { ok: false, reason: `tentative plan spec_id must be ${specId}` };

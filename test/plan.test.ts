@@ -693,7 +693,13 @@ test("plan ground fails closed for malformed tentative artifacts", async () => {
     await mkdir(path.dirname(planFile), { recursive: true });
     const badCases: Array<[string, unknown, RegExp]> = [
       ["wrong spec", { ...validStoredPlan("S-OTHER"), spec_id: "S-OTHER" }, /tentative plan spec_id must be S-001/],
-      ["bad version", { ...validStoredPlan("S-001"), version: 2 }, /tentative plan version must be 1/],
+      // A version this build cannot read now says so, and says what to do,
+      // instead of stating a rule ("must be 1") that reads as corruption.
+      [
+        "newer version",
+        { ...validStoredPlan("S-001"), version: 2 },
+        /written by a newer Hivemind \(plan format 2\).*Upgrade Hivemind/su
+      ],
       ["bad status", { ...validStoredPlan("S-001"), status: "committed" }, /tentative plan status must be tentative/],
       ["missing grounded_at", { ...validStoredPlan("S-001"), grounding_status: "grounded", grounded_base_commit: "abc123" }, /grounded_at must be present/],
       ["grounded task without plan marker", { ...validStoredPlan("S-001"), tasks: [{ ...task("T-001"), scope_status: "grounded", grounding_evidence: validGroundingEvidence(), grounded_scope: draftScope(["README.md"]) }] }, /grounded tasks require top-level grounding_status/],

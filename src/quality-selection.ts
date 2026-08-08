@@ -5,6 +5,7 @@ import { appendEvent } from "./events.js";
 import { writeImmutableJsonArtifact } from "./immutable-artifact.js";
 import { findGitRoot } from "./repo.js";
 import { loadAdmittedValueQualityRun } from "./value-quality.js";
+import { checkFormatVersion, formatVersions } from "./format-version.js";
 
 const selectionRuleId = "minimal_verified_change_surface_v1";
 const selectionOrder = [
@@ -232,8 +233,11 @@ async function loadDraftSelectionInput(
 
   const manifest = manifestResult.value;
   const changedFiles = stringArray(manifest.changed_files);
+  const gated = checkFormatVersion(manifest, formatVersions.qualityDraftManifest, `draft ${draftId} manifest`);
+  if (!gated.ok) {
+    return { ok: false, reason: gated.reason };
+  }
   if (
-    manifest.version !== 1 ||
     manifest.quality_run_id !== qualityRunId ||
     manifest.draft_id !== draftId ||
     manifest.task_id !== taskId ||
@@ -390,8 +394,11 @@ function validateQualityRunManifest(
   strategy: QualitySelectionArtifact["strategy"],
   draftCount: number | null
 ): { ok: true; value: QualityRunManifest } | { ok: false; reason: string } {
+  const gated = checkFormatVersion(value, formatVersions.qualitySelection, "the quality run manifest");
+  if (!gated.ok) {
+    return { ok: false, reason: gated.reason };
+  }
   if (
-    value.version !== 1 ||
     value.quality_run_id !== qualityRunId ||
     value.task_id !== taskId ||
     value.strategy !== strategy ||

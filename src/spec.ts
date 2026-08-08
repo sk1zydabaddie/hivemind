@@ -3,6 +3,7 @@ import { writeFileAtomic, writeJsonAtomic } from "./atomic.js";
 import { checkIdeationRatifiable } from "./ideation.js";
 import { readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
+import { checkFormatVersion, formatVersions } from "./format-version.js";
 import {
   activeSpecPath,
   buildSpecTemplate,
@@ -248,8 +249,9 @@ export async function readActiveSpec(repoRoot: string): Promise<SpecResult<{ spe
   if (!isRecord(raw)) {
     return { ok: false, reason: "active spec file must be a JSON object" };
   }
-  if (raw.version !== 1) {
-    return { ok: false, reason: "active spec file version must be 1" };
+  const gated = checkFormatVersion(raw, formatVersions.spec, "the active spec file");
+  if (!gated.ok) {
+    return { ok: false, reason: gated.reason };
   }
   if (typeof raw.spec_id !== "string") {
     return { ok: false, reason: "active spec file spec_id must be a string" };

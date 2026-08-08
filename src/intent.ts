@@ -6,6 +6,7 @@ import { readJsonFile } from "./json.js";
 import { readActiveLeases } from "./lease.js";
 import { findGitRoot } from "./repo.js";
 import { validateRequestedTaskId, validateTaskId } from "./task-id.js";
+import { checkFormatVersion, formatVersions } from "./format-version.js";
 
 export interface WriteIntent {
   task_id: string;
@@ -257,8 +258,9 @@ function validateStoredWriteIntent(raw: unknown, expectedTaskId: string): Intent
   if (!isRecord(raw)) {
     return { ok: false, reason: `passed write intent for ${expectedTaskId} must be a JSON object` };
   }
-  if (raw.version !== 1) {
-    return { ok: false, reason: `passed write intent for ${expectedTaskId} must have version 1` };
+  const gated = checkFormatVersion(raw, formatVersions.intent, `passed write intent for ${expectedTaskId}`);
+  if (!gated.ok) {
+    return { ok: false, reason: gated.reason };
   }
   if (raw.task_id !== expectedTaskId) {
     return { ok: false, reason: `passed write intent task_id must be ${expectedTaskId}` };

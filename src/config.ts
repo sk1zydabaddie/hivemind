@@ -1,5 +1,6 @@
 import { realpath } from "node:fs/promises";
 import path from "node:path";
+import { checkFormatVersion, formatVersions } from "./format-version.js";
 import { readJsonFile } from "./json.js";
 import { isAutonomyLevel, type AutonomyLevel } from "./autonomy-level.js";
 import { normalizeRepoPathPattern, validateRepoRelativePathOrGlob } from "./path-pattern.js";
@@ -114,8 +115,11 @@ export function validateConfig(raw: unknown): string[] {
     return ["config must be a JSON object"];
   }
 
-  if (raw.version !== 1) {
-    problems.push("version must be 1");
+  // Version before shape. A config from a newer build must say so rather than
+  // producing a list of field complaints about a format this build cannot read.
+  const gated = checkFormatVersion(raw, formatVersions.config, ".hivemind/config.json");
+  if (!gated.ok) {
+    return [gated.reason];
   }
   if (raw.stack !== "typescript-node") {
     problems.push("stack must be typescript-node");

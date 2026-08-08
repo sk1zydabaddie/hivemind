@@ -8,6 +8,7 @@ import { callDaemonIfConfigured } from "./daemon-client.js";
 import { readJsonFile } from "./json.js";
 import { getProcessLiveness, type ProcessLiveness } from "./process-liveness.js";
 import { findGitRoot } from "./repo.js";
+import { checkFormatVersion, formatVersions } from "./format-version.js";
 
 export interface SelfMeasuredUsage {
   requests: number;
@@ -991,8 +992,12 @@ function normalizeMeteredCallReservation(
   reservationId: string,
   value: unknown
 ): { ok: true; value: MeteredCallReservation } | { ok: false; reason: string } {
-  if (!isRecord(value) || value.version !== 1 || value.reservation_id !== reservationId) {
-    return { ok: false, reason: `quota reservation ${reservationId} has invalid identity or version` };
+  const gated = checkFormatVersion(value, formatVersions.meteredReservation, `quota reservation ${reservationId}`);
+  if (!gated.ok) {
+    return { ok: false, reason: gated.reason };
+  }
+  if (!isRecord(value) || value.reservation_id !== reservationId) {
+    return { ok: false, reason: `quota reservation ${reservationId} has invalid identity` };
   }
   if (normalizeIdentifier(reservationId) === null || normalizeProvider(String(value.provider ?? "")) === null) {
     return { ok: false, reason: `quota reservation ${reservationId} has invalid provider or identifier` };

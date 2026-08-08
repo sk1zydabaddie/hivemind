@@ -3,6 +3,7 @@ import path from "node:path";
 import { writeJsonAtomic } from "./atomic.js";
 import { readJsonFile } from "./json.js";
 import { processIsLiveOrUnknown } from "./process-liveness.js";
+import { checkFormatVersion, formatVersions } from "./format-version.js";
 
 export interface DaemonState {
   version: 1;
@@ -57,8 +58,9 @@ function validateDaemonState(value: unknown): { ok: true } | { ok: false; reason
   if (!isRecord(value)) {
     return { ok: false, reason: "daemon state must be a JSON object" };
   }
-  if (value.version !== 1) {
-    return { ok: false, reason: "daemon state version must be 1" };
+  const gated = checkFormatVersion(value, formatVersions.daemonState, ".hivemind/daemon.json");
+  if (!gated.ok) {
+    return { ok: false, reason: gated.reason };
   }
   if (!Number.isSafeInteger(value.pid) || typeof value.pid !== "number" || value.pid <= 0) {
     return { ok: false, reason: "daemon state pid must be a positive safe integer" };

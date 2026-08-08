@@ -5,6 +5,7 @@ import { writeJsonAtomic } from "./atomic.js";
 import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
 import type { DraftScope, TentativePlan, TentativePlanTask } from "./plan.js";
 import { type SpecResult } from "./spec.js";
+import { checkFormatVersion, formatVersions } from "./format-version.js";
 
 export type ReplanCause = "scope-too-narrow" | "overlap" | "agent-incapable" | "spec-ambiguity";
 export type ReplanRemedy = "widen" | "re-sequence" | "re-route" | "escalate";
@@ -440,8 +441,9 @@ function validateReplanRecord(raw: unknown, relativePath: string): SpecResult<Re
   if (!isRecord(raw)) {
     return { ok: false, reason: `${relativePath} must be a JSON object` };
   }
-  if (raw.version !== 1) {
-    return { ok: false, reason: `${relativePath} version must be 1` };
+  const gated = checkFormatVersion(raw, formatVersions.replan, relativePath);
+  if (!gated.ok) {
+    return { ok: false, reason: gated.reason };
   }
   if (typeof raw.spec_id !== "string" || raw.spec_id.trim() === "") {
     return { ok: false, reason: `${relativePath} spec_id must be a non-empty string` };
