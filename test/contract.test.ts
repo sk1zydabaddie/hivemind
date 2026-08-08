@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { loadContract, normalizeContract, validateContract } from "../src/contract.js";
+import { CONTRACT_FORMAT_VERSION } from "../src/contract-version.js";
 import { initProject } from "../src/init.js";
 import { withTemplateRepo } from "./support/fixture-repo.js";
 
@@ -35,7 +36,10 @@ test("valid sample contract validates and normalizes", () => {
   };
 
   assert.deepEqual(validateContract(raw), []);
-  assert.deepEqual(normalizeContract(raw), raw);
+  // Normalization now stamps the format the record is in. Everything else is
+  // unchanged, which is the point: the version describes the record, not the
+  // task.
+  assert.deepEqual(normalizeContract(raw), { contract_version: CONTRACT_FORMAT_VERSION, ...raw });
 });
 
 test("contract validation requires exactly one acceptance criterion backed by a test", () => {
@@ -183,6 +187,8 @@ test("CLI contract validate prints normalized JSON", async () => {
 
     assert.equal(result.stderr, "");
     assert.deepEqual(JSON.parse(result.stdout), {
+      // Normalized output now states the format the record is in.
+      contract_version: CONTRACT_FORMAT_VERSION,
       task_id: "T-001",
       title: "",
       agent_role: "builder",

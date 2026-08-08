@@ -29,8 +29,18 @@ pub struct ProjectConnection {
     status: String,
 }
 
+// No deny_unknown_fields. The shell and Core ship as separate binaries and are
+// routinely at different versions on the same machine, so Core adding one
+// field to daemon.json would otherwise stop the shell attaching to its own
+// daemon -- a total outage from a purely additive change.
+//
+// Tolerating unknown fields is safe HERE specifically because daemon.json
+// authorizes nothing. It is a rendezvous record: where the daemon is, and
+// which build it is. `version` is still checked, and `build_id` is still
+// compared against the expected shell build; neither check is weakened by
+// ignoring a field this binary has never heard of. Do not copy this to a
+// format that grants anything.
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct DaemonState {
     version: u8,
     #[serde(default, deserialize_with = "deserialize_optional_pid")]
@@ -42,8 +52,9 @@ struct DaemonState {
     started_at: String,
 }
 
+// Same reasoning as DaemonState: this is the daemon's own /health response,
+// read across a version boundary, and it authorizes nothing.
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct DaemonHealth {
     ok: bool,
     repo_root: String,

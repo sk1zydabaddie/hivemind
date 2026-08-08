@@ -33,7 +33,22 @@ const workerContextContractFields = [
   "required_tests",
   "patch_requirements"
 ] as const satisfies readonly (keyof TaskContract)[];
-type MissingWorkerContextContractField = Exclude<keyof TaskContract, (typeof workerContextContractFields)[number]>;
+/**
+ * Contract fields deliberately kept OUT of the worker's context pack.
+ *
+ * `contract_version` describes the on-disk record's format, not the task. A
+ * worker has nothing to do with it, and putting a provenance number in the
+ * prompt is noise the model has to ignore.
+ *
+ * Anything listed here is a decision, not an oversight -- the guard below
+ * still fails for any new field that is neither included nor named here.
+ */
+type WithheldFromWorkerContext = "contract_version";
+
+type MissingWorkerContextContractField = Exclude<
+  keyof TaskContract,
+  (typeof workerContextContractFields)[number] | WithheldFromWorkerContext
+>;
 const workerContextContractIsComplete: MissingWorkerContextContractField extends never ? true : never = true;
 
 export interface PromptLayers {

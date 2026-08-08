@@ -3,6 +3,97 @@
 Durable notes about behaviour that is deliberate, and about known conditions that
 should not be re-diagnosed from scratch when they recur.
 
+## Durable formats: version, upcast at read, never rewrite
+
+### The invariant
+
+> Upgrading Hivemind must not lose in-flight work, and a durable format gaining
+> a field must not make existing records unreadable — **and migration must not
+> change the bytes of any record another record's hash is bound to.**
+>
+> Closed-world validation stays. Rejecting unknown fields is a real floor
+> against a worker smuggling data through a contract, so the answer is
+> versioning plus migration, never loosening validation.
+
+### The pattern this belongs to
+
+A new required field making pre-upgrade state unusable has now happened three
+times. It is not a coincidence, it is the shape of the system: every durable
+format validates closed-world in both directions, so an older record fails on a
+newer build *and* a newer record fails on an older one.
+
+Worth knowing before "just add a field" again: **21 modules already declare
+`version: 1` and hard-fail on `version !== 1`, and no format in this repository
+is ever version 2.** The convention is present and inert. A version that can
+only be 1 is worse than none — it looks like migration support while
+guaranteeing a hard failure the moment anyone bumps it. Task contracts, which
+gate the most, had no version field at all.
+
+### Why migration is read-time and never rewrites
+
+Not a preference — `verificationInputsStillMatch` re-hashes every contract file
+and `adoption.ts` gates on it. Rewriting a contract to migrate it would report
+`verified-then-stale: contract hash changed` on work that had already been
+verified. The user's reward for upgrading would be losing exactly the work this
+invariant protects.
+
+So: bytes on disk are never touched, the upcast happens in memory on every
+read, and old records stay readable by old builds. There is no migration step
+to run, no partial-migration state, and nothing to roll back. The cost is that
+upcast code is carried indefinitely.
+
+Two rules keep an upcast trustworthy:
+
+- **Pure and total.** No I/O, no clock, no config. Two reads of the same bytes
+  must produce the same value, or a hash-bound artifact could disagree with
+  itself.
+- **Refuse rather than invent.** Where no safe default exists, fail and name
+  the field. `routing_task_type` gets `other` — the enum's own unclassified
+  member, not an invented value, and safe in both directions that consume it: a
+  learned-routing scorecard miss falls back to the deterministic comparison,
+  and a value-quality policy that does not name it *denies* admission.
+
+### Forward compatibility: refuse, but legibly
+
+A record from a **newer** build is refused, and that is correct rather than
+merely cautious: a v2 contract could carry a field that *narrows* scope, and an
+older build ignoring it would grant more than intended.
+
+Consequences:
+
+- **Single integer versions, no minor.** "Older readers may ignore fields they
+  do not know" is exactly the hole closed-world validation exists to close — an
+  unknown field rides in under a minor bump. Every known version gets its own
+  exact field set.
+- **Version is parsed before schema validation.** This is structural, not
+  cosmetic. The field-set check runs last, so a v2 contract used to fail with
+  `unsupported contract field: <whatever was added>`, which reads as corruption
+  and sends a person hunting damage that is not there. It now says which format
+  wrote it, which this build reads, and what to do.
+
+### The one place unknown fields are tolerated
+
+`daemon.json` and the daemon's `/health` response, read by the Tauri shell.
+`deny_unknown_fields` there meant Core adding one field would stop the shell
+attaching to its own daemon — a total outage from a purely additive change,
+across two binaries that routinely ship at different versions.
+
+Safe **here specifically** because daemon.json authorizes nothing: it is a
+rendezvous record saying where the daemon is and which build it is. `version`
+is still checked and `build_id` is still compared against the expected shell
+build; ignoring an unknown field weakens neither. Do not copy this to a format
+that grants anything.
+
+### What is deliberately left alone
+
+| Format | Treatment | Why |
+| --- | --- | --- |
+| Task contracts | Versioned, read-time upcast | Gates seven subsystems; a pre-upgrade contract was permanently unusable |
+| `daemon.json`, `/health` | Tolerate unknown fields | Cross-language, cross-version, authorizes nothing |
+| config, plans, memory canon, promoted policies | **Not yet** — same pattern, latent | Work-bearing; next pass |
+| Verification manifests and other immutable artifacts | **Not yet** — read-time upcast when needed | Hash is over the original bytes and must stay so; `loadVerificationSet` already hashes the raw text before parsing, so an upcast slots between parse and validate without touching it |
+| lease-lock record, `project-temp/owner.json` | **Nothing, deliberately** | Ephemeral. An unparseable lock is already reaped as stale; an owner mismatch already means "not mine", which is the correct fail-closed answer. Versioning adds ceremony and no safety |
+
 ## Worker termination proves a TREE, not a process
 
 ### The invariant

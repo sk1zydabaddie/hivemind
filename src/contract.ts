@@ -10,11 +10,20 @@ import { findGitRoot } from "./repo.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { validateRequestedTaskId, validateTaskId } from "./task-id.js";
 import { isRoutingTaskType, type RoutingTaskType, routingTaskTypeExpectation } from "./routing-task-type.js";
+import { CONTRACT_FORMAT_VERSION, upcastContract } from "./contract-version.js";
 
 export type AgentRole = "coordinator" | "scout" | "builder" | "reviewer";
 export type AllowedFileIntent = "create" | "modify";
 
 export interface TaskContract {
+  /**
+   * The on-disk format this contract came from, stamped by normalization and
+   * written back out. Optional because it describes the *record*, not the
+   * task: a contract built in memory is current by construction, so internal
+   * synthesis and fixtures do not supply it. Absent on disk means the shape
+   * that predates the field. See src/contract-version.ts.
+   */
+  contract_version?: number;
   task_id: string;
   title: string;
   agent_role: AgentRole;
@@ -52,6 +61,7 @@ const arrayFields = [
 
 const pathArrayFields = ["allowed_files", "read_only_files", "forbidden_files"] as const;
 const allowedContractFields = new Set([
+  "contract_version",
   "task_id",
   "title",
   "agent_role",
@@ -89,7 +99,18 @@ export async function validateContractCommand(cwd: string, args: string[]): Prom
     return 1;
   }
 
-  const problems = validateContract(result.raw, taskId);
+  // Same order as the load path, so validating an older contract by hand
+  // reports what the run would actually do rather than a stale schema error.
+  const upcast = upcastContract(result.raw, `.hivemind/tasks/${taskId}.contract.json`);
+  if (!upcast.ok) {
+    console.error(`error: ${upcast.reason}`);
+    return 1;
+  }
+  for (const applied of upcast.value.applied) {
+    console.error(`note: read as contract format ${CONTRACT_FORMAT_VERSION}, supplying ${applied}`);
+  }
+
+  const problems = validateContract(upcast.value.contract, taskId);
   if (problems.length > 0) {
     for (const problem of problems) {
       console.error(`error: ${problem}`);
@@ -97,7 +118,7 @@ export async function validateContractCommand(cwd: string, args: string[]): Prom
     return 1;
   }
 
-  console.log(`${JSON.stringify(normalizeContract(result.raw), null, 2)}\n`);
+  console.log(`${JSON.stringify(normalizeContract(upcast.value.contract), null, 2)}\n`);
   return 0;
 }
 
@@ -133,12 +154,23 @@ export async function loadAndValidateContract(
     return loaded;
   }
 
-  const problems = validateContract(loaded.raw, taskId);
+  // Version first, schema second. A contract from a newer build otherwise
+  // fails the closed-world field check with "unsupported contract field",
+  // which reads as corruption rather than as a version it cannot read.
+  // The bytes on disk are never touched: the upcast is in memory only,
+  // because adoption re-hashes contract files and a rewrite would report
+  // verified-then-stale on work that was already verified.
+  const upcast = upcastContract(loaded.raw, `.hivemind/tasks/${taskId}.contract.json`);
+  if (!upcast.ok) {
+    return upcast;
+  }
+
+  const problems = validateContract(upcast.value.contract, taskId);
   if (problems.length > 0) {
     return { ok: false, reason: problems.join("; ") };
   }
 
-  return { ok: true, contract: normalizeContract(loaded.raw) };
+  return { ok: true, contract: normalizeContract(upcast.value.contract) };
 }
 
 export async function createTaskContract(
@@ -304,6 +336,12 @@ export function normalizeContract(raw: unknown): TaskContract {
 
   const allowedFiles = normalizeStringArray(raw.allowed_files);
   return {
+    // Normalization runs after the upcast, so an unversioned contract has
+    // already been stamped. A direct caller that skipped it is writing a
+    // contract in this build's format by definition.
+    contract_version: typeof raw.contract_version === "number"
+      ? raw.contract_version
+      : CONTRACT_FORMAT_VERSION,
     task_id: String(raw.task_id),
     title: typeof raw.title === "string" ? raw.title : "",
     agent_role: isAgentRole(raw.agent_role) ? raw.agent_role : "builder",
