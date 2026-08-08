@@ -12,13 +12,17 @@ export function SetupScreen({
   connectionState,
   connectionDetail,
   onChooseProject,
-  onConnectAgent
+  onConnectAgent,
+  onInitializeProject,
+  initializing
 }: {
   projectPath: string;
   connectionState: string;
   connectionDetail: string;
   onChooseProject: () => void;
   onConnectAgent: () => void;
+  onInitializeProject: () => void;
+  initializing: boolean;
 }): React.JSX.Element {
   const connecting =
     connectionState === "connecting" ||
@@ -55,6 +59,16 @@ export function SetupScreen({
                   <p className="mt-1 mb-0 text-[13px] leading-relaxed text-muted">
                     {problem.detail}
                   </p>
+                  {problem.action === "initialize" ? (
+                    <Button
+                      className="mt-3"
+                      disabled={initializing}
+                      onClick={onInitializeProject}
+                      type="button"
+                    >
+                      {initializing ? "Setting up…" : "Set up this folder"}
+                    </Button>
+                  ) : null}
                   {problem.command === null ? null : (
                     <code className="mt-3 block rounded-md bg-panel/70 px-3 py-2 font-mono text-[12px] break-all text-ink">
                       {problem.command}
@@ -160,14 +174,15 @@ function SetupStep({
 export function plainConnectionProblem(
   state: string,
   detail: string
-): { title: string; detail: string; command: string | null } | null {
+): { title: string; detail: string; command: string | null; action?: "initialize" } | null {
   if (state === "live") return null;
   if (/not initialized for Hivemind/iu.test(detail)) {
     return {
       title: "This folder has not been set up yet",
       detail:
-        "Hivemind keeps its plans, checks and history inside the project. Run this once in the folder, then open it again.",
-      command: "hivemind init"
+        "Hivemind keeps its plans, checks and history inside the project. It can create that now, along with the cost tiers and agent profiles a first run needs.",
+      command: null,
+      action: "initialize"
     };
   }
   if (/not a git repository|git root/iu.test(detail)) {

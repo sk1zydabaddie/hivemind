@@ -91,6 +91,56 @@ pub async fn select_project(
     .map_err(|error| format!("project selection task failed: {error}"))?
 }
 
+/// Sets a repository up and opens it, without a terminal.
+///
+/// The daemon refuses to attach to a repository that has no config, so this
+/// cannot be an audited workspace action: there is no daemon yet to route one
+/// to. The shell therefore runs Core's own `init` command, exactly as it
+/// already runs `build-id` and `daemon`. It does not reimplement any part of
+/// initialisation; Core remains the only thing that decides what a project
+/// contains.
+#[tauri::command]
+pub async fn initialize_project(
+    app: tauri::AppHandle,
+    project_path: String,
+) -> Result<ProjectConnection, String> {
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|error| format!("could not resolve desktop resources: {error}"))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let project_root = canonical_git_root(&project_path)?;
+        run_core_init(&project_root, Some(&resource_dir))?;
+        connect_project_with(
+            &project_path,
+            &mut |root| start_daemon(root, Some(&resource_dir)),
+            &query_daemon_health,
+            &|root| query_cli_build_identity(root, Some(&resource_dir)),
+            &|root| query_expected_shell_build_identity(root, Some(&resource_dir)),
+            EMBEDDED_SHELL_BUILD_ID,
+            &process_liveness,
+            STARTUP_TIMEOUT,
+        )
+    })
+    .await
+    .map_err(|error| format!("project initialization task failed: {error}"))?
+}
+
+fn run_core_init(project_root: &Path, resource_dir: Option<&Path>) -> Result<(), String> {
+    let output = daemon_command(resource_dir)?
+        .arg("init")
+        .current_dir(project_root)
+        .output()
+        .map_err(|error| format!("could not set up the selected project: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "could not set up the selected project: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn workspace_action(
     app: tauri::AppHandle,

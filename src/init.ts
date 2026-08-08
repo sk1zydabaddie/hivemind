@@ -9,6 +9,12 @@ import {
   DEFAULT_MAX_CONCURRENT_WORKERS,
   type HivemindConfig
 } from "./config.js";
+import {
+  REQUIRED_ADAPTER_TOOLS,
+  TIER_GLOB_KEYS,
+  defaultAdapterProfile,
+  defaultTierGlobs
+} from "./project-defaults.js";
 import { findGitRoot } from "./repo.js";
 
 const hivemindDirs = ["tasks", "log", "patches", "worktrees", "adapters", "canon"] as const;
@@ -30,6 +36,12 @@ export async function initProject(cwd: string): Promise<number> {
       console.error(`error: ${migration.reason}`);
       return 1;
     }
+    const globs = await ensureTierGlobsRecorded(configPath);
+    if (!globs.ok) {
+      console.error(`error: ${globs.reason}`);
+      return 1;
+    }
+    await ensureRequiredAdapterProfiles(hivemindRoot);
     console.log("already initialized");
     return 0;
   }
@@ -52,6 +64,7 @@ export async function initProject(cwd: string): Promise<number> {
     test_command: await detectTestCommand(repoRoot),
     allowed_globs: [],
     forbidden_globs: ["**/*.lock", "**/package.json", "**/.git/**"],
+    ...defaultTierGlobs(),
     manager_autonomy: { level: "auto" },
     execution: { max_concurrent_workers: DEFAULT_MAX_CONCURRENT_WORKERS },
     resource_policy: {
@@ -61,8 +74,52 @@ export async function initProject(cwd: string): Promise<number> {
   };
 
   await writeJsonAtomic(configPath, config);
+  await ensureRequiredAdapterProfiles(hivemindRoot);
   console.log("initialized hivemind project");
   return 0;
+}
+
+/**
+ * Absence is the only evidence we have that a value was never authored. A key
+ * that is present -- even as an empty list -- is a decision someone made, so it
+ * is left alone. Only missing keys are filled in.
+ */
+async function ensureTierGlobsRecorded(configPath: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  let config: unknown;
+  try {
+    config = JSON.parse(await readFile(configPath, "utf8"));
+  } catch {
+    return { ok: false, reason: "existing .hivemind/config.json is not valid JSON" };
+  }
+  if (!isRecord(config)) {
+    return { ok: false, reason: "existing .hivemind/config.json must be an object" };
+  }
+  const defaults = defaultTierGlobs();
+  const missing = TIER_GLOB_KEYS.filter((key) => !(key in config));
+  if (missing.length === 0) {
+    return { ok: true };
+  }
+  await writeJsonAtomic(configPath, {
+    ...config,
+    ...Object.fromEntries(missing.map((key) => [key, defaults[key]]))
+  });
+  return { ok: true };
+}
+
+/**
+ * The desktop asks Core for these tools by name on a first prompt. A profile
+ * that already exists is a choice made in setup, so it is never rewritten.
+ */
+async function ensureRequiredAdapterProfiles(hivemindRoot: string): Promise<void> {
+  const adaptersDir = path.join(hivemindRoot, "adapters");
+  await mkdir(adaptersDir, { recursive: true });
+  for (const tool of REQUIRED_ADAPTER_TOOLS) {
+    const profilePath = path.join(adaptersDir, `${tool}.profile.json`);
+    if (await exists(profilePath)) {
+      continue;
+    }
+    await writeJsonAtomic(profilePath, defaultAdapterProfile(tool));
+  }
 }
 
 async function ensureBaseBranchRecorded(

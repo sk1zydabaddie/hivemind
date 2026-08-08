@@ -14,7 +14,9 @@ import {
   DEFAULT_SESSION_TOKEN_CEILING,
   loadConfig
 } from "../src/config.js";
+import { findDangerousAdapterArgs, findRefusedAdapterModes, loadAdapterProfile } from "../src/adapter.js";
 import { initProject } from "../src/init.js";
+import { inferAllowedFilesTier } from "../src/routing.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -35,6 +37,9 @@ test("init creates the M0.1 .hivemind scaffold inside a git repo", async () => {
     await assertExists(path.join(repo, ".hivemind", "adapters"));
     await assertExists(path.join(repo, ".hivemind", "canon"));
     assert.equal(await readFile(path.join(repo, ".hivemind", "log", "events.jsonl"), "utf8"), "");
+    // The desktop asks Core for these two tools by name on a first prompt.
+    await assertExists(path.join(repo, ".hivemind", "adapters", "planner.profile.json"));
+    await assertExists(path.join(repo, ".hivemind", "adapters", "manager.profile.json"));
 
     const config = JSON.parse(await readFile(path.join(repo, ".hivemind", "config.json"), "utf8")) as {
       version: number;
@@ -44,6 +49,10 @@ test("init creates the M0.1 .hivemind scaffold inside a git repo", async () => {
       test_command: string;
       allowed_globs: string[];
       forbidden_globs: string[];
+      low_globs: string[];
+      medium_globs: string[];
+      high_globs: string[];
+      critical_globs: string[];
       resource_policy: {
         run_ceiling: { tokens: number };
         session_ceiling: { tokens: number };
@@ -60,6 +69,12 @@ test("init creates the M0.1 .hivemind scaffold inside a git repo", async () => {
       test_command: "npm test",
       allowed_globs: [],
       forbidden_globs: ["**/*.lock", "**/package.json", "**/.git/**"],
+      // Cost tiers ship by default: without them every path fell through to
+      // the High fallback, which only a strong provider may serve.
+      low_globs: ["docs/**", "**/*.md", "**/*.txt"],
+      medium_globs: ["src/**", "app/**", "lib/**", "test/**", "tests/**"],
+      high_globs: ["package.json", "tsconfig.json", "**/*.config.*"],
+      critical_globs: [".github/**", "infra/**", "**/auth/**"],
       manager_autonomy: { level: "auto" },
       execution: { max_concurrent_workers: DEFAULT_MAX_CONCURRENT_WORKERS },
       resource_policy: {
@@ -330,3 +345,73 @@ async function git(cwd: string, args: string[]): Promise<void> {
 async function assertExists(filePath: string): Promise<void> {
   await stat(filePath);
 }
+
+test("a fresh project routes by cost tier instead of forcing the strongest provider", async () => {
+  await withTempDir(async (repo) => {
+    await git(repo, ["init"]);
+    assert.equal(await initProject(repo), 0);
+    const config = await loadConfig(repo);
+    assert.equal(config.ok, true, config.ok ? undefined : config.reason);
+    if (!config.ok) return;
+
+    // Without globs every path fell through to the "high" fallback, and High
+    // requires a strong provider, so cheap providers were ineligible rather
+    // than deprioritised: a new project could only use the most expensive one.
+    assert.equal(inferAllowedFilesTier(["docs/guide.md"], config.config), "low");
+    assert.equal(inferAllowedFilesTier(["src/feature.ts"], config.config), "medium");
+    assert.equal(inferAllowedFilesTier([".github/workflows/ci.yml"], config.config), "critical");
+    // The floor is unchanged: anything the globs do not name is still High.
+    assert.equal(inferAllowedFilesTier(["unmatched/elsewhere.bin"], config.config), "high");
+    // And the highest scope in a task still wins.
+    assert.equal(inferAllowedFilesTier(["docs/guide.md", ".github/workflows/ci.yml"], config.config), "critical");
+  });
+});
+
+test("a fresh project can reach a first run without hand-written adapter profiles", async () => {
+  await withTempDir(async (repo) => {
+    await git(repo, ["init"]);
+    assert.equal(await initProject(repo), 0);
+
+    for (const tool of ["planner", "manager"]) {
+      const loaded = await loadAdapterProfile(repo, tool);
+      assert.equal(loaded.ok, true, loaded.ok ? undefined : loaded.reason);
+      if (!loaded.ok) continue;
+      assert.equal(loaded.profile.tool, tool);
+      // Confined and explicit: every setting the run depends on is stated, so
+      // an unstated one cannot stay whatever the user's agent config left it.
+      assert.deepEqual(findDangerousAdapterArgs(loaded.profile.invoke), []);
+      assert.equal(loaded.profile.invoke.includes("--model"), true);
+      assert.equal(loaded.profile.invoke.includes("--sandbox"), true);
+      assert.equal(loaded.profile.invoke.includes("workspace-write"), true);
+      assert.equal(loaded.profile.invoke.some((arg) => /ultra|ignore-user-config/iu.test(arg)), false);
+      assert.deepEqual(findRefusedAdapterModes(loaded.profile), []);
+    }
+  });
+});
+
+test("init fills only absent tier globs and never rewrites an authored value", async () => {
+  await withTempDir(async (repo) => {
+    await git(repo, ["init"]);
+    assert.equal(await initProject(repo), 0);
+    const configPath = path.join(repo, ".hivemind", "config.json");
+
+    // A deliberately empty list is a decision, not an absence.
+    const authored = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    authored.low_globs = [];
+    authored.medium_globs = ["only/mine/**"];
+    delete authored.critical_globs;
+    await writeFile(configPath, `${JSON.stringify(authored, null, 2)}\n`);
+
+    assert.equal(await initProject(repo), 0);
+    const after = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    assert.deepEqual(after.low_globs, [], "an authored empty list was overwritten");
+    assert.deepEqual(after.medium_globs, ["only/mine/**"], "an authored list was overwritten");
+    assert.deepEqual(after.critical_globs, [".github/**", "infra/**", "**/auth/**"]);
+
+    // An existing profile is a setup choice and is never rewritten.
+    const plannerPath = path.join(repo, ".hivemind", "adapters", "planner.profile.json");
+    await writeFile(plannerPath, `${JSON.stringify({ tool: "planner", mine: true }, null, 2)}\n`);
+    assert.equal(await initProject(repo), 0);
+    assert.deepEqual(JSON.parse(await readFile(plannerPath, "utf8")), { tool: "planner", mine: true });
+  });
+});

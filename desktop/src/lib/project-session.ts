@@ -9,28 +9,34 @@ export interface ProjectConnection {
 
 interface ProjectSessionOptions {
   selectProject: (projectPath: string) => Promise<unknown>;
+  /* Sets a folder up and opens it. Same flow as selecting one; only the shell
+     command differs, so the two share every generation and error rule. */
+  initializeProject: (projectPath: string) => Promise<unknown>;
   onSwitchStart: () => void;
   onConnected: (connection: ProjectConnection) => void;
   onError: (error: Error) => void;
 }
 
+type OpenResult =
+  | { ok: true; value: ProjectConnection }
+  | { ok: false; reason?: string; stale?: true };
+
 export function createProjectSession({
   selectProject,
+  initializeProject,
   onSwitchStart,
   onConnected,
   onError
 }: ProjectSessionOptions): {
-  switchProject: (
-    projectPath: string
-  ) => Promise<
-    | { ok: true; value: ProjectConnection }
-    | { ok: false; reason?: string; stale?: true }
-  >;
+  switchProject: (projectPath: string) => Promise<OpenResult>;
+  initializeProject: (projectPath: string) => Promise<OpenResult>;
 } {
   let generation = 0;
 
-  return {
-    async switchProject(projectPath) {
+  async function open(
+    projectPath: string,
+    invokeShell: (path: string) => Promise<unknown>
+  ): Promise<OpenResult> {
       const selectedPath = String(projectPath ?? "").trim();
       const currentGeneration = ++generation;
       onSwitchStart();
@@ -42,9 +48,7 @@ export function createProjectSession({
 
       let connection: ProjectConnection;
       try {
-        connection = validateProjectConnection(
-          await selectProject(selectedPath)
-        );
+        connection = validateProjectConnection(await invokeShell(selectedPath));
       } catch (error) {
         if (currentGeneration !== generation) {
           return { ok: false, stale: true };
@@ -59,7 +63,11 @@ export function createProjectSession({
       }
       onConnected(connection);
       return { ok: true, value: connection };
-    }
+  }
+
+  return {
+    switchProject: (projectPath) => open(projectPath, selectProject),
+    initializeProject: (projectPath) => open(projectPath, initializeProject)
   };
 }
 

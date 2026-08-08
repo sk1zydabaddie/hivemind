@@ -21,6 +21,7 @@ describe("project-bound desktop session", () => {
     const connections: string[] = [];
     const errors: string[] = [];
     const session = createProjectSession({
+      initializeProject: (projectPath) => Promise.reject(new Error(`unexpected initialize ${projectPath}`)),
       selectProject: (projectPath) =>
         new Promise((resolve) => pending.set(projectPath, resolve)),
       onSwitchStart: () => resets.push("reset"),

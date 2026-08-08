@@ -32,6 +32,8 @@ interface WorkspaceView {
   inspection: WorkspaceInspection | null;
   actionError: string;
   switchProject: (projectPath: string) => Promise<void>;
+  initializeProject: () => Promise<void>;
+  initializing: boolean;
   selectTaskOutput: (taskId: string) => void;
   performAction: <T>(action: WorkspaceAction) => Promise<T>;
 }
@@ -45,6 +47,7 @@ export function useWorkspace(): WorkspaceView {
   const [connectionDetail, setConnectionDetail] = useState("");
   const [inspection, setInspection] = useState<WorkspaceInspection | null>(null);
   const [actionError, setActionError] = useState("");
+  const [initializing, setInitializing] = useState(false);
   const [revision, setRevision] = useState(0);
   const projectionRef = useRef(createBoardProjection());
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -190,6 +193,8 @@ export function useWorkspace(): WorkspaceView {
       createProjectSession({
         selectProject: (selectedPath) =>
           invoke("select_project", { projectPath: selectedPath }),
+        initializeProject: (selectedPath) =>
+          invoke("initialize_project", { projectPath: selectedPath }),
         onSwitchStart: () => {
           streamGuardRef.current.advance();
           closeStreams();
@@ -235,6 +240,15 @@ export function useWorkspace(): WorkspaceView {
     [session]
   );
 
+  const initializeProject = useCallback(async () => {
+    setInitializing(true);
+    try {
+      await session.initializeProject(projectPath);
+    } finally {
+      setInitializing(false);
+    }
+  }, [session, projectPath]);
+
   useEffect(() => {
     void session.switchProject(initialPath);
     return () => {
@@ -278,6 +292,8 @@ export function useWorkspace(): WorkspaceView {
     inspection,
     actionError,
     switchProject,
+    initializeProject,
+    initializing,
     selectTaskOutput: openOutputStream,
     performAction
   };

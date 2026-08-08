@@ -187,8 +187,10 @@ export default function App(): React.JSX.Element {
             connectionDetail={workspace.connectionDetail}
             connectionState={workspace.connectionState}
             projectPath={visibleProjectPath}
+            initializing={workspace.initializing}
             onChooseProject={() => setProjectOpen(true)}
             onConnectAgent={() => setAgentOpen(true)}
+            onInitializeProject={() => void workspace.initializeProject()}
           />
         )}
 
