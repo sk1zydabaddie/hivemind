@@ -3,6 +3,62 @@
 Durable notes about behaviour that is deliberate, and about known conditions that
 should not be re-diagnosed from scratch when they recur.
 
+## Control flow reads codes, never prose
+
+### The invariant
+
+> Control flow must never depend on the text of a message. A reason is for
+> humans; a code is for code. **Rewording an error must be a copy change, never
+> a behaviour change.**
+
+### What this was
+
+Twenty-eight sites resolved control flow by pattern-matching human-readable
+error strings. The dangerous subset **fail open** — they proceed when the
+message matches, so a reworded sentence silently disables a floor rather than
+degrading a message.
+
+`src/failure-code.ts` holds the codes. A producer that a caller needs to
+*distinguish* sets one; producers whose failures are only ever read by a person
+do not need one. `hasFailureCode` is the only way to ask, and it fails closed
+by construction: no code and a different code are both no-match, so a caller
+cannot re-invent the fail-open by treating absence as a wildcard.
+
+A code is part of the contract between two modules. Changing one should be as
+visible as changing a signature; changing a reason should be invisible.
+
+### Three copies of a fail-open that could never fire
+
+`lease.ts`, `run.ts` and `integrate.ts` each carried
+`!reason.includes("tentative plan not found")` to skip the
+dependency-integrated check — keyed on wording produced in `plan.ts`, with
+nothing connecting them to it.
+
+They were **dead**. `requireTaskDependenciesIntegrated` already handles a
+planless project by falling through to manual-task authorization, and it
+consumes that reason internally rather than propagating it. Verified by
+instrumenting the callee to throw if it ever returned that reason and running
+the whole suite: **zero hits across 605 tests**. Removing them is also the
+fail-closed direction, so it is safe even if some uncovered path could reach
+them.
+
+The live consumers of that distinction were inside `plan.ts` itself and in
+`workspace-inspection.ts`, asking the direct producer. Those became code
+checks.
+
+### The test that proves the coupling is gone
+
+Producing a code is easy to assert and proves little. The load-bearing test
+**rewords the producer's sentence and asserts every consumer branches the same
+way**. It copies the compiled tree to a temp directory first — the runner runs
+files in parallel, so mutating shared modules even briefly could hand a sibling
+test a half-rewritten module — rewords the copy, re-imports, and checks the
+decisions are identical while the sentences differ.
+
+Proven to bite: replacing one code check with the old `reason.includes(...)`
+makes it fail. That is the regression that would have caught every instance of
+this class.
+
 ## Durable formats: version, upcast at read, never rewrite
 
 ### The invariant

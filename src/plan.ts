@@ -32,6 +32,7 @@ import { validateRequestedTaskId } from "./task-id.js";
 import { latestTaskRunState } from "./run-state.js";
 import { workerProtectedPathReason, workerProtectedScopeReason } from "./worker-protected-paths.js";
 import { checkFormatVersion, formatVersions } from "./format-version.js";
+import { codedFailure, hasFailureCode } from "./failure-code.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -823,7 +824,10 @@ export async function requireTaskDependenciesIntegrated(
     if (tentative.ok) {
       return planResult;
     }
-    if (!tentative.ok && !tentative.reason.startsWith("tentative plan not found:")) {
+    // Absent is a plan state; unreadable is not. Anything that is not
+    // definitively "no plan" refuses, so a wording change cannot turn an
+    // unreadable plan into a missing one.
+    if (!hasFailureCode(tentative, "tentative_plan_not_found")) {
       return { ok: false, reason: `task ${taskId} dependency check refused because plan state is unreadable: ${tentative.reason}` };
     }
     return requireManualTaskAuthorized(repoRoot, specId, taskId);
@@ -869,7 +873,7 @@ export async function reviewManualTaskForAuthorization(
   if (tentative.ok) {
     return { ok: false, reason: `manual task authorization refused: ${specId} has a tentative plan; ratify that exact plan instead` };
   }
-  if (!tentative.reason.startsWith("tentative plan not found:")) {
+  if (!hasFailureCode(tentative, "tentative_plan_not_found")) {
     return { ok: false, reason: `manual task authorization refused because plan state is unreadable: ${tentative.reason}` };
   }
   return readManualTaskContractHash(repoRoot, specId, taskId);
@@ -1285,7 +1289,10 @@ export async function loadTentativePlan(repoRoot: string, specId: string): Promi
     raw = JSON.parse(await readFile(tentativePlanPath(repoRoot, specId), "utf8"));
   } catch (error: unknown) {
     if (isNodeError(error, "ENOENT")) {
-      return { ok: false, reason: `tentative plan not found: ${tentativePlanRelativePath(specId)}` };
+      // Callers distinguish "no plan yet" from "the plan is broken", so this
+      // carries a code. It used to be recoverable only by matching this
+      // sentence, in five places across four modules.
+      return codedFailure("tentative_plan_not_found", `tentative plan not found: ${tentativePlanRelativePath(specId)}`);
     }
     if (error instanceof SyntaxError) {
       return { ok: false, reason: `invalid JSON in ${tentativePlanRelativePath(specId)}` };

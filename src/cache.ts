@@ -8,6 +8,7 @@ import { readJsonFile } from "./json.js";
 import { readActiveLeases, type LeaseStore } from "./lease.js";
 import { findGitRoot } from "./repo.js";
 import { validateRequestedTaskId } from "./task-id.js";
+import { hasFailureCode } from "./failure-code.js";
 
 const schemaVersion = 1;
 
@@ -245,7 +246,8 @@ async function readTaskContracts(repoRoot: string): Promise<{ ok: true; value: T
 async function readCacheIntegrationQueue(repoRoot: string): Promise<{ ok: true; value: string[] } | { ok: false; reason: string }> {
   const result = await loadIntegrationQueue(repoRoot);
   if (!result.ok) {
-    return result.reason.includes("integration queue not found") ? { ok: true, value: [] } : result;
+    // No queue FILE means no queued work; anything else is a real failure.
+    return hasFailureCode(result, "integration_queue_not_found") ? { ok: true, value: [] } : result;
   }
   return { ok: true, value: result.value.map((entry) => entry.task_id) };
 }

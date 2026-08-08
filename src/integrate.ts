@@ -19,6 +19,7 @@ import { findGitRoot } from "./repo.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { validateRequestedTaskId } from "./task-id.js";
 import { type TaskTier } from "./routing.js";
+import { hasFailureCode } from "./failure-code.js";
 import {
   resolveMaximumTaskTier,
   runVerification,
@@ -444,7 +445,8 @@ async function loadQueueOrEmpty(repoRoot: string): Promise<{ ok: true; value: In
   if (queueResult.ok) {
     return queueResult;
   }
-  return queueResult.reason.includes("integration queue not found") ? { ok: true, value: [] } : queueResult;
+  // No queue FILE means no queued work; anything else is a real failure.
+  return hasFailureCode(queueResult, "integration_queue_not_found") ? { ok: true, value: [] } : queueResult;
 }
 
 async function gateQueue(repoRoot: string, queue: IntegrationQueueEntry[]): Promise<{ ok: true; value: GateSummary[] } | { ok: false; reason: string }> {
@@ -738,13 +740,16 @@ async function requireAcceptedPatchEvidence(repoRoot: string, taskId: string): P
 async function requireDependenciesIfPlanBacked(repoRoot: string, taskId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
   const specResult = await requireActiveSpecRatified(repoRoot);
   if (!specResult.ok) {
-    return specResult.reason.startsWith("no active spec") ? { ok: true } : specResult;
+    // A project with no spec at all has no plan to be dependent on. Anything
+    // else -- an unreadable spec, an unratified one -- is a real refusal, and
+    // must not be waved through because a sentence happened to start the same
+    // way.
+    return hasFailureCode(specResult, "no_active_spec") ? { ok: true } : specResult;
   }
-  const dependencyResult = await requireTaskDependenciesIntegrated(repoRoot, specResult.value.spec_id, taskId);
-  if (!dependencyResult.ok && dependencyResult.reason.includes("tentative plan not found")) {
-    return { ok: true };
-  }
-  return dependencyResult;
+  // The callee already handles a planless project; it never returns the
+  // "tentative plan not found" reason, so the check that used to be here was
+  // an unreachable fail-open.
+  return requireTaskDependenciesIntegrated(repoRoot, specResult.value.spec_id, taskId);
 }
 
 function integrationTimestamp(): string {

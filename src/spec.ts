@@ -4,6 +4,7 @@ import { checkIdeationRatifiable } from "./ideation.js";
 import { readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
 import { checkFormatVersion, formatVersions } from "./format-version.js";
+import { codedFailure } from "./failure-code.js";
 import {
   activeSpecPath,
   buildSpecTemplate,
@@ -239,7 +240,10 @@ export async function readActiveSpec(repoRoot: string): Promise<SpecResult<{ spe
     raw = await readJsonFile(activeSpecPath(repoRoot));
   } catch (error: unknown) {
     if (isNodeError(error, "ENOENT")) {
-      return { ok: false, reason: "no active spec; create and ratify a spec before planning, leasing, or running workers" };
+      return codedFailure(
+        "no_active_spec",
+        "no active spec; create and ratify a spec before planning, leasing, or running workers"
+      );
     }
     if (error instanceof SyntaxError) {
       return { ok: false, reason: "invalid JSON in .hivemind/spec/active.json" };

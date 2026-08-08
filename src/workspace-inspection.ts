@@ -33,6 +33,7 @@ import { loadSpecDocument } from "./spec-format.js";
 import { getStatus, type HivemindStatus } from "./status.js";
 import { inspectLatestAdoptionReadiness } from "./adoption.js";
 import { readTaskOutput } from "./output-stream.js";
+import { hasFailureCode } from "./failure-code.js";
 
 export interface WorkspaceQueueItem {
   id: string;
@@ -976,7 +977,7 @@ async function inspectPlans(
     ) {
       return reviewed;
     }
-  } else if (!tentative.reason.startsWith("tentative plan not found:")) {
+  } else if (!hasFailureCode(tentative, "tentative_plan_not_found")) {
     return tentative;
   }
   const ratified = await loadCurrentRatifiedPlan(repoRoot, specId, "workspace plan inspection");

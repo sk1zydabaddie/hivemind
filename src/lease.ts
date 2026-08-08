@@ -72,8 +72,15 @@ export async function requestLeaseForContract(repoRoot: string, taskId: string):
   if (!specResult.ok) {
     return specResult;
   }
+  // requireTaskDependenciesIntegrated already handles a project with no plan:
+  // it falls through to manual-task authorization. It never propagates the
+  // "tentative plan not found" reason, so the string check that used to sit
+  // here was a fail-open that could not fire -- verified by instrumenting the
+  // callee to throw if it ever returned that reason, across the whole suite.
+  // Removing it also fails closed rather than open, so it is safe even if some
+  // uncovered path could reach it.
   const dependencyResult = await requireTaskDependenciesIntegrated(repoRoot, specResult.value.spec_id, taskId);
-  if (!dependencyResult.ok && !dependencyResult.reason.includes("tentative plan not found")) {
+  if (!dependencyResult.ok) {
     return dependencyResult;
   }
 

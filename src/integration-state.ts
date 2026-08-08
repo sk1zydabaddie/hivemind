@@ -1,5 +1,6 @@
 import path from "node:path";
 import { readEvents, type HivemindEvent } from "./events.js";
+import { codedFailure, type CodedFailure } from "./failure-code.js";
 import { readJsonFile } from "./json.js";
 import { validateRequestedTaskId } from "./task-id.js";
 
@@ -115,14 +116,17 @@ export function pendingQueueEntries(
 
 export async function loadIntegrationQueue(
   repoRoot: string
-): Promise<{ ok: true; value: IntegrationQueueEntry[] } | { ok: false; reason: string }> {
+): Promise<{ ok: true; value: IntegrationQueueEntry[] } | CodedFailure> {
   const queuePath = path.join(repoRoot, ".hivemind", "integration", "queue.json");
   let raw: unknown;
   try {
     raw = await readJsonFile(queuePath);
   } catch (error: unknown) {
     if (isNodeError(error, "ENOENT")) {
-      return { ok: false, reason: "integration queue not found: .hivemind/integration/queue.json" };
+      // Three callers treat "no queue file" as "empty queue". That is a real
+      // distinction, so it carries a code rather than being recovered from the
+      // sentence.
+      return codedFailure("integration_queue_not_found", "integration queue not found: .hivemind/integration/queue.json");
     }
     if (error instanceof SyntaxError) {
       return { ok: false, reason: "invalid JSON in .hivemind/integration/queue.json" };

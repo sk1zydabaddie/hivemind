@@ -216,8 +216,11 @@ async function prepareRunTask(
     return leaseResult;
   }
 
+  // See lease.ts: the callee already handles a planless project, and never
+  // returns this reason, so the string check here was an unreachable
+  // fail-open.
   const dependencyResult = await requireTaskDependenciesIntegrated(repoRoot, specResult.value.spec_id, taskId);
-  if (!dependencyResult.ok && !dependencyResult.reason.includes("tentative plan not found")) {
+  if (!dependencyResult.ok) {
     return dependencyResult;
   }
 

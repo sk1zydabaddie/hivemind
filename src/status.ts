@@ -11,6 +11,7 @@ import { readJsonFile } from "./json.js";
 import { readActiveLeases, type LeaseStore } from "./lease.js";
 import { listReplanStatuses, type ReplanStatus } from "./replan.js";
 import { findGitRoot } from "./repo.js";
+import { hasFailureCode } from "./failure-code.js";
 
 export interface HivemindStatus {
   tasks: StatusTask[];
@@ -260,7 +261,9 @@ function patchEventReason(event: HivemindEvent): string {
 async function readStatusQueue(repoRoot: string): Promise<{ ok: true; value: string[] } | { ok: false; reason: string }> {
   const result = await loadIntegrationQueue(repoRoot);
   if (!result.ok) {
-    return result.reason.includes("integration queue not found") ? { ok: true, value: [] } : result;
+    // No queue FILE means no queued work. An unreadable or malformed queue is
+    // a real failure and must not read as empty.
+    return hasFailureCode(result, "integration_queue_not_found") ? { ok: true, value: [] } : result;
   }
 
   return { ok: true, value: result.value.map((entry) => entry.task_id) };

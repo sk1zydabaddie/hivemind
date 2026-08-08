@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import type { FailureCode } from "./failure-code.js";
 import { validateTaskId } from "./task-id.js";
 
 export type SpecStatus = "draft" | "ratified";
@@ -10,7 +11,16 @@ export interface LoadedSpecDocument {
   status: SpecStatus;
 }
 
-export type SpecResult<T> = { ok: true; value: T } | { ok: false; reason: string };
+/**
+ * `code` is how a caller asks which failure this is. Branching on `reason` is
+ * a bug: rewording a sentence would change behaviour. Optional because most
+ * failures are only ever read by a person and need no code; absence means no
+ * caller distinguishes it, and must be treated as no match rather than as a
+ * wildcard. See src/failure-code.ts.
+ */
+export type SpecResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; reason: string; code?: FailureCode };
 
 export const requiredSections = [
   "Problem / goal",
