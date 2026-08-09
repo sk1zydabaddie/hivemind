@@ -8,6 +8,7 @@ import { formatErrorDetail } from "./error-detail.js";
 import { readJsonFile } from "./json.js";
 import { terminateProcessTreeAndVerify, type DurableProcessIdentity } from "./process-control.js";
 import { assembleAgentPrompt, buildAgentPromptFromContract } from "./prompt-cache.js";
+import type { FailureCode } from "./failure-code.js";
 import {
   adapterOutputIndicatesThrottle,
   bindMeteredCallProcess,
@@ -88,6 +89,8 @@ export interface InvokeAgentFailure {
   ok: false;
   reason: string;
   budget_exceeded?: true;
+  /** Which ceiling was hit, when that distinction drives scheduling. */
+  code?: FailureCode;
   exitCode?: number;
   wallTimeMs?: number;
   effectiveTokens?: number;
@@ -153,6 +156,7 @@ export type AdapterProcessFailure = {
   ok: false;
   reason: string;
   budget_exceeded?: true;
+  code?: FailureCode;
   exitCode?: number;
   wallTimeMs?: number;
   effectiveTokens?: number;

@@ -59,6 +59,64 @@ Proven to bite: replacing one code check with the old `reason.includes(...)`
 makes it fail. That is the regression that would have caught every instance of
 this class.
 
+### The errno that was rendered and re-parsed
+
+`task-control.ts` decided whether worktree cleanup was retryable — on the path
+that releases a lease — by regexing `EBUSY|EPERM|resource busy|...` out of a
+**rendered sentence**. The typed errno existed upstream: `stat` and `chmod`
+threw a real Node error with a real `code`, that throw escaped
+`removeTaskWorktree` entirely, and the caller flattened it with
+`error.message` before matching the result.
+
+The errno is now read while it is still a value. `restoreTrackedFileWrites`
+catches its own throws and returns `worktree_busy`; the caller's catch does the
+same for anything that still escapes. `isBusyErrno` reads `error.code` and
+explicitly does **not** look at the message, so an error whose text merely
+mentions EPERM is not evidence.
+
+### git's stderr, and what "fail closed" means at each site
+
+`src/git-stderr.ts` is the only place another program's prose is read. It is
+named for what it is — untrusted classification — and each caller states its
+closed direction concretely, because "fail closed" is meaningless in the
+abstract:
+
+- **Cleanup retry.** Unrecognised means *do not retry*: the removal is reported
+  failed, cleanup does not complete, and the lease stays held with the debris
+  present. Nothing is reclaimed on a guess. Retrying on an unrecognised message
+  would be the open direction — it spends the retry budget and can report
+  success on a cleanup that never happened.
+- **Branch deletion.** Unrecognised means the failure is *real* and propagates.
+  Only a branch git positively reports as absent counts as already-deleted.
+
+Callers must read `false` as "not known to be transient", never as "known to be
+permanent". The two differ, and only the first is safe to act on by giving up.
+
+### Adoption says which check failed, not which regex matched
+
+`reason_code` drives what a person is told about a failed write to their own
+branch, and it was derived by regexing the reason — so rewording upstream
+silently turned a specific diagnosis into "unknown". The idea was right and the
+source was wrong: each of the three checks now emits its own code, and the
+mapping reads it. "unknown" now means a check genuinely did not classify
+itself.
+
+### A scheduling decision that rested on a sentence about tokens
+
+`isSessionReservationRefusal` matched
+`/token budget exceeded: session .+another \d+-token call would exceed ceiling/`
+to decide whether a **whole wave stops** for budget or **one lane** is treated
+as a failure. `budget_exceeded: true` already existed but is set for both
+run-ceiling and session-ceiling refusals, so it could not make the
+distinction — which is exactly why the regex was there.
+
+The session-ceiling refusal now carries `session_reservation_refused`, threaded
+through the reservation result, the adapter failure, and onto the durable
+`task.paused` event as `reroute_code`. Putting it on the event matters: the
+scheduler reads the lane outcome back from the trail, not from a return value,
+so a code that stopped at the function boundary would not have survived the
+trip.
+
 ## Durable formats: version, upcast at read, never rewrite
 
 ### The invariant

@@ -12,6 +12,8 @@ import { findGitRoot } from "./repo.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { resolveTaskAuthoringBase, type TaskAuthoringBase } from "./task-authoring-base.js";
 import { validateRequestedTaskId } from "./task-id.js";
+import { codedFailure, type CodedFailure } from "./failure-code.js";
+import { isBusyErrno, isBusyStderr, isMissingBranchStderr } from "./git-stderr.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -120,7 +122,7 @@ export async function removeTaskWorktree(
   repoRoot: string,
   taskId: string,
   options: { discardChanges?: boolean } = {}
-): Promise<{ ok: true; value: WorktreeResult } | { ok: false; reason: string }> {
+): Promise<{ ok: true; value: WorktreeResult } | CodedFailure> {
   const taskIdResult = validateRequestedTaskId(taskId);
   if (!taskIdResult.ok) {
     return taskIdResult;
@@ -139,13 +141,22 @@ export async function removeTaskWorktree(
       path.join(".hivemind", "worktrees", taskId)
     ]);
     if (!removeResult.ok) {
-      return { ok: false, reason: removeResult.reason };
+      // git is a separate program, so its stderr is the only evidence here.
+      // The classification is isolated and fails closed: unrecognised means no
+      // code, which means the caller does not retry.
+      return isBusyStderr(removeResult.reason)
+        ? codedFailure("worktree_busy", removeResult.reason)
+        : { ok: false, reason: removeResult.reason };
     }
   }
 
   const branchResult = await git(repoRoot, ["branch", "-D", value.branch]);
-  if (!branchResult.ok && !branchResult.reason.includes("not found")) {
-    return { ok: false, reason: branchResult.reason };
+  // Only a branch git positively reports as absent counts as already-deleted.
+  // Anything else propagates rather than being assumed done.
+  if (!branchResult.ok && !isMissingBranchStderr(branchResult.reason)) {
+    return isBusyStderr(branchResult.reason)
+      ? codedFailure("worktree_busy", branchResult.reason)
+      : { ok: false, reason: branchResult.reason };
   }
 
   return { ok: true, value };
@@ -200,17 +211,29 @@ async function readLeaseFilesForTask(repoRoot: string, taskId: string): Promise<
   };
 }
 
-async function restoreTrackedFileWrites(worktreePath: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+async function restoreTrackedFileWrites(worktreePath: string): Promise<{ ok: true } | CodedFailure> {
   const trackedResult = await gitStdout(worktreePath, ["ls-files", "-z"]);
   if (!trackedResult.ok) {
     return { ok: false, reason: trackedResult.reason };
   }
 
+  // stat and chmod throw a real Node error carrying a real errno. Catching it
+  // HERE is the whole point: left to propagate, it escaped to a caller that
+  // rendered it with error.message and then regexed EPERM back out of that
+  // prose to decide whether cleanup was retryable. The typed value is read
+  // while it is still a value.
   for (const repoPath of parseNullSeparated(trackedResult.stdout)) {
     const fullPath = path.join(worktreePath, repoPath);
-    const fileStat = await stat(fullPath);
-    if (!fileStat.isDirectory()) {
-      await chmod(fullPath, fileStat.mode | 0o200);
+    try {
+      const fileStat = await stat(fullPath);
+      if (!fileStat.isDirectory()) {
+        await chmod(fullPath, fileStat.mode | 0o200);
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      return isBusyErrno(error)
+        ? codedFailure("worktree_busy", `could not restore write access to ${repoPath}: ${message}`)
+        : { ok: false, reason: `could not restore write access to ${repoPath}: ${message}` };
     }
   }
 

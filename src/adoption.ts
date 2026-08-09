@@ -14,6 +14,7 @@ import {
   type TaskLeaseRequirement
 } from "./lease.js";
 import { removeTaskWorktree } from "./worktree.js";
+import { codedFailure, type CodedFailure, type FailureCode } from "./failure-code.js";
 import {
   hashJson,
   loadVerificationSet,
@@ -51,7 +52,7 @@ export interface AdoptionCompletion {
   reconciled: boolean;
 }
 
-type AdoptionResult<T> = { ok: true; value: T } | { ok: false; reason: string };
+type AdoptionResult<T> = { ok: true; value: T } | CodedFailure;
 
 interface AdoptionState {
   stored: StoredVerificationSet;
@@ -113,15 +114,15 @@ export async function inspectLatestAdoptionReadiness(repoRoot: string): Promise<
     } };
   }
   const state = await deriveAdoptionState(repoRoot, verificationId);
-  if (!state.ok) return { ok: true, value: failedReadiness(latest, verificationId, taskIds, state.reason) };
+  if (!state.ok) return { ok: true, value: failedReadiness(latest, verificationId, taskIds, state) };
   const ownership = await validateAdoptionOwnership(repoRoot, state.value.stored.manifest);
-  if (!ownership.ok) return { ok: true, value: failedReadiness(latest, verificationId, taskIds, ownership.reason) };
+  if (!ownership.ok) return { ok: true, value: failedReadiness(latest, verificationId, taskIds, ownership) };
   const canonical = await requireCleanCanonicalBase(
     repoRoot,
     state.value.stored.manifest.base_branch,
     state.value.stored.manifest.base_commit
   );
-  if (!canonical.ok) return { ok: true, value: failedReadiness(latest, verificationId, taskIds, canonical.reason) };
+  if (!canonical.ok) return { ok: true, value: failedReadiness(latest, verificationId, taskIds, canonical) };
   return { ok: true, value: {
     status: "ready",
     reason_code: "none",
@@ -312,18 +313,22 @@ async function deriveAdoptionState(repoRoot: string, verificationId: string): Pr
     event.data.verification_manifest_sha256 === stored.value.manifest_sha256
   );
   if (passed === undefined) {
-    return { ok: false, reason: "verification set is not bound to a durable integration.passed event" };
+    return codedFailure("adoption_inputs_changed", "verification set is not bound to a durable integration.passed event");
   }
   if (!sameStrings(passed.data.applied, stored.value.manifest.task_ids)) {
-    return { ok: false, reason: "verification set is only partially verified or event task identities differ" };
+    return codedFailure("adoption_inputs_changed", "verification set is only partially verified or event task identities differ");
   }
   const unchanged = await verificationInputsStillMatch(repoRoot, stored.value.manifest);
-  if (!unchanged.ok) return unchanged;
+  // Every failure from this check is by definition "the verified inputs no
+  // longer match". Adoption classifies it by WHICH CHECK failed, not by what
+  // the check said -- verification-set.ts has no business knowing adoption's
+  // vocabulary, so the mapping lives here, once.
+  if (!unchanged.ok) return codedFailure("adoption_inputs_changed", unchanged.reason);
   const head = await git(repoRoot, ["rev-parse", `refs/heads/${stored.value.manifest.base_branch}`]);
-  if (!head.ok) return { ok: false, reason: `cannot resolve configured base ref: ${head.reason}` };
+  if (!head.ok) return codedFailure("adoption_base_moved", `cannot resolve configured base ref: ${head.reason}`);
   const liveHead = head.stdout.trim();
   if (liveHead !== stored.value.manifest.base_commit) {
-    return { ok: false, reason: `verified-then-stale: live base HEAD ${liveHead} != verified base ${stored.value.manifest.base_commit}` };
+    return codedFailure("adoption_base_moved", `verified-then-stale: live base HEAD ${liveHead} != verified base ${stored.value.manifest.base_commit}`);
   }
   const leases = await readActiveLeases(repoRoot);
   if (!leases.ok) return leases;
@@ -353,22 +358,22 @@ async function validateAdoptionPreconditions(repoRoot: string, manifest: Verific
 }
 
 async function validateAdoptionOwnership(repoRoot: string, manifest: VerificationSetManifest): Promise<AdoptionResult<TaskLeaseRequirement[]>> {
-  if (manifest.oracle.decision === "block") return { ok: false, reason: "oracle floor blocked this verification set" };
+  if (manifest.oracle.decision === "block") return codedFailure("adoption_oracle_block", "oracle floor blocked this verification set");
   if (manifest.oracle.coverage_configured && manifest.oracle.binding && manifest.oracle.status !== "strong") {
-    return { ok: false, reason: `oracle floor refuses ${manifest.oracle.task_tier} adoption with ${manifest.oracle.status} coverage evidence` };
+    return codedFailure("adoption_oracle_block", `oracle floor refuses ${manifest.oracle.task_tier} adoption with ${manifest.oracle.status} coverage evidence`);
   }
   const leaseRequirements: TaskLeaseRequirement[] = [];
   for (const input of manifest.inputs) {
     const contract = await loadAndValidateContract(repoRoot, input.task_id);
     if (!contract.ok) return contract;
     if (contract.contract.base_commit !== manifest.base_commit) {
-      return { ok: false, reason: `verified-then-stale: ${input.task_id} base_commit differs from the verification set` };
+      return codedFailure("adoption_inputs_changed", `verified-then-stale: ${input.task_id} base_commit differs from the verification set`);
     }
     const lease = await verifyLeaseCoverage(repoRoot, input.task_id, contract.contract.allowed_files, {
       baseCommit: contract.contract.base_commit,
       allowedFileIntents: contract.contract.allowed_file_intents
     });
-    if (!lease.ok) return { ok: false, reason: `adoption lease precondition failed for ${input.task_id}: ${lease.reason}` };
+    if (!lease.ok) return codedFailure("adoption_lease_problem", `adoption lease precondition failed for ${input.task_id}: ${lease.reason}`);
     leaseRequirements.push({ task_id: input.task_id, files: lease.files });
   }
   return { ok: true, value: leaseRequirements };
@@ -387,19 +392,38 @@ function blockedReadiness(
   return { status: "needs_reverification", reason_code: reasonCode, reason, verification_id: null, task_ids: taskIds, changed_files: [], base_commit: null, base_branch: null, verified_at: event.ts };
 }
 
-function failedReadiness(event: HivemindEvent, verificationId: string, taskIds: string[], reason: string): AdoptionReadiness {
-  const reasonCode: AdoptionReadiness["reason_code"] = /live base HEAD|checked-out base HEAD|base moved/iu.test(reason)
-    ? "moved_head"
-    : /lease|ownership|held by|not leased/iu.test(reason)
-      ? "lease_problem"
-      : /oracle|coverage/iu.test(reason)
-        ? "oracle_block"
-        : /hash changed|not bound|manifest|partially verified|task identities/iu.test(reason)
-          ? "changed_inputs"
-          : /clean base worktree|checked-out base branch/iu.test(reason)
-            ? "base_worktree"
-            : "unknown";
-  return { status: "needs_reverification", reason_code: reasonCode, reason, verification_id: verificationId, task_ids: taskIds, changed_files: [], base_commit: null, base_branch: null, verified_at: event.ts };
+/**
+ * Maps the code the failing check produced onto what a person is told.
+ *
+ * This used to regex the reason to guess which check had failed, and that
+ * decides what somebody reads about a failed write to their own branch: a
+ * reworded upstream sentence silently turned a specific diagnosis into
+ * "unknown". The idea -- a typed reason_code -- was right; the source was not.
+ *
+ * "unknown" now means the check genuinely did not classify itself, which is
+ * honest, rather than meaning a regex missed.
+ */
+const adoptionReasonCodes: Record<string, AdoptionReadiness["reason_code"]> = {
+  adoption_base_moved: "moved_head",
+  adoption_inputs_changed: "changed_inputs",
+  adoption_lease_problem: "lease_problem",
+  adoption_oracle_block: "oracle_block",
+  adoption_base_worktree: "base_worktree"
+};
+
+/** Exported so the mapping itself is testable without staging a whole repo. */
+export function adoptionReasonCodeFor(failure: { code?: FailureCode }): AdoptionReadiness["reason_code"] {
+  return (failure.code === undefined ? undefined : adoptionReasonCodes[failure.code]) ?? "unknown";
+}
+
+function failedReadiness(
+  event: HivemindEvent,
+  verificationId: string,
+  taskIds: string[],
+  failure: { reason: string; code?: FailureCode }
+): AdoptionReadiness {
+  const reasonCode = adoptionReasonCodeFor(failure);
+  return { status: "needs_reverification", reason_code: reasonCode, reason: failure.reason, verification_id: verificationId, task_ids: taskIds, changed_files: [], base_commit: null, base_branch: null, verified_at: event.ts };
 }
 
 function stringArray(value: unknown): string[] | null {
@@ -416,11 +440,11 @@ function eventReason(event: HivemindEvent): string | null {
 async function requireCleanCanonicalBase(repoRoot: string, branch: string, expectedHead: string): Promise<AdoptionResult<true>> {
   const current = await git(repoRoot, ["symbolic-ref", "--short", "HEAD"]);
   if (!current.ok || current.stdout.trim() !== branch) {
-    return { ok: false, reason: `adoption requires the clean checked-out base branch ${branch}` };
+    return codedFailure("adoption_base_worktree", `adoption requires the clean checked-out base branch ${branch}`);
   }
   const head = await git(repoRoot, ["rev-parse", "HEAD"]);
   if (!head.ok || head.stdout.trim() !== expectedHead) {
-    return { ok: false, reason: "verified-then-stale: checked-out base HEAD changed before adoption" };
+    return codedFailure("adoption_base_moved", "verified-then-stale: checked-out base HEAD changed before adoption");
   }
   const status = await git(repoRoot, [
     "status",

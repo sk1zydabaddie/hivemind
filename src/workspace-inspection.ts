@@ -293,7 +293,7 @@ export async function inspectWorkspace(
   const events = await readEvents(repoRoot);
   if (!events.ok) return events;
   const activeSpec = await readActiveSpec(repoRoot);
-  if (!activeSpec.ok && !activeSpec.reason.startsWith("no active spec;")) return activeSpec;
+  if (!activeSpec.ok && !hasFailureCode(activeSpec, "no_active_spec")) return activeSpec;
   const specId = activeSpec.ok ? activeSpec.value.spec_id : null;
   /* Read-only, and never fatal: a project without a readable spec document still
      reports the rest of its state. */

@@ -50,6 +50,7 @@ import { admitValueQuality, type ValueQualityAdmission, type ValueQualityStrateg
 import { admitExecutionWave } from "./wave-admission.js";
 import { createTaskWorktree, type WorktreeResult } from "./worktree.js";
 import { checkFormatVersion, formatVersions } from "./format-version.js";
+import { hasFailureCode, type FailureCode } from "./failure-code.js";
 
 interface ManagerSession {
   version: 1;
@@ -154,7 +155,7 @@ interface ManagerBlockedAction {
 
 type ManagerActionExecutionRecord =
   | { ok: true; value: unknown }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; code?: FailureCode };
 
 export type ManagerAction =
   | { type: "get_status" }
@@ -547,6 +548,8 @@ interface ConcurrentLaneOutcome {
   task_id: string;
   status: ConcurrentLaneStatus;
   reason: string;
+  /** Carried from the durable pause event, not parsed out of the reason. */
+  code?: FailureCode;
 }
 
 type ConcurrentWaveDecision =
@@ -949,7 +952,7 @@ async function tryExecuteConcurrentWorkerWave(
         steps.push({ action: runAction, tier: started.value.tier, result: started.value.result });
         const outcome = await classifyConcurrentLaneOutcome(repoRoot, entry.task.task_id, started.value.result.reason);
         laneOutcomes.set(entry.task.task_id, outcome);
-        if (isSessionReservationRefusal(started.value.result.reason)) {
+        if (hasFailureCode(started.value.result, "session_reservation_refused")) {
           stopNewLaunches = { action: runAction, result: started.value.result };
         } else if (outcome.status !== "paused") {
           await cleanupRefusedConcurrentLane(repoRoot, entry.task.task_id, started.value.result.reason);
@@ -980,9 +983,17 @@ async function tryExecuteConcurrentWorkerWave(
     if (
       stopNewLaunches === undefined &&
       outcome.status === "paused" &&
-      isSessionReservationRefusal(outcome.reason)
+      hasFailureCode({ ok: false, code: outcome.code }, "session_reservation_refused")
     ) {
-      stopNewLaunches = { action: completed.action, result: completed.result.ok ? { ok: false, reason: outcome.reason } : completed.result };
+      // Carry the code onto the recorded stop. A later check asks this same
+      // result whether the wave stopped for budget, and rebuilding it without
+      // the code is exactly how the distinction got lost before.
+      stopNewLaunches = {
+        action: completed.action,
+        result: completed.result.ok
+          ? { ok: false, reason: outcome.reason, code: outcome.code }
+          : { ...completed.result, code: completed.result.code ?? outcome.code }
+      };
     }
   }
 
@@ -1055,7 +1066,7 @@ async function tryExecuteConcurrentWorkerWave(
     acceptedSurvivors.push(taskId);
   }
 
-  const budgetStoppedLaunches = stopNewLaunches !== undefined && isSessionReservationRefusal(stopNewLaunches.result.reason);
+  const budgetStoppedLaunches = stopNewLaunches !== undefined && hasFailureCode(stopNewLaunches.result, "session_reservation_refused");
   if (acceptedSurvivors.length > 0 && (stopNewLaunches === undefined || budgetStoppedLaunches)) {
     const expectation = await captureIntegrationQueueExpectation(repoRoot, acceptedSurvivors);
     if (!expectation.ok) {
@@ -1133,7 +1144,11 @@ async function classifyConcurrentLaneOutcome(
     return {
       task_id: taskId,
       status: "paused",
-      reason: typeof pause.data.reroute_reason === "string" ? pause.data.reroute_reason : fallbackReason
+      reason: typeof pause.data.reroute_reason === "string" ? pause.data.reroute_reason : fallbackReason,
+      // Carried on the durable event, not parsed out of the reason. The
+      // scheduler reads the lane outcome back from the trail, so a code that
+      // stopped at a function boundary would not survive the trip.
+      code: typeof pause.data.reroute_code === "string" ? (pause.data.reroute_code as FailureCode) : undefined
     };
   }
   const state = latestTaskRunState(events.value, taskId);
@@ -1166,9 +1181,6 @@ async function cleanupRefusedConcurrentLane(repoRoot: string, taskId: string, re
   }
 }
 
-function isSessionReservationRefusal(reason: string): boolean {
-  return /token budget exceeded: session .+another \d+-token call would exceed ceiling/iu.test(reason);
-}
 
 function settledParallelLaneTaskIds(events: HivemindEvent[]): Set<string> {
   const settled = new Set<string>();
@@ -3299,14 +3311,20 @@ async function routeMutatingAction<T>(
   repoRoot: string,
   endpoint: string,
   body: Record<string, unknown>,
-  direct: () => Promise<{ ok: true; value: T } | { ok: false; reason: string }>
-): Promise<{ ok: true; value: T } | { ok: false; reason: string }> {
+  direct: () => Promise<{ ok: true; value: T } | { ok: false; reason: string; code?: FailureCode }>
+): Promise<{ ok: true; value: T } | { ok: false; reason: string; code?: FailureCode }> {
   const daemonResult = await callDaemonIfConfigured<T>(repoRoot, endpoint, body);
   return daemonResult.routed ? daemonResult : direct();
 }
 
-function recordResult<T>(result: { ok: true; value: T } | { ok: false; reason: string }): ManagerActionExecutionRecord {
-  return result.ok ? { ok: true, value: result.value } : { ok: false, reason: result.reason };
+function recordResult<T>(
+  result: { ok: true; value: T } | { ok: false; reason: string; code?: FailureCode }
+): ManagerActionExecutionRecord {
+  // Forward the code. Dropping it here is precisely what forced the scheduler
+  // to reconstruct the run-vs-session distinction from a sentence.
+  return result.ok
+    ? { ok: true, value: result.value }
+    : { ok: false, reason: result.reason, ...(result.code === undefined ? {} : { code: result.code }) };
 }
 
 function requirePendingProposal(

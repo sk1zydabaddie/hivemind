@@ -8,6 +8,8 @@ import { getProcessLiveness, type ProcessLiveness } from "./process-liveness.js"
 import { latestTaskRunState } from "./run-state.js";
 import { validateRequestedTaskId } from "./task-id.js";
 import { removeTaskWorktree } from "./worktree.js";
+import { codedFailure, hasFailureCode } from "./failure-code.js";
+import { isBusyErrno } from "./git-stderr.js";
 
 const cleanupRetryMs = 2_500;
 const cleanupRetryIntervalMs = 50;
@@ -401,7 +403,11 @@ async function removeTaskWorktreeAfterProcessExit(
 ): Promise<Awaited<ReturnType<typeof removeTaskWorktree>>> {
   const deadline = Date.now() + cleanupRetryMs;
   let result = await attemptTaskWorktreeRemoval(repoRoot, taskId);
-  while (!result.ok && Date.now() < deadline && isTransientWorktreeCleanupFailure(result.reason)) {
+  // Retry only what the removal itself reported as still-held. This used to
+  // regex EBUSY/EPERM back out of a rendered sentence -- the typed errno
+  // existed upstream, was flattened by error.message, and was reconstructed
+  // here to decide whether a lease could be released.
+  while (!result.ok && Date.now() < deadline && hasFailureCode(result, "worktree_busy")) {
     await new Promise((resolve) => setTimeout(resolve, cleanupRetryIntervalMs));
     result = await attemptTaskWorktreeRemoval(repoRoot, taskId);
   }
@@ -415,12 +421,12 @@ async function attemptTaskWorktreeRemoval(
   try {
     return await removeTaskWorktree(repoRoot, taskId, { discardChanges: true });
   } catch (error: unknown) {
-    return { ok: false, reason: errorMessage(error) };
+    // A throw that escaped the removal still carries its errno. Read it as a
+    // value rather than rendering it and re-reading the rendering.
+    return isBusyErrno(error)
+      ? codedFailure("worktree_busy", errorMessage(error))
+      : { ok: false, reason: errorMessage(error) };
   }
-}
-
-function isTransientWorktreeCleanupFailure(reason: string): boolean {
-  return /\b(?:EBUSY|EPERM|resource busy|used by another process|access is denied)\b/iu.test(reason);
 }
 
 async function waitForWorkerTeardown(

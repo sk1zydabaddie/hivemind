@@ -20,6 +20,7 @@ import { requireActiveSpecRatified } from "./spec.js";
 import { validateRequestedTaskId } from "./task-id.js";
 import { type TaskTier } from "./routing.js";
 import { hasFailureCode } from "./failure-code.js";
+import { isMissingBranchStderr } from "./git-stderr.js";
 import {
   resolveMaximumTaskTier,
   runVerification,
@@ -652,7 +653,11 @@ async function cleanupShadow(repoRoot: string, worktreePath: string, branch: str
   }
 
   const branchResult = await git(repoRoot, ["branch", "-D", branch]);
-  if (!branchResult.ok && !branchResult.reason.includes("not found")) {
+  // git is a separate program; its stderr is the only evidence. Isolated in
+  // git-stderr.ts and failing closed -- only a branch git positively reports
+  // as absent is treated as already-deleted, anything else is recorded as a
+  // real cleanup error.
+  if (!branchResult.ok && !isMissingBranchStderr(branchResult.reason)) {
     errors.push(branchResult.reason);
   }
 

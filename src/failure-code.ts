@@ -32,7 +32,32 @@ export const failureCodes = [
   /** No active spec has been selected. Produced by readActiveSpec. */
   "no_active_spec",
   /** No integration queue file exists. Produced by loadIntegrationQueue. */
-  "integration_queue_not_found"
+  "integration_queue_not_found",
+
+  /**
+   * Worktree cleanup could not finish because something still holds a file, so
+   * retrying may succeed. Produced by removeTaskWorktree from a real errno
+   * where one exists, and only otherwise from git's stderr.
+   */
+  "worktree_busy",
+
+  /**
+   * Adoption readiness. These drive what a person is told about a failed write
+   * to their own branch, so each comes from the check that made the decision
+   * rather than from re-reading its sentence.
+   */
+  "adoption_base_moved",
+  "adoption_inputs_changed",
+  "adoption_lease_problem",
+  "adoption_oracle_block",
+  "adoption_base_worktree",
+
+  /**
+   * A metered call was refused because the SESSION ceiling would be exceeded,
+   * as opposed to one lane failing. The scheduler stops a whole wave on this,
+   * so it must not rest on the shape of a sentence about tokens.
+   */
+  "session_reservation_refused"
 ] as const;
 
 export type FailureCode = (typeof failureCodes)[number];

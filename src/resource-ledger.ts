@@ -9,6 +9,7 @@ import { readJsonFile } from "./json.js";
 import { getProcessLiveness, type ProcessLiveness } from "./process-liveness.js";
 import { findGitRoot } from "./repo.js";
 import { checkFormatVersion, formatVersions } from "./format-version.js";
+import type { FailureCode } from "./failure-code.js";
 
 export interface SelfMeasuredUsage {
   requests: number;
@@ -164,7 +165,7 @@ export interface ReserveMeteredCallInput {
 
 export type ReserveMeteredCallResult =
   | { ok: true; value: { reservation: MeteredCallReservation | null; capacity: MeteredBudgetCapacity | null } }
-  | { ok: false; reason: string; budget_exceeded?: true };
+  | { ok: false; reason: string; budget_exceeded?: true; code?: FailureCode };
 
 export type SettleMeteredCallResult =
   | { ok: true; value: { entry: QuotaLedgerEntry; reservation: MeteredCallReservation } }
@@ -283,7 +284,12 @@ export async function reserveMeteredCall(
       return {
         ok: false,
         reason: `token budget exceeded: session ${sessionId} has ${capacity.settled_tokens} settled tokens and ${capacity.active_reserved_tokens} active reserved tokens; another ${reservationTokens}-token call would exceed ceiling ${sessionCeiling} (budget permits ${capacity.available_reservations} more simultaneous call(s))`,
-        budget_exceeded: true
+        budget_exceeded: true,
+        // budget_exceeded alone cannot distinguish this from a RUN-ceiling
+        // refusal -- both set it -- which is why the scheduler used to regex
+        // this sentence to decide whether to stop a whole wave or fail one
+        // lane. The code says which ceiling was hit.
+        code: "session_reservation_refused" as const
       };
     }
     const reservationId = randomUUID();
@@ -857,12 +863,12 @@ async function writeQuotaLedgerState(repoRoot: string, state: QuotaLedgerState):
 
 type LedgerMutationResult<T> =
   | { ok: true; value: T }
-  | { ok: false; reason: string; budget_exceeded?: true; commit?: true };
+  | { ok: false; reason: string; budget_exceeded?: true; commit?: true; code?: FailureCode };
 
 async function withLedgerMutation<T>(
   repoRoot: string,
   action: (state: QuotaLedgerState) => Promise<LedgerMutationResult<T>>
-): Promise<{ ok: true; value: T } | { ok: false; reason: string; budget_exceeded?: true }> {
+): Promise<{ ok: true; value: T } | { ok: false; reason: string; budget_exceeded?: true; code?: FailureCode }> {
   return withInProcessLedgerQueue(repoRoot, () =>
     withLedgerLock(repoRoot, async () => {
       const state = await readQuotaLedgerState(repoRoot);
@@ -872,10 +878,14 @@ async function withLedgerMutation<T>(
         await writeQuotaLedgerState(repoRoot, state.value);
       }
       if (result.ok) return result;
+      // Rebuilding the failure here silently dropped the typed code, so the
+      // scheduler could only recover the run-vs-session distinction by
+      // regexing the sentence. Forward it.
       return {
         ok: false,
         reason: result.reason,
-        ...(result.budget_exceeded === true ? { budget_exceeded: true as const } : {})
+        ...(result.budget_exceeded === true ? { budget_exceeded: true as const } : {}),
+        ...(result.code === undefined ? {} : { code: result.code })
       };
     })
   );

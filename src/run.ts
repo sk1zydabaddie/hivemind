@@ -26,6 +26,7 @@ import { taskCancellationRequested } from "./task-control.js";
 import { resolveTaskAuthoringBase } from "./task-authoring-base.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { createTaskWorktree, removeTaskWorktree } from "./worktree.js";
+import type { FailureCode } from "./failure-code.js";
 
 const execFileAsync = promisify(execFile);
 const agentLogPath = "agent.log";
@@ -513,7 +514,7 @@ async function finishPreparedRunAttempt(
   }
   if (!invokeResult.ok) {
     if (invokeResult.budget_exceeded === true) {
-      const paused = await emitRunQuotaPause(repoRoot, prepared, invokeResult.reason);
+      const paused = await emitRunQuotaPause(repoRoot, prepared, invokeResult.reason, invokeResult.code);
       return paused.ok ? invokeResult : paused;
     }
     const failed = await emitRunFailure(
@@ -910,7 +911,8 @@ async function emitRunFailure(
 async function emitRunQuotaPause(
   repoRoot: string,
   prepared: PreparedRun,
-  reason: string
+  reason: string,
+  code?: FailureCode
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   return emitRunEvent(
     repoRoot,
@@ -924,6 +926,9 @@ async function emitRunQuotaPause(
         routing_task_type: prepared.contract.routing_task_type,
         reason: "quota_exhausted",
         reroute_reason: reason,
+        // The scheduler reads this to decide whether a whole wave stops for
+        // budget or one lane failed. It used to regex reroute_reason.
+        reroute_code: code ?? null,
         checkpoint_preserved: true,
         worktree_preserved: true,
         lease_preserved: true,
