@@ -4,11 +4,12 @@ import path from "node:path";
 import { currentBuildIdentity } from "./build-identity.js";
 import { daemonProcessIsLive, readDaemonState } from "./daemon-state.js";
 import { formatErrorDetail } from "./error-detail.js";
+import { isFailureCode, type FailureCode } from "./failure-code.js";
 
 export type DaemonCallResult<T> =
   | { routed: false }
   | { routed: true; ok: true; value: T }
-  | { routed: true; ok: false; reason: string };
+  | { routed: true; ok: false; reason: string; code?: FailureCode };
 
 interface DaemonHealth {
   ok: true;
@@ -16,7 +17,7 @@ interface DaemonHealth {
   build_id: string;
 }
 
-type InProcessDaemonResult = { ok: true; value: unknown } | { ok: false; reason: string };
+type InProcessDaemonResult = { ok: true; value: unknown } | { ok: false; reason: string; code?: FailureCode };
 
 interface InProcessDaemonContext {
   repo_root: string;
@@ -46,7 +47,7 @@ export async function callDaemonIfConfigured<T>(
     const result = await local.invoke(endpoint, body);
     return result.ok
       ? { routed: true, ok: true, value: result.value as T }
-      : { routed: true, ok: false, reason: result.reason };
+      : { routed: true, ok: false, reason: result.reason, ...(result.code === undefined ? {} : { code: result.code }) };
   }
 
   const addressResult = await resolveDaemonAddress(repoRoot);
@@ -74,30 +75,44 @@ export async function callDaemonIfConfigured<T>(
     };
   }
 
-  const result = await requestJson<{ ok: true; value: T } | { ok: false; reason: string }>(`${baseUrl}${endpoint}`, {
+  const result = await requestJson<{ ok: true; value: T } | { ok: false; reason: string; code?: FailureCode }>(`${baseUrl}${endpoint}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body)
   });
   if (!result.ok) {
-    return { routed: true, ok: false, reason: result.reason };
+    return {
+      routed: true,
+      ok: false,
+      reason: result.reason,
+      ...(result.code === undefined ? {} : { code: result.code })
+    };
   }
   if (!isDaemonResult(result.value)) {
     return { routed: true, ok: false, reason: "daemon returned an invalid response" };
   }
-  return result.value.ok ? { routed: true, ok: true, value: result.value.value as T } : { routed: true, ok: false, reason: result.value.reason };
+  return result.value.ok
+    ? { routed: true, ok: true, value: result.value.value as T }
+    : {
+        routed: true,
+        ok: false,
+        reason: result.value.reason,
+        ...(result.value.code === undefined ? {} : { code: result.value.code })
+      };
 }
 
 export async function callDaemonRequired<T>(
   repoRoot: string,
   endpoint: string,
   body: Record<string, unknown>
-): Promise<{ ok: true; value: T } | { ok: false; reason: string }> {
+): Promise<{ ok: true; value: T } | { ok: false; reason: string; code?: FailureCode }> {
   const result = await callDaemonIfConfigured<T>(repoRoot, endpoint, body);
   if (!result.routed) {
     return { ok: false, reason: "HIVEMIND_DAEMON_URL is required for MCP tool execution" };
   }
-  return result.ok ? { ok: true, value: result.value } : { ok: false, reason: result.reason };
+  return result.ok
+    ? { ok: true, value: result.value }
+    : { ok: false, reason: result.reason, ...(result.code === undefined ? {} : { code: result.code }) };
 }
 
 function normalizeDaemonUrl(value: string | undefined): string | null {
@@ -130,7 +145,10 @@ async function resolveDaemonAddress(repoRoot: string): Promise<{ ok: true; value
     : { ok: true, value: discovered };
 }
 
-async function requestJson<T>(url: string, init: RequestInit): Promise<{ ok: true; value: T } | { ok: false; reason: string }> {
+async function requestJson<T>(
+  url: string,
+  init: RequestInit
+): Promise<{ ok: true; value: T } | { ok: false; reason: string; code?: FailureCode }> {
   let response: Response;
   try {
     response = await fetch(url, withConnectionClose(init));
@@ -146,7 +164,8 @@ async function requestJson<T>(url: string, init: RequestInit): Promise<{ ok: tru
   }
 
   if (!response.ok) {
-    return { ok: false, reason: readReason(parsed) };
+    const code = readCode(parsed);
+    return { ok: false, reason: readReason(parsed), ...(code === undefined ? {} : { code }) };
   }
   return { ok: true, value: parsed as T };
 }
@@ -168,15 +187,21 @@ async function sameRepoRoot(left: string, right: string): Promise<boolean> {
   }
 }
 
-function isDaemonResult(value: unknown): value is { ok: true; value: unknown } | { ok: false; reason: string } {
+function isDaemonResult(value: unknown): value is { ok: true; value: unknown } | { ok: false; reason: string; code?: FailureCode } {
   if (!isRecord(value) || typeof value.ok !== "boolean") {
     return false;
   }
-  return value.ok ? "value" in value : typeof value.reason === "string";
+  return value.ok
+    ? "value" in value
+    : typeof value.reason === "string" && (value.code === undefined || isFailureCode(value.code));
 }
 
 function readReason(value: unknown): string {
   return isRecord(value) && typeof value.reason === "string" ? value.reason : "daemon request failed";
+}
+
+function readCode(value: unknown): FailureCode | undefined {
+  return isRecord(value) && isFailureCode(value.code) ? value.code : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

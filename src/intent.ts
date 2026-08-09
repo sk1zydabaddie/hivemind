@@ -7,6 +7,7 @@ import { readActiveLeases } from "./lease.js";
 import { findGitRoot } from "./repo.js";
 import { validateRequestedTaskId, validateTaskId } from "./task-id.js";
 import { checkFormatVersion, formatVersions } from "./format-version.js";
+import { codedFailure, type FailureCode } from "./failure-code.js";
 
 export interface WriteIntent {
   task_id: string;
@@ -27,7 +28,7 @@ export interface StoredWriteIntentPass extends WriteIntentPass {
   approved_at: string;
 }
 
-type IntentResult<T> = { ok: true; value: T } | { ok: false; reason: string };
+type IntentResult<T> = { ok: true; value: T } | { ok: false; reason: string; code?: FailureCode };
 
 export async function intentCommand(cwd: string, args: string[]): Promise<number> {
   const [taskId, intentPath, ...rest] = args;
@@ -107,7 +108,7 @@ export async function checkWriteIntent(repoRoot: string, taskId: string, rawInte
     if (!rejected.ok) {
       return rejected;
     }
-    return { ok: false, reason };
+    return codedFailure("write_intent_lease_conflict", reason);
   }
 
   const approved: StoredWriteIntentPass = {
@@ -157,7 +158,7 @@ export async function requirePassedWriteIntent(repoRoot: string, taskId: string)
     raw = await readJsonFile(passedIntentPath(repoRoot, taskId));
   } catch (error: unknown) {
     if (isNodeError(error, "ENOENT")) {
-      return { ok: false, reason: `passed write intent not found for ${taskId}; run hivemind intent ${taskId} <intent.json> before invoking a worker` };
+      return codedFailure("write_intent_not_found", `passed write intent not found for ${taskId}; run hivemind intent ${taskId} <intent.json> before invoking a worker`);
     }
     if (error instanceof SyntaxError) {
       return { ok: false, reason: `invalid JSON in .hivemind/intents/${taskId}.approved.json` };

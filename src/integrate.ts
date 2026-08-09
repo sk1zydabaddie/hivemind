@@ -19,7 +19,7 @@ import { findGitRoot } from "./repo.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { validateRequestedTaskId } from "./task-id.js";
 import { type TaskTier } from "./routing.js";
-import { hasFailureCode } from "./failure-code.js";
+import { codedFailure, hasFailureCode, type FailureCode } from "./failure-code.js";
 import { isMissingBranchStderr } from "./git-stderr.js";
 import {
   resolveMaximumTaskTier,
@@ -132,7 +132,7 @@ export async function integrateCommand(cwd: string, args: string[]): Promise<num
 export async function integrateShadow(
   repoRoot: string,
   expectation?: IntegrationQueueExpectation
-): Promise<{ ok: true; value: IntegrationStatus } | { ok: false; reason: string }> {
+): Promise<{ ok: true; value: IntegrationStatus } | { ok: false; reason: string; code?: FailureCode }> {
   const configResult = await loadConfig(repoRoot);
   if (!configResult.ok) {
     return configResult;
@@ -165,10 +165,10 @@ export async function integrateShadow(
 
   const baseBranch = configResult.config.base_branch?.trim();
   if (!baseBranch) {
-    return {
-      ok: false,
-      reason: "config.base_branch is not recorded; check out the intended base branch and run hivemind init again"
-    };
+    return codedFailure(
+      "integration_base_branch_missing",
+      "config.base_branch is not recorded; check out the intended base branch and run hivemind init again"
+    );
   }
   const branchFormat = await git(repoRoot, ["check-ref-format", "--branch", baseBranch]);
   if (!branchFormat.ok) {
@@ -177,7 +177,7 @@ export async function integrateShadow(
   const baseRef = `refs/heads/${baseBranch}`;
   const baseResult = await git(repoRoot, ["rev-parse", "--verify", baseRef]);
   if (!baseResult.ok) {
-    return { ok: false, reason: `configured base branch ${baseBranch} not found` };
+    return codedFailure("integration_base_branch_not_found", `configured base branch ${baseBranch} not found`);
   }
 
   const gateResult = await gateQueue(repoRoot, queueResult.value);

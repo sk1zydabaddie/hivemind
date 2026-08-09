@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
@@ -1449,8 +1450,134 @@ test("workspace inspection surfaces a durable integration refusal in plain langu
     const workTab = await readFile(path.resolve("desktop/src/components/workspace/work-tab.tsx"), "utf8");
     assert.doesNotMatch(workTab, /A required check is missing or could not be measured/u);
     const inspectionSource = await readFile(path.resolve("src/workspace-inspection.ts"), "utf8");
-    assert.match(inspectionSource, /\(\?:configured \)\?base branch/u);
+    assert.doesNotMatch(inspectionSource, /\(\?:configured \)\?base branch/u);
   });
+});
+
+test("rewording plan and integration failures leaves workspace decisions unchanged", async () => {
+  const copyRoot = await mkdtemp(path.join(tmpdir(), "hivemind-workspace-reword-"));
+  try {
+    await cp(path.resolve("dist/src"), copyRoot, { recursive: true });
+    const rewordings = [
+      ["plan.js", "requires a current lint-passed tentative plan", "needs a freshly validated tentative plan"],
+      [
+        "integrate.js",
+        "config.base_branch is not recorded; check out the intended base branch and run hivemind init again",
+        "no project branch is configured; select one and initialize the project again"
+      ],
+      ["integrate.js", "configured base branch ${baseBranch} not found", "project branch ${baseBranch} cannot be resolved"]
+    ] as const;
+    for (const [file, from, to] of rewordings) {
+      const fullPath = path.join(copyRoot, file);
+      const source = await readFile(fullPath, "utf8");
+      assert.ok(source.includes(from), `${file} no longer contains ${from}`);
+      await writeFile(fullPath, source.replaceAll(from, to), "utf8");
+    }
+    const copiedPlan = await import(pathToFileURL(path.join(copyRoot, "plan.js")).href);
+    const copiedManager = await import(pathToFileURL(path.join(copyRoot, "manager.js")).href);
+    const copiedWorkspace = await import(pathToFileURL(path.join(copyRoot, "workspace-inspection.js")).href);
+
+    await withRepo(async (repo) => {
+      await createRatifiedSpec(repo, "S-001");
+      assert.equal((await createTentativePlan(repo, "S-001", workspacePlanFixture())).ok, true);
+      const review = await copiedPlan.reviewPlanForRatification(repo, "S-001");
+      assert.equal(review.ok, false);
+      assert.equal(review.code, "plan_not_currently_lint_passed");
+      assert.match(review.reason, /needs a freshly validated tentative plan/u);
+
+      const inspection = await copiedWorkspace.inspectWorkspace(repo);
+      assert.equal(inspection.ok, true, inspection.ok ? undefined : inspection.reason);
+      if (inspection.ok) assert.equal(inspection.value.plan_review, null);
+    });
+
+    const exerciseIntegrationFailure = async (
+      configure: (config: Record<string, unknown>) => void,
+      expectedCode: "integration_base_branch_missing" | "integration_base_branch_not_found",
+      expectedReason: RegExp,
+      expectedPlainReason: string
+    ) => withRepo(async (repo) => {
+      await createRatifiedSpec(repo, "S-001");
+      const plan = workspacePlanFixture();
+      assert.equal((await createTentativePlan(repo, "S-001", {
+        tasks: [plan.tasks[0]],
+        execution_groups: [{ group_id: "G-1", mode: "sequence", task_ids: ["T-001"] }]
+      })).ok, true);
+      const grounded = await groundTentativePlan(repo, "S-001");
+      assert.equal(grounded.ok, true, grounded.ok ? undefined : grounded.reason);
+      const linted = await lintTentativePlan(repo, "S-001");
+      assert.equal(linted.ok, true, linted.ok ? undefined : linted.reason);
+      const review = await executeWorkspaceAction(repo, { type: "plan.review", payload: { spec_id: "S-001" } });
+      assert.equal(review.ok, true, review.ok ? undefined : review.reason);
+      if (!review.ok) return;
+      const ratified = await executeWorkspaceAction(repo, {
+        type: "plan.ratify",
+        payload: { spec_id: "S-001", expected_plan_hash: (review.value as { plan_hash: string }).plan_hash }
+      });
+      assert.equal(ratified.ok, true, ratified.ok ? undefined : ratified.reason);
+      await writeContract(repo, "T-001", ["README.md"]);
+      await mkdir(path.join(repo, ".hivemind", "integration"), { recursive: true });
+      await writeFile(
+        path.join(repo, ".hivemind", "integration", "queue.json"),
+        `${JSON.stringify([{ task_id: "T-001" }], null, 2)}\n`
+      );
+      const configPath = path.join(repo, ".hivemind", "config.json");
+      const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+      configure(config);
+      config.test_command = "node -e \"process.exit(0)\"";
+      await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+      await setWorkspaceAutonomy(repo, "review_everything");
+
+      const session = await startManagerSession(repo, "Check the accepted change.", {
+        proposedAction: {
+          type: "proposed_actions",
+          source: "scripted",
+          reason: "The accepted change is ready for the project checks.",
+          actions: [{ type: "integrate_shadow" }],
+          human_approval_required_for: ["integrate_shadow"]
+        }
+      });
+      assert.equal(session.ok, true, session.ok ? undefined : session.reason);
+      if (!session.ok) return;
+      const continued = await executeWorkspaceAction(repo, {
+        type: "manager.continue",
+        payload: { session_id: session.value.session_id, tool: "unused-fixture", max_steps: 1 }
+      });
+      assert.equal(continued.ok, true, continued.ok ? undefined : continued.reason);
+      const awaiting = await inspectWorkspace(repo);
+      assert.equal(awaiting.ok, true, awaiting.ok ? undefined : awaiting.reason);
+      if (!awaiting.ok) return;
+      const approval = awaiting.value.needs_you.find((item) => item.kind === "manager_approval");
+      assert.ok(approval, JSON.stringify({ session: awaiting.value.manager_session, needs_you: awaiting.value.needs_you }));
+      assert.equal(approval?.action?.type, "manager.approve_pending");
+      assert.ok(approval?.action);
+
+      const approved = await copiedManager.approvePendingManagerAction(repo, approval.action.payload);
+      assert.equal(approved.ok, true, approved.ok ? undefined : approved.reason);
+      if (!approved.ok) return;
+      assert.equal(approved.value.result.ok, false);
+      assert.equal(approved.value.result.code, expectedCode);
+      assert.match(approved.value.result.reason, expectedReason);
+
+      const inspected = await inspectWorkspace(repo);
+      assert.equal(inspected.ok, true, inspected.ok ? undefined : inspected.reason);
+      if (inspected.ok) assert.equal(inspected.value.integration_failure?.reason, expectedPlainReason);
+    });
+
+    await exerciseIntegrationFailure(
+      (config) => { config.base_branch = "missing-project-branch"; },
+      "integration_base_branch_not_found",
+      /project branch missing-project-branch cannot be resolved/u,
+      'The configured project branch "missing-project-branch" could not be found. Review the base branch setting, then retry the project check.'
+    );
+    await exerciseIntegrationFailure(
+      (config) => { delete config.base_branch; },
+      "integration_base_branch_missing",
+      /no project branch is configured/u,
+      "This project has no recorded base branch. Check out the intended branch, run project setup again, then retry the project check."
+    );
+  } finally {
+    await rm(copyRoot, { recursive: true, force: true, maxRetries: 3 });
+  }
 });
 
 test("the CLI workspace path uses the same dispatcher and rejects crafted authority", async () => {

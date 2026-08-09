@@ -313,7 +313,7 @@ export async function inspectWorkspace(
     ? { ok: true as const, review: null, current: null }
     : await inspectPlans(repoRoot, specId, events.value, config.config);
   if (!planState.ok) return planState;
-  const integrationFailure = buildIntegrationFailure(status.value, session.value);
+  const integrationFailure = buildIntegrationFailure(status.value, session.value, config.config);
   const queues = await buildQueues(
     repoRoot,
     events.value,
@@ -972,7 +972,7 @@ async function inspectPlans(
       );
       if (!alreadyRatified) review = presentPlan(reviewed.value, config);
     } else if (
-      !reviewed.reason.includes("requires a current lint-passed tentative plan") &&
+      !hasFailureCode(reviewed, "plan_not_currently_lint_passed") &&
       !tentativePlanWasFullyAdopted(tentative.value, events)
     ) {
       return reviewed;
@@ -1438,23 +1438,28 @@ function plainEvidence(event: HivemindEvent): string {
 
 function buildIntegrationFailure(
   status: HivemindStatus,
-  session: ManagerWorkspaceSession | null
+  session: ManagerWorkspaceSession | null,
+  config: HivemindConfig
 ): WorkspaceInspection["integration_failure"] {
   if (session?.blocked_action_type !== "integrate_shadow" || session.blocked_reason === null) {
     return null;
   }
   return {
-    reason: plainIntegrationFailureReason(session.blocked_reason),
+    reason: plainIntegrationFailureReason(session.blocked_reason, session.blocked_code, config.base_branch),
     task_ids: [...status.integration.queue]
   };
 }
 
-function plainIntegrationFailureReason(reason: string): string {
-  const missingBranch = /^(?:configured )?base branch (.+) not found$/u.exec(reason);
-  if (missingBranch) {
-    return `The configured project branch "${missingBranch[1]}" could not be found. Review the base branch setting, then retry the project check.`;
+function plainIntegrationFailureReason(
+  reason: string,
+  code: ManagerWorkspaceSession["blocked_code"],
+  configuredBaseBranch: string | undefined
+): string {
+  const failure = { ok: false as const, ...(code === null ? {} : { code }) };
+  if (hasFailureCode(failure, "integration_base_branch_not_found") && configuredBaseBranch?.trim()) {
+    return `The configured project branch "${configuredBaseBranch.trim()}" could not be found. Review the base branch setting, then retry the project check.`;
   }
-  if (/config\.base_branch is not recorded/iu.test(reason)) {
+  if (hasFailureCode(failure, "integration_base_branch_missing")) {
     return "This project has no recorded base branch. Check out the intended branch, run project setup again, then retry the project check.";
   }
   return reason;

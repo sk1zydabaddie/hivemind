@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type { FailureCode } from "./failure-code.js";
+import { codedFailure, type FailureCode } from "./failure-code.js";
 import { validateTaskId } from "./task-id.js";
 
 export type SpecStatus = "draft" | "ratified";
@@ -47,7 +47,7 @@ export async function loadSpecDocument(repoRoot: string, specId: string): Promis
     markdown = await readFile(specFilePath(repoRoot, specId), "utf8");
   } catch (error: unknown) {
     if (isNodeError(error, "ENOENT")) {
-      return { ok: false, reason: `spec not found: .hivemind/spec/${specId}.md` };
+      return codedFailure("spec_not_found", `spec not found: .hivemind/spec/${specId}.md`);
     }
     throw error;
   }

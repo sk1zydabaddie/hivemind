@@ -27,12 +27,25 @@
  */
 
 export const failureCodes = [
+  /** No spec document exists for the requested id. Produced by loadSpecDocument. */
+  "spec_not_found",
   /** No tentative plan file exists for the spec. Produced by loadTentativePlan. */
   "tentative_plan_not_found",
   /** No active spec has been selected. Produced by readActiveSpec. */
   "no_active_spec",
   /** No integration queue file exists. Produced by loadIntegrationQueue. */
   "integration_queue_not_found",
+
+  /** No approved write intent exists yet for a task. Produced by requirePassedWriteIntent. */
+  "write_intent_not_found",
+  /** A write intent names files outside the task's current lease. Produced by checkWriteIntent. */
+  "write_intent_lease_conflict",
+  /** A tentative plan exists but is not currently lint-passed. Produced by loadCurrentLintedPlan. */
+  "plan_not_currently_lint_passed",
+
+  /** Shadow integration cannot resolve a configured base branch. */
+  "integration_base_branch_missing",
+  "integration_base_branch_not_found",
 
   /**
    * Worktree cleanup could not finish because something still holds a file, so
@@ -57,7 +70,9 @@ export const failureCodes = [
    * as opposed to one lane failing. The scheduler stops a whole wave on this,
    * so it must not rest on the shape of a sentence about tokens.
    */
-  "session_reservation_refused"
+  "session_reservation_refused",
+  /** A non-session-specific token ceiling refused or invalidated a metered call. */
+  "token_budget_exceeded"
 ] as const;
 
 export type FailureCode = (typeof failureCodes)[number];
@@ -86,4 +101,9 @@ export function codedFailure(code: FailureCode, reason: string): { ok: false; re
  */
 export function hasFailureCode(result: { ok: boolean; code?: FailureCode }, code: FailureCode): boolean {
   return result.ok === false && result.code === code;
+}
+
+/** Validates an untrusted serialized value before restoring it as a code. */
+export function isFailureCode(value: unknown): value is FailureCode {
+  return typeof value === "string" && (failureCodes as readonly string[]).includes(value);
 }

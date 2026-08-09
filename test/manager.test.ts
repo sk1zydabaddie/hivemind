@@ -1,21 +1,22 @@
 import assert from "node:assert/strict";
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path, { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
 import { appendEvent, readEvents, type HivemindEvent } from "../src/events.js";
 import { currentBuildIdentity } from "../src/build-identity.js";
 import { loadConfig } from "../src/config.js";
+import { createTaskContract } from "../src/contract.js";
 import { createDaemonServer } from "../src/daemon.js";
 import { initProject } from "../src/init.js";
 import { integratedTaskIdsFromEvents } from "../src/integration-state.js";
-import { requestLease } from "../src/lease.js";
+import { requestLease, requestLeaseForContract } from "../src/lease.js";
 import { readQuotaLedger, readQuotaLedgerState, recordQuotaUsage, reserveMeteredCall } from "../src/resource-ledger.js";
 import { latestTaskRunState } from "../src/run-state.js";
 import {
@@ -988,6 +989,82 @@ test("Auto records and surfaces a session-ceiling stop before another manager ca
       assert.equal(needsYou.some((item) => /token budget exceeded/iu.test(item.detail)), true);
     }
   });
+});
+
+test("rewording manager producer reasons leaves intent and token decisions unchanged", async () => {
+  const copyRoot = await mkdtemp(path.join(tmpdir(), "hivemind-manager-reword-"));
+  try {
+    await cp(path.resolve("dist/src"), copyRoot, { recursive: true });
+    const rewordings = [
+      ["intent.js", "passed write intent not found for ", "approved intent is absent for "],
+      ["intent.js", "write intent rejected: ", "lease coverage refused this intent: "],
+      ["resource-ledger.js", "token budget exceeded: session ", "session capacity unavailable: "]
+    ] as const;
+    for (const [file, from, to] of rewordings) {
+      const fullPath = path.join(copyRoot, file);
+      const source = await readFile(fullPath, "utf8");
+      assert.ok(source.includes(from), `${file} no longer contains ${from}`);
+      await writeFile(fullPath, source.replaceAll(from, to), "utf8");
+    }
+    const copiedManager = await import(pathToFileURL(path.join(copyRoot, "manager.js")).href);
+
+    await withTempRepo(async ({ repo, baseCommit }) => {
+      await createRatifiedSpec(repo, "S-001");
+      const contract = managerContract("T-MISSING-INTENT", baseCommit, ["README.md"]);
+      await prepareLintedPlan(repo, contract);
+      const created = await createTaskContract(repo, contract);
+      assert.equal(created.ok, true, created.ok ? undefined : created.reason);
+      const leased = await requestLeaseForContract(repo, "T-MISSING-INTENT");
+      assert.equal(leased.ok, true, leased.ok ? undefined : leased.reason);
+
+      const started = await copiedManager.startManagerSession(
+        repo,
+        "Resume the deterministic task.",
+        { deterministicHappyPath: true, tool: "unused-fixture" }
+      );
+      assert.equal(started.ok, true, started.ok ? undefined : started.reason);
+      if (!started.ok) return;
+      assert.equal(started.value.proposed_action.actions[0]?.type, "check_write_intent");
+    });
+
+    await withTempRepo(async ({ repo, baseCommit }) => {
+      await setConfigManagerAutonomy(repo, { level: "auto", redirect_limit: 2 });
+      await createRatifiedSpec(repo, "S-001");
+      const contract = managerContract("T-REWORD-REDIRECT", baseCommit, ["README.md"]);
+      await prepareLintedPlan(repo, contract);
+      await writeRedirectAwareManagerProfile(repo, "T-REWORD-REDIRECT", contract, "unused-worker");
+
+      const result = await copiedManager.runAutonomousManagerLoop(repo, "Reach the intent gate.", { tool: "manager", maxSteps: 3 });
+      assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+      if (!result.ok) return;
+      assert.equal(result.value.steps[2]?.tier, "redirect");
+      assert.match(result.value.steps[2]?.result?.reason ?? "", /lease coverage refused this intent/u);
+    });
+
+    await withTempRepo(async ({ repo }) => {
+      await setConfigManagerAutonomy(repo, { level: "auto" });
+      await createRatifiedSpec(repo, "S-001");
+      await writeManagerProposalProfile(repo, proposalFor([{ type: "get_status" }]));
+      const started = await startManagerSession(repo, "Use the stored no-paid first action.", {
+        proposedAction: testProposal([{ type: "get_status" }])
+      });
+      assert.equal(started.ok, true, started.ok ? undefined : started.reason);
+      if (!started.ok) return;
+      await setResourceSessionCeiling(repo, 1);
+
+      const continued = await copiedManager.continueAutonomousManagerLoop(repo, started.value.session_id, {
+        tool: "manager",
+        maxSteps: 3
+      });
+      assert.equal(continued.ok, false);
+      if (continued.ok) return;
+      assert.match(continued.reason, /session capacity unavailable/u);
+      const events = await readRequiredEvents(repo);
+      assert.equal(events.some((event) => event.type === "quota.exhausted" && event.data.session_id === started.value.session_id), true);
+    });
+  } finally {
+    await rm(copyRoot, { recursive: true, force: true, maxRetries: 3 });
+  }
 });
 
 test("daemon workspace dispatcher completes the Core-derived loop without manager calls or nested HTTP", async (context) => {

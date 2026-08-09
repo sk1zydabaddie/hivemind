@@ -169,7 +169,7 @@ export type ReserveMeteredCallResult =
 
 export type SettleMeteredCallResult =
   | { ok: true; value: { entry: QuotaLedgerEntry; reservation: MeteredCallReservation } }
-  | { ok: false; reason: string; budget_exceeded?: true };
+  | { ok: false; reason: string; budget_exceeded?: true; code?: FailureCode };
 
 export interface QuotaUsageRecord {
   provider: string;
@@ -184,7 +184,7 @@ export interface QuotaUsageRecord {
 
 export type RecordQuotaUsageResult =
   | { ok: true; value: QuotaLedgerEntry }
-  | { ok: false; reason: string; budget_exceeded?: true };
+  | { ok: false; reason: string; budget_exceeded?: true; code?: FailureCode };
 
 const ledgerLockRetryMs = 25;
 const ledgerLockTimeoutMs = 2000;
@@ -274,7 +274,8 @@ export async function reserveMeteredCall(
       reason: reservationTokens === 0
         ? `token budget exceeded: run token ceiling 0 forbids invoking metered provider ${provider}`
         : `token budget exceeded: estimated input ${input.estimated_input_tokens} tokens leaves no output budget under run ceiling ${reservationTokens} for ${provider}`,
-      budget_exceeded: true
+      budget_exceeded: true,
+      code: "token_budget_exceeded"
     };
   }
 
@@ -685,7 +686,7 @@ function validateSettledBudget(
   entry: QuotaLedgerEntry,
   providers: QuotaLedger,
   sessionIdOverride?: string | null
-): { ok: true } | { ok: false; reason: string; budget_exceeded: true } {
+): { ok: true } | { ok: false; reason: string; budget_exceeded: true; code: FailureCode } {
   if (entry.unmetered) return { ok: true };
   const effectiveTokens = entry.last_request?.effective_tokens ?? 0;
   const runTokenCeiling = config.resource_policy?.run_ceiling?.tokens;
@@ -694,7 +695,8 @@ function validateSettledBudget(
     return {
       ok: false,
       reason: `token budget exceeded: post-call token overshoot: ${reservation?.provider ?? "provider"} used ${effectiveTokens} effective tokens after completion, exceeding its ${runTokenCeiling}-token admission reservation by ${overshoot}; provider usage is unavailable until completion, so the output was refused and the full usage was charged`,
-      budget_exceeded: true
+      budget_exceeded: true,
+      code: "token_budget_exceeded"
     };
   }
   const sessionId = reservation?.session_id ?? sessionIdOverride ?? null;
@@ -705,7 +707,8 @@ function validateSettledBudget(
       return {
         ok: false,
         reason: `token budget exceeded: manager session ${sessionId} used ${sessionTokens} effective tokens against ceiling ${sessionTokenCeiling}`,
-        budget_exceeded: true
+        budget_exceeded: true,
+        code: "token_budget_exceeded"
       };
     }
   }

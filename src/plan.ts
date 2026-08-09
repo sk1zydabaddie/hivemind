@@ -972,7 +972,7 @@ async function loadCurrentLintedPlan(repoRoot: string, specId: string, action: s
   }
   const plan = loaded.value;
   if (plan.lint_status !== "passed" || plan.linted_base_commit !== plan.base_commit || plan.linted_at === undefined) {
-    return { ok: false, reason: `${action} requires a current lint-passed tentative plan` };
+    return codedFailure("plan_not_currently_lint_passed", `${action} requires a current lint-passed tentative plan`);
   }
   const lintResult = runPlanLintRules(plan, head.value, config.config.critical_globs ?? []);
   if (!lintResult.ok) {

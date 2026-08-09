@@ -8,6 +8,7 @@ import { createTaskContract } from "./contract.js";
 import { withInProcessDaemonTransport } from "./daemon-client.js";
 import { removeDaemonState, writeDaemonState } from "./daemon-state.js";
 import { formatErrorDetail } from "./error-detail.js";
+import type { FailureCode } from "./failure-code.js";
 import { EventBus } from "./event-bus.js";
 import { appendEvent, readEvents } from "./events.js";
 import { enqueueIntegrationPatch, integrateShadow } from "./integrate.js";
@@ -41,7 +42,7 @@ type DaemonPayload = Record<string, unknown>;
 type DaemonHandler = (
   payload: DaemonPayload,
   eventBus: EventBus
-) => Promise<{ ok: true; value: unknown } | { ok: false; reason: string }>;
+) => Promise<{ ok: true; value: unknown } | { ok: false; reason: string; code?: FailureCode }>;
 
 export async function daemonCommand(cwd: string, args: string[]): Promise<number> {
   const options = parseDaemonOptions(args);

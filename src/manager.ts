@@ -50,7 +50,7 @@ import { admitValueQuality, type ValueQualityAdmission, type ValueQualityStrateg
 import { admitExecutionWave } from "./wave-admission.js";
 import { createTaskWorktree, type WorktreeResult } from "./worktree.js";
 import { checkFormatVersion, formatVersions } from "./format-version.js";
-import { hasFailureCode, type FailureCode } from "./failure-code.js";
+import { hasFailureCode, isFailureCode, type FailureCode } from "./failure-code.js";
 
 interface ManagerSession {
   version: 1;
@@ -137,6 +137,7 @@ export interface ManagerWorkspaceSession {
   pending_action: ManagerPendingAction | null;
   blocked_action_type: ManagerAction["type"] | null;
   blocked_reason: string | null;
+  blocked_code: FailureCode | null;
   continuation_available: boolean;
   autonomy_level: AutonomyLevel;
   autonomy_levels: AutonomyLevel[];
@@ -391,7 +392,7 @@ async function startManagerSessionWithId(
       : await generateManagerProposal(repoRoot, message.trim(), options.tool ?? "manager", spec.value.spec_id, sessionId)
     : ({ ok: true, value: options.proposedAction } as const);
   if (!proposedAction.ok) {
-    return recordManagerProposalFailure(repoRoot, sessionId, proposedAction.reason);
+    return recordManagerProposalFailure(repoRoot, sessionId, proposedAction);
   }
   const proposalValidation = validateAutonomousSessionProposal(proposedAction.value);
   if (!proposalValidation.ok) return proposalValidation;
@@ -762,7 +763,7 @@ async function derivePreWorkerActions(
   if (!current.lease.held) actions.push({ type: "request_lease", task_id: task.task_id });
   const intent = await requirePassedWriteIntent(repoRoot, task.task_id);
   if (!intent.ok) {
-    if (!intent.reason.startsWith("passed write intent not found")) return intent;
+    if (!hasFailureCode(intent, "write_intent_not_found")) return intent;
     actions.push({
       type: "check_write_intent",
       task_id: task.task_id,
@@ -2080,7 +2081,7 @@ function buildGateRejectionAdvice(action: ManagerAction, reason: string): Manage
 }
 
 function isRedirectableWriteIntentRejection(action: ManagerAction, result: ManagerActionExecutionRecord): action is Extract<ManagerAction, { type: "check_write_intent" }> {
-  return action.type === "check_write_intent" && result.ok === false && result.reason.startsWith("write intent rejected:");
+  return action.type === "check_write_intent" && hasFailureCode(result, "write_intent_lease_conflict");
 }
 
 async function handleWriteIntentRedirect(
@@ -2341,7 +2342,7 @@ export async function continueAutonomousManagerLoop(
       const wave = await tryExecuteConcurrentWorkerWave(repoRoot, session.value, policy.value);
       if (!wave.ok) return wave;
       if (wave.value.kind === "judgment") {
-        return recordManagerProposalFailure(repoRoot, sessionId, wave.value.reason);
+        return recordManagerProposalFailure(repoRoot, sessionId, { reason: wave.value.reason });
       }
       if (wave.value.kind === "executed") {
         for (const waveStep of wave.value.steps) {
@@ -2440,7 +2441,7 @@ export async function continueAutonomousManagerLoop(
             session.value.spec_id,
             session.value.session_id
           );
-          if (!generated.ok) return recordManagerProposalFailure(repoRoot, sessionId, generated.reason);
+          if (!generated.ok) return recordManagerProposalFailure(repoRoot, sessionId, generated);
           nextProposal = generated.value;
           sessionForWrite = appendProposalToSession(
             {
@@ -2485,7 +2486,7 @@ export async function continueAutonomousManagerLoop(
               session.value.spec_id,
               session.value.session_id
             );
-        if (!generated.ok) return recordManagerProposalFailure(repoRoot, sessionId, generated.reason);
+        if (!generated.ok) return recordManagerProposalFailure(repoRoot, sessionId, generated);
         nextProposal = generated.value;
         sessionForWrite = appendProposalToSession(session.value, nextProposal);
         await writeJsonAtomic(managerSessionPath(repoRoot, sessionId), sessionForWrite);
@@ -2714,17 +2715,20 @@ async function recordBlockedManagerAction(
 async function recordManagerProposalFailure(
   repoRoot: string,
   sessionId: string,
-  reason: string
+  failure: { reason: string; code?: FailureCode }
 ): Promise<SpecResult<never>> {
-  if (/token budget exceeded/iu.test(reason)) {
+  if (
+    hasFailureCode({ ok: false, code: failure.code }, "token_budget_exceeded") ||
+    hasFailureCode({ ok: false, code: failure.code }, "session_reservation_refused")
+  ) {
     const recorded = await appendEvent(repoRoot, {
       type: "quota.exhausted",
       task_id: null,
-      data: { version: 1, session_id: sessionId, reason, source: "token_ceiling" }
+      data: { version: 1, session_id: sessionId, reason: failure.reason, source: "token_ceiling" }
     });
     if (!recorded.ok) return recorded;
   }
-  return { ok: false, reason };
+  return { ok: false, reason: failure.reason, ...(failure.code === undefined ? {} : { code: failure.code }) };
 }
 
 export async function retryBlockedManagerAction(
@@ -3469,6 +3473,7 @@ export async function inspectManagerSessionHistory(
 function presentManagerWorkspaceHistorySession(session: ManagerSession): ManagerWorkspaceHistorySession {
   const pending = session.pending_action ?? null;
   const blockedReason = session.blocked_action?.result.reason ?? null;
+  const blockedCode = session.blocked_action?.result.code ?? null;
   const actionTimes = session.executed_actions
     .map((action) => action.ts)
     .filter((value) => !Number.isNaN(Date.parse(value)));
@@ -3488,6 +3493,7 @@ function presentManagerWorkspaceHistorySession(session: ManagerSession): Manager
     pending_action: pending,
     blocked_action_type: session.blocked_action?.action_type ?? null,
     blocked_reason: blockedReason,
+    blocked_code: blockedCode,
     continuation_available: status === "active" && session.proposal_state !== undefined,
     autonomy_level: autonomyLevel,
     autonomy_levels: [autonomyLevel],
@@ -3641,6 +3647,7 @@ function validateManagerSession(value: unknown, sessionId: string): SpecResult<M
       !isRecord(blocked.result) ||
       blocked.result.ok !== false ||
       typeof blocked.result.reason !== "string" ||
+      (blocked.result.code !== undefined && !isFailureCode(blocked.result.code)) ||
       !isRecord(blocked.stop) ||
       typeof blocked.stop.reason !== "string" ||
       typeof blocked.stop.diagnosis !== "string" ||

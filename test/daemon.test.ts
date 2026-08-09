@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
+import { callDaemonIfConfigured } from "../src/daemon-client.js";
 import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { checkWriteIntent } from "../src/intent.js";
@@ -26,6 +27,26 @@ interface DaemonProcess {
   url: string;
   repoRoot: string;
 }
+
+test("a coded daemon failure survives the HTTP round trip", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const daemon = await startDaemon(repo);
+    const originalUrl = process.env.HIVEMIND_DAEMON_URL;
+    process.env.HIVEMIND_DAEMON_URL = daemon.url;
+    try {
+      const result = await callDaemonIfConfigured(repo, "/integrate/shadow", {});
+
+      assert.equal(result.routed, true);
+      assert.equal(result.ok, false);
+      if (!result.routed || result.ok) return;
+      assert.equal(result.code, "integration_queue_not_found");
+    } finally {
+      if (originalUrl === undefined) delete process.env.HIVEMIND_DAEMON_URL;
+      else process.env.HIVEMIND_DAEMON_URL = originalUrl;
+      await stopDaemon(daemon);
+    }
+  });
+});
 
 test("daemon serializes concurrent lease requests and re-reads committed state after restart", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {

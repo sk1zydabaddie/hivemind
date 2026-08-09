@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
@@ -32,6 +32,32 @@ test("ideation start creates a draft spec and durable discovery state", async ()
       user: false,
       orchestrator: false
     });
+  });
+});
+
+test("rewording the missing-spec reason does not stop ideation from creating the spec", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const copyRoot = await mkdtemp(path.join(tmpdir(), "hivemind-ideation-reword-"));
+    try {
+      await cp(path.resolve("dist/src"), copyRoot, { recursive: true });
+      const specFormatPath = path.join(copyRoot, "spec-format.js");
+      const source = await readFile(specFormatPath, "utf8");
+      assert.ok(source.includes("spec not found: "));
+      await writeFile(specFormatPath, source.replace("spec not found: ", "no spec document exists at "), "utf8");
+
+      const specFormat = await import(pathToFileURL(specFormatPath).href);
+      const ideation = await import(pathToFileURL(path.join(copyRoot, "ideation.js")).href);
+      const missing = await specFormat.loadSpecDocument(repo, "S-REWORD");
+      assert.equal(missing.ok, false);
+      assert.equal(missing.code, "spec_not_found");
+      assert.match(missing.reason, /no spec document exists at/u);
+
+      const started = await ideation.startIdeationSession(repo, "S-REWORD", "Copy change", "Prove reasons are not control flow");
+      assert.equal(started.ok, true, started.ok ? undefined : started.reason);
+      assert.match(await readFile(path.join(repo, ".hivemind", "spec", "S-REWORD.md"), "utf8"), /Prove reasons are not control flow/u);
+    } finally {
+      await rm(copyRoot, { recursive: true, force: true, maxRetries: 3 });
+    }
   });
 });
 

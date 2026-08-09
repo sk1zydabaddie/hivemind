@@ -11,6 +11,7 @@ import {
 import { extractJsonObject, readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
 import { checkFormatVersion, formatVersions } from "./format-version.js";
+import { hasFailureCode } from "./failure-code.js";
 import {
   activeSpecPath,
   buildSpecTemplate,
@@ -142,7 +143,7 @@ export async function startIdeationSession(
       return { ok: false, reason: problems.join("; ") };
     }
     markdown = existingSpec.value.markdown;
-  } else if (existingSpec.reason.startsWith("spec not found:")) {
+  } else if (hasFailureCode(existingSpec, "spec_not_found")) {
     markdown = buildSpecTemplate(title.trim());
   } else {
     return existingSpec;

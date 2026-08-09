@@ -117,6 +117,42 @@ scheduler reads the lane outcome back from the trail, not from a return value,
 so a code that stopped at the function boundary would not have survived the
 trip.
 
+### Codes crossing the daemon boundary
+
+The desktop reaches manager actions through the daemon, so an in-process type
+is not enough. The daemon route already returned the complete failure object,
+but `daemon-client.ts` rebuilt failures twice: once for a non-2xx HTTP response
+and again while returning the parsed domain result. Both copies now retain a
+validated `FailureCode`; an unknown serialized value is not restored as a code.
+A real child-daemon regression sends a coded integration failure through HTTP
+and asserts the caller receives the same code.
+
+This transit check applies beyond HTTP. The manager's durable blocked action,
+workspace presentation, quota settlement, and adapter result now all carry a
+code when their producer supplies one. Consumers still fail closed when reading
+legacy records without a code.
+
+### The remaining audited consumers
+
+The final seven sites were checked for dead and lossy-transit shapes before
+conversion. Full-suite producer and consumer instrumentation found six live
+distinctions: missing specs, missing and lease-conflicting write intents,
+non-current plan lint, missing and unresolvable integration base branches, and
+token-ceiling failures. Their producers now emit codes and their consumers read
+only those codes.
+
+The `replan.ts` fallback that searched an action result sentence for a task id
+was dead. Manager actions scoped to a task already persist `task_id`; full-suite
+instrumentation found no unscoped action whose reason supplied that identity.
+The fallback and its helper were removed instead of being made to look
+load-bearing with a new code.
+
+The new regressions reword each producer sentence in a copied compiled tree and
+exercise the real consumers. Each was proven to bite by temporarily restoring
+its former string match and observing the expected assertion fail. The daemon
+regression was likewise proven by temporarily restoring the field-dropping
+client reconstruction.
+
 ## Durable formats: version, upcast at read, never rewrite
 
 ### The invariant

@@ -376,11 +376,7 @@ async function readManagerFailures(repoRoot: string, taskId: string): Promise<Sp
 }
 
 function actionMatchesTask(action: Record<string, unknown>, taskId: string): boolean {
-  return typeof action.task_id === "string" ? action.task_id === taskId : actionResultMentionsTask(action.result, taskId);
-}
-
-function actionResultMentionsTask(result: unknown, taskId: string): boolean {
-  return isRecord(result) && typeof result.reason === "string" && result.reason.includes(taskId);
+  return typeof action.task_id === "string" && action.task_id === taskId;
 }
 
 function classifyThrash(evidence: ReplanEvidence): ReplanCause {

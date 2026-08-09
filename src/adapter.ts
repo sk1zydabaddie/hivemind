@@ -768,6 +768,7 @@ async function resolveProcessResult(
 ): Promise<void> {
   const failures: string[] = processStartFailure === undefined ? [] : [processStartFailure];
   let budgetExceeded = false;
+  let budgetFailureCode: FailureCode | undefined;
   if (result.outputLogPath !== null) {
     try {
       await writeAdapterProcessLog(result.outputLogPath, tool, result);
@@ -808,6 +809,7 @@ async function resolveProcessResult(
       if (!settlement.ok) {
         failures.push(settlement.reason);
         budgetExceeded = settlement.budget_exceeded === true;
+        budgetFailureCode = settlement.code;
       } else {
         const quotaRequest = settlement.value.entry.last_request;
         if (quotaRequest === null) {
@@ -832,6 +834,7 @@ async function resolveProcessResult(
       ...(budgetExceeded
         ? {
             budget_exceeded: true as const,
+            ...(budgetFailureCode === undefined ? {} : { code: budgetFailureCode }),
             exitCode: result.exitCode,
             wallTimeMs: result.wallTimeMs,
             effectiveTokens:
