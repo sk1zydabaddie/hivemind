@@ -24,6 +24,7 @@ npm run dev   ->  /replay.html?scenario=<id>
 | 08 | Needs you | `final-run-transcript-4` |
 | 09 | Command palette | `e2e-textkit-parallel-run&open=commands` |
 | 10 | Settings | `e2e-textkit-parallel-run&open=settings` |
+| 11 | The shipped card | `e2e-textkit-parallel-run` |
 
 ## What is real in each, and what is not
 
@@ -52,13 +53,30 @@ discovered.
 Both cuts are marked in the scenario's own `source` field, so a future reader
 sees it in the data and not only here.
 
+## What the mid-run cut can now show
+
+`@midrun` restores the lease store by replaying `lease.approved` /
+`lease.released` to the cut point, so **01** and **06** show the three agents
+holding two files each — which is what the live run showed and what every
+earlier capture reported as zero. The manager session's status is corrected to
+live for a cut that reaches no terminal event, so the header says *running*
+rather than *took*. Both are described in DESIGN-NOTES under "the capture is not
+wrong, it is LATER than the cut".
+
 ## Known defects visible in these images
 
-Both are Core-side and predate this pass. They are preserved, not hidden.
+Core-side, predating this pass, preserved rather than hidden.
 
-- **07 / the shipped card reads "0 files changed"** over a commit that changed
-  eight. `adoption.completed` did not record `changed_files` when this trail was
-  captured; Core writes it now, so a fresh run renders "8 files".
-- **01 / "took 26m 27s" during a live run.** `runSpanMs` reports the span of the
-  replayed events and the mid-run cut projects as inactive, so the header says
-  *took* where a live run would say *running*.
+- **11 / "This project's record of the change does not list the files."**
+  `adoption.completed` did not record `changed_files` when this trail was
+  captured. The card used to read "0 files changed" over a commit that changed
+  eight; it now reports the absence instead of asserting a zero. Core writes the
+  field, so a fresh run renders "8 files changed".
+- **08 / `rejected add src/ledger.js`** renders as Core recorded it. This trail
+  predates `plain_reason`; the client defers correctly and needs no change when
+  a current Core rejects a patch.
+- **01, 06 / the spend meter reads "5 calls · 622.6K"** — the whole run's bill on
+  a trail cut when three of five calls had been made. The ledger is a file and
+  the trail carries no per-call resource event, so unlike the lease store it
+  cannot be rewound. The same capture-at-the-pause that retires the two
+  synthesized booleans retires this too.

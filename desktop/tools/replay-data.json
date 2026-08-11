@@ -7337,7 +7337,7 @@
                 "id": "reverify:2026-08-11T05:49:38.503Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-C9pCnx\\.hivemind\\resource\\verification-sets\\V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-etz1Nt\\.hivemind\\resource\\verification-sets\\V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T05:49:38.503Z",
                 "task_id": "T-001",
                 "action": {
@@ -7921,7 +7921,7 @@
                 "id": "reverify:2026-08-11T05:49:38.503Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-C9pCnx\\.hivemind\\resource\\verification-sets\\V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-etz1Nt\\.hivemind\\resource\\verification-sets\\V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T05:49:38.503Z",
                 "task_id": "T-001",
                 "action": {
@@ -8505,7 +8505,7 @@
                 "id": "reverify:2026-08-11T05:49:38.503Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-C9pCnx\\.hivemind\\resource\\verification-sets\\V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-etz1Nt\\.hivemind\\resource\\verification-sets\\V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T05:49:38.503Z",
                 "task_id": "T-001",
                 "action": {
@@ -9089,7 +9089,7 @@
                 "id": "reverify:2026-08-11T05:50:41.550Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-C9pCnx\\.hivemind\\resource\\verification-sets\\V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003 + T-004; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-etz1Nt\\.hivemind\\resource\\verification-sets\\V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003 + T-004; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T05:50:41.550Z",
                 "task_id": "T-001",
                 "action": {
@@ -9674,7 +9674,7 @@
                 "id": "reverify:2026-08-11T05:50:41.550Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-C9pCnx\\.hivemind\\resource\\verification-sets\\V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003 + T-004; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-etz1Nt\\.hivemind\\resource\\verification-sets\\V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003 + T-004; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T05:50:41.550Z",
                 "task_id": "T-001",
                 "action": {
@@ -18829,7 +18829,7 @@
     },
     {
       "id": "e2e-textkit-parallel-run@midrun",
-      "source": "docs/evidence/e2e-2026-08-11-textkit/e2e-textkit-parallel-run.jsonl (cut at peak concurrency)",
+      "source": "docs/evidence/e2e-2026-08-11-textkit/e2e-textkit-parallel-run.jsonl (cut at peak concurrency; leases rebuilt from the trail, session status corrected to live)",
       "events": [
         {
           "ts": "2026-08-11T05:21:29.169Z",
@@ -19403,8 +19403,11 @@
                 "test/slugify.test.js"
               ],
               "lease": {
-                "held": false,
-                "files": []
+                "held": true,
+                "files": [
+                  "src/slugify.js",
+                  "test/slugify.test.js"
+                ]
               },
               "worktree": "missing",
               "patch": {
@@ -19428,8 +19431,11 @@
                 "test/truncate.test.js"
               ],
               "lease": {
-                "held": false,
-                "files": []
+                "held": true,
+                "files": [
+                  "src/truncate.js",
+                  "test/truncate.test.js"
+                ]
               },
               "worktree": "missing",
               "patch": {
@@ -19453,8 +19459,11 @@
                 "test/wordCount.test.js"
               ],
               "lease": {
-                "held": false,
-                "files": []
+                "held": true,
+                "files": [
+                  "src/wordCount.js",
+                  "test/wordCount.test.js"
+                ]
               },
               "worktree": "missing",
               "patch": {
@@ -19496,7 +19505,14 @@
               "integrated": false
             }
           ],
-          "leases": {},
+          "leases": {
+            "src/slugify.js": "T-001",
+            "src/truncate.js": "T-002",
+            "src/wordCount.js": "T-003",
+            "test/slugify.test.js": "T-001",
+            "test/truncate.test.js": "T-002",
+            "test/wordCount.test.js": "T-003"
+          },
           "integration": {
             "queue": [],
             "status": null
@@ -19510,7 +19526,10 @@
             "state": "running",
             "agent": "codex-terra",
             "worktree": "D:\\Projects\\hivemind-e2e\\.hivemind\\worktrees\\T-001",
-            "lease_files": [],
+            "lease_files": [
+              "src/slugify.js",
+              "test/slugify.test.js"
+            ],
             "patch": {
               "submitted": false,
               "analyzed": false,
@@ -19535,7 +19554,10 @@
             "state": "running",
             "agent": "codex-terra",
             "worktree": "D:\\Projects\\hivemind-e2e\\.hivemind\\worktrees\\T-002",
-            "lease_files": [],
+            "lease_files": [
+              "src/truncate.js",
+              "test/truncate.test.js"
+            ],
             "patch": {
               "submitted": false,
               "analyzed": false,
@@ -19560,7 +19582,10 @@
             "state": "running",
             "agent": "codex-terra",
             "worktree": "D:\\Projects\\hivemind-e2e\\.hivemind\\worktrees\\T-003",
-            "lease_files": [],
+            "lease_files": [
+              "src/wordCount.js",
+              "test/wordCount.test.js"
+            ],
             "patch": {
               "submitted": false,
               "analyzed": false,
@@ -19661,8 +19686,8 @@
           "session_id": "625f918d-57e2-4ebb-9c1f-b4e87ae46978",
           "spec_id": "S-001",
           "created_at": "2026-08-11T05:47:51.755Z",
-          "last_activity_at": "2026-08-11T05:50:41.654Z",
-          "status": "complete",
+          "last_activity_at": "2026-08-11T05:47:55.981Z",
+          "status": "active",
           "tool": "manager",
           "call_count": 65,
           "pending_action": null,
@@ -21384,7 +21409,7 @@
                 "id": "reverify:2026-08-11T22:02:17.710Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-Si7aw7\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-ugYHbE\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T22:02:17.710Z",
                 "task_id": "T-001",
                 "action": {
@@ -21534,7 +21559,7 @@
                 "id": "reverify:2026-08-11T22:02:17.710Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-Si7aw7\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-ugYHbE\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T22:02:17.710Z",
                 "task_id": "T-001",
                 "action": {
@@ -23145,7 +23170,7 @@
                 "id": "reverify:2026-08-11T22:02:17.710Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-HSeFqc\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-nCMduS\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T22:02:17.710Z",
                 "task_id": "T-001",
                 "action": {
@@ -23295,7 +23320,7 @@
                 "id": "reverify:2026-08-11T22:02:17.710Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-HSeFqc\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-nCMduS\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T22:02:17.710Z",
                 "task_id": "T-001",
                 "action": {
@@ -25256,7 +25281,7 @@
       ],
       "span_ms": 122866,
       "inspection": null,
-      "inspection_error": "plan-lint failed: GROUNDING_FRESHNESS: tentative plan base 6b0e28b3f0f406deeb659313bcb8977436eebf44 is stale relative to current HEAD f8a690e3223645c8049cc30f9e5ccc3c6eecdb4f"
+      "inspection_error": "plan-lint failed: GROUNDING_FRESHNESS: tentative plan base 6b0e28b3f0f406deeb659313bcb8977436eebf44 is stale relative to current HEAD ddf0235d637b60897af22efa0e768558159c4ca5"
     },
     {
       "id": "final-run-transcript-4",
@@ -25487,8 +25512,11 @@
                 "README.md"
               ],
               "lease": {
-                "held": false,
-                "files": []
+                "held": true,
+                "files": [
+                  "package.json",
+                  "README.md"
+                ]
               },
               "worktree": "missing",
               "patch": {
@@ -25512,8 +25540,11 @@
                 "test/ledger.test.js"
               ],
               "lease": {
-                "held": false,
-                "files": []
+                "held": true,
+                "files": [
+                  "src/ledger.js",
+                  "test/ledger.test.js"
+                ]
               },
               "worktree": "missing",
               "patch": {
@@ -25530,7 +25561,12 @@
               "integrated": true
             }
           ],
-          "leases": {},
+          "leases": {
+            "package.json": "T-001",
+            "README.md": "T-001",
+            "src/ledger.js": "T-002",
+            "test/ledger.test.js": "T-002"
+          },
           "integration": {
             "queue": [],
             "status": null
@@ -25544,7 +25580,10 @@
             "state": "rejected",
             "agent": null,
             "worktree": null,
-            "lease_files": [],
+            "lease_files": [
+              "package.json",
+              "README.md"
+            ],
             "patch": {
               "submitted": true,
               "analyzed": true,
@@ -25569,7 +25608,10 @@
             "state": "verified",
             "agent": null,
             "worktree": null,
-            "lease_files": [],
+            "lease_files": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ],
             "patch": {
               "submitted": true,
               "analyzed": true,
@@ -25861,8 +25903,11 @@
                 "test/ledger.test.js"
               ],
               "lease": {
-                "held": false,
-                "files": []
+                "held": true,
+                "files": [
+                  "src/ledger.js",
+                  "test/ledger.test.js"
+                ]
               },
               "worktree": "missing",
               "patch": {
@@ -25879,7 +25924,10 @@
               "integrated": true
             }
           ],
-          "leases": {},
+          "leases": {
+            "src/ledger.js": "T-001",
+            "test/ledger.test.js": "T-001"
+          },
           "integration": {
             "queue": [],
             "status": null
@@ -25893,7 +25941,10 @@
             "state": "verified",
             "agent": "codex-worker",
             "worktree": "D:\\Projects\\trimr-m6-2-async-live-20260618-152954\\.hivemind\\worktrees\\T-001",
-            "lease_files": [],
+            "lease_files": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ],
             "patch": {
               "submitted": true,
               "analyzed": true,
@@ -26484,8 +26535,11 @@
                 "test/ledger.test.js"
               ],
               "lease": {
-                "held": false,
-                "files": []
+                "held": true,
+                "files": [
+                  "src/ledger.js",
+                  "test/ledger.test.js"
+                ]
               },
               "worktree": "missing",
               "patch": {
@@ -26502,7 +26556,10 @@
               "integrated": true
             }
           ],
-          "leases": {},
+          "leases": {
+            "src/ledger.js": "T-001",
+            "test/ledger.test.js": "T-001"
+          },
           "integration": {
             "queue": [],
             "status": null
@@ -26516,7 +26573,10 @@
             "state": "verified",
             "agent": null,
             "worktree": null,
-            "lease_files": [],
+            "lease_files": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ],
             "patch": {
               "submitted": true,
               "analyzed": true,
@@ -26744,8 +26804,11 @@
                 "test/ledger.test.js"
               ],
               "lease": {
-                "held": false,
-                "files": []
+                "held": true,
+                "files": [
+                  "src/ledger.js",
+                  "test/ledger.test.js"
+                ]
               },
               "worktree": "missing",
               "patch": {
@@ -26762,7 +26825,10 @@
               "integrated": false
             }
           ],
-          "leases": {},
+          "leases": {
+            "src/ledger.js": "T-001",
+            "test/ledger.test.js": "T-001"
+          },
           "integration": {
             "queue": [],
             "status": null
@@ -26776,7 +26842,10 @@
             "state": "rejected",
             "agent": null,
             "worktree": null,
-            "lease_files": [],
+            "lease_files": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ],
             "patch": {
               "submitted": true,
               "analyzed": true,
@@ -26989,8 +27058,11 @@
                 "test/ledger.test.js"
               ],
               "lease": {
-                "held": false,
-                "files": []
+                "held": true,
+                "files": [
+                  "src/ledger.js",
+                  "test/ledger.test.js"
+                ]
               },
               "worktree": "missing",
               "patch": {
@@ -27007,7 +27079,10 @@
               "integrated": false
             }
           ],
-          "leases": {},
+          "leases": {
+            "src/ledger.js": "T-002",
+            "test/ledger.test.js": "T-002"
+          },
           "integration": {
             "queue": [],
             "status": null
@@ -27021,7 +27096,10 @@
             "state": "accepted",
             "agent": null,
             "worktree": null,
-            "lease_files": [],
+            "lease_files": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ],
             "patch": {
               "submitted": true,
               "analyzed": true,
@@ -27204,8 +27282,12 @@
                 "src/cli.js"
               ],
               "lease": {
-                "held": false,
-                "files": []
+                "held": true,
+                "files": [
+                  "bin/trimr.js",
+                  "package.json",
+                  "src/cli.js"
+                ]
               },
               "worktree": "missing",
               "patch": {
@@ -27222,7 +27304,11 @@
               "integrated": false
             }
           ],
-          "leases": {},
+          "leases": {
+            "bin/trimr.js": "T-001",
+            "package.json": "T-001",
+            "src/cli.js": "T-001"
+          },
           "integration": {
             "queue": [],
             "status": null
@@ -27236,7 +27322,11 @@
             "state": "rejected",
             "agent": null,
             "worktree": null,
-            "lease_files": [],
+            "lease_files": [
+              "bin/trimr.js",
+              "package.json",
+              "src/cli.js"
+            ],
             "patch": {
               "submitted": true,
               "analyzed": true,
@@ -27410,8 +27500,11 @@
                 "test/ledger.test.js"
               ],
               "lease": {
-                "held": false,
-                "files": []
+                "held": true,
+                "files": [
+                  "src/ledger.js",
+                  "test/ledger.test.js"
+                ]
               },
               "worktree": "missing",
               "patch": {
@@ -27428,7 +27521,10 @@
               "integrated": false
             }
           ],
-          "leases": {},
+          "leases": {
+            "src/ledger.js": "T-002",
+            "test/ledger.test.js": "T-002"
+          },
           "integration": {
             "queue": [],
             "status": null
@@ -27442,7 +27538,10 @@
             "state": "planned",
             "agent": null,
             "worktree": null,
-            "lease_files": [],
+            "lease_files": [
+              "src/ledger.js",
+              "test/ledger.test.js"
+            ],
             "patch": {
               "submitted": false,
               "analyzed": false,
@@ -27575,7 +27674,7 @@
       ],
       "span_ms": 14,
       "inspection": null,
-      "inspection_error": "plan-lint failed: GROUNDING_FRESHNESS: tentative plan base 6b0e28b3f0f406deeb659313bcb8977436eebf44 is stale relative to current HEAD 2ecca0a021d121a02c86f68a0b191c92c9a2f47a"
+      "inspection_error": "plan-lint failed: GROUNDING_FRESHNESS: tentative plan base 6b0e28b3f0f406deeb659313bcb8977436eebf44 is stale relative to current HEAD bd08c1b9ff6b7569b8ebef47c088627e6cd1417b"
     },
     {
       "id": "firstrun-quota-stop",
@@ -27619,7 +27718,7 @@
       ],
       "span_ms": 14,
       "inspection": null,
-      "inspection_error": "plan-lint failed: GROUNDING_FRESHNESS: tentative plan base 6b0e28b3f0f406deeb659313bcb8977436eebf44 is stale relative to current HEAD f8a690e3223645c8049cc30f9e5ccc3c6eecdb4f"
+      "inspection_error": "plan-lint failed: GROUNDING_FRESHNESS: tentative plan base 6b0e28b3f0f406deeb659313bcb8977436eebf44 is stale relative to current HEAD 6718dc6da1142230e4580a4b41d908d358e17aad"
     },
     {
       "id": "empty-project",

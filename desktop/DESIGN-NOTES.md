@@ -1041,6 +1041,26 @@ its test move together.
 If a Core test needs to know a control exists, it should match the condition and
 the handler, never the words on the button.
 
+### The two synthesized booleans, and what retires them
+
+Everything in a replayed scenario is captured except two flags. Both are marked
+in the scenario's own `source` field so the data admits it, and both are listed
+here with the capture that would remove the need for them.
+
+| Scenario | Synthesized | Everything else | Retired by |
+| --- | --- | --- | --- |
+| `<id>@ship` | that `inspectLatestAdoptionReadiness` would answer **ready** | the queue item is rebuilt field-for-field from the run's own `adoption.reviewed`: tasks, files, branch, base commit, both identifiers | a trail captured **while the ship bar is on screen** — i.e. an evidence folder whose `project-state/` is taken between `adoption.reviewed` and `adoption.execute`, rather than after the run |
+| `<id>@review-*` | that the plan is **pending** rather than approved | the plan is the run's own ratified plan; the spec is a real drafted spec from `spec-drafting-vacuity.json`, with its real open question and real suggested non-goal | a capture taken at the plan review, before Approve is pressed — the state every first run passes through and no capture has yet stopped in |
+
+Both have the same root cause and the same one-line fix on the next real run:
+**capture `project-state/` at the decision, not only at the end.** A run that
+pauses for a human is the only moment those two states exist, and the person
+sitting at that pause is the one who can take the snapshot.
+
+Neither flag can conjure an affordance. `@ship`'s item carries the real
+`adoption.execute` payload it was recorded with, and `@review-*` leaves
+`needs_you` empty; nothing in either invents a control or an authorization.
+
 ### Two states the corpus could not draw, and now can
 
 Both were added to `tools/collect-replay.mjs` during the visual pass, because a
@@ -1328,20 +1348,179 @@ a single column.
   It replaced four rounded squares in a grid, which was both generic and,
   literally, four cards in a grid.
 
-### A defect found while reading the tests, not fixed here
+### Round two: four things that looked like style and were arithmetic
 
-`test/design-tokens.test.ts` asserts
+Every one of these was reported as "this looks wrong". Three were, and the
+fourth was a capture serving state from the wrong moment. Recorded because the
+shape keeps repeating: **a surface that looks broken is worth diagnosing before
+it is worth restyling.**
+
+**The run's duration was measuring the buffer, not the run.** `runSpanMs` took
+the first and last timestamps in the replayed event buffer. The textkit trail
+opens with an `autonomy.level_changed` twenty-six minutes before anybody typed
+anything, so a six-minute run reported **"took 30m 43s"** and its mid-run cut
+reported **"took 26m 27s"** — numbers made almost entirely of the time somebody
+spent in settings. The window now starts at the newest `plan.prepared`, which is
+the event carrying the request the thread leads with; a trail with no plan keeps
+the whole window rather than inventing a boundary. Three tests cover it,
+including a trail carrying two runs.
+
+**"Took" on a live run was the capture, not the clock.** The client reads
+Core's `manager_session.status` to decide whether a run is live, and
+`project-state/` is captured *after* the run — so a trail cut mid-run was served
+a session reading `complete`. Core derives that status from the session's own
+pending actions, so rewinding the file would mean inventing a scheduled action,
+and an invented action can surface an approval control. The enum is corrected on
+the projection instead, only for a cut that reaches no terminal event, with
+`pending_action` and `continuation_available` untouched. See "the capture is not
+wrong, it is later" below.
+
+**"0 files changed" over a commit that changed eight was real, and the trail was
+right.** `adoption.completed` in that trail genuinely has no `changed_files` —
+it is the pre-fix shape, exactly as the evidence README says. The defect was the
+client's: `readStringArray(...) ?? []` collapsed *absent* into *empty*, and the
+card stated the second. This is the standing rule about silent catches, arriving
+through a `??` rather than a `try`. `changedFiles` is now `string[] | null` and
+the card says the record does not list them. The ship bar was always right
+because it reads `adoption.reviewed`, which does carry the field.
+
+**"Files being edited — 0" beside three agents holding two files each** was the
+same capture problem as the manager session, and this half *was* reconstructible.
+See below.
+
+### Standing rule extended: the capture is not wrong, it is LATER than the cut
+
+"Capture the trail AND the project state" was written for state that was
+*missing*. The mid-run cuts found the other direction: state that is **present,
+captured, and from after the moment being replayed**. A finished manager session
+and an emptied lease store were both rendered as fact over a live run.
+
+> **A cut trail must not be handed the run's final file state.** Ask of every
+> restored file: is this the same at the cut as at the end? If not, either
+> rebuild it from the trail or say the scenario cannot draw it.
+
+The lease store rebuilds cleanly, because `lease.approved` records what was
+granted and `lease.released` gives it back — replaying the pair to the cut point
+reconstructs exactly who held what. It is written to
+`.hivemind/leases/active.json` and read back through Core's own
+`readActiveLeases`, so the reconstruction has to satisfy Core's validation to
+appear at all. `@midrun` now shows three agents holding two files each, which is
+what the live run showed and what the corpus never could.
+
+That is the *trail must be able to rebuild the state* rule paying out: the
+events carried enough, so the state came back.
+
+**Still later than the cut, and not rebuildable: the spend ledger.** `@midrun`
+shows "5 calls · 622.6K", which is the whole run's bill on a trail cut when
+three of five calls had been made. Unlike leases, this cannot be reconstructed:
+`resource/ledger.json` is a file and the trail carries no per-call resource
+event to replay. Retired by the same capture that retires the two synthesized
+booleans — `project-state/` taken at the pause rather than at the end — or by
+Core emitting a durable event per call, which would make the ledger rebuildable
+the way the lease store now is.
+
+### The rail now draws the map's gauge, because it is the same fact
+
+The rail's four segments were unlabelled grey underlines. The map's are named —
+Queued / Editing / Checked / Ready — with the current one in the standing's
+colour. Same data about the same task, told worse on the surface people look at
+most, and it read as a rendering bug.
+
+`PhaseSpine` is exported from `agent-map.tsx` and the rail renders it, with the
+count beside the identifier exactly as the map's card footer does. One
+component, so the two cannot diverge again. Note the colour source: the spine is
+coloured by `phase.standing` and never by the queue, which is the rule already
+recorded above — how far a task *got* is its state and nothing else.
+
+### The empty state was the largest thing on screen
+
+During a live run the inspector held "Nothing from this agent yet" over ~450px
+of white, in the exact place the product's claim is strongest. The rail's grid
+gave the task list `auto` and the inspector `1fr`, so the panel with nothing to
+say got all the leftover height.
+
+Inverted: the list takes the height, the inspector hugs what it has. And an
+agent that has said nothing is not an agent doing nothing — with leases restored
+the panel now says what it is holding, and opens the file list by default when
+it holds anything.
+
+### Progress through phases, not through finished tasks
+
+The rule under the run header was driven by completed count, so it sat at 0% for
+the whole first wave of a run — three agents working, and the one ambient-free
+progress signal in the app showing nothing having happened. It is now the sum of
+cleared phases over the total, which moves every time any task clears one. The
+`n/m done` figure beside it is unchanged and still correct; what was missing was
+motion, not a different number.
+
+### A disabled control is never filled
+
+"Start building" sat over an empty box as a filled navy button at 45% opacity,
+which still reads as pressable. The filled variants now drop to the canvas with
+a rule when disabled; the quiet variants keep fading. One rule in
+`buttonVariants`, so no surface decides this for itself.
+
+### Confirmed, not fixed: `rejected add src/ledger.js`
+
+Checked rather than assumed, because the client rewriting Core's strings is a
+mistake this file already records three times.
+
+- Core's `plainEvidence` (`workspace-inspection.ts`) reads
+  `plain_reason` **first**, ahead of `report`, `reason` and `recommendation`.
+- `analyze.ts` writes `plain_reason` beside the durable `reason` on
+  `patch.rejected` / `patch.accepted`.
+- The client renders `task.issue` and `item.detail` verbatim. The containment
+  guard leaves this string alone correctly: it carries no banned vocabulary, it
+  is simply terse gate output.
+- `final-run-transcript-4`, the trail that produces this string, contains **zero**
+  occurrences of `plain_reason`. It predates the field.
+
+So the client is deferring correctly and will light up with no change the moment
+a rejection happens on a current Core. It has not been *observed* doing so,
+because no captured trail contains a rejection carrying the field — which is the
+corpus gap already listed under "the refusal half of `plain_reason`".
+
+### The guard that could not fail, and what the guard can actually reach
+
+`test/design-tokens.test.ts` asserted
 
 ```js
 expect(styles.indexOf("@layer theme, base, legacy, components, utilities;"))
   .toBeLessThan(styles.indexOf('@import "tailwindcss"'));
 ```
 
-The legacy layer was removed from `styles.css` when `legacy.css` was deleted, so
-`indexOf` returns `-1`, and `-1` is less than any real index. **The assertion
-passes because the string is absent.** It has been vacuous since that deletion.
-`thin-client.test.ts` asserts the correct current string, so the layer order is
-still covered — but this line is a test that can no longer fail.
+The `legacy` layer went with `legacy.css`, so `indexOf` returned `-1` — and `-1`
+is less than any real index. **The assertion passed because the string it looked
+for was gone.** Fixed: both halves are asserted now, that the declaration exists
+and that it precedes the import.
+
+**Then the whole file was mutation-tested**, because one vacuous assertion is
+evidence about the file, not about one line. Each mutation was applied to
+`styles.css`, the suite run, and the file restored:
+
+| Mutation | Before | After |
+| --- | --- | --- |
+| `--amber` → `#ff9900` | fails | fails |
+| `--color-muted-foreground` removed from `@theme` | fails | fails |
+| `--primary` repointed to `--clay` | fails | fails |
+| `@layer` declaration deleted | **passes** | fails |
+| `--radius-md` 4px → 9px | **passes** | fails |
+| `--radius-3xl` 6px → 24px | **passes** | fails |
+| `--radius-sm` deleted | **passes** | fails |
+
+So the answer to "can it catch radius drift" was **no**, and it is now yes: the
+radius scale is declared as literals in `@theme inline`, which makes it exactly
+as reachable as colour. Every `rounded-<x>` in the app resolves through one of
+six names, so asserting those six is a complete guard, and the "nothing above
+6px" check catches a pill arriving through a token rather than a class.
+
+**Spacing is out of reach for this file, and should stay out of it.** Spacing is
+not declared in CSS at all — it is Tailwind's default scale, spent as utilities
+in TSX (`px-3` against `px-3.5`). A CSS assertion cannot see it. Catching that
+drift needs a different instrument: a scan of the TSX for spacing utilities
+outside an allowed set, which is a lint over markup rather than a token
+contract. Worth building if spacing starts drifting; not worth pretending this
+file covers it.
 
 ### The token contract, and why it has a test
 

@@ -50,7 +50,7 @@ import {
   PanelLabel
 } from "@/components/ui/panel";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { RunMap } from "@/components/workspace/agent-map";
+import { PhaseSpine, RunMap, phaseRatio } from "@/components/workspace/agent-map";
 import {
   SpecReviewPanel,
   initialNonGoals,
@@ -64,7 +64,7 @@ import {
   type TaskProjection,
   type TaskState
 } from "@/lib/projection";
-import { filesInFlight, runStanding, taskPhase } from "@/lib/phases";
+import { PHASES, filesInFlight, runStanding, taskPhase } from "@/lib/phases";
 import {
   buildRunThread,
   runSpanMs,
@@ -674,15 +674,21 @@ export function WorkTab({
         {/* The rail holds state you glance at: what is running, and — only when
             you ask for it — what one agent is saying. */}
         {tasks.length === 0 ? null : (
-        /* The task list takes the height it actually needs and the inspector
-           takes the rest. A fixed fraction starved a two-task list by a dozen
-           pixels and clipped its last row against the panel edge, which reads
-           as broken rather than as "scroll for more" -- Radix's scrollbar is
-           hover-only, so nothing on screen said otherwise. */
+        /* The task list takes the height; the inspector hugs what it has to
+           say. It used to be the other way round, which put a 450px void under
+           "Nothing from this agent yet" in the exact place the product's claim
+           is strongest -- the largest single element on screen during a live
+           run was an empty state.
+
+           The list keeps a floor rather than a fraction: a fixed fraction once
+           starved a two-task list by a dozen pixels and clipped its last row
+           against the panel edge, which reads as broken rather than as "scroll
+           for more" -- Radix's scrollbar is hover-only, so nothing on screen
+           said otherwise. */
         <aside
           className={`grid min-h-0 gap-3 ${
             selected
-              ? "grid-rows-[minmax(0,auto)_minmax(200px,1fr)]"
+              ? "grid-rows-[minmax(120px,1fr)_minmax(0,auto)]"
               : "grid-rows-[minmax(0,1fr)]"
           }`}
         >
@@ -701,7 +707,7 @@ export function WorkTab({
             />
           </Panel>
           {selected ? (
-            <Panel>
+            <Panel className="grid-rows-[auto_auto]">
               <InspectorPane
                 busy={busy}
                 output={projection.selectedOutput}
@@ -1252,7 +1258,20 @@ function RunHeader({
               ? "All tasks finished, with something to decide"
               : "All tasks finished"
             : `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"} in this run`;
-  const progress = tasks.length === 0 ? 0 : Math.round((done / tasks.length) * 100);
+  /* Progress through phases, not through completed tasks.
+     Counting only finished tasks meant the rule under this header sat at 0%
+     for the entire first wave of a run — three agents working, and the one
+     ambient-free progress signal in the app showing nothing having happened.
+     Every task clearing a phase now moves it, which is what the four-segment
+     gauge in the rail and the map already say per task. */
+  const progress =
+    tasks.length === 0
+      ? 0
+      : Math.round(
+          (tasks.reduce((total, task) => total + Math.min(taskPhase(task).reached, PHASES.length), 0) /
+            (tasks.length * PHASES.length)) *
+            100
+        );
 
   return (
     <div className="relative flex shrink-0 items-start gap-4 border-b border-rule bg-canvas px-4 py-3">
@@ -1643,28 +1662,28 @@ function TaskRow({
             {language.label}
           </span>
         </span>
-        <span className="mt-1 block text-[11px] break-words text-muted-foreground">
+        {/* The map's gauge, not a smaller worse copy of it. Four named phases,
+            the current one in the standing's colour, and the count beside the
+            identifier — which is exactly where the map's card puts it. */}
+        <span className="mt-2 block">
+          <PhaseSpine advanceKey={null} phase={phase} standing={phase.standing} />
+        </span>
+        <span className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px] break-words text-muted-foreground">
           <span className="font-mono" title={task.task_id}>
             {task.task_id}
           </span>
-          {task.lease_files.length > 0
-            ? ` · editing ${task.lease_files.length} ${task.lease_files.length === 1 ? "file" : "files"}`
-            : ""}
-          {waitingFor === "" ? "" : ` · after ${waitingFor}`}
-        </span>
-        {/* Four segments: how far this one change has got. Same model the map
-            draws in full, small enough to sit in a glanceable row. It sits at
-            the foot of the row rather than under the title, where it read as
-            an underline of the title rather than as a gauge. */}
-        <span aria-hidden="true" className="mt-2 flex gap-0.5">
-          {[0, 1, 2, 3].map((index) => (
-            <span
-              className={`h-[2px] flex-1 ${
-                index < phase.reached ? toneEdge[language.tone] : "bg-rule"
-              }`}
-              key={index}
-            />
-          ))}
+          <span aria-hidden="true" className="h-2.5 w-px bg-rule" />
+          <span className="font-mono">{phaseRatio(phase)}</span>
+          {task.lease_files.length > 0 ? (
+            <>
+              <span aria-hidden="true" className="h-2.5 w-px bg-rule" />
+              <span>
+                editing {task.lease_files.length}{" "}
+                {task.lease_files.length === 1 ? "file" : "files"}
+              </span>
+            </>
+          ) : null}
+          {waitingFor === "" ? null : <span className="w-full">after {waitingFor}</span>}
         </span>
         {issue ? (
           <span className="mt-2 block border-l-2 border-clay/40 bg-clay-wash px-2 py-1.5 text-[11px] leading-snug break-words text-clay">
@@ -1699,7 +1718,13 @@ function InspectorPane({
 }): React.JSX.Element {
   const [mode, setMode] = useState<"summary" | "raw">("summary");
   const [filesOpen, setFilesOpen] = useState(false);
-  useEffect(() => setMode("summary"), [task.task_id]);
+  /* Files open by default when the agent is holding some: during a live run
+     that is the most useful thing this panel knows, and it is the reason the
+     panel is not empty. */
+  useEffect(() => {
+    setMode("summary");
+    setFilesOpen(task.lease_files.length > 0);
+  }, [task.task_id, task.lease_files.length]);
   const files = task.lease_files;
   const phase = taskPhase(task);
   /* Only offer to stop something that is actually going. */
@@ -1777,12 +1802,32 @@ function InspectorPane({
         </div>
       </header>
 
-      <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto]">
-        <ScrollArea className="min-h-0">
-          <pre className="m-0 px-3 py-2.5 font-mono text-[12px] leading-[1.65] break-words whitespace-pre-wrap text-ink">
-            {output.length > 0 ? text : "Nothing from this agent yet."}
-          </pre>
-        </ScrollArea>
+      <div className="grid min-h-0 grid-rows-[minmax(0,auto)_auto]">
+        {output.length > 0 ? (
+          <ScrollArea className="max-h-[340px] min-h-0">
+            <pre className="m-0 px-3 py-2.5 font-mono text-[12px] leading-[1.65] break-words whitespace-pre-wrap text-ink">
+              {text}
+            </pre>
+          </ScrollArea>
+        ) : (
+          /* An agent that has said nothing is not an agent doing nothing. What
+             it holds and where it has got to is the answer to the question the
+             empty panel was failing to answer. */
+          <div className="grid gap-1.5 px-3 py-2.5">
+            <p className="m-0 text-[12px] leading-snug text-muted-foreground">
+              {stoppable
+                ? "This agent has not said anything yet."
+                : "This agent said nothing while it worked."}
+            </p>
+            {files.length > 0 ? (
+              <p className="m-0 text-[12px] leading-snug text-ink">
+                It is holding{" "}
+                <span className="font-mono">{files.length}</span>{" "}
+                {files.length === 1 ? "file" : "files"}, listed below.
+              </p>
+            ) : null}
+          </div>
+        )}
 
         <Collapsible open={filesOpen} onOpenChange={setFilesOpen}>
           <CollapsibleTrigger asChild>
@@ -2051,25 +2096,36 @@ function ShippedCard({
 
       <Collapsible open={filesOpen} onOpenChange={setFilesOpen}>
         <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-navy/15 pt-2.5 text-[12px] text-muted-foreground">
-          <CollapsibleTrigger asChild>
-            <button
-              className="font-medium text-navy underline decoration-navy/30 underline-offset-2 hover:decoration-navy"
-              type="button"
-            >
-              <span className="font-mono">{entry.changedFiles.length}</span>{" "}
-              {entry.changedFiles.length === 1 ? "file" : "files"} changed
-            </button>
-          </CollapsibleTrigger>
+          {/* A commit whose record does not list its files is not a commit that
+              changed none. Saying "0 files changed" over a commit that changed
+              eight is the worst kind of wrong this app can be, so the missing
+              field is reported as missing. */}
+          {entry.changedFiles === null ? (
+            <span>This project's record of the change does not list the files.</span>
+          ) : (
+            <CollapsibleTrigger asChild>
+              <button
+                className="font-medium text-navy underline decoration-navy/30 underline-offset-2 hover:decoration-navy"
+                type="button"
+              >
+                <span className="font-mono">{entry.changedFiles.length}</span>{" "}
+                {entry.changedFiles.length === 1 ? "file" : "files"} changed
+              </button>
+            </CollapsibleTrigger>
+          )}
           {entry.adoptedRef ? (
-            <span>
-              · landed as{" "}
-              <span className="font-mono text-ink">{entry.adoptedRef.slice(0, 10)}</span>
+            <span className="flex items-baseline gap-2">
+              {entry.changedFiles === null ? null : <Divider />}
+              <span>
+                landed as{" "}
+                <span className="font-mono text-ink">{entry.adoptedRef.slice(0, 10)}</span>
+              </span>
             </span>
           ) : null}
         </div>
         <CollapsibleContent>
           <ul className="mt-2 mb-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0">
-            {entry.changedFiles.map((file) => (
+            {(entry.changedFiles ?? []).map((file) => (
               <li className="font-mono text-[12px] break-all text-muted-foreground" key={file}>
                 {file}
               </li>

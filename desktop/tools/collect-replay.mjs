@@ -158,7 +158,81 @@ async function scratchRepo(events, trailPath) {
      contracts the capture did not include. */
   const restored = await restoreProjectState(repo, trailPath);
   await writeContracts(repo, events, restored);
+  await rewindLeaseStore(repo, events);
   return repo;
+}
+
+/* A cut trail must not be handed the run's FINAL file state.
+ *
+ * `project-state/` is captured after the run finished, so replaying a trail cut
+ * mid-run served a lease store that had already been emptied at adoption — and
+ * the rail rendered it as fact: "Files being edited — 0" beside three agents
+ * that were each holding two files. Leases are a file rather than events, so
+ * nothing cut them with the trail.
+ *
+ * This is the silently-wrong-UI shape from the one direction the "capture the
+ * trail AND the project state" rule did not cover: captured state is not wrong,
+ * it is just LATER than the cut.
+ *
+ * Nothing is invented. The store is `{ path: taskId }`; `lease.approved`
+ * records what was granted and `lease.released` gives it back, so replaying the
+ * pair to the cut point reconstructs exactly who held what at that moment. It
+ * is then read back through Core's own `readActiveLeases`, so the reconstruction
+ * has to satisfy Core's validation to appear at all.
+ */
+async function rewindLeaseStore(repo, events) {
+  const held = {};
+  for (const event of events) {
+    if (event.task_id === null) continue;
+    if (event.type === "lease.approved") {
+      for (const file of event.data.granted ?? []) held[file] = event.task_id;
+    }
+    if (event.type === "lease.released") {
+      for (const [file, holder] of Object.entries(held)) {
+        if (holder === event.task_id) delete held[file];
+      }
+    }
+  }
+  await mkdir(path.join(repo, ".hivemind", "leases"), { recursive: true });
+  await writeFile(
+    path.join(repo, ".hivemind", "leases", "active.json"),
+    `${JSON.stringify(Object.fromEntries(Object.entries(held).sort(([a], [b]) => a.localeCompare(b))), null, 2)}\n`,
+    "utf8"
+  );
+}
+
+/* The other half of the same problem, and the half that cannot be reconstructed.
+ *
+ * The manager session's `status` is what the client reads to decide whether a
+ * run is live — which is what chooses "running 1m 39s" over "took 1m 39s". Core
+ * derives it from the session's own pending actions
+ * (`proposed_action.actions.length === 0 ? "complete" : "active"`), so rewinding
+ * the FILE would mean inventing a scheduled action, and an invented action can
+ * surface an approval control. That is far past what a capture may do.
+ *
+ * So the enum is corrected on the projection instead, for a cut that reaches no
+ * terminal event — the trail itself is the evidence the run had not finished.
+ * `pending_action` and `continuation_available` are left exactly as captured, so
+ * this cannot conjure an affordance; it only stops a live run being described in
+ * the past tense. Marked in the scenario's `source`, like every other
+ * synthesized state in this file.
+ */
+function liveSession(inspection, events) {
+  const finished = events.some((event) =>
+    ["adoption.completed", "scheduler.run_completed", "scheduler.run_cancelled"].includes(event.type)
+  );
+  const session = inspection?.manager_session;
+  if (finished || !session || (session.status !== "complete" && session.status !== "stopped")) {
+    return inspection;
+  }
+  return {
+    ...inspection,
+    manager_session: {
+      ...session,
+      status: "active",
+      last_activity_at: events.at(-1)?.ts ?? session.last_activity_at
+    }
+  };
 }
 
 /* Core lists tasks from `.hivemind/tasks/*.contract.json`, not from the event
@@ -582,10 +656,10 @@ for (const file of files) {
       const midProjected = await inspect(midrun, file);
       scenarios.push({
         id: `${id}@midrun`,
-        source: `${relative} (cut at peak concurrency)`,
+        source: `${relative} (cut at peak concurrency; leases rebuilt from the trail, session status corrected to live)`,
         events: midrun,
         span_ms: Date.parse(midrun.at(-1).ts) - Date.parse(midrun[0].ts),
-        inspection: midProjected.ok ? midProjected.inspection : null,
+        inspection: midProjected.ok ? liveSession(midProjected.inspection, midrun) : null,
         inspection_error: midProjected.ok ? null : midProjected.reason
       });
       console.log(

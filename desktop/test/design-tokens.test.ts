@@ -137,10 +137,20 @@ describe("shadcn token contract", () => {
   test("Tailwind is wired through the Vite plugin and scans the whole client", async () => {
     const styles = await readStyles();
     expect(styles).toContain('@import "tailwindcss"');
-    // The legacy sheet serves the untouched tabs and must always lose to a
-    // utility, so the layer order is declared before anything is imported.
-    expect(styles.indexOf("@layer theme, base, legacy, components, utilities;"))
-      .toBeLessThan(styles.indexOf('@import "tailwindcss"'));
+
+    /* This asserted `@layer theme, base, legacy, components, utilities;` long
+       after `legacy.css` was deleted and the `legacy` layer went with it. The
+       string was absent, `indexOf` returned -1, and -1 is less than any real
+       index -- so the assertion PASSED BECAUSE THE THING IT LOOKED FOR WAS
+       GONE. A guard that cannot fail is not a guard.
+
+       Both halves are asserted now: the declaration exists, and it precedes the
+       import. Order matters because a layer named after the import would be
+       ordered after Tailwind's own layers. */
+    const order = "@layer theme, base, components, utilities;";
+    const orderAt = styles.indexOf(order);
+    expect(orderAt, `styles.css does not declare "${order}"`).toBeGreaterThan(-1);
+    expect(orderAt).toBeLessThan(styles.indexOf('@import "tailwindcss"'));
 
     const vite = await readFile(path.join(desktopRoot, "vite.config.ts"), "utf8");
     expect(vite).toContain('from "@tailwindcss/vite"');
@@ -153,6 +163,44 @@ describe("shadcn token contract", () => {
     expect(components.tailwind.config).toBe("");
     expect(components.tailwind.css).toBe("src/styles.css");
     expect(components.aliases.ui).toBe("@/components/ui");
+  });
+});
+
+/**
+ * Radius is reachable for a CSS assertion in exactly the way colour is: the
+ * whole scale is declared as literals in `@theme inline`, so every
+ * `rounded-<x>` in the app resolves through one of these six names.
+ *
+ * Added after a mutation experiment: changing `--radius-md` from 4px to 9px
+ * left the entire suite green, which meant the file's own claim to be a token
+ * contract covered only half of what the contract is.
+ */
+describe("radius contract", () => {
+  const radii: Record<string, string> = {
+    "radius-xs": "2px",
+    "radius-sm": "3px",
+    "radius-md": "4px",
+    "radius-lg": "5px",
+    "radius-xl": "6px",
+    "radius-2xl": "6px",
+    "radius-3xl": "6px"
+  };
+
+  test("the six steps are the whole scale, and it stays barely rounded", async () => {
+    const styles = await readStyles();
+    const theme = themeBlock(styles);
+
+    for (const [token, expected] of Object.entries(radii)) {
+      expect(theme, `--${token} is missing from @theme inline`).toContain(`--${token}:`);
+      expect(resolve(styles, `--${token}`), `--${token} drifted off the scale`).toBe(expected);
+    }
+
+    /* Nothing above 6px, because a panel corner larger than that reads as a
+       card on a marketing page rather than as an instrument's edge. */
+    for (const declared of theme.match(/--radius[a-z0-9-]*:\s*[^;]+/gu) ?? []) {
+      const px = /(\d+)px/u.exec(resolve(styles, declared.split(":")[0]!.trim()));
+      if (px !== null) expect(Number(px[1]), `${declared} is above 6px`).toBeLessThanOrEqual(6);
+    }
   });
 });
 

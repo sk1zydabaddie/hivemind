@@ -212,10 +212,15 @@ function PhaseCard({
   );
 }
 
-/* Four segments, one per phase. Filled for cleared, hollow-with-a-bar for the
-   one it is in, empty for not reached. The label under the current segment is
-   the only text, so the row reads as progress rather than as a legend. */
-function PhaseSpine({
+/* Four segments, one per phase, each with its name underneath and the one the
+ * task is in set in the standing's colour.
+ *
+ * Exported because the rail draws the same thing about the same task. It used
+ * to draw four unlabelled grey underlines, which communicated nothing and read
+ * as a rendering bug — the same data, told worse, on the surface a person looks
+ * at most. One component, so the two cannot diverge again.
+ */
+export function PhaseSpine({
   phase,
   standing,
   advanceKey

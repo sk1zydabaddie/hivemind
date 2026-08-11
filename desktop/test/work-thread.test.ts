@@ -219,14 +219,62 @@ describe("what the shipped card can say about a ship", () => {
     });
   });
 
-  test("reports none when the event predates the field, rather than inventing any", () => {
-    // The captured 2026-08-11 trail is exactly this shape.
+  /* Absent and empty are different facts, and collapsing them is how the card
+     came to read "0 files changed" over a commit that changed eight. The
+     captured 2026-08-11 trail is exactly the absent shape. */
+  test("says the record is silent when the event predates the field", () => {
     const entry = shipped({
       task_ids: ["T-001"],
       base_branch: "master",
       adopted_ref: "6b024f5c11938085e07389ace42796a74231a878"
     });
+    expect(entry).toMatchObject({ kind: "shipped", changedFiles: null });
+  });
+
+  test("reports a genuinely empty set as empty, not as silence", () => {
+    const entry = shipped({
+      task_ids: ["T-001"],
+      changed_files: [],
+      base_branch: "master"
+    });
     expect(entry).toMatchObject({ kind: "shipped", changedFiles: [] });
+  });
+});
+
+describe("how long a run has been going", () => {
+  /* The buffer is not a run. The textkit trail opens with a settings change
+     twenty-six minutes before anybody typed anything, and measuring the whole
+     buffer reported a six-minute run as "took 30m 43s". */
+  test("measures from the request, not from the first event in the buffer", () => {
+    const events = newestFirst([
+      event("autonomy.level_changed", null, {}, "2026-08-11T05:21:29.169Z"),
+      event("plan.prepared", null, {}, "2026-08-11T05:46:16.000Z"),
+      event("task.started", "T-001", {}, "2026-08-11T05:47:55.981Z"),
+      event("adoption.completed", null, {}, "2026-08-11T05:52:12.136Z")
+    ]);
+    expect(runSpanMs(events)).toBe(
+      Date.parse("2026-08-11T05:52:12.136Z") - Date.parse("2026-08-11T05:46:16.000Z")
+    );
+  });
+
+  test("keeps the whole window when the trail records no request", () => {
+    const events = newestFirst([
+      event("task.started", "T-001", {}, "2026-08-11T05:47:55.981Z"),
+      event("task.completed", "T-001", {}, "2026-08-11T05:49:03.000Z")
+    ]);
+    expect(runSpanMs(events)).toBe(
+      Date.parse("2026-08-11T05:49:03.000Z") - Date.parse("2026-08-11T05:47:55.981Z")
+    );
+  });
+
+  test("takes the newest request when a trail carries more than one run", () => {
+    const events = newestFirst([
+      event("plan.prepared", null, {}, "2026-08-11T05:00:00.000Z"),
+      event("adoption.completed", null, {}, "2026-08-11T05:10:00.000Z"),
+      event("plan.prepared", null, {}, "2026-08-11T06:00:00.000Z"),
+      event("adoption.completed", null, {}, "2026-08-11T06:02:30.000Z")
+    ]);
+    expect(runSpanMs(events)).toBe(150_000);
   });
 });
 
@@ -238,9 +286,10 @@ function newestFirst(oldestFirst: HivemindEvent[]): HivemindEvent[] {
 function event(
   type: string,
   taskId: string | null,
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
+  ts = "2026-08-06T14:00:00.000Z"
 ): HivemindEvent {
-  return { ts: "2026-08-06T14:00:00.000Z", type, task_id: taskId, data };
+  return { ts, type, task_id: taskId, data };
 }
 
 function at(ts: string, type: string, taskId: string | null): HivemindEvent {

@@ -55,7 +55,11 @@ export interface ThreadShipped {
   id: string;
   at: string;
   taskIds: string[];
-  changedFiles: string[];
+  /* `null` when `adoption.completed` did not record the field at all, which is
+     a different fact from a change that touched no files. Collapsing the two
+     is how the shipped card came to read "0 files changed" over a commit that
+     changed eight. */
+  changedFiles: string[] | null;
   branch: string | null;
   adoptedRef: string | null;
 }
@@ -147,6 +151,25 @@ const FINISHED_TYPES = new Set([
 ]);
 
 /** Wall time the trail covers, first durable event to last. */
+/**
+ * How long THIS RUN has been going, from the trail's own timestamps.
+ *
+ * This used to measure the whole replayed buffer, first event to last. The
+ * buffer is not a run: the textkit trail opens with an `autonomy.level_changed`
+ * twenty-six minutes before anybody typed anything, so a six-minute run
+ * reported "took 30m 43s" and its mid-run cut reported "took 26m 27s" — a
+ * number made almost entirely of the time somebody spent in settings.
+ *
+ * The run starts where its story starts: the newest `plan.prepared`, which is
+ * the event carrying the request the thread leads with. A trail with no plan
+ * has no run boundary to find, so it keeps the whole window rather than
+ * inventing one.
+ *
+ * It ends at the newest event, so a live run reports elapsed-as-of-the-last-
+ * thing-that-happened. That moves when the trail moves and at no other time,
+ * which is the same rule the rest of this file follows — a ticking clock would
+ * be ambient motion and client-held state.
+ */
 export function runSpanMs(events: HivemindEvent[]): number | null {
   if (events.length === 0) return null;
   const stamps = events
@@ -154,7 +177,17 @@ export function runSpanMs(events: HivemindEvent[]): number | null {
     .filter((value) => Number.isFinite(value))
     .sort((left, right) => left - right);
   if (stamps.length < 2) return null;
-  const span = stamps[stamps.length - 1]! - stamps[0]!;
+
+  const startedAt = events
+    .filter((event) => event.type === "plan.prepared")
+    .map((event) => Date.parse(event.ts))
+    .filter((value) => Number.isFinite(value))
+    .sort((left, right) => left - right)
+    .at(-1);
+
+  const latest = stamps[stamps.length - 1]!;
+  const from = startedAt !== undefined && startedAt <= latest ? startedAt : stamps[0]!;
+  const span = latest - from;
   /* Sub-second spans are an artefact of a trail written in one burst, not a
      measurement worth showing. */
   return span >= 1000 ? span : null;
@@ -239,7 +272,9 @@ export function buildRunThread(
         id,
         at: event.ts,
         taskIds: readStringArray(event.data.task_ids) ?? [],
-        changedFiles: readStringArray(event.data.changed_files) ?? [],
+        /* Deliberately NOT `?? []`. Absent and empty are different facts, and
+           the older trails in docs/evidence genuinely lack this field. */
+        changedFiles: readStringArray(event.data.changed_files),
         branch: readString(event.data.base_branch),
         adoptedRef: readString(event.data.adopted_ref)
       });

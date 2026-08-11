@@ -154,8 +154,12 @@ export function ProjectTab({
           </Empty>
         </section>
       ) : (
-        <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_340px] gap-3 overflow-hidden">
-          <Panel>
+        /* Panels hug what they hold and the canvas carries the rest. Stretching
+           two panels to the viewport over one run left ~60% of the surface as
+           held-open white, which reads as unfinished rather than as empty --
+           the same reasoning the bare state above already followed. */
+        <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_340px] items-start gap-3 overflow-hidden">
+          <Panel className="max-h-full">
             <PanelHeader className="bg-panel">
               <PanelLabel className="text-ink">Past runs</PanelLabel>
               <PanelCount>{runs.length}</PanelCount>
@@ -179,8 +183,8 @@ export function ProjectTab({
             </ScrollArea>
           </Panel>
 
-          <aside className="grid min-h-0 grid-rows-[minmax(0,1fr)] gap-3 overflow-hidden">
-            <Panel>
+          <aside className="grid max-h-full min-h-0 grid-rows-[minmax(0,auto)] gap-3 overflow-hidden">
+            <Panel className="max-h-full">
               <PanelHeader className="bg-panel">
                 <PanelLabel className="text-ink">What it has learned</PanelLabel>
                 <PanelCount>{learned.length}</PanelCount>
