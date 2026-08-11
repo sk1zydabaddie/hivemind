@@ -550,6 +550,35 @@ content, the spec content, the question and the suggestion are all real; the
 pending state is not. A trail captured before ratification would close that,
 and is worth taking on the next run.
 
+### spec.draft, and what is left of the front door
+
+`spec.draft` is one adapter call that turns a prompt into a short-form spec,
+opens its ideation session, and records the drafter's own alternatives and
+self-critique as the orchestrator's round. What comes out is a drafted,
+orchestrator-signed spec that `plan.prepare` can plan from.
+
+The round is the drafter's real material. The drafting prompt asks for two
+genuinely different ways to satisfy the request with real tradeoffs, and says
+that if the request is too thin for two honest alternatives it should raise an
+open question rather than invent a second one. A round assembled to satisfy a
+validator would be the same theatre as a placeholder non-goal.
+
+**It cannot sign for a person.** `spec.draft` writes
+`orchestrator_calls_convergence` and nothing else, and
+`test/spec-convergence.test.ts` now names it as another caller that must not
+reach `convergence.user` — 7/7, alongside the direct module call, the invented
+authorization, the replay, the spec edited after presentation, the CLI without a
+TTY, and the four automated surfaces.
+
+#### "Nothing to decline" is an answer
+
+The rough edge is closed. The review offers "There is nothing this should leave
+alone" as an explicit choice, which satisfies the Non-goals section. It is never
+the default and never prefilled — it has to be chosen — because the gate is
+collecting a person's judgement about scope, and "I considered it and there is
+nothing" is a judgement. `assessNonGoals` is unchanged: it measures *drafted*
+output quality, where a vacuous entry is still theatre.
+
 ### Proposal: the front door
 
 Not built. Written down because the design choice is real and worth settling

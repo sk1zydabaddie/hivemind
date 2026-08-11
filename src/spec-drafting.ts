@@ -16,12 +16,22 @@ import type { SpecResult } from "./spec-format.js";
  * cannot tell what was wanted should stop the run rather than pick.
  */
 
+export interface DraftedAlternative {
+  title: string;
+  tradeoffs: string[];
+}
+
 export interface DraftedSpecProposal {
   title: string;
   goal: string;
   non_goals: string[];
   acceptance: string[];
   open_questions: string[];
+  /* The ideation gate wants two real ways to do this, with what each costs.
+     Asked for here rather than stubbed after the fact: a round assembled to
+     satisfy a validator is the same theatre as a placeholder non-goal. */
+  alternatives: DraftedAlternative[];
+  self_critique: { weakest_point: string; cut_or_change: string };
 }
 
 export function buildSpecDraftingPrompt(input: {
@@ -40,8 +50,16 @@ export function buildSpecDraftingPrompt(input: {
     '  "goal": "one or two sentences: what should be true when this is done",',
     '  "non_goals": ["what this deliberately will NOT do"],',
     '  "acceptance": ["how someone checks it is done, in plain language"],',
-    '  "open_questions": ["a question whose answer would change what gets built"]',
+    '  "open_questions": ["a question whose answer would change what gets built"],',
+    '  "alternatives": [{ "title": "a way to do this", "tradeoffs": ["what it costs", "what it buys"] }],',
+    '  "self_critique": { "weakest_point": "the weakest thing about this spec", "cut_or_change": "what to cut or change" }',
     "}",
+    "",
+    "ALTERNATIVES.",
+    "Give at least two genuinely different ways to satisfy the request, each with",
+    "real tradeoffs. Not one real option and one straw man. If the request is so",
+    "thin that two honest alternatives do not exist, say so in an open question",
+    "rather than inventing a second one.",
     "",
     "NON-GOALS — read this twice.",
     "A non-goal is a constraint. Whatever you write here narrows what gets built,",
@@ -99,9 +117,27 @@ export function parseDraftedSpec(modelOutput: string): SpecResult<DraftedSpecPro
   if (acceptance.length === 0) {
     return { ok: false, reason: "drafted spec must state at least one acceptance check" };
   }
+  const alternatives = readAlternatives(value.alternatives);
+  if (alternatives === null) {
+    return { ok: false, reason: "drafted alternatives must each have a title and tradeoffs" };
+  }
+  const critique = value.self_critique;
+  const weakest = isRecord(critique) ? readText(critique.weakest_point) : null;
+  const change = isRecord(critique) ? readText(critique.cut_or_change) : null;
+  if (weakest === null || change === null) {
+    return { ok: false, reason: "drafted spec must include a self-critique" };
+  }
   return {
     ok: true,
-    value: { title, goal, non_goals: nonGoals, acceptance, open_questions: openQuestions }
+    value: {
+      title,
+      goal,
+      non_goals: nonGoals,
+      acceptance,
+      open_questions: openQuestions,
+      alternatives,
+      self_critique: { weakest_point: weakest, cut_or_change: change }
+    }
   };
 }
 
@@ -145,6 +181,23 @@ export function assessNonGoals(nonGoals: string[]): NonGoalVacuity {
     else substantive.push(entry);
   }
   return { empty: nonGoals.length === 0, vacuous, substantive };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readAlternatives(value: unknown): DraftedAlternative[] | null {
+  if (!Array.isArray(value)) return null;
+  const items: DraftedAlternative[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) return null;
+    const title = readText(entry.title);
+    const tradeoffs = readTextList(entry.tradeoffs);
+    if (title === null || tradeoffs === null || tradeoffs.length === 0) return null;
+    items.push({ title, tradeoffs });
+  }
+  return items;
 }
 
 function readText(value: unknown): string | null {

@@ -18,6 +18,7 @@ import { requestTaskRedirect } from "./supervision.js";
 import { requestTaskStop } from "./task-control.js";
 import { inspectWorkspace } from "./workspace-inspection.js";
 
+import { draftSpecFromPrompt } from "./spec-draft-action.js";
 import { adoptSpec, readSpecForReview } from "./spec-review.js";
 
 export const workspaceActionTypes = [
@@ -29,6 +30,7 @@ export const workspaceActionTypes = [
   "plan.prepare",
   "plan.review",
   "plan.ratify",
+  "spec.draft",
   "spec.review",
   "spec.adopt",
   "manual_task.review",
@@ -78,6 +80,11 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
   if (raw.type === "plan.review") {
     const parsed = exactStrings(payload, ["spec_id"]);
     return parsed.ok ? reviewPlanForRatification(repoRoot, parsed.value.spec_id) : parsed;
+  }
+  /* Drafts a spec from a prompt and signs only the orchestrator's half. */
+  if (raw.type === "spec.draft") {
+    const parsed = exactStrings(payload, ["prompt", "tool"]);
+    return parsed.ok ? draftSpecFromPrompt(repoRoot, parsed.value.prompt, parsed.value.tool) : parsed;
   }
   if (raw.type === "spec.review") {
     const parsed = exactStrings(payload, ["spec_id"]);

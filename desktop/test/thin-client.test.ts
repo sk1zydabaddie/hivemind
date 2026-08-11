@@ -233,6 +233,7 @@ describe("React workspace boundary", () => {
       // The one review signs the spec before it ratifies the plan, because
       // ratifying a plan requires a ratified spec. Ordering, not a second
       // decision -- the person acts once.
+      "spec.draft",
       "spec.review",
       "spec.adopt",
       "task.redirect",
@@ -321,7 +322,9 @@ describe("React workspace boundary", () => {
     expect(work).toMatch(/setReplanText\(message\);\s*setReplanOpen\(true\);/u);
     expect(work).toMatch(/Start over with a different plan/u);
     expect(work).toMatch(/onStartOver/u);
-    expect(work).toMatch(/const preparePlan[\s\S]{0,400}type: "plan\.prepare"/u);
+    /* A first prompt drafts a spec before it plans, so the window is wider. Both
+       calls are asserted, in order. */
+    expect(work).toMatch(/const preparePlan[\s\S]{0,700}type: "spec\.draft"[\s\S]{0,400}type: "plan\.prepare"/u);
 
     // Nothing offers a control that cannot do anything.
     expect(work).toMatch(/if \(!canOpenAttention\(item\)\) return null;/u);

@@ -1642,7 +1642,7 @@ function parseGroundingEvidence(index: number, raw: unknown): SpecResult<Groundi
   };
 }
 
-async function trackedFilesAtBase(repoRoot: string, baseCommit: string): Promise<SpecResult<string[]>> {
+export async function trackedFilesAtBase(repoRoot: string, baseCommit: string): Promise<SpecResult<string[]>> {
   try {
     const { stdout } = await execFileAsync("git", ["ls-tree", "-r", "--name-only", baseCommit], { cwd: repoRoot, windowsHide: true });
     return { ok: true, value: uniqueSorted(stdout.split(/\r?\n/).map((entry) => normalizeGitPath(entry)).filter((entry) => entry !== "")) };
@@ -2470,7 +2470,7 @@ function parseStringArray(label: string, value: unknown): SpecResult<string[]> {
   return { ok: true, value: strings };
 }
 
-async function currentHead(repoRoot: string): Promise<SpecResult<string>> {
+export async function currentHead(repoRoot: string): Promise<SpecResult<string>> {
   try {
     const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: repoRoot, windowsHide: true });
     const value = stdout.trim();

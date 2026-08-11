@@ -246,6 +246,7 @@ export type WorkspaceAction = {
     | "plan.prepare"
     | "plan.review"
     | "plan.ratify"
+    | "spec.draft"
     | "spec.review"
     | "spec.adopt"
     | "manual_task.review"

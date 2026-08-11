@@ -65,3 +65,8 @@ Two actions added for the single first-run review.
   while any open question remains, naming them. The orchestrator cannot propose
   this action, and `markIdeationConvergence` refuses a user signature without an
   authorization no matter who calls it.
+- `spec.draft` — one adapter call. Turns a prompt into a short-form spec, opens
+  its ideation session, and records the drafter's own alternatives and
+  self-critique as the orchestrator's round. Writes `convergence.orchestrator`
+  only; it has no path to `convergence.user`, asserted in
+  `test/spec-convergence.test.ts`.

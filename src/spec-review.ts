@@ -84,7 +84,8 @@ export async function readSpecForReview(repoRoot: string, specId: string): Promi
 export async function adoptSpec(
   repoRoot: string,
   specId: string,
-  nonGoals: string[]
+  nonGoals: string[],
+  nothingToDecline = false
 ): Promise<SpecResult<{ spec_id: string; non_goals: string[]; status: "ratified" }>> {
   const spec = await loadSpecDocument(repoRoot, specId);
   if (!spec.ok) return spec;
@@ -99,12 +100,19 @@ export async function adoptSpec(
     };
   }
 
+  /* "There is nothing to decline" is an answer, not an empty field. The gate is
+     collecting a person's judgement about scope, and "I considered it and there
+     is nothing" is a judgement. It has to be said explicitly -- it is never a
+     default and is never prefilled -- but once said it satisfies the section. */
   const cleaned = nonGoals.map((entry) => entry.trim()).filter((entry) => entry !== "");
-  if (cleaned.length === 0) {
+  if (cleaned.length === 0 && !nothingToDecline) {
     return {
       ok: false,
-      reason: "Say what this should not do before starting, or say there is nothing."
+      reason: "Say what this should not do before starting, or say there is nothing to decline."
     };
+  }
+  if (cleaned.length === 0) {
+    cleaned.push("Nothing to decline. This was asked and answered before the work started.");
   }
 
   const written = replaceSectionBody(

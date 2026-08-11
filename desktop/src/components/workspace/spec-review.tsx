@@ -21,6 +21,11 @@ export interface NonGoalEntry {
   drafted: boolean;
 }
 
+/* "There is nothing to decline" is an answer to the question, not an empty
+   field -- the person considered scope and judged there is nothing. It is never
+   the default and never prefilled; it has to be chosen. */
+export const NOTHING_TO_DECLINE = "__nothing__";
+
 export function initialNonGoals(review: SpecReview | null): NonGoalEntry[] {
   return (review?.drafted_non_goals ?? []).map((text) => ({ text, drafted: true }));
 }
@@ -101,7 +106,9 @@ export function SpecReviewPanel({
                 key={`${entry.text}-${index}`}
               >
                 <span className="min-w-0 flex-1 text-[13px] leading-snug break-words text-ink">
-                  {entry.text}
+                  {entry.text === NOTHING_TO_DECLINE
+                    ? "Nothing — you said this has no limits to set."
+                    : entry.text}
                 </span>
                 {entry.drafted ? <DraftedMark /> : <YoursMark />}
                 <Button
@@ -147,6 +154,16 @@ export function SpecReviewPanel({
             Add
           </Button>
         </div>
+        {nonGoals.length === 0 ? (
+          <button
+            className="justify-self-start text-[13px] text-muted-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:text-ink"
+            disabled={busy}
+            type="button"
+            onClick={() => onNonGoalsChange([{ text: NOTHING_TO_DECLINE, drafted: false }])}
+          >
+            There is nothing this should leave alone
+          </button>
+        ) : null}
       </div>
     </section>
   );

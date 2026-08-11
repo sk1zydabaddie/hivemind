@@ -155,6 +155,13 @@ test("no automated surface can reach user convergence", async () => {
 
   // The orchestrator proposes actions; none of them is this one.
   assert.doesNotMatch(manager, /"spec\.converge"|user_convergence/u);
+
+  /* spec.draft is another caller that reaches the ideation state. It signs the
+     orchestrator's half and must have no way to reach the person's. */
+  const draft = await readFile(path.resolve("src/spec-draft-action.ts"), "utf8");
+  assert.doesNotMatch(draft, /requestUserConvergence|recordUserConvergence|verifyUserConvergence/u);
+  assert.doesNotMatch(draft, /"user"/u);
+  assert.match(draft, /orchestrator_calls_convergence: true/u);
 });
 
 test("verification refuses an authorization naming a different spec", async () => {

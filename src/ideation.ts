@@ -29,6 +29,7 @@ import {
   openQuestionsEmpty,
   replaceSectionBody,
   sectionBody,
+  specForm,
   requiredSections,
   specFilePath,
   type SpecResult,
@@ -158,7 +159,10 @@ export async function startIdeationSession(
     return existingSpec;
   }
 
-  const withGoal = replaceSectionBody(markdown, "Problem / goal", goal.trim());
+  /* Short-form specs name the section "Goal"; long-form ones "Problem / goal".
+     Writing to whichever this document has, rather than assuming nine headings. */
+  const goalSection = specForm(markdown) === "short" ? "Goal" : "Problem / goal";
+  const withGoal = replaceSectionBody(markdown, goalSection, goal.trim());
   if (!withGoal.ok) {
     return withGoal;
   }

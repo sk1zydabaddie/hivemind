@@ -48,6 +48,7 @@ import { RunMap } from "@/components/workspace/agent-map";
 import {
   SpecReviewPanel,
   initialNonGoals,
+  NOTHING_TO_DECLINE,
   type NonGoalEntry
 } from "@/components/workspace/spec-review";
 import { plainActionError } from "@/lib/plain-language";
@@ -296,6 +297,14 @@ export function WorkTab({
   /* One request, one plan. Used by the composer when nothing is left to do, and
      by "Start over" when a prepared plan is not what the person wanted. */
   const preparePlan = async (message: string): Promise<void> => {
+    /* A project with no spec yet gets one drafted from what was typed. Core
+       decides everything about it; this only notices, from the inspection, that
+       there is nothing to plan against yet. The drafted spec carries the
+       orchestrator's signature only -- the person's comes at the review. */
+    if (inspection?.active_spec_id === null || inspection?.active_spec_id === undefined) {
+      setFeedback("Working out what you asked for…");
+      await onAction({ type: "spec.draft", payload: { prompt: message, tool: "planner" } });
+    }
     const prepared = await onAction<{
       status: "awaiting_ratification" | "ratified_by_policy";
       autonomy_level: AutonomyLevel;
@@ -735,7 +744,12 @@ export function WorkTab({
                   type: "spec.adopt",
                   payload: {
                     spec_id: specReview.spec_id,
-                    non_goals: nonGoals.map((entry) => entry.text)
+                    non_goals: nonGoals
+                      .filter((entry) => entry.text !== NOTHING_TO_DECLINE)
+                      .map((entry) => entry.text),
+                    nothing_to_decline: nonGoals.some(
+                      (entry) => entry.text === NOTHING_TO_DECLINE
+                    )
                   }
                 });
               }
