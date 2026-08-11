@@ -20,8 +20,10 @@
   --surface: var(--canvas);
   --ink: #1f2328;
   --navy: #1b3a6b;
+  /* One rule colour. There used to be a second, lighter one for "inner"
+     borders, which meant every surface had to decide which weight it was --
+     and they disagreed. A single hairline is the whole separation language. */
   --rule: #e3e6ea;
-  --rule-soft: #edeff2;
   --muted: #667085;
   --amber: #b88936;
   --clay: #b65b4f;
@@ -31,7 +33,9 @@
   --amber-wash: #f9f3e8;
   --clay-wash: #f9edeb;
 
-  --radius: 10px;
+  /* Barely rounded. A 10px panel corner reads as a card on a marketing page;
+     an instrument's panels are square enough that the rule is what you see. */
+  --radius: 5px;
 
   /* shadcn semantic tokens, so `npx shadcn add <x>` lands on this palette. */
   --background: var(--ground);
@@ -78,7 +82,6 @@
   --color-ink: var(--ink);
   --color-navy: var(--navy);
   --color-rule: var(--rule);
-  --color-rule-soft: var(--rule-soft);
   --color-amber: var(--amber);
   --color-clay: var(--clay);
   --color-navy-wash: var(--navy-wash);
@@ -118,19 +121,28 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* Softly rounded, never pill-shaped: 6px chips, 8px controls, 10px panels. */
-  --radius-xs: 4px;
-  --radius-sm: 6px;
-  --radius-md: 8px;
+  /* One radius scale, and it is nearly square. 2px marks, 3px chips and
+     inputs, 4px controls, 5px panels, 6px overlays. Nothing above 6. */
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
   --radius-lg: var(--radius);
-  --radius-xl: 14px;
-  --radius-2xl: 14px;
-  --radius-3xl: 14px;
+  --radius-xl: 6px;
+  --radius-2xl: 6px;
+  --radius-3xl: 6px;
 
-  /* Elevation separates a panel from the canvas. Nothing glows. */
-  --shadow-panel: 0 1px 2px rgb(31 35 40 / 0.05), 0 1px 3px rgb(31 35 40 / 0.04);
-  --shadow-raised: 0 2px 4px rgb(31 35 40 / 0.06), 0 8px 20px rgb(31 35 40 / 0.06);
+  /* Two shadows, and both belong to things that genuinely float ABOVE the app.
+     A panel is separated by its 1px rule and by the canvas behind it -- there
+     is deliberately no `shadow-panel`, so nothing in the layout can reach for
+     elevation instead of drawing an edge. */
+  --shadow-raised: 0 1px 2px rgb(31 35 40 / 0.06), 0 6px 16px rgb(31 35 40 / 0.08);
   --shadow-overlay: 0 24px 64px rgb(31 35 40 / 0.18), 0 2px 8px rgb(31 35 40 / 0.08);
+
+  /* The two type roles the instrument keeps repeating: a micro section label,
+     and a tabular figure. Declared once so they cannot drift per surface. */
+  --tracking-label: 0.07em;
+  --tracking-tight: -0.011em;
+  --tracking-tighter: -0.021em;
 }
 
 @layer base {
@@ -175,25 +187,44 @@
     color: inherit;
   }
 
-  button:focus-visible,
-  input:focus-visible,
-  textarea:focus-visible,
-  select:focus-visible,
-  [role="tab"]:focus-visible,
-  [role="button"]:focus-visible {
+  /* One focus treatment for the whole app: a navy hairline ring, one pixel
+     clear of the element. Every surface inherits it, so no component has to
+     invent its own and none of them can disagree. */
+  :focus-visible {
     outline: 2px solid var(--navy);
-    outline-offset: 2px;
+    outline-offset: 1px;
+    border-radius: var(--radius-sm);
   }
 
+  /* Numbers are read against each other -- counts in a rail, tokens against a
+     ceiling, a duration against the one above it -- so every figure the mono
+     family sets is tabular by default rather than per surface. */
   code,
   pre,
-  kbd {
+  kbd,
+  time,
+  .font-mono {
     font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
   }
 
   ::selection {
     background: var(--navy);
     color: var(--ground);
+  }
+
+  /* ONE icon set: lucide-react, and nothing else. Its default stroke of 2 is
+     drawn for 20-24px icons and reads a weight too heavy beside 13px Geist at
+     the 14px this app uses everywhere, so it is normalised once here rather
+     than passed as a prop at every call site.
+
+     This is the only hand-written rule in the app, and it is deliberately a
+     normalisation of a third-party component's default attribute rather than a
+     rule about any surface. It also enforces the set: an icon from a different
+     library carries no `.lucide` class, so it renders at the wrong weight and
+     shows itself. */
+  svg.lucide {
+    stroke-width: 1.75;
   }
 }
 

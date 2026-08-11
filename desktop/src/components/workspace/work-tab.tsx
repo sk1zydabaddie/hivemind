@@ -17,7 +17,7 @@ import {
   TextQuote,
   X
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
+import {
+  Panel,
+  PanelCount,
+  PanelHeader,
+  PanelLabel
+} from "@/components/ui/panel";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { RunMap } from "@/components/workspace/agent-map";
 import {
@@ -526,7 +532,7 @@ export function WorkTab({
     tasks.length === 0 && displayedPlan === null && !runActive && attention === null;
 
   return (
-    <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden px-4 pb-4">
+    <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden p-3">
       {/* Row 1 is always present so the panels below can never lose their row; it
           only has height when a human is genuinely required. */}
       <div className="min-w-0">
@@ -574,7 +580,7 @@ export function WorkTab({
           stop control off the screen entirely, which is a capability loss
           dressed up as responsive behaviour. */}
       <div
-        className={`grid min-h-0 gap-4 overflow-hidden ${
+        className={`grid min-h-0 gap-3 overflow-hidden ${
           tasks.length === 0
             ? "grid-cols-[minmax(0,1fr)]"
             : "grid-cols-[minmax(0,1fr)_300px] min-[1100px]:grid-cols-[minmax(0,1fr)_360px] min-[1600px]:grid-cols-[minmax(0,1fr)_420px]"
@@ -674,17 +680,17 @@ export function WorkTab({
            as broken rather than as "scroll for more" -- Radix's scrollbar is
            hover-only, so nothing on screen said otherwise. */
         <aside
-          className={`grid min-h-0 gap-4 ${
+          className={`grid min-h-0 gap-3 ${
             selected
               ? "grid-rows-[minmax(0,auto)_minmax(200px,1fr)]"
               : "grid-rows-[minmax(0,1fr)]"
           }`}
         >
           <Panel>
-            <header className="flex shrink-0 items-baseline justify-between gap-2 border-b border-rule-soft px-4 py-3">
-              <h2 className="m-0 text-[14px] font-semibold text-ink">Current work</h2>
-              <span className="font-mono text-[12px] text-muted-foreground">{tasks.length}</span>
-            </header>
+            <PanelHeader className="bg-panel">
+              <PanelLabel className="text-ink">Current work</PanelLabel>
+              <PanelCount>{tasks.length}</PanelCount>
+            </PanelHeader>
             <TaskBoard
               groups={inspection?.execution_groups ?? []}
               integrationFailure={inspection?.integration_failure ?? null}
@@ -873,24 +879,6 @@ export function WorkTab({
   );
 }
 
-/* Every content surface is a panel lifted off the canvas. Grouping comes from
-   the container and its padding, not from a grid of full-bleed rules. */
-function Panel({
-  className,
-  children
-}: {
-  className?: string;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <section
-      className={`grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-lg border border-rule bg-panel shadow-panel ${className ?? ""}`}
-    >
-      {children}
-    </section>
-  );
-}
-
 /* ── Decision 2 ───────────────────────────────────────────────────────────── */
 
 function ShipBar({
@@ -908,52 +896,49 @@ function ShipBar({
   const files = changeSet?.changed_files ?? [];
   return (
     <Collapsible asChild>
+      {/* The second and last decision. It gets the one solid navy edge in the
+          app: nothing else is allowed to look like this, so the bar cannot be
+          confused with a status strip. */}
       <section
         aria-label="Ready to ship"
-        className="mb-4 rounded-lg border border-navy/20 bg-navy-wash px-5 py-4 shadow-panel"
+        className="mb-3 rounded-lg border border-navy/25 border-l-2 border-l-navy bg-navy-wash"
       >
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 px-4 py-3">
           <span
             aria-hidden="true"
-            className="grid size-8 shrink-0 place-items-center rounded-md bg-navy text-panel"
+            className="grid size-6 shrink-0 place-items-center rounded-sm bg-navy text-panel"
           >
-            <Check className="size-[18px]" />
+            <Check className="size-3.5" />
           </span>
           <div className="min-w-0 flex-1">
-            <strong className="block text-[15px] leading-snug font-semibold tracking-[-0.01em] text-ink">
+            <strong className="block text-[14px] leading-snug font-semibold tracking-tight text-ink">
               {item.title}
             </strong>
             {changeSet ? (
-              <span className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 text-[13px] text-muted-foreground">
-                <span>
-                  {changeSet.task_ids.length}{" "}
-                  {changeSet.task_ids.length === 1 ? "task" : "tasks"} ·
-                </span>
+              <span className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 text-[12px] text-muted-foreground">
+                <span className="font-mono text-ink">{changeSet.task_ids.length}</span>
+                <span>{changeSet.task_ids.length === 1 ? "task" : "tasks"} ·</span>
                 <CollapsibleTrigger asChild>
                   <button
                     className="font-medium text-navy underline decoration-navy/30 underline-offset-2 hover:decoration-navy"
                     type="button"
                   >
-                    {files.length} {files.length === 1 ? "file" : "files"}
+                    <span className="font-mono">{files.length}</span>{" "}
+                    {files.length === 1 ? "file" : "files"}
                   </button>
                 </CollapsibleTrigger>
                 <span>
-                  · into <span className="font-mono text-[12px] text-ink">{changeSet.base_branch}</span>
+                  · into <span className="font-mono text-ink">{changeSet.base_branch}</span>
                 </span>
               </span>
             ) : (
-              <span className="mt-0.5 block text-[13px] break-words text-muted-foreground">
+              <span className="mt-0.5 block text-[12px] break-words text-muted-foreground">
                 {plainPrimaryDetail(item.detail, item.kind)}
               </span>
             )}
           </div>
           {changeSet ? (
-            <Button
-              className="bg-panel/70 text-navy"
-              type="button"
-              variant="outline"
-              onClick={onInspect}
-            >
+            <Button type="button" variant="outline" onClick={onInspect}>
               See every line
             </Button>
           ) : null}
@@ -965,7 +950,7 @@ function ShipBar({
           ) : null}
         </div>
         <CollapsibleContent>
-          <ul className="mt-3.5 mb-0 flex list-none flex-wrap gap-x-5 gap-y-1.5 border-t border-navy/15 p-0 pt-3.5">
+          <ul className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 border-t border-navy/15 px-4 py-3 pl-[52px]">
             {item.change_set?.changed_files.map((file) => (
               <li className="font-mono text-[12px] break-all text-muted-foreground" key={file}>
                 {file}
@@ -1007,26 +992,30 @@ function AttentionBar({
 }): React.JSX.Element {
   const failing = /failed|stopped|blocked|rejected/iu.test(`${item.kind} ${item.title}`);
   const skin = failing
-    ? "border-clay/25 bg-clay-wash"
-    : "border-amber/25 bg-amber-wash";
+    ? "border-clay/25 border-l-clay bg-clay-wash"
+    : "border-amber/25 border-l-amber bg-amber-wash";
   const mark = failing ? "text-clay" : "text-amber";
   const named = attentionHeadline(item, taskTitles);
   return (
     <Collapsible asChild>
       <section
         aria-label="Needs you"
-        className={`mb-4 rounded-lg border px-5 py-4 shadow-panel ${skin}`}
+        className={`mb-3 rounded-lg border border-l-2 px-4 py-3 ${skin}`}
       >
-        <div className="flex items-start gap-4">
+        <div className="flex items-start gap-3">
           <span
             aria-hidden="true"
-            className={`grid size-8 shrink-0 place-items-center rounded-md bg-panel/70 ${mark}`}
+            className={`mt-px grid size-6 shrink-0 place-items-center rounded-sm bg-panel/70 ${mark}`}
           >
-            <AlertTriangle className="size-[18px]" />
+            <AlertTriangle className="size-3.5" />
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-baseline gap-x-2.5">
-              <span className={`text-[12px] font-semibold ${mark}`}>Needs you</span>
+              <span
+                className={`text-[11px] font-medium tracking-label uppercase ${mark}`}
+              >
+                Needs you
+              </span>
               {rest.length > 0 ? (
                 <CollapsibleTrigger asChild>
                   <button
@@ -1043,20 +1032,20 @@ function AttentionBar({
             </div>
             {/* The row leads with what the work is; what happened to it, and the
                 identifier it happened to, sit underneath. */}
-            <strong className="mt-1 block text-[15px] leading-snug font-semibold tracking-[-0.01em] break-words text-ink">
+            <strong className="mt-1 block text-[14px] leading-snug font-semibold tracking-tight break-words text-ink">
               {named.headline}
             </strong>
             {named.predicate === null ? null : (
-              <span className={`mt-0.5 block text-[13px] font-medium ${mark}`}>
+              <span className={`mt-0.5 block text-[12px] font-medium ${mark}`}>
                 {sentenceCase(named.predicate)}
                 {named.taskId === null ? null : (
-                  <span className="ml-1.5 font-mono text-[12px] font-normal text-muted-foreground">
+                  <span className="ml-1.5 font-mono font-normal text-muted-foreground">
                     {named.taskId}
                   </span>
                 )}
               </span>
             )}
-            <p className="mt-1.5 mb-0 max-w-[760px] text-[13px] leading-relaxed break-words text-muted-foreground">
+            <p className="mt-1 mb-0 max-w-[760px] text-[12px] leading-relaxed break-words text-muted-foreground">
               {plainPrimaryDetail(item.detail, item.kind)}
             </p>
           </div>
@@ -1068,7 +1057,7 @@ function AttentionBar({
           />
           <Button
             aria-label="Set this aside"
-            size="icon"
+            size="icon-sm"
             title="Set this aside"
             type="button"
             variant="ghost"
@@ -1079,7 +1068,7 @@ function AttentionBar({
         </div>
 
         <CollapsibleContent>
-          <ul className="mt-4 mb-0 grid list-none gap-3 border-t border-ink/10 p-0 pt-4">
+          <ul className="mt-3 mb-0 grid list-none gap-2.5 border-t border-ink/10 p-0 pt-3 pl-9">
             {rest.map((other) => {
               const otherNamed = attentionHeadline(other, taskTitles);
               return (
@@ -1145,7 +1134,7 @@ function AttentionActions({
   }
   if (!canOpenAttention(item)) return null;
   return (
-    <Button className="bg-panel/70" size={size} type="button" variant="outline" onClick={onOpen}>
+    <Button size={size} type="button" variant="outline" onClick={onOpen}>
       Show me
     </Button>
   );
@@ -1173,19 +1162,19 @@ function PlanWaitingBar({
   return (
     <section
       aria-label="Plan ready for review"
-      className="mb-4 flex items-center gap-4 rounded-lg border border-rule bg-panel px-5 py-4 shadow-panel"
+      className="mb-3 flex items-center gap-3 rounded-lg border border-rule border-l-2 border-l-navy bg-panel px-4 py-3"
     >
       <span
         aria-hidden="true"
-        className="grid size-8 shrink-0 place-items-center rounded-md bg-navy-wash text-navy"
+        className="grid size-6 shrink-0 place-items-center rounded-sm bg-navy-wash text-navy"
       >
-        <Layers3 className="size-[18px]" />
+        <Layers3 className="size-3.5" />
       </span>
       <div className="min-w-0 flex-1">
-        <strong className="block text-[15px] leading-snug font-semibold tracking-[-0.01em] text-ink">
+        <strong className="block text-[14px] leading-snug font-semibold tracking-tight text-ink">
           A {plan.tasks.length}-step plan is ready
         </strong>
-        <span className="mt-0.5 block text-[13px] text-muted-foreground">
+        <span className="mt-0.5 block text-[12px] text-muted-foreground">
           Nothing starts until you review and approve this exact plan.
         </span>
       </div>
@@ -1198,7 +1187,7 @@ function PlanWaitingBar({
       </Button>
       <Button
         aria-label="Set this aside"
-        size="icon"
+        size="icon-sm"
         type="button"
         variant="ghost"
         onClick={onDismiss}
@@ -1266,44 +1255,61 @@ function RunHeader({
   const progress = tasks.length === 0 ? 0 : Math.round((done / tasks.length) * 100);
 
   return (
-    <div className="relative flex min-h-[60px] shrink-0 items-center gap-4 border-b border-rule-soft px-5 py-3.5">
+    <div className="relative flex shrink-0 items-start gap-4 border-b border-rule bg-canvas px-4 py-3">
       <div className="min-w-0">
+        {/* The run's subject is a sentence somebody wrote, not a field name.
+            Setting it in the label voice shouted it. */}
         {subject === null ? null : (
-          <span className="mb-0.5 block text-[12px] break-words text-muted-foreground">{subject}</span>
+          <span className="mb-0.5 block text-[12px] leading-snug break-words text-muted-foreground">
+            {subject}
+          </span>
         )}
-        <h2 className="m-0 text-[16px] leading-tight font-semibold tracking-[-0.015em] text-ink">
+        <h2 className="m-0 text-[15px] leading-tight font-semibold tracking-tight text-ink">
           {headline}
         </h2>
-        <div className="mt-1 flex flex-wrap items-baseline gap-x-2.5 text-[13px] text-muted-foreground">
-          {files > 0 ? (
-            <span>{files === 1 ? "1 file" : `${files} files`} being edited</span>
-          ) : null}
-          {tasks.length > 0 ? (
-            <span className="font-mono text-[12px]">
-              {done}/{tasks.length} done
-            </span>
-          ) : null}
-          {spanMs === null ? null : (
-            <span className="font-mono text-[12px]">
-              {runActive ? `running ${formatDuration(spanMs)}` : `took ${formatDuration(spanMs)}`}
-            </span>
-          )}
-          {/* One projection decides the top-level claim. Core's queue is the
-              authority on whether anything is waiting, so the header never says
-              "Ready to ship" over an attention bar saying it cannot merge. */}
-          {attentionCount > 0 ? (
-            <span className="font-medium text-amber">
-              {attentionCount === 1 ? "1 thing needs you" : `${attentionCount} things need you`}
-            </span>
-          ) : integrationStatus !== "idle" && tasks.length > 0 ? (
-            <span className={`font-medium ${toneText[verification.tone]}`}>
-              {verification.label}
-            </span>
-          ) : null}
-        </div>
+        {/* One instrument line: the figures that answer "where is this", in
+            mono, separated by hairlines rather than by middots. The readings
+            are collected first and the separators interleaved after, because
+            rendering a separator beside each optional reading printed a
+            leading hairline whenever the first one was absent. */}
+        <MetaLine
+          readings={[
+            tasks.length > 0 ? (
+              <span className="font-mono text-ink" key="done">
+                {done}/{tasks.length}
+                <span className="ml-1 font-sans text-muted-foreground">done</span>
+              </span>
+            ) : null,
+            files > 0 ? (
+              <span className="font-mono text-ink" key="files">
+                {files}
+                <span className="ml-1 font-sans text-muted-foreground">
+                  {files === 1 ? "file open" : "files open"}
+                </span>
+              </span>
+            ) : null,
+            spanMs === null ? null : (
+              <span className="font-mono" key="span">
+                {runActive ? `running ${formatDuration(spanMs)}` : `took ${formatDuration(spanMs)}`}
+              </span>
+            ),
+            /* One projection decides the top-level claim. Core's queue is the
+               authority on whether anything is waiting, so the header never
+               says "Ready to ship" over a bar saying it cannot ship. */
+            attentionCount > 0 ? (
+              <span className="font-medium text-amber" key="attention">
+                {attentionCount === 1 ? "1 thing needs you" : `${attentionCount} things need you`}
+              </span>
+            ) : integrationStatus !== "idle" && tasks.length > 0 ? (
+              <span className={`font-medium ${toneText[verification.tone]}`} key="check">
+                {verification.label}
+              </span>
+            ) : null
+          ]}
+        />
       </div>
 
-      <div className="ml-auto flex shrink-0 items-center gap-1.5">
+      <div className="ml-auto flex shrink-0 items-center gap-1">
         {tasks.length > 0 ? (
           <ViewToggle value={view} onChange={onViewChange} />
         ) : null}
@@ -1330,18 +1336,17 @@ function RunHeader({
           <DropdownMenuTrigger asChild>
             <Button
               aria-label="How often Hivemind interrupts you"
-              className="text-muted-foreground"
               size="sm"
               type="button"
               variant="ghost"
             >
               <SlidersHorizontal aria-hidden="true" />
               {autonomyLabel(configuredLevel)}
-              <ChevronDown aria-hidden="true" className="text-muted-foreground" />
+              <ChevronDown aria-hidden="true" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-[260px]">
-            <DropdownMenuLabel className="text-muted-foreground">Interrupt me for</DropdownMenuLabel>
+            <DropdownMenuLabel>Interrupt me for</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuRadioGroup
               value={configuredLevel}
@@ -1365,10 +1370,36 @@ function RunHeader({
           actually finishes. */}
       <span aria-hidden="true" className="absolute inset-x-0 -bottom-px h-[2px]">
         <span
-          className="block h-[2px] rounded-r-full bg-navy transition-[width] duration-500 ease-out"
+          className="block h-[2px] bg-navy transition-[width] duration-500 ease-out"
           style={{ width: `${progress}%` }}
         />
       </span>
+    </div>
+  );
+}
+
+/* A hairline between two figures. Middots at 12px read as punctuation inside
+   the numbers; a rule reads as a gauge, which is what this row is. */
+function Divider(): React.JSX.Element {
+  return <span aria-hidden="true" className="h-2.5 w-px bg-rule" />;
+}
+
+/* Readings, hairline-separated, with the separators decided by what is
+   actually present rather than by each reading's own condition. */
+function MetaLine({
+  readings
+}: {
+  readings: Array<React.ReactNode | null>;
+}): React.JSX.Element {
+  const present = readings.filter((reading): reading is React.ReactNode => reading !== null);
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] text-muted-foreground">
+      {present.map((reading, index) => (
+        <Fragment key={index}>
+          {index === 0 ? null : <Divider />}
+          {reading}
+        </Fragment>
+      ))}
     </div>
   );
 }
@@ -1389,7 +1420,7 @@ function ViewToggle({
   return (
     <span
       aria-label="How to show this run"
-      className="mr-1 inline-flex gap-0.5 rounded-md bg-canvas p-0.5"
+      className="mr-1 inline-flex divide-x divide-rule overflow-hidden rounded-md border border-rule"
       role="group"
     >
       {options.map((option) => {
@@ -1398,8 +1429,10 @@ function ViewToggle({
         return (
           <button
             aria-pressed={active}
-            className={`inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-[12px] font-medium transition-colors ${
-              active ? "bg-panel text-ink shadow-panel" : "text-muted-foreground hover:text-ink"
+            className={`inline-flex h-7 cursor-pointer items-center gap-1.5 px-2.5 text-[12px] font-medium transition-colors ${
+              active
+                ? "bg-navy-wash text-navy"
+                : "bg-panel text-muted-foreground hover:text-ink"
             }`}
             key={option.key}
             type="button"
@@ -1418,36 +1451,56 @@ function ViewToggle({
 
 function IdleBoard({ onPick }: { onPick: (value: string) => void }): React.JSX.Element {
   return (
-    <div className="min-h-0 overflow-auto px-8 py-10">
-      <div className="max-w-[620px]">
-        <h2 className="m-0 text-[32px] leading-[1.15] font-semibold tracking-[-0.025em] text-ink">
-          Describe what you
-          <br />
-          want built.
+    <div className="min-h-0 overflow-auto px-6 py-7">
+      <div className="max-w-[560px]">
+        <h2 className="m-0 text-[22px] leading-tight font-semibold tracking-tighter text-ink">
+          Describe what you want built.
         </h2>
-        <p className="mt-4 mb-0 max-w-[520px] text-[15px] leading-[1.6] text-muted-foreground">
+        <p className="mt-2.5 mb-0 max-w-[480px] text-[13px] leading-relaxed text-muted-foreground">
           Hivemind splits the work across agents, keeps each one inside its own
-          files, and checks every change. You step in twice: now, and when it
-          asks you to ship.
+          files, and checks every change.
         </p>
-        <p className="mt-10 mb-3 text-[12px] font-medium text-muted-foreground">Try one of these</p>
-        <ul className="m-0 grid list-none gap-2 p-0">
+
+        {/* The product's whole shape, stated as two numbered steps rather than
+            as a paragraph. It is the one claim the empty state has to make. */}
+        <ol className="mt-5 mb-0 grid list-none gap-2 border-l border-rule p-0 pl-3.5">
+          <li className="flex items-baseline gap-2.5 text-[13px] text-ink">
+            <span className="font-mono text-[11px] text-navy">01</span>
+            You say what you want built.
+          </li>
+          <li className="flex items-baseline gap-2.5 text-[13px] text-ink">
+            <span className="font-mono text-[11px] text-navy">02</span>
+            You say ship, once it is checked.
+          </li>
+          <li className="flex items-baseline gap-2.5 text-[13px] text-muted-foreground">
+            <span className="font-mono text-[11px] text-muted-foreground">--</span>
+            Everything between those happens on its own.
+          </li>
+        </ol>
+
+        <div className="mt-7 flex items-center gap-3">
+          <span className="text-[11px] font-medium tracking-label text-muted-foreground uppercase">
+            Try one of these
+          </span>
+          <span aria-hidden="true" className="h-px flex-1 bg-rule" />
+        </div>
+        <ul className="m-0 mt-2 grid list-none overflow-hidden rounded-md border border-rule p-0">
           {EXAMPLE_ASKS.map((ask, index) => (
-            <li key={ask}>
+            <li className="border-b border-rule last:border-b-0" key={ask}>
               <button
-                className="group flex w-full items-center gap-3.5 rounded-md border border-rule bg-canvas px-4 py-3 text-left transition-colors hover:border-navy/30 hover:bg-navy-wash"
+                className="group flex w-full cursor-pointer items-center gap-3 bg-panel px-3 py-2.5 text-left transition-colors hover:bg-navy-wash"
                 type="button"
                 onClick={() => onPick(ask)}
               >
-                <span className="font-mono text-[12px] text-muted-foreground">
+                <span className="font-mono text-[11px] text-muted-foreground group-hover:text-navy">
                   {String(index + 1).padStart(2, "0")}
                 </span>
-                <span className="min-w-0 flex-1 text-[14px] break-words text-ink group-hover:text-navy">
+                <span className="min-w-0 flex-1 text-[13px] break-words text-ink group-hover:text-navy">
                   {ask}
                 </span>
                 <ArrowUpRight
                   aria-hidden="true"
-                  className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+                  className="size-3.5 shrink-0 text-navy opacity-0 transition-opacity group-hover:opacity-100"
                 />
               </button>
             </li>
@@ -1502,17 +1555,21 @@ function TaskBoard({
 
   return (
     <ScrollArea className="min-h-0">
-      <div className="pb-4">
+      <div className="pb-3">
         {lanes.length === 0 ? (
-          <p className="m-0 px-5 py-6 text-[14px] leading-relaxed text-muted-foreground">
+          <p className="m-0 px-4 py-5 text-[13px] leading-relaxed text-muted-foreground">
             No tasks in this run yet.
           </p>
         ) : null}
         {lanes.map((lane) => (
           <section key={lane.key}>
-            <header className="sticky top-0 z-1 flex items-baseline justify-between gap-3 border-b border-rule-soft bg-canvas px-5 py-2">
-              <span className="text-[12px] font-medium text-muted-foreground">{lane.label}</span>
-              <span className="font-mono text-[12px] text-muted-foreground">{lane.tasks.length}</span>
+            <header className="sticky top-0 z-1 flex h-7 items-center gap-3 border-b border-rule bg-canvas px-3">
+              <span className="text-[11px] font-medium tracking-label text-muted-foreground uppercase">
+                {lane.label}
+              </span>
+              <span className="ml-auto font-mono text-[11px] text-muted-foreground">
+                {lane.tasks.length}
+              </span>
             </header>
             {lane.tasks.map((task) => (
               <TaskRow
@@ -1563,38 +1620,30 @@ function TaskRow({
   return (
     <button
       aria-pressed={selected}
-      className={`relative flex w-full items-start gap-3 border-b border-rule-soft px-4 py-3 text-left transition-colors ${
-        selected ? "bg-navy-wash" : "bg-transparent hover:bg-canvas"
+      className={`relative flex w-full cursor-pointer items-start gap-2.5 border-b border-rule px-3 py-2.5 pl-2.5 text-left transition-colors ${
+        selected
+          ? "bg-navy-wash before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-navy"
+          : "bg-panel hover:bg-canvas"
       }`}
       type="button"
       onClick={onSelect}
     >
+      {/* A square mark, not a dot: the same shape the map uses for a phase, at
+          the size a row can carry. */}
       <span
         aria-hidden="true"
-        className={`mt-[6px] size-2 shrink-0 rounded-full ${toneEdge[language.tone]}`}
+        className={`mt-[5px] size-1.5 shrink-0 rounded-xs ${toneEdge[language.tone]}`}
       />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-3">
           <span className="min-w-0 text-[13px] leading-snug font-medium break-words text-ink">
             {task.title}
           </span>
-          <span className={`shrink-0 text-[12px] font-medium ${toneText[language.tone]}`}>
+          <span className={`shrink-0 text-[11px] font-medium ${toneText[language.tone]}`}>
             {language.label}
           </span>
         </span>
-        {/* Four segments: how far this one change has got. Same model the map
-            draws in full, small enough to sit in a glanceable row. */}
-        <span aria-hidden="true" className="mt-1.5 flex gap-1">
-          {[0, 1, 2, 3].map((index) => (
-            <span
-              className={`h-[3px] flex-1 rounded-full ${
-                index < phase.reached ? toneEdge[language.tone] : "bg-rule"
-              }`}
-              key={index}
-            />
-          ))}
-        </span>
-        <span className="mt-1.5 block text-[12px] break-words text-muted-foreground">
+        <span className="mt-1 block text-[11px] break-words text-muted-foreground">
           <span className="font-mono" title={task.task_id}>
             {task.task_id}
           </span>
@@ -1603,8 +1652,22 @@ function TaskRow({
             : ""}
           {waitingFor === "" ? "" : ` · after ${waitingFor}`}
         </span>
+        {/* Four segments: how far this one change has got. Same model the map
+            draws in full, small enough to sit in a glanceable row. It sits at
+            the foot of the row rather than under the title, where it read as
+            an underline of the title rather than as a gauge. */}
+        <span aria-hidden="true" className="mt-2 flex gap-0.5">
+          {[0, 1, 2, 3].map((index) => (
+            <span
+              className={`h-[2px] flex-1 ${
+                index < phase.reached ? toneEdge[language.tone] : "bg-rule"
+              }`}
+              key={index}
+            />
+          ))}
+        </span>
         {issue ? (
-          <span className="mt-2 block rounded-md bg-clay-wash px-2.5 py-1.5 text-[12px] leading-snug break-words text-clay">
+          <span className="mt-2 block border-l-2 border-clay/40 bg-clay-wash px-2 py-1.5 text-[11px] leading-snug break-words text-clay">
             {/* Core writes `plain_reason` beside the durable reason now, and
                 `plainEvidence` prefers it, so this arrives already readable.
                 The client-side rewriter that used to sit here was deleted
@@ -1648,14 +1711,14 @@ function InspectorPane({
 
   return (
     <>
-      <header className="grid shrink-0 gap-3 border-b border-rule-soft px-4 py-3.5">
+      <header className="grid shrink-0 gap-2.5 border-b border-rule bg-canvas px-3 py-2.5">
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
-            <strong className="block text-[14px] leading-snug font-semibold break-words text-ink">
+            <strong className="block text-[13px] leading-snug font-semibold break-words text-ink">
               {task.title}
             </strong>
-            <span className="mt-0.5 block text-[13px] break-words text-muted-foreground">
-              <span className="font-mono text-[12px]">{task.task_id}</span>
+            <span className="mt-0.5 block text-[11px] break-words text-muted-foreground">
+              <span className="font-mono">{task.task_id}</span>
               {task.agent ? ` · ${task.agent}` : " · no agent yet"}
             </span>
           </div>
@@ -1684,22 +1747,24 @@ function InspectorPane({
             </Button>
           ) : null}
         </div>
-        <p className="m-0 text-[12px] leading-snug break-words text-muted-foreground">
+        <p className="m-0 text-[11px] leading-snug break-words text-muted-foreground">
           {phase.summary}
         </p>
         <div className="flex items-center gap-2">
-          <span className="text-[12px] font-medium text-muted-foreground">Live output</span>
+          <span className="text-[11px] font-medium tracking-label text-muted-foreground uppercase">
+            Live output
+          </span>
           <span
             aria-label="How much output to show"
-            className="ml-auto inline-flex gap-0.5 rounded-md bg-canvas p-0.5"
+            className="ml-auto inline-flex divide-x divide-rule overflow-hidden rounded-md border border-rule"
             role="group"
           >
             {(["summary", "raw"] as const).map((option) => (
               <button
-                className={`rounded-sm px-2 py-1 text-[12px] font-medium transition-colors ${
+                className={`h-6 cursor-pointer px-2 text-[11px] font-medium transition-colors ${
                   mode === option
-                    ? "bg-panel text-ink shadow-panel"
-                    : "text-muted-foreground hover:text-ink"
+                    ? "bg-navy-wash text-navy"
+                    : "bg-panel text-muted-foreground hover:text-ink"
                 }`}
                 key={option}
                 type="button"
@@ -1714,7 +1779,7 @@ function InspectorPane({
 
       <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto]">
         <ScrollArea className="min-h-0">
-          <pre className="m-0 px-4 py-3 font-mono text-[12px] leading-[1.7] break-words whitespace-pre-wrap text-ink">
+          <pre className="m-0 px-3 py-2.5 font-mono text-[12px] leading-[1.65] break-words whitespace-pre-wrap text-ink">
             {output.length > 0 ? text : "Nothing from this agent yet."}
           </pre>
         </ScrollArea>
@@ -1722,28 +1787,32 @@ function InspectorPane({
         <Collapsible open={filesOpen} onOpenChange={setFilesOpen}>
           <CollapsibleTrigger asChild>
             <button
-              className="flex w-full items-center gap-2 border-t border-rule-soft px-4 py-2.5 text-left hover:bg-canvas"
+              className="flex h-9 w-full cursor-pointer items-center gap-2 border-t border-rule bg-canvas px-3 text-left hover:bg-navy-wash"
               type="button"
             >
-              <FileCode2 aria-hidden="true" className="size-4 text-muted-foreground" />
-              <span className="text-[13px] text-ink">Files being edited</span>
-              <span className="ml-auto font-mono text-[12px] text-muted-foreground">{files.length}</span>
+              <FileCode2 aria-hidden="true" className="size-3.5 text-muted-foreground" />
+              <span className="text-[11px] font-medium tracking-label text-muted-foreground uppercase">
+                Files being edited
+              </span>
+              <span className="ml-auto font-mono text-[11px] text-muted-foreground">
+                {files.length}
+              </span>
               <ChevronRight
                 aria-hidden="true"
-                className={`size-4 text-muted-foreground transition-transform ${filesOpen ? "rotate-90" : ""}`}
+                className={`size-3.5 text-muted-foreground transition-transform ${filesOpen ? "rotate-90" : ""}`}
               />
             </button>
           </CollapsibleTrigger>
           <CollapsibleContent>
             {files.length === 0 ? (
-              <p className="m-0 px-4 pb-3 text-[13px] text-muted-foreground">
+              <p className="m-0 border-t border-rule px-3 py-2 text-[12px] text-muted-foreground">
                 This task is not editing any file yet.
               </p>
             ) : (
-              <ul className="m-0 max-h-[140px] list-none overflow-auto p-0 pb-2">
+              <ul className="m-0 max-h-[140px] list-none overflow-auto border-t border-rule p-0 py-1.5">
                 {files.map((file) => (
                   <li
-                    className="px-4 py-1 font-mono text-[12px] break-all text-muted-foreground"
+                    className="px-3 py-0.5 font-mono text-[12px] break-all text-muted-foreground"
                     key={file}
                   >
                     {file}
@@ -1779,14 +1848,14 @@ function RunThread({
   );
   return (
     <ScrollArea aria-label="What has happened in this run" className="min-h-0">
-      <div className="grid gap-4 px-6 py-5">
+      <div className="grid gap-3 px-5 py-4">
         {events.length >= RECENT_EVENT_LIMIT ? (
           <p className="m-0 text-[12px] text-muted-foreground">
             This run is long enough that its earliest activity is no longer shown.
           </p>
         ) : null}
         {entries.length === 0 ? (
-          <p className="m-0 text-[14px] leading-relaxed text-muted-foreground">
+          <p className="m-0 text-[13px] leading-relaxed text-muted-foreground">
             Nothing has happened yet. Describe what you want below and Hivemind
             will prepare a plan.
           </p>
@@ -1819,19 +1888,29 @@ function ThreadRow({
 }): React.JSX.Element {
   if (entry.kind === "request" || entry.kind === "guidance") {
     const guidance = entry.kind === "guidance";
+    /* Not a chat bubble. A chat bubble puts the one thing the person actually
+       wrote on the far right of a 900px column and leaves the left half empty,
+       which is what made this surface read as a messaging app rather than as a
+       record of a run. The request is a quoted block on the same left edge as
+       everything else, marked by a navy rule. */
     return (
-      <article className="grid justify-items-end gap-1">
-        <div className="max-w-[560px] rounded-lg rounded-br-sm bg-canvas px-4 py-3">
-          <p className="m-0 text-[14px] leading-relaxed break-words text-ink">{entry.text}</p>
+      <article className="border-l-2 border-navy pl-3.5">
+        <div className="flex items-baseline gap-2">
+          <span className="text-[11px] font-medium tracking-label text-navy uppercase">
+            {guidance ? "You added" : "You asked for"}
+          </span>
+          <time className="font-mono text-[11px] text-muted-foreground">
+            {formatClock(entry.at)}
+          </time>
+          {guidance ? (
+            <span className="text-[11px] text-muted-foreground">
+              {entry.applied ? "used on the next step" : "will be used on the next step"}
+            </span>
+          ) : null}
         </div>
-        <span className="text-[12px] text-muted-foreground">
-          You · {formatClock(entry.at)}
-          {guidance
-            ? entry.applied
-              ? " · used on the next step"
-              : " · will be used on the next step"
-            : ""}
-        </span>
+        <p className="mt-1 mb-0 max-w-[720px] text-[14px] leading-relaxed break-words text-ink">
+          {entry.text}
+        </p>
       </article>
     );
   }
@@ -1841,18 +1920,18 @@ function ThreadRow({
     const steps = matches ? plan.tasks.length : null;
     const stages = matches ? plan.execution_groups.length : null;
     return (
-      <article className="max-w-[640px] rounded-lg border border-rule bg-panel p-4">
-        <div className="flex items-start gap-3">
+      <article className="max-w-[720px] rounded-md border border-rule bg-canvas px-3.5 py-3">
+        <div className="flex items-center gap-2.5">
           <span
             aria-hidden="true"
-            className={`grid size-7 shrink-0 place-items-center rounded-md ${
+            className={`grid size-6 shrink-0 place-items-center rounded-sm ${
               entry.approved ? "bg-navy text-panel" : "bg-navy-wash text-navy"
             }`}
           >
-            {entry.approved ? <Check className="size-4" /> : <Layers3 className="size-4" />}
+            {entry.approved ? <Check className="size-3.5" /> : <Layers3 className="size-3.5" />}
           </span>
           <div className="min-w-0 flex-1">
-            <strong className="block text-[14px] leading-snug font-semibold text-ink">
+            <strong className="block text-[13px] leading-snug font-semibold text-ink">
               {steps === null
                 ? entry.approved
                   ? "You approved the plan"
@@ -1861,11 +1940,16 @@ function ThreadRow({
                   ? `You approved a ${steps}-step plan`
                   : `A ${steps}-step plan is ready to review`}
             </strong>
-            <span className="mt-0.5 block text-[13px] text-muted-foreground">
-              {stages !== null
-                ? `${stages} ${stages === 1 ? "stage" : "stages"} · `
-                : ""}
-              {formatClock(entry.at)}
+            <span className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+              {stages !== null ? (
+                <>
+                  <span className="font-mono">
+                    {stages} {stages === 1 ? "stage" : "stages"}
+                  </span>
+                  <Divider />
+                </>
+              ) : null}
+              <time className="font-mono">{formatClock(entry.at)}</time>
             </span>
           </div>
           {plan !== null ? (
@@ -1882,24 +1966,31 @@ function ThreadRow({
     return <ShippedCard entry={entry} plan={plan} taskTitles={taskTitles} />;
   }
 
+  /* Milestones are a log, and a log is a fixed left gutter of times against a
+     rule. The eye reads down the times; the rule is what turns a stack of rows
+     into one thread. */
   return (
-    <div className="flex items-baseline gap-3">
-      <time className="shrink-0 font-mono text-[12px] text-muted-foreground">
+    <div className="relative flex items-start gap-3 pl-[92px]">
+      <time className="absolute top-px left-0 w-[62px] text-right font-mono text-[11px] whitespace-nowrap text-muted-foreground">
         {formatClock(entry.at)}
       </time>
       <span
         aria-hidden="true"
-        className={`mt-1.5 size-1.5 shrink-0 rounded-full ${toneDot[entry.tone]}`}
+        className="absolute inset-y-[-6px] left-[75px] w-px bg-rule"
       />
-      <span className="min-w-0 flex-1 text-[14px] leading-snug break-words text-ink">
+      <span
+        aria-hidden="true"
+        className={`absolute top-[5px] left-[73px] size-[5px] rounded-xs ${toneDot[entry.tone]}`}
+      />
+      <span className="min-w-0 flex-1 text-[13px] leading-snug break-words text-ink">
         {entry.text}
         {entry.durationMs === null ? null : (
-          <span className="ml-1.5 font-mono text-[12px] text-muted-foreground">
+          <span className="ml-1.5 font-mono text-[11px] text-muted-foreground">
             {formatDuration(entry.durationMs)}
           </span>
         )}
         {entry.count > 1 ? (
-          <span className="ml-1.5 font-mono text-[12px] text-muted-foreground">×{entry.count}</span>
+          <span className="ml-1.5 font-mono text-[11px] text-muted-foreground">×{entry.count}</span>
         ) : null}
       </span>
     </div>
@@ -1918,36 +2009,38 @@ function ShippedCard({
 }): React.JSX.Element {
   const [filesOpen, setFilesOpen] = useState(false);
   return (
-    <article className="max-w-[720px] rounded-lg border border-navy/20 bg-navy-wash p-5">
-      <div className="flex items-center gap-3">
+    <article className="max-w-[720px] rounded-md border border-navy/25 border-l-2 border-l-navy bg-navy-wash px-4 py-3.5">
+      <div className="flex items-center gap-2.5">
         <span
           aria-hidden="true"
-          className="grid size-8 shrink-0 place-items-center rounded-md bg-navy text-panel"
+          className="grid size-6 shrink-0 place-items-center rounded-sm bg-navy text-panel"
         >
-          <Check className="size-[18px]" />
+          <Check className="size-3.5" />
         </span>
         <div className="min-w-0 flex-1">
-          <strong className="block text-[16px] leading-snug font-semibold tracking-[-0.01em] text-ink">
+          <strong className="block text-[14px] leading-snug font-semibold tracking-tight text-ink">
             Shipped {entry.taskIds.length}{" "}
             {entry.taskIds.length === 1 ? "task" : "tasks"}
             {entry.branch ? ` to ${entry.branch}` : ""}
           </strong>
-          <span className="mt-0.5 block text-[13px] text-muted-foreground">
-            {formatClock(entry.at)} · this is now part of your project
+          <span className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+            <time className="font-mono">{formatClock(entry.at)}</time>
+            <Divider />
+            <span>this is now part of your project</span>
           </span>
         </div>
       </div>
 
-      <ul className="mt-4 mb-0 grid list-none gap-3 border-t border-navy/15 p-0 pt-4">
+      <ul className="mt-3 mb-0 grid list-none gap-2 border-t border-navy/15 p-0 pt-3">
         {entry.taskIds.map((taskId) => {
           const planned = plan?.tasks.find((task) => task.task_id === taskId);
           return (
             <li key={taskId}>
-              <strong className="block text-[14px] leading-snug font-medium break-words text-ink">
+              <strong className="block text-[13px] leading-snug font-medium break-words text-ink">
                 {planned?.title ?? taskTitles[taskId] ?? taskId}
               </strong>
               {planned?.acceptance_criterion ? (
-                <span className="mt-0.5 block text-[13px] leading-relaxed break-words text-muted-foreground">
+                <span className="mt-0.5 block text-[12px] leading-relaxed break-words text-muted-foreground">
                   {planned.acceptance_criterion}
                 </span>
               ) : null}
@@ -1957,27 +2050,25 @@ function ShippedCard({
       </ul>
 
       <Collapsible open={filesOpen} onOpenChange={setFilesOpen}>
-        <div className="mt-4 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-navy/15 pt-3 text-[13px] text-muted-foreground">
+        <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-navy/15 pt-2.5 text-[12px] text-muted-foreground">
           <CollapsibleTrigger asChild>
             <button
               className="font-medium text-navy underline decoration-navy/30 underline-offset-2 hover:decoration-navy"
               type="button"
             >
-              {entry.changedFiles.length}{" "}
+              <span className="font-mono">{entry.changedFiles.length}</span>{" "}
               {entry.changedFiles.length === 1 ? "file" : "files"} changed
             </button>
           </CollapsibleTrigger>
           {entry.adoptedRef ? (
             <span>
               · landed as{" "}
-              <span className="font-mono text-[12px] text-ink">
-                {entry.adoptedRef.slice(0, 10)}
-              </span>
+              <span className="font-mono text-ink">{entry.adoptedRef.slice(0, 10)}</span>
             </span>
           ) : null}
         </div>
         <CollapsibleContent>
-          <ul className="mt-2 mb-0 flex list-none flex-wrap gap-x-5 gap-y-1.5 p-0">
+          <ul className="mt-2 mb-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0">
             {entry.changedFiles.map((file) => (
               <li className="font-mono text-[12px] break-all text-muted-foreground" key={file}>
                 {file}
@@ -2022,11 +2113,11 @@ function PromptDock({
   onStartManager: () => Promise<void>;
 }): React.JSX.Element {
   return (
-    <footer className="shrink-0 border-t border-rule-soft p-3">
-      <form className="grid gap-2.5" onSubmit={(event) => void onSubmit(event)}>
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2 rounded-md border border-rule bg-canvas p-2 transition-colors focus-within:border-navy/40 focus-within:bg-panel">
+    <footer className="shrink-0 border-t border-rule bg-canvas p-2.5">
+      <form className="grid gap-2" onSubmit={(event) => void onSubmit(event)}>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2 rounded-md border border-rule bg-panel p-1.5 transition-colors focus-within:border-navy/45">
           <textarea
-            className="max-h-[180px] min-h-[40px] w-full resize-y border-0 bg-transparent px-1.5 py-1.5 text-[15px] leading-[1.55] text-ink outline-none placeholder:text-muted-foreground"
+            className="max-h-[180px] min-h-[36px] w-full resize-y border-0 bg-transparent px-1.5 py-1.5 text-[14px] leading-relaxed text-ink outline-none placeholder:text-muted-foreground"
             id="work-composer"
             placeholder={
               runActive
@@ -2047,7 +2138,7 @@ function PromptDock({
             }}
           />
           <Button
-            className={idle ? "h-11 px-5 text-[14px]" : "size-11"}
+            className={idle ? "h-9 px-3.5" : "size-9"}
             disabled={busy || value.trim() === ""}
             size={idle ? "default" : "icon"}
             type="submit"
@@ -2058,25 +2149,25 @@ function PromptDock({
                 <ArrowRight aria-hidden="true" />
               </>
             ) : (
-              <Send aria-hidden="true" className="size-[18px]" />
+              <Send aria-hidden="true" className="size-4" />
             )}
           </Button>
         </div>
         {feedback ? (
           <p
-            className="m-0 rounded-md bg-navy-wash px-3 py-2 text-[13px] leading-snug break-words text-navy"
+            className="m-0 rounded-sm border-l-2 border-navy bg-navy-wash px-2.5 py-1.5 text-[12px] leading-snug break-words text-navy"
             role="status"
           >
             {feedback}
           </p>
         ) : null}
-        <div className="flex items-center gap-3 px-2">
-          <span className="min-w-0 flex-1 text-[12px] leading-snug break-words text-muted-foreground">
+        <div className="flex items-center gap-2.5 px-1">
+          <span className="min-w-0 flex-1 text-[11px] leading-snug break-words text-muted-foreground">
             {runActive
               ? "Guidance is read on the next step and does not change work already in progress."
               : "Typing describes work. Nothing runs until Hivemind has a plan it can check."}
           </span>
-          <kbd className="shrink-0 rounded-sm border border-rule px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+          <kbd className="shrink-0 rounded-sm border border-rule bg-panel px-1 font-mono text-[11px] text-muted-foreground">
             ⌘↵
           </kbd>
           {managerStartAvailable ? (
@@ -2102,7 +2193,7 @@ function SpendMeter({
   spend: WorkspaceInspection["spend"] | null;
 }): React.JSX.Element {
   if (!spend) {
-    return <span className="shrink-0 text-[12px] text-muted-foreground">no spend yet</span>;
+    return <span className="shrink-0 text-[11px] text-muted-foreground">no spend yet</span>;
   }
   const ratio =
     spend.session_ceiling_tokens > 0
@@ -2110,15 +2201,17 @@ function SpendMeter({
       : 0;
   return (
     <span
-      className={`flex shrink-0 items-center gap-2.5 rounded-md px-2 py-1 font-mono text-[12px] ${
+      className={`flex shrink-0 items-center gap-2 rounded-sm px-1.5 py-0.5 font-mono text-[11px] ${
         spend.near_session_ceiling ? "bg-amber-wash text-amber" : "text-muted-foreground"
       }`}
       title={`${spend.run_ceiling_tokens.toLocaleString()} tokens maximum per call`}
     >
       <span>{spend.calls} calls</span>
-      <span className="block h-1.5 w-[56px] overflow-hidden rounded-full bg-rule">
+      {/* A meter, not a capsule: a square bar reads as a gauge on an
+          instrument, and it is the same 2px language as the phase spine. */}
+      <span className="block h-[3px] w-[52px] overflow-hidden bg-rule">
         <span
-          className={`block h-1.5 rounded-full ${spend.near_session_ceiling ? "bg-amber" : "bg-navy"}`}
+          className={`block h-[3px] ${spend.near_session_ceiling ? "bg-amber" : "bg-navy"}`}
           style={{ width: `${ratio}%` }}
         />
       </span>
@@ -2172,20 +2265,20 @@ function PlanTakeover({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="grid h-[min(780px,calc(100vh-48px))] w-[min(1140px,calc(100vw-48px))] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 p-0 sm:max-w-none"
+        className="grid h-[min(780px,calc(100vh-40px))] w-[min(1120px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 p-0 sm:max-w-none"
         showCloseButton={false}
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
-        <DialogHeader className="border-b border-rule-soft px-8 py-6">
-          <span className="text-[12px] font-medium text-navy">
+        <DialogHeader className="gap-1.5 border-b border-rule px-6 py-5">
+          <span className="text-[11px] font-medium tracking-label text-navy uppercase">
             {ratificationPending ? "Before anything starts" : "The approved plan"}
           </span>
-          <DialogTitle className="text-[26px] leading-tight font-semibold tracking-[-0.025em]">
+          <DialogTitle className="text-[22px] leading-tight font-semibold tracking-tighter">
             {plan.tasks.length} {plan.tasks.length === 1 ? "step" : "steps"}, in{" "}
             {plan.execution_groups.length}{" "}
             {plan.execution_groups.length === 1 ? "stage" : "stages"}
           </DialogTitle>
-          <DialogDescription className="max-w-[720px] text-[14px] leading-relaxed">
+          <DialogDescription className="max-w-[720px]">
             {ratificationPending
               ? "Check the order, the files each step may touch, and how each result gets checked. Approving applies to this exact version only."
               : "Read-only record of the exact approved plan, including how each step's result is checked."}
@@ -2193,9 +2286,9 @@ function PlanTakeover({
         </DialogHeader>
 
         <ScrollArea className="min-h-0 bg-canvas">
-          <div className="px-8 py-6">
+          <div className="px-6 py-5">
             {specReview !== null && ratificationPending ? (
-              <div className="mb-7 border-b border-rule pb-7">
+              <div className="mb-6 border-b border-rule pb-6">
                 <SpecReviewPanel
                   busy={busy}
                   nonGoals={nonGoals}
@@ -2205,18 +2298,18 @@ function PlanTakeover({
               </div>
             ) : null}
             {amendments.length > 0 ? (
-              <section className="mb-6 rounded-lg border border-amber/25 bg-amber-wash px-5 py-4">
-                <strong className="block text-[14px] font-semibold text-ink">
+              <section className="mb-5 rounded-md border border-amber/25 border-l-2 border-l-amber bg-amber-wash px-4 py-3">
+                <strong className="block text-[13px] font-semibold text-ink">
                   {amendments.length === 1
                     ? "One change to this plan is queued"
                     : `${amendments.length} changes to this plan are queued`}
                 </strong>
-                <span className="mt-0.5 block text-[13px] text-muted-foreground">
+                <span className="mt-0.5 block text-[12px] leading-relaxed text-muted-foreground">
                   Queued changes take effect only after they pass the normal checks
                   and you approve the updated plan. The plan below does not include
                   them yet.
                 </span>
-                <ul className="mt-3 mb-0 grid list-none gap-2 p-0">
+                <ul className="mt-2.5 mb-0 grid list-none gap-1.5 p-0">
                   {amendments.map((amendment) => (
                     <li className="text-[13px] break-words text-ink" key={amendment.id}>
                       {amendment.title}
@@ -2226,27 +2319,29 @@ function PlanTakeover({
                 </ul>
               </section>
             ) : null}
+            {/* Stages read down the left as a numbered spine, so the order the
+                work runs in is the first thing the page states. */}
             {plan.execution_groups.map((group, groupIndex) => (
               <section
-                className="grid grid-cols-[172px_minmax(0,1fr)] gap-6 pb-6"
+                className="grid grid-cols-[152px_minmax(0,1fr)] gap-5 pb-5"
                 key={group.group_id}
               >
-                <div className="flex items-start gap-3">
-                  <span className="grid size-6 shrink-0 place-items-center rounded-md bg-ink font-mono text-[12px] text-panel">
+                <div className="flex items-start gap-2.5">
+                  <span className="grid size-5 shrink-0 place-items-center rounded-xs bg-ink font-mono text-[11px] text-panel">
                     {groupIndex + 1}
                   </span>
                   <div className="min-w-0">
-                    <strong className="block text-[14px] font-semibold text-ink">
+                    <strong className="block text-[13px] leading-snug font-semibold text-ink">
                       {group.mode === "parallel"
                         ? `${group.task_ids.length} at the same time`
                         : `${group.task_ids.length} in order`}
                     </strong>
-                    <span className="mt-1 block font-mono text-[12px] break-words text-muted-foreground">
+                    <span className="mt-0.5 block font-mono text-[11px] break-words text-muted-foreground">
                       {group.group_id}
                     </span>
                   </div>
                 </div>
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-3 md:grid-cols-2">
                   {group.task_ids.map((taskId) => {
                     const task = plan.tasks.find((candidate) => candidate.task_id === taskId);
                     return task ? (
@@ -2264,18 +2359,18 @@ function PlanTakeover({
           </div>
         </ScrollArea>
 
-        <DialogFooter className="items-center justify-between border-t border-rule-soft bg-panel px-8 py-4 sm:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
-            <code className="rounded-sm bg-canvas px-2 py-1 font-mono text-[12px] text-muted-foreground">
+        <DialogFooter className="items-center justify-between border-t border-rule bg-panel px-6 py-3 sm:justify-between">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <code className="rounded-sm border border-rule bg-canvas px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
               {plan.plan_hash.slice(0, 12)}
             </code>
-            <span className="text-[13px] text-muted-foreground">
+            <span className="text-[12px] text-muted-foreground">
               {ratificationPending
                 ? "Any regenerated or edited plan needs a fresh approval."
                 : "Read-only record of the exact approved plan."}
             </span>
           </div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             {ratificationPending ? (
               <Button type="button" variant="outline" onClick={onStartOver}>
                 <RotateCcw aria-hidden="true" />
@@ -2287,7 +2382,7 @@ function PlanTakeover({
               Add a step
             </Button>
             {blockedReason === null ? null : (
-              <span className="mr-1 max-w-[320px] text-[12px] leading-snug text-clay">
+              <span className="mr-1 max-w-[320px] text-[11px] leading-snug text-clay">
                 {blockedReason}
               </span>
             )}
@@ -2327,15 +2422,20 @@ function PlanTaskCard({
     .map((taskId) => plan.tasks.find((entry) => entry.task_id === taskId)?.title ?? taskId)
     .join(", ");
   return (
-    <article className="min-w-0 rounded-lg border border-rule bg-panel p-5 shadow-panel">
-      <div className="flex items-start justify-between gap-2">
+    /* A specimen sheet, not a marketing card: a titled head, then a ruled
+       field table where the label column is fixed so every card in the stage
+       aligns on the same gutter and the answers can be read in a column. */
+    <article className="min-w-0 overflow-hidden rounded-md border border-rule bg-panel">
+      <div className="flex items-start justify-between gap-2 border-b border-rule px-3.5 py-2.5">
         <div className="min-w-0">
-          <h3 className="m-0 text-[15px] leading-snug font-semibold break-words text-ink">
+          <h3 className="m-0 text-[13px] leading-snug font-semibold break-words text-ink">
             {task.title}
           </h3>
-          <span className="mt-1 block font-mono text-[12px] text-muted-foreground">{task.task_id}</span>
+          <span className="mt-0.5 block font-mono text-[11px] text-muted-foreground">
+            {task.task_id}
+          </span>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1">
           {task.tier === "high" || task.tier === "critical" ? (
             <Badge tone={task.tier === "critical" ? "danger" : "warning"}>
               {capitalize(task.tier)} risk
@@ -2343,7 +2443,7 @@ function PlanTaskCard({
           ) : null}
           <Button
             aria-label={`Edit ${task.title}`}
-            size="icon-sm"
+            size="icon-xs"
             title="Edit this step"
             type="button"
             variant="ghost"
@@ -2353,7 +2453,7 @@ function PlanTaskCard({
           </Button>
         </div>
       </div>
-      <dl className="mt-4 mb-0 grid gap-3">
+      <dl className="m-0 grid">
         <PlanFact label="Changes" value={task.scope.join(", ") || "No files"} mono />
         <PlanFact label="Reads" value={task.read_only_scope.join(", ") || "Nothing extra"} mono />
         <PlanFact label="After" value={after || "Can start immediately"} />
@@ -2378,10 +2478,12 @@ function PlanFact({
   mono?: boolean;
 }): React.JSX.Element {
   return (
-    <div className="grid grid-cols-[104px_minmax(0,1fr)] gap-4 border-t border-rule-soft pt-3">
-      <dt className="text-[13px] text-muted-foreground">{label}</dt>
+    <div className="grid grid-cols-[104px_minmax(0,1fr)] gap-3 border-b border-rule px-3.5 py-2 last:border-b-0">
+      <dt className="pt-px text-[11px] font-medium tracking-label text-muted-foreground uppercase">
+        {label}
+      </dt>
       <dd
-        className={`m-0 break-words text-ink ${mono ? "font-mono text-[12px] leading-relaxed" : "text-[13px] leading-snug"}`}
+        className={`m-0 break-words text-ink ${mono ? "font-mono text-[12px] leading-relaxed" : "text-[12px] leading-relaxed"}`}
       >
         {value}
       </dd>
@@ -2409,28 +2511,28 @@ function AmendmentDialog({
   const update = (field: keyof AmendmentDraft, next: string): void =>
     onChange({ ...value, draft: { ...value.draft, [field]: next } });
   const field =
-    "w-full rounded-md border border-rule bg-canvas px-2.5 py-2 font-mono text-[13px] font-normal text-ink";
+    "w-full rounded-md border border-rule bg-canvas px-2 py-1.5 font-mono text-[13px] font-normal text-ink transition-colors focus-visible:border-navy/45 focus-visible:bg-panel";
   return (
     <Dialog open onOpenChange={(next) => (next ? undefined : onClose())}>
-      <DialogContent className="w-[min(760px,calc(100vw-48px))] gap-0 p-0 sm:max-w-none">
+      <DialogContent className="w-[min(740px,calc(100vw-40px))] gap-0 p-0 sm:max-w-none">
         <form
           onSubmit={(event) => {
             event.preventDefault();
             void onSubmit();
           }}
         >
-          <DialogHeader className="border-b border-rule-soft px-6 py-5">
-            <DialogTitle className="text-[19px] font-semibold tracking-[-0.015em]">
+          <DialogHeader className="border-b border-rule px-5 py-4">
+            <DialogTitle>
               {value.kind === "add_task" ? "Add a step" : `Edit ${value.draft.taskId}`}
             </DialogTitle>
-            <DialogDescription className="text-[14px] leading-relaxed">
+            <DialogDescription>
               {value.kind === "edit_task"
                 ? "If this step has already started, Hivemind will refuse the edit and tell you the safer next move."
                 : "The step is queued for grounding and checks, then comes back to you as a new plan to review."}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid max-h-[60vh] grid-cols-2 gap-4 overflow-auto px-6 py-5">
-            <label className="grid gap-2 text-[13px] font-medium text-ink">
+          <div className="grid max-h-[60vh] grid-cols-2 gap-3.5 overflow-auto px-5 py-4">
+            <label className="grid gap-1.5 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
               Step ID
               <input
                 className={field}
@@ -2439,7 +2541,7 @@ function AmendmentDialog({
                 value={value.draft.taskId}
               />
             </label>
-            <label className="grid gap-2 text-[13px] font-medium text-ink">
+            <label className="grid gap-1.5 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
               Title
               <input
                 className={field}
@@ -2447,7 +2549,7 @@ function AmendmentDialog({
                 value={value.draft.title}
               />
             </label>
-            <label className="col-span-2 grid gap-2 text-[13px] font-medium text-ink">
+            <label className="col-span-2 grid gap-1.5 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
               Files it may change
               <textarea
                 className={field}
@@ -2457,7 +2559,7 @@ function AmendmentDialog({
                 value={value.draft.files}
               />
             </label>
-            <label className="col-span-2 grid gap-2 text-[13px] font-medium text-ink">
+            <label className="col-span-2 grid gap-1.5 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
               Files it may read
               <textarea
                 className={field}
@@ -2466,7 +2568,7 @@ function AmendmentDialog({
                 value={value.draft.readOnlyFiles}
               />
             </label>
-            <label className="grid gap-2 text-[13px] font-medium text-ink">
+            <label className="grid gap-1.5 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
               Runs after
               <input
                 className={field}
@@ -2475,7 +2577,7 @@ function AmendmentDialog({
                 value={value.draft.dependencies}
               />
             </label>
-            <label className="grid gap-2 text-[13px] font-medium text-ink">
+            <label className="grid gap-1.5 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
               Named check
               <input
                 className={field}
@@ -2484,7 +2586,7 @@ function AmendmentDialog({
                 value={value.draft.checks}
               />
             </label>
-            <label className="col-span-2 grid gap-2 text-[13px] font-medium text-ink">
+            <label className="col-span-2 grid gap-1.5 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
               Done when
               <textarea
                 className={field}
@@ -2493,7 +2595,7 @@ function AmendmentDialog({
                 value={value.draft.acceptance}
               />
             </label>
-            <label className="col-span-2 grid gap-2 text-[13px] font-medium text-ink">
+            <label className="col-span-2 grid gap-1.5 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
               Independent check
               <input
                 className={field}
@@ -2504,7 +2606,7 @@ function AmendmentDialog({
             </label>
             {value.kind === "add_task" ? (
               <>
-                <label className="grid gap-2 text-[13px] font-medium text-ink">
+                <label className="grid gap-1.5 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
                   Stage
                   <input
                     className={field}
@@ -2512,7 +2614,7 @@ function AmendmentDialog({
                     value={value.draft.groupId}
                   />
                 </label>
-                <label className="grid gap-2 text-[13px] font-medium text-ink">
+                <label className="grid gap-1.5 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
                   Order
                   <select
                     className={field}
@@ -2526,8 +2628,8 @@ function AmendmentDialog({
               </>
             ) : null}
           </div>
-          <DialogFooter className="items-center justify-between border-t border-rule-soft bg-canvas px-6 py-4 sm:justify-between">
-            <span className="text-[13px] text-muted-foreground">
+          <DialogFooter className="items-center justify-between border-t border-rule bg-canvas px-5 py-3 sm:justify-between">
+            <span className="text-[12px] text-muted-foreground">
               Current plan: {plan.tasks.length} {plan.tasks.length === 1 ? "step" : "steps"}
             </span>
             <Button disabled={busy} type="submit">
@@ -2565,7 +2667,7 @@ function TextActionDialog({
 }): React.JSX.Element {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[620px]">
+      <DialogContent className="sm:max-w-[600px]">
         <form
           className="grid gap-4"
           onSubmit={(event) => {
@@ -2574,20 +2676,20 @@ function TextActionDialog({
           }}
         >
           <DialogHeader>
-            <DialogTitle className="text-[19px] font-semibold tracking-[-0.015em] break-words">{title}</DialogTitle>
-            <DialogDescription className="text-[14px] leading-relaxed">
+            <DialogTitle className="break-words">{title}</DialogTitle>
+            <DialogDescription>
               {description}
             </DialogDescription>
           </DialogHeader>
           <textarea
             autoFocus
-            className="min-h-[150px] w-full resize-y rounded-md border border-rule bg-canvas px-3 py-2.5 text-[14px] leading-relaxed text-ink"
+            className="min-h-[150px] w-full resize-y rounded-md border border-rule bg-canvas px-2.5 py-2 text-[13px] leading-relaxed text-ink transition-colors focus-visible:border-navy/45 focus-visible:bg-panel"
             rows={6}
             value={value}
             onChange={(event) => onChange(event.target.value)}
           />
           <DialogFooter className="items-center justify-between sm:justify-between">
-            <span className="text-[13px] text-muted-foreground">{note}</span>
+            <span className="text-[12px] text-muted-foreground">{note}</span>
             <Button disabled={busy || value.trim() === ""} type="submit">
               {submitLabel}
             </Button>
@@ -2613,26 +2715,26 @@ function PatchDialog({
 }): React.JSX.Element {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="grid h-[min(720px,calc(100vh-48px))] w-[min(1000px,calc(100vw-48px))] grid-rows-[auto_minmax(0,1fr)] gap-0 p-0 sm:max-w-none">
-        <DialogHeader className="border-b border-rule-soft px-6 py-5">
-          <DialogTitle className="text-[19px] font-semibold tracking-[-0.015em]">
+      <DialogContent className="grid h-[min(720px,calc(100vh-40px))] w-[min(1000px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)] gap-0 p-0 sm:max-w-none">
+        <DialogHeader className="border-b border-rule px-5 py-4">
+          <DialogTitle>
             Every line that would land
           </DialogTitle>
-          <DialogDescription className="text-[14px] leading-relaxed">
+          <DialogDescription>
             Exactly what was checked. Nothing here has touched your branch yet.
           </DialogDescription>
         </DialogHeader>
         <ScrollArea className="min-h-0 bg-canvas">
           {loading ? (
-            <p className="m-0 px-6 py-5 text-[13px] text-muted-foreground">Loading the checked changes…</p>
+            <p className="m-0 px-5 py-4 text-[13px] text-muted-foreground">Loading the checked changes…</p>
           ) : null}
           {error ? (
-            <p className="m-0 px-6 py-5 text-[13px] text-clay" role="status">
+            <p className="m-0 px-5 py-4 text-[13px] text-clay" role="status">
               {error}
             </p>
           ) : null}
           {patch ? (
-            <pre className="m-0 px-6 py-5 font-mono text-[12px] leading-[1.7] break-words whitespace-pre-wrap text-ink">
+            <pre className="m-0 px-5 py-4 font-mono text-[12px] leading-[1.65] break-words whitespace-pre-wrap text-ink">
               {patch}
             </pre>
           ) : null}

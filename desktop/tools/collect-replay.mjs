@@ -359,6 +359,150 @@ function busiestPrefix(run) {
   return best.count >= 2 ? run.slice(0, best.index + 1) : null;
 }
 
+/* The one state a captured trail cannot project: ready to ship.
+ *
+ * `inspectLatestAdoptionReadiness` compares the verified set against the live
+ * repository, and a scratch repository is not the repository the run happened
+ * in -- so a trail cut just before `adoption.completed` projects as "the checks
+ * are stale" rather than "ready". The live run showed the ship bar; the replay
+ * of the same trail cannot.
+ *
+ * So the queue item is rebuilt from the run's own `adoption.reviewed` event,
+ * field for field as `buildQueues` builds it. Everything shown -- the tasks,
+ * the files, the branch, the base commit, the identifiers -- is read out of a
+ * durable event this run really appended. What is synthesized is the *state*:
+ * that the readiness check would say "ready". Per the standing rule, that is
+ * marked here, in the scenario's `source`, and in the DESIGN-NOTES.
+ */
+function shipReadyCut(run) {
+  const completedAt = run.findIndex((event) => event.type === "adoption.completed");
+  if (completedAt < 1) return null;
+  const reviewed = [...run.slice(0, completedAt)]
+    .reverse()
+    .find((event) => event.type === "adoption.reviewed");
+  if (reviewed === undefined) return null;
+  const data = reviewed.data;
+  if (
+    typeof data.pending_adoption_id !== "string" ||
+    typeof data.verification_id !== "string" ||
+    typeof data.expected_base_head !== "string" ||
+    typeof data.expected_state_hash !== "string" ||
+    !Array.isArray(data.task_ids) ||
+    !Array.isArray(data.changed_files)
+  ) {
+    return null;
+  }
+  const baseBranch = typeof data.base_branch === "string" ? data.base_branch : "the project branch";
+  const item = {
+    id: `adoption:${data.verification_id}:${data.pending_adoption_id}`,
+    kind: "adoption_ready",
+    title: "Confirm this exact change set",
+    detail: `${data.task_ids.join(" + ")} / ${data.changed_files.length} files / base ${data.expected_base_head.slice(0, 8)}. This one action moves the verified set onto ${baseBranch}.`,
+    created_at: reviewed.ts,
+    task_id: null,
+    action: {
+      type: "adoption.execute",
+      payload: {
+        pending_adoption_id: data.pending_adoption_id,
+        verification_id: data.verification_id,
+        expected_base_head: data.expected_base_head,
+        expected_state_hash: data.expected_state_hash
+      }
+    },
+    change_set: {
+      verification_id: data.verification_id,
+      base_branch: baseBranch,
+      task_ids: [...data.task_ids],
+      changed_files: [...data.changed_files]
+    }
+  };
+  return { events: run.slice(0, completedAt), item };
+}
+
+/* The one review: a plan awaiting ratification, with the spec half beside it.
+ *
+ * No captured trail holds this state either -- the real run's plan was ratified
+ * during it, so every trail projects with `plan_review: null`. What is real
+ * here is everything on the screen: the plan is the run's own ratified plan,
+ * and the spec is a REAL drafted spec from the drafting experiment
+ * (`docs/evidence/spec-drafting-vacuity.json`), with its real open question and
+ * its real suggested non-goal. What is synthesized is one boolean -- that the
+ * plan is pending rather than approved. Marked here and in the scenario id.
+ *
+ * `assumptions` is empty because that experiment predates the drafter writing
+ * them; an invented assumption would be exactly the theatre the experiment was
+ * run to detect.
+ */
+function specReviewFromDraft(result) {
+  const draft = result.draft;
+  if (draft === undefined) return null;
+  return {
+    spec_id: "S-001",
+    title: draft.title ?? "",
+    authorship: "drafted",
+    status: "draft",
+    goal: draft.goal ?? "",
+    drafted_non_goals: [...(draft.non_goals ?? [])],
+    acceptance: [...(draft.acceptance ?? [])],
+    open_questions: [...(draft.open_questions ?? [])],
+    assumptions: [],
+    asked_for: result.prompt ?? null
+  };
+}
+
+async function draftedSpecs() {
+  const file = path.join(evidenceRoot, "spec-drafting-vacuity.json");
+  let parsed;
+  try {
+    parsed = JSON.parse(await readFile(file, "utf8"));
+  } catch {
+    return [];
+  }
+  const wanted = [
+    ["blocked", (entry) => (entry.draft?.open_questions ?? []).length > 0],
+    ["ready", (entry) => (entry.draft?.open_questions ?? []).length === 0]
+  ];
+  const found = [];
+  for (const [suffix, matches] of wanted) {
+    const entry = (parsed.results ?? []).find(matches);
+    const review = entry === undefined ? null : specReviewFromDraft(entry);
+    if (review !== null) found.push({ suffix, review });
+  }
+  return found;
+}
+
+/* A project that has done nothing: no tasks, no plan, nothing in the queue.
+ *
+ * Every captured trail starts after somebody typed a prompt, so the first thing
+ * a person sees has never had a scenario. This is the same emptying replay.html
+ * already does before a playback's first captured frame -- a real projection
+ * with its run-shaped fields cleared -- rather than a hand-written inspection,
+ * so the settings, the ceilings and the shape of the object stay real.
+ */
+function emptyProjectScenario(scenario) {
+  if (scenario.inspection === null) return null;
+  return {
+    id: "empty-project",
+    source: `${scenario.source} (run-shaped fields cleared: a project that has done nothing)`,
+    events: [],
+    span_ms: 0,
+    inspection: {
+      ...scenario.inspection,
+      tasks: [],
+      execution_groups: [],
+      task_titles: {},
+      plan_review: null,
+      current_plan: null,
+      manager_session: null,
+      needs_you: [],
+      later: [],
+      active_spec_id: null,
+      active_spec_title: null
+    },
+    inspection_error: null
+  };
+}
+
 const files = await collectEvidenceFiles();
 const scenarios = [];
 for (const file of files) {
@@ -408,6 +552,31 @@ for (const file of files) {
       );
     }
 
+    const ship = shipReadyCut(run);
+    if (ship !== null) {
+      const shipProjected = await inspect(ship.events, file);
+      if (shipProjected.ok) {
+        /* The stale-checks item the scratch repository produces is the same
+           artefact, from the other side: it is a fact about the replay, not
+           about the run, whose trail goes integration.passed -> reviewed ->
+           completed with no rerun in between. */
+        const rest = (shipProjected.inspection.needs_you ?? []).filter(
+          (item) => item.kind !== "reverification_required"
+        );
+        scenarios.push({
+          id: `${id}@ship`,
+          source: `${relative} (cut before adoption; readiness rebuilt from adoption.reviewed)`,
+          events: ship.events,
+          span_ms: Date.parse(ship.events.at(-1).ts) - Date.parse(ship.events[0].ts),
+          inspection: { ...shipProjected.inspection, needs_you: [ship.item, ...rest] },
+          inspection_error: null
+        });
+        console.log(
+          `${`${id}@ship`.padEnd(34)} ${String(ship.events.length).padStart(3)} events  projected + readiness rebuilt`
+        );
+      }
+    }
+
     const midrun = busiestPrefix(run);
     if (midrun !== null && midrun.length < run.length) {
       const midProjected = await inspect(midrun, file);
@@ -426,6 +595,38 @@ for (const file of files) {
       );
     }
   }
+}
+
+/* The review pair, hung off the richest run that actually carries a plan. */
+const planned = scenarios.find(
+  (scenario) => scenario.inspection?.current_plan !== null && scenario.inspection !== null
+);
+if (planned !== undefined) {
+  for (const { suffix, review } of await draftedSpecs()) {
+    scenarios.push({
+      id: `${planned.id}@review-${suffix}`,
+      source: `${planned.source} + docs/evidence/spec-drafting-vacuity.json (real plan, real drafted spec; the pending state is synthesized)`,
+      events: planned.events,
+      span_ms: planned.span_ms,
+      inspection: {
+        ...planned.inspection,
+        plan_review: planned.inspection.current_plan,
+        needs_you: []
+      },
+      inspection_error: null,
+      spec_review: review
+    });
+    console.log(
+      `${`${planned.id}@review-${suffix}`.padEnd(34)}   real plan + real drafted spec, pending synthesized`
+    );
+  }
+}
+
+const richest = scenarios.find((scenario) => scenario.inspection !== null);
+const empty = richest === undefined ? null : emptyProjectScenario(richest);
+if (empty !== null) {
+  scenarios.push(empty);
+  console.log(`${empty.id.padEnd(34)}   0 events  cleared from ${richest.id}`);
 }
 
 scenarios.sort((left, right) => right.events.length - left.events.length);

@@ -41,11 +41,11 @@ export function AgentSetupDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="grid h-[min(820px,calc(100vh-48px))] w-[min(880px,calc(100vw-48px))] grid-rows-[auto_minmax(0,1fr)] gap-0 p-0 sm:max-w-none">
-        <DialogHeader className="border-b border-rule-soft px-8 py-6">
-          <DialogTitle className="text-[24px] leading-tight font-semibold tracking-[-0.02em]">
+        <DialogHeader className="border-b border-rule px-5 py-4">
+          <DialogTitle className="text-[20px] leading-tight font-semibold tracking-tighter">
             Which coding agent do you have?
           </DialogTitle>
-          <DialogDescription className="max-w-[640px] text-[14px] leading-relaxed">
+          <DialogDescription className="max-w-[640px]">
             Hivemind runs the agent you already pay for. It never asks for your
             API keys — it starts the same command-line tool you use yourself.
           </DialogDescription>
@@ -67,11 +67,11 @@ export function AgentSetupDialog({
             {provider.status === "supported" ? (
               <SupportedProvider provider={provider} />
             ) : (
-              <section className="rounded-lg border border-amber/25 bg-amber-wash p-5">
+              <section className="rounded-md border border-amber/25 border-l-2 border-l-amber bg-amber-wash p-4">
                 <div className="flex items-start gap-3">
                   <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber" />
                   <div className="min-w-0">
-                    <strong className="block text-[14px] font-semibold text-ink">
+                    <strong className="block text-[13px] font-semibold text-ink">
                       {provider.label} is not something you can pick yet
                     </strong>
                     <p className="mt-1.5 mb-0 text-[13px] leading-relaxed text-muted-foreground">
@@ -100,14 +100,14 @@ function ProviderCard({
   return (
     <button
       aria-pressed={selected}
-      className={`rounded-lg border p-4 text-left transition-colors ${
+      className={`cursor-pointer rounded-md border p-3.5 text-left transition-colors ${
         selected ? "border-navy bg-navy-wash" : "border-rule bg-panel hover:border-navy/40"
       }`}
       type="button"
       onClick={onSelect}
     >
       <div className="flex items-baseline justify-between gap-3">
-        <strong className="text-[15px] font-semibold text-ink">{provider.label}</strong>
+        <strong className="text-[14px] font-semibold text-ink">{provider.label}</strong>
         <span
           className={`text-[12px] font-medium ${
             provider.status === "supported" ? "text-navy" : "text-amber"
@@ -127,7 +127,7 @@ function SupportedProvider({ provider }: { provider: ProviderOption }): React.JS
   return (
     <>
       <section>
-        <h3 className="m-0 text-[14px] font-semibold text-ink">
+        <h3 className="m-0 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
           What Hivemind requires of it
         </h3>
         <p className="mt-1 mb-3 text-[13px] leading-relaxed text-muted-foreground">
@@ -135,7 +135,7 @@ function SupportedProvider({ provider }: { provider: ProviderOption }): React.JS
           that carries bypass flags before it ever starts the agent; the rest are
           set by the file below.
         </p>
-        <ul className="m-0 grid list-none gap-px overflow-hidden rounded-lg border border-rule bg-rule p-0">
+        <ul className="m-0 grid list-none gap-px overflow-hidden rounded-md border border-rule bg-rule p-0">
           {CAPABILITIES.map((capability) => {
             const setting = provider.capabilities[capability.id];
             return (
@@ -161,7 +161,7 @@ function SupportedProvider({ provider }: { provider: ProviderOption }): React.JS
       </section>
 
       <section>
-        <h3 className="m-0 text-[14px] font-semibold text-ink">
+        <h3 className="m-0 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
           Create these two files in your project
         </h3>
         <p className="mt-1 mb-3 text-[13px] leading-relaxed text-muted-foreground">
@@ -181,7 +181,7 @@ function SupportedProvider({ provider }: { provider: ProviderOption }): React.JS
       </section>
 
       <section>
-        <h3 className="m-0 text-[14px] font-semibold text-ink">
+        <h3 className="m-0 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
           Then add these cost defaults
         </h3>
         <p className="mt-1 mb-3 max-w-[640px] text-[13px] leading-relaxed text-muted-foreground">
@@ -212,8 +212,8 @@ function CopyBlock({
 }): React.JSX.Element {
   const [copied, setCopied] = useState(false);
   return (
-    <div className="overflow-hidden rounded-lg border border-rule bg-panel">
-      <div className="flex items-center gap-3 border-b border-rule-soft px-4 py-2.5">
+    <div className="overflow-hidden rounded-md border border-rule bg-panel">
+      <div className="flex items-center gap-3 border-b border-rule bg-canvas px-3.5 py-2">
         <div className="min-w-0 flex-1">
           <code className="block font-mono text-[12px] break-all text-ink">{label}</code>
           <span className="mt-0.5 block text-[12px] text-muted-foreground">{note}</span>

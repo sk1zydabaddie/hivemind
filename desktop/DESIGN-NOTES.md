@@ -1041,6 +1041,33 @@ its test move together.
 If a Core test needs to know a control exists, it should match the condition and
 the handler, never the words on the button.
 
+### Two states the corpus could not draw, and now can
+
+Both were added to `tools/collect-replay.mjs` during the visual pass, because a
+surface the brief asked to be judged could not be rendered from real data at
+all. Both are marked in the scenario's own `source` field.
+
+**`<id>@ship` — ready to ship.** `inspectLatestAdoptionReadiness` compares the
+verified set against the *live* repository, and a scratch repository is not the
+repository the run happened in, so a trail cut just before `adoption.completed`
+projects as "the checks are stale" rather than "ready". The live run showed the
+ship bar; the replay of the same trail could not. The queue item is now rebuilt
+from the run's own `adoption.reviewed` event, field for field as `buildQueues`
+builds it — real tasks, real files, real branch, real base commit. What is
+synthesized is the *state*, that readiness would say ready.
+
+**`<id>@review-blocked` / `@review-ready` — the one review.** No trail holds a
+plan *awaiting* ratification either. These pair the run's real plan with a real
+drafted spec from `docs/evidence/spec-drafting-vacuity.json`, including its real
+blocking question and its real suggested non-goal. One boolean is synthesized:
+pending rather than approved. `assumptions` is left empty because that
+experiment predates the drafter writing them, and an invented assumption would
+be exactly the theatre the experiment was run to detect.
+
+**`empty-project`.** A real projection with its run-shaped fields cleared — the
+same emptying `replay.html` already does before a playback's first frame. The
+first thing anyone sees had never had a scenario.
+
 ### Verification debt
 
 Every design judgement through five passes came from a fixture harness that
@@ -1150,6 +1177,171 @@ acceptance criterion names, and marks it.
 Tailwind v4 (CSS-first, no config file) with the shadcn token set mapped onto
 the logo palette in `src/styles.css`, so `npx shadcn add <x>` lands on the
 palette with no edits.
+
+### The design system, stated once — 2026-08-11
+
+The whole system, so a future surface has something to conform *to* rather than
+a set of examples to imitate. Everything below is enforced by tokens or by a
+shared primitive; nothing is a convention held in someone's head.
+
+**Radius.** 2px marks · 3px chips, inputs and keycaps · 4px controls and cards ·
+5px panels · 6px overlays. Nothing above 6, and nothing is a pill. The scale
+lives in `@theme inline` as `--radius-xs` … `--radius-3xl`, so `rounded-md` means
+4px everywhere including in a component the CLI generates.
+
+**Elevation.** Two shadows, and both belong to things that genuinely float
+*above* the app: `--shadow-raised` (popovers, tooltips) and `--shadow-overlay`
+(dialogs). **There is deliberately no `shadow-panel`.** A panel is separated by
+its 1px rule and the canvas behind it. Deleting the token rather than agreeing
+not to use it is what makes this hold: reaching for elevation in a layout now
+requires inventing a shadow, which is visible in review.
+
+**Rules.** One rule colour, `--rule`. There used to be a second lighter
+`--rule-soft` for "inner" borders, which meant every surface had to decide which
+weight it was — and they disagreed. It is deleted.
+
+**Type.** 10px (segment names only) · 11px labels, counts, metadata · 12px
+secondary · 13px body and controls · 14px primary rows and prompts · 15px panel
+headlines · 17/20/22px dialog and surface headlines. Three tracking values are
+tokens — `tracking-label` (0.07em), `tracking-tight`, `tracking-tighter` — so the
+21 hand-written `tracking-[-0.015em]`-style values are gone.
+
+**The label voice.** 11px, medium, `tracking-label`, uppercase, muted. Panel
+headers, lane headings, field names. If a piece of text is a *heading* rather
+than a label it is sentence case at 13px or larger. Setting the run's subject —
+a sentence somebody typed — in the label voice shouted it, and that was caught
+by looking at it.
+
+**Figures.** Mono, and tabular by default: `code, pre, kbd, time, .font-mono`
+carry `font-variant-numeric: tabular-nums` in the base layer, because every
+figure in this app is read against another one. Hairlines separate readings on
+an instrument line, not middots — a middot at 12px reads as punctuation inside
+the number.
+
+**Focus.** One treatment, declared once on `:focus-visible`: a 2px navy outline,
+1px clear. No component brings its own ring. The one exception is the section
+tab, which insets it, because a full-height tab outlined outside itself reads as
+a floating box.
+
+**Icons.** **lucide-react, and nothing else.** Its default stroke of 2 is drawn
+for 20–24px icons and reads a weight too heavy beside 13px Geist, so
+`svg.lucide { stroke-width: 1.75 }` normalises it once in the base layer. That
+rule is the only hand-written rule in the app and it is deliberately a
+normalisation of a third-party default, not a rule about a surface. It also
+enforces the set: an icon from another library carries no `.lucide` class, so it
+renders at the wrong weight and shows itself.
+
+**The shared primitives.** `src/components/ui/panel.tsx` — `Panel`,
+`PanelHeader`, `PanelLabel`, `PanelCount`. A panel used to be a class string
+repeated in three files, which is three chances to disagree, and they did: the
+Work rail, the Project record and the plan review each had their own padding,
+header height and label style.
+
+### What 21st.dev gave, and what it did not
+
+Used as a source of proven structure, never as a style donor. Every component
+was rewritten onto the tokens above before it shipped.
+
+**Taken: `@originui/command`.** Two shapes this palette did not have — the search
+row as a ruled header with a leading icon, and `CommandShortcut` as a real
+`<kbd>` pushed to the right of a row, so the palette teaches its own shortcuts.
+What had to be conformed:
+
+| Arrived as | Shipped as |
+| --- | --- |
+| `@radix-ui/react-icons` magnifier — **a second icon set** | lucide's `Search` |
+| `rounded-lg`, `shadow-black/5` | 4px/6px corners, one rule, no shadow |
+| `ring-[3px]` focus | the one navy `:focus-visible` outline |
+| `opacity-60` on icons | `text-muted-foreground` |
+| 14px rows, `tracking-widest` shortcut text | 13px rows, mono keycap |
+
+**Rejected: every tabs component in the catalogue**, including `@originui/tabs`.
+They are all the lifted-pill shape this app already had, so taking one would
+have changed nothing except which file the opinion came from. The section tabs
+are hand-built as a navy underline on the chrome's own edge — four utilities,
+and the toolbar reads as chrome rather than as a widget sitting on chrome. This
+is the rule working as intended: a hand-built element that matches beats an
+imported one that does not.
+
+**Not searched for at all:** the agent tree, the four-phase task cards, the plan
+review and the ship confirmation. Those are the product. No registry has them,
+and a component that nearly fits one of them would be worse than nothing.
+
+### What the audit had to fix
+
+Run over every surface at the end of the pass, looking for anything that came
+from somewhere else.
+
+- **`shadow-panel` on 14 elements**, including every panel, the two header
+  buttons and the plan cards. Removed with the token.
+- **`--rule-soft` as a second border weight** in 9 places. Deleted.
+- **Three `rounded-full` pills**: the connection dot, and both halves of the
+  routing weight bar. The dot is a 6px square now, matching the task marks; the
+  bar is a 3px square gauge, matching the spend meter.
+- **Radii spread across 6, 8, 10 and 14px.** Now 2/3/4/5/6.
+- **Two segmented controls with different mechanics** — the Story/Map toggle and
+  the Highlights/Everything toggle were a tinted tray with a raised active chip;
+  they are now one bordered, divided group with a navy-wash active cell.
+- **Panel headers at three different heights** with three label styles. One
+  `PanelHeader`, 36px.
+- **`text-sm` (14px) inside the dropdown menu** against 13px everywhere else,
+  plus Tailwind's default `shadow-md`/`shadow-lg`, plus 16px icons.
+- **Two dialog header paddings** (`px-8 py-6` and `px-6 py-5`) across four
+  dialogs. One.
+- **A leading hairline** on the run header's instrument line whenever the first
+  reading was absent — each reading carried its own separator. `MetaLine` now
+  collects what is present and interleaves after.
+- **The task row's phase gauge sat directly under the title**, where it read as
+  an underline of the title rather than as a gauge. It is at the foot of the row.
+- **The map card said its phase twice** — once in the named segments, once in a
+  summary line underneath. The line is gone and the count moved to the footer.
+
+### The three surfaces that changed shape, and why
+
+Structure is unchanged; these are the same components rendering the same data.
+
+**The run thread is no longer a chat.** The request was a right-aligned bubble,
+which put the one thing the person actually wrote on the far right of a 900px
+column and left the left half of the panel empty. It is a quoted block on the
+same left edge as everything else, marked by a navy rule. Milestones are a log:
+a fixed mono time gutter, a continuous hairline, a square node. The Work tab is
+a record of a run, and it should not have looked like a messaging app.
+
+**The idle board is no longer a hero.** A 32px headline broken across two lines
+over a paragraph is a marketing page. It is 22px, and the product's whole shape
+is stated as two numbered steps against a rule — which is more information in
+less space, and is the thing a first-time user actually needs.
+
+**Project runs are a record, not cards.** Rows are flush to the panel, separated
+by one rule, with the date fixed in a mono gutter so a stack of runs reads down
+a single column.
+
+### Deliberate exceptions
+
+- **`ui/empty.tsx` stays verbatim and stays centred.** It is the standing proof
+  that a CLI-generated component lands styled with no manual conversion, so
+  editing it would destroy the thing it exists to prove. Its centred block is
+  also the right shape for a single empty state inside a panel — the ban on
+  centred symmetry is about page layouts, not about one block.
+- **The brand mark is drawn, not iconographic.** Two interlocking hexagons in
+  the two identity colours, reduced from `Branding/Icon Only White Backround.png`.
+  It replaced four rounded squares in a grid, which was both generic and,
+  literally, four cards in a grid.
+
+### A defect found while reading the tests, not fixed here
+
+`test/design-tokens.test.ts` asserts
+
+```js
+expect(styles.indexOf("@layer theme, base, legacy, components, utilities;"))
+  .toBeLessThan(styles.indexOf('@import "tailwindcss"'));
+```
+
+The legacy layer was removed from `styles.css` when `legacy.css` was deleted, so
+`indexOf` returns `-1`, and `-1` is less than any real index. **The assertion
+passes because the string is absent.** It has been vacuous since that deletion.
+`thin-client.test.ts` asserts the correct current string, so the layer order is
+still covered — but this line is a test that can no longer fail.
 
 ### The token contract, and why it has a test
 

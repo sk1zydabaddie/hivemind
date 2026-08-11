@@ -23,13 +23,19 @@ export function TabsList({
   return (
     <TabsPrimitive.List
       data-slot="tabs-list"
-      className={cn("flex items-center gap-1", className)}
+      className={cn("flex h-full items-stretch", className)}
       {...props}
     />
   );
 }
 
-/* The active section lifts off the canvas onto a panel of its own. */
+/* Sections are marked by a navy rule on the chrome's own edge, not by a raised
+ * pill. 21st.dev's tabs (originui, and every other one in the catalogue) are the
+ * same lifted-pill shape this app already had -- taking one would have changed
+ * nothing except which file the opinion came from, so the underline is
+ * hand-built. It costs four utilities and it makes the toolbar read as chrome
+ * rather than as a widget sitting on top of chrome.
+ */
 export function TabsTrigger({
   className,
   ...props
@@ -38,10 +44,13 @@ export function TabsTrigger({
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        "inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-transparent bg-transparent px-3 text-[13px] font-medium text-muted-foreground transition-colors",
+        /* The focus ring is inset: a full-height tab outlined one pixel clear
+           of itself reads as a floating box rather than as a focused tab. */
+        "relative inline-flex cursor-pointer items-center gap-1.5 border-0 bg-transparent px-3 text-[13px] font-medium text-muted-foreground transition-colors focus-visible:outline-offset-[-3px]",
+        "after:absolute after:inset-x-0 after:-bottom-px after:h-[2px] after:bg-transparent after:transition-colors",
         "hover:text-ink",
-        "data-[state=active]:border-rule data-[state=active]:bg-panel data-[state=active]:text-ink data-[state=active]:shadow-panel",
-        "[&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground data-[state=active]:[&>svg]:text-navy",
+        "data-[state=active]:text-ink data-[state=active]:after:bg-navy",
+        "[&>svg]:size-3.5 [&>svg]:shrink-0",
         className
       )}
       {...props}

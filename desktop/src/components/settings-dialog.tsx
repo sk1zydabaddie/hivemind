@@ -62,11 +62,11 @@ export function SettingsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="grid h-[min(760px,calc(100vh-48px))] w-[min(760px,calc(100vw-48px))] grid-rows-[auto_minmax(0,1fr)] gap-0 p-0 sm:max-w-none">
-        <DialogHeader className="border-b border-rule-soft px-8 py-6">
-          <DialogTitle className="text-[24px] leading-tight font-semibold tracking-[-0.02em]">
+        <DialogHeader className="border-b border-rule px-5 py-4">
+          <DialogTitle className="text-[20px] leading-tight font-semibold tracking-tighter">
             Settings
           </DialogTitle>
-          <DialogDescription className="text-[14px] leading-relaxed">
+          <DialogDescription>
             Settings belong to the project you have open, not to the app.
           </DialogDescription>
         </DialogHeader>
@@ -172,8 +172,8 @@ function Section({
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <section className="rounded-lg border border-rule bg-panel p-5">
-      <h3 className="m-0 mb-3 text-[14px] font-semibold text-ink">{title}</h3>
+    <section className="rounded-md border border-rule bg-panel p-4">
+      <h3 className="m-0 mb-2.5 text-[11px] font-medium tracking-label text-muted-foreground uppercase">{title}</h3>
       {children}
     </section>
   );
@@ -181,7 +181,7 @@ function Section({
 
 function Fact({ label, value }: { label: string; value: string }): React.JSX.Element {
   return (
-    <div className="rounded-md bg-canvas px-3 py-2.5">
+    <div className="rounded-sm border border-rule bg-canvas px-2.5 py-2">
       <dt className="text-[12px] text-muted-foreground">{label}</dt>
       <dd className="m-0 mt-0.5 font-mono text-[13px] text-ink">{value}</dd>
     </div>

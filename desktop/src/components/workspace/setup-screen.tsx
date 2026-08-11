@@ -33,30 +33,30 @@ export function SetupScreen({
 
   return (
     <ScrollArea className="min-h-0">
-      <div className="px-8 py-10">
+      <div className="px-6 py-8">
         <div className="max-w-[680px]">
           {connecting ? (
-            <p className="m-0 flex items-center gap-2 text-[14px] text-muted-foreground">
+            <p className="m-0 flex items-center gap-2 text-[13px] text-muted-foreground">
               <Loader aria-hidden="true" className="size-4 animate-spin text-navy" />
               Opening {visiblePath}…
             </p>
           ) : (
             <>
-              <h2 className="m-0 text-[32px] leading-[1.15] font-semibold tracking-[-0.025em] text-ink">
+              <h2 className="m-0 text-[22px] leading-tight font-semibold tracking-tighter text-ink">
                 Set up this project.
               </h2>
-              <p className="mt-4 mb-0 max-w-[560px] text-[15px] leading-[1.6] text-muted-foreground">
+              <p className="mt-2.5 mb-0 max-w-[520px] text-[13px] leading-relaxed text-muted-foreground">
                 Hivemind builds inside one project folder, using the coding agent
                 you already pay for. Three things need to be in place before the
                 first run.
               </p>
 
               {problem === null ? null : (
-                <section className="mt-7 rounded-lg border border-amber/25 bg-amber-wash px-5 py-4">
-                  <strong className="block text-[14px] font-semibold text-ink">
+                <section className="mt-6 rounded-md border border-amber/25 border-l-2 border-l-amber bg-amber-wash px-4 py-3">
+                  <strong className="block text-[13px] font-semibold text-ink">
                     {problem.title}
                   </strong>
-                  <p className="mt-1 mb-0 text-[13px] leading-relaxed text-muted-foreground">
+                  <p className="mt-1 mb-0 text-[12px] leading-relaxed text-muted-foreground">
                     {problem.detail}
                   </p>
                   {problem.action === "initialize" ? (
@@ -70,7 +70,7 @@ export function SetupScreen({
                     </Button>
                   ) : null}
                   {problem.command === null ? null : (
-                    <code className="mt-3 block rounded-md bg-panel/70 px-3 py-2 font-mono text-[12px] break-all text-ink">
+                    <code className="mt-2.5 block rounded-sm border border-amber/25 bg-panel/70 px-2.5 py-1.5 font-mono text-[12px] break-all text-ink">
                       {problem.command}
                     </code>
                   )}
@@ -87,7 +87,7 @@ export function SetupScreen({
                 </section>
               )}
 
-              <ol className="mt-8 mb-0 grid list-none gap-px overflow-hidden rounded-lg border border-rule bg-rule p-0">
+              <ol className="mt-7 mb-0 grid list-none gap-px overflow-hidden rounded-md border border-rule bg-rule p-0">
                 <SetupStep
                   action={
                     <Button size="sm" type="button" variant="outline" onClick={onChooseProject}>
@@ -131,7 +131,7 @@ export function SetupScreen({
                   now writes the agent profiles and the cost tiers, so the old
                   line -- "Hivemind cannot write them for you yet" -- was telling
                   a new person to go and paste files it had already written. */}
-              <p className="mt-6 mb-0 max-w-[560px] text-[13px] leading-relaxed text-muted-foreground">
+              <p className="mt-5 mb-0 max-w-[560px] text-[12px] leading-relaxed text-muted-foreground">
                 Setting up the folder does all three. Open them if you want to
                 change what Hivemind chose; you do not have to.
               </p>
@@ -155,16 +155,16 @@ function SetupStep({
   action: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <li className="flex items-center gap-4 bg-panel px-5 py-4">
+    <li className="flex items-center gap-3 bg-panel px-4 py-3">
       <span
         aria-hidden="true"
-        className="grid size-6 shrink-0 place-items-center rounded-md bg-canvas font-mono text-[12px] text-muted-foreground"
+        className="grid size-5 shrink-0 place-items-center rounded-xs bg-canvas font-mono text-[11px] text-muted-foreground"
       >
         {index}
       </span>
       <div className="min-w-0 flex-1">
-        <strong className="block text-[14px] font-medium text-ink">{title}</strong>
-        <span className="mt-0.5 block text-[13px] leading-relaxed break-words text-muted-foreground">
+        <strong className="block text-[13px] font-medium text-ink">{title}</strong>
+        <span className="mt-0.5 block text-[12px] leading-relaxed break-words text-muted-foreground">
           {detail}
         </span>
       </div>

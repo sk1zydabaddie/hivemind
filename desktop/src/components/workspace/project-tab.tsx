@@ -21,6 +21,12 @@ import {
   EmptyMedia,
   EmptyTitle
 } from "@/components/ui/empty";
+import {
+  Panel,
+  PanelCount,
+  PanelHeader,
+  PanelLabel
+} from "@/components/ui/panel";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { plainActionError } from "@/lib/plain-language";
 import type {
@@ -104,22 +110,21 @@ export function ProjectTab({
 
   return (
     <div
-      className={`grid h-full min-h-0 overflow-hidden px-4 pb-4 ${
+      className={`grid h-full min-h-0 overflow-hidden p-3 ${
         bare ? "content-start grid-rows-[auto_auto]" : "grid-rows-[auto_minmax(0,1fr)]"
       }`}
     >
-      <header className="flex shrink-0 flex-wrap items-end justify-between gap-4 pt-1 pb-4">
+      <header className="flex shrink-0 flex-wrap items-end justify-between gap-4 pb-3">
         <div className="min-w-0">
-          <h2 className="m-0 text-[20px] leading-tight font-semibold tracking-[-0.02em] text-ink">
+          <h2 className="m-0 text-[15px] leading-tight font-semibold tracking-tight text-ink">
             What {projectName} has done
           </h2>
-          <p className="mt-1 mb-0 max-w-[560px] text-[13px] leading-relaxed text-muted-foreground">
+          <p className="mt-1 mb-0 max-w-[560px] text-[12px] leading-relaxed text-muted-foreground">
             Every run this project has finished, and everything it has been told
             to remember. Nothing here changes your code.
           </p>
         </div>
         <Button
-          className="bg-panel shadow-panel"
           disabled={trailLoading}
           type="button"
           variant="outline"
@@ -133,8 +138,8 @@ export function ProjectTab({
       {bare ? (
         /* Nothing to show is not a reason to hold the whole viewport open. The
            panel hugs its one sentence and the canvas carries the rest. */
-        <section className="self-start rounded-lg border border-rule bg-panel py-14 shadow-panel">
-          <Empty className="mx-auto max-w-[560px] p-0 md:p-0">
+        <section className="self-start rounded-lg border border-rule bg-panel py-12">
+          <Empty className="mx-auto max-w-[520px] p-0 md:p-0">
             <EmptyHeader>
               <EmptyMedia variant="icon">
                 <ScrollText aria-hidden="true" />
@@ -149,54 +154,50 @@ export function ProjectTab({
           </Empty>
         </section>
       ) : (
-        <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_340px] gap-4 overflow-hidden">
-          <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-lg border border-rule bg-panel shadow-panel">
-            <header className="flex shrink-0 items-baseline justify-between gap-2 border-b border-rule-soft px-5 py-3">
-              <h3 className="m-0 text-[14px] font-semibold text-ink">Past runs</h3>
-              <span className="font-mono text-[12px] text-muted-foreground">{runs.length}</span>
-            </header>
+        <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_340px] gap-3 overflow-hidden">
+          <Panel>
+            <PanelHeader className="bg-panel">
+              <PanelLabel className="text-ink">Past runs</PanelLabel>
+              <PanelCount>{runs.length}</PanelCount>
+            </PanelHeader>
             <ScrollArea className="min-h-0">
-              <div className="grid gap-3 px-5 py-4">
-                {runs.length === 0 ? (
-                  <p className="m-0 text-[13px] leading-relaxed text-muted-foreground">
-                    No run has finished in this project yet.
-                  </p>
-                ) : (
-                  runs.map((run) => (
+              {runs.length === 0 ? (
+                <p className="m-0 px-4 py-5 text-[13px] leading-relaxed text-muted-foreground">
+                  No run has finished in this project yet.
+                </p>
+              ) : (
+                <div className="grid">
+                  {runs.map((run) => (
                     <RunCard
                       key={run.session_id}
                       run={run}
                       taskTitles={inspection?.task_titles ?? {}}
                     />
-                  ))
-                )}
-              </div>
+                  ))}
+                </div>
+              )}
             </ScrollArea>
-          </section>
+          </Panel>
 
-          <aside className="grid min-h-0 grid-rows-[minmax(0,1fr)] gap-4 overflow-hidden">
-            <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-lg border border-rule bg-panel shadow-panel">
-              <header className="flex shrink-0 items-baseline justify-between gap-2 border-b border-rule-soft px-4 py-3">
-                <h3 className="m-0 text-[14px] font-semibold text-ink">
-                  What it has learned
-                </h3>
-                <span className="font-mono text-[12px] text-muted-foreground">
-                  {learned.length}
-                </span>
-              </header>
+          <aside className="grid min-h-0 grid-rows-[minmax(0,1fr)] gap-3 overflow-hidden">
+            <Panel>
+              <PanelHeader className="bg-panel">
+                <PanelLabel className="text-ink">What it has learned</PanelLabel>
+                <PanelCount>{learned.length}</PanelCount>
+              </PanelHeader>
               <ScrollArea className="min-h-0">
-                <div className="grid gap-3 px-4 py-4">
+                <div className="grid gap-2.5 px-3 py-3">
                   {learned.length === 0 && waiting.length === 0 ? (
-                    <p className="m-0 text-[13px] leading-relaxed text-muted-foreground">
+                    <p className="m-0 text-[12px] leading-relaxed text-muted-foreground">
                       Nothing has been added to this project's standing guidance.
                     </p>
                   ) : null}
                   {learned.map((entry) => (
                     <article
-                      className="rounded-md border border-rule bg-canvas px-3.5 py-3"
+                      className="rounded-md border border-rule bg-canvas px-3 py-2.5"
                       key={entry.canon_id}
                     >
-                      <div className="flex items-start gap-2.5">
+                      <div className="flex items-start gap-2">
                         <Lightbulb
                           aria-hidden="true"
                           className="mt-0.5 size-3.5 shrink-0 text-navy"
@@ -218,11 +219,11 @@ export function ProjectTab({
 
                   {waiting.length > 0 ? (
                     <>
-                      <div className="flex items-baseline gap-2 pt-1">
-                        <h4 className="m-0 text-[12px] font-semibold text-amber">
+                      <div className="flex items-center gap-2 pt-1">
+                        <h4 className="m-0 text-[11px] font-medium tracking-label text-amber uppercase">
                           Waiting for you to look at
                         </h4>
-                        <span className="font-mono text-[11px] text-muted-foreground">
+                        <span className="ml-auto font-mono text-[11px] text-muted-foreground">
                           {waiting.length}
                         </span>
                       </div>
@@ -231,7 +232,7 @@ export function ProjectTab({
                   ) : null}
                 </div>
               </ScrollArea>
-            </section>
+            </Panel>
           </aside>
         </div>
       )}
@@ -265,71 +266,87 @@ function RunCard({
           : "text-muted-foreground";
   return (
     <Collapsible asChild open={open} onOpenChange={setOpen}>
-      <article className="rounded-lg border border-rule bg-canvas px-4 py-3.5">
+      {/* A record, not a card. Rows are flush to the panel and separated by one
+          rule, with the date fixed in a mono gutter so a stack of runs reads
+          down a single column. */}
+      <article className="border-b border-rule px-3 py-3 last:border-b-0">
         <div className="flex items-start gap-3">
+          <div className="grid w-[124px] shrink-0 gap-0.5 pt-px">
+            <time className="font-mono text-[11px] text-muted-foreground">
+              {formatDateTime(run.started_at)}
+            </time>
+            <span className={`text-[11px] font-medium ${tone}`}>
+              {plainOutcome(run.outcome)}
+            </span>
+          </div>
           <div className="min-w-0 flex-1">
             {/* Lead with what the run did, not with the identifier that names it. */}
-            <strong className="block text-[14px] leading-snug font-semibold break-words text-ink">
+            <strong className="block text-[13px] leading-snug font-semibold break-words text-ink">
               {run.outcome_detail || plainOutcome(run.outcome)}
             </strong>
-            <div className="mt-1 flex flex-wrap items-baseline gap-x-2.5 gap-y-1 text-[12px] text-muted-foreground">
-              <span className={`font-medium ${tone}`}>{plainOutcome(run.outcome)}</span>
-              <span>{formatDateTime(run.started_at)}</span>
-              <span className="inline-flex items-baseline gap-1 font-mono">
-                <Clock3 aria-hidden="true" className="size-3 translate-y-0.5" />
-                {formatDuration(run.duration_ms)}
-              </span>
-              <span className="font-mono">{run.spec_id}</span>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px]">
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px]">
               <Tally
                 label={run.merged_tasks.length === 1 ? "task shipped" : "tasks shipped"}
                 tone="navy"
                 value={run.merged_tasks.length}
               />
+              <Rule />
               <Tally
                 label={run.verified_tasks.length === 1 ? "task checked" : "tasks checked"}
                 tone="muted"
                 value={run.verified_tasks.length}
               />
               {run.stopped_tasks.length > 0 ? (
-                <Tally
-                  label={run.stopped_tasks.length === 1 ? "task stopped" : "tasks stopped"}
-                  tone="clay"
-                  value={run.stopped_tasks.length}
-                />
+                <>
+                  <Rule />
+                  <Tally
+                    label={run.stopped_tasks.length === 1 ? "task stopped" : "tasks stopped"}
+                    tone="clay"
+                    value={run.stopped_tasks.length}
+                  />
+                </>
               ) : null}
               {/* What it cost belongs on the summary line, not behind a
                   disclosure. Replaying a real run showed a card that said what
                   shipped and stayed silent about the bill. */}
               {run.calls > 0 ? (
-                <span className="inline-flex items-baseline gap-1.5 text-muted-foreground">
-                  <b className="font-mono text-[13px] font-semibold text-ink">
-                    {formatCompact(run.effective_tokens)}
-                  </b>
-                  <span>
-                    tokens over {run.calls} {run.calls === 1 ? "call" : "calls"}
+                <>
+                  <Rule />
+                  <span className="inline-flex items-baseline gap-1.5 text-muted-foreground">
+                    <b className="font-mono text-[12px] font-semibold text-ink">
+                      {formatCompact(run.effective_tokens)}
+                    </b>
+                    <span>
+                      tokens over {run.calls} {run.calls === 1 ? "call" : "calls"}
+                    </span>
                   </span>
-                </span>
+                </>
               ) : null}
+              <Rule />
+              <span className="inline-flex items-baseline gap-1 font-mono text-muted-foreground">
+                <Clock3 aria-hidden="true" className="size-3 translate-y-0.5" />
+                {formatDuration(run.duration_ms)}
+              </span>
+              <Rule />
+              <span className="font-mono text-muted-foreground">{run.spec_id}</span>
             </div>
           </div>
           <CollapsibleTrigger asChild>
             <button
               aria-label={open ? "Hide the detail" : "Show the detail"}
-              className="shrink-0 rounded-sm p-1 text-muted-foreground hover:bg-panel hover:text-ink"
+              className="shrink-0 cursor-pointer rounded-sm p-1 text-muted-foreground hover:bg-canvas hover:text-ink"
               type="button"
             >
               <ChevronRight
                 aria-hidden="true"
-                className={`size-4 transition-transform ${open ? "rotate-90" : ""}`}
+                className={`size-3.5 transition-transform ${open ? "rotate-90" : ""}`}
               />
             </button>
           </CollapsibleTrigger>
         </div>
 
         <CollapsibleContent>
-          <div className="mt-3.5 grid gap-4 border-t border-rule pt-3.5">
+          <div className="mt-3 ml-[136px] grid gap-3.5 border-t border-rule pt-3">
             <TaskList
               empty="Nothing from this run reached your branch."
               items={run.merged_tasks.map((taskId) => ({
@@ -340,7 +357,7 @@ function RunCard({
             />
             {run.stopped_tasks.length > 0 ? (
               <section className="grid gap-1.5">
-                <h4 className="m-0 text-[12px] font-semibold text-clay">
+                <h4 className="m-0 text-[11px] font-medium tracking-label text-clay uppercase">
                   Stopped before finishing
                 </h4>
                 <ul className="m-0 grid list-none gap-2 p-0">
@@ -357,7 +374,7 @@ function RunCard({
                 </ul>
               </section>
             ) : null}
-            <dl className="m-0 grid grid-cols-2 gap-x-6 gap-y-1.5 text-[12px] sm:grid-cols-3">
+            <dl className="m-0 grid grid-cols-2 gap-x-6 gap-y-1.5 text-[11px] sm:grid-cols-3">
               <Fact label="Agent calls" value={formatNumber(run.calls)} />
               <Fact label="Tokens counted" value={formatCompact(run.effective_tokens)} />
               <Fact
@@ -392,17 +409,23 @@ function Tally({
           : "text-muted-foreground";
   return (
     <span className="inline-flex items-baseline gap-1.5">
-      <b className={`font-mono text-[13px] font-semibold ${color}`}>{value}</b>
+      <b className={`font-mono text-[12px] font-semibold ${color}`}>{value}</b>
       <span className="text-muted-foreground">{label}</span>
     </span>
   );
 }
 
+/* The same hairline the Work header uses between figures. Two surfaces, one
+   separator — middots would have been a third punctuation style. */
+function Rule(): React.JSX.Element {
+  return <span aria-hidden="true" className="h-2.5 w-px bg-rule" />;
+}
+
 function Fact({ label, value }: { label: string; value: string }): React.JSX.Element {
   return (
     <div>
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="m-0 font-mono text-[13px] text-ink">{value}</dd>
+      <dt className="font-medium tracking-label text-muted-foreground uppercase">{label}</dt>
+      <dd className="m-0 font-mono text-[12px] text-ink">{value}</dd>
     </div>
   );
 }
@@ -418,7 +441,7 @@ function TaskList({
 }): React.JSX.Element {
   return (
     <section className="grid gap-1.5">
-      <h4 className="m-0 text-[12px] font-semibold text-ink">{title}</h4>
+      <h4 className="m-0 text-[11px] font-medium tracking-label text-muted-foreground uppercase">{title}</h4>
       {items.length === 0 ? (
         <p className="m-0 text-[12px] text-muted-foreground">{empty}</p>
       ) : (
@@ -453,7 +476,7 @@ function ReviewCard({
   children?: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <article className="rounded-md border border-amber/25 bg-amber-wash px-3.5 py-3">
+    <article className="rounded-md border border-amber/25 border-l-2 border-l-amber bg-amber-wash px-3 py-2.5">
       <strong className="block text-[13px] leading-snug font-semibold break-words text-ink">
         {title}
       </strong>
@@ -461,8 +484,8 @@ function ReviewCard({
         {body}
       </p>
       {children}
-      <div className="mt-2.5 grid gap-1 border-t border-amber/20 pt-2.5">
-        <span className="text-[11px] font-medium text-muted-foreground">
+      <div className="mt-2.5 grid gap-1 border-t border-amber/20 pt-2">
+        <span className="text-[11px] font-medium tracking-label text-muted-foreground uppercase">
           Review this in a terminal
         </span>
         <code className="font-mono text-[11px] break-all text-ink">{command}</code>
@@ -519,10 +542,10 @@ function ProviderComparison({
           </div>
           <span
             aria-hidden="true"
-            className="block h-1 overflow-hidden rounded-full bg-panel"
+            className="block h-[3px] overflow-hidden bg-rule"
           >
             <span
-              className="block h-1 rounded-full bg-navy"
+              className="block h-[3px] bg-navy"
               style={{ width: `${Math.max(3, Math.min(100, provider.weight * 100))}%` }}
             />
           </span>
@@ -540,7 +563,7 @@ function DraftTestCard({
   taskTitle: string;
 }): React.JSX.Element {
   return (
-    <article className="rounded-md border border-rule bg-canvas px-3.5 py-3">
+    <article className="rounded-md border border-rule bg-canvas px-3 py-2.5">
       <strong className="block text-[13px] leading-snug font-semibold break-words text-ink">
         A test was drafted for {taskTitle}
       </strong>
@@ -578,18 +601,18 @@ function TrailDialog({
 }): React.JSX.Element {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="grid h-[min(720px,calc(100vh-48px))] w-[min(920px,calc(100vw-48px))] grid-rows-[auto_minmax(0,1fr)] gap-0 p-0 sm:max-w-none">
-        <DialogHeader className="border-b border-rule-soft px-6 py-5">
-          <DialogTitle className="text-[18px] font-semibold tracking-[-0.015em]">
+      <DialogContent className="grid h-[min(720px,calc(100vh-40px))] w-[min(900px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)] gap-0 p-0 sm:max-w-none">
+        <DialogHeader className="border-b border-rule px-5 py-4">
+          <DialogTitle>
             Everything this project recorded
           </DialogTitle>
-          <DialogDescription className="text-[13px]">
+          <DialogDescription>
             Every step the project wrote down, oldest first. This is the record
             the app reads; it is shown here exactly as it was written.
           </DialogDescription>
         </DialogHeader>
         <ScrollArea className="min-h-0 bg-canvas">
-          <div className="px-6 py-5">
+          <div className="px-5 py-4">
             {error !== "" ? (
               <p className="m-0 rounded-md bg-clay-wash px-3 py-2 text-[13px] break-words text-clay">
                 {error}
@@ -600,7 +623,7 @@ function TrailDialog({
               <ol className="m-0 grid list-none gap-0 p-0">
                 {(trail ?? []).map((event, index) => (
                   <li
-                    className="grid grid-cols-[128px_minmax(0,1fr)] items-baseline gap-3 border-b border-rule-soft py-2 last:border-b-0"
+                    className="grid grid-cols-[124px_minmax(0,1fr)] items-baseline gap-3 border-b border-rule py-1.5 last:border-b-0"
                     key={`${event.ts}-${index}`}
                   >
                     <time className="font-mono text-[11px] text-muted-foreground">

@@ -22,10 +22,10 @@ export function ScrollArea({
       </ScrollAreaPrimitive.Viewport>
       <ScrollAreaPrimitive.Scrollbar
         data-slot="scroll-area-scrollbar"
-        className="flex w-2 touch-none border-l border-rule/70 p-0.5 select-none"
+        className="flex w-1.5 touch-none p-px select-none"
         orientation="vertical"
       >
-        <ScrollAreaPrimitive.Thumb className="relative flex-1 rounded-sm bg-rule" />
+        <ScrollAreaPrimitive.Thumb className="relative flex-1 rounded-xs bg-rule" />
       </ScrollAreaPrimitive.Scrollbar>
       <ScrollAreaPrimitive.Corner />
     </ScrollAreaPrimitive.Root>

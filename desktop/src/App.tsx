@@ -1,4 +1,12 @@
-import { Check, FolderGit2, LayoutList, Library, Settings, Terminal } from "lucide-react";
+import {
+  Check,
+  FolderGit2,
+  LayoutList,
+  Library,
+  Search,
+  Settings,
+  Terminal
+} from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { AgentSetupDialog } from "@/components/agent-setup-dialog";
@@ -21,7 +29,8 @@ import {
   CommandGroup,
   CommandInput,
   CommandItem,
-  CommandList
+  CommandList,
+  CommandShortcut
 } from "@/components/ui/command";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -86,10 +95,12 @@ export default function App(): React.JSX.Element {
         value={section}
         onValueChange={setSection}
       >
-        <header className="flex h-14 shrink-0 items-center gap-7 px-5">
-          <div className="flex items-center gap-2.5 pr-1">
+        {/* Chrome, not a widget tray. White, ruled off from the canvas below,
+            44px tall, and every control on it is the same height. */}
+        <header className="flex h-11 shrink-0 items-stretch gap-4 border-b border-rule bg-panel pr-2.5 pl-3">
+          <div className="flex shrink-0 items-center gap-2">
             <BrandMark />
-            <span className="text-[16px] leading-none font-semibold tracking-[-0.015em] text-ink">
+            <span className="text-[13px] leading-none font-semibold tracking-tight text-ink">
               Hivemind
             </span>
           </div>
@@ -110,36 +121,22 @@ export default function App(): React.JSX.Element {
           </TabsList>
           ) : null}
 
-          <div className="ml-auto flex items-center gap-2.5">
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <ConnectionReadout
               detail={workspace.connectionDetail}
               state={workspace.connectionState}
             />
+            <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-rule" />
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  aria-label="Settings"
-                  className="size-9 bg-panel shadow-panel"
-                  size="icon"
+                  className="h-7 max-w-[280px] gap-1.5 px-2"
                   type="button"
-                  variant="outline"
-                  onClick={() => setSettingsOpen(true)}
-                >
-                  <Settings aria-hidden="true" className="text-muted-foreground" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Settings</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  className="h-9 max-w-[300px] gap-2 bg-panel px-3 shadow-panel"
-                  type="button"
-                  variant="outline"
+                  variant="ghost"
                   onClick={() => setProjectOpen(true)}
                 >
-                  <FolderGit2 aria-hidden="true" className="text-muted-foreground" />
-                  <span className="text-[13px] font-medium">{projectName}</span>
+                  <FolderGit2 aria-hidden="true" />
+                  <span className="font-mono text-[12px] text-ink">{projectName}</span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
@@ -148,12 +145,45 @@ export default function App(): React.JSX.Element {
                 Click to open a different project.
               </TooltipContent>
             </Tooltip>
+            {/* The palette exists; nothing on screen said so. A keycap in the
+                chrome is the cheapest way to teach a shortcut. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  aria-label="Commands"
+                  className="h-7 gap-1.5 px-2"
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setPaletteOpen(true)}
+                >
+                  <Search aria-hidden="true" />
+                  <kbd className="rounded-sm border border-rule px-1 font-mono text-[11px] text-muted-foreground">
+                    ⌘K
+                  </kbd>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Commands</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  aria-label="Settings"
+                  size="icon-sm"
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setSettingsOpen(true)}
+                >
+                  <Settings aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Settings</TooltipContent>
+            </Tooltip>
           </div>
         </header>
 
         {shellUpdateRequired ? (
           <section
-            className="mx-4 mb-3 flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border border-clay/30 bg-clay-wash px-4 py-3 text-[13px] text-clay"
+            className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-clay/25 bg-clay-wash px-4 py-2.5 text-[12px] text-clay"
             role="alert"
           >
             <strong className="font-semibold">Desktop update required</strong>
@@ -249,6 +279,7 @@ export default function App(): React.JSX.Element {
             >
               <LayoutList aria-hidden="true" />
               Describe what you want built
+              <CommandShortcut>/</CommandShortcut>
             </CommandItem>
             <CommandItem onSelect={() => runCommand(() => setProjectOpen(true))}>
               <FolderGit2 aria-hidden="true" />
@@ -289,13 +320,13 @@ export default function App(): React.JSX.Element {
               builds stays there until you ship it.
             </DialogDescription>
           </DialogHeader>
-          <form className="grid gap-4" onSubmit={submitProject}>
-            <label className="grid gap-2 text-[13px] font-medium text-ink">
+          <form className="grid gap-3.5" onSubmit={submitProject}>
+            <label className="grid gap-1.5 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
               Project folder
               <input
                 autoComplete="off"
                 autoFocus
-                className="h-11 rounded-md border border-rule bg-canvas px-3 font-mono text-[13px] text-ink"
+                className="h-9 rounded-md border border-rule bg-canvas px-2.5 font-mono text-[13px] text-ink transition-colors focus-visible:border-navy/40 focus-visible:bg-panel"
                 id="project-path"
                 onChange={(event) => setProjectInput(event.target.value)}
                 placeholder="D:\\Projects\\my-app"
@@ -303,9 +334,11 @@ export default function App(): React.JSX.Element {
                 value={projectInput}
               />
             </label>
-            <p className="m-0 flex flex-wrap items-baseline gap-x-2 text-[13px] text-muted-foreground">
-              <span className="font-medium text-ink">Currently open</span>
-              <span className="min-w-0 break-all font-mono text-[12px]">
+            <p className="m-0 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[12px] text-muted-foreground">
+              <span className="text-[11px] font-medium tracking-label uppercase">
+                Currently open
+              </span>
+              <span className="min-w-0 break-all font-mono text-ink">
                 {visibleProjectPath}
               </span>
             </p>
@@ -322,17 +355,59 @@ export default function App(): React.JSX.Element {
   );
 }
 
-/* Two identity colours, four cells: the swarm in the smallest possible mark. */
+/* The product's own mark, reduced: two interlocking hexagons in the two
+   identity colours. The four rounded squares this replaced were a generic
+   swarm glyph and, literally, four cards in a grid. */
 function BrandMark(): React.JSX.Element {
+  const hex = (cx: number, cy: number): string => {
+    const r = 6.1;
+    const w = r * 0.866;
+    return [
+      `M${cx} ${cy - r}`,
+      `L${cx + w} ${cy - r / 2}`,
+      `L${cx + w} ${cy + r / 2}`,
+      `L${cx} ${cy + r}`,
+      `L${cx - w} ${cy + r / 2}`,
+      `L${cx - w} ${cy - r / 2}`,
+      "Z"
+    ].join(" ");
+  };
   return (
-    <span className="grid size-8 shrink-0 place-items-center rounded-md bg-panel shadow-panel">
-      <svg aria-hidden="true" height="15" viewBox="0 0 15 15" width="15">
-        <rect fill="var(--navy)" height="6.5" rx="1.5" width="6.5" x="0" y="0" />
-        <rect fill="var(--ink)" height="6.5" rx="1.5" width="6.5" x="8.5" y="0" />
-        <rect fill="var(--ink)" height="6.5" rx="1.5" width="6.5" x="0" y="8.5" />
-        <rect fill="var(--navy)" height="6.5" rx="1.5" width="6.5" x="8.5" y="8.5" />
-      </svg>
-    </span>
+    <svg
+      aria-hidden="true"
+      className="shrink-0"
+      fill="none"
+      height="19"
+      viewBox="0 0 20 20"
+      width="19"
+    >
+      <defs>
+        {/* The one crossing where the navy link passes in front, which is what
+            makes the two read as linked rather than as overlapping. */}
+        <clipPath id="hivemind-link">
+          <rect height="6" width="7" x="10" y="4.5" />
+        </clipPath>
+      </defs>
+      <path
+        d={hex(11.6, 8.2)}
+        stroke="var(--navy)"
+        strokeLinejoin="round"
+        strokeWidth="2.4"
+      />
+      <path
+        d={hex(8.4, 11.8)}
+        stroke="var(--ink)"
+        strokeLinejoin="round"
+        strokeWidth="2.4"
+      />
+      <path
+        clipPath="url(#hivemind-link)"
+        d={hex(11.6, 8.2)}
+        stroke="var(--navy)"
+        strokeLinejoin="round"
+        strokeWidth="2.4"
+      />
+    </svg>
   );
 }
 
@@ -351,9 +426,9 @@ function ConnectionReadout({
       <TooltipTrigger asChild>
         <span
           aria-live="polite"
-          className="flex cursor-default items-center gap-2 rounded-md px-2 py-1 text-[13px] text-muted-foreground"
+          className="flex cursor-default items-center gap-1.5 px-1 text-[12px] text-muted-foreground"
         >
-          <span aria-hidden="true" className={`size-[7px] rounded-full ${dot}`} />
+          <span aria-hidden="true" className={`size-1.5 rounded-xs ${dot}`} />
           <span className="font-medium text-ink first-letter:uppercase">{state}</span>
         </span>
       </TooltipTrigger>

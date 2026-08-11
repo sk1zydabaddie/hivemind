@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 /* Rules and tinted fills, never pills. `tone` is the vocabulary the workspace
    already speaks, so the prop is kept as-is. */
 const badgeVariants = cva(
-  "badge inline-flex w-fit shrink-0 items-center justify-center gap-1 rounded-sm border px-2 py-0.5 text-[12px] leading-4 font-medium whitespace-nowrap [&>svg]:size-3 [&>svg]:pointer-events-none",
+  "badge inline-flex w-fit shrink-0 items-center justify-center gap-1 rounded-sm border px-1.5 py-px text-[11px] leading-[15px] font-medium whitespace-nowrap [&>svg]:size-3 [&>svg]:pointer-events-none",
   {
     variants: {
       tone: {
