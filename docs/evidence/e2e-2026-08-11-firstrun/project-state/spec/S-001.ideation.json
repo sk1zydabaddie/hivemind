@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "spec_id": "S-001",
+  "goal": "Provide a reusable way to determine whether a supplied value is a valid email address and return a clear valid-or-invalid result.",
+  "status": "awaiting_user_convergence",
+  "rounds": [
+    {
+      "index": 1,
+      "alternatives": [
+        {
+          "title": "Practical syntax validator",
+          "tradeoffs": [
+            "May reject uncommon but standards-compliant addresses or accept some addresses that cannot actually receive mail.",
+            "Keeps behavior predictable, lightweight, and suitable for common application input."
+          ]
+        },
+        {
+          "title": "Standards-focused validator",
+          "tradeoffs": [
+            "Adds complexity and may require a maintained validation dependency.",
+            "Supports more unusual standards-compliant address formats and avoids maintaining intricate parsing rules locally."
+          ]
+        }
+      ],
+      "self_critique": {
+        "weakest_point": "The meaning of \"valid\" is unsettled, so exact expected behavior cannot yet be specified.",
+        "cut_or_change": "Resolve the required validation strictness, then replace the broad examples with an explicit set of accepted and rejected edge cases."
+      },
+      "substantive_change": true,
+      "orchestrator_calls_convergence": true
+    }
+  ],
+  "divergence_complete": true,
+  "convergence": {
+    "user": false,
+    "orchestrator": true
+  },
+  "consecutive_non_substantive_rounds": 0,
+  "diminishing_returns_signal": false
+}

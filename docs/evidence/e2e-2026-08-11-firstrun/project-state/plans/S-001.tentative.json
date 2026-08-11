@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "spec_id": "S-001",
+  "status": "tentative",
+  "base_commit": "6b0e28b3f0f406deeb659313bcb8977436eebf44",
+  "source": "adapter-generated",
+  "created_at": "2026-08-11T18:46:17.447Z",
+  "grounding_status": "grounded",
+  "grounded_at": "2026-08-11T18:46:17.526Z",
+  "grounded_base_commit": "6b0e28b3f0f406deeb659313bcb8977436eebf44",
+  "tasks": [
+    {
+      "task_id": "T-001",
+      "title": "Implement and document email validation",
+      "task_type": "deterministic",
+      "routing_task_type": "api",
+      "mode": "write",
+      "agent_role": "builder",
+      "draft_scope": {
+        "allowed_files": [
+          "src/index.js",
+          "src/validateEmail.js",
+          "test/validateEmail.test.js",
+          "README.md"
+        ],
+        "allowed_file_intents": {
+          "src/index.js": "modify",
+          "src/validateEmail.js": "create",
+          "test/validateEmail.test.js": "create",
+          "README.md": "modify"
+        },
+        "read_only_files": [
+          "package.json",
+          "src/formatDate.js",
+          "test/formatDate.test.js"
+        ],
+        "forbidden_files": [],
+        "must_not_change": [
+          "package.json",
+          "src/formatDate.js",
+          "test/formatDate.test.js"
+        ]
+      },
+      "depends_on": [],
+      "parallel_safe": false,
+      "acceptance_criterion": "The package exports a reusable email-validation function that returns true for representative ordinary addresses including \"person@example.com\", returns false without throwing for malformed strings including \"person@\" and \"@example.com\" and for non-string inputs, documents its practical-syntax behavior and examples in README.md, and preserves all existing behavior with the full test suite passing.",
+      "deterministic_validity_check": "node -e \"const api=require('./src/index.js'); const validate=api.validateEmail; if(typeof validate!=='function') process.exit(1); const cases=[['person@example.com',true],['person@',false],['@example.com',false],[null,false],[42,false]]; for(const [value,expected] of cases){let actual; try{actual=validate(value)}catch(error){process.exit(1)} if(actual!==expected) process.exit(1)}\"",
+      "required_tests": [
+        "npm test"
+      ],
+      "patch_requirements": [
+        "Add one focused reusable validator implementation in src/validateEmail.js and export it through src/index.js.",
+        "Return a boolean result for every supplied value and reject non-string inputs without throwing.",
+        "Implement practical syntax validation only; do not perform network, mailbox-existence, deliverability, ownership, or identity checks.",
+        "Add test/validateEmail.test.js with representative valid, malformed, and non-string cases, including every example named by the ratified spec.",
+        "Document the exported validation behavior, practical-syntax boundary, boolean result, and valid and invalid usage examples in README.md.",
+        "Preserve the existing formatDate implementation, tests, and package configuration without duplicating or replacing their paths."
+      ],
+      "critical_path_approved": false,
+      "scope_status": "grounded",
+      "grounding_evidence": {
+        "source": "git-tree",
+        "base_commit": "6b0e28b3f0f406deeb659313bcb8977436eebf44",
+        "checked_at": "2026-08-11T18:46:17.526Z",
+        "cited_paths": [
+          "package.json",
+          "README.md",
+          "src/formatDate.js",
+          "src/index.js",
+          "src/validateEmail.js",
+          "test/formatDate.test.js",
+          "test/validateEmail.test.js"
+        ],
+        "resolved_files": [
+          "package.json",
+          "README.md",
+          "src/formatDate.js",
+          "src/index.js",
+          "src/validateEmail.js",
+          "test/formatDate.test.js",
+          "test/validateEmail.test.js"
+        ]
+      },
+      "grounded_scope": {
+        "allowed_files": [
+          "README.md",
+          "src/index.js",
+          "src/validateEmail.js",
+          "test/validateEmail.test.js"
+        ],
+        "allowed_file_intents": {
+          "README.md": "modify",
+          "src/index.js": "modify",
+          "src/validateEmail.js": "create",
+          "test/validateEmail.test.js": "create"
+        },
+        "read_only_files": [
+          "package.json",
+          "src/formatDate.js",
+          "test/formatDate.test.js"
+        ],
+        "forbidden_files": [],
+        "must_not_change": [
+          "package.json",
+          "src/formatDate.js",
+          "test/formatDate.test.js"
+        ]
+      }
+    }
+  ],
+  "execution_groups": [
+    {
+      "group_id": "G-1",
+      "mode": "sequence",
+      "task_ids": [
+        "T-001"
+      ]
+    }
+  ],
+  "lint_status": "passed",
+  "linted_at": "2026-08-11T18:46:17.578Z",
+  "linted_base_commit": "6b0e28b3f0f406deeb659313bcb8977436eebf44"
+}

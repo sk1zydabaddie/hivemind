@@ -26,7 +26,7 @@ import { buildPlanningGenerationPrompt } from "./planning-prompt.js";
 import { assertNoKnownFailedScopeRepeat, evaluateThrashForPlan, type ReplanEvaluationResult } from "./replan.js";
 import { findGitRoot } from "./repo.js";
 import { isRoutingTaskType, type RoutingTaskType, routingTaskTypeExpectation } from "./routing-task-type.js";
-import { checkPlanningAllowed, requireActiveSpecRatified } from "./spec.js";
+import { checkPlanningAllowed, readActiveSpec, requireActiveSpecRatified } from "./spec.js";
 import { loadSpecDocument, type SpecResult, validateRequestedSpecId } from "./spec-format.js";
 import { validateRequestedTaskId } from "./task-id.js";
 import { latestTaskRunState } from "./run-state.js";
@@ -426,7 +426,13 @@ export async function prepareWorkspaceTentativePlan(
   if (prompt.length > 20_000) {
     return { ok: false, reason: "planning prompt must be a non-empty string of at most 20000 characters" };
   }
-  const activeSpec = await requireActiveSpecRatified(repoRoot);
+  /* Planning is a proposal and requires only a valid active spec; execution is
+     what requires ratification. This path had its own copy of the ratified
+     check, so the desktop's first prompt still refused a drafted spec after the
+     gate moved -- found by walking a clean install rather than by a test. */
+  const active = await readActiveSpec(repoRoot);
+  if (!active.ok) return active;
+  const activeSpec = await checkPlanningAllowed(repoRoot, active.value.spec_id);
   if (!activeSpec.ok) return activeSpec;
 
   const usageSessionId = randomUUID();
@@ -476,7 +482,10 @@ export async function prepareWorkspaceTentativePlan(
   });
   if (!recorded.ok) return recorded;
 
-  if (autonomy.value === "auto") {
+  /* Auto suppresses the plan interruption, but only once the person has signed
+     the spec. An unsigned spec is precisely the case where somebody IS needed,
+     which is what "only what needs me" means. */
+  if (autonomy.value === "auto" && activeSpec.value.status === "ratified") {
     const ratified = await ratifyPlanWithSource(repoRoot, reviewed.value.spec_id, reviewed.value.plan_hash, "autonomy_policy", autonomy.value);
     if (!ratified.ok) return ratified;
     const decision = await recordAutonomyDecision(repoRoot, {
@@ -514,7 +523,16 @@ export async function prepareWorkspaceTentativePlan(
       usage_session_id: usageSessionId,
       task_count: reviewed.value.task_count,
       lint_status: "passed",
-      status: autonomy.value === "auto" ? "ratified_by_policy" : "awaiting_ratification",
+      /* Autonomy governs interruption for routine steps. It does not govern the
+         spec's signature: an unratified spec always awaits the person, whatever
+         they set, because that signature is the thing autonomy is not allowed to
+         give. Without this, "auto" on a first run tried to ratify a plan against
+         an unsigned spec and refused, which read as a broken product rather than
+         as a decision waiting. */
+      status:
+        autonomy.value === "auto" && activeSpec.value.status === "ratified"
+          ? "ratified_by_policy"
+          : "awaiting_ratification",
       autonomy_level: autonomy.value
     }
   };
@@ -1022,6 +1040,12 @@ async function ratifyPlanWithSource(
   if (!/^[a-f0-9]{64}$/u.test(expectedHash)) {
     return { ok: false, reason: "plan ratification requires the exact 64-character hash shown by --review" };
   }
+  /* Ratifying a plan still requires a ratified spec. Only PLANNING was loosened.
+     Without this, autonomy "auto" ratified a plan against a spec nobody had
+     signed -- the human signature bypassed entirely, which is the one thing the
+     whole arrangement exists to prevent. Found by walking a clean install. */
+  const specRatified = await requireActiveSpecRatified(repoRoot);
+  if (!specRatified.ok) return specRatified;
   const reviewed = await reviewPlanForRatification(repoRoot, specId);
   if (!reviewed.ok) {
     return reviewed;

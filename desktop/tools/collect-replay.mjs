@@ -366,7 +366,11 @@ for (const file of files) {
   const events = extractEvents(await readFile(file, "utf8"));
   if (events.length === 0) continue;
   for (const [index, run] of splitRuns(events).entries()) {
-    if (run.length < 3) continue;
+    /* Three events is a reasonable floor for noise, but a run stopped at its
+       review is genuinely short -- a plan prepared and a decision recorded is
+       two -- and it is the state the review screens most needed. Keep anything
+       carrying a plan however brief. */
+    if (run.length < 3 && !run.some((event) => event.type.startsWith("plan."))) continue;
     const id = `${path.basename(file).replace(/\.(jsonl|md)$/u, "")}${index === 0 ? "" : `-${index + 1}`}`;
     const projected = await inspect(run, file);
     scenarios.push({

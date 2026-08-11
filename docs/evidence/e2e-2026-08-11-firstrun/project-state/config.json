@@ -1,0 +1,13 @@
+{
+  "resource_policy": {
+    "run_ceiling": {
+      "tokens": 150000
+    },
+    "session_ceiling": {
+      "tokens": 500000
+    }
+  },
+  "execution": {
+    "max_concurrent_workers": 2
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "tasks": [
+    {
+      "task_id": "T-001",
+      "title": "Implement and document email validation",
+      "task_type": "deterministic",
+      "routing_task_type": "api",
+      "mode": "write",
+      "agent_role": "builder",
+      "draft_scope": {
+        "allowed_files": [
+          "src/index.js",
+          "src/validateEmail.js",
+          "test/validateEmail.test.js",
+          "README.md"
+        ],
+        "allowed_file_intents": {
+          "src/index.js": "modify",
+          "src/validateEmail.js": "create",
+          "test/validateEmail.test.js": "create",
+          "README.md": "modify"
+        },
+        "read_only_files": [
+          "package.json",
+          "src/formatDate.js",
+          "test/formatDate.test.js"
+        ],
+        "forbidden_files": [],
+        "must_not_change": [
+          "package.json",
+          "src/formatDate.js",
+          "test/formatDate.test.js"
+        ]
+      },
+      "depends_on": [],
+      "parallel_safe": false,
+      "acceptance_criterion": "The package exports a reusable email-validation function that returns true for representative ordinary addresses including \"person@example.com\", returns false without throwing for malformed strings including \"person@\" and \"@example.com\" and for non-string inputs, documents its practical-syntax behavior and examples in README.md, and preserves all existing behavior with the full test suite passing.",
+      "deterministic_validity_check": "node -e \"const api=require('./src/index.js'); const validate=api.validateEmail; if(typeof validate!=='function') process.exit(1); const cases=[['person@example.com',true],['person@',false],['@example.com',false],[null,false],[42,false]]; for(const [value,expected] of cases){let actual; try{actual=validate(value)}catch(error){process.exit(1)} if(actual!==expected) process.exit(1)}\"",
+      "required_tests": [
+        "npm test"
+      ],
+      "patch_requirements": [
+        "Add one focused reusable validator implementation in src/validateEmail.js and export it through src/index.js.",
+        "Return a boolean result for every supplied value and reject non-string inputs without throwing.",
+        "Implement practical syntax validation only; do not perform network, mailbox-existence, deliverability, ownership, or identity checks.",
+        "Add test/validateEmail.test.js with representative valid, malformed, and non-string cases, including every example named by the ratified spec.",
+        "Document the exported validation behavior, practical-syntax boundary, boolean result, and valid and invalid usage examples in README.md.",
+        "Preserve the existing formatDate implementation, tests, and package configuration without duplicating or replacing their paths."
+      ],
+      "critical_path_approved": false
+    }
+  ],
+  "execution_groups": [
+    {
+      "group_id": "G-1",
+      "mode": "sequence",
+      "task_ids": [
+        "T-001"
+      ]
+    }
+  ]
+}

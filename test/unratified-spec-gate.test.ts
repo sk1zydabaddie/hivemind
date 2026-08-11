@@ -46,6 +46,31 @@ test("an unratified spec permits planning", async () => {
   });
 });
 
+test("the desktop's own planning route allows an unratified spec", async () => {
+  /* `prepareWorkspacePlan` kept its own copy of the ratified check, so the
+     first prompt still refused a drafted spec after the gate moved. Found by
+     walking a clean install, not by a test -- so here is the test. */
+  const plan = await readFile(path.resolve("src/plan.ts"), "utf8");
+  const section = plan.slice(plan.indexOf("planning prompt must not be empty"));
+  assert.match(section.slice(0, 1200), /checkPlanningAllowed\(repoRoot/u);
+  assert.doesNotMatch(section.slice(0, 1200), /requireActiveSpecRatified/u);
+});
+
+test("a plan cannot be ratified against an unratified spec, by anyone", async () => {
+  /* Only PLANNING was loosened. Ratifying a plan is the point at which work
+     becomes startable, so it still requires the spec's signature. Loosening the
+     planning gate briefly let autonomy "auto" ratify a plan against a spec
+     nobody had signed -- the human signature bypassed entirely. */
+  const plan = await readFile(path.resolve("src/plan.ts"), "utf8");
+  const section = plan.slice(plan.indexOf("async function ratifyPlanWithSource"));
+  assert.match(section.slice(0, 1400), /requireActiveSpecRatified\(repoRoot\)/u);
+  // And it is checked before anything is written.
+  assert.ok(
+    section.indexOf("requireActiveSpecRatified") < section.indexOf("writeFile("),
+    "the spec must be checked before a ratified plan is written"
+  );
+});
+
 test("an unratified spec refuses every path that can touch the repository", async () => {
   await withDraftSpec(async (repo) => {
     /* Each of these is tried for real rather than asserted about. A gate that
