@@ -144,7 +144,7 @@ prevented — the data was one scope away, already in hand.
 The rule keeps catching things because it is asked too late. Ask it of the
 event when the event is written, not when a surface finally needs it.
 
-## Standing rule: capture the trail, not just the picture
+## Standing rule: capture the trail AND the project state
 
 Every verification run keeps its JSONL trail alongside its screenshots. A
 screenshot cannot be replayed into a redesigned UI; the trail can, and it is the
@@ -153,6 +153,66 @@ only artefact that stays useful after the surface changes.
 The M10.8 concurrent run and the M8 end-to-end runs are lost to replay because
 only PNGs and prose were kept. Their durations, their nine-task plan and their
 adoption refs exist as numbers in a README and cannot be rendered by anything.
+
+### The rule as first written was incomplete, and quietly so
+
+"Capture the trail" was not enough, because **a run's state is not all events**.
+The plan, the spend ledger, the manager session, the spec and the contracts are
+*files*. A trail replayed on its own therefore comes back with a null plan and
+zero spend — and says so nowhere. It projects, it renders, it looks right.
+
+The cost of that was not hypothetical. The plan review and the spend meter were
+listed as "waiting on a real trail" for five passes. A real trail arrived on
+2026-08-11 and **still could not draw them**, because the missing pieces were
+never events to begin with. Every replay verification done before that date was
+partial in a way nobody could see: the surfaces that depend on file state were
+being checked against nulls and called verified.
+
+An evidence folder now carries `project-state/` mirroring `.hivemind/`, and the
+collector restores it beside the trail. Captured, never invented — a folder
+without one replays exactly as before.
+
+The generalisation worth keeping: **ask what the surface reads, not what the
+system emits.** A capture is complete when every input to the surface is in it,
+and events are only one class of input.
+
+### And: every trail projects only to its end
+
+The second gap in the same rule. A captured trail replays to its final state, so
+a *finished* run is the only state a trail could ever draw. Mid-flight — three
+agents working at once, which is the thing this product exists to do — stayed
+fixture-only even after real trails existed.
+
+The two live screenshots of it are the proof: both landed inside an
+inspection-lag window and show "Waiting to start" beside three running tasks.
+Nobody caught it, because a screenshot is whatever the UI happened to be showing
+when a human pressed a key.
+
+`tools/collect-replay.mjs` now also emits `<id>@midrun`: the trail cut at peak
+concurrency and projected by Core, which draws the honest mid-run state. For a
+run that reaches a ship it emits a full `timeline` — one Core projection at each
+point the run visibly changed — so playback can move the rail with the story
+instead of serving the finished projection over an unfinished thread.
+
+A finished run is the easy state to render. The states that have been wrong five
+times are the ones in the middle.
+
+## Playback: the demo comes out of the capture
+
+`/replay.html?scenario=<id>&play=6` replays a run on its own clock: events on
+their real relative timing, worker output on the same clock, and the projection
+stepping through the captured `timeline`. 4× is 43s, 6× is 29s, 8× is 22s.
+
+Everything it plays is captured. Two liberties, both about time and neither
+about content: gaps are clamped at 20s before scaling, so the 24 minutes between
+a settings change and the prompt do not become 24 minutes of demo, and a worker
+thinking for 90 seconds still reads as work. Output uses the events' clock
+rather than its own — its first version drifted, because it restarted timing
+whenever the app happened to open the stream.
+
+This exists because the alternative was a screen recording, and a screen
+recording would have re-captured the same inspection lag that spoiled the two
+live mid-run screenshots.
 
 ## Standing rule: real trails verify, fixtures only lay out
 
@@ -329,6 +389,9 @@ That error is also raw Core text on a primary surface, and it says *spec*,
 kind-based sentence, which is correct but loses the one detail that would tell
 somebody what to do.
 
+A proposal for this is written up under **"Proposal: the front door"** below,
+after the Core actions it depends on.
+
 ### The cost defect in an unconfigured project
 
 `inferScopeTier` (src/routing.ts) returns **`"high"`** for any path matching no
@@ -345,6 +408,114 @@ default globs so that documentation is low, source and tests are medium, and
 build/CI/auth paths are high or critical. `COST_DEFAULT_GLOBS` in
 `desktop/src/lib/providers.ts` is the set the setup dialog hands to people today
 and is a reasonable starting shape.
+
+### Proposal: the front door
+
+Not built. Written down because the design choice is real and worth settling
+before code.
+
+#### What the spec is actually load-bearing for
+
+Read the enforcement rather than the convention, and the answer is narrow.
+
+| Enforced | Where | What it demands |
+| --- | --- | --- |
+| `# Spec: <title>` | validate | non-empty title |
+| exactly one `status:` line | validate | `draft` or `ratified` |
+| nine `##` headings present | validate | **headings only — bodies may be empty** |
+| Non-goals non-empty | ratify | some text |
+| Open questions empty | ratify | no text |
+| ≥2 alternatives with tradeoffs | ratify | recorded in the ideation session |
+| ≥1 round, each with a self-critique | ratify | recorded |
+| `convergence.orchestrator` | ratify | a sign-off |
+| `convergence.user` | ratify | **a separate sign-off** |
+
+What consumes the document: `buildPlanningGenerationPrompt` passes the whole
+markdown to the planner as context, and the title becomes
+`active_spec_title`. That is all.
+
+What does **not** read it: grounding (base commit and per-task evidence against
+the repo), all eight plan-lint rules (parallel safety, scope overlap, dependency
+cycles, critical approval, right-sizing, skeleton-trap acceptance), file scope
+(the plan's `allowed_files`) and conformance (the plan's
+`deterministic_validity_check`). Scope and conformance derive from the **plan**,
+not the spec.
+
+So **seven of the nine sections are conventional** — a thinking scaffold for the
+person and context for the planner. Non-goals and Open questions are
+load-bearing as *gates*, not as data. And the gate's real work is not the
+document at all: it is forcing alternatives, a self-critique, and **two distinct
+signatures** before any work starts.
+
+That reframes the problem. The gate is not protecting scope derivation. It is
+protecting intent quality, and it already distinguishes "a model converged" from
+"a person converged".
+
+#### The authorship line
+
+A model may **draft**; only a person may **converge**. Core already models this:
+`convergence.orchestrator` and `convergence.user` are separate booleans, and
+ratification requires both. Any first-run flow that writes `convergence.user`
+without a human act is forging the one signature the gate exists to collect.
+That rules out the obvious shortcut — scaffold a spec, auto-ratify it, never
+show it — however tempting its simplicity.
+
+The sharp edge is Non-goals. A non-goal is a *constraint on what gets built*. A
+generated non-goal is a generated constraint, and one nobody read can silently
+narrow the work. If the app drafts non-goals, it must show them. That single
+consideration, more than anything about document structure, decides the flow.
+
+#### Recommended: one review, and it is the plan review
+
+```
+prompt → drafted spec (orchestrator-converged) → plan → ONE review → work
+```
+
+The person's single approval carries both signatures, because the review shows
+the things both gates are actually checking:
+
+- **what will be built** — the plan, as today: steps, file scopes, how each
+  result is checked;
+- **what will not** — the drafted non-goals, stated plainly, because they are
+  constraints the person is adopting;
+- **anything the drafter could not resolve** — open questions, which **block**.
+  Core already refuses ratification while any remain, so they cannot be a
+  footnote; answering them belongs on this screen, and an unanswered one means
+  the run does not start.
+
+This stays inside the two-decision model: type what you want, approve the plan.
+It does not bypass the gate — it collects the same signature against strictly
+more information than a nine-section document read in isolation would give,
+because the plan is concrete where the spec is prose.
+
+What it costs: one more model call before planning, and a review screen that
+grows a "what this will not do" section. What it must not become: a spec
+displayed for form's sake. If the drafted non-goals are always "None recorded",
+the gate is vacuous and we have built theatre.
+
+#### The smaller version, and why it is not as small as it looks
+
+"Have `project.init` write a valid scaffold the user never sees" does not
+actually unblock a first run. The scaffold satisfies *validate*; it does not
+satisfy *ratify*, which needs the ideation record and both signatures. Getting
+past that without a human act means auto-signing `convergence.user` — the one
+thing ruled out above.
+
+If a smaller step is wanted first, the honest one is a Core change rather than a
+client trick: let a **short spec form** be first-class — title, goal, non-goals,
+acceptance — accepted by `plan.prepare` on equal terms, with the nine-section
+document reserved for deliberate work. That says "a one-line intent is a
+legitimate spec shape" instead of pretending a placeholder is a document. It is
+a smaller change than it sounds, because nothing parses the nine sections.
+
+#### Open question for the human, not for this file
+
+Whether a drafted spec should be *kept* as the project's spec, or treated as
+scaffolding for the plan and discarded. Keeping it means the project accumulates
+documents nobody wrote. Discarding it means `active_spec_title` and the run
+history lose their subject line. I lean toward keeping it, marked as drafted,
+because the ideation record already distinguishes who converged — but this is a
+product call about what the project's memory should contain.
 
 ### Core actions the settings surface needs
 

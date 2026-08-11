@@ -240,6 +240,102 @@ async function inspect(events, trailPath) {
   }
 }
 
+/* A projection at every point the run visibly changed.
+ *
+ * Playing a trail back in time is only honest if the projection moves with it.
+ * Serving the final projection while events trickle in would draw a rail
+ * reading "4/4 shipped" over a thread that has not finished planning -- the
+ * exact class of wrong this corpus keeps producing.
+ *
+ * One scratch repository is built and re-inspected at each cut, because
+ * `initProject` and `git init` dominate the cost and neither changes.
+ */
+const MILESTONE_TYPES = new Set([
+  "plan.prepared",
+  "plan.ratified",
+  "task.started",
+  "task.completed",
+  "task.failed",
+  "task.blocked",
+  "patch.rejected",
+  "integration.passed",
+  "integration.failed",
+  "adoption.reviewed",
+  "adoption.completed"
+]);
+
+async function inspectTimeline(run, trailPath) {
+  const cuts = [];
+  run.forEach((event, index) => {
+    if (MILESTONE_TYPES.has(event.type)) cuts.push(index);
+  });
+  if (cuts.length === 0) return null;
+  if (cuts.at(-1) !== run.length - 1) cuts.push(run.length - 1);
+
+  const repo = await scratchRepo(run, trailPath);
+  const eventsPath = path.join(repo, ".hivemind", "log", "events.jsonl");
+  try {
+    const { inspectWorkspace } = await import(
+      new URL(
+        `file://${path.join(repoRoot, "dist", "src", "workspace-inspection.js").replaceAll("\\", "/")}`
+      )
+    );
+    const start = Date.parse(run[0].ts);
+    const frames = [];
+    for (const cut of cuts) {
+      const prefix = run.slice(0, cut + 1);
+      await writeFile(
+        eventsPath,
+        `${prefix.map((event) => JSON.stringify(event)).join("\n")}\n`,
+        "utf8"
+      );
+      const result = await inspectWorkspace(repo);
+      if (!result.ok) continue;
+      frames.push({
+        event_index: cut,
+        at_ms: Date.parse(run[cut].ts) - start,
+        inspection: result.value
+      });
+    }
+    return frames.length > 0 ? frames : null;
+  } finally {
+    await rm(repo, { recursive: true, force: true, maxRetries: 3 });
+  }
+}
+
+/* Worker output is not in the trail: it is written to
+ * `.hivemind/log/tasks/<id>.output.jsonl`, which a capture only holds if the
+ * evidence folder took it. Where it exists, playback can stream it back on the
+ * same clock as the events, which is the difference between a demo of state
+ * changing and a demo of agents working. */
+async function collectOutput(trailPath) {
+  const dir = path.join(path.dirname(trailPath), "project-state", "log", "tasks");
+  let names;
+  try {
+    names = await readdir(dir);
+  } catch {
+    return null;
+  }
+  const output = {};
+  for (const name of names) {
+    if (!name.endsWith(".output.jsonl")) continue;
+    const records = [];
+    for (const line of (await readFile(path.join(dir, name), "utf8")).split(/\r?\n/u)) {
+      if (line.trim() === "") continue;
+      try {
+        const record = JSON.parse(line);
+        if (typeof record?.task_id === "string" && typeof record?.text === "string") {
+          records.push(record);
+        }
+      } catch {
+        /* a truncated final line is not worth failing a capture over */
+      }
+    }
+    if (records.length > 0) output[records[0].task_id] = records;
+  }
+  return Object.keys(output).length > 0 ? output : null;
+}
+
 /* Where the run was busiest: the point at which the most tasks were started and
  * none of them had finished yet. Cutting the trail there and projecting the
  * truncated events through Core gives a genuine mid-run state -- something the
@@ -286,6 +382,27 @@ for (const file of files) {
         projected.ok ? "projected" : `NO PROJECTION: ${projected.reason}`
       }`
     );
+
+    /* Only a run that reaches a ship is worth the cost of a frame-by-frame
+       projection, and only that run can be played as a demo of the whole
+       thing. Everything else keeps the single end-state projection. */
+    const complete =
+      run.some((event) => event.type === "plan.ratified") &&
+      run.some((event) => event.type === "adoption.completed");
+    if (complete && projected.ok) {
+      const scenario = scenarios.at(-1);
+      const [timeline, output] = await Promise.all([
+        inspectTimeline(run, file),
+        collectOutput(file)
+      ]);
+      if (timeline !== null) scenario.timeline = timeline;
+      if (output !== null) scenario.output = output;
+      console.log(
+        `${"".padEnd(34)}     playback: ${timeline?.length ?? 0} projections, ${
+          output === null ? 0 : Object.values(output).reduce((n, r) => n + r.length, 0)
+        } output records`
+      );
+    }
 
     const midrun = busiestPrefix(run);
     if (midrun !== null && midrun.length < run.length) {
