@@ -70,6 +70,16 @@ test("one exact reviewed verification set advances the base once and retains bot
       adopted_ref: adopted.value.adopted_ref,
       automatic_rollback: false
     });
+    /* The trail has to be able to rebuild what shipped, not merely attest that
+       something did. Without this the record proves a commit landed but cannot
+       say which files it carried, and the shipped card read "0 files changed"
+       over a commit that changed eight. */
+    const changedFiles = completed?.data.changed_files;
+    assert.ok(Array.isArray(changedFiles), "adoption.completed must record what it changed");
+    assert.deepEqual(changedFiles, review.value.changed_files);
+    assert.ok((changedFiles as string[]).length > 0);
+    const started = [...events].reverse().find((event) => event.type === "adoption.started");
+    assert.deepEqual(started?.data.changed_files, changedFiles);
     const second = await adoptVerifiedSet(repo, review.value);
     assert.equal(second.ok, false);
     if (!second.ok) assert.match(second.reason, /already consumed/u);

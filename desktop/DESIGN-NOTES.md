@@ -122,7 +122,7 @@ carry what is needed to reconstruct the state it describes. Ask of every new
 event: **could the state be rebuilt from this alone?** If not, the trail is a
 receipt, not a record.
 
-This has now bitten four times:
+This has now bitten five times:
 
 1. a checkpoint that could not be resumed from,
 2. a pre-M8.7 verification that could not be adopted from,
@@ -131,10 +131,18 @@ This has now bitten four times:
 4. `task.created` omitting `required_tests`, `deterministic_validity_check` and
    `routing_task_type`, so **Core's own contract validation refuses a contract
    rebuilt from Core's own log** — found by replaying the trail through the UI.
+5. `adoption.completed` omitting `changed_files`, so the trail could prove a
+   commit landed but not say what it carried. The shipped card read **"0 files
+   changed" over a commit that changed eight** — found by shipping a real run
+   through the app on 2026-08-11. `adoption.reviewed` had recorded the files all
+   along; the started/completed pair had not.
 
 The fourth is the sharpest statement of the rule: the system cannot reconstruct
-its own state from its own durable record. Adding those three fields to
-`task.created` closes this instance; the rule is what prevents the fifth.
+its own state from its own durable record. The fifth is the cheapest to have
+prevented — the data was one scope away, already in hand.
+
+The rule keeps catching things because it is asked too late. Ask it of the
+event when the event is written, not when a surface finally needs it.
 
 ## Standing rule: capture the trail, not just the picture
 
@@ -292,6 +300,35 @@ The setup screen and the agent dialog make steps 2 and 3 comprehensible and hand
 over the exact files, but the app still cannot apply them. Everything below is
 what Core would need for a first run without a text editor.
 
+**Walked again on 2026-08-11, and step 3 is not the last wall.** With adapter
+profiles and tier globs in place, the first prompt still fails:
+
+> `no active spec; create and ratify a spec before planning, leasing, or running workers`
+
+Reaching a first prompt took four terminal commands and a hand-written document,
+none of which appears on any surface in the app:
+
+```
+hivemind spec S-001 --create --title "…"     # then fill nine sections by hand
+hivemind ideate S-001 --start --title "…" --goal "…"
+hivemind ideate S-001 --round round.json     # ≥2 alternatives with tradeoffs,
+                                             # plus a self-critique round
+hivemind spec S-001 --ratify
+```
+
+The spec gate is doing real work — it refuses a spec with empty non-goals, and
+it refuses ratification without genuine alternatives and a self-critique. The
+problem is not that the gate exists, it is that the product's whole promise is
+"type what you want" and the first thing it does is refuse until you have
+written a nine-section document in a text editor. `project.init` in the list
+below is necessary but not sufficient: a first run also needs a way to get from
+a sentence to a ratified spec.
+
+That error is also raw Core text on a primary surface, and it says *spec*,
+*leasing* and *workers* — the client's guard suppresses it and falls back to the
+kind-based sentence, which is correct but loses the one detail that would tell
+somebody what to do.
+
 ### The cost defect in an unconfigured project
 
 `inferScopeTier` (src/routing.ts) returns **`"high"`** for any path matching no
@@ -370,41 +407,51 @@ directly.
 report the roles it expects in `config.inspect`, or config should carry a
 role→tool mapping. Today the only thing tying them together is a desktop test.
 
-### Core-side copy the client cannot repair
+### Core-side copy — done
 
-Found by replay: the client is not the only thing writing user-facing text, and
-what Core writes is gate output. Three fixes, all in Core.
+Three fixes, all in Core, all shipped on 2026-08-11.
 
-**Gate reasons need a plain-language field.** These strings render verbatim today,
-in the attention bar and in the task row:
+**`plain_reason` is written where the cause is known.** The cause was being
+thrown away at the point it was known: `decideOp` returned only a verdict, so by
+the time anything wanted to explain a refusal the only material left was the
+operation and the path. `decision.ts` now carries a typed `DecisionCause`
+alongside the verdict, `plainDecisionReason` turns it into one sentence naming
+the file, and `analyze.ts` writes `plain_reason` onto `patch.rejected` /
+`patch.accepted` beside an untouched durable `reason`.
 
-| Recorded reason | What it means to the person |
-| --- | --- |
-| `rejected add src/ledger.js` | it tried to create a file that is not its to create |
-| `escalated modify package.json` | the change reaches a file that needs your say-so |
-| `empty patch: no changes to analyze` | it finished without changing anything |
-| `path is read-only under the granted lease` | it tried to edit a file another task owns |
-| `adapter timed out before producing a patch` | the agent stopped responding before it finished |
+The real run on 2026-08-11 produced 11 events carrying both halves:
 
-The durable `reason` must stay exactly as it is — it is evidence. The fix is a
-sibling field, `plain_reason`, written where the reason is produced, carrying one
-sentence in the second column's voice. `plainEvidence` in
-`workspace-inspection.ts` already prefers `plain_reason` when present, so queue
-items light up as soon as the producers write it; `plainTaskIssue` in the client
-should then be deleted rather than extended. This is the third time this has come
-up. More regex in the client cannot work: the client is guessing at strings it
-does not own.
+```
+reason      : "all changes are within scope"
+plain_reason: "Every file it changed was one this task was given."
+```
 
-**`taskAttentionTitle` must stop leading with IDs.** It composes "T-001 needs a
-revision" while the row beside it reads "Initialize CLI package metadata and usage
-docs". Core has the title in the contract it just loaded. Lead with it, and keep
-the ID as secondary detail — the same rule the client follows.
+That run was clean, so only the accept path was exercised on real data. The
+refusal sentences are covered by `test/plain-reason.test.ts`, which asserts every
+cause has a sentence, that it names the file, and that it contains none of the
+vocabulary the client would refuse to render.
 
-**Core should adopt the client's vocabulary.** Core-composed copy says *merge*
-("This change needs fresh checks before it can merge"); every client surface says
-*ship*. Both appear on screen at once. The language pass settled on *ship*
-because it is what a non-technical person calls the decision, and the client
-cannot rewrite Core's sentences without guessing at their meaning.
+`plainTaskIssue` is **deleted**, not extended, and a desktop test asserts it
+stays deleted. Note the shape of this by construction: `plain_reason` is written
+when an event is produced, so the eight older trails in `docs/evidence` cannot
+gain it retroactively, and they correctly still replay with the raw reasons.
+
+**`taskAttentionTitle` leads with the title.** It only ever looked the title up
+in the plan, so a run whose plan is not loaded composed "T-001 needs a revision"
+beside a row reading "Initialize CLI package metadata and usage docs". The
+durable status carries the title too, and is the wider source of the two. Where
+neither knows a title — a trail with no `task.created`, which the m7-4 evidence
+is — leading with the identifier is correct, because anything else is invention.
+
+**Core says *ship*.** The language pass settled on *ship*; Core said *merge* in
+the adoption readiness sentence, the run outcome detail and the failed-adoption
+title. All three now say ship, and the readiness sentence no longer puts
+"verified-set provenance" and "adoption" on the attention bar.
+
+The client's containment guard (`src/lib/vocabulary.ts`) stays exactly as strict
+as it was. It declines an unsayable sentence and falls back to wording chosen by
+the item's typed `kind`; it never rewrites one. Core's copy improving is what
+stops the guard firing — the guard does not relax to meet it.
 
 ### Actions with no way to reach them
 
@@ -499,13 +546,28 @@ are not in the repository, so they cannot be replayed. Whatever process captures
 evidence should keep the JSONL alongside the PNGs; a screenshot cannot be
 replayed into a different UI, and the trail can.
 
-**So these surfaces have still never been drawn from real data**, and this pass
-did not change that: the populated **Project** surface (past runs, remembered
-guidance, items waiting for review), the **plan review**, and the **ship bar**.
-Their layouts were checked against a scratch fixture injected into
-`replay-data.json` and then discarded — which is a layout tool, not evidence,
-exactly as the standing rule above says. Treat them as unverified until a trail
-carrying `plan.*`, `adoption.*` and a completed run exists.
+**Closed on 2026-08-11.** `docs/evidence/e2e-2026-08-11-textkit` is a real run
+driven end to end through the desktop app: one prompt, a plan review, an
+approval, three workers in parallel, a dependent fourth task, and a ship. Its
+trail carries `plan.*`, `adoption.*`, `routing.observed` and a completed run —
+all four things this corpus had never contained — and it replays:
+
+```
+npm run replay:collect
+/replay.html?scenario=e2e-textkit-parallel-run
+```
+
+So the plan review, the ship confirmation and the populated Project surface have
+now each been rendered from real data. Two of the three were right the first
+time; the ship card was not, and that is recorded above as the fifth instance of
+the rebuild rule.
+
+What that trail still cannot show, because the collector replays events into a
+scratch repository rather than restoring a project: `plan_review` and
+`current_plan` come back null (the plan file is not in the trail) and `spend`
+reads zero (the ledger is not either). The plan review screen in the evidence
+folder is a live screenshot, not a replay. Restoring those two artefacts
+alongside the events is the next thing worth doing to the collector.
 
 `task.created` records `title`, `agent_role`, `base_commit`,
 `acceptance_criterion` and `allowed_files`, but **not** `required_tests`,

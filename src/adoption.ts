@@ -218,6 +218,13 @@ export async function adoptVerifiedSet(
     candidate_commit: candidate.value.commit,
     candidate_tree: candidate.value.tree,
     task_ids: manifest.task_ids,
+    /* What this adoption actually changes. `adoption.reviewed` already records
+       it, but the started/completed pair did not, so the trail could prove a
+       change landed without being able to say what landed -- a receipt rather
+       than a record, and the fifth time that rule has been broken here. Found
+       by replaying a real run: the shipped card read "0 files changed" over a
+       commit that changed eight. */
+    changed_files: [...manifest.changed_files],
     lease_requirements: preconditions.value
   };
   const guarded = await runWithHeldTaskLeases(repoRoot, preconditions.value, async () => {
