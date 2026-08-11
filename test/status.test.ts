@@ -228,13 +228,9 @@ test("getStatus reports a real patch verdict only after submit and analyze event
     const submitted = await submitTask(repo, "T-REAL");
     assert.equal(submitted.ok, true);
     const analyzed = await analyzeTask(repo, "T-REAL");
-    assert.deepEqual(analyzed, {
-      ok: true,
-      value: {
-        verdict: "accept",
-        reason: "all changes are within scope"
-      }
-    });
+    assert.equal(analyzed.ok, true);
+    assert.equal(analyzed.ok && analyzed.value.verdict, "accept");
+    assert.equal(analyzed.ok && analyzed.value.reason, "all changes are within scope");
 
     const result = await getStatus(repo);
     assert.equal(result.ok, true);
@@ -292,13 +288,9 @@ test("M2.6 MVP gate runs two fake agents in parallel, rejects out-of-scope work,
     const accepted = await analyzeTask(repo, "T-001");
     const rejected = await analyzeTask(repo, "T-002");
 
-    assert.deepEqual(accepted, {
-      ok: true,
-      value: {
-        verdict: "accept",
-        reason: "all changes are within scope"
-      }
-    });
+    assert.equal(accepted.ok, true);
+    assert.equal(accepted.ok && accepted.value.verdict, "accept");
+    assert.equal(accepted.ok && accepted.value.reason, "all changes are within scope");
     assert.equal(rejected.ok, true);
     if (!rejected.ok) {
       return;

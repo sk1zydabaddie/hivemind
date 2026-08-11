@@ -1172,7 +1172,7 @@ test("History stays active until every ratified task is durably verified, then b
     if (!complete.ok) return;
     const completeRun = (complete.value as { history: { runs: Array<{ outcome: string; outcome_detail: string; verified_tasks: string[] }> } }).history.runs[0];
     assert.equal(completeRun?.outcome, "completed");
-    assert.equal(completeRun?.outcome_detail, "All 2 planned tasks passed project checks and are ready to adopt.");
+    assert.equal(completeRun?.outcome_detail, "All 2 planned tasks passed their checks and are ready to ship.");
     assert.deepEqual(completeRun?.verified_tasks, ["T-001", "T-002", "T-999"]);
 
     await appendEvent(repo, {
@@ -1185,7 +1185,7 @@ test("History stays active until every ratified task is durably verified, then b
     if (!adopted.ok) return;
     const adoptedRun = (adopted.value as { history: { runs: Array<{ outcome: string; outcome_detail: string; merged_tasks: string[] }> } }).history.runs[0];
     assert.equal(adoptedRun?.outcome, "completed");
-    assert.equal(adoptedRun?.outcome_detail, "All 2 planned tasks merged into the project.");
+    assert.equal(adoptedRun?.outcome_detail, "All 2 planned tasks shipped to the project.");
     assert.deepEqual(adoptedRun?.merged_tasks, ["T-001", "T-002"]);
   });
 });

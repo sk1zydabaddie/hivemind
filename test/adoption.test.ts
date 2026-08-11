@@ -566,7 +566,9 @@ test("legacy verification is surfaced and a typed fresh-check action runs the re
     if (inspection.ok) {
       const item = inspection.value.needs_you.find((entry) => entry.kind === "reverification_required");
       assert.equal(item?.action?.type, "verification.rerun");
-      assert.match(item?.detail ?? "", /predate verified-set provenance|real project checks again/iu);
+      // Wording is desktop-facing copy and changes with language passes; what
+      // must hold is that the item points at re-running the project's checks.
+      assert.match(item?.detail ?? "", /checks again/iu);
     }
 
     const guidance = await executeWorkspaceAction(repo, {

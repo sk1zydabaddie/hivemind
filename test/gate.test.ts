@@ -8,7 +8,7 @@ import test from "node:test";
 
 import type { TaskContract } from "../src/contract.js";
 import type { DecisionConfig } from "../src/decision.js";
-import { runGate } from "../src/gate.js";
+import { runGate, type GateResult, type GateVerdict } from "../src/gate.js";
 import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
@@ -21,7 +21,7 @@ test("runGate accepts an all-in-scope modify patch", async () => {
 
     const result = await runGate(baseCommit, patchPath, contractFor({ allowed_files: ["README.md"] }), configFor(repo));
 
-    assert.deepEqual(result, { verdict: "accept", reason: "all changes are within scope" });
+    assertGate(result, "accept", "all changes are within scope");
   });
 });
 
@@ -70,7 +70,7 @@ test("runGate rejects a patch that does not apply to the declared base", async (
 
     const result = await runGate(baseCommit, patchPath, contractFor({ allowed_files: ["README.md"] }), configFor(repo));
 
-    assert.deepEqual(result, { verdict: "reject", reason: "patch does not apply to declared base" });
+    assertGate(result, "reject", "patch does not apply to declared base");
   });
 });
 
@@ -83,7 +83,7 @@ test("runGate accepts an allowed add by canonicalizing against the applied check
 
     const result = await runGate(baseCommit, patchPath, contractFor({ allowed_files: ["new-file.txt"] }), configFor(repo));
 
-    assert.deepEqual(result, { verdict: "accept", reason: "all changes are within scope" });
+    assertGate(result, "accept", "all changes are within scope");
   });
 });
 
@@ -95,7 +95,7 @@ test("runGate accepts an allowed delete by canonicalizing against the base check
 
     const result = await runGate(baseCommit, patchPath, contractFor({ allowed_files: ["delete-me.txt"] }), configFor(repo));
 
-    assert.deepEqual(result, { verdict: "accept", reason: "all changes are within scope" });
+    assertGate(result, "accept", "all changes are within scope");
   });
 });
 
@@ -151,7 +151,7 @@ test("runGate accepts an empty patch as no changes", async () => {
 
     const result = await runGate(baseCommit, patchPath, contractFor({ allowed_files: ["README.md"] }), configFor(repo));
 
-    assert.deepEqual(result, { verdict: "accept", reason: "no changes" });
+    assertGate(result, "accept", "no changes");
   });
 });
 
@@ -297,6 +297,26 @@ async function makeUntrackedFilesDiffable(repo: string): Promise<void> {
 
 async function resetRepo(repo: string, commit: string): Promise<void> {
   await git(repo, ["reset", "--hard", commit]);
+}
+
+/**
+ * The gate now returns two halves of one answer: `reason` is evidence and is
+ * asserted exactly, `plain_reason` is what a person reads and is asserted for
+ * the properties that matter -- present, a sentence, and free of any internal
+ * term. Pinning its exact wording here would make every language pass a Core
+ * test failure, which is the coupling this project already removed once.
+ */
+function assertGate(result: GateResult, verdict: GateVerdict, reason: string): void {
+  assert.equal(result.verdict, verdict);
+  assert.equal(result.reason, reason);
+  assert.ok(result.plain_reason.trim() !== "", "plain_reason must be written");
+  assert.match(result.plain_reason, /^[A-Z].*[.]$/su);
+  for (const term of ["lease", "worktree", "verdict", "glob", "escalate", "contract"]) {
+    assert.ok(
+      !result.plain_reason.toLowerCase().includes(term),
+      `plain_reason says "${term}", which no surface will render: ${result.plain_reason}`
+    );
+  }
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {

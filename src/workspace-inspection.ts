@@ -321,7 +321,8 @@ export async function inspectWorkspace(
     planState.current,
     session.value,
     integrationFailure,
-    options
+    options,
+    status.value
   );
   if (!queues.ok) return queues;
   const ledger = await readQuotaLedgerState(repoRoot);
@@ -920,13 +921,13 @@ function historyOutcome(
   if (stoppedTasks.length > 0) return { state: "needs_attention", detail: `${stoppedTasks.length} task${stoppedTasks.length === 1 ? "" : "s"} stopped or paused.` };
   if (status === "paused") return { state: "paused", detail: "The run is waiting for a decision." };
   if (plannedTaskIds !== null && plannedTaskIds.every((taskId) => mergedTasks.includes(taskId))) {
-    return { state: "completed", detail: `All ${plannedTaskIds.length} planned task${plannedTaskIds.length === 1 ? "" : "s"} merged into the project.` };
+    return { state: "completed", detail: `All ${plannedTaskIds.length} planned task${plannedTaskIds.length === 1 ? "" : "s"} shipped to the project.` };
   }
   if (plannedTaskIds !== null && plannedTaskIds.every((taskId) => verifiedTasks.includes(taskId))) {
-    return { state: "completed", detail: `All ${plannedTaskIds.length} planned task${plannedTaskIds.length === 1 ? "" : "s"} passed project checks and are ready to adopt.` };
+    return { state: "completed", detail: `All ${plannedTaskIds.length} planned task${plannedTaskIds.length === 1 ? "" : "s"} passed their checks and are ready to ship.` };
   }
   if (status === "active") return { state: "active", detail: "The run is still active." };
-  if (verifiedTasks.length > 0) return { state: "completed", detail: `${verifiedTasks.length} task${verifiedTasks.length === 1 ? "" : "s"} passed project checks and are ready to adopt.` };
+  if (verifiedTasks.length > 0) return { state: "completed", detail: `${verifiedTasks.length} task${verifiedTasks.length === 1 ? "" : "s"} passed their checks and are ready to ship.` };
   return { state: "completed", detail: "The run ended without a verified change." };
 }
 
@@ -1072,7 +1073,8 @@ async function buildQueues(
   currentPlan: WorkspacePlanReview | null,
   session: ManagerWorkspaceSession | null,
   integrationFailure: WorkspaceInspection["integration_failure"],
-  options: WorkspaceInspectionOptions
+  options: WorkspaceInspectionOptions,
+  status: HivemindStatus | null
 ): Promise<{ ok: true; value: { needsYou: WorkspaceQueueItem[]; later: WorkspaceQueueItem[] } } | { ok: false; reason: string }> {
   const needsYou: WorkspaceQueueItem[] = [];
   if (planReview !== null) {
@@ -1181,7 +1183,7 @@ async function buildQueues(
     needsYou.push(queueEvent(
       event,
       "task_attention",
-      taskAttentionTitle(event, currentPlan ?? planReview),
+      taskAttentionTitle(event, currentPlan ?? planReview, status),
       taskAttentionDetail(event, events, currentPlan ?? planReview)
     ));
   }
@@ -1383,10 +1385,10 @@ function unresolvedAdoptionOutcomes(events: HivemindEvent[]): WorkspaceQueueItem
     items.push({
       id: `${event.type}:${String(event.data.adoption_id ?? event.ts)}`,
       kind: indeterminate ? "adoption_indeterminate" : "adoption_failed",
-      title: indeterminate ? "We cannot tell whether this landed" : "The merge did not happen",
+      title: indeterminate ? "We cannot tell whether this landed" : "This did not ship, and your branch is unchanged",
       detail: indeterminate
         ? `${scope} could not be confirmed either way. Check your branch by hand: it was at ${refSummary(event.data.pre_adoption_ref)} before, the change would have made it ${refSummary(event.data.adopted_ref ?? event.data.candidate_commit)}, and it now reads ${refSummary(event.data.observed_head)}. ${plainEvidence(event)}`
-        : `${scope} was not merged and your branch is unchanged. ${plainEvidence(event)}`,
+        : `${scope} did not ship and your branch is unchanged. ${plainEvidence(event)}`,
       created_at: event.ts,
       task_id: taskIds[0] ?? null,
       action: null
@@ -1465,8 +1467,21 @@ function plainIntegrationFailureReason(
   return reason;
 }
 
-function taskAttentionTitle(event: HivemindEvent, plan: WorkspacePlanReview | null): string {
-  const title = plan?.tasks.find((task) => task.task_id === event.task_id)?.title ?? event.task_id ?? "Task";
+/* Lead with what the work is, and keep the identifier as secondary detail --
+   the same rule every row already follows. The title was only ever looked up in
+   the plan, so a run whose plan is not loaded composed "T-001 needs a revision"
+   beside a row reading "Initialize CLI package metadata and usage docs". The
+   durable status carries the title too, and it is the wider source of the two. */
+function taskAttentionTitle(
+  event: HivemindEvent,
+  plan: WorkspacePlanReview | null,
+  status: HivemindStatus | null
+): string {
+  const title =
+    plan?.tasks.find((task) => task.task_id === event.task_id)?.title ??
+    status?.tasks.find((task) => task.task_id === event.task_id)?.title ??
+    event.task_id ??
+    "Task";
   if (event.type === "patch.rejected") return `${title} needs a revision`;
   if (event.type === "task.blocked") return `${title} cannot continue`;
   if (event.type === "task.paused") return `${title} is waiting for capacity`;
@@ -1512,7 +1527,7 @@ function plainApprovalDetail(action: string): string {
 }
 
 function adoptionReasonTitle(reason: string): string {
-  if (reason === "missing_provenance") return "This change needs fresh checks before it can merge";
+  if (reason === "missing_provenance") return "This change needs fresh checks before it can ship";
   if (reason === "moved_head") return "The project changed after these checks";
   if (reason === "changed_inputs") return "The checked inputs no longer match";
   if (reason === "lease_problem") return "Editing ownership changed after verification";

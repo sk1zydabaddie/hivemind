@@ -371,7 +371,7 @@
           {
             "id": "task_attention:T-001:2026-06-17T20:23:01.629Z",
             "kind": "task_attention",
-            "title": "T-001 needs a revision",
+            "title": "Initialize CLI package metadata and usage docs needs a revision",
             "detail": "rejected add src/ledger.js",
             "created_at": "2026-06-17T20:23:01.629Z",
             "task_id": "T-001",
@@ -380,8 +380,8 @@
           {
             "id": "reverify:2026-06-17T20:19:20.481Z:missing_provenance",
             "kind": "reverification_required",
-            "title": "This change needs fresh checks before it can merge",
-            "detail": "These checks predate verified-set provenance. Run the real project checks again before adoption. Fresh checks will re-evaluate T-002; they will not reuse or alter the old result.",
+            "title": "This change needs fresh checks before it can ship",
+            "detail": "These checks are older than the way this project records them now. Run the project's checks again before shipping. Fresh checks will re-evaluate T-002; they will not reuse or alter the old result.",
             "created_at": "2026-06-17T20:19:20.481Z",
             "task_id": "T-002",
             "action": {
@@ -693,8 +693,8 @@
           {
             "id": "reverify:2026-06-18T22:46:17.680Z:missing_provenance",
             "kind": "reverification_required",
-            "title": "This change needs fresh checks before it can merge",
-            "detail": "These checks predate verified-set provenance. Run the real project checks again before adoption. Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
+            "title": "This change needs fresh checks before it can ship",
+            "detail": "These checks are older than the way this project records them now. Run the project's checks again before shipping. Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
             "created_at": "2026-06-18T22:46:17.680Z",
             "task_id": "T-001",
             "action": {
@@ -1010,8 +1010,8 @@
           {
             "id": "reverify:2026-07-28T03:36:45.824Z:missing_provenance",
             "kind": "reverification_required",
-            "title": "This change needs fresh checks before it can merge",
-            "detail": "These checks predate verified-set provenance. Run the real project checks again before adoption. Fresh checks will re-evaluate the queued changes; they will not reuse or alter the old result.",
+            "title": "This change needs fresh checks before it can ship",
+            "detail": "These checks are older than the way this project records them now. Run the project's checks again before shipping. Fresh checks will re-evaluate the queued changes; they will not reuse or alter the old result.",
             "created_at": "2026-07-28T03:36:45.824Z",
             "task_id": null,
             "action": {
@@ -1316,8 +1316,8 @@
           {
             "id": "reverify:2026-06-17T22:39:46.957Z:missing_provenance",
             "kind": "reverification_required",
-            "title": "This change needs fresh checks before it can merge",
-            "detail": "These checks predate verified-set provenance. Run the real project checks again before adoption. Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
+            "title": "This change needs fresh checks before it can ship",
+            "detail": "These checks are older than the way this project records them now. Run the project's checks again before shipping. Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
             "created_at": "2026-06-17T22:39:46.957Z",
             "task_id": "T-001",
             "action": {
@@ -1576,7 +1576,7 @@
           {
             "id": "task_attention:T-001:2026-06-17T21:50:10.780Z",
             "kind": "task_attention",
-            "title": "T-001 needs a revision",
+            "title": "Implement JSON ledger storage and validation needs a revision",
             "detail": "empty patch: no changes to analyze",
             "created_at": "2026-06-17T21:50:10.780Z",
             "task_id": "T-001",
@@ -2036,7 +2036,7 @@
           {
             "id": "task_attention:T-001:2026-06-17T23:10:56.106Z",
             "kind": "task_attention",
-            "title": "T-001 needs a revision",
+            "title": "Scaffold npm CLI entrypoint needs a revision",
             "detail": "escalated modify package.json",
             "created_at": "2026-06-17T23:10:56.106Z",
             "task_id": "T-001",

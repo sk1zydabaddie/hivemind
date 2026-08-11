@@ -25,13 +25,12 @@ test("analyzeTask returns accept for a clean in-scope bundle", async () => {
 
     const result = await analyzeTask(repo, "T-001");
 
-    assert.deepEqual(result, {
-      ok: true,
-      value: {
-        verdict: "accept",
-        reason: "all changes are within scope"
-      }
-    });
+    assert.equal(result.ok, true);
+    assert.equal(result.ok && result.value.verdict, "accept");
+    assert.equal(result.ok && result.value.reason, "all changes are within scope");
+    // The sibling a person reads. Its wording is desktop-facing copy; that it
+    // is written at all, beside an unchanged durable reason, is the contract.
+    assert.ok(result.ok && result.value.plain_reason.trim() !== "");
     const events = await readEvents(repo);
     assert.equal(events.ok, true);
     if (!events.ok) {
@@ -53,10 +52,10 @@ test("CLI analyze prints accept JSON and exits zero for an in-scope bundle", asy
     const result = await execFileAsync("node", [cliPath, "analyze", "T-001"], { cwd: repo, windowsHide: true });
 
     assert.equal(result.stderr, "");
-    assert.deepEqual(JSON.parse(result.stdout), {
-      verdict: "accept",
-      reason: "all changes are within scope"
-    });
+    const printed = JSON.parse(result.stdout) as { verdict: string; reason: string; plain_reason: string };
+    assert.equal(printed.verdict, "accept");
+    assert.equal(printed.reason, "all changes are within scope");
+    assert.ok(printed.plain_reason.trim() !== "");
   });
 });
 
@@ -138,13 +137,10 @@ test("analyzeTask rejects an empty patch instead of accepting no changes", async
 
     const result = await analyzeTask(repo, "T-EMPTY");
 
-    assert.deepEqual(result, {
-      ok: true,
-      value: {
-        verdict: "reject",
-        reason: "empty patch: no changes to analyze"
-      }
-    });
+    assert.equal(result.ok, true);
+    assert.equal(result.ok && result.value.verdict, "reject");
+    assert.equal(result.ok && result.value.reason, "empty patch: no changes to analyze");
+    assert.equal(result.ok && result.value.plain_reason, "It finished without changing anything.");
     const events = await readEvents(repo);
     assert.equal(events.ok, true);
     if (!events.ok) {

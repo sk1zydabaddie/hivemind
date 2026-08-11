@@ -102,7 +102,10 @@ export async function inspectLatestAdoptionReadiness(repoRoot: string): Promise<
     return {
       ok: true,
       value: {
-        ...blockedReadiness(latest, taskIds, "missing_provenance", "These checks predate verified-set provenance. Run the real project checks again before adoption."),
+        /* This sentence is read straight onto the attention bar. `reason_code`
+           is the part anything downstream matches on, so the wording is free to
+           be the wording a person can act on. */
+        ...blockedReadiness(latest, taskIds, "missing_provenance", "These checks are older than the way this project records them now. Run the project's checks again before shipping."),
         verification_id: verificationId
       }
     };

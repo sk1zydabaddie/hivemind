@@ -7,6 +7,30 @@ import { workerProtectedPathReason } from "./worker-protected-paths.js";
 
 export type DecisionVerdict = "pass" | "reject" | "escalate";
 
+/* Why a verdict was reached. The verdict alone was the whole answer until now,
+ * which meant the gate could say a change was refused but never say why -- so
+ * every surface downstream rendered "rejected add src/ledger.js" and left the
+ * person to infer the rest. The cause is decided here, where it is known, and
+ * carried out rather than reconstructed later from the path.
+ */
+export type DecisionCause =
+  | "allowed"
+  | "unknown_operation"
+  | "unresolvable_path"
+  | "protected_path"
+  | "outside_allowed_files"
+  | "delete_forbidden_path"
+  | "delete_critical_path"
+  | "symlink"
+  | "mode_or_metadata_change"
+  | "git_behavior_file"
+  | "dependency_file";
+
+export interface DecisionOutcome {
+  verdict: DecisionVerdict;
+  cause: DecisionCause;
+}
+
 export interface DecisionConfig extends HivemindConfig {
   critical_globs?: string[];
 }
@@ -27,47 +51,96 @@ const dependencyFiles = new Set([
   "bun.lockb"
 ]);
 
+/** The verdict only. Kept so existing callers and the M1.3 table read unchanged. */
 export async function decideOp(
   op: DecisionOp,
   contract: TaskContract,
   config: DecisionConfig
 ): Promise<DecisionVerdict> {
+  return (await decideOpOutcome(op, contract, config)).verdict;
+}
+
+/* The same decision table, returning the cause alongside the verdict. The order
+   of the checks is the decision table and must not be reordered: the first rule
+   that matches is the reason, and callers render it as such. */
+export async function decideOpOutcome(
+  op: DecisionOp,
+  contract: TaskContract,
+  config: DecisionConfig
+): Promise<DecisionOutcome> {
   if (!knownOps.has(op.op as ChangesetOpType)) {
-    return "reject";
+    return { verdict: "reject", cause: "unknown_operation" };
   }
 
   const canonical = await canonicalize(config.repo_root, op.path);
   if (!canonical.ok) {
-    return "reject";
+    return { verdict: "reject", cause: "unresolvable_path" };
   }
 
   const resolvedPath = canonical.resolved;
   if (workerProtectedPathReason(resolvedPath) !== null) {
-    return "reject";
+    return { verdict: "reject", cause: "protected_path" };
   }
   if (!isAllowedPath(resolvedPath, contract, config)) {
-    return "reject";
+    return { verdict: "reject", cause: "outside_allowed_files" };
   }
 
-  if (op.op === "delete" && (isForbiddenPath(resolvedPath, contract, config) || isCriticalPath(resolvedPath, config))) {
-    return "reject";
+  if (op.op === "delete" && isForbiddenPath(resolvedPath, contract, config)) {
+    return { verdict: "reject", cause: "delete_forbidden_path" };
+  }
+  if (op.op === "delete" && isCriticalPath(resolvedPath, config)) {
+    return { verdict: "reject", cause: "delete_critical_path" };
   }
 
   if (op.op === "symlink") {
-    return "reject";
+    return { verdict: "reject", cause: "symlink" };
   }
 
-  if (
-    op.op === "chmod" ||
-    op.op === "submodule" ||
-    op.op === "gitattr" ||
-    isGitBehaviorPath(resolvedPath) ||
-    isDependencyPath(resolvedPath)
-  ) {
-    return "escalate";
+  if (op.op === "chmod" || op.op === "submodule" || op.op === "gitattr") {
+    return { verdict: "escalate", cause: "mode_or_metadata_change" };
+  }
+  if (isGitBehaviorPath(resolvedPath)) {
+    return { verdict: "escalate", cause: "git_behavior_file" };
+  }
+  if (isDependencyPath(resolvedPath)) {
+    return { verdict: "escalate", cause: "dependency_file" };
   }
 
-  return "pass";
+  return { verdict: "pass", cause: "allowed" };
+}
+
+/* One sentence in the voice every user-facing surface uses. This is written
+   where the decision is made, because only here is the cause known without
+   guessing. It never contains an internal term: `plain_reason` is read straight
+   onto a primary surface, so anything unsayable here is unsayable there. */
+export function plainDecisionReason(cause: DecisionCause, op: DecisionOp): string {
+  const file = op.path;
+  switch (cause) {
+    case "unknown_operation":
+      return `It tried to make a kind of change to ${file} that is not allowed.`;
+    case "unresolvable_path":
+      return `It tried to change ${file}, which is not a real file inside this project.`;
+    case "protected_path":
+      return `It tried to change ${file}, which only you can change.`;
+    case "outside_allowed_files":
+      return op.op === "add"
+        ? `It tried to create ${file}, which is not one of the files this task was given.`
+        : `It tried to edit ${file}, which is not one of the files this task was given.`;
+    case "delete_forbidden_path":
+      return `It tried to delete ${file}, which this task was told to leave alone.`;
+    case "delete_critical_path":
+      return `It tried to delete ${file}, which is too important to remove automatically.`;
+    case "symlink":
+      return `It tried to add a shortcut to another file at ${file}, which is not allowed.`;
+    case "mode_or_metadata_change":
+      return `It tried to change how ${file} is stored rather than what is in it, which needs your say-so.`;
+    case "git_behavior_file":
+      return `It tried to change ${file}, which affects the whole project, so it needs your say-so.`;
+    case "dependency_file":
+      return `It tried to change ${file}, which adds or updates a package, so it needs your say-so.`;
+    case "allowed":
+      return `This task was given ${file}, so the change is fine.`;
+  }
 }
 
 function isAllowedPath(pathValue: string, contract: TaskContract, config: DecisionConfig): boolean {

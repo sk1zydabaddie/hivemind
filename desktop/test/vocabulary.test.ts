@@ -52,6 +52,36 @@ describe("vocabulary the product does not say", () => {
     }
   });
 
+  test("the client does not reword Core's reasons, it only declines unsayable ones", async () => {
+    const work = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"),
+      "utf8"
+    );
+    const inspection = await readFile(
+      path.resolve(desktopRoot, "..", "src", "workspace-inspection.ts"),
+      "utf8"
+    );
+
+    /* Core writes `plain_reason` beside the durable `reason` now, and
+       `plainEvidence` prefers it, so a task issue arrives already readable.
+       `plainTaskIssue` regexed Core's strings into sentences the client was
+       guessing at; it is deleted, and re-adding it is the regression. */
+    expect(work).not.toMatch(/plainTaskIssue/u);
+    expect(inspection).toMatch(/for \(const key of \["plain_reason",/u);
+
+    // The containment guard stays: it declines a sentence, never rewrites one.
+    expect(work).toMatch(/containsInternalVocabulary\(detail\)/u);
+  });
+
+  test("Core writes plain_reason where the cause is known", async () => {
+    const gate = await readFile(path.resolve(desktopRoot, "..", "src", "gate.ts"), "utf8");
+    const analyze = await readFile(path.resolve(desktopRoot, "..", "src", "analyze.ts"), "utf8");
+
+    // The durable reason is evidence and must survive untouched beside it.
+    expect(gate).toMatch(/plain_reason: plainDecisionReason\(outcome\.cause, op\)/u);
+    expect(analyze).toMatch(/reason: gateResult\.reason,\s*plain_reason: gateResult\.plain_reason/u);
+  });
+
   test("the guard's list covers every term the brief bans", () => {
     for (const term of [
       "lease",

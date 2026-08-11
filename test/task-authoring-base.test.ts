@@ -121,10 +121,9 @@ test("dependent task authors against the exact verified predecessor tree while c
     const config = await loadConfig(repo);
     assert.equal(config.ok, true);
     if (!config.ok) return;
-    assert.deepEqual(await runGate(authoringBase.value.commit, patchPath, loaded.contract, config.config), {
-      verdict: "accept",
-      reason: "all changes are within scope"
-    });
+    const gated = await runGate(authoringBase.value.commit, patchPath, loaded.contract, config.config);
+    assert.equal(gated.verdict, "accept");
+    assert.equal(gated.reason, "all changes are within scope");
 
     await writeFile(
       path.join(repo, ".hivemind", "patches", "T-001", "diff.patch"),

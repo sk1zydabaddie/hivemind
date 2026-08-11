@@ -63,7 +63,11 @@ export async function analyzeTask(
   if (!authoringBase.ok) return authoringBase;
   const gateResult: GateResult =
     patch.trim() === ""
-      ? { verdict: "reject", reason: "empty patch: no changes to analyze" }
+      ? {
+          verdict: "reject",
+          reason: "empty patch: no changes to analyze",
+          plain_reason: "It finished without changing anything."
+        }
       : await runGate(authoringBase.value.commit, patchPath, contractResult.contract, configResult.config);
   if (options.emitEvent !== false) {
     const eventType = gateResult.verdict === "accept" ? "patch.accepted" : "patch.rejected";
@@ -72,7 +76,10 @@ export async function analyzeTask(
       task_id: taskId,
       data: {
         verdict: gateResult.verdict,
-        reason: gateResult.reason
+        /* `reason` stays exactly as it is -- it is evidence, and things match on
+           it. `plain_reason` is the sibling every user-facing surface reads. */
+        reason: gateResult.reason,
+        plain_reason: gateResult.plain_reason
       }
     });
     if (!eventResult.ok) {

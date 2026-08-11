@@ -1552,7 +1552,13 @@ function TaskRow({
         </span>
         {issue ? (
           <span className="mt-2 block rounded-md bg-clay-wash px-2.5 py-1.5 text-[12px] leading-snug break-words text-clay">
-            {plainTaskIssue(issue)}
+            {/* Core writes `plain_reason` beside the durable reason now, and
+                `plainEvidence` prefers it, so this arrives already readable.
+                The client-side rewriter that used to sit here was deleted
+                rather than extended: a fourth regex would be guessing at a
+                string it does not own, which is the mistake this project has
+                recorded three times. Render what Core wrote. */}
+            {issue}
           </span>
         ) : null}
       </span>
@@ -2607,15 +2613,6 @@ function plainPrimaryDetail(detail: string, kind: WorkspaceQueueItem["kind"]): s
     return QUEUE_FALLBACK[kind];
   }
   return detail;
-}
-
-function plainTaskIssue(issue: string): string {
-  if (/quota|429|capacity/iu.test(issue)) return "Paused until capacity is available.";
-  if (/oracle|coverage/iu.test(issue)) return "Testing is too thin for this change.";
-  if (/write[-_ ]intent|scope/iu.test(issue)) {
-    return "The agent tried to change a file outside this task.";
-  }
-  return issue;
 }
 
 function integrationLanguage(status: string): { label: string; tone: Tone } {
