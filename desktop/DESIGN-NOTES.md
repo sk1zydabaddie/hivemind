@@ -196,6 +196,41 @@ caller was one edit away from skipping it. It is inside
 verify its own preconditions. A caller that has to remember is a caller that
 eventually forgets.
 
+## Standing rule: walk the journey, do not only test the units
+
+Three defects, all in the first-run seam, all invisible to 634 passing tests,
+all found by clicking through the product rather than by testing it. Together
+they are the strongest evidence this file has for the rule.
+
+1. **`prepareWorkspacePlan` kept a duplicate ratification check.** The planning
+   gate was moved in `checkPlanningAllowed`; this path called
+   `requireActiveSpecRatified` directly, so the first prompt still refused a
+   drafted spec. Found by typing a prompt.
+2. **Autonomy signed for the person.** With planning loosened, `auto` ratified a
+   plan against an unsigned spec. Found by looking at what was on disk after the
+   first defect was fixed.
+3. **The dispatcher and `adoptSpec` disagreed about a field.** An edit landed
+   `nothing_to_decline` in one and not the other, so Approve — the single action
+   a first run depends on — failed with "payload contains an unsupported field".
+   Found by clicking Approve.
+
+What they have in common is not carelessness; each was a reasonable edit. It is
+that **no test walks the journey**. The suite tests units richly and the seams
+between them not at all, and all three defects lived precisely in a seam: a gate
+moved in one place and duplicated in another, a policy branch downstream of a
+changed precondition, a payload contract split across two files.
+
+The rule:
+
+> **Walk the journey before claiming it works.** A suite that passes tells you
+> the units are right. Only using the product tells you they are connected. For
+> any flow the product actually sells — first run, prompt to shipped — walking
+> it is part of the definition of done, not a verification afterthought.
+
+The cost of not doing it is visible in the history: the front door was claimed
+finished three times, and each time walking it found something a test could not
+have. The cost of doing it is one paid run.
+
 ## Standing rule: capture the trail AND the project state
 
 Every verification run keeps its JSONL trail alongside its screenshots. A

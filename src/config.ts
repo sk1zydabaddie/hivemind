@@ -5,8 +5,14 @@ import { readJsonFile } from "./json.js";
 import { isAutonomyLevel, type AutonomyLevel } from "./autonomy-level.js";
 import { normalizeRepoPathPattern, validateRepoRelativePathOrGlob } from "./path-pattern.js";
 
-export const DEFAULT_RUN_TOKEN_CEILING = 150_000;
-export const DEFAULT_SESSION_TOKEN_CEILING = 500_000;
+/* Derived from MEASURED_WORST_SINGLE_CALL_TOKENS in project-defaults.ts, not
+   chosen as a round number. 150,000 was under the 152,229 a real worker call
+   costs, so a first run stopped on quota after the work was done and the money
+   was spent. A run ceiling must clear the worst single call a default
+   configuration can make, with room for a call that runs longer than the one
+   that was measured. */
+export const DEFAULT_RUN_TOKEN_CEILING = 300_000;
+export const DEFAULT_SESSION_TOKEN_CEILING = 3_000_000;
 export const DEFAULT_MAX_CONCURRENT_WORKERS = 2;
 export const HARD_MAX_CONCURRENT_WORKERS = 4;
 

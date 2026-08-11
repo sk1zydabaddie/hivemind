@@ -1,3 +1,5 @@
+import { DEFAULT_RUN_TOKEN_CEILING, DEFAULT_SESSION_TOKEN_CEILING } from "../src/config.js";
+import { MEASURED_WORST_SINGLE_CALL_TOKENS } from "../src/project-defaults.js";
 import assert from "node:assert/strict";
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdir, mkdtemp, open, readFile, rm, stat, writeFile } from "node:fs/promises";
@@ -450,6 +452,13 @@ test("daemon startup preserves a live metered reservation instead of blanket-rel
 
 test("a proven-dead worker without durable usage is charged the full reservation", async () => {
   await withTempRepo(async ({ repo }) => {
+    /* Declared, not inherited: this asserts the charge equals the reservation,
+       which is the run ceiling. Inheriting it coupled the test to a default it
+       does not assert. */
+    await setResourcePolicy(repo, {
+      run_ceiling: { tokens: 150_000 },
+      session_ceiling: { tokens: 500_000 }
+    });
     const reservation = await reserveTestCall(repo, "dead-full-charge");
     assert.equal(
       (await bindMeteredCallProcess(repo, reservation.reservation_id, { pid: 5252, process_instance_id: "dead-process" })).ok,
@@ -511,6 +520,10 @@ test("restart reconciliation settles durable provider usage instead of charging 
 
 test("metered settlement is exactly once and releases the unused reservation remainder", async () => {
   await withTempRepo(async ({ repo }) => {
+    await setResourcePolicy(repo, {
+      run_ceiling: { tokens: 150_000 },
+      session_ceiling: { tokens: 500_000 }
+    });
     const reservation = await reserveTestCall(repo, "exactly-once");
     const identity = { pid: 7272, process_instance_id: "settlement-owner" };
     assert.equal((await bindMeteredCallProcess(repo, reservation.reservation_id, identity)).ok, true);
@@ -559,14 +572,25 @@ test("metered settlement is exactly once and releases the unused reservation rem
   });
 });
 
-test("the default token ceilings expose a budget concurrency limit of three calls", async () => {
+test("the default token ceilings expose a usable budget concurrency", async () => {
   await withTempRepo(async ({ repo }) => {
     const capacity = await readMeteredBudgetCapacity(repo, "default-capacity");
     assert.equal(capacity.ok, true);
     if (!capacity.ok) return;
-    assert.equal(capacity.value.per_call_reservation_tokens, 150_000);
-    assert.equal(capacity.value.session_ceiling_tokens, 500_000);
-    assert.equal(capacity.value.available_reservations, 3);
+    /* Asserted as a relationship rather than as three fixed numbers. The old
+       version pinned 150,000 / 500,000 / 3, which is how a run ceiling below
+       one real worker call survived: the number was asserted, the property it
+       needed to have was not. */
+    assert.equal(capacity.value.per_call_reservation_tokens, DEFAULT_RUN_TOKEN_CEILING);
+    assert.equal(capacity.value.session_ceiling_tokens, DEFAULT_SESSION_TOKEN_CEILING);
+    assert.ok(
+      capacity.value.per_call_reservation_tokens > MEASURED_WORST_SINGLE_CALL_TOKENS,
+      "one call must fit inside the per-call reservation"
+    );
+    assert.ok(
+      capacity.value.available_reservations >= 3,
+      "a default session must afford several calls, not one"
+    );
   });
 });
 

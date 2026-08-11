@@ -1180,12 +1180,21 @@ async function buildQueues(
     });
   }
   for (const event of latestTaskAttention(events)) {
-    needsYou.push(queueEvent(
+    const item = queueEvent(
       event,
       "task_attention",
       taskAttentionTitle(event, currentPlan ?? planReview, status),
       taskAttentionDetail(event, events, currentPlan ?? planReview)
-    ));
+    );
+    /* A task paused for capacity is one worker call from continuing: its
+       contract, lease and worktree all survived. Offering nothing here left the
+       person told "waiting for capacity" with no way to act, and the only route
+       forward was a new prompt that threw away an approved plan. */
+    if (event.type === "task.paused" && event.task_id !== null) {
+      item.action = { type: "task.resume", payload: { task_id: event.task_id } };
+      item.detail = "This stopped because the run reached its spending limit. Continuing picks up the same task with the work it already did.";
+    }
+    needsYou.push(item);
   }
   const exhausted = [...events].reverse().find((event) => event.type === "quota.exhausted" && event.data.source === "token_ceiling");
   if (exhausted !== undefined) {

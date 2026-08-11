@@ -2649,6 +2649,7 @@ function queueActionLabel(actionType: string): string {
   if (actionType === "manager.continue") return "Keep going";
   if (actionType === "manager.retry_blocked") return "Try again";
   if (actionType === "task.stop") return "Stop this task";
+  if (actionType === "task.resume") return "Carry on";
   if (actionType === "verification.rerun") return "Run the checks again";
   if (actionType === "adoption.review") return "Show me the changes";
   if (actionType === "adoption.execute") return "Ship it";
@@ -2658,6 +2659,7 @@ function queueActionLabel(actionType: string): string {
 function actionSuccessMessage(actionType: string): string {
   if (actionType === "manager.approve_pending") return "The next step was approved.";
   if (actionType === "verification.rerun") return "Fresh project checks completed.";
+  if (actionType === "task.resume") return "Picked up where it stopped.";
   return "Done.";
 }
 

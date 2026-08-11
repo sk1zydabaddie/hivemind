@@ -332,6 +332,14 @@ export async function prepareConcurrentManagerFixture(
   await writeProfile(repo, "concurrent-worker", workerPath);
   await setConfigExecution(repo, concurrency);
   await setResourceSessionCeiling(repo, sessionCeiling);
+  /* Declared, not inherited: these fixtures assert how many workers fit under
+     the session ceiling, which depends on this number. */
+  await setResourceRunCeiling(repo, 150_000);
+  /* Same discipline for providers. These fixtures assert what happens when a
+     provider lane hits a wall, which is only meaningful against a known set of
+     providers -- init's tier ladder would reroute instead of pausing, which is
+     correct behaviour for a real project and wrong for this test. */
+  await removeDefaultTierWorkers(repo);
   await setConfigTestCommand(repo, "node -e \"process.exit(0)\"");
   await prepareLintedPlanWithTasks(
     repo,
@@ -657,6 +665,34 @@ export async function setTierPatterns(
   config.high_globs = patterns.high_globs ?? [];
   config.critical_globs = patterns.critical_globs ?? [];
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+/**
+ * Budget tests must DECLARE the run ceiling, not inherit it.
+ *
+ * These fixtures assert how many workers fit under a session ceiling, which
+ * depends on the per-call reservation -- the run ceiling. Inheriting that from
+ * init's defaults coupled them to a number they do not assert, so raising the
+ * default (because it was below one real worker call) broke six concurrency
+ * tests that have nothing to do with it. Same lesson as declaring the tier and
+ * provider set rather than inheriting init's.
+ */
+/** Drop init's tier ladder so a fixture's provider set is exactly what it declares. */
+export async function removeDefaultTierWorkers(repo: string): Promise<void> {
+  for (const tool of ["worker-standard", "worker-cheap"]) {
+    await rm(path.join(repo, ".hivemind", "adapters", `${tool}.profile.json`), { force: true });
+  }
+}
+
+export async function setResourceRunCeiling(repo: string, tokens: number): Promise<void> {
+  const configPath = path.join(repo, ".hivemind", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+  const policy = typeof config.resource_policy === "object" && config.resource_policy !== null && !Array.isArray(config.resource_policy)
+    ? config.resource_policy as Record<string, unknown>
+    : {};
+  config.resource_policy = { ...policy, run_ceiling: { tokens } };
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}
+`);
 }
 
 export async function setResourceSessionCeiling(repo: string, tokens: number): Promise<void> {

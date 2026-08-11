@@ -10,6 +10,8 @@ import {
   type HivemindConfig
 } from "./config.js";
 import {
+  DEFAULT_TIER_WORKERS,
+  defaultTierWorkerProfile,
   REQUIRED_ADAPTER_TOOLS,
   TIER_GLOB_KEYS,
   defaultAdapterProfile,
@@ -120,6 +122,13 @@ async function ensureRequiredAdapterProfiles(hivemindRoot: string): Promise<void
       continue;
     }
     await writeJsonAtomic(profilePath, defaultAdapterProfile(tool));
+  }
+  /* The tier ladder. Without these the routing floor computes the right tier and
+     has nowhere to fall, so every task runs on the flagship. */
+  for (const entry of DEFAULT_TIER_WORKERS) {
+    const profilePath = path.join(adaptersDir, `${entry.tool}.profile.json`);
+    if (await exists(profilePath)) continue;
+    await writeJsonAtomic(profilePath, defaultTierWorkerProfile(entry));
   }
 }
 

@@ -18,6 +18,7 @@ import { requestTaskRedirect } from "./supervision.js";
 import { requestTaskStop } from "./task-control.js";
 import { inspectWorkspace } from "./workspace-inspection.js";
 
+import { resumeTask } from "./task-resume.js";
 import { draftSpecFromPrompt } from "./spec-draft-action.js";
 import { adoptSpec, readSpecForReview } from "./spec-review.js";
 
@@ -39,6 +40,7 @@ export const workspaceActionTypes = [
   "manager.approve_pending",
   "task.redirect",
   "task.stop",
+  "task.resume",
   "run.stop",
   "status.inspect",
   "trail.inspect",
@@ -115,6 +117,12 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
       nonGoals as string[],
       payload.nothing_to_decline === true
     );
+  }
+  /* Continue a run that stopped for capacity, reusing the contract, lease and
+     worktree that survived the pause. Refuses if any of them went stale. */
+  if (raw.type === "task.resume") {
+    const parsed = exactStrings(payload, ["task_id"]);
+    return parsed.ok ? resumeTask(repoRoot, parsed.value.task_id) : parsed;
   }
   if (raw.type === "plan.ratify") {
     const parsed = exactStrings(payload, ["spec_id", "expected_plan_hash"]);

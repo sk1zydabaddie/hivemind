@@ -1,3 +1,4 @@
+import { DEFAULT_RUN_TOKEN_CEILING, DEFAULT_SESSION_TOKEN_CEILING } from "../src/config.js";
 import assert from "node:assert/strict";
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
@@ -528,8 +529,13 @@ test("workspace inspection publishes one concurrent task projection with actual 
     const failed = inspected.value.needs_you.find((item) => item.task_id === "T-002" && item.kind === "task_attention");
     assert.equal(failed?.title, "Add validation stopped");
     assert.match(failed?.detail ?? "", /^T-002 stopped; 2 other tasks are continuing\./u);
-    assert.equal(inspected.value.spend.reserved_tokens, 150_000);
-    assert.equal(inspected.value.spend.committed_tokens, inspected.value.spend.effective_tokens + 150_000);
+    /* The reservation is the run ceiling, so it is read from the constant
+       rather than pinned to a literal that a defaults change would break. */
+    assert.equal(inspected.value.spend.reserved_tokens, DEFAULT_RUN_TOKEN_CEILING);
+    assert.equal(
+      inspected.value.spend.committed_tokens,
+      inspected.value.spend.effective_tokens + DEFAULT_RUN_TOKEN_CEILING
+    );
   });
 });
 
@@ -1065,7 +1071,7 @@ test("workspace inspection presents authoritative plan detail and daemon-derived
     assert.deepEqual(view.later.map((item) => item.kind), ["memory_review", "memory_review"]);
     assert.equal(view.spend.calls, 0);
     assert.equal(view.spend.effective_tokens, 0);
-    assert.equal(view.spend.session_ceiling_tokens, 500_000);
+    assert.equal(view.spend.session_ceiling_tokens, DEFAULT_SESSION_TOKEN_CEILING);
     assert.deepEqual(view.swarm.characterizations, [{
       candidate_id: "C-001",
       task_id: "T-001",

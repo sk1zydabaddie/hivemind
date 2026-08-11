@@ -256,6 +256,7 @@ export type WorkspaceAction = {
     | "manager.approve_pending"
     | "task.redirect"
     | "task.stop"
+    | "task.resume"
     | "run.stop"
     | "status.inspect"
     | "trail.inspect"

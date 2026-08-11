@@ -70,3 +70,8 @@ Two actions added for the single first-run review.
   self-critique as the orchestrator's round. Writes `convergence.orchestrator`
   only; it has no path to `convergence.user`, asserted in
   `test/spec-convergence.test.ts`.
+- `task.resume` — continues a task that paused for capacity, reusing the
+  contract, lease and worktree that survived the pause. Applies every gate a
+  fresh run applies (ratified spec, task in the approved plan, lease still this
+  task's, worktree present) and refuses with a plain sentence if any went stale.
+  Never re-plans and never re-ratifies: none of that state was lost.

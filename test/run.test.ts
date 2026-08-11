@@ -1,3 +1,4 @@
+import { DEFAULT_RUN_TOKEN_CEILING } from "../src/config.js";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -499,6 +500,11 @@ test("runTask reacts to a quota wall by checkpointing and resuming on another pr
 
 test("runTask pauses and preserves a checkpoint when no eligible quota-wall provider remains", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
+    /* Declared, not inherited: this asserts what happens when NO eligible
+       provider remains, which is only meaningful against a known provider
+       set. init's tier ladder would supply one and reroute instead. */
+    await rm(path.join(repo, ".hivemind", "adapters", "worker-standard.profile.json"), { force: true });
+    await rm(path.join(repo, ".hivemind", "adapters", "worker-cheap.profile.json"), { force: true });
     const primaryAgent = await writeAgent(repo, "quota-wall-no-provider-agent.mjs", [
       "const { appendFile } = await import('node:fs/promises');",
       "await appendFile('README.md', 'partial work before no-provider quota pause\\n');",
@@ -541,6 +547,11 @@ test("runTask pauses and preserves a checkpoint when no eligible quota-wall prov
 
 test("runTask resumes a quota-paused task from its preserved checkpoint when a provider becomes eligible", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
+    /* Declared, not inherited: this asserts what happens when NO eligible
+       provider remains, which is only meaningful against a known provider
+       set. init's tier ladder would supply one and reroute instead. */
+    await rm(path.join(repo, ".hivemind", "adapters", "worker-standard.profile.json"), { force: true });
+    await rm(path.join(repo, ".hivemind", "adapters", "worker-cheap.profile.json"), { force: true });
     const primaryAgent = await writeAgent(repo, "quota-pause-primary-agent.mjs", [
       "const { appendFile } = await import('node:fs/promises');",
       "await appendFile('README.md', 'partial work preserved across quota pause\\n');",
@@ -1229,7 +1240,12 @@ test("restart reconciles dead, live, and ambiguous workers independently without
     assert.equal(ledger.ok, true);
     if (ledger.ok) {
       assert.equal(ledger.value.reservations[reservations.get("T-LIFE-DEAD") ?? ""].status, "settled");
-      assert.equal(ledger.value.reservations[reservations.get("T-LIFE-DEAD") ?? ""].settlement?.charged_tokens, 150_000);
+      // The full reservation is the run ceiling; read the constant rather than a
+      // literal a defaults change would silently break.
+      assert.equal(
+        ledger.value.reservations[reservations.get("T-LIFE-DEAD") ?? ""].settlement?.charged_tokens,
+        DEFAULT_RUN_TOKEN_CEILING
+      );
       assert.equal(ledger.value.reservations[reservations.get("T-LIFE-ALIVE") ?? ""].status, "active");
       assert.equal(ledger.value.reservations[reservations.get("T-LIFE-UNKNOWN") ?? ""].status, "active");
     }

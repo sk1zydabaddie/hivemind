@@ -76,6 +76,24 @@ export const REQUIRED_ADAPTER_TOOLS = [
  * whatever the user's own agent configuration last left it, which is how a run
  * silently changes model or sandbox between invocations.
  */
+/**
+ * What one call actually costs, measured rather than assumed.
+ *
+ * From the 2026-08-11 first-run walk and the textkit run before it:
+ *
+ *   worker, gpt-5.6-sol     152,229   the most expensive call a default can make
+ *   worker, gpt-5.6-terra  ~120,000
+ *   planner                 ~21,000
+ *   spec drafting           ~20,000
+ *
+ * These exist so the ceilings below are derived from them and cannot drift apart
+ * silently. `test/first-run-defaults.test.ts` asserts the pairing, not the
+ * numbers: a default ceiling must exceed the worst single call a default
+ * configuration can make. A ceiling under one worker call is not a budget, it is
+ * a trap that fires after the money is spent.
+ */
+export const MEASURED_WORST_SINGLE_CALL_TOKENS = 152_229;
+
 const CODEX_INVOKE_TAIL = [
   "exec",
   "--model",
@@ -88,6 +106,47 @@ const CODEX_INVOKE_TAIL = [
   "--json",
   "-"
 ];
+
+/**
+ * The tier ladder a fresh project needs.
+ *
+ * Tier globs were already written correctly, so routing computed the right tier
+ * for every task -- and then had nowhere to fall, because the only profiles on
+ * disk were strong. Every task ran on the flagship regardless of its tier. These
+ * two give the floor somewhere to land: Medium work routes to standard, Low work
+ * to cheap, and High/Critical still require strong.
+ *
+ * Worker-scoped on purpose. Orchestrator roles are resolved by name and must
+ * never be found by the worker search.
+ */
+export const DEFAULT_TIER_WORKERS = [
+  { tool: "worker-standard", model: "gpt-5.6-terra", tier: "standard", cost: 10 },
+  { tool: "worker-cheap", model: "gpt-5.6-luna", tier: "cheap", cost: 4 }
+] as const;
+
+export function defaultTierWorkerProfile(
+  entry: (typeof DEFAULT_TIER_WORKERS)[number],
+  platform: NodeJS.Platform = process.platform
+): Record<string, unknown> {
+  const tail = CODEX_INVOKE_TAIL.map((argument) =>
+    argument === "gpt-5.6-sol" ? entry.model : argument
+  );
+  return {
+    tool: entry.tool,
+    invoke:
+      platform === "win32"
+        ? ["cmd.exe", "/d", "/s", "/c", "codex.cmd", ...tail]
+        : ["codex", ...tail],
+    prompt_arg: "stdin",
+    verified_on: "configured-by-init",
+    roles: ["worker"],
+    routing_tier: entry.tier,
+    cost_rank: entry.cost,
+    context_window: 272_000,
+    timeout_ms: 600_000,
+    usage_parser: "codex-jsonl"
+  };
+}
 
 export function defaultAdapterProfile(
   tool: string,
