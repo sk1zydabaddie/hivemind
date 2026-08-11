@@ -1,0 +1,16 @@
+# Hivemind Adapter Run Log
+tool: planner
+exit_code: 0
+timed_out: false
+metering_enforcement: admission_reservation_then_post_completion_refusal
+reserved_tokens: 150000
+effective_tokens: 22112
+post_completion_overshoot_tokens: 0
+
+## stdout
+{"type":"thread.started","thread_id":"019ff256-5185-7cb0-9256-d13af9d3c26f"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"{\"tasks\":[{\"task_id\":\"T-001\",\"title\":\"Implement and export email address validation\",\"task_type\":\"deterministic\",\"routing_task_type\":\"api\",\"mode\":\"write\",\"agent_role\":\"builder\",\"draft_scope\":{\"allowed_files\":[\"src/index.js\",\"src/validateEmail.js\",\"test/validateEmail.test.js\"],\"allowed_file_intents\":{\"src/index.js\":\"modify\",\"src/validateEmail.js\":\"create\",\"test/validateEmail.test.js\":\"create\"},\"read_only_files\":[\"package.json\"],\"forbidden_files\":[\"README.md\",\"src/formatDate.js\",\"test/formatDate.test.js\"],\"must_not_change\":[\"package.json\",\"README.md\",\"src/formatDate.js\",\"test/formatDate.test.js\"]},\"depends_on\":[],\"parallel_safe\":true,\"acceptance_criterion\":\"The package public interface exports validateEmail, which returns true for user@example.com and first.last+tag@example.co.uk; returns false without throwing for malformed, non-string, empty, whitespace-only, space-containing, and leading- or trailing-whitespace inputs; and npm test passes with regression coverage for these cases.\",\"deterministic_validity_check\":\"node -e \\\"const { validateEmail } = require('./src/index.js'); const accepted = ['user@example.com','first.last+tag@example.co.uk']; const rejected = ['userexample.com','@example.com','user@','user@example','user @example.com',' user@example.com','user@example.com ', '', '   ', null, undefined, 42, {}, []]; if (typeof validateEmail !== 'function' || !accepted.every((value) => validateEmail(value) === true) || !rejected.every((value) => validateEmail(value) === false)) process.exit(1);\\\"\",\"required_tests\":[\"npm test\"],\"patch_requirements\":[\"Create a focused validateEmail utility that returns a boolean for every supplied value and performs no network or external-service calls.\",\"Reject non-string, empty, whitespace-only, leading- or trailing-whitespace, missing-local-part, missing-domain, missing-@, space-containing, and incomplete-domain values.\",\"Accept practical ordinary addresses including plus-addressing, dotted local parts, subdomains, and multi-label domains.\",\"Export validateEmail through src/index.js without changing the existing formatDate public behavior.\",\"Add tests covering all ratified accepted and rejected example categories, including non-string inputs and the no-throw behavior.\"],\"critical_path_approved\":false}],\"execution_groups\":[{\"group_id\":\"G-1\",\"mode\":\"sequence\",\"task_ids\":[\"T-001\"]}]}"}}
+{"type":"turn.completed","usage":{"input_tokens":21073,"cached_input_tokens":9984,"cache_write_input_tokens":0,"output_tokens":1039,"reasoning_output_tokens":516}}
+
+## stderr

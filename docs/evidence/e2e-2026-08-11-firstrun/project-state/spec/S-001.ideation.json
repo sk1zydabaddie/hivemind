@@ -1,30 +1,30 @@
 {
   "version": 1,
   "spec_id": "S-001",
-  "goal": "Provide a reusable way to determine whether a supplied value is a valid email address and return a clear valid-or-invalid result.",
+  "goal": "Provide a public utility that determines whether a supplied string has a practical, commonly accepted email-address format.",
   "status": "awaiting_user_convergence",
   "rounds": [
     {
       "index": 1,
       "alternatives": [
         {
-          "title": "Practical syntax validator",
+          "title": "Local pragmatic validator",
           "tradeoffs": [
-            "May reject uncommon but standards-compliant addresses or accept some addresses that cannot actually receive mail.",
-            "Keeps behavior predictable, lightweight, and suitable for common application input."
+            "Requires maintaining a small set of validation rules and representative tests.",
+            "Adds no dependency and keeps behavior easy to understand and tailor."
           ]
         },
         {
-          "title": "Standards-focused validator",
+          "title": "Established validation package",
           "tradeoffs": [
-            "Adds complexity and may require a maintained validation dependency.",
-            "Supports more unusual standards-compliant address formats and avoids maintaining intricate parsing rules locally."
+            "Adds a dependency that must be evaluated, updated, and kept compatible.",
+            "Provides broader handling of email syntax and benefits from validation cases maintained by others."
           ]
         }
       ],
       "self_critique": {
-        "weakest_point": "The meaning of \"valid\" is unsettled, so exact expected behavior cannot yet be specified.",
-        "cut_or_change": "Resolve the required validation strictness, then replace the broad examples with an explicit set of accepted and rejected edge cases."
+        "weakest_point": "Practical email syntax is inherently subjective, so unusual but technically valid addresses may be rejected.",
+        "cut_or_change": "If unusual RFC-valid addresses are important, replace the pragmatic-syntax assumption with explicitly defined compatibility requirements."
       },
       "substantive_change": true,
       "orchestrator_calls_convergence": true

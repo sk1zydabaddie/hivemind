@@ -1,13 +1,4 @@
 {
-  "version": 1,
-  "spec_id": "S-001",
-  "status": "tentative",
-  "base_commit": "6b0e28b3f0f406deeb659313bcb8977436eebf44",
-  "source": "adapter-generated",
-  "created_at": "2026-08-11T19:39:54.640Z",
-  "grounding_status": "grounded",
-  "grounded_at": "2026-08-11T19:39:54.721Z",
-  "grounded_base_commit": "6b0e28b3f0f406deeb659313bcb8977436eebf44",
   "tasks": [
     {
       "task_id": "T-001",
@@ -56,57 +47,7 @@
         "Export validateEmail through src/index.js without changing the existing formatDate public behavior.",
         "Add tests covering all ratified accepted and rejected example categories, including non-string inputs and the no-throw behavior."
       ],
-      "critical_path_approved": false,
-      "scope_status": "grounded",
-      "grounding_evidence": {
-        "source": "git-tree",
-        "base_commit": "6b0e28b3f0f406deeb659313bcb8977436eebf44",
-        "checked_at": "2026-08-11T19:39:54.721Z",
-        "cited_paths": [
-          "package.json",
-          "README.md",
-          "src/formatDate.js",
-          "src/index.js",
-          "src/validateEmail.js",
-          "test/formatDate.test.js",
-          "test/validateEmail.test.js"
-        ],
-        "resolved_files": [
-          "package.json",
-          "README.md",
-          "src/formatDate.js",
-          "src/index.js",
-          "src/validateEmail.js",
-          "test/formatDate.test.js",
-          "test/validateEmail.test.js"
-        ]
-      },
-      "grounded_scope": {
-        "allowed_files": [
-          "src/index.js",
-          "src/validateEmail.js",
-          "test/validateEmail.test.js"
-        ],
-        "allowed_file_intents": {
-          "src/index.js": "modify",
-          "src/validateEmail.js": "create",
-          "test/validateEmail.test.js": "create"
-        },
-        "read_only_files": [
-          "package.json"
-        ],
-        "forbidden_files": [
-          "README.md",
-          "src/formatDate.js",
-          "test/formatDate.test.js"
-        ],
-        "must_not_change": [
-          "package.json",
-          "README.md",
-          "src/formatDate.js",
-          "test/formatDate.test.js"
-        ]
-      }
+      "critical_path_approved": false
     }
   ],
   "execution_groups": [
@@ -117,8 +58,5 @@
         "T-001"
       ]
     }
-  ],
-  "lint_status": "passed",
-  "linted_at": "2026-08-11T19:39:54.778Z",
-  "linted_base_commit": "6b0e28b3f0f406deeb659313bcb8977436eebf44"
+  ]
 }

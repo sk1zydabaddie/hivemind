@@ -1,6 +1,31 @@
 # First-run walk — clean install, 2026-08-11
 
-## The answer
+## The answer, after the drafter was fixed
+
+**Yes.** A clean install reaches a first run with no terminal and no
+hand-written document. Same prompt, unchanged — "Add a way to validate email
+addresses" — now produces a plan the person can approve, with the ambiguity
+recorded as a stated assumption instead of a blocking question.
+
+The assumption that used to stop the run:
+
+> *Validation checks practical syntax suitable for ordinary application input
+> rather than implementing every address permitted by the full email RFCs.*
+
+Plus two more it decided rather than asked (boolean return, whitespace
+handling), and two substantive non-goals it declined on its own — *"Does not
+verify that the address, domain, or mailbox actually exists"* and *"Does not
+send a verification email or contact an external service."* Zero open
+questions. `03-review-with-assumptions.png` is the review with "Decisions made
+for you" populated and **Approve and start enabled**.
+
+Re-run cost: **2 calls, 42,581 tokens**, matching the estimate.
+
+What is still not proven is the second half of the sentence — the run itself.
+The walk stops at an approvable review; nobody has clicked Approve on a clean
+install and watched work land. That is the next thing to capture.
+
+## The answer before the fix, kept for the record
 
 **Yes for the door, no for the room.** A clean install reaches the one review
 with no terminal and no hand-written document — folder chosen, project set up,
