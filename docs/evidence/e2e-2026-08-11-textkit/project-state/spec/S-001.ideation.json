@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "spec_id": "S-001",
+  "goal": "Add three independent text helpers, each with its own module and tests, and document them in the README.",
+  "status": "ratifiable",
+  "rounds": [
+    {
+      "index": 1,
+      "alternatives": [
+        {
+          "title": "One module per helper, re-exported from src/index.js",
+          "tradeoffs": [
+            "Each helper can be owned and tested by an independent task, so three workers can run in parallel without touching the same file.",
+            "Slightly more files than a single utils module.",
+            "Matches the existing capitalize.js layout, so nothing about the package shape has to change."
+          ]
+        },
+        {
+          "title": "A single src/text.js exporting all three helpers",
+          "tradeoffs": [
+            "Fewer files and one import site.",
+            "All three helpers share one file, so the work cannot be split across parallel tasks without two workers editing the same file.",
+            "Breaks the existing one-helper-per-file convention set by capitalize.js."
+          ]
+        }
+      ],
+      "self_critique": {
+        "weakest_point": "truncate's ellipsis rule is ambiguous at the boundary: whether max counts the ellipsis characters is not stated, and an off-by-one there is the most likely defect.",
+        "cut_or_change": "State in the acceptance criteria that max is the length of the returned string including the ellipsis, and require a test at exactly the boundary length."
+      },
+      "substantive_change": true,
+      "orchestrator_calls_convergence": true
+    }
+  ],
+  "divergence_complete": true,
+  "convergence": {
+    "user": true,
+    "orchestrator": true
+  },
+  "consecutive_non_substantive_rounds": 0,
+  "diminishing_returns_signal": false
+}

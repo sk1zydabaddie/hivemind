@@ -11,7 +11,7 @@
  * data: regenerate it rather than editing it.
  */
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -88,7 +88,54 @@ function splitRuns(events, gapMs = 30 * 60 * 1000) {
   return runs;
 }
 
-async function scratchRepo(events) {
+/* Some state a run depends on is not in the event trail at all: the ratified
+ * plan, the spec, the contracts and the spend ledger are files. A trail on its
+ * own therefore replays with a null plan and zero spend -- which is exactly why
+ * the plan review and the spend meter had never been seen against real data.
+ *
+ * An evidence folder may carry a `project-state/` directory mirroring the
+ * layout of `.hivemind/`. When one sits beside a trail, it is copied in after
+ * `initProject`, so the replay gets the real artefacts rather than a
+ * reconstruction. Captured, never invented: if the folder is absent the replay
+ * behaves exactly as before.
+ */
+async function restoreProjectState(repo, trailPath) {
+  const stateDir = path.join(path.dirname(trailPath), "project-state");
+  try {
+    await readdir(stateDir);
+  } catch {
+    return false;
+  }
+  /* Everything except config.json, which is merged below rather than copied:
+     copying it whole would replace the config `initProject` just wrote, losing
+     the format version the rest of Core requires. */
+  await cp(stateDir, path.join(repo, ".hivemind"), {
+    recursive: true,
+    force: true,
+    filter: (source) => path.basename(source) !== "config.json"
+  });
+
+  /* config.json cannot be restored wholesale -- it carries `repo_root` and a
+     base branch belonging to the machine that ran it. Only the two settings the
+     UI reads back are merged: without them the spend meter compares real usage
+     against init's default ceilings and shows a run that was well inside budget
+     in amber, which is a wrong signal rather than a missing one. */
+  const captured = path.join(stateDir, "config.json");
+  try {
+    const source = JSON.parse(await readFile(captured, "utf8"));
+    const configPath = path.join(repo, ".hivemind", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    for (const key of ["resource_policy", "execution"]) {
+      if (source[key] !== undefined) config[key] = source[key];
+    }
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  } catch {
+    /* No captured config, or none worth merging. The defaults stand. */
+  }
+  return true;
+}
+
+async function scratchRepo(events, trailPath) {
   const repo = await mkdtemp(path.join(tmpdir(), "hivemind-replay-"));
   const git = (args) => execFileAsync("git", args, { cwd: repo, windowsHide: true });
   await git(["init"]);
@@ -107,7 +154,10 @@ async function scratchRepo(events) {
     `${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
     "utf8"
   );
-  await writeContracts(repo, events);
+  /* Real captured contracts win over reconstructed ones. Only synthesize the
+     contracts the capture did not include. */
+  const restored = await restoreProjectState(repo, trailPath);
+  await writeContracts(repo, events, restored);
   return repo;
 }
 
@@ -116,13 +166,16 @@ async function scratchRepo(events) {
  * what each contract said in `task.created`, so the collector writes those back
  * out. Anything not recorded there is left empty rather than invented — see the
  * replay findings in DESIGN-NOTES.md. */
-async function writeContracts(repo, events) {
+async function writeContracts(repo, events, restored = false) {
   const tasksDir = path.join(repo, ".hivemind", "tasks");
   await mkdir(tasksDir, { recursive: true });
+  const already = restored
+    ? new Set((await readdir(tasksDir)).map((name) => name.replace(/\.contract\.json$/u, "")))
+    : new Set();
   const seen = new Set();
   for (const event of events) {
     if (event.type !== "task.created" || event.task_id === null) continue;
-    if (seen.has(event.task_id)) continue;
+    if (seen.has(event.task_id) || already.has(event.task_id)) continue;
     seen.add(event.task_id);
     const data = event.data;
     const allowed = Array.isArray(data.allowed_files) ? data.allowed_files : [];
@@ -170,8 +223,8 @@ function commandFromAcceptance(criterion) {
   return match === null ? "npm test" : match[1].trim();
 }
 
-async function inspect(events) {
-  const repo = await scratchRepo(events);
+async function inspect(events, trailPath) {
+  const repo = await scratchRepo(events, trailPath);
   try {
     const { inspectWorkspace } = await import(
       new URL(
@@ -187,6 +240,29 @@ async function inspect(events) {
   }
 }
 
+/* Where the run was busiest: the point at which the most tasks were started and
+ * none of them had finished yet. Cutting the trail there and projecting the
+ * truncated events through Core gives a genuine mid-run state -- something the
+ * corpus has never held, because every captured trail projects only to its end.
+ *
+ * A finished run is the easy state to draw. Work in flight is the one the
+ * product is actually about, and it had only ever been seen in fixtures or in a
+ * screenshot caught at whatever moment a human happened to press the button.
+ */
+function busiestPrefix(run) {
+  const running = new Set();
+  let best = { count: 0, index: -1 };
+  run.forEach((event, index) => {
+    if (event.task_id === null) return;
+    if (event.type === "task.started" || event.type === "task.resumed") running.add(event.task_id);
+    if (["task.completed", "task.failed", "task.blocked", "task.cancelled"].includes(event.type)) {
+      running.delete(event.task_id);
+    }
+    if (running.size > best.count) best = { count: running.size, index };
+  });
+  return best.count >= 2 ? run.slice(0, best.index + 1) : null;
+}
+
 const files = await collectEvidenceFiles();
 const scenarios = [];
 for (const file of files) {
@@ -196,7 +272,7 @@ for (const file of files) {
   for (const [index, run] of splitRuns(events).entries()) {
     if (run.length < 3) continue;
     const id = `${path.basename(file).replace(/\.(jsonl|md)$/u, "")}${index === 0 ? "" : `-${index + 1}`}`;
-    const projected = await inspect(run);
+    const projected = await inspect(run, file);
     scenarios.push({
       id,
       source: relative,
@@ -210,6 +286,24 @@ for (const file of files) {
         projected.ok ? "projected" : `NO PROJECTION: ${projected.reason}`
       }`
     );
+
+    const midrun = busiestPrefix(run);
+    if (midrun !== null && midrun.length < run.length) {
+      const midProjected = await inspect(midrun, file);
+      scenarios.push({
+        id: `${id}@midrun`,
+        source: `${relative} (cut at peak concurrency)`,
+        events: midrun,
+        span_ms: Date.parse(midrun.at(-1).ts) - Date.parse(midrun[0].ts),
+        inspection: midProjected.ok ? midProjected.inspection : null,
+        inspection_error: midProjected.ok ? null : midProjected.reason
+      });
+      console.log(
+        `${`${id}@midrun`.padEnd(34)} ${String(midrun.length).padStart(3)} events  ${
+          midProjected.ok ? "projected" : `NO PROJECTION: ${midProjected.reason}`
+        }`
+      );
+    }
   }
 }
 

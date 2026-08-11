@@ -562,12 +562,39 @@ now each been rendered from real data. Two of the three were right the first
 time; the ship card was not, and that is recorded above as the fifth instance of
 the rebuild rule.
 
-What that trail still cannot show, because the collector replays events into a
-scratch repository rather than restoring a project: `plan_review` and
-`current_plan` come back null (the plan file is not in the trail) and `spend`
-reads zero (the ledger is not either). The plan review screen in the evidence
-folder is a live screenshot, not a replay. Restoring those two artefacts
-alongside the events is the next thing worth doing to the collector.
+### Closed: a trail alone was never enough
+
+The first replay of that run projected a **null plan and zero spend**, because
+the plan, the ledger and the manager session are *files, not events*. That is
+the whole reason the plan review and the spend meter had stayed fixture-only:
+the corpus could not have drawn them however carefully it was replayed.
+
+An evidence folder may now carry `project-state/`, mirroring `.hivemind/`, and
+the collector restores it beside the trail. Captured, never invented — a folder
+without one replays exactly as before. `config.json` is the one file merged
+rather than copied, and only `resource_policy` and `execution`: `repo_root` and
+the base branch belong to the machine that ran it.
+
+Two things this immediately caught, both the "silently wrong UI" shape:
+
+- **Spend rendered amber against the wrong ceiling.** 622.6K of real usage
+  compared to init's 500K default, for a run whose real ceiling was 2.5M. A run
+  comfortably inside budget drawn as nearly out of it.
+- **No mid-run state existed anywhere in the corpus.** Every trail projects only
+  to its end, so "three agents at once" — the thing the product is *for* — had
+  only ever been a fixture, or a live screenshot caught at whatever instant
+  somebody pressed the button. Both live captures of it landed inside an
+  inspection-lag window and show "Waiting to start" beside three running tasks.
+  The collector now also emits `<id>@midrun`: the trail cut at peak concurrency
+  and projected by Core, which draws the honest state.
+
+The mid-run cut is worth more than a screenshot. A finished run is the easy
+state to render; work in flight is the one that has been wrong five times.
+
+Still not drawn from real data: **populated memory** (this project learned
+nothing), the **refusal half of `plain_reason`** (nothing was rejected), and
+**mid-run lease state** (leases are released at adoption, so a post-run capture
+cannot hold them).
 
 `task.created` records `title`, `agent_role`, `base_commit`,
 `acceptance_criterion` and `allowed_files`, but **not** `required_tests`,

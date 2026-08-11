@@ -129,6 +129,106 @@ reported tasks running, then verified. It resolved on its own. The run took 90
 seconds end to end, so this is a fast-burst case; recorded as observed, not
 diagnosed.
 
+## Replay verification, 2026-08-11
+
+The three surfaces that had only ever been drawn from fixtures were replayed
+against this trail. A trail alone could not do it: the plan, the ledger and the
+manager session are **files, not events**, so the run projected with a null plan
+and zero spend. `project-state/` beside the trail now carries them, and the
+collector restores it.
+
+| Surface | Verdict |
+| --- | --- |
+| Plan review | **Correct.** 4 steps in 2 stages, real titles, real file scopes, real acceptance criteria, real conformance commands, plan hash `3d87a3cad249`. No defect. |
+| Ship confirmation | **Defect reproduced and fix confirmed.** This trail renders "0 files changed"; the same trail with the field Core now writes renders "8 files changed". |
+| Project surface | **One defect, fixed.** It reported what shipped and said nothing about what it cost. Spend was real but buried in a disclosure; it is now on the run's summary line. |
+
+Two replay artefacts were found and fixed in the collector rather than lived with:
+
+- **Spend read amber against the wrong ceiling.** The replay compared 622.6K of
+  real usage to init's 500K default, so a run comfortably inside its real 2.5M
+  ceiling rendered as nearly out of budget. `project-state/config.json` now
+  carries `resource_policy` and `execution` only — never `repo_root` or a base
+  branch, which belong to the machine that ran it.
+- **No mid-run state existed anywhere.** Every captured trail projects only to
+  its end, so "three agents working at once" had only ever been a fixture or a
+  screenshot caught at whatever moment a human pressed the button — and the two
+  live captures here (`03`, `04`) both landed inside an inspection-lag window
+  showing "Waiting to start" beside three running tasks. The collector now emits
+  `<id>@midrun`, the trail cut at peak concurrency and projected by Core, which
+  renders the honest state: 3 running, 1 waiting.
+
+`project-state/` deliberately omits `plans/S-001.tentative.json`. It is
+superseded by the ratified plan, and its grounding is stale against any scratch
+repository, which fails plan-lint on a mid-run cut.
+
+### Not verified by this trail
+
+- **The vocabulary guard and `taskAttentionTitle` are not exercised here.** This
+  run was clean, so it produced **no queue items at all** — nothing ever needed
+  a person. Both were verified across the rest of the corpus instead: 6 of 6
+  attention titles lead with the task title where one is known, the 4 that lead
+  with an identifier are `m7-4`, whose trail records no `task.created` and so
+  has no title to lead with, and the guard fires on 3 pre-`plain_reason`
+  reasons containing "lease". Zero Core strings anywhere still say *merge*.
+- **Memory items.** "What it has learned" is empty because this project learned
+  nothing. Populated memory remains fixture-only.
+- **The refusal half of `plain_reason`.** Nothing was rejected.
+- **Mid-run lease state.** Leases were released at adoption, so the restored
+  state has none and the mid-run replay shows "0 files being edited" where the
+  live run showed 2 per task.
+
+## For the website
+
+**Three strongest, in order:**
+
+1. `15-replay-midrun-map.png` — "3 tasks running", three phase cards mid-flight,
+   the dependent task waiting below. This is the product's whole claim in one
+   image, and it exists only because the collector can now cut a trail mid-run.
+2. `11-replay-plan-review.png` — what gets approved before anything runs: the
+   files each step may touch and how each result is checked.
+3. `07-ship-confirmation.png` — "Confirm this exact change set · 4 tasks · 8
+   files · into master", the second and last decision.
+
+**Do not use `03-work-in-progress.png` or `04-map-parallel.png`.** Both live
+captures landed inside an inspection-lag window: the rail reads "Waiting to
+start" beside three tasks the thread says are working. `14`/`15` replace them
+and are correct.
+
+**Needs recapturing before publication:** `08-post-ship.png` shows the "0 files
+changed" defect. Recapture it after the next real run, when
+`adoption.completed` carries the field. The replayed `10` has the same problem
+for the same reason.
+
+Two cosmetic notes on the replay shots: the run header says "took 26m 27s"
+because the trail's span includes idle time before the prompt, and the inspector
+reads "Nothing from this agent yet" because the replay harness does not yet play
+back worker output.
+
+### Can the trail produce a sped-up demo video?
+
+**The data is sufficient; the harness is not yet.** Everything needed is now
+captured:
+
+- 105 events with real timestamps — the run is ~7 minutes of activity inside a
+  30-minute span, clustered in bursts (39 events in one 30-second window when
+  the wave starts).
+- `project-state/log/tasks/*.output.jsonl` — 71 real worker output records with
+  timestamps and tool names, in exactly the shape the desktop's output stream
+  serves.
+
+Two things are missing, both in `tools/replay.tsx` rather than in the evidence:
+
+1. **Timed playback.** The harness fires every event at once. A video needs the
+   events emitted on their real relative timing, divided by a speed factor.
+2. **Output stream playback.** The harness stubs `/output/stream` and returns
+   nothing, so the inspector stays empty. The records exist; nothing serves them.
+
+Both are small and use only captured data. Until they exist, a demo showing live
+agent output has to be a fresh screen recording — but a fresh recording would
+capture the same inspection lag that spoiled `03` and `04`, so the replay route
+is the one worth building.
+
 ## Files
 
 | File | What it is |
@@ -146,3 +246,9 @@ diagnosed.
 | `08-post-ship.png` | Shipped, with the adoption ref. |
 | `09-project-after-run.png` | The Project surface after a real run. |
 | `10-replayed-from-trail.png` | The trail replayed back into the UI. |
+| `11-replay-plan-review.png` | The plan review, replayed from the trail. |
+| `12-replay-project.png` | The Project surface, replayed, with spend on the line. |
+| `13-replay-map.png` | The map, replayed at the finished state. |
+| `14-replay-midrun-story.png` | Cut at peak concurrency: three tasks running. |
+| `15-replay-midrun-map.png` | The same moment as the map. **Landing-page shot.** |
+| `project-state/` | The files a trail cannot carry: spec, plan, contracts, ledger, session, and the run's ceilings. Restored by the collector. |

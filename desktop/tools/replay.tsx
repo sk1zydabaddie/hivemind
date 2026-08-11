@@ -126,7 +126,8 @@ const clickByName = (name: string): boolean => {
 const drive = (): void => {
   const steps = [
     params.get("tab") === "project" ? "Project" : null,
-    params.get("view") === "map" ? "Map" : null
+    params.get("view") === "map" ? "Map" : null,
+    params.get("open") === "plan" ? "View plan" : null
   ].filter((step): step is string => step !== null);
   if (steps.length === 0) return;
   let attempts = 0;

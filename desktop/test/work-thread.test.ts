@@ -191,6 +191,45 @@ describe("run thread", () => {
   });
 });
 
+/* The shipped card is the last thing a person reads, and it was wrong on the
+ * first real run: `adoption.completed` did not carry `changed_files`, so it
+ * reported "0 files changed" over a commit that changed eight. Core writes the
+ * field now. Both shapes are pinned here because the pre-fix shape still exists
+ * in `docs/evidence/e2e-2026-08-11-textkit`, and that trail is only useful as a
+ * regression artefact for as long as it keeps reproducing the defect.
+ */
+describe("what the shipped card can say about a ship", () => {
+  const shipped = (data: Record<string, unknown>) =>
+    buildRunThread([event("adoption.completed", null, data)], TITLES).find(
+      (entry) => entry.kind === "shipped"
+    );
+
+  test("reports every file when Core recorded them", () => {
+    const entry = shipped({
+      task_ids: ["T-001", "T-002"],
+      changed_files: ["README.md", "src/slugify.js", "test/slugify.test.js"],
+      base_branch: "master",
+      adopted_ref: "6b024f5c11938085e07389ace42796a74231a878"
+    });
+    expect(entry).toMatchObject({
+      kind: "shipped",
+      taskIds: ["T-001", "T-002"],
+      changedFiles: ["README.md", "src/slugify.js", "test/slugify.test.js"],
+      branch: "master"
+    });
+  });
+
+  test("reports none when the event predates the field, rather than inventing any", () => {
+    // The captured 2026-08-11 trail is exactly this shape.
+    const entry = shipped({
+      task_ids: ["T-001"],
+      base_branch: "master",
+      adopted_ref: "6b024f5c11938085e07389ace42796a74231a878"
+    });
+    expect(entry).toMatchObject({ kind: "shipped", changedFiles: [] });
+  });
+});
+
 /* The projection keeps events newest-first; the thread reads oldest-first. */
 function newestFirst(oldestFirst: HivemindEvent[]): HivemindEvent[] {
   return [...oldestFirst].reverse();

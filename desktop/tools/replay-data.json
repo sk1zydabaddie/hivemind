@@ -2078,8 +2078,8 @@
             "stalled": false,
             "last_event": "lease.released",
             "last_event_at": "2026-08-11T05:52:12.077Z",
-            "execution_group": null,
-            "group_mode": null,
+            "execution_group": "G-1",
+            "group_mode": "parallel",
             "depends_on": [],
             "started_at": "2026-08-11T05:47:53.649Z",
             "worker_finished_at": "2026-08-11T05:49:01.960Z"
@@ -2103,8 +2103,8 @@
             "stalled": false,
             "last_event": "lease.released",
             "last_event_at": "2026-08-11T05:52:12.093Z",
-            "execution_group": null,
-            "group_mode": null,
+            "execution_group": "G-1",
+            "group_mode": "parallel",
             "depends_on": [],
             "started_at": "2026-08-11T05:47:54.841Z",
             "worker_finished_at": "2026-08-11T05:49:30.648Z"
@@ -2128,8 +2128,8 @@
             "stalled": false,
             "last_event": "lease.released",
             "last_event_at": "2026-08-11T05:52:12.107Z",
-            "execution_group": null,
-            "group_mode": null,
+            "execution_group": "G-1",
+            "group_mode": "parallel",
             "depends_on": [],
             "started_at": "2026-08-11T05:47:55.981Z",
             "worker_finished_at": "2026-08-11T05:49:20.691Z"
@@ -2153,29 +2153,50 @@
             "stalled": false,
             "last_event": "lease.released",
             "last_event_at": "2026-08-11T05:52:12.121Z",
-            "execution_group": null,
-            "group_mode": null,
-            "depends_on": [],
+            "execution_group": "G-2",
+            "group_mode": "sequence",
+            "depends_on": [
+              "T-001",
+              "T-002",
+              "T-003"
+            ],
             "started_at": "2026-08-11T05:49:40.023Z",
             "worker_finished_at": "2026-08-11T05:50:33.851Z"
           }
         ],
         "execution_groups": [
           {
-            "group_id": "current-work",
-            "mode": "sequence",
+            "group_id": "G-1",
+            "mode": "parallel",
             "task_ids": [
               "T-001",
               "T-002",
-              "T-003",
-              "T-004"
+              "T-003"
             ],
-            "label": "4 done",
+            "label": "3 done",
             "counts": {
               "working": 0,
               "waiting": 0,
               "needs_you": 0,
-              "done": 4
+              "done": 3
+            },
+            "configured_cap": 3,
+            "effective_concurrency": 3,
+            "binding_limit": "ready_count",
+            "capacity_note": null
+          },
+          {
+            "group_id": "G-2",
+            "mode": "sequence",
+            "task_ids": [
+              "T-004"
+            ],
+            "label": "1 done",
+            "counts": {
+              "working": 0,
+              "waiting": 0,
+              "needs_you": 0,
+              "done": 1
             },
             "configured_cap": null,
             "effective_concurrency": null,
@@ -2189,26 +2210,256 @@
           "T-003": "Implement and test wordCount helper",
           "T-004": "Export and document text helpers"
         },
-        "active_spec_id": null,
-        "active_spec_title": null,
-        "manager_session": null,
+        "active_spec_id": "S-001",
+        "active_spec_title": "Add slugify, truncate and wordCount text helpers with tests and docs",
+        "manager_session": {
+          "session_id": "625f918d-57e2-4ebb-9c1f-b4e87ae46978",
+          "spec_id": "S-001",
+          "created_at": "2026-08-11T05:47:51.755Z",
+          "last_activity_at": "2026-08-11T05:50:41.654Z",
+          "status": "complete",
+          "tool": "manager",
+          "call_count": 65,
+          "pending_action": null,
+          "blocked_action_type": null,
+          "blocked_reason": null,
+          "blocked_code": null,
+          "continuation_available": false,
+          "autonomy_level": "review_plan",
+          "autonomy_levels": [
+            "review_plan"
+          ]
+        },
         "autonomy": {
           "configured_level": "auto",
-          "run_levels": []
+          "run_levels": [
+            "review_plan"
+          ]
         },
         "plan_review": null,
-        "current_plan": null,
+        "current_plan": {
+          "spec_id": "S-001",
+          "plan_hash": "3d87a3cad249dbb584ba740fe3bbc43e0eee0667d01c4073f19fa883d9097198",
+          "plan_path": ".hivemind/plans/ratified/S-001/3d87a3cad249dbb584ba740fe3bbc43e0eee0667d01c4073f19fa883d9097198.json",
+          "base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+          "created_at": "2026-08-11T05:46:16.194Z",
+          "tasks": [
+            {
+              "task_id": "T-001",
+              "title": "Implement and test slugify helper",
+              "tier": "medium",
+              "task_type": "deterministic",
+              "routing_task_type": "api",
+              "mode": "write",
+              "agent_role": "builder",
+              "scope": [
+                "src/slugify.js",
+                "test/slugify.test.js"
+              ],
+              "allowed_file_intents": {
+                "src/slugify.js": "create",
+                "test/slugify.test.js": "create"
+              },
+              "read_only_scope": [
+                "src/capitalize.js",
+                "test/capitalize.test.js"
+              ],
+              "forbidden_scope": [
+                "package.json",
+                "README.md",
+                "src/index.js"
+              ],
+              "must_not_change": [
+                "package.json",
+                "README.md",
+                "src/index.js",
+                "src/capitalize.js",
+                "test/capitalize.test.js"
+              ],
+              "depends_on": [],
+              "parallel_safe": true,
+              "acceptance_criterion": "slugify returns a lowercase URL-safe slug, handles empty input, and rejects non-string input with TypeError.",
+              "deterministic_validity_check": "node --input-type=module -e \"import { slugify } from './src/slugify.js'; if (slugify('Hello, World!') !== 'hello-world' || slugify('') !== '') throw new Error('slugify behavior failed'); try { slugify(1); throw new Error('missing TypeError') } catch (error) { if (!(error instanceof TypeError)) throw error }\"",
+              "required_tests": [
+                "npm test"
+              ],
+              "patch_requirements": [
+                "Create src/slugify.js with no imports from other helpers.",
+                "Create test/slugify.test.js covering normal, empty, and non-string TypeError cases."
+              ],
+              "critical_path_approved": false
+            },
+            {
+              "task_id": "T-002",
+              "title": "Implement and test truncate helper",
+              "tier": "medium",
+              "task_type": "deterministic",
+              "routing_task_type": "api",
+              "mode": "write",
+              "agent_role": "builder",
+              "scope": [
+                "src/truncate.js",
+                "test/truncate.test.js"
+              ],
+              "allowed_file_intents": {
+                "src/truncate.js": "create",
+                "test/truncate.test.js": "create"
+              },
+              "read_only_scope": [
+                "src/capitalize.js",
+                "test/capitalize.test.js"
+              ],
+              "forbidden_scope": [
+                "package.json",
+                "README.md",
+                "src/index.js"
+              ],
+              "must_not_change": [
+                "package.json",
+                "README.md",
+                "src/index.js",
+                "src/capitalize.js",
+                "test/capitalize.test.js"
+              ],
+              "depends_on": [],
+              "parallel_safe": true,
+              "acceptance_criterion": "truncate returns unchanged strings at or below max length, returns a string of exactly max characters including an ellipsis when truncating, handles empty input, and rejects non-string input with TypeError.",
+              "deterministic_validity_check": "node --input-type=module -e \"import { truncate } from './src/truncate.js'; if (truncate('hello', 5) !== 'hello' || truncate('hello', 4) !== 'h...' || truncate('hello', 4).length !== 4 || truncate('', 1) !== '') throw new Error('truncate boundary behavior failed'); try { truncate(1, 4); throw new Error('missing TypeError') } catch (error) { if (!(error instanceof TypeError)) throw error }\"",
+              "required_tests": [
+                "npm test"
+              ],
+              "patch_requirements": [
+                "Create src/truncate.js with no imports from other helpers.",
+                "Create test/truncate.test.js covering unchanged, truncated, exact-boundary, empty, and non-string TypeError cases."
+              ],
+              "critical_path_approved": false
+            },
+            {
+              "task_id": "T-003",
+              "title": "Implement and test wordCount helper",
+              "tier": "medium",
+              "task_type": "deterministic",
+              "routing_task_type": "api",
+              "mode": "write",
+              "agent_role": "builder",
+              "scope": [
+                "src/wordCount.js",
+                "test/wordCount.test.js"
+              ],
+              "allowed_file_intents": {
+                "src/wordCount.js": "create",
+                "test/wordCount.test.js": "create"
+              },
+              "read_only_scope": [
+                "src/capitalize.js",
+                "test/capitalize.test.js"
+              ],
+              "forbidden_scope": [
+                "package.json",
+                "README.md",
+                "src/index.js"
+              ],
+              "must_not_change": [
+                "package.json",
+                "README.md",
+                "src/index.js",
+                "src/capitalize.js",
+                "test/capitalize.test.js"
+              ],
+              "depends_on": [],
+              "parallel_safe": true,
+              "acceptance_criterion": "wordCount returns the number of whitespace-separated words, returns zero for empty or whitespace-only input, and rejects non-string input with TypeError.",
+              "deterministic_validity_check": "node --input-type=module -e \"import { wordCount } from './src/wordCount.js'; if (wordCount('one two three') !== 3 || wordCount('  one\\ttwo\\nthree  ') !== 3 || wordCount('   ') !== 0 || wordCount('') !== 0) throw new Error('wordCount behavior failed'); try { wordCount(null); throw new Error('missing TypeError') } catch (error) { if (!(error instanceof TypeError)) throw error }\"",
+              "required_tests": [
+                "npm test"
+              ],
+              "patch_requirements": [
+                "Create src/wordCount.js with no imports from other helpers.",
+                "Create test/wordCount.test.js covering normal, whitespace-separated, empty, whitespace-only, and non-string TypeError cases."
+              ],
+              "critical_path_approved": false
+            },
+            {
+              "task_id": "T-004",
+              "title": "Export and document text helpers",
+              "tier": "medium",
+              "task_type": "deterministic",
+              "routing_task_type": "documentation",
+              "mode": "integration",
+              "agent_role": "builder",
+              "scope": [
+                "README.md",
+                "src/index.js"
+              ],
+              "allowed_file_intents": {
+                "src/index.js": "modify",
+                "README.md": "modify"
+              },
+              "read_only_scope": [
+                "package.json",
+                "src/capitalize.js",
+                "test/capitalize.test.js"
+              ],
+              "forbidden_scope": [
+                "package.json",
+                "src/capitalize.js",
+                "test/capitalize.test.js"
+              ],
+              "must_not_change": [
+                "package.json",
+                "src/capitalize.js",
+                "test/capitalize.test.js"
+              ],
+              "depends_on": [
+                "T-001",
+                "T-002",
+                "T-003"
+              ],
+              "parallel_safe": false,
+              "acceptance_criterion": "src/index.js exports slugify, truncate, and wordCount, and README documents each helper and its callable signature.",
+              "deterministic_validity_check": "node --input-type=module -e \"import { slugify, truncate, wordCount } from './src/index.js'; if (slugify('A B') !== 'a-b' || truncate('hello', 4) !== 'h...' || wordCount('a b') !== 2) throw new Error('public exports failed')\"",
+              "required_tests": [
+                "npm test",
+                "named review check: README.md documents slugify(text), truncate(text, max), and wordCount(text)"
+              ],
+              "patch_requirements": [
+                "Modify src/index.js to re-export all three new helper modules while preserving the existing capitalize export.",
+                "Modify README.md to document all three helpers with their names and parameters.",
+                "Do not alter package.json or capitalize behavior."
+              ],
+              "critical_path_approved": false
+            }
+          ],
+          "execution_groups": [
+            {
+              "group_id": "G-1",
+              "mode": "parallel",
+              "task_ids": [
+                "T-001",
+                "T-002",
+                "T-003"
+              ]
+            },
+            {
+              "group_id": "G-2",
+              "mode": "sequence",
+              "task_ids": [
+                "T-004"
+              ]
+            }
+          ]
+        },
         "integration_failure": null,
         "needs_you": [],
         "later": [],
         "spend": {
-          "session_id": null,
-          "calls": 0,
-          "effective_tokens": 0,
+          "session_id": "625f918d-57e2-4ebb-9c1f-b4e87ae46978",
+          "calls": 5,
+          "effective_tokens": 622583,
           "reserved_tokens": 0,
-          "committed_tokens": 0,
-          "run_ceiling_tokens": 150000,
-          "session_ceiling_tokens": 500000,
+          "committed_tokens": 622583,
+          "run_ceiling_tokens": 200000,
+          "session_ceiling_tokens": 2500000,
           "near_session_ceiling": false
         },
         "swarm": {
@@ -2229,9 +2480,1173 @@
           "warnings": []
         },
         "history": {
-          "runs": [],
-          "run_ceiling_tokens": 150000,
-          "session_ceiling_tokens": 500000,
+          "runs": [
+            {
+              "session_id": "625f918d-57e2-4ebb-9c1f-b4e87ae46978",
+              "spec_id": "S-001",
+              "started_at": "2026-08-11T05:47:51.755Z",
+              "last_activity_at": "2026-08-11T05:52:12.136Z",
+              "duration_ms": 260381,
+              "outcome": "completed",
+              "outcome_detail": "All 4 planned tasks shipped to the project.",
+              "verified_tasks": [
+                "T-001",
+                "T-002",
+                "T-003",
+                "T-004"
+              ],
+              "merged_tasks": [
+                "T-001",
+                "T-002",
+                "T-003",
+                "T-004"
+              ],
+              "stopped_tasks": [],
+              "calls": 5,
+              "effective_tokens": 622583,
+              "provider_reported_tokens": 622583,
+              "self_measured_tokens": 7555,
+              "evidence_paths": [
+                ".hivemind/orchestrator/sessions/625f918d-57e2-4ebb-9c1f-b4e87ae46978.json",
+                ".hivemind/log/events.jsonl"
+              ],
+              "autonomy_levels": [
+                "review_plan"
+              ]
+            }
+          ],
+          "run_ceiling_tokens": 200000,
+          "session_ceiling_tokens": 2500000,
+          "warnings": []
+        }
+      },
+      "inspection_error": null
+    },
+    {
+      "id": "e2e-textkit-parallel-run@midrun",
+      "source": "docs/evidence/e2e-2026-08-11-textkit/e2e-textkit-parallel-run.jsonl (cut at peak concurrency)",
+      "events": [
+        {
+          "ts": "2026-08-11T05:21:29.169Z",
+          "type": "autonomy.level_changed",
+          "task_id": null,
+          "data": {
+            "version": 1,
+            "previous_level": "auto",
+            "level": "review_plan",
+            "applies_from": "next_interruption_decision",
+            "config_hash": "491b3bf6bee81077998eeea28bdea73c80a67b43b1a9d1710123c820644a3cd4"
+          }
+        },
+        {
+          "ts": "2026-08-11T05:46:16.377Z",
+          "type": "plan.prepared",
+          "task_id": null,
+          "data": {
+            "version": 1,
+            "spec_id": "S-001",
+            "plan_hash": "3d87a3cad249dbb584ba740fe3bbc43e0eee0667d01c4073f19fa883d9097198",
+            "plan_path": ".hivemind/plans/S-001.tentative.json",
+            "proposal_path": ".hivemind/resource/planning/625f918d-57e2-4ebb-9c1f-b4e87ae46978.proposal.json",
+            "usage_session_id": "625f918d-57e2-4ebb-9c1f-b4e87ae46978",
+            "tool": "planner",
+            "prompt": "Add three independent text helpers to this library, each in its own file with its own test file: slugify(text) turns a string into a lowercase url-safe slug; truncate(text, max) shortens a string to max characters and appends an ellipsis only when it had to cut; wordCount(text) returns the number of words. Keep each helper in its own file under src/ and its tests under test/. Also update README.md to document all three.",
+            "prompt_hash": "03a3da428d698909657393f570a27acd6bc73d733304ae1000fdc20082a7c4bf",
+            "autonomy_level": "review_plan",
+            "status": "awaiting_ratification",
+            "authorization_effect": "none"
+          }
+        },
+        {
+          "ts": "2026-08-11T05:46:16.390Z",
+          "type": "autonomy.decision_recorded",
+          "task_id": null,
+          "data": {
+            "version": 1,
+            "level": "review_plan",
+            "session_id": "625f918d-57e2-4ebb-9c1f-b4e87ae46978",
+            "decision": "plan_ratification",
+            "action_type": "plan.ratify",
+            "interruption": "required",
+            "authorization_source": "human",
+            "result": "paused",
+            "reason": "review_plan requires exact-hash human plan ratification before execution."
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:50.816Z",
+          "type": "plan.ratified",
+          "task_id": null,
+          "data": {
+            "version": 1,
+            "spec_id": "S-001",
+            "plan_hash": "3d87a3cad249dbb584ba740fe3bbc43e0eee0667d01c4073f19fa883d9097198",
+            "plan_path": ".hivemind/plans/ratified/S-001/3d87a3cad249dbb584ba740fe3bbc43e0eee0667d01c4073f19fa883d9097198.json",
+            "base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "task_count": 4,
+            "confirmation": "exact_plan_hash",
+            "authorization_source": "human",
+            "autonomy_level": "review_plan"
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:51.757Z",
+          "type": "autonomy.decision_recorded",
+          "task_id": null,
+          "data": {
+            "version": 1,
+            "level": "review_plan",
+            "session_id": "625f918d-57e2-4ebb-9c1f-b4e87ae46978",
+            "decision": "run_started",
+            "action_type": "manager.start",
+            "interruption": "not_applicable",
+            "authorization_source": "deterministic_pipeline",
+            "result": "started",
+            "reason": "Manager run started with project autonomy level review_plan."
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:52.622Z",
+          "type": "scheduler.wave_started",
+          "task_id": null,
+          "data": {
+            "version": 1,
+            "session_id": "625f918d-57e2-4ebb-9c1f-b4e87ae46978",
+            "group_id": "G-1",
+            "task_ids": [
+              "T-001",
+              "T-002",
+              "T-003"
+            ],
+            "configured_cap": 3,
+            "effective_concurrency": 3,
+            "binding_limit": "ready_count",
+            "budget_available_reservations": 12
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:52.673Z",
+          "type": "task.created",
+          "task_id": "T-001",
+          "data": {
+            "title": "Implement and test slugify helper",
+            "agent_role": "builder",
+            "routing_task_type": "api",
+            "base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "acceptance_criterion": "slugify returns a lowercase URL-safe slug, handles empty input, and rejects non-string input with TypeError.",
+            "allowed_files": [
+              "src/slugify.js",
+              "test/slugify.test.js"
+            ],
+            "contract_path": ".hivemind/tasks/T-001.contract.json",
+            "source": "contract.create"
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:52.766Z",
+          "type": "lease.approved",
+          "task_id": "T-001",
+          "data": {
+            "requested_files": [
+              "src/slugify.js",
+              "test/slugify.test.js"
+            ],
+            "granted": [
+              "src/slugify.js",
+              "test/slugify.test.js"
+            ]
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:52.804Z",
+          "type": "write_intent.submitted",
+          "task_id": "T-001",
+          "data": {
+            "intended_files": [
+              "src/slugify.js",
+              "test/slugify.test.js"
+            ],
+            "intended_symbols": [],
+            "possible_risks": [
+              "Create src/slugify.js with no imports from other helpers.",
+              "Create test/slugify.test.js covering normal, empty, and non-string TypeError cases."
+            ],
+            "will_not_change": [
+              "package.json",
+              "README.md",
+              "src/index.js",
+              "src/capitalize.js",
+              "test/capitalize.test.js"
+            ]
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:52.822Z",
+          "type": "write_intent.approved",
+          "task_id": "T-001",
+          "data": {
+            "intended_files": [
+              "src/slugify.js",
+              "test/slugify.test.js"
+            ]
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:53.143Z",
+          "type": "task.authoring_base_prepared",
+          "task_id": "T-001",
+          "data": {
+            "contract_base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "authoring_base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "authoring_base_tree": "515703551aa2aa2d75b59906808b5b1be8acfb50",
+            "dependency_task_ids": [],
+            "dependency_verification_id": null
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:53.634Z",
+          "type": "task.run_accepted",
+          "task_id": "T-001",
+          "data": {
+            "run_id": "df044101-c5be-4229-a44c-efd6826b273f",
+            "tool": "codex-terra",
+            "routing_task_type": "api",
+            "worktree": "D:\\Projects\\hivemind-e2e\\.hivemind\\worktrees\\T-001",
+            "contract_base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "authoring_base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "dependency_verification_id": null
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:53.649Z",
+          "type": "task.started",
+          "task_id": "T-001",
+          "data": {
+            "run_id": "df044101-c5be-4229-a44c-efd6826b273f",
+            "tool": "codex-terra",
+            "routing_task_type": "api",
+            "worktree": "D:\\Projects\\hivemind-e2e\\.hivemind\\worktrees\\T-001",
+            "contract_base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "authoring_base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "dependency_verification_id": null
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:53.679Z",
+          "type": "autonomy.decision_recorded",
+          "task_id": null,
+          "data": {
+            "version": 1,
+            "level": "review_plan",
+            "session_id": "625f918d-57e2-4ebb-9c1f-b4e87ae46978",
+            "decision": "manager_action",
+            "action_type": "run_worker",
+            "interruption": "suppressed",
+            "authorization_source": "autonomy_policy",
+            "pending_action_id": "a2a6d6fe-3696-4462-8aaa-ea9fa7e6b96e",
+            "result": "authorized",
+            "reason": "action run_worker is configured as high-risk/consequential"
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:53.695Z",
+          "type": "manager.action_approved",
+          "task_id": "T-001",
+          "data": {
+            "version": 1,
+            "pending_action_id": "a2a6d6fe-3696-4462-8aaa-ea9fa7e6b96e",
+            "session_id": "625f918d-57e2-4ebb-9c1f-b4e87ae46978",
+            "action_type": "run_worker",
+            "subject": "T-001",
+            "expected_state_hash": "19dbe0041f2e0b2681ef695df52495fb5d8a8174ee921f7a1c3c3896c03f7983",
+            "result_ok": true,
+            "authorization_source": "autonomy_policy",
+            "autonomy_level": "review_plan"
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:53.753Z",
+          "type": "task.created",
+          "task_id": "T-002",
+          "data": {
+            "title": "Implement and test truncate helper",
+            "agent_role": "builder",
+            "routing_task_type": "api",
+            "base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "acceptance_criterion": "truncate returns unchanged strings at or below max length, returns a string of exactly max characters including an ellipsis when truncating, handles empty input, and rejects non-string input with TypeError.",
+            "allowed_files": [
+              "src/truncate.js",
+              "test/truncate.test.js"
+            ],
+            "contract_path": ".hivemind/tasks/T-002.contract.json",
+            "source": "contract.create"
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:53.855Z",
+          "type": "lease.approved",
+          "task_id": "T-002",
+          "data": {
+            "requested_files": [
+              "src/truncate.js",
+              "test/truncate.test.js"
+            ],
+            "granted": [
+              "src/truncate.js",
+              "test/truncate.test.js"
+            ]
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:53.900Z",
+          "type": "write_intent.submitted",
+          "task_id": "T-002",
+          "data": {
+            "intended_files": [
+              "src/truncate.js",
+              "test/truncate.test.js"
+            ],
+            "intended_symbols": [],
+            "possible_risks": [
+              "Create src/truncate.js with no imports from other helpers.",
+              "Create test/truncate.test.js covering unchanged, truncated, exact-boundary, empty, and non-string TypeError cases."
+            ],
+            "will_not_change": [
+              "package.json",
+              "README.md",
+              "src/index.js",
+              "src/capitalize.js",
+              "test/capitalize.test.js"
+            ]
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:53.903Z",
+          "type": "cache.read",
+          "task_id": "T-001",
+          "data": {
+            "path": "src/capitalize.js",
+            "content_hash": "5f04b558ebfe1b39db3a76d4b271a5e446615a908efc327b8b62d5587f071981",
+            "bytes": 278,
+            "result": "miss",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:53.919Z",
+          "type": "write_intent.approved",
+          "task_id": "T-002",
+          "data": {
+            "intended_files": [
+              "src/truncate.js",
+              "test/truncate.test.js"
+            ]
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:53.929Z",
+          "type": "cache.read",
+          "task_id": "T-001",
+          "data": {
+            "path": "test/capitalize.test.js",
+            "content_hash": "46ea8344cc236411bba6f38e270e840fb0f176cd3b494bac9e10c0716c479cef",
+            "bytes": 347,
+            "result": "miss",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:53.973Z",
+          "type": "task.worker_process_started",
+          "task_id": "T-001",
+          "data": {
+            "version": 1,
+            "run_id": "df044101-c5be-4229-a44c-efd6826b273f",
+            "tool": "codex-terra",
+            "pid": 38364,
+            "process_instance_id": "34773a62-0667-45df-965c-c85c856bddd9",
+            "process_group_id": null
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:54.296Z",
+          "type": "task.authoring_base_prepared",
+          "task_id": "T-002",
+          "data": {
+            "contract_base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "authoring_base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "authoring_base_tree": "515703551aa2aa2d75b59906808b5b1be8acfb50",
+            "dependency_task_ids": [],
+            "dependency_verification_id": null
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:54.828Z",
+          "type": "task.run_accepted",
+          "task_id": "T-002",
+          "data": {
+            "run_id": "00250463-ae9d-4b34-a4a5-d08739083371",
+            "tool": "codex-terra",
+            "routing_task_type": "api",
+            "worktree": "D:\\Projects\\hivemind-e2e\\.hivemind\\worktrees\\T-002",
+            "contract_base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "authoring_base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "dependency_verification_id": null
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:54.841Z",
+          "type": "task.started",
+          "task_id": "T-002",
+          "data": {
+            "run_id": "00250463-ae9d-4b34-a4a5-d08739083371",
+            "tool": "codex-terra",
+            "routing_task_type": "api",
+            "worktree": "D:\\Projects\\hivemind-e2e\\.hivemind\\worktrees\\T-002",
+            "contract_base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "authoring_base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "dependency_verification_id": null
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:54.869Z",
+          "type": "autonomy.decision_recorded",
+          "task_id": null,
+          "data": {
+            "version": 1,
+            "level": "review_plan",
+            "session_id": "625f918d-57e2-4ebb-9c1f-b4e87ae46978",
+            "decision": "manager_action",
+            "action_type": "run_worker",
+            "interruption": "suppressed",
+            "authorization_source": "autonomy_policy",
+            "pending_action_id": "798f0bd4-5a6d-4089-976b-68e29653d4ec",
+            "result": "authorized",
+            "reason": "action run_worker is configured as high-risk/consequential"
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:54.882Z",
+          "type": "manager.action_approved",
+          "task_id": "T-002",
+          "data": {
+            "version": 1,
+            "pending_action_id": "798f0bd4-5a6d-4089-976b-68e29653d4ec",
+            "session_id": "625f918d-57e2-4ebb-9c1f-b4e87ae46978",
+            "action_type": "run_worker",
+            "subject": "T-002",
+            "expected_state_hash": "1ea61b8a7e106893efe3214d6a88665d5bca1a8a077fa32728d479760d2945db",
+            "result_ok": true,
+            "authorization_source": "autonomy_policy",
+            "autonomy_level": "review_plan"
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:54.941Z",
+          "type": "task.created",
+          "task_id": "T-003",
+          "data": {
+            "title": "Implement and test wordCount helper",
+            "agent_role": "builder",
+            "routing_task_type": "api",
+            "base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "acceptance_criterion": "wordCount returns the number of whitespace-separated words, returns zero for empty or whitespace-only input, and rejects non-string input with TypeError.",
+            "allowed_files": [
+              "src/wordCount.js",
+              "test/wordCount.test.js"
+            ],
+            "contract_path": ".hivemind/tasks/T-003.contract.json",
+            "source": "contract.create"
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:55.050Z",
+          "type": "lease.approved",
+          "task_id": "T-003",
+          "data": {
+            "requested_files": [
+              "src/wordCount.js",
+              "test/wordCount.test.js"
+            ],
+            "granted": [
+              "src/wordCount.js",
+              "test/wordCount.test.js"
+            ]
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:55.086Z",
+          "type": "cache.read",
+          "task_id": "T-002",
+          "data": {
+            "path": "src/capitalize.js",
+            "content_hash": "5f04b558ebfe1b39db3a76d4b271a5e446615a908efc327b8b62d5587f071981",
+            "bytes": 278,
+            "result": "hit",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:55.088Z",
+          "type": "write_intent.submitted",
+          "task_id": "T-003",
+          "data": {
+            "intended_files": [
+              "src/wordCount.js",
+              "test/wordCount.test.js"
+            ],
+            "intended_symbols": [],
+            "possible_risks": [
+              "Create src/wordCount.js with no imports from other helpers.",
+              "Create test/wordCount.test.js covering normal, whitespace-separated, empty, whitespace-only, and non-string TypeError cases."
+            ],
+            "will_not_change": [
+              "package.json",
+              "README.md",
+              "src/index.js",
+              "src/capitalize.js",
+              "test/capitalize.test.js"
+            ]
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:55.101Z",
+          "type": "cache.read",
+          "task_id": "T-002",
+          "data": {
+            "path": "test/capitalize.test.js",
+            "content_hash": "46ea8344cc236411bba6f38e270e840fb0f176cd3b494bac9e10c0716c479cef",
+            "bytes": 347,
+            "result": "hit",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:55.118Z",
+          "type": "write_intent.approved",
+          "task_id": "T-003",
+          "data": {
+            "intended_files": [
+              "src/wordCount.js",
+              "test/wordCount.test.js"
+            ]
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:55.138Z",
+          "type": "task.worker_process_started",
+          "task_id": "T-002",
+          "data": {
+            "version": 1,
+            "run_id": "00250463-ae9d-4b34-a4a5-d08739083371",
+            "tool": "codex-terra",
+            "pid": 16264,
+            "process_instance_id": "af93b745-722a-4ba8-8005-fd083c901d43",
+            "process_group_id": null
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:55.483Z",
+          "type": "task.authoring_base_prepared",
+          "task_id": "T-003",
+          "data": {
+            "contract_base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "authoring_base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "authoring_base_tree": "515703551aa2aa2d75b59906808b5b1be8acfb50",
+            "dependency_task_ids": [],
+            "dependency_verification_id": null
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:55.967Z",
+          "type": "task.run_accepted",
+          "task_id": "T-003",
+          "data": {
+            "run_id": "43ca5c74-729a-46d0-ba52-eeaedfeaa2d5",
+            "tool": "codex-terra",
+            "routing_task_type": "api",
+            "worktree": "D:\\Projects\\hivemind-e2e\\.hivemind\\worktrees\\T-003",
+            "contract_base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "authoring_base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "dependency_verification_id": null
+          }
+        },
+        {
+          "ts": "2026-08-11T05:47:55.981Z",
+          "type": "task.started",
+          "task_id": "T-003",
+          "data": {
+            "run_id": "43ca5c74-729a-46d0-ba52-eeaedfeaa2d5",
+            "tool": "codex-terra",
+            "routing_task_type": "api",
+            "worktree": "D:\\Projects\\hivemind-e2e\\.hivemind\\worktrees\\T-003",
+            "contract_base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "authoring_base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+            "dependency_verification_id": null
+          }
+        }
+      ],
+      "span_ms": 1586812,
+      "inspection": {
+        "status": {
+          "tasks": [
+            {
+              "task_id": "T-001",
+              "title": "Implement and test slugify helper",
+              "allowed_files": [
+                "src/slugify.js",
+                "test/slugify.test.js"
+              ],
+              "lease": {
+                "held": false,
+                "files": []
+              },
+              "worktree": "missing",
+              "patch": {
+                "bundle": "absent",
+                "submitted": false,
+                "analyzed": false,
+                "accepted": false,
+                "verdict": null,
+                "reason": "patch bundle not found",
+                "submitted_at": null,
+                "analyzed_at": null
+              },
+              "queued": false,
+              "integrated": false
+            },
+            {
+              "task_id": "T-002",
+              "title": "Implement and test truncate helper",
+              "allowed_files": [
+                "src/truncate.js",
+                "test/truncate.test.js"
+              ],
+              "lease": {
+                "held": false,
+                "files": []
+              },
+              "worktree": "missing",
+              "patch": {
+                "bundle": "absent",
+                "submitted": false,
+                "analyzed": false,
+                "accepted": false,
+                "verdict": null,
+                "reason": "patch bundle not found",
+                "submitted_at": null,
+                "analyzed_at": null
+              },
+              "queued": false,
+              "integrated": false
+            },
+            {
+              "task_id": "T-003",
+              "title": "Implement and test wordCount helper",
+              "allowed_files": [
+                "src/wordCount.js",
+                "test/wordCount.test.js"
+              ],
+              "lease": {
+                "held": false,
+                "files": []
+              },
+              "worktree": "missing",
+              "patch": {
+                "bundle": "absent",
+                "submitted": false,
+                "analyzed": false,
+                "accepted": false,
+                "verdict": null,
+                "reason": "patch bundle not found",
+                "submitted_at": null,
+                "analyzed_at": null
+              },
+              "queued": false,
+              "integrated": false
+            },
+            {
+              "task_id": "T-004",
+              "title": "Export and document text helpers",
+              "allowed_files": [
+                "README.md",
+                "src/index.js"
+              ],
+              "lease": {
+                "held": false,
+                "files": []
+              },
+              "worktree": "missing",
+              "patch": {
+                "bundle": "absent",
+                "submitted": false,
+                "analyzed": false,
+                "accepted": false,
+                "verdict": null,
+                "reason": "patch bundle not found",
+                "submitted_at": null,
+                "analyzed_at": null
+              },
+              "queued": false,
+              "integrated": false
+            }
+          ],
+          "leases": {},
+          "integration": {
+            "queue": [],
+            "status": null
+          },
+          "replans": []
+        },
+        "tasks": [
+          {
+            "task_id": "T-001",
+            "title": "Implement and test slugify helper",
+            "state": "running",
+            "agent": "codex-terra",
+            "worktree": "D:\\Projects\\hivemind-e2e\\.hivemind\\worktrees\\T-001",
+            "lease_files": [],
+            "patch": {
+              "submitted": false,
+              "analyzed": false,
+              "verdict": null,
+              "reason": "patch bundle not found",
+              "changed_files": null
+            },
+            "integration": "not queued",
+            "issue": null,
+            "stalled": false,
+            "last_event": "task.worker_process_started",
+            "last_event_at": "2026-08-11T05:47:53.973Z",
+            "execution_group": "G-1",
+            "group_mode": "parallel",
+            "depends_on": [],
+            "started_at": "2026-08-11T05:47:53.649Z",
+            "worker_finished_at": null
+          },
+          {
+            "task_id": "T-002",
+            "title": "Implement and test truncate helper",
+            "state": "running",
+            "agent": "codex-terra",
+            "worktree": "D:\\Projects\\hivemind-e2e\\.hivemind\\worktrees\\T-002",
+            "lease_files": [],
+            "patch": {
+              "submitted": false,
+              "analyzed": false,
+              "verdict": null,
+              "reason": "patch bundle not found",
+              "changed_files": null
+            },
+            "integration": "not queued",
+            "issue": null,
+            "stalled": false,
+            "last_event": "task.worker_process_started",
+            "last_event_at": "2026-08-11T05:47:55.138Z",
+            "execution_group": "G-1",
+            "group_mode": "parallel",
+            "depends_on": [],
+            "started_at": "2026-08-11T05:47:54.841Z",
+            "worker_finished_at": null
+          },
+          {
+            "task_id": "T-003",
+            "title": "Implement and test wordCount helper",
+            "state": "running",
+            "agent": "codex-terra",
+            "worktree": "D:\\Projects\\hivemind-e2e\\.hivemind\\worktrees\\T-003",
+            "lease_files": [],
+            "patch": {
+              "submitted": false,
+              "analyzed": false,
+              "verdict": null,
+              "reason": "patch bundle not found",
+              "changed_files": null
+            },
+            "integration": "not queued",
+            "issue": null,
+            "stalled": false,
+            "last_event": "task.started",
+            "last_event_at": "2026-08-11T05:47:55.981Z",
+            "execution_group": "G-1",
+            "group_mode": "parallel",
+            "depends_on": [],
+            "started_at": "2026-08-11T05:47:55.981Z",
+            "worker_finished_at": null
+          },
+          {
+            "task_id": "T-004",
+            "title": "Export and document text helpers",
+            "state": "planned",
+            "agent": null,
+            "worktree": null,
+            "lease_files": [],
+            "patch": {
+              "submitted": false,
+              "analyzed": false,
+              "verdict": null,
+              "reason": "patch bundle not found",
+              "changed_files": null
+            },
+            "integration": "not queued",
+            "issue": null,
+            "stalled": false,
+            "last_event": null,
+            "last_event_at": null,
+            "execution_group": "G-2",
+            "group_mode": "sequence",
+            "depends_on": [
+              "T-001",
+              "T-002",
+              "T-003"
+            ],
+            "started_at": null,
+            "worker_finished_at": null
+          }
+        ],
+        "execution_groups": [
+          {
+            "group_id": "G-1",
+            "mode": "parallel",
+            "task_ids": [
+              "T-001",
+              "T-002",
+              "T-003"
+            ],
+            "label": "3 working",
+            "counts": {
+              "working": 3,
+              "waiting": 0,
+              "needs_you": 0,
+              "done": 0
+            },
+            "configured_cap": 3,
+            "effective_concurrency": 3,
+            "binding_limit": "ready_count",
+            "capacity_note": null
+          },
+          {
+            "group_id": "G-2",
+            "mode": "sequence",
+            "task_ids": [
+              "T-004"
+            ],
+            "label": "1 waiting",
+            "counts": {
+              "working": 0,
+              "waiting": 1,
+              "needs_you": 0,
+              "done": 0
+            },
+            "configured_cap": null,
+            "effective_concurrency": null,
+            "binding_limit": null,
+            "capacity_note": null
+          }
+        ],
+        "task_titles": {
+          "T-001": "Implement and test slugify helper",
+          "T-002": "Implement and test truncate helper",
+          "T-003": "Implement and test wordCount helper",
+          "T-004": "Export and document text helpers"
+        },
+        "active_spec_id": "S-001",
+        "active_spec_title": "Add slugify, truncate and wordCount text helpers with tests and docs",
+        "manager_session": {
+          "session_id": "625f918d-57e2-4ebb-9c1f-b4e87ae46978",
+          "spec_id": "S-001",
+          "created_at": "2026-08-11T05:47:51.755Z",
+          "last_activity_at": "2026-08-11T05:50:41.654Z",
+          "status": "complete",
+          "tool": "manager",
+          "call_count": 65,
+          "pending_action": null,
+          "blocked_action_type": null,
+          "blocked_reason": null,
+          "blocked_code": null,
+          "continuation_available": false,
+          "autonomy_level": "review_plan",
+          "autonomy_levels": [
+            "review_plan"
+          ]
+        },
+        "autonomy": {
+          "configured_level": "auto",
+          "run_levels": [
+            "review_plan"
+          ]
+        },
+        "plan_review": null,
+        "current_plan": {
+          "spec_id": "S-001",
+          "plan_hash": "3d87a3cad249dbb584ba740fe3bbc43e0eee0667d01c4073f19fa883d9097198",
+          "plan_path": ".hivemind/plans/ratified/S-001/3d87a3cad249dbb584ba740fe3bbc43e0eee0667d01c4073f19fa883d9097198.json",
+          "base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+          "created_at": "2026-08-11T05:46:16.194Z",
+          "tasks": [
+            {
+              "task_id": "T-001",
+              "title": "Implement and test slugify helper",
+              "tier": "medium",
+              "task_type": "deterministic",
+              "routing_task_type": "api",
+              "mode": "write",
+              "agent_role": "builder",
+              "scope": [
+                "src/slugify.js",
+                "test/slugify.test.js"
+              ],
+              "allowed_file_intents": {
+                "src/slugify.js": "create",
+                "test/slugify.test.js": "create"
+              },
+              "read_only_scope": [
+                "src/capitalize.js",
+                "test/capitalize.test.js"
+              ],
+              "forbidden_scope": [
+                "package.json",
+                "README.md",
+                "src/index.js"
+              ],
+              "must_not_change": [
+                "package.json",
+                "README.md",
+                "src/index.js",
+                "src/capitalize.js",
+                "test/capitalize.test.js"
+              ],
+              "depends_on": [],
+              "parallel_safe": true,
+              "acceptance_criterion": "slugify returns a lowercase URL-safe slug, handles empty input, and rejects non-string input with TypeError.",
+              "deterministic_validity_check": "node --input-type=module -e \"import { slugify } from './src/slugify.js'; if (slugify('Hello, World!') !== 'hello-world' || slugify('') !== '') throw new Error('slugify behavior failed'); try { slugify(1); throw new Error('missing TypeError') } catch (error) { if (!(error instanceof TypeError)) throw error }\"",
+              "required_tests": [
+                "npm test"
+              ],
+              "patch_requirements": [
+                "Create src/slugify.js with no imports from other helpers.",
+                "Create test/slugify.test.js covering normal, empty, and non-string TypeError cases."
+              ],
+              "critical_path_approved": false
+            },
+            {
+              "task_id": "T-002",
+              "title": "Implement and test truncate helper",
+              "tier": "medium",
+              "task_type": "deterministic",
+              "routing_task_type": "api",
+              "mode": "write",
+              "agent_role": "builder",
+              "scope": [
+                "src/truncate.js",
+                "test/truncate.test.js"
+              ],
+              "allowed_file_intents": {
+                "src/truncate.js": "create",
+                "test/truncate.test.js": "create"
+              },
+              "read_only_scope": [
+                "src/capitalize.js",
+                "test/capitalize.test.js"
+              ],
+              "forbidden_scope": [
+                "package.json",
+                "README.md",
+                "src/index.js"
+              ],
+              "must_not_change": [
+                "package.json",
+                "README.md",
+                "src/index.js",
+                "src/capitalize.js",
+                "test/capitalize.test.js"
+              ],
+              "depends_on": [],
+              "parallel_safe": true,
+              "acceptance_criterion": "truncate returns unchanged strings at or below max length, returns a string of exactly max characters including an ellipsis when truncating, handles empty input, and rejects non-string input with TypeError.",
+              "deterministic_validity_check": "node --input-type=module -e \"import { truncate } from './src/truncate.js'; if (truncate('hello', 5) !== 'hello' || truncate('hello', 4) !== 'h...' || truncate('hello', 4).length !== 4 || truncate('', 1) !== '') throw new Error('truncate boundary behavior failed'); try { truncate(1, 4); throw new Error('missing TypeError') } catch (error) { if (!(error instanceof TypeError)) throw error }\"",
+              "required_tests": [
+                "npm test"
+              ],
+              "patch_requirements": [
+                "Create src/truncate.js with no imports from other helpers.",
+                "Create test/truncate.test.js covering unchanged, truncated, exact-boundary, empty, and non-string TypeError cases."
+              ],
+              "critical_path_approved": false
+            },
+            {
+              "task_id": "T-003",
+              "title": "Implement and test wordCount helper",
+              "tier": "medium",
+              "task_type": "deterministic",
+              "routing_task_type": "api",
+              "mode": "write",
+              "agent_role": "builder",
+              "scope": [
+                "src/wordCount.js",
+                "test/wordCount.test.js"
+              ],
+              "allowed_file_intents": {
+                "src/wordCount.js": "create",
+                "test/wordCount.test.js": "create"
+              },
+              "read_only_scope": [
+                "src/capitalize.js",
+                "test/capitalize.test.js"
+              ],
+              "forbidden_scope": [
+                "package.json",
+                "README.md",
+                "src/index.js"
+              ],
+              "must_not_change": [
+                "package.json",
+                "README.md",
+                "src/index.js",
+                "src/capitalize.js",
+                "test/capitalize.test.js"
+              ],
+              "depends_on": [],
+              "parallel_safe": true,
+              "acceptance_criterion": "wordCount returns the number of whitespace-separated words, returns zero for empty or whitespace-only input, and rejects non-string input with TypeError.",
+              "deterministic_validity_check": "node --input-type=module -e \"import { wordCount } from './src/wordCount.js'; if (wordCount('one two three') !== 3 || wordCount('  one\\ttwo\\nthree  ') !== 3 || wordCount('   ') !== 0 || wordCount('') !== 0) throw new Error('wordCount behavior failed'); try { wordCount(null); throw new Error('missing TypeError') } catch (error) { if (!(error instanceof TypeError)) throw error }\"",
+              "required_tests": [
+                "npm test"
+              ],
+              "patch_requirements": [
+                "Create src/wordCount.js with no imports from other helpers.",
+                "Create test/wordCount.test.js covering normal, whitespace-separated, empty, whitespace-only, and non-string TypeError cases."
+              ],
+              "critical_path_approved": false
+            },
+            {
+              "task_id": "T-004",
+              "title": "Export and document text helpers",
+              "tier": "medium",
+              "task_type": "deterministic",
+              "routing_task_type": "documentation",
+              "mode": "integration",
+              "agent_role": "builder",
+              "scope": [
+                "README.md",
+                "src/index.js"
+              ],
+              "allowed_file_intents": {
+                "src/index.js": "modify",
+                "README.md": "modify"
+              },
+              "read_only_scope": [
+                "package.json",
+                "src/capitalize.js",
+                "test/capitalize.test.js"
+              ],
+              "forbidden_scope": [
+                "package.json",
+                "src/capitalize.js",
+                "test/capitalize.test.js"
+              ],
+              "must_not_change": [
+                "package.json",
+                "src/capitalize.js",
+                "test/capitalize.test.js"
+              ],
+              "depends_on": [
+                "T-001",
+                "T-002",
+                "T-003"
+              ],
+              "parallel_safe": false,
+              "acceptance_criterion": "src/index.js exports slugify, truncate, and wordCount, and README documents each helper and its callable signature.",
+              "deterministic_validity_check": "node --input-type=module -e \"import { slugify, truncate, wordCount } from './src/index.js'; if (slugify('A B') !== 'a-b' || truncate('hello', 4) !== 'h...' || wordCount('a b') !== 2) throw new Error('public exports failed')\"",
+              "required_tests": [
+                "npm test",
+                "named review check: README.md documents slugify(text), truncate(text, max), and wordCount(text)"
+              ],
+              "patch_requirements": [
+                "Modify src/index.js to re-export all three new helper modules while preserving the existing capitalize export.",
+                "Modify README.md to document all three helpers with their names and parameters.",
+                "Do not alter package.json or capitalize behavior."
+              ],
+              "critical_path_approved": false
+            }
+          ],
+          "execution_groups": [
+            {
+              "group_id": "G-1",
+              "mode": "parallel",
+              "task_ids": [
+                "T-001",
+                "T-002",
+                "T-003"
+              ]
+            },
+            {
+              "group_id": "G-2",
+              "mode": "sequence",
+              "task_ids": [
+                "T-004"
+              ]
+            }
+          ]
+        },
+        "integration_failure": null,
+        "needs_you": [],
+        "later": [],
+        "spend": {
+          "session_id": "625f918d-57e2-4ebb-9c1f-b4e87ae46978",
+          "calls": 5,
+          "effective_tokens": 622583,
+          "reserved_tokens": 0,
+          "committed_tokens": 622583,
+          "run_ceiling_tokens": 200000,
+          "session_ceiling_tokens": 2500000,
+          "near_session_ceiling": false
+        },
+        "swarm": {
+          "characterizations": [],
+          "warnings": []
+        },
+        "memory": {
+          "pending_lessons": [],
+          "routing_changes": [],
+          "draft_tests": [],
+          "canon": [],
+          "active_routing": {
+            "status": "absent",
+            "canon_id": null,
+            "reason": "no human-promoted learned routing policy exists",
+            "task_types": []
+          },
+          "warnings": []
+        },
+        "history": {
+          "runs": [
+            {
+              "session_id": "625f918d-57e2-4ebb-9c1f-b4e87ae46978",
+              "spec_id": "S-001",
+              "started_at": "2026-08-11T05:47:51.755Z",
+              "last_activity_at": "2026-08-11T05:50:41.654Z",
+              "duration_ms": 169899,
+              "outcome": "completed",
+              "outcome_detail": "The run ended without a verified change.",
+              "verified_tasks": [],
+              "merged_tasks": [],
+              "stopped_tasks": [],
+              "calls": 5,
+              "effective_tokens": 622583,
+              "provider_reported_tokens": 622583,
+              "self_measured_tokens": 7555,
+              "evidence_paths": [
+                ".hivemind/orchestrator/sessions/625f918d-57e2-4ebb-9c1f-b4e87ae46978.json",
+                ".hivemind/log/events.jsonl"
+              ],
+              "autonomy_levels": [
+                "review_plan"
+              ]
+            }
+          ],
+          "run_ceiling_tokens": 200000,
+          "session_ceiling_tokens": 2500000,
           "warnings": []
         }
       },

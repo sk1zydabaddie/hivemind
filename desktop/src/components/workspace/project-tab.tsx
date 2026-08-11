@@ -299,6 +299,19 @@ function RunCard({
                   value={run.stopped_tasks.length}
                 />
               ) : null}
+              {/* What it cost belongs on the summary line, not behind a
+                  disclosure. Replaying a real run showed a card that said what
+                  shipped and stayed silent about the bill. */}
+              {run.calls > 0 ? (
+                <span className="inline-flex items-baseline gap-1.5 text-muted-foreground">
+                  <b className="font-mono text-[13px] font-semibold text-ink">
+                    {formatCompact(run.effective_tokens)}
+                  </b>
+                  <span>
+                    tokens over {run.calls} {run.calls === 1 ? "call" : "calls"}
+                  </span>
+                </span>
+              ) : null}
             </div>
           </div>
           <CollapsibleTrigger asChild>

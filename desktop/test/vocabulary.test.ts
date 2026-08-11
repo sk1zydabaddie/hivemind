@@ -82,6 +82,44 @@ describe("vocabulary the product does not say", () => {
     expect(analyze).toMatch(/reason: gateResult\.reason,\s*plain_reason: gateResult\.plain_reason/u);
   });
 
+  test("a captured run replays with its plan, its spend and its history", async () => {
+    const raw = await readFile(path.join(desktopRoot, "tools", "replay-data.json"), "utf8");
+    const { scenarios } = JSON.parse(raw) as {
+      scenarios: Array<{
+        id: string;
+        inspection: {
+          current_plan: { tasks: unknown[]; execution_groups: unknown[] } | null;
+          spend: { calls: number; effective_tokens: number; near_session_ceiling: boolean };
+          history: { runs: Array<{ merged_tasks: string[]; calls: number }> };
+          tasks: Array<{ state: string }>;
+        } | null;
+      }>;
+    };
+
+    /* The plan review, the spend meter and the Project surface had only ever
+       been drawn from fixtures, because a trail alone carries none of the three:
+       the plan, the ledger and the session are files, not events. The collector
+       restores a captured `project-state/` beside the trail. If this regresses,
+       those surfaces quietly go back to being unverified. */
+    const run = scenarios.find((scenario) => scenario.id === "e2e-textkit-parallel-run");
+    expect(run?.inspection, "the real end-to-end trail must still project").toBeTruthy();
+    const inspection = run!.inspection!;
+
+    expect(inspection.current_plan?.tasks).toHaveLength(4);
+    expect(inspection.current_plan?.execution_groups).toHaveLength(2);
+    expect(inspection.tasks.every((task) => task.state === "merged")).toBe(true);
+
+    // Real measured spend, against the ceilings that run actually had.
+    expect(inspection.spend.calls).toBe(5);
+    expect(inspection.spend.effective_tokens).toBe(622_583);
+    // 622K against this run's real 2.5M ceiling is not near it. Comparing it to
+    // init's 500K default put a run that was well inside budget in amber.
+    expect(inspection.spend.near_session_ceiling).toBe(false);
+
+    expect(inspection.history.runs).toHaveLength(1);
+    expect(inspection.history.runs[0]?.merged_tasks).toHaveLength(4);
+  });
+
   test("the guard's list covers every term the brief bans", () => {
     for (const term of [
       "lease",

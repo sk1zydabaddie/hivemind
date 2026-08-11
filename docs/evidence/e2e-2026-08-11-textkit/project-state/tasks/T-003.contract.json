@@ -1,0 +1,43 @@
+{
+  "contract_version": 1,
+  "task_id": "T-003",
+  "title": "Implement and test wordCount helper",
+  "agent_role": "builder",
+  "routing_task_type": "api",
+  "base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+  "acceptance_criterion": "wordCount returns the number of whitespace-separated words, returns zero for empty or whitespace-only input, and rejects non-string input with TypeError.",
+  "deterministic_validity_check": "node --input-type=module -e \"import { wordCount } from './src/wordCount.js'; if (wordCount('one two three') !== 3 || wordCount('  one\\ttwo\\nthree  ') !== 3 || wordCount('   ') !== 0 || wordCount('') !== 0) throw new Error('wordCount behavior failed'); try { wordCount(null); throw new Error('missing TypeError') } catch (error) { if (!(error instanceof TypeError)) throw error }\"",
+  "allowed_files": [
+    "src/wordCount.js",
+    "test/wordCount.test.js"
+  ],
+  "allowed_file_intents": {
+    "src/wordCount.js": "create",
+    "test/wordCount.test.js": "create"
+  },
+  "read_only_files": [
+    "src/capitalize.js",
+    "test/capitalize.test.js"
+  ],
+  "forbidden_files": [
+    "package.json",
+    "README.md",
+    "src/index.js"
+  ],
+  "allowed_symbols": [],
+  "forbidden_symbols": [],
+  "must_not_change": [
+    "package.json",
+    "README.md",
+    "src/index.js",
+    "src/capitalize.js",
+    "test/capitalize.test.js"
+  ],
+  "required_tests": [
+    "npm test"
+  ],
+  "patch_requirements": [
+    "Create src/wordCount.js with no imports from other helpers.",
+    "Create test/wordCount.test.js covering normal, whitespace-separated, empty, whitespace-only, and non-string TypeError cases."
+  ]
+}

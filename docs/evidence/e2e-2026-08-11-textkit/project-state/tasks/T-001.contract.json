@@ -1,0 +1,43 @@
+{
+  "contract_version": 1,
+  "task_id": "T-001",
+  "title": "Implement and test slugify helper",
+  "agent_role": "builder",
+  "routing_task_type": "api",
+  "base_commit": "1cf937fabc5483d612a8a48999d8b409d6c7a615",
+  "acceptance_criterion": "slugify returns a lowercase URL-safe slug, handles empty input, and rejects non-string input with TypeError.",
+  "deterministic_validity_check": "node --input-type=module -e \"import { slugify } from './src/slugify.js'; if (slugify('Hello, World!') !== 'hello-world' || slugify('') !== '') throw new Error('slugify behavior failed'); try { slugify(1); throw new Error('missing TypeError') } catch (error) { if (!(error instanceof TypeError)) throw error }\"",
+  "allowed_files": [
+    "src/slugify.js",
+    "test/slugify.test.js"
+  ],
+  "allowed_file_intents": {
+    "src/slugify.js": "create",
+    "test/slugify.test.js": "create"
+  },
+  "read_only_files": [
+    "src/capitalize.js",
+    "test/capitalize.test.js"
+  ],
+  "forbidden_files": [
+    "package.json",
+    "README.md",
+    "src/index.js"
+  ],
+  "allowed_symbols": [],
+  "forbidden_symbols": [],
+  "must_not_change": [
+    "package.json",
+    "README.md",
+    "src/index.js",
+    "src/capitalize.js",
+    "test/capitalize.test.js"
+  ],
+  "required_tests": [
+    "npm test"
+  ],
+  "patch_requirements": [
+    "Create src/slugify.js with no imports from other helpers.",
+    "Create test/slugify.test.js covering normal, empty, and non-string TypeError cases."
+  ]
+}
