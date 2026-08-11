@@ -45,6 +45,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { RunMap } from "@/components/workspace/agent-map";
+import {
+  SpecReviewPanel,
+  initialNonGoals,
+  type NonGoalEntry
+} from "@/components/workspace/spec-review";
 import { plainActionError } from "@/lib/plain-language";
 import {
   RECENT_EVENT_LIMIT,
@@ -68,7 +73,8 @@ import type {
   WorkspaceInspection,
   WorkspacePlanReview,
   WorkspacePlanTask,
-  WorkspaceQueueItem
+  WorkspaceQueueItem,
+  SpecReview
 } from "@/lib/workspace-actions";
 
 interface WorkTabProps {
@@ -170,6 +176,10 @@ export function WorkTab({
      to be, so it lives here rather than in the shell's navigation. */
   const [view, setView] = useState<"thread" | "map">("thread");
   const [reviewOpen, setReviewOpen] = useState(false);
+  /* The spec half of the one review. Read through the audited dispatcher; the
+     client decides nothing about it. */
+  const [specReview, setSpecReview] = useState<SpecReview | null>(null);
+  const [nonGoals, setNonGoals] = useState<NonGoalEntry[]>([]);
   const [composer, setComposer] = useState("");
   const [feedback, setFeedback] = useState("");
   const [busy, setBusy] = useState(false);
@@ -407,6 +417,20 @@ export function WorkTab({
     if (!displayedPlan) return;
     setReviewOpen(true);
     setFeedback("");
+    const specId = plan?.spec_id ?? currentPlan?.spec_id ?? null;
+    if (specId !== null) {
+      try {
+        const loaded = await onAction<SpecReview>({
+          type: "spec.review",
+          payload: { spec_id: specId }
+        });
+        setSpecReview(loaded);
+        setNonGoals(initialNonGoals(loaded));
+      } catch {
+        /* A spec that cannot be read is not a reason to hide the plan. */
+        setSpecReview(null);
+      }
+    }
     if (!plan) return;
     try {
       await onAction({ type: "plan.review", payload: { spec_id: plan.spec_id } });
@@ -683,6 +707,9 @@ export function WorkTab({
           open={reviewOpen}
           plan={displayedPlan}
           ratificationPending={plan !== null}
+          nonGoals={nonGoals}
+          specReview={specReview}
+          onNonGoalsChange={setNonGoals}
           onStartOver={() => {
             setReplanText("");
             setReplanOpen(true);
@@ -700,6 +727,18 @@ export function WorkTab({
             setBusy(true);
             setFeedback("");
             try {
+              /* One decision, two signatures. The spec is adopted first because
+                 ratifying a plan requires a ratified spec -- ordering, not a
+                 second choice. The person's non-goals are what gets written. */
+              if (specReview !== null && specReview.status !== "ratified") {
+                await onAction({
+                  type: "spec.adopt",
+                  payload: {
+                    spec_id: specReview.spec_id,
+                    non_goals: nonGoals.map((entry) => entry.text)
+                  }
+                });
+              }
               await onAction({
                 type: "plan.ratify",
                 payload: { spec_id: plan.spec_id, expected_plan_hash: plan.plan_hash }
@@ -2084,6 +2123,9 @@ function PlanTakeover({
   open,
   busy,
   ratificationPending,
+  specReview,
+  nonGoals,
+  onNonGoalsChange,
   amendments,
   onOpenChange,
   onRatify,
@@ -2095,6 +2137,9 @@ function PlanTakeover({
   open: boolean;
   busy: boolean;
   ratificationPending: boolean;
+  specReview: SpecReview | null;
+  nonGoals: NonGoalEntry[];
+  onNonGoalsChange: (entries: NonGoalEntry[]) => void;
   amendments: WorkspaceQueueItem[];
   onOpenChange: (open: boolean) => void;
   onRatify: () => Promise<void>;
@@ -2102,6 +2147,14 @@ function PlanTakeover({
   onEdit: (task: WorkspacePlanTask) => void;
   onStartOver: () => void;
 }): React.JSX.Element {
+  /* Why approving is unavailable, in the words the person needs. Core refuses
+     both of these too; this only explains the refusal before they hit it. */
+  const blockedReason =
+    specReview !== null && ratificationPending && specReview.open_questions.length > 0
+      ? "Answer the questions above before starting."
+      : specReview !== null && ratificationPending && nonGoals.length === 0
+        ? "Say what this should not do, or add “nothing”, before starting."
+        : null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -2127,6 +2180,16 @@ function PlanTakeover({
 
         <ScrollArea className="min-h-0 bg-canvas">
           <div className="px-8 py-6">
+            {specReview !== null && ratificationPending ? (
+              <div className="mb-7 border-b border-rule pb-7">
+                <SpecReviewPanel
+                  busy={busy}
+                  nonGoals={nonGoals}
+                  review={specReview}
+                  onNonGoalsChange={onNonGoalsChange}
+                />
+              </div>
+            ) : null}
             {amendments.length > 0 ? (
               <section className="mb-6 rounded-lg border border-amber/25 bg-amber-wash px-5 py-4">
                 <strong className="block text-[14px] font-semibold text-ink">
@@ -2209,8 +2272,19 @@ function PlanTakeover({
               <Plus aria-hidden="true" />
               Add a step
             </Button>
+            {blockedReason === null ? null : (
+              <span className="mr-1 max-w-[320px] text-[12px] leading-snug text-clay">
+                {blockedReason}
+              </span>
+            )}
             {ratificationPending ? (
-              <Button disabled={busy} size="lg" type="button" onClick={() => void onRatify()}>
+              <Button
+                disabled={busy || blockedReason !== null}
+                size="lg"
+                title={blockedReason ?? undefined}
+                type="button"
+                onClick={() => void onRatify()}
+              >
                 <Check aria-hidden="true" />
                 Approve and start
               </Button>

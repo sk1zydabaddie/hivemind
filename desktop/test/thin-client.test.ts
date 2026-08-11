@@ -230,6 +230,11 @@ describe("React workspace boundary", () => {
       "plan.prepare",
       "plan.ratify",
       "plan.review",
+      // The one review signs the spec before it ratifies the plan, because
+      // ratifying a plan requires a ratified spec. Ordering, not a second
+      // decision -- the person acts once.
+      "spec.review",
+      "spec.adopt",
       "task.redirect",
       // Stopping one task moved here from the tree tab that no longer exists,
       // so the app keeps exactly one inspector and one set of task controls.

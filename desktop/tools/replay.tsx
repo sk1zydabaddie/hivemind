@@ -41,6 +41,8 @@ interface ReplayScenario {
   timeline?: ReplayFrame[];
   /** Captured worker output, keyed by task. Playback only. */
   output?: Record<string, ReplayOutputRecord[]>;
+  /** A real drafted spec, for replaying the one review. */
+  spec_review?: Record<string, unknown>;
 }
 
 const HEX = "9f".repeat(32);
@@ -264,6 +266,11 @@ class ReplayEventSource {
         return inspection;
       }
       if (action.type === "trail.inspect") return scenario.events.slice(0, delivered);
+      /* The spec half of the review, served from a REAL drafted spec captured
+         by the drafting experiment rather than a fixture. */
+      if (action.type === "spec.review" && scenario.spec_review !== undefined) {
+        return scenario.spec_review;
+      }
       return {};
     }
     throw new Error(`replay harness has no stub for ${command}`);

@@ -51,3 +51,17 @@ The desktop refuses to attach or submit a workspace action unless the live daemo
 ## Desktop Shell Build Identity
 
 The native shell embeds a deterministic hash of the React, Rust, package/lockfile, and Tauri configuration inputs used to build it. On project connect and again before every workspace action, the Rust transport asks the current Core CLI for the expected shell identity and refuses before daemon attach, launch, health use, or action transport when the values differ. The returned connection carries both identities and React also requires them to match. This makes a stale embedded frontend a visible refusal instead of allowing obsolete controls to transact against current Core; it adds no action authority and changes no deterministic floor.
+
+## Spec review (2026-08-11)
+
+Two actions added for the single first-run review.
+
+- `spec.review` — read-only. Returns the spec as the review screen shows it:
+  goal, drafted non-goals, acceptance, open questions, and the verbatim prompt
+  it was drafted from. Mutates nothing.
+- `spec.adopt` — the human signature. Writes the person's answer to "anything
+  this should not do?", takes out a convergence authorization against the
+  document *as they are adopting it*, spends it, and ratifies the spec. Refuses
+  while any open question remains, naming them. The orchestrator cannot propose
+  this action, and `markIdeationConvergence` refuses a user signature without an
+  authorization no matter who calls it.

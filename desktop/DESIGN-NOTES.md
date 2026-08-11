@@ -513,6 +513,43 @@ be chosen quietly:
 The third is the only one that preserves what the gate is for. It is not built;
 `assessNonGoals` was deliberately not loosened to accommodate any of them.
 
+### The one review, built
+
+`src/components/workspace/spec-review.tsx`, inside the existing plan takeover.
+One screen; the person acts once. `spec.adopt` signs the spec, then
+`plan.ratify` ratifies the plan, because ratifying a plan requires a ratified
+spec — ordering, not a second decision.
+
+**Non-goals is an input, not a display.** Drafted entries arrive prefilled and
+marked *Suggested*; anything typed is marked *Yours*. The heading asks the
+question — "Anything this should NOT do?" — rather than presenting a default,
+and an empty drafted list says "Nothing was suggested" instead of hiding the
+field. The person's answer is what gets written to the spec. This follows the
+experiment: the drafter left writing, validation, caching and watching all
+undeclared on the config-reader prompt, so drafted non-goals cannot be the
+forcing function. They are a bonus; the person is the author.
+
+**Open questions block, visibly.** The refusal is the first thing on the screen,
+in clay, with the question quoted and the remedy stated, and the approve button
+is disabled with the reason beside it. Core refuses this too — the UI only
+explains the refusal before somebody hits it.
+
+#### What this was verified against
+
+`16-review-blocked.png` and `17-review-ready.png` in
+`docs/evidence/e2e-2026-08-11-textkit`, replayed from **real** data: the plan is
+the real four-task plan from the 2026-08-11 run, and the spec is a **real
+drafted spec** from the vacuity experiment — the config-reader draft with its
+one genuine blocking question, and the titleCase draft with its one suggested
+non-goal.
+
+**One thing is synthesized, and only one:** no captured trail contains a plan
+*awaiting* ratification — the real run's plan was ratified during it — so the
+scenarios present the real plan as pending. Per the standing rule: the plan
+content, the spec content, the question and the suggestion are all real; the
+pending state is not. A trail captured before ratification would close that,
+and is worth taking on the next run.
+
 ### Proposal: the front door
 
 Not built. Written down because the design choice is real and worth settling

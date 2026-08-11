@@ -223,6 +223,19 @@ export interface WorkspaceHistoryRun {
   autonomy_levels: AutonomyLevel[];
 }
 
+/** What the one review shows. Read-only; `spec.adopt` is the signature. */
+export interface SpecReview {
+  spec_id: string;
+  title: string;
+  authorship: "human" | "drafted";
+  status: "draft" | "ratified";
+  goal: string;
+  drafted_non_goals: string[];
+  acceptance: string[];
+  open_questions: string[];
+  asked_for: string | null;
+}
+
 export type WorkspaceAction = {
   type:
     | "autonomy.set"
@@ -233,6 +246,8 @@ export type WorkspaceAction = {
     | "plan.prepare"
     | "plan.review"
     | "plan.ratify"
+    | "spec.review"
+    | "spec.adopt"
     | "manual_task.review"
     | "manual_task.authorize"
     | "plan.amend"

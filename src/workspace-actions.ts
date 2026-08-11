@@ -18,6 +18,8 @@ import { requestTaskRedirect } from "./supervision.js";
 import { requestTaskStop } from "./task-control.js";
 import { inspectWorkspace } from "./workspace-inspection.js";
 
+import { adoptSpec, readSpecForReview } from "./spec-review.js";
+
 export const workspaceActionTypes = [
   "autonomy.set",
   "manager.start",
@@ -27,6 +29,8 @@ export const workspaceActionTypes = [
   "plan.prepare",
   "plan.review",
   "plan.ratify",
+  "spec.review",
+  "spec.adopt",
   "manual_task.review",
   "manual_task.authorize",
   "plan.amend",
@@ -74,6 +78,25 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
   if (raw.type === "plan.review") {
     const parsed = exactStrings(payload, ["spec_id"]);
     return parsed.ok ? reviewPlanForRatification(repoRoot, parsed.value.spec_id) : parsed;
+  }
+  if (raw.type === "spec.review") {
+    const parsed = exactStrings(payload, ["spec_id"]);
+    return parsed.ok ? readSpecForReview(repoRoot, parsed.value.spec_id) : parsed;
+  }
+  /* The human signature. The orchestrator cannot propose this action, and
+     `markIdeationConvergence` refuses a user signature without an authorization
+     regardless of who calls it -- see src/spec-convergence.ts. */
+  if (raw.type === "spec.adopt") {
+    const nonGoals = payload.non_goals;
+    const parsed = exactStrings({ spec_id: payload.spec_id }, ["spec_id"]);
+    if (!parsed.ok) return parsed;
+    if (Object.keys(payload).some((key) => key !== "spec_id" && key !== "non_goals")) {
+      return { ok: false, reason: "workspace action payload contains an unsupported field" };
+    }
+    if (!Array.isArray(nonGoals) || !nonGoals.every((entry) => typeof entry === "string")) {
+      return { ok: false, reason: "spec.adopt requires non_goals as a list of strings" };
+    }
+    return adoptSpec(repoRoot, parsed.value.spec_id, nonGoals as string[]);
   }
   if (raw.type === "plan.ratify") {
     const parsed = exactStrings(payload, ["spec_id", "expected_plan_hash"]);
