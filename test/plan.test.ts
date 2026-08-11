@@ -10,6 +10,7 @@ import test from "node:test";
 import { appendEvent } from "../src/events.js";
 import { createTaskContract } from "../src/contract.js";
 import { markIdeationConvergence, recordIdeationRound, startIdeationSession } from "../src/ideation.js";
+import { requestUserConvergence } from "../src/spec-convergence.js";
 import { initProject } from "../src/init.js";
 import { requestLeaseForContract } from "../src/lease.js";
 import { createSpec, ratifySpec } from "../src/spec.js";
@@ -238,13 +239,14 @@ test("plan propose writes a tentative plan without creating executable task stat
   });
 });
 
-test("plan propose refuses draft inactive missing or invalid specs before writing", async () => {
+/* Planning no longer requires ratification -- a plan is a proposal and nothing
+   in it touches the repository. What still refuses is a spec that is inactive,
+   missing or malformed. The draft case moved to
+   test/unratified-spec-gate.test.ts, which asserts what replaced it. */
+test("plan propose refuses inactive missing or invalid specs before writing", async () => {
   await withTempRepo(async ({ repo }) => {
     const planPath = await writePlan(repo, validPlan());
     await createSpec(repo, "S-DRAFT", "Draft plan");
-
-    await assertPlanRejects(repo, ["plan", "S-DRAFT", "--propose", planPath], /active spec S-DRAFT is draft/);
-    await assertMissing(path.join(repo, ".hivemind", "plans", "S-DRAFT.tentative.json"));
 
     await createRatifiedSpec(repo, "S-ACTIVE");
     await assertPlanRejects(repo, ["plan", "S-DRAFT", "--propose", planPath], /spec S-DRAFT is not active; active spec is S-ACTIVE/);
@@ -428,13 +430,26 @@ test("plan propose accepts overlaps and cycles because M5.6 plan-lint owns them"
   });
 });
 
-test("plan check preserves the M5.1 ratified planning gate behavior", async () => {
+/* Was "preserves the M5.1 ratified planning gate". That gate moved: planning is
+   allowed from a valid draft, and ratification is required before anything can
+   execute. This now asserts the part that did not move. */
+test("plan check requires an active, valid spec and an existing plan", async () => {
   await withTempRepo(async ({ repo }) => {
+    // A draft spec is now plannable, and says so.
     await createSpec(repo, "S-DRAFT", "Draft check");
-
-    await assertPlanRejects(repo, ["plan", "S-DRAFT", "--check"], /active spec S-DRAFT is draft/);
+    const draftCheck = await execFileAsync(process.execPath, [cliPath, "plan", "S-DRAFT", "--check"], {
+      cwd: repo,
+      windowsHide: true
+    });
+    assert.deepEqual(JSON.parse(draftCheck.stdout), {
+      spec_id: "S-DRAFT",
+      status: "draft",
+      planning: "allowed"
+    });
 
     await createRatifiedSpec(repo, "S-001");
+    // An inactive spec still refuses.
+    await assertPlanRejects(repo, ["plan", "S-DRAFT", "--check"], /spec S-DRAFT is not active/);
     const result = await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--check"], {
       cwd: repo,
       windowsHide: true
@@ -1179,7 +1194,7 @@ async function createRatifiedSpec(repo: string, specId: string): Promise<void> {
     orchestrator_calls_convergence: true
   });
   assert.equal(round.ok, true);
-  const userConverged = await markIdeationConvergence(repo, specId, "user");
+  const userConverged = await authorizedUserConvergence(repo, specId);
   assert.equal(userConverged.ok, true);
   const ratified = await ratifySpec(repo, specId);
   assert.equal(ratified.ok, true);
@@ -1393,4 +1408,11 @@ async function exists(filePath: string): Promise<boolean> {
 
 async function assertMissing(filePath: string): Promise<void> {
   assert.equal(await exists(filePath), false);
+}
+
+/* Signing in a test uses the same two steps a person's review does. */
+async function authorizedUserConvergence(repo: string, specId: string) {
+  const authorization = await requestUserConvergence(repo, specId, "test");
+  if (!authorization.ok) return authorization;
+  return markIdeationConvergence(repo, specId, "user", authorization.value);
 }

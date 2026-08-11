@@ -148,7 +148,7 @@ export async function requireActiveSpecRatified(repoRoot: string): Promise<SpecR
 export async function checkPlanningAllowed(
   repoRoot: string,
   specId: string
-): Promise<SpecResult<{ spec_id: string; status: "ratified"; planning: "allowed" }>> {
+): Promise<SpecResult<{ spec_id: string; status: SpecStatus; planning: "allowed" }>> {
   const specIdResult = validateRequestedSpecId(specId);
   if (!specIdResult.ok) {
     return specIdResult;
@@ -162,12 +162,28 @@ export async function checkPlanningAllowed(
     return { ok: false, reason: `spec ${specId} is not active; active spec is ${active.value.spec_id}` };
   }
 
-  const ratified = await requireActiveSpecRatified(repoRoot);
-  if (!ratified.ok) {
-    return ratified;
+  /* Planning does not require ratification; running does.
+   *
+   * These were the same check, which forced a person to ratify a spec before
+   * they could see what it would produce -- and made the first run demand a
+   * document before it would show a plan. Planning reads the repository and
+   * writes a tentative plan; it touches no code and starts no worker.
+   *
+   * Every gate that matters is unchanged: `requireActiveSpecRatified` still
+   * guards contract creation, leases, workers, integration and checkpoints, so
+   * nothing can RUN against an unratified spec. What moved is only the point at
+   * which a person has to commit, from before they can look to before anything
+   * happens. */
+  const loaded = await loadSpecDocument(repoRoot, specId);
+  if (!loaded.ok) {
+    return loaded;
+  }
+  const problems = validateSpecDocument(loaded.value);
+  if (problems.length > 0) {
+    return { ok: false, reason: `active spec ${specId} is invalid: ${problems.join("; ")}` };
   }
 
-  return { ok: true, value: { spec_id: specId, status: "ratified", planning: "allowed" } };
+  return { ok: true, value: { spec_id: specId, status: loaded.value.status, planning: "allowed" } };
 }
 
 function parseSpecArgs(

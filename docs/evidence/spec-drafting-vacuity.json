@@ -1,0 +1,95 @@
+{
+  "generated_at": "2026-08-11T17:34:25.332Z",
+  "results": [
+    {
+      "label": "vague-1",
+      "prompt": "make the text stuff better",
+      "ms": 7930,
+      "draft": {
+        "title": "Text utility improvements",
+        "goal": "Improve the project's text-processing behavior according to the intended outcomes.",
+        "non_goals": [],
+        "acceptance": [
+          "The agreed text utility behavior is implemented and covered by tests.",
+          "npm test passes."
+        ],
+        "open_questions": [
+          "Which text utility or utilities should change, and what specific behavior should be improved?"
+        ]
+      },
+      "vacuity": {
+        "empty": true,
+        "vacuous": [],
+        "substantive": []
+      }
+    },
+    {
+      "label": "specific",
+      "prompt": "Add a titleCase(text) helper in its own file with its own tests that capitalises the first letter of every word",
+      "ms": 6767,
+      "draft": {
+        "title": "Title case text helper",
+        "goal": "Add a titleCase(text) helper in its own source file that capitalises the first letter of every word, with dedicated tests.",
+        "non_goals": [
+          "Does not change the behavior of existing text helpers."
+        ],
+        "acceptance": [
+          "Calling titleCase('hello world') returns 'Hello World'.",
+          "The helper has its own test file.",
+          "npm test passes."
+        ],
+        "open_questions": []
+      },
+      "vacuity": {
+        "empty": false,
+        "vacuous": [],
+        "substantive": [
+          "Does not change the behavior of existing text helpers."
+        ]
+      }
+    },
+    {
+      "label": "temptation",
+      "prompt": "Add a function that reads a config file from disk and returns the parsed settings",
+      "ms": 7319,
+      "draft": {
+        "title": "Config file reader",
+        "goal": "Provide a function that reads a configuration file from disk and returns its parsed settings.",
+        "non_goals": [],
+        "acceptance": [
+          "Given a valid configuration file in the agreed format, the function returns the corresponding parsed settings.",
+          "`npm test` passes."
+        ],
+        "open_questions": [
+          "What configuration file format should the function support (for example, JSON, YAML, or another format)?"
+        ]
+      },
+      "vacuity": {
+        "empty": true,
+        "vacuous": [],
+        "substantive": []
+      }
+    },
+    {
+      "label": "vague-2",
+      "prompt": "make the text stuff better",
+      "ms": 5724,
+      "draft": {
+        "title": "Text utility improvements",
+        "goal": "Improve the project's text-related functionality according to the requested behavior.",
+        "non_goals": [],
+        "acceptance": [
+          "The requested text behavior is implemented and verified with npm test."
+        ],
+        "open_questions": [
+          "Which text behavior should be improved, and what should the new result look like?"
+        ]
+      },
+      "vacuity": {
+        "empty": true,
+        "vacuous": [],
+        "substantive": []
+      }
+    }
+  ]
+}

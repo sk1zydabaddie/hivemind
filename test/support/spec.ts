@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { markIdeationConvergence, recordIdeationRound, startIdeationSession } from "../../src/ideation.js";
 import { ratifySpec } from "../../src/spec.js";
+import { requestUserConvergence } from "../../src/spec-convergence.js";
 
 export async function createRatifiedSpec(repo: string, specId = "S-001"): Promise<void> {
   const created = await startIdeationSession(repo, specId, "Test spec", "Test goal");
@@ -22,7 +23,13 @@ export async function createRatifiedSpec(repo: string, specId = "S-001"): Promis
     orchestrator_calls_convergence: true
   });
   assert.equal(round.ok, true);
-  const userConverged = await markIdeationConvergence(repo, specId, "user");
+  /* Fixtures sign the way a person does: take out an authorization against the
+     document as it stands, then spend it. There is no shortcut for tests
+     either, which is the point. */
+  const authorization = await requestUserConvergence(repo, specId, "test-fixture");
+  assert.equal(authorization.ok, true);
+  if (!authorization.ok) return;
+  const userConverged = await markIdeationConvergence(repo, specId, "user", authorization.value);
   assert.equal(userConverged.ok, true);
   const ratified = await ratifySpec(repo, specId);
   assert.equal(ratified.ok, true);

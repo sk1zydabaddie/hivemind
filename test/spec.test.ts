@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { markIdeationConvergence, recordIdeationRound, startIdeationSession } from "../src/ideation.js";
+import { requestUserConvergence } from "../src/spec-convergence.js";
 import { initProject } from "../src/init.js";
 import { createSpec, ratifySpec } from "../src/spec.js";
 import { authorizePlanlessManualTaskIfEligible } from "./support/manual-task.js";
@@ -49,7 +50,13 @@ test("spec validate rejects malformed status and missing sections", async () => 
       (error: unknown) => {
         assert.equal((error as { code?: number }).code, 1);
         assert.match(String((error as { stderr?: string }).stderr), /spec status must be draft or ratified/);
-        assert.match(String((error as { stderr?: string }).stderr), /spec is missing required section: Context/);
+        /* A document with neither shape is reported against whichever it is
+           closer to. "# Spec: Bad" plus one long-form heading is nearer the
+           short form, so the missing short-form sections are named. */
+        assert.match(
+          String((error as { stderr?: string }).stderr),
+          /spec is missing required section: (Context|Goal)/
+        );
         return true;
       }
     );
@@ -101,7 +108,7 @@ test("spec ratify requires empty questions, non-goals, and completed ideation be
       orchestrator_calls_convergence: true
     });
     assert.equal(round.ok, true);
-    const userConverged = await markIdeationConvergence(repo, "S-001", "user");
+    const userConverged = await authorizedUserConvergence(repo, "S-001");
     assert.equal(userConverged.ok, true);
 
     const ratified = await ratifySpec(repo, "S-001");
@@ -119,19 +126,14 @@ test("spec ratify requires empty questions, non-goals, and completed ideation be
   });
 });
 
-test("draft spec blocks planning and lease grants until ratified", async () => {
+/* Was "draft spec blocks planning and lease grants until ratified". Planning is
+   now permitted from a draft; lease grants are not. The full set of paths a
+   draft spec still refuses is asserted in test/unratified-spec-gate.test.ts. */
+test("draft spec permits planning and blocks lease grants until ratified", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await execFileAsync(process.execPath, [cliPath, "spec", "S-001", "--create", "--title", "Draft work"], { cwd: repo, windowsHide: true });
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
 
-    await assert.rejects(
-      execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--check"], { cwd: repo, windowsHide: true }),
-      (error: unknown) => {
-        assert.equal((error as { code?: number }).code, 1);
-        assert.match(String((error as { stderr?: string }).stderr), /active spec S-001 is draft/);
-        return true;
-      }
-    );
     await assert.rejects(
       execFileAsync(process.execPath, [cliPath, "lease", "T-001"], { cwd: repo, windowsHide: true }),
       (error: unknown) => {
@@ -227,7 +229,14 @@ async function completeIdeationViaCli(repo: string, specId: string): Promise<voi
   );
   await execFileAsync(process.execPath, [cliPath, "ideate", specId, "--start", "--title", "Draft work", "--goal", "Draft work"], { cwd: repo, windowsHide: true });
   await execFileAsync(process.execPath, [cliPath, "ideate", specId, "--round", roundPath], { cwd: repo, windowsHide: true });
-  await execFileAsync(process.execPath, [cliPath, "ideate", specId, "--converge", "--by", "user"], { cwd: repo, windowsHide: true });
+  /* The CLI refuses user convergence without a TTY, which a test process does
+     not have. Signing goes through the authorized module path instead -- the
+     same two steps the CLI performs after its confirmation prompt. The CLI's
+     own refusal is asserted in test/spec-convergence.test.ts. */
+  const authorization = await requestUserConvergence(repo, specId, "test");
+  assert.equal(authorization.ok, true);
+  if (!authorization.ok) return;
+  assert.equal((await markIdeationConvergence(repo, specId, "user", authorization.value)).ok, true);
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {
@@ -246,4 +255,11 @@ async function assertMissing(filePath: string): Promise<void> {
     assert.equal((error as { code?: string }).code, "ENOENT");
     return true;
   });
+}
+
+/* Signing in a test uses the same two steps a person's review does. */
+async function authorizedUserConvergence(repo: string, specId: string) {
+  const authorization = await requestUserConvergence(repo, specId, "test");
+  if (!authorization.ok) return authorization;
+  return markIdeationConvergence(repo, specId, "user", authorization.value);
 }

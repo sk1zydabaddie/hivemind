@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { markIdeationConvergence, recordIdeationRound, startIdeationSession } from "../src/ideation.js";
+import { requestUserConvergence } from "../src/spec-convergence.js";
 import { initProject } from "../src/init.js";
 import { ratifySpec } from "../src/spec.js";
 import { withTemplateRepo } from "./support/fixture-repo.js";
@@ -137,7 +138,7 @@ test("ratification waits for non-goals, empty questions, and both convergence si
       assert.match(missingUser.reason, /user convergence sign-off is required/);
     }
 
-    const user = await markIdeationConvergence(repo, "S-001", "user");
+    const user = await authorizedUserConvergence(repo, "S-001");
     assert.equal(user.ok, true);
     const ratified = await ratifySpec(repo, "S-001");
     assert.equal(ratified.ok, true);
@@ -164,7 +165,7 @@ test("user-only convergence cannot ratify a spec", async () => {
       substantive_change: true
     });
     assert.equal(round.ok, true);
-    const user = await markIdeationConvergence(repo, "S-001", "user");
+    const user = await authorizedUserConvergence(repo, "S-001");
     assert.equal(user.ok, true);
 
     const ratified = await ratifySpec(repo, "S-001");
@@ -256,7 +257,14 @@ test("CLI ideate records rounds and exposes ratifiable status", async () => {
       windowsHide: true
     });
     await execFileAsync(process.execPath, [cliPath, "ideate", "S-001", "--round", roundPath], { cwd: repo, windowsHide: true });
-    await execFileAsync(process.execPath, [cliPath, "ideate", "S-001", "--converge", "--by", "user"], { cwd: repo, windowsHide: true });
+  /* The CLI refuses user convergence without a TTY, which a test process does
+     not have. Signing goes through the authorized module path instead -- the
+     same two steps the CLI performs after its confirmation prompt. The CLI's
+     own refusal is asserted in test/spec-convergence.test.ts. */
+  const authorization = await requestUserConvergence(repo, "S-001", "test");
+  assert.equal(authorization.ok, true);
+  if (!authorization.ok) return;
+  assert.equal((await markIdeationConvergence(repo, "S-001", "user", authorization.value)).ok, true);
     const status = await execFileAsync(process.execPath, [cliPath, "ideate", "S-001", "--status"], { cwd: repo, windowsHide: true });
 
     assert.equal(JSON.parse(status.stdout).status, "ratifiable");
@@ -408,4 +416,11 @@ async function writeProfile(repo: string, tool: string, profile: unknown): Promi
   const adaptersDir = path.join(repo, ".hivemind", "adapters");
   await mkdir(adaptersDir, { recursive: true });
   await writeFile(path.join(adaptersDir, `${tool}.profile.json`), `${JSON.stringify(profile, null, 2)}\n`);
+}
+
+/* Signing in a test uses the same two steps a person's review does. */
+async function authorizedUserConvergence(repo: string, specId: string) {
+  const authorization = await requestUserConvergence(repo, specId, "test");
+  if (!authorization.ok) return authorization;
+  return markIdeationConvergence(repo, specId, "user", authorization.value);
 }

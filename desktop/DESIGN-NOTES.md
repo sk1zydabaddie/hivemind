@@ -409,6 +409,110 @@ build/CI/auth paths are high or critical. `COST_DEFAULT_GLOBS` in
 `desktop/src/lib/providers.ts` is the set the setup dialog hands to people today
 and is a reasonable starting shape.
 
+### Invariant change: planning no longer requires a ratified spec
+
+Taken deliberately on 2026-08-11. Recorded here because it inverts a gate three
+Core tests named, and someone should be able to find out why.
+
+**What changed.** `checkPlanningAllowed` required the active spec to be
+*ratified*. It now requires the active spec to be *valid*. `plan.prepare` will
+run against a draft.
+
+**Why.** A plan is a proposal: planning reads the repository and writes a
+tentative plan. Nothing in it touches the repo. The invariant that matters is
+that **execution** requires a ratified spec, and `requireActiveSpecRatified`
+still guards contracts, leases, worktrees, workers, scouts, integration and
+checkpoints. The original gate was written when nothing generated a spec, so
+requiring ratification before planning was free — it protected against wasted
+planner tokens, not against repo mutation. Once the app drafts a spec from a
+prompt, that same gate makes it impossible to show anyone a plan before they
+commit to the document it came from, which is precisely what a first run needs.
+
+**What it costs.** Planner spend on a spec that may never be ratified. A person
+can now prompt, see a plan, and walk away, having paid for a planning call
+against a document nobody adopted. That is the deliberate price of showing
+someone a plan before they sign, and it is a real cost: on the 2026-08-11 run a
+planning call was 23.3K tokens.
+
+**What makes it safe, and where that is proved.**
+`test/unratified-spec-gate.test.ts` asserts both halves: an unratified spec
+permits planning, and then *tries* contract creation, lease grant, worktree
+creation, worker run, scout run and checkpoint against it and confirms each
+refuses, and refuses **because** the spec is unratified rather than incidentally.
+Integration is the one path that cannot be reached from an empty repository — it
+refuses for want of a queue before it consults the spec — so that one is
+asserted structurally, and the test says so rather than fabricating a queue and
+calling it behaviour.
+
+**Nothing inferred ratification from a plan.** Audited before the change: every
+execution surface calls `requireActiveSpecRatified` itself. `contract.ts` checks
+the spec at line 180 *before* reading the linted plan at 196, so contract
+creation never treats "a plan exists" as evidence a spec was ratified. That
+shape — one gate standing in for another — is the one that has bitten this
+project repeatedly, and it is not present here.
+
+One ordering consequence for the UI: `ratifyPlan` itself requires a ratified
+spec, so the single review must sign the spec before it ratifies the plan.
+
+### The vacuity experiment, and what it found
+
+Four real drafting calls on 2026-08-11, `codex-terra`, 4 calls / 79,137 tokens.
+Verbatim output in `docs/evidence/spec-drafting-vacuity.json`.
+
+| Prompt | Non-goals | Open questions | `assessNonGoals` |
+| --- | --- | --- | --- |
+| "make the text stuff better" | none | 1 | empty |
+| "Add a titleCase(text) helper…" | 1 | none | 1 substantive |
+| "…reads a config file from disk…" | none | 1 | empty |
+| "make the text stuff better" (again) | none | 1 | empty |
+
+**Zero vacuous entries.** The drafter never wrote "None recorded" or "Anything
+else". When it had nothing to decline it returned an empty list, which is what
+the prompt asked for and is the honest answer.
+
+**It asks rather than guesses.** Both vague runs invented no constraints and
+raised a question instead — "Which text utility or utilities should change?" —
+and did so consistently across two runs. That is the behaviour that matters
+most: open questions block ratification, so a drafter that guesses is worse than
+one that returns nothing.
+
+**It did not decline the tempting scope.** The config-reader prompt has obvious
+adjacent scope — writing config, schema validation, caching, watching for
+changes — and the drafter declined none of it. It asked about file format
+instead, which is a legitimate question, but the temptation went unaddressed.
+On the specific thing this experiment was designed to test, the answer is no.
+
+**The one substantive non-goal is real but mild.** "Does not change the
+behavior of existing text helpers" is derived from the project's file list
+rather than from the prompt's own phrasing, and a person might well have written
+it. It is not padding. It is also the kind of thing a builder would probably
+have respected anyway.
+
+#### The finding that matters: the gate refuses the honest answer
+
+`ratifySpec` requires Non-goals to be non-empty. Three of four drafts produced
+**zero** non-goals — correctly, by the prompt's own instruction. Those specs
+cannot be ratified.
+
+For these three it does not bite, because each also raised an open question and
+would have blocked anyway. But a prompt that is specific enough to need no
+question and has no tempting adjacent scope would produce an unratifiable spec,
+and the person would be blocked by a rule nobody meant to apply to them.
+
+So the collision is real and currently latent. The options, none of which should
+be chosen quietly:
+
+- **Let a drafted spec ratify with empty non-goals**, treating "nothing to
+  decline" as a legitimate answer and losing the gate's forcing function.
+- **Require the drafter to always produce one**, which is how "None recorded"
+  gets invented and the gate becomes theatre — the outcome this experiment was
+  run to detect.
+- **Ask the person**, making "is there anything this should not do?" part of the
+  one review. Keeps the gate honest and costs a field on a screen.
+
+The third is the only one that preserves what the gate is for. It is not built;
+`assessNonGoals` was deliberately not loosened to accommodate any of them.
+
 ### Proposal: the front door
 
 Not built. Written down because the design choice is real and worth settling

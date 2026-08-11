@@ -12,6 +12,14 @@ import { extractJsonObject, readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
 import { checkFormatVersion, formatVersions } from "./format-version.js";
 import { hasFailureCode } from "./failure-code.js";
+import { createInterface } from "node:readline/promises";
+import {
+  recordUserConvergence,
+  requestUserConvergence,
+  verifyUserConvergence,
+  type UserConvergenceAuthorization,
+  type UserConvergenceRequest
+} from "./spec-convergence.js";
 import {
   activeSpecPath,
   buildSpecTemplate,
@@ -20,6 +28,7 @@ import {
   nonGoalsPresent,
   openQuestionsEmpty,
   replaceSectionBody,
+  sectionBody,
   requiredSections,
   specFilePath,
   type SpecResult,
@@ -101,7 +110,7 @@ export async function ideationCommand(cwd: string, args: string[]): Promise<numb
         : action.action === "generate"
           ? await generateIdeationRound(repoRoot, action.specId, action.tool, action.outPath, action.steering)
           : action.action === "converge"
-            ? await markIdeationConvergence(repoRoot, action.specId, action.party)
+            ? await convergeFromTerminal(repoRoot, action.specId, action.party)
             : await getIdeationStatus(repoRoot, action.specId);
 
   if (!result.ok) {
@@ -235,11 +244,32 @@ export async function recordIdeationRound(
   return { ok: true, value: state };
 }
 
+/**
+ * `orchestrator` may be signed by whatever produced the document. `user` may
+ * not: it requires an authorization verified against a durable request, so no
+ * caller can assert it by passing a party name. See src/spec-convergence.ts for
+ * why a boolean or a caller-supplied string is not enough.
+ */
 export async function markIdeationConvergence(
   repoRoot: string,
   specId: string,
-  party: ConvergenceParty
+  party: ConvergenceParty,
+  authorization?: UserConvergenceAuthorization
 ): Promise<SpecResult<IdeationState>> {
+  let verified: UserConvergenceRequest | null = null;
+  if (party === "user") {
+    if (authorization === undefined) {
+      return {
+        ok: false,
+        reason:
+          "user convergence requires an authorization from a recorded request; a caller cannot assert it"
+      };
+    }
+    const check = await verifyUserConvergence(repoRoot, authorization);
+    if (!check.ok) return check;
+    verified = check.value;
+  }
+
   const loaded = await loadIdeationState(repoRoot, specId);
   if (!loaded.ok) {
     return loaded;
@@ -247,6 +277,10 @@ export async function markIdeationConvergence(
   const spec = await loadSpecDocument(repoRoot, specId);
   if (!spec.ok) {
     return spec;
+  }
+  if (verified !== null) {
+    const recorded = await recordUserConvergence(repoRoot, verified, "markIdeationConvergence");
+    if (!recorded.ok) return recorded;
   }
   loaded.value.convergence[party] = true;
   loaded.value.status = deriveStatus(loaded.value, spec.value.markdown);
@@ -256,6 +290,67 @@ export async function markIdeationConvergence(
 
 export async function getIdeationStatus(repoRoot: string, specId: string): Promise<SpecResult<IdeationState>> {
   return loadIdeationState(repoRoot, specId);
+}
+
+/**
+ * The terminal's way of signing.
+ *
+ * The person is at a TTY, so the same shape the canon gate uses applies: show
+ * what is being adopted, require it typed back, and only then take out an
+ * authorization. Non-goals are printed in full because they are the constraints
+ * being signed, and a signature on constraints nobody read is the failure this
+ * whole mechanism exists to prevent.
+ *
+ * The orchestrator's signature needs none of this and takes the direct path.
+ */
+async function convergeFromTerminal(
+  repoRoot: string,
+  specId: string,
+  party: ConvergenceParty
+): Promise<SpecResult<IdeationState>> {
+  if (party !== "user") {
+    return markIdeationConvergence(repoRoot, specId, party);
+  }
+  if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) {
+    return {
+      ok: false,
+      reason: "user convergence requires an interactive TTY, or an authorized review in the app"
+    };
+  }
+  const spec = await loadSpecDocument(repoRoot, specId);
+  if (!spec.ok) return spec;
+
+  const nonGoals = sectionBody(spec.value.markdown, "Non-goals") ?? "";
+  process.stderr.write(
+    [
+      `Spec: ${specId} — ${spec.value.title}`,
+      spec.value.markdown.includes("authored: drafted")
+        ? "This spec was drafted for you. Signing adopts it as written."
+        : "",
+      "",
+      "This work will NOT do:",
+      nonGoals.trim() === "" ? "  (nothing recorded)" : nonGoals.trimEnd(),
+      ""
+    ]
+      .filter((line) => line !== "")
+      .join("\n") + "\n"
+  );
+
+  const requested = await requestUserConvergence(repoRoot, specId, "cli");
+  if (!requested.ok) return requested;
+
+  const expected = `adopt ${specId}`;
+  const terminal = createInterface({ input: process.stdin, output: process.stderr, terminal: true });
+  let confirmation: string;
+  try {
+    confirmation = await terminal.question(`Type "${expected}" to adopt this spec and its non-goals: `);
+  } finally {
+    terminal.close();
+  }
+  if (confirmation.trim() !== expected) {
+    return { ok: false, reason: "user convergence was not explicitly confirmed" };
+  }
+  return markIdeationConvergence(repoRoot, specId, party, requested.value);
 }
 
 export async function generateIdeationRound(

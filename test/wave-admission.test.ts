@@ -9,6 +9,7 @@ import test from "node:test";
 
 import { appendEvent, readEvents } from "../src/events.js";
 import { markIdeationConvergence, recordIdeationRound, startIdeationSession } from "../src/ideation.js";
+import { requestUserConvergence } from "../src/spec-convergence.js";
 import { initProject } from "../src/init.js";
 import { readActiveLeases } from "../src/lease.js";
 import {
@@ -221,7 +222,10 @@ async function createRatifiedSpec(repo: string): Promise<void> {
     substantive_change: true,
     orchestrator_calls_convergence: true
   })).ok, true);
-  assert.equal((await markIdeationConvergence(repo, "S-001", "user")).ok, true);
+  const authorization = await requestUserConvergence(repo, "S-001", "test-fixture");
+  assert.equal(authorization.ok, true);
+  if (!authorization.ok) return;
+  assert.equal((await markIdeationConvergence(repo, "S-001", "user", authorization.value)).ok, true);
   assert.equal((await ratifySpec(repo, "S-001")).ok, true);
 }
 

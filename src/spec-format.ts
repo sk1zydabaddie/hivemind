@@ -34,7 +34,51 @@ export const requiredSections = [
   "Open questions"
 ] as const;
 
-export type SpecSection = (typeof requiredSections)[number];
+/**
+ * The short form.
+ *
+ * Nothing parses the long form's nine sections: the markdown is handed to the
+ * planner whole, and scope and conformance derive from the plan rather than
+ * from the spec. Only two sections are checked for content anywhere -- Non-goals
+ * must say something and Open questions must say nothing -- and both are here.
+ *
+ * So this is not a relaxation of the gate. It is the same gate over a document
+ * that states its intent without nine headings, which is what a first run
+ * actually has. The long form stays supported for deliberate work; it simply
+ * stops being the only shape a spec may take.
+ */
+export const shortFormSections = [
+  "Goal",
+  "Non-goals",
+  "Acceptance criteria",
+  "Open questions"
+] as const;
+
+export type SpecSection = (typeof requiredSections)[number] | (typeof shortFormSections)[number];
+
+export type SpecForm = "long" | "short";
+
+/** Which shape this document is, or null when it is neither. */
+export function specForm(markdown: string): SpecForm | null {
+  if (requiredSections.every((section) => hasSection(markdown, section))) return "long";
+  if (shortFormSections.every((section) => hasSection(markdown, section))) return "short";
+  return null;
+}
+
+/**
+ * Who wrote this document.
+ *
+ * `drafted` means a model produced it from a prompt and a person adopted it;
+ * `human` means a person wrote it. Recorded on the artifact because the
+ * constraints in a spec -- the non-goals especially -- bind the work, and a
+ * project should never be silent about where its own constraints came from.
+ * Absent means `human`: every spec written before this existed was.
+ */
+export type SpecAuthorship = "human" | "drafted";
+
+export function specAuthorship(markdown: string): SpecAuthorship {
+  return /^authored:\s*drafted\s*$/mu.test(markdown) ? "drafted" : "human";
+}
 
 export async function loadSpecDocument(repoRoot: string, specId: string): Promise<SpecResult<LoadedSpecDocument>> {
   const specIdResult = validateRequestedSpecId(specId);
@@ -81,9 +125,16 @@ export function validateSpecDocument(document: { markdown: string; title: string
     }
   }
 
-  for (const section of requiredSections) {
-    if (!hasSection(document.markdown, section)) {
-      problems.push(`spec is missing required section: ${section}`);
+  /* Either shape is valid. Reported against whichever the document is closer
+     to, so the message names the sections actually missing rather than nine
+     that were never intended. */
+  if (specForm(document.markdown) === null) {
+    const longMissing = requiredSections.filter((section) => !hasSection(document.markdown, section));
+    const shortMissing = shortFormSections.filter((section) => !hasSection(document.markdown, section));
+    const missing = shortMissing.length <= longMissing.length ? shortMissing : longMissing;
+    const shape = shortMissing.length <= longMissing.length ? "short-form" : "long-form";
+    for (const section of missing) {
+      problems.push(`${shape} spec is missing required section: ${section}`);
     }
   }
   return problems;
@@ -113,6 +164,52 @@ export function buildSpecTemplate(title: string): string {
     "## Open questions",
     ""
   ].join("\n");
+}
+
+/**
+ * A short-form spec drafted from a prompt.
+ *
+ * The prompt is recorded verbatim beside the sections drawn from it, so the
+ * document can always be read back against what was actually asked for. A
+ * drafted spec that cannot be compared to its prompt is the same defect as a
+ * durable event that cannot rebuild its own state.
+ */
+export function buildDraftedSpec(input: {
+  title: string;
+  prompt: string;
+  goal: string;
+  nonGoals: string[];
+  acceptance: string[];
+  openQuestions: string[];
+}): string {
+  const bullets = (items: string[]): string[] =>
+    items.length === 0 ? [""] : items.map((item) => `- ${item.trim()}`);
+  return [
+    `# Spec: ${input.title}`,
+    "status: draft",
+    "authored: drafted",
+    "",
+    "## Goal",
+    "",
+    input.goal.trim(),
+    "",
+    "## Non-goals",
+    "",
+    ...bullets(input.nonGoals),
+    "",
+    "## Acceptance criteria",
+    "",
+    ...bullets(input.acceptance),
+    "",
+    "## Open questions",
+    "",
+    ...bullets(input.openQuestions),
+    "",
+    "## What was asked for",
+    "",
+    input.prompt.trim(),
+    ""
+  ].join("\n").replace(/\n{3,}/gu, "\n\n");
 }
 
 export function validateRequestedSpecId(specId: string): SpecResult<null> {
