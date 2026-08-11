@@ -566,3 +566,34 @@ continue and keep their resources` failed once, on the first iteration of a
 batch, after conversion to the barrier. It then passed 12/12 consecutively
 under load and has not recurred. It is recorded here so a future occurrence is
 treated as a recurrence with history rather than as a new defect.
+
+## Tier routing is for task work. The planner stays on the flagship.
+
+`init` writes a tier ladder — `worker-standard` on `gpt-5.6-terra`,
+`worker-cheap` on `gpt-5.6-luna` — so a fresh project has somewhere below the
+flagship for ordinary source work to land. It does **not** write cheaper
+drafting or planning profiles, and that asymmetry is deliberate.
+
+A plan is the thing you least want cheap. It fixes scope, file boundaries and
+the conformance criteria for everything downstream; every worker call, every
+lease, every verification runs inside a shape the planner chose. A worker
+producing a mediocre patch inside correct boundaries is a re-run of one task. A
+planner drawing the boundaries wrong is a whole run spent building the wrong
+thing, plus the planning call again, plus the review again — far more than the
+token difference between tiers, and paid in the person's attention rather than
+in tokens.
+
+The same argument applies to drafting, one step earlier: the drafted spec is what
+the person reviews, and an ambiguity the drafter fails to surface as a stated
+assumption becomes a defect nobody was given the chance to catch.
+
+So the ~42K a first run spends at the top rate before any work starts is the
+price of the two artefacts a person actually reads and signs. It is not an
+unfinished part of the tier work.
+
+**Do not "finish" this by giving the planner or the drafter a cheaper profile.**
+The tier globs in `routing.ts` map task file paths to provider floors; they are
+about the work, not about the reasoning that decides what the work is. If a
+future change makes the planner tier-routable, it must be argued on its own
+merits and it must contend with this note, not treat the current state as an
+oversight.

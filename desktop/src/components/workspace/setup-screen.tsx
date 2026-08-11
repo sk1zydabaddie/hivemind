@@ -110,7 +110,7 @@ export function SetupScreen({
                       Set it up
                     </Button>
                   }
-                  detail="Hivemind runs Codex on your behalf. It needs to know how to start it."
+                  detail="Setting up the folder writes these. Hivemind runs Codex on your behalf and needs to know how to start it."
                   index={2}
                   title="Your coding agent"
                 />
@@ -121,15 +121,19 @@ export function SetupScreen({
                       Show me
                     </Button>
                   }
-                  detail="Without them, every file counts as high-risk and the most expensive model runs everything."
+                  detail="Setting up the folder writes these too, so ordinary work runs on a cheaper model than the one reserved for risky files."
                   index={3}
                   title="Cost defaults"
                 />
               </ol>
 
+              {/* Steps 2 and 3 used to be the person's job. Setting up the folder
+                  now writes the agent profiles and the cost tiers, so the old
+                  line -- "Hivemind cannot write them for you yet" -- was telling
+                  a new person to go and paste files it had already written. */}
               <p className="mt-6 mb-0 max-w-[560px] text-[13px] leading-relaxed text-muted-foreground">
-                Steps 2 and 3 are files in your project. Hivemind cannot write them
-                for you yet, so it hands you exactly what to paste.
+                Setting up the folder does all three. Open them if you want to
+                change what Hivemind chose; you do not have to.
               </p>
             </>
           )}

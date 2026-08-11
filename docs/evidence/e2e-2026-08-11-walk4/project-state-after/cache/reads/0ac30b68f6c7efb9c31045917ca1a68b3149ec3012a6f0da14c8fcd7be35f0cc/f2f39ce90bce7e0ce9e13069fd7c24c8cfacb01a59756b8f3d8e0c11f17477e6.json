@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "path": "src/name.js",
+  "content_hash": "f2f39ce90bce7e0ce9e13069fd7c24c8cfacb01a59756b8f3d8e0c11f17477e6",
+  "bytes": 105,
+  "content": "export function normalizeName(value) {\r\n  return String(value ?? \"\").trim().replace(/\\s+/gu, \" \");\r\n}\r\n\r\n"
+}

@@ -1,0 +1,30 @@
+{
+  "tool": "planner",
+  "invoke": [
+    "cmd.exe",
+    "/d",
+    "/s",
+    "/c",
+    "codex.cmd",
+    "exec",
+    "--model",
+    "gpt-5.6-sol",
+    "--sandbox",
+    "workspace-write",
+    "--config",
+    "model_reasoning_effort=\"high\"",
+    "--ephemeral",
+    "--json",
+    "-"
+  ],
+  "prompt_arg": "stdin",
+  "verified_on": "configured-by-init",
+  "roles": [
+    "orchestrator"
+  ],
+  "routing_tier": "strong",
+  "cost_rank": 1000,
+  "context_window": 272000,
+  "timeout_ms": 120000,
+  "usage_parser": "codex-jsonl"
+}

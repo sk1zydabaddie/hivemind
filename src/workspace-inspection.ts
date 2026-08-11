@@ -339,12 +339,26 @@ export async function inspectWorkspace(
     ? null
     : latestPreparedPlanSession(events.value, planState.current);
   const sessionId = preparedPlanSession ?? session.value?.session_id ?? null;
+  /**
+   * Drafting is billed to the spec, not to the run.
+   *
+   * `spec.draft` runs before any run exists, so it books its usage under the
+   * spec id; planning and work book theirs under the run session. Summing only
+   * the run session showed a person 2 calls and 179.4K on a walk that had
+   * actually spent 3 calls and 199.7K -- a third of the calls and a tenth of
+   * the money invisible, in the direction that flatters us. Both sessions are
+   * the same first run as far as anyone reading the number is concerned.
+   */
+  const spendSessions = [...new Set([sessionId, specId].filter(
+    (id): id is string => typeof id === "string" && id !== ""
+  ))];
   let calls = 0;
   let effectiveTokens = 0;
-  if (sessionId !== null) {
-    for (const entry of Object.values(ledger.value.providers)) {
-      const usage = entry.session_usage[sessionId];
-      if (usage !== undefined && !entry.unmetered) {
+  for (const entry of Object.values(ledger.value.providers)) {
+    if (entry.unmetered) continue;
+    for (const id of spendSessions) {
+      const usage = entry.session_usage[id];
+      if (usage !== undefined) {
         calls += usage.requests;
         effectiveTokens += usage.effective_tokens;
       }

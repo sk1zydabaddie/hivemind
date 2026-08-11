@@ -180,17 +180,39 @@ async function resolveCurrentBranch(
   }
 }
 
+/**
+ * A missing test command and an unreadable one are not the same thing.
+ *
+ * Both used to produce `""` in silence, so a project whose package.json could
+ * not be parsed was set up with no checks and nothing said so. On Windows the
+ * usual cause is a byte-order mark: PowerShell's `Set-Content -Encoding utf8`
+ * writes one, `JSON.parse` rejects it, and the catch swallowed the whole thing.
+ * The BOM is now stripped, and a package.json that still will not parse is
+ * reported rather than absorbed -- absence of a package.json stays silent,
+ * because that is a project with nothing to detect rather than a broken one.
+ */
 async function detectTestCommand(repoRoot: string): Promise<string> {
   const packageJsonPath = path.join(repoRoot, "package.json");
+  let contents: string;
   try {
-    const parsed = JSON.parse(await readFile(packageJsonPath, "utf8")) as {
-      scripts?: Record<string, unknown>;
-    };
-    return typeof parsed.scripts?.test === "string" ? "npm test" : "";
+    contents = await readFile(packageJsonPath, "utf8");
   } catch (error: unknown) {
     if (isFileMissing(error)) {
       return "";
     }
+    throw error;
+  }
+
+  try {
+    const parsed = JSON.parse(contents.replace(/^﻿/u, "")) as {
+      scripts?: Record<string, unknown>;
+    };
+    return typeof parsed.scripts?.test === "string" ? "npm test" : "";
+  } catch {
+    console.error(
+      "warning: package.json could not be read, so no test command was recorded. " +
+        "Set test_command in .hivemind/config.json once package.json parses."
+    );
     return "";
   }
 }

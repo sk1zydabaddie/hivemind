@@ -1,0 +1,291 @@
+{
+  "version": 1,
+  "session_id": "3a2409a7-b618-4561-8088-3aac73f9727f",
+  "created_at": "2026-08-11T22:00:45.851Z",
+  "spec_id": "S-001",
+  "execution_mode": "deterministic_happy_path",
+  "autonomy_level_at_start": "auto",
+  "working_set": {
+    "spec": {
+      "spec_id": "S-001",
+      "title": "Email address validation",
+      "status": "ratified",
+      "path": ".hivemind/spec/S-001.md"
+    },
+    "status": {
+      "task_count": 0,
+      "active_lease_count": 0,
+      "integration_queue_count": 0,
+      "integrated_task_count": 0
+    }
+  },
+  "turns": [
+    {
+      "role": "user",
+      "content": "Execute the exact ratified plan through the normal checks."
+    },
+    {
+      "role": "manager",
+      "content": "Core derived the complete pre-worker pipeline for T-001 from the exact ratified plan and current durable state."
+    },
+    {
+      "role": "manager",
+      "content": "executed create_task_contract: ok"
+    },
+    {
+      "role": "manager",
+      "content": "executed request_lease: ok"
+    },
+    {
+      "role": "manager",
+      "content": "executed check_write_intent: ok"
+    },
+    {
+      "role": "manager",
+      "content": "executed create_worktree: ok"
+    },
+    {
+      "role": "manager",
+      "content": "executed run_worker: ok"
+    },
+    {
+      "role": "manager",
+      "content": "proposed next actions: submit_patch -> analyze_patch - Core observed T-001 completed with an unsubmitted patch and derived the existing submit/analyze pair."
+    },
+    {
+      "role": "manager",
+      "content": "executed submit_patch: ok"
+    },
+    {
+      "role": "manager",
+      "content": "executed analyze_patch: ok"
+    },
+    {
+      "role": "manager",
+      "content": "proposed next actions: enqueue_patch - Core observed current submitted and accepted evidence for T-001."
+    },
+    {
+      "role": "manager",
+      "content": "executed enqueue_patch: ok"
+    },
+    {
+      "role": "manager",
+      "content": "proposed next actions: integrate_shadow - Core observed accepted queued work and derived the existing shadow-verification action."
+    },
+    {
+      "role": "manager",
+      "content": "executed integrate_shadow: ok"
+    },
+    {
+      "role": "manager",
+      "content": "proposed next actions: none - Every task in the exact ratified plan has current durable verification evidence."
+    }
+  ],
+  "proposed_action": {
+    "type": "proposed_actions",
+    "source": "deterministic",
+    "reason": "Every task in the exact ratified plan has current durable verification evidence.",
+    "actions": [],
+    "human_approval_required_for": []
+  },
+  "proposal_state": {
+    "proposal_id": "a70305cc-48f9-488e-b9b1-fc4d2295a99e",
+    "status": "consumed",
+    "next_action_index": 0,
+    "consumed_at": "2026-08-11T22:02:17.902Z"
+  },
+  "executed_actions": [
+    {
+      "id": "37351038-8c3b-4f64-8bd8-32efb28935fc",
+      "ts": "2026-08-11T22:00:47.353Z",
+      "type": "create_task_contract",
+      "result": {
+        "ok": true,
+        "value": {
+          "task_id": "T-001",
+          "contract_path": ".hivemind/tasks/T-001.contract.json",
+          "contract": {
+            "contract_version": 1,
+            "task_id": "T-001",
+            "title": "Implement and test email address validation",
+            "agent_role": "builder",
+            "routing_task_type": "api",
+            "base_commit": "bb4ecb46198c477cbbb0d280cbcd52be59954d43",
+            "acceptance_criterion": "The public isValidEmail(value) API returns true for person@example.com; returns false without throwing for person, @example.com, person@, whitespace-only strings, leading- or trailing-whitespace addresses, and non-string values; and the full test suite passes.",
+            "deterministic_validity_check": "node -e \"const assert=require('node:assert/strict'); const api=require('./src/index.js'); assert.equal(typeof api.isValidEmail,'function'); assert.equal(api.isValidEmail('person@example.com'),true); for (const value of ['person','@example.com','person@','   ',' person@example.com','person@example.com ',null,undefined,42,{},[]]) assert.doesNotThrow(()=>assert.equal(api.isValidEmail(value),false));\"",
+            "allowed_files": [
+              "src/email.js",
+              "src/index.js",
+              "test/email.test.js"
+            ],
+            "allowed_file_intents": {
+              "src/email.js": "create",
+              "src/index.js": "modify",
+              "test/email.test.js": "create"
+            },
+            "read_only_files": [
+              "package.json",
+              "src/name.js",
+              "test/name.test.js"
+            ],
+            "forbidden_files": [
+              "README.md"
+            ],
+            "allowed_symbols": [],
+            "forbidden_symbols": [],
+            "must_not_change": [
+              "src/name.js",
+              "test/name.test.js"
+            ],
+            "required_tests": [
+              "npm test"
+            ],
+            "patch_requirements": [
+              "Create a reusable email validator that performs only local practical syntax validation and returns a boolean for every input.",
+              "Export the validator from src/index.js as isValidEmail.",
+              "Reject leading or trailing whitespace instead of trimming it.",
+              "Add regression tests covering the accepted common address and every malformed or non-string category named by the acceptance criterion.",
+              "Do not add network calls, DNS lookups, mailbox checks, or new dependencies."
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "986f303d-33c3-4154-9690-1368b015bb61",
+      "ts": "2026-08-11T22:00:47.450Z",
+      "type": "request_lease",
+      "task_id": "T-001",
+      "result": {
+        "ok": true,
+        "value": {
+          "task_id": "T-001",
+          "granted": [
+            "src/email.js",
+            "src/index.js",
+            "test/email.test.js"
+          ]
+        }
+      }
+    },
+    {
+      "id": "c039d338-bcfe-4dd8-ba2c-8fe39bf0ff16",
+      "ts": "2026-08-11T22:00:47.499Z",
+      "type": "check_write_intent",
+      "task_id": "T-001",
+      "result": {
+        "ok": true,
+        "value": {
+          "task_id": "T-001",
+          "verdict": "pass",
+          "intended_files": [
+            "src/email.js",
+            "src/index.js",
+            "test/email.test.js"
+          ]
+        }
+      }
+    },
+    {
+      "id": "c749cffe-acd5-45b7-81f4-8ceef43e8b90",
+      "ts": "2026-08-11T22:00:47.827Z",
+      "type": "create_worktree",
+      "task_id": "T-001",
+      "result": {
+        "ok": true,
+        "value": {
+          "worktree": "D:\\Projects\\hivemind-walk4\\.hivemind\\worktrees\\T-001",
+          "branch": "hivemind/T-001"
+        }
+      }
+    },
+    {
+      "id": "93149484-4260-4cd3-9f67-e812f89ab38c",
+      "ts": "2026-08-11T22:02:13.795Z",
+      "type": "run_worker",
+      "task_id": "T-001",
+      "result": {
+        "ok": true,
+        "value": {
+          "task_id": "T-001",
+          "status": "completed",
+          "tool": "worker-standard",
+          "diff_path": "D:\\Projects\\hivemind-walk4\\.hivemind\\patches\\T-001\\diff.patch",
+          "tool_exit": 0,
+          "changed_files": 3
+        }
+      }
+    },
+    {
+      "id": "34bc6e9e-65b8-4c94-9eb6-db33b2b2a8e4",
+      "ts": "2026-08-11T22:02:14.172Z",
+      "type": "submit_patch",
+      "task_id": "T-001",
+      "result": {
+        "ok": true,
+        "value": {
+          "task_id": "T-001",
+          "bundle_path": "D:\\Projects\\hivemind-walk4\\.hivemind\\patches\\T-001",
+          "files": [
+            "diff.patch",
+            "summary.md",
+            "files_changed.json",
+            "symbols_changed.json",
+            "tests_run.json",
+            "risks.md",
+            "memory_proposals.json"
+          ]
+        }
+      }
+    },
+    {
+      "id": "860c90f4-2f97-4c1d-9e72-fb3d453bbe99",
+      "ts": "2026-08-11T22:02:15.352Z",
+      "type": "analyze_patch",
+      "task_id": "T-001",
+      "result": {
+        "ok": true,
+        "value": {
+          "verdict": "accept",
+          "reason": "all changes are within scope",
+          "plain_reason": "Every file it changed was one this task was given."
+        }
+      }
+    },
+    {
+      "id": "eebb6930-1f6e-403a-887d-94a16099490a",
+      "ts": "2026-08-11T22:02:15.416Z",
+      "type": "enqueue_patch",
+      "task_id": "T-001",
+      "result": {
+        "ok": true,
+        "value": {
+          "task_id": "T-001",
+          "queue_path": ".hivemind/integration/queue.json",
+          "queue": [
+            "T-001"
+          ]
+        }
+      }
+    },
+    {
+      "id": "55298aa8-59c4-42bc-a749-707ff5a8d910",
+      "ts": "2026-08-11T22:02:17.840Z",
+      "type": "integrate_shadow",
+      "result": {
+        "ok": true,
+        "value": {
+          "branch": "integration/20260811-220216650Z",
+          "applied": [
+            "T-001"
+          ],
+          "tests": "pass",
+          "report": "gate results:\n- T-001: accept (all changes are within scope)\nverification mode: full\nverification reason: structured verification inventory is missing\nstructural oracle: unknown (advisory; structural evidence is not runtime coverage)\nstructurally covered impact files: (none)\nstructurally uncovered impact files: (none)\nstructurally unknown impact files: src/email.js, src/index.js, test/email.test.js\nstructural oracle unknown reasons: structured verification inventory is missing\nruntime changed-line coverage: unconfigured\nruntime coverage coordinate space: post_patch_applied_tree\nruntime coverage applied tree: (none)\nruntime coverage ratio: 0/0\nruntime coverage unknown files: (none)\nruntime coverage unknown reasons: (none)\nselected checks: full-suite\ncontract validity checks: contract-validity:T-001\nskipped checks: (none)\ncheck contract-validity:T-001: node -e \"const assert=require('node:assert/strict'); const api=require('./src/index.js'); assert.equal(typeof api.isValidEmail,'function'); assert.equal(api.isValidEmail('person@example.com'),true); for (const value of ['person','@example.com','person@','   ',' person@example.com','person@example.com ',null,undefined,42,{},[]]) assert.doesNotThrow(()=>assert.equal(api.isValidEmail(value),false));\"\ncheck contract-validity:T-001 exit code: 0\nstdout:\n\nstderr:\n\ncheck full-suite: npm test\ncheck full-suite exit code: 0\nstdout:\n> signup-kit@0.1.0 test\n> node --test test/*.test.js\n\nTAP version 13\n# Subtest: accepts a common email address\nok 1 - accepts a common email address\n  ---\n  duration_ms: 0.9443\n  type: 'test'\n  ...\n# Subtest: rejects malformed addresses and non-string values\nok 2 - rejects malformed addresses and non-string values\n  ---\n  duration_ms: 0.2873\n  type: 'test'\n  ...\n# Subtest: collapses whitespace\nok 3 - collapses whitespace\n  ---\n  duration_ms: 0.6773\n  type: 'test'\n  ...\n1..3\n# tests 3\n# suites 0\n# pass 3\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 93.4687\nstderr:\n\noracle floor task tier: medium\noracle floor coverage configured: false\noracle floor binding: false\noracle floor status: unconfigured\noracle floor decision: proceed\noracle floor diagnostic: coverage is not configured; the structural oracle remains advisory and the M7.6d floor does not bind\noracle floor uncovered changed lines: (none)\noracle floor uncovered impact files: (none)\noracle floor unknown files: src/email.js, src/index.js, test/email.test.js\noracle floor unknown reasons: structured verification inventory is missing\noracle floor remediation: (none)\noracle floor automatic characterization launched: false\n",
+          "verification_id": "V-ba979481-c7ad-41e8-bf9f-daec50043254",
+          "verification_manifest_path": ".hivemind/resource/verification-sets/V-ba979481-c7ad-41e8-bf9f-daec50043254/manifest.json",
+          "verification_manifest_sha256": "a3011022423ded7e1b3e5dfa377be3bc7ec7eeef848c3c6f0591ca464e79abd5"
+        }
+      }
+    }
+  ]
+}

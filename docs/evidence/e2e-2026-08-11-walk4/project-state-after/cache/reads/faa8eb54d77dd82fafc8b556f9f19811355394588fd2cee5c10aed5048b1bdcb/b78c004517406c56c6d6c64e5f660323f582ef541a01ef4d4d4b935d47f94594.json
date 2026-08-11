@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "path": "test/name.test.js",
+  "content_hash": "b78c004517406c56c6d6c64e5f660323f582ef541a01ef4d4d4b935d47f94594",
+  "bytes": 238,
+  "content": "import assert from \"node:assert/strict\";\r\nimport test from \"node:test\";\r\nimport { normalizeName } from \"../src/name.js\";\r\n\r\ntest(\"collapses whitespace\", () => {\r\n  assert.equal(normalizeName(\"  Ada   Lovelace \"), \"Ada Lovelace\");\r\n});\r\n\r\n"
+}

@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "spec_id": "S-001",
+  "goal": "Provide a reusable way to determine whether a value is a plausibly valid email address. Validation should return a clear valid-or-invalid result without contacting external services.",
+  "status": "ratifiable",
+  "rounds": [
+    {
+      "index": 1,
+      "alternatives": [
+        {
+          "title": "Practical pattern validation",
+          "tradeoffs": [
+            "May reject unusual but technically valid addresses or accept rare malformed cases.",
+            "Keeps validation small, fast, predictable, and dependency-free."
+          ]
+        },
+        {
+          "title": "Standards-oriented email parser",
+          "tradeoffs": [
+            "Adds implementation complexity or a dependency and may accept unfamiliar address forms.",
+            "Handles more RFC-valid edge cases and provides stronger syntax interpretation."
+          ]
+        }
+      ],
+      "self_critique": {
+        "weakest_point": "The phrase practical email syntax still leaves exact edge-case behavior unspecified.",
+        "cut_or_change": "If the product needs unusual internationalized or quoted addresses, replace the practical-pattern assumption with an explicit supported-address policy."
+      },
+      "substantive_change": true,
+      "orchestrator_calls_convergence": true
+    }
+  ],
+  "divergence_complete": true,
+  "convergence": {
+    "user": true,
+    "orchestrator": true
+  },
+  "consecutive_non_substantive_rounds": 0,
+  "diminishing_returns_signal": false
+}

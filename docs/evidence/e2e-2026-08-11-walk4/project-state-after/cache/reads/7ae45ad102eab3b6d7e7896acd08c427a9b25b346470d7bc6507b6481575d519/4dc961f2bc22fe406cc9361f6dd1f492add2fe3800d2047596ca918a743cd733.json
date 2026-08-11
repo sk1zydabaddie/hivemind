@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "path": "package.json",
+  "content_hash": "4dc961f2bc22fe406cc9361f6dd1f492add2fe3800d2047596ca918a743cd733",
+  "bytes": 130,
+  "content": "{\r\n  \"name\": \"signup-kit\",\r\n  \"version\": \"0.1.0\",\r\n  \"type\": \"module\",\r\n  \"scripts\": { \"test\": \"node --test test/*.test.js\" }\r\n}\r\n"
+}

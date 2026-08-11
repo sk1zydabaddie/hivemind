@@ -1,0 +1,60 @@
+{
+  "tasks": [
+    {
+      "task_id": "T-001",
+      "title": "Implement and test email address validation",
+      "task_type": "deterministic",
+      "routing_task_type": "api",
+      "mode": "write",
+      "agent_role": "builder",
+      "draft_scope": {
+        "allowed_files": [
+          "src/index.js",
+          "src/email.js",
+          "test/email.test.js"
+        ],
+        "allowed_file_intents": {
+          "src/index.js": "modify",
+          "src/email.js": "create",
+          "test/email.test.js": "create"
+        },
+        "read_only_files": [
+          "package.json",
+          "src/name.js",
+          "test/name.test.js"
+        ],
+        "forbidden_files": [
+          "README.md"
+        ],
+        "must_not_change": [
+          "src/name.js",
+          "test/name.test.js"
+        ]
+      },
+      "depends_on": [],
+      "parallel_safe": false,
+      "acceptance_criterion": "The public isValidEmail(value) API returns true for person@example.com; returns false without throwing for person, @example.com, person@, whitespace-only strings, leading- or trailing-whitespace addresses, and non-string values; and the full test suite passes.",
+      "deterministic_validity_check": "node -e \"const assert=require('node:assert/strict'); const api=require('./src/index.js'); assert.equal(typeof api.isValidEmail,'function'); assert.equal(api.isValidEmail('person@example.com'),true); for (const value of ['person','@example.com','person@','   ',' person@example.com','person@example.com ',null,undefined,42,{},[]]) assert.doesNotThrow(()=>assert.equal(api.isValidEmail(value),false));\"",
+      "required_tests": [
+        "npm test"
+      ],
+      "patch_requirements": [
+        "Create a reusable email validator that performs only local practical syntax validation and returns a boolean for every input.",
+        "Export the validator from src/index.js as isValidEmail.",
+        "Reject leading or trailing whitespace instead of trimming it.",
+        "Add regression tests covering the accepted common address and every malformed or non-string category named by the acceptance criterion.",
+        "Do not add network calls, DNS lookups, mailbox checks, or new dependencies."
+      ],
+      "critical_path_approved": false
+    }
+  ],
+  "execution_groups": [
+    {
+      "group_id": "G-1",
+      "mode": "sequence",
+      "task_ids": [
+        "T-001"
+      ]
+    }
+  ]
+}

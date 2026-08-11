@@ -121,7 +121,10 @@ test("a fresh project routes ordinary work below the flagship", async () => {
   });
 });
 
-async function withFreshProject(run: (repo: string) => Promise<void>): Promise<void> {
+async function withFreshProject(
+  run: (repo: string) => Promise<void>,
+  options: { bom?: boolean } = {}
+): Promise<void> {
   const repo = await realpath(await mkdtemp(path.join(tmpdir(), "hivemind-defaults-")));
   try {
     const git = (args: string[]) => execFileAsync("git", args, { cwd: repo, windowsHide: true });
@@ -129,6 +132,12 @@ async function withFreshProject(run: (repo: string) => Promise<void>): Promise<v
     await git(["config", "user.email", "test@example.test"]);
     await git(["config", "user.name", "Test"]);
     await writeFile(path.join(repo, "README.md"), "# fixture\n", "utf8");
+    const packageJson = `${JSON.stringify({ name: "fixture", scripts: { test: "node --test" } }, null, 2)}\n`;
+    await writeFile(
+      path.join(repo, "package.json"),
+      options.bom === true ? `﻿${packageJson}` : packageJson,
+      "utf8"
+    );
     await git(["add", "."]);
     await git(["commit", "-m", "base"]);
     await initProject(repo);
@@ -137,3 +146,20 @@ async function withFreshProject(run: (repo: string) => Promise<void>): Promise<v
     await rm(repo, { recursive: true, force: true, maxRetries: 3 });
   }
 }
+
+test("a byte-order mark does not silently cost a project its checks", async () => {
+  /* PowerShell's `Set-Content -Encoding utf8` writes a BOM. JSON.parse rejects
+     it, and init used to absorb that into an empty test command -- a project set
+     up with no checks and nothing saying so. Found by walking, not by a unit. */
+  await withFreshProject(async (repo) => {
+    const config = await loadConfig(repo);
+    assert.equal(config.ok, true);
+    if (config.ok) {
+      assert.equal(
+        config.config.test_command,
+        "npm test",
+        "a BOM in package.json must not cost the project its test command"
+      );
+    }
+  }, { bom: true });
+});

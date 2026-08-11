@@ -231,6 +231,38 @@ The cost of not doing it is visible in the history: the front door was claimed
 finished three times, and each time walking it found something a test could not
 have. The cost of doing it is one paid run.
 
+### The fourth walk, which reached shipped and still found four more
+
+`docs/evidence/e2e-2026-08-11-walk4/` is the first walk to get from prompt to
+shipped with no terminal. It also found four defects against 646 passing tests,
+which is the point worth keeping:
+
+1. **A byte-order mark silently cost the project its checks.** `init` parses
+   `package.json` to find the test command; a BOM makes `JSON.parse` throw and
+   the catch returned `""`. Setup reported success, and the run failed at
+   *integration* — after the worker was paid for — naming a config key.
+2. **The cost readout undercounted by a third of the calls.** Drafting bills to
+   the spec and everything after it to the run, and the readout summed one
+   session. 2 calls shown, 3 spent.
+3. **The setup screen told people to paste files it had already written.**
+4. **"restart the daemon before using this project"** — an instruction with no
+   control anywhere in the app to carry it out.
+
+Two of these are worth generalising beyond the seam rule.
+
+> **A catch that returns a default is a decision to be silent.** Absent and
+> unreadable are different facts, and collapsing them hides the second one
+> until it costs something. Distinguish them or say so.
+
+> **A number a person spends money against must be reconciled to the ledger,
+> not to one of its sessions.** Any per-session view will eventually miss a
+> session, and the miss always flatters us.
+
+Note also what caught defect 1: the fixture was written with PowerShell, which
+writes BOMs. The walk was one accident away from measuring my own setup instead
+of the product. Walking is not a guarantee — it is only better odds than not
+walking.
+
 ## Standing rule: capture the trail AND the project state
 
 Every verification run keeps its JSONL trail alongside its screenshots. A

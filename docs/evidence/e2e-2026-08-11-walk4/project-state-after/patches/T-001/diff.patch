@@ -1,0 +1,58 @@
+diff --git a/src/email.js b/src/email.js
+new file mode 100644
+index 0000000..46ed820
+--- /dev/null
++++ b/src/email.js
+@@ -0,0 +1,13 @@
++const EMAIL_PATTERN = /^(?:[A-Z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Z0-9!#$%&'*+/=?^_`{|}~-]+)*)@(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?$/iu;
++
++/**
++ * Performs a local, practical syntax check for an email address.
++ *
++ * This intentionally does not verify DNS records or mailbox existence.
++ *
++ * @param {unknown} value
++ * @returns {boolean}
++ */
++export function isValidEmail(value) {
++  return typeof value === "string" && value === value.trim() && EMAIL_PATTERN.test(value);
++}
+diff --git a/src/index.js b/src/index.js
+index 28d4ba1..c9e71cd 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -1,2 +1,3 @@
+ export { normalizeName } from "./name.js";
++export { isValidEmail } from "./email.js";
+ 
+diff --git a/test/email.test.js b/test/email.test.js
+new file mode 100644
+index 0000000..f5ec6c5
+--- /dev/null
++++ b/test/email.test.js
+@@ -0,0 +1,25 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { isValidEmail } from "../src/index.js";
++
++test("accepts a common email address", () => {
++  assert.equal(isValidEmail("person@example.com"), true);
++});
++
++test("rejects malformed addresses and non-string values", () => {
++  for (const value of [
++    "person",
++    "@example.com",
++    "person@",
++    "   ",
++    " person@example.com",
++    "person@example.com ",
++    null,
++    undefined,
++    42,
++    {},
++    [],
++  ]) {
++    assert.doesNotThrow(() => assert.equal(isValidEmail(value), false));
++  }
++});

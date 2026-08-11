@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "path": "src/index.js",
+  "content_hash": "82ce1e6939cf2a95210fefa1fc9897dea85add7a10d8eeaa9f0c9d09b4b57318",
+  "bytes": 46,
+  "content": "export { normalizeName } from \"./name.js\";\r\n\r\n"
+}
