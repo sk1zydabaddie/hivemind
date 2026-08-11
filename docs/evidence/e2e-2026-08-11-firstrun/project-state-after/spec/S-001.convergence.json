@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "requests": [
+    {
+      "pending_convergence_id": "UC-693c1587ce61bcd3747fe3e812f83ce8",
+      "spec_id": "S-001",
+      "spec_sha256": "fcce16055e6faf310e2c09933815f1a7b0d0187d5ff7754645254b625253dbd9",
+      "presented_by": "desktop-review",
+      "requested_at": "2026-08-11T20:10:29.626Z"
+    }
+  ],
+  "recorded": [
+    {
+      "pending_convergence_id": "UC-693c1587ce61bcd3747fe3e812f83ce8",
+      "spec_id": "S-001",
+      "spec_sha256": "fcce16055e6faf310e2c09933815f1a7b0d0187d5ff7754645254b625253dbd9",
+      "authorized_by": "markIdeationConvergence",
+      "recorded_at": "2026-08-11T20:10:29.639Z"
+    }
+  ]
+}

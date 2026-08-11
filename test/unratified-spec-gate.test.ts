@@ -33,6 +33,26 @@ const execFileAsync = promisify(execFile);
  * every path that can touch the repository.
  */
 
+test("the review's own payload is accepted by the dispatcher", async () => {
+  /* The desktop sends spec_id, non_goals and nothing_to_decline. An earlier
+     edit landed the third field in adoptSpec but not in the dispatcher, so the
+     one action a first run depends on was refused with "payload contains an
+     unsupported field" -- found by clicking Approve, not by a test. */
+  const actions = await readFile(path.resolve("src/workspace-actions.ts"), "utf8");
+  const branch = actions.slice(actions.indexOf('raw.type === "spec.adopt"'));
+  for (const field of ["spec_id", "non_goals", "nothing_to_decline"]) {
+    assert.match(branch.slice(0, 900), new RegExp(field, "u"), `spec.adopt must accept ${field}`);
+  }
+  const review = await readFile(
+    path.resolve("desktop/src/components/workspace/work-tab.tsx"),
+    "utf8"
+  );
+  const sent = review.slice(review.indexOf('type: "spec.adopt"'), review.indexOf('type: "spec.adopt"') + 600);
+  for (const field of ["spec_id", "non_goals", "nothing_to_decline"]) {
+    assert.match(sent, new RegExp(field, "u"), `the review must send ${field}`);
+  }
+});
+
 test("an unratified spec permits planning", async () => {
   await withDraftSpec(async (repo) => {
     const planning = await checkPlanningAllowed(repo, "S-001");

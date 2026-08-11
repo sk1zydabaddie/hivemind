@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "spec_id": "S-001",
+  "goal": "Provide a public utility that determines whether a supplied string has a practical, commonly accepted email-address format.",
+  "status": "ratifiable",
+  "rounds": [
+    {
+      "index": 1,
+      "alternatives": [
+        {
+          "title": "Local pragmatic validator",
+          "tradeoffs": [
+            "Requires maintaining a small set of validation rules and representative tests.",
+            "Adds no dependency and keeps behavior easy to understand and tailor."
+          ]
+        },
+        {
+          "title": "Established validation package",
+          "tradeoffs": [
+            "Adds a dependency that must be evaluated, updated, and kept compatible.",
+            "Provides broader handling of email syntax and benefits from validation cases maintained by others."
+          ]
+        }
+      ],
+      "self_critique": {
+        "weakest_point": "Practical email syntax is inherently subjective, so unusual but technically valid addresses may be rejected.",
+        "cut_or_change": "If unusual RFC-valid addresses are important, replace the pragmatic-syntax assumption with explicitly defined compatibility requirements."
+      },
+      "substantive_change": true,
+      "orchestrator_calls_convergence": true
+    }
+  ],
+  "divergence_complete": true,
+  "convergence": {
+    "user": true,
+    "orchestrator": true
+  },
+  "consecutive_non_substantive_rounds": 0,
+  "diminishing_returns_signal": false
+}

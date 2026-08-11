@@ -1,8 +1,45 @@
 # First-run walk — clean install, 2026-08-11
 
-## The answer, after the drafter was fixed
+## Prompt to shipped: no
 
-**Yes.** A clean install reaches a first run with no terminal and no
+A clean install gets from prompt to **approved plan and a running worker** with
+no terminal and no hand-written document. It does not get to shipped.
+
+It stops on `quota_exhausted`, after the worker finished, because `init` writes
+a 150,000-token run ceiling and the worker used **152,229** — an overshoot of
+2,229 on a one-task run. Every role pins to `gpt-5.6-sol`, so there is nothing
+cheaper to route to and no way to come in under the ceiling.
+
+Two things make that a wall rather than a bump:
+
+- **Raising the ceiling means editing `.hivemind/config.json`.** That is the
+  terminal again, which is the condition being tested.
+- **A quota-paused run has no recovery path in the app.** The manager session
+  reads `stopped`, `continuation_available` is false, and the attention item
+  carries `action: null`. The person is told "waiting for capacity" and offered
+  nothing to do about it. `05-first-run-quota-stop.png`.
+
+So the defaults are internally inconsistent: the flagship is the only provider a
+fresh project has, and the default ceiling is below what one flagship worker
+call costs. Either number alone is fine; together they guarantee a first run
+stops after the money is spent.
+
+**Cost of the walk to that point: 3 calls, 194,810 tokens** — planner 20,469 and
+22,112, worker 152,229, all `gpt-5.6-sol`. That number is the argument for the
+settings work: nothing here needed a flagship model.
+
+`04-first-run-work-in-flight.png` is the run working. There is no ship
+screenshot, because the run never shipped. `08-post-ship.png` in the textkit
+folder still carries the "0 files changed" defect and still needs replacing —
+this walk did not replace it.
+
+I raised the ceiling by hand to try to finish the capture, which leaves
+clean-install conditions and is recorded here as such. It did not help: the
+session had already stopped, and the app offers no way to resume it.
+
+## What a first run does reach, and that part works
+
+**Yes** to everything up to the worker. A clean install reaches a first run with no terminal and no
 hand-written document. Same prompt, unchanged — "Add a way to validate email
 addresses" — now produces a plan the person can approve, with the ambiguity
 recorded as a stated assumption instead of a blocking question.

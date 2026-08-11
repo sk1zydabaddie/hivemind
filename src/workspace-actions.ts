@@ -97,13 +97,24 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
     const nonGoals = payload.non_goals;
     const parsed = exactStrings({ spec_id: payload.spec_id }, ["spec_id"]);
     if (!parsed.ok) return parsed;
-    if (Object.keys(payload).some((key) => key !== "spec_id" && key !== "non_goals")) {
+    const allowed = new Set(["spec_id", "non_goals", "nothing_to_decline"]);
+    if (Object.keys(payload).some((key) => !allowed.has(key))) {
       return { ok: false, reason: "workspace action payload contains an unsupported field" };
     }
     if (!Array.isArray(nonGoals) || !nonGoals.every((entry) => typeof entry === "string")) {
       return { ok: false, reason: "spec.adopt requires non_goals as a list of strings" };
     }
-    return adoptSpec(repoRoot, parsed.value.spec_id, nonGoals as string[]);
+    if (payload.nothing_to_decline !== undefined && typeof payload.nothing_to_decline !== "boolean") {
+      return { ok: false, reason: "nothing_to_decline must be a boolean when present" };
+    }
+    /* "There is nothing to decline" is an answer to the question, so it travels
+       as its own field rather than as a magic string in the list. */
+    return adoptSpec(
+      repoRoot,
+      parsed.value.spec_id,
+      nonGoals as string[],
+      payload.nothing_to_decline === true
+    );
   }
   if (raw.type === "plan.ratify") {
     const parsed = exactStrings(payload, ["spec_id", "expected_plan_hash"]);

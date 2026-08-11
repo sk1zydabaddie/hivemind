@@ -660,6 +660,20 @@ Both have to be visible or the review is a rubber stamp.
 The test of whether this worked is the same prompt, unchanged, reaching a plan
 with a stated assumption instead of a question.
 
+### A quota-paused run has no way back
+
+Found finishing the first-run walk. When a run pauses on `quota_exhausted` the
+manager session reads `stopped`, `continuation_available` is false, and the
+queue item carries `action: null`. The person is told "waiting for capacity" and
+given nothing to do about it — the same class as the `run_stalled` and
+`adoption.indeterminate` silences already listed here: Core records the state,
+and the app can only describe it.
+
+What is needed from Core is a resume that does not re-plan: the task's contract,
+lease and worktree all survive the pause, so the work is one worker call from
+continuing. Today the only way forward is a new prompt, which throws away a plan
+the person already approved and pays for planning twice.
+
 ### Fresh install pins everything to the flagship
 
 Logged here, belongs in the settings / bring-your-own-keys work.
@@ -670,7 +684,14 @@ for each task. But it writes only three adapter profiles — `planner`, `manager
 has nowhere to fall: there is no cheap or standard provider to route down to, so
 every role runs on the most expensive model available.
 
-Measured on the first-run walk: 4 calls, 83,816 tokens, all `gpt-5.6-sol`.
+Measured on the first-run walk: 3 calls, 194,810 tokens, all `gpt-5.6-sol` --
+planner 20,469 and 22,112, worker 152,229.
+
+**The defaults are internally inconsistent.** `init` writes a 150,000-token run
+ceiling, and one flagship worker call cost 152,229. Either number alone is
+defensible; together they guarantee a first run stops on quota *after* the money
+is spent. Whatever fixes the provider defaults has to fix the ceiling in the
+same change, or the fix is not a fix.
 
 Fixing it today means hand-writing `codex-terra` and `codex-luna` profiles,
 which is the terminal again — so it is not a first-run fix, it is the settings
