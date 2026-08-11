@@ -99,4 +99,42 @@ class ReplayEventSource {
   }
 };
 
-void import("../src/main");
+/* Drive the replayed app to a surface that normally needs a click, so a
+ * headless capture can reach the map and the project record. Harness only --
+ * the app has no idea this exists and gets no test hooks of its own.
+ *
+ *   /replay.html?scenario=<id>&tab=project
+ *   /replay.html?scenario=<id>&view=map
+ */
+const clickByName = (name: string): boolean => {
+  const match = [...document.querySelectorAll("button")].find(
+    (button) =>
+      (button.textContent ?? "").trim() === name ||
+      button.getAttribute("aria-label") === name
+  );
+  if (!match) return false;
+  /* Radix's tab trigger activates on mousedown and on focus, not on a bare
+     programmatic click -- so drive the whole sequence rather than `.click()`. */
+  match.focus();
+  for (const type of ["pointerdown", "mousedown", "mouseup"]) {
+    match.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+  }
+  match.click();
+  return true;
+};
+
+const drive = (): void => {
+  const steps = [
+    params.get("tab") === "project" ? "Project" : null,
+    params.get("view") === "map" ? "Map" : null
+  ].filter((step): step is string => step !== null);
+  if (steps.length === 0) return;
+  let attempts = 0;
+  const timer = window.setInterval(() => {
+    attempts += 1;
+    if (steps.length > 0 && clickByName(steps[0]!)) steps.shift();
+    if (steps.length === 0 || attempts > 60) window.clearInterval(timer);
+  }, 100);
+};
+
+void import("../src/main").then(() => window.setTimeout(drive, 300));

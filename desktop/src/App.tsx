@@ -1,21 +1,10 @@
-import {
-  BrainCircuit,
-  Check,
-  FolderGit2,
-  History,
-  LayoutList,
-  Network,
-  Settings,
-  Terminal
-} from "lucide-react";
+import { Check, FolderGit2, LayoutList, Library, Settings, Terminal } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { AgentSetupDialog } from "@/components/agent-setup-dialog";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { SetupScreen } from "@/components/workspace/setup-screen";
-import { HistoryTab } from "@/components/workspace/history-tab";
-import { MemoryTab } from "@/components/workspace/memory-tab";
-import { SwarmTab } from "@/components/workspace/swarm-tab";
+import { ProjectTab } from "@/components/workspace/project-tab";
 import { WorkTab } from "@/components/workspace/work-tab";
 import { Button } from "@/components/ui/button";
 import {
@@ -105,23 +94,18 @@ export default function App(): React.JSX.Element {
             </span>
           </div>
 
+          {/* Two sections, because the product asks for two decisions. Work is
+              the run you are having; Project is every run you have had. The
+              agent map is a way of drawing Work, not a third place to be. */}
           {ready ? (
           <TabsList aria-label="Workspace sections">
             <TabsTrigger value="work">
               <LayoutList aria-hidden="true" />
               Work
             </TabsTrigger>
-            <TabsTrigger value="swarm">
-              <Network aria-hidden="true" />
-              Swarm
-            </TabsTrigger>
-            <TabsTrigger value="memory">
-              <BrainCircuit aria-hidden="true" />
-              Memory
-            </TabsTrigger>
-            <TabsTrigger value="history">
-              <History aria-hidden="true" />
-              History
+            <TabsTrigger value="project">
+              <Library aria-hidden="true" />
+              Project
             </TabsTrigger>
           </TabsList>
           ) : null}
@@ -212,21 +196,10 @@ export default function App(): React.JSX.Element {
             onSelectTask={workspace.selectTaskOutput}
           />
         </TabsContent>
-        <TabsContent value="swarm">
-          <SwarmTab
-            actionError={workspace.actionError}
+        <TabsContent value="project">
+          <ProjectTab
             inspection={workspace.inspection}
-            projection={workspace.projection}
-            onAction={workspace.performAction}
-            onSelectTask={workspace.selectTaskOutput}
-          />
-        </TabsContent>
-        <TabsContent value="memory">
-          <MemoryTab inspection={workspace.inspection} />
-        </TabsContent>
-        <TabsContent value="history">
-          <HistoryTab
-            inspection={workspace.inspection}
+            projectName={projectName}
             onAction={workspace.performAction}
           />
         </TabsContent>
@@ -293,9 +266,7 @@ export default function App(): React.JSX.Element {
           <CommandGroup heading="Go to">
             {[
               { value: "work", label: "Work", icon: <LayoutList aria-hidden="true" /> },
-              { value: "swarm", label: "Swarm", icon: <Network aria-hidden="true" /> },
-              { value: "memory", label: "Memory", icon: <BrainCircuit aria-hidden="true" /> },
-              { value: "history", label: "History", icon: <History aria-hidden="true" /> }
+              { value: "project", label: "Project", icon: <Library aria-hidden="true" /> }
             ].map((entry) => (
               <CommandItem
                 key={entry.value}

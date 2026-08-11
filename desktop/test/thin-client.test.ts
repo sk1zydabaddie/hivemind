@@ -24,10 +24,11 @@ describe("React workspace boundary", () => {
     const files = [
       "src/App.tsx",
       "src/components/workspace/work-tab.tsx",
-      "src/components/workspace/swarm-tab.tsx",
-      "src/components/workspace/memory-tab.tsx",
-      "src/components/workspace/history-tab.tsx",
+      "src/components/workspace/agent-map.tsx",
+      "src/components/workspace/project-tab.tsx",
       "src/hooks/use-workspace.ts",
+      "src/lib/phases.ts",
+      "src/lib/work-presentation.ts",
       "src/lib/projection.ts",
       "src/lib/project-session.ts",
       "src/lib/swarm-model.ts",
@@ -82,14 +83,21 @@ describe("React workspace boundary", () => {
 
     expect(config).toMatch(/ui\.shadcn\.com/u);
     expect(styles).toMatch(/prefers-reduced-motion/u);
-    for (const tab of ["Work", "Swarm", "Memory", "History"]) {
-      expect(app).toContain(tab);
+
+    /* Two sections, because the product asks for two decisions. The run map is
+       a view toggle inside Work and the project's past is one surface, so
+       neither may reappear as a permanent place in the shell. */
+    const triggers = [...app.matchAll(/<TabsTrigger value="([a-z]+)">/gu)].map(
+      (match) => match[1]
+    );
+    expect(triggers).toEqual(["work", "project"]);
+    for (const collapsed of ["swarm", "memory", "history"]) {
+      expect(triggers).not.toContain(collapsed);
     }
   });
 
   test("Tailwind is the single styling path and the shadcn CLI is wired to it", async () => {
     const styles = await readFile(path.join(desktopRoot, "src", "styles.css"), "utf8");
-    const legacy = await readFile(path.join(desktopRoot, "src", "legacy.css"), "utf8");
     const config = JSON.parse(
       await readFile(path.join(desktopRoot, "components.json"), "utf8")
     ) as {
@@ -136,14 +144,15 @@ describe("React workspace boundary", () => {
     }
     expect(styles).not.toMatch(/--field-ivory|--meridian|linear-gradient|backdrop-filter/u);
 
-    // The untouched tabs keep their class names, quarantined below Tailwind.
-    expect(styles).toMatch(/@layer theme, base, legacy, components, utilities;/u);
-    expect(legacy).toMatch(/@layer legacy \{/u);
-    expect(legacy).toMatch(/--meridian: var\(--navy\)/u);
+    /* The legacy stylesheet existed only to serve the three tabs that have now
+       been folded into Work and Project. Every surface is utility-only, so the
+       quarantine layer is gone rather than merely empty. */
+    await expect(access(path.join(desktopRoot, "src", "legacy.css"))).rejects.toThrow();
+    expect(styles).toMatch(/@layer theme, base, components, utilities;/u);
+    expect(styles).not.toMatch(/@import\s+"\.\/legacy\.css"/u);
   });
 
   test("the four hand-ported primitives are Tailwind-native", async () => {
-    const legacy = await readFile(path.join(desktopRoot, "src", "legacy.css"), "utf8");
     for (const component of ["badge", "scroll-area", "tabs", "tooltip"]) {
       const source = await readFile(
         path.join(desktopRoot, "src", "components", "ui", `${component}.tsx`),
@@ -154,15 +163,15 @@ describe("React workspace boundary", () => {
       // Styled by utilities on the shared tokens, not by a hand-written rule.
       expect(source).toMatch(/(?:text|bg|border|rounded)-[a-z]/u);
     }
-    for (const dead of [
-      ".badge-neutral",
-      ".scroll-area",
-      ".tabs-trigger",
-      ".tabs-content",
-      ".tooltip-content"
-    ]) {
-      expect(legacy).not.toContain(dead);
-    }
+    /* A CLI-added component must land styled with no manual conversion. `empty`
+       was added by `npx shadcn add` and is kept verbatim, so it is the standing
+       proof of that: if the token contract regresses, this renders unstyled. */
+    const empty = await readFile(
+      path.join(desktopRoot, "src", "components", "ui", "empty.tsx"),
+      "utf8"
+    );
+    expect(empty).toMatch(/text-muted-foreground/u);
+    expect(empty).toMatch(/from "@\/lib\/utils"/u);
   });
 
   test("primary labels use plain language and controls trace to the M8.3 registry", async () => {
@@ -222,6 +231,9 @@ describe("React workspace boundary", () => {
       "plan.ratify",
       "plan.review",
       "task.redirect",
+      // Stopping one task moved here from the tree tab that no longer exists,
+      // so the app keeps exactly one inspector and one set of task controls.
+      "task.stop",
       "run.stop"
     ]));
     for (const action of actions) expect(audit).toContain(`\`${action}\``);
@@ -266,7 +278,11 @@ describe("React workspace boundary", () => {
     expect(work).toMatch(
       /grid h-full min-h-0 grid-rows-\[auto_minmax\(0,1fr\)\] overflow-hidden/u
     );
-    expect(work).toMatch(/grid min-h-0 grid-cols-\[minmax\(0,1fr\)_360px\] gap-4 overflow-hidden/u);
+    /* The rail is a fixed 360px beside a flexible work column -- except when
+       there is no task to put in it, which a real trail does produce. Then the
+       work column takes the width rather than holding an empty panel open. */
+    expect(work).toMatch(/grid-cols-\[minmax\(0,1fr\)_360px\]/u);
+    expect(work).toMatch(/tasks\.length === 0[\s\S]{0,120}grid-cols-\[minmax\(0,1fr\)\]/u);
     expect(work).toMatch(
       /<Panel className="grid-rows-\[auto_minmax\(0,1fr\)_auto\]">[\s\S]*<PromptDock/u
     );
@@ -409,9 +425,13 @@ describe("React workspace boundary", () => {
     }
   });
 
-  test("Swarm controls use only audited actions and motion is event-bound", async () => {
-    const swarm = await readFile(
-      path.join(desktopRoot, "src", "components", "workspace", "swarm-tab.tsx"),
+  test("the run map is a view, not a place: it selects and never acts", async () => {
+    const map = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "agent-map.tsx"),
+      "utf8"
+    );
+    const work = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"),
       "utf8"
     );
     const projection = await readFile(
@@ -419,37 +439,54 @@ describe("React workspace boundary", () => {
       "utf8"
     );
     const styles = await readFile(path.join(desktopRoot, "src", "styles.css"), "utf8");
-    const audit = await readFile(path.resolve(desktopRoot, "..", "docs", "m8-action-routing-audit.md"), "utf8");
 
-    const actions = [...swarm.matchAll(/type:\s*"([a-z_.]+)"/gu)]
-      .map((match) => match[1])
-      .filter((action) => action.includes("."));
-    expect(new Set(actions)).toEqual(new Set([
-      "change.inspect",
-      "quality.cancel",
-      "run.stop",
-      "task.redirect",
-      "task.stop"
-    ]));
-    for (const action of actions) expect(audit).toContain(`\`${action}\``);
-    expect(swarm).not.toMatch(/runGate|integrateShadow|requestLease|reviewMemoryProposal/u);
-    expect(swarm).toMatch(/const tree = buildSwarmTree\(projection, inspection\)/u);
-    expect(swarm).toMatch(/type: "task\.stop"/u);
-    expect(swarm).toMatch(/type: "run\.stop"/u);
-    expect(swarm).toContain("Stop all working tasks");
-    expect(swarm).not.toMatch(/useMemo\(\s*\(\) => buildSwarmTree/u);
+    /* The map dispatches nothing at all. Every control that acts on a task
+       lives in the one rail inspector, which is why the tree stopped being a
+       tab: it was a second inspector for the same tasks. */
+    expect(map).not.toMatch(/onAction|type:\s*"[a-z]+\.[a-z_]+"|invokeWorkspaceAction/u);
+    expect(map).not.toMatch(/runGate|integrateShadow|requestLease|reviewMemoryProposal/u);
+    expect(map).toMatch(/buildSwarmTree\(projection, inspection\)/u);
+    expect(map).toMatch(/onSelectTask/u);
+
+    // It reads Core's queue for what needs a person; it never decides that.
+    expect(map).toMatch(/inspection\?\.needs_you/u);
+
+    /* Caught by replaying a real trail: a verified task sitting behind a
+       "needs fresh checks" queue item was drawn in failure red directly above
+       the words "Checks passed, ready to ship". How far a task got is Core's
+       task state; the queue is a separate fact and gets a separate mark. */
+    expect(map).toMatch(/const standing = phase\.standing;/u);
+    expect(map).not.toMatch(/flagged[^\n]*\?\s*"attention"/u);
+
+    // The toggle lives inside Work, so the map costs no permanent navigation.
+    expect(work).toMatch(/view === "map" \? \(\s*<RunMap/u);
+    expect(work).toMatch(/<ViewToggle/u);
+
+    /* Motion stays bound to a live record: the spine animates only where an
+       artifact movement names that task, and reduced motion removes the
+       overlay while the filled segment underneath survives. */
     expect(projection).toMatch(/message\.source === "live"[\s\S]*recordArtifactMovements/u);
-    const legacy = await readFile(path.join(desktopRoot, "src", "legacy.css"), "utf8");
-    expect(legacy).toMatch(/\.artifact-marker[\s\S]*animation:\s*artifact-travel/u);
+    expect(map).toMatch(/projection\.artifactMovements/u);
+    expect(map).toMatch(/artifact-marker/u);
+    expect(styles).toMatch(/animation:\s*artifact-advance/u);
     expect(styles).toMatch(/prefers-reduced-motion[\s\S]*\.artifact-marker\s*\{\s*display:\s*none/u);
   });
 
-  test("Work and Swarm share the daemon task projection and lead with task titles", async () => {
+  test("phases are a rendering of Core's task state and derive nothing", async () => {
+    const phases = await readFile(path.join(desktopRoot, "src", "lib", "phases.ts"), "utf8");
+
+    // A lookup table keyed by the state Core publishes, and nothing else. No
+    // event inspection, no timers, no second opinion about where a task is.
+    expect(phases).toMatch(/Record<TaskState, TaskPhase>/u);
+    expect(phases).not.toMatch(/recentEvents|Date\.now|useState|useEffect|fetch\(/u);
+    expect(phases).not.toMatch(/localStorage|sessionStorage/u);
+  });
+
+  test("every surface shares the daemon task projection and leads with titles", async () => {
     const work = await readFile(path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"), "utf8");
-    const swarm = await readFile(path.join(desktopRoot, "src", "components", "workspace", "swarm-tab.tsx"), "utf8");
+    const map = await readFile(path.join(desktopRoot, "src", "components", "workspace", "agent-map.tsx"), "utf8");
     const model = await readFile(path.join(desktopRoot, "src", "lib", "swarm-model.ts"), "utf8");
-    const memory = await readFile(path.join(desktopRoot, "src", "components", "workspace", "memory-tab.tsx"), "utf8");
-    const history = await readFile(path.join(desktopRoot, "src", "components", "workspace", "history-tab.tsx"), "utf8");
+    const project = await readFile(path.join(desktopRoot, "src", "components", "workspace", "project-tab.tsx"), "utf8");
     expect(work).toMatch(/const tasks = inspection\?\.tasks \?\? \[\]/u);
     expect(model).toMatch(/inspection\?\.tasks \?\? \[\]/u);
     expect(work).not.toMatch(/taskRows\(projection\)|projection\.tasks/u);
@@ -457,40 +494,91 @@ describe("React workspace boundary", () => {
     // Rows lead with the title; the id is secondary metadata beneath it.
     expect(work).toMatch(/\{task\.title\}[\s\S]{0,500}\{task\.task_id\}/u);
     expect(work).not.toMatch(/\{task\.task_id\}[\s\S]{0,120}\{task\.title\}/u);
-    expect(swarm).toMatch(/<strong>\{task\.task\.title\}<\/strong>\s*<small>\{task\.task\.task_id\}<\/small>/u);
-    expect(memory).toMatch(/taskTitle\} test draft/u);
-    expect(history).toMatch(/taskTitles\[taskId\] \?\? taskId/u);
+    // Ordering, not proximity: the card renders the title before the id.
+    expect(map.indexOf("{task.title}")).toBeGreaterThan(-1);
+    expect(map.indexOf("{task.title}")).toBeLessThan(map.indexOf("{task.task_id}"));
+    expect(project).toMatch(/taskTitles\[taskId\] \?\? taskId/u);
+    // A past run leads with what it did, not with the id that names it.
+    expect(project).toMatch(/\{run\.outcome_detail \|\| plainOutcome\(run\.outcome\)\}/u);
+
+    /* Core composes queue titles as "T-001 needs a revision" beside a row
+       reading "Initialize CLI package metadata". The bar leads with the title
+       Core already handed over in `task_titles`. */
+    expect(work).toMatch(/attentionHeadline\(item, taskTitles\)/u);
+    expect(work).toMatch(/\{named\.headline\}/u);
   });
 
-  test("Memory has no promotion surface and History exposes only the audited read-only trail", async () => {
-    const memory = await readFile(
-      path.join(desktopRoot, "src", "components", "workspace", "memory-tab.tsx"),
-      "utf8"
-    );
-    const history = await readFile(
-      path.join(desktopRoot, "src", "components", "workspace", "history-tab.tsx"),
+  test("the Project surface is read-only and offers no promotion", async () => {
+    const project = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "project-tab.tsx"),
       "utf8"
     );
     const app = await readFile(path.join(desktopRoot, "src", "App.tsx"), "utf8");
-    const source = `${memory}\n${history}`;
     const audit = await readFile(path.resolve(desktopRoot, "..", "docs", "m8-action-routing-audit.md"), "utf8");
 
-    expect(memory).not.toMatch(/onAction|invokeWorkspaceAction|fetch\(|method:\s*["']POST/u);
-    expect(history).not.toMatch(/invokeWorkspaceAction|fetch\(|method:\s*["']POST/u);
-    const historyActions = [...history.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
-    expect(new Set(historyActions)).toEqual(new Set(["trail.inspect"]));
+    /* Memory and History were two tabs describing one subject and neither could
+       act. Merged, that must stay true: exactly one audited read, no writes. */
+    const actions = [...project.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
+    expect(new Set(actions)).toEqual(new Set(["trail.inspect"]));
     expect(audit).toContain("`trail.inspect`");
-    expect(source).not.toMatch(/reviewMemoryProposal|memory\.review_handoff|Promote|Approve/u);
-    expect(memory).toMatch(/The app cannot approve this item/u);
-    expect(memory).toMatch(/Review in a terminal/u);
-    expect(memory).toMatch(/<h2>Later<\/h2>/u);
-    expect(memory).toMatch(/title="Routing changes"/u);
-    expect(memory).toMatch(/title="Draft tests"/u);
-    expect(history).toMatch(/read-only project evidence/u);
-    expect(source).not.toMatch(/Reached merge/iu);
-    expect(history).toMatch(/run\.merged_tasks/u);
+    expect(project).not.toMatch(/invokeWorkspaceAction|fetch\(|method:\s*["']POST/u);
+    expect(project).not.toMatch(/reviewMemoryProposal|memory\.review_handoff/u);
+    expect(project).not.toMatch(/>\s*(?:Promote|Approve)\s*</u);
+
+    // The handoff stays explicit: the app shows the evidence and the command.
+    expect(project).toMatch(/The app cannot approve this item/u);
+    expect(project).toMatch(/Review this in a terminal/u);
+
+    // All three memory kinds still have a reader after the merge.
+    expect(project).toMatch(/pending_lessons/u);
+    expect(project).toMatch(/routing_changes/u);
+    expect(project).toMatch(/draft_tests/u);
+    expect(project).toMatch(/memory\?\.canon/u);
+    expect(project).toMatch(/history\.runs/u);
+    expect(project).not.toMatch(/Reached merge/iu);
+
     const inspection = await readFile(path.resolve(desktopRoot, "..", "src", "workspace-inspection.ts"), "utf8");
     expect(inspection).toMatch(/event\.type === "adoption\.completed"[\s\S]*event\.data\.task_ids/u);
     expect(app).not.toMatch(/FutureWorkspaceTab/u);
+  });
+
+  test("no internal vocabulary reaches the map or the Project surface either", async () => {
+    const map = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "agent-map.tsx"),
+      "utf8"
+    );
+    const project = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "project-tab.tsx"),
+      "utf8"
+    );
+    const source = `${map}\n${project}`;
+    const readable = [
+      ...[...source.matchAll(/>([^<>{}\n]+)</gu)].map((match) => match[1]),
+      ...[...source.matchAll(/(?:placeholder|title|aria-label)="([^"]+)"/gu)].map(
+        (match) => match[1]
+      )
+    ]
+      .join(" | ")
+      .toLowerCase();
+
+    for (const banned of [
+      "lease",
+      "canon",
+      "oracle",
+      "tier-1",
+      "tier-2",
+      "write-intent",
+      "write intent",
+      "integrate_shadow",
+      "adoption",
+      "execution group",
+      "worktree",
+      "task_type",
+      "routing policy",
+      "quality run",
+      "admission"
+    ]) {
+      expect(readable).not.toContain(banned);
+    }
   });
 });

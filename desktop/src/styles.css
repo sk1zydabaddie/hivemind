@@ -1,11 +1,10 @@
-/* Layer order is declared before any import so the legacy stylesheet that still
-   serves the untouched Swarm/Memory/History tabs always loses to Tailwind
-   utilities. Redesigned surfaces are utility-only. */
-@layer theme, base, legacy, components, utilities;
+/* Every surface is utility-only now. The legacy stylesheet that served the old
+   Swarm, Memory and History tabs went with them: those tabs were folded into
+   Work's map view and the Project surface, so nothing is left to quarantine. */
+@layer theme, base, components, utilities;
 
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "./legacy.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -199,7 +198,33 @@
 }
 
 /* Motion only ever reflects a real event: a task starting, a change landing.
-   Nothing here loops for decoration. */
+   Nothing here loops for decoration.
+
+   `.artifact-marker` is the one animation in the app. It fires when the live
+   stream reports a change clearing a phase, and it plays exactly once per
+   event, so the phase spine moves when the work moves and at no other time.
+
+   It is an OVERLAY on an already-filled segment, never the fill itself. That
+   is what lets reduced motion hide it outright: what remains is the same
+   segment, drawn statically and still correct. */
+@layer components {
+  .artifact-marker {
+    transform-origin: left center;
+    animation: artifact-advance 620ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+}
+
+@keyframes artifact-advance {
+  from {
+    transform: scaleX(0);
+    opacity: 0.85;
+  }
+  to {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

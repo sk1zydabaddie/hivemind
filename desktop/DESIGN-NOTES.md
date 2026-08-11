@@ -76,25 +76,44 @@ near 400. The limit is 4,000 (~1MB of small objects). When the buffer has
 actually dropped events, the thread says so instead of silently losing its
 beginning.
 
-## Deferred, with reasoning
+## Done: four tabs became two
 
-### Four tabs should probably become two
+The shell is now **Work** (the run) and **Project** (its past). Swarm became a
+view toggle inside Work; Memory and History merged into Project.
 
-Work, Swarm, Memory and History were designed when the app asked for ~10
-decisions. Three of them are inspection surfaces for a person who, by the
-product model above, does not want to inspect anything.
+Reading the code made the case harder than the original argument did:
 
-- **Swarm should be a view toggle inside Work, not a tab.** It draws the same
-  run the Work tab already describes, in tree form. At 2–3 tasks it is mostly
-  orientation, which the thread and the rail now provide. As a toggle it earns
-  its place at 8+ tasks without costing a permanent tab.
-- **Memory and History should collapse into one "Project" surface.** Both are
-  read-only records of what this project has learned and done. They are one
-  concept — the project's past — split across two tabs.
+- **Swarm could not show anything Work did not already have.** `buildSwarmTree`
+  takes exactly `inspection.execution_groups`, `inspection.tasks` and
+  `projection.subagents` — the same inputs the rail reads. A tab whose inputs are
+  a subset of another tab's is a *rendering*, not a place.
+- **It was a second inspector for the same tasks.** `TaskInspector` in the tree
+  and `InspectorPane` in Work rendered one task, one output stream and the same
+  three controls, in two code paths with two vocabularies ("Redirect" against
+  "Guide this agent"). That is a divergence waiting to happen, and merging them
+  removed it.
+- **Memory and History could not act.** Every memory card ended in "review this
+  in a terminal", and History was read-only plus one trail dialog. Two tabs, one
+  subject, zero decisions.
 
-That would take the shell to two tabs: **Work** (the run) and **Project** (its
-history). Deferred because it is a larger IA change than the hole it fixes, not
-because the reasoning is weak.
+What that bought, beyond one less decision model:
+
+- `src/legacy.css` is **gone**. It existed only to serve those three tabs, so
+  every surface is utility-only now and the `@layer legacy` quarantine went with
+  it.
+- Stopping one task moved into the rail inspector, so `task.stop` is reachable
+  from the one place that owns task controls.
+- The map dispatches **no actions at all**. It selects a task; the rail acts on
+  it. That is what keeps it a view rather than a second place to be.
+
+### The four phases
+
+`src/lib/phases.ts` is the model both the map and the rail draw: **Queued →
+Editing → Checked → Ready**, plus shipped, stopped, and needs-you. It is a
+`Record<TaskState, TaskPhase>` and nothing else — a rendering of the state Core
+publishes, exhaustive by type so a new task state upstream refuses to compile.
+It reads no events, keeps no time, and holds no state; deriving a phase any
+other way would make the client a second opinion about where a task is.
 
 ### Standing rule: the trail must be able to REBUILD the state, not just attest it
 
@@ -137,6 +156,54 @@ have no captured data yet — nothing more.
 Five passes of green fixtures produced a UI that rendered "A task has to revise
 its change ×3" on real data, merging three different failing tasks into one row.
 No fixture caught it because every fixture had a title for every task.
+
+## What replaying real trails caught this pass
+
+Three defects that every fixture would have passed. Recorded because the shape
+of them keeps repeating, not because these three instances matter most.
+
+**A verified task drawn in failure red.** The map coloured a task's phase spine
+from Core's `needs_you` queue as well as from its state. On
+`final-run-transcript-4` that put T-002 — `verified`, checks passed — in clay,
+directly above its own words "Checks passed, ready to ship". The queue item was
+real (`reverification_required`: the checks are stale, not failed), but how far a
+task *got* is its state and nothing else. The queue is a separate fact and now
+gets a separate, quieter mark. **Two true things, one of them rendered as the
+other.**
+
+**Core's own copy leaking banned vocabulary onto the primary surface.** The
+attention bar rendered "These checks predate verified-set provenance. Run the
+real project checks again before adoption." verbatim — Core's sentence, with two
+words the product does not say. A containment guard already existed in
+`plainPrimaryDetail`; its word list was simply narrower than the actual ban list.
+It is now `src/lib/vocabulary.ts`, one list shared by the guard and its test,
+and `test/vocabulary.test.ts` asserts it against the **real captured detail
+strings** in `tools/replay-data.json` — including that at least one real string
+still trips it, so the guard cannot quietly stop being exercised.
+
+This is a containment check, not a translation: the client recognises *its own*
+banned vocabulary and declines to render the sentence, falling back to wording
+chosen by the item's typed `kind`. It still does not guess what Core meant. When
+Core writes `plain_reason`, the guard stops firing on its own.
+
+**A 360px rail held open for nothing.** `m7-4-consolidation-behavioral` has five
+queue items and **zero** projected tasks — a shape no fixture had. The rail
+rendered "No tasks in this run yet." across 500px of white. The body grid now
+drops the rail entirely when there are no tasks.
+
+### Still leaking, and why it is not fixed here
+
+`rejected add src/ledger.js` still renders raw in the attention bar and the task
+row. It carries no banned vocabulary, so the guard correctly leaves it alone; it
+is simply terse gate output. The fix remains Core's `plain_reason`, and adding a
+fourth client-side regex for it would repeat the mistake this file already
+records three times.
+
+On `m7-4` the thread reads "T-101 has to revise its change" because that trail
+carries no task titles at all — `inspection.tasks` is empty, so `task_titles` is
+empty. Leading with the identifier is correct there: naming it anything else
+would be invention. Where a title *is* known, `attentionHeadline` now leads with
+it and demotes the identifier, which is the same rule the rows already followed.
 
 ## A known class of bug: Core records it, the UI never shows it
 
@@ -347,9 +414,12 @@ bugs, but a real product gap:
 - `manual_task.review` / `manual_task.authorize` — manually authored tasks have
   no surface at all.
 - `verify.characterize` — no way to ask for a characterization test.
-- `quality.best_of_n` / `quality.draft_refine` — you can **cancel** a quality run
-  from the Swarm tab but you cannot **start** one from anywhere, which is the
-  wrong half to expose.
+- `quality.best_of_n` / `quality.draft_refine` — no way to start a second
+  attempt from anywhere. `quality.cancel` used to be reachable from the tree
+  tab, which was the wrong half to expose on its own; folding that tab in
+  removed it rather than pairing it, so this is now a clean gap in both
+  directions instead of a lopsided one. A second attempt shows on its task's
+  card in the map, so when a start control exists it has an obvious home.
 
 ### Waiting on Core
 
@@ -408,6 +478,13 @@ Core actually produced. That is still not a live daemon — no worker output, no
 live leases, no spend — so treat both harnesses as instruments, never as
 verification.
 
+The harness can now be driven to a surface that needs a click, so a headless
+capture can reach the map and the project record:
+`/replay.html?scenario=<id>&view=map`, `&tab=project`. That lives entirely in
+`tools/replay.tsx` — the app has no test hooks of its own. (Radix's tab trigger
+activates on mousedown and focus, not on a bare programmatic `.click()`, which
+is why the harness dispatches the whole sequence.)
+
 #### What the evidence corpus does not contain
 
 Across all eight replayable trails there is **no `plan.*` event, no `adoption.*`
@@ -422,6 +499,14 @@ are not in the repository, so they cannot be replayed. Whatever process captures
 evidence should keep the JSONL alongside the PNGs; a screenshot cannot be
 replayed into a different UI, and the trail can.
 
+**So these surfaces have still never been drawn from real data**, and this pass
+did not change that: the populated **Project** surface (past runs, remembered
+guidance, items waiting for review), the **plan review**, and the **ship bar**.
+Their layouts were checked against a scratch fixture injected into
+`replay-data.json` and then discarded — which is a layout tool, not evidence,
+exactly as the standing rule above says. Treat them as unverified until a trail
+carrying `plan.*`, `adoption.*` and a completed run exists.
+
 `task.created` records `title`, `agent_role`, `base_commit`,
 `acceptance_criterion` and `allowed_files`, but **not** `required_tests`,
 `deterministic_validity_check` or `routing_task_type`. Core's own contract
@@ -432,9 +517,14 @@ acceptance criterion names, and marks it.
 
 ### Client-side, not yet done
 
-- **Responsive behaviour outside 1440×900.** Above ~1600 the rail should widen;
-  below ~1100 it should collapse to a toggle. Currently fixed with a 820px
-  minimum.
+- **Responsive behaviour outside 1440×900.** Partly done: the rail is 300px
+  below ~1100, 360px to ~1600, and 420px above it, and it disappears entirely
+  when a run has no tasks. It is deliberately **not** hidden at narrow widths —
+  the first attempt hid it below 1100, which takes the live output, the guide
+  control and the stop control off the screen. That is a capability loss
+  dressed as responsive behaviour. Still outstanding: at the 820px minimum the
+  rail is cramped rather than collapsible, and a real collapse would need the
+  inspector to have somewhere else to go.
 - **Accessibility beyond the basics.** The task list is buttons inside sections;
   a listbox with roving focus is probably more correct. Keyboard traversal and
   screen-reader flow have not been tested on the redesigned markup.
@@ -486,8 +576,21 @@ should fail visibly rather than silently pick something.
   where they carry meaning (needs attention, failed). No other hues, no
   gradients.
 - **Motion reflects real events.** The run-progress rule moves when a task
-  finishes. Nothing loops for decoration.
-- `src/legacy.css` serves the untouched Swarm/Memory/History tabs from an
-  `@layer legacy` declared below Tailwind's utilities, with the old variable
-  names aliased to the new palette. Nothing new should be added there; each tab
-  drops its share when it gets redesigned.
+  finishes. `.artifact-marker` is the only animation in the app: it fires when
+  the live stream reports a change clearing a phase, plays once, and is an
+  *overlay* on an already-filled segment — which is what lets reduced motion
+  hide it outright and leave the segment underneath still correct.
+- **`src/legacy.css` is gone.** It served the three tabs that no longer exist,
+  so the `@layer legacy` quarantine went with them. Every surface is
+  utility-only; there is no longer anywhere to put a hand-written rule.
+
+### The acceptance test, re-run this pass
+
+`npx shadcn@latest add alert` produced a component that rendered styled with
+**zero manual class conversion and zero config edits**, and every utility it
+referenced compiled to real CSS resolving to a palette value (`--destructive` →
+`--clay` → `#b65b4f`, `--muted-foreground` → `--muted` → `#667085`). The probe
+was removed. `empty` was added the same way and **kept**, so the app now carries
+a verbatim CLI-generated component as standing proof of the contract — if the
+token mapping regresses, it renders unstyled and `test/thin-client.test.ts`
+fails.

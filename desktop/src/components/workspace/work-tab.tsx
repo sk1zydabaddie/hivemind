@@ -8,11 +8,13 @@ import {
   CircleStop,
   FileCode2,
   Layers3,
+  ListTree,
   MessageSquareText,
   Plus,
   RotateCcw,
   Send,
   SlidersHorizontal,
+  TextQuote,
   X
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -42,6 +44,7 @@ import {
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { RunMap } from "@/components/workspace/agent-map";
 import { plainActionError } from "@/lib/plain-language";
 import {
   RECENT_EVENT_LIMIT,
@@ -49,6 +52,7 @@ import {
   type TaskProjection,
   type TaskState
 } from "@/lib/projection";
+import { filesInFlight, runStanding, taskPhase } from "@/lib/phases";
 import {
   buildRunThread,
   runSpanMs,
@@ -56,7 +60,8 @@ import {
   type ThreadEntry,
   type ThreadTone
 } from "@/lib/work-thread";
-import { summarizeWorkerOutput } from "@/lib/work-presentation";
+import { attentionHeadline, summarizeWorkerOutput } from "@/lib/work-presentation";
+import { containsInternalVocabulary } from "@/lib/vocabulary";
 import type {
   AutonomyLevel,
   WorkspaceAction,
@@ -161,6 +166,9 @@ export function WorkTab({
     : null;
   const [dismissedAttention, setDismissedAttention] = useState<string[]>([]);
   const [dismissedPlanHash, setDismissedPlanHash] = useState<string | null>(null);
+  /* The map is the same run drawn as shape. It is a way of looking, not a place
+     to be, so it lives here rather than in the shell's navigation. */
+  const [view, setView] = useState<"thread" | "map">("thread");
   const [reviewOpen, setReviewOpen] = useState(false);
   const [composer, setComposer] = useState("");
   const [feedback, setFeedback] = useState("");
@@ -361,6 +369,21 @@ export function WorkTab({
     }
   };
 
+  /* Stopping one task used to be reachable only from the separate tree tab. It
+     belongs beside the agent it stops, in the one inspector this app now has. */
+  const stopTask = async (taskId: string, reason: string): Promise<void> => {
+    setBusy(true);
+    setFeedback("");
+    try {
+      await onAction({ type: "task.stop", payload: { task_id: taskId, reason } });
+      setFeedback("Stopped. Its files were released for other work.");
+    } catch (error) {
+      setFeedback(plainActionError(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const stopRun = async (): Promise<void> => {
     if (!managerSession) {
       setFeedback("Nothing is running to stop.");
@@ -487,6 +510,7 @@ export function WorkTab({
             item={attention}
             planWaiting={planWaiting}
             rest={openQueue.filter((entry) => entry.id !== attention.id)}
+            taskTitles={inspection?.task_titles ?? {}}
             onApprove={() => void approveQueueItem(attention)}
             onApproveOther={(other) => void approveQueueItem(other)}
             onDismiss={() => setDismissedAttention((items) => [...items, attention.id])}
@@ -509,7 +533,20 @@ export function WorkTab({
         ) : null}
       </div>
 
-      <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_360px] gap-4 overflow-hidden">
+      {/* A run with no tasks projected yet -- which a real trail does produce,
+          with five things in the queue and nothing to show beside them -- must
+          not hold 360px open for an empty panel. */}
+      {/* The rail narrows below ~1100 and widens above ~1600; it is never
+          hidden. Hiding it takes the live output, the guide control and the
+          stop control off the screen entirely, which is a capability loss
+          dressed up as responsive behaviour. */}
+      <div
+        className={`grid min-h-0 gap-4 overflow-hidden ${
+          tasks.length === 0
+            ? "grid-cols-[minmax(0,1fr)]"
+            : "grid-cols-[minmax(0,1fr)_300px] min-[1100px]:grid-cols-[minmax(0,1fr)_360px] min-[1600px]:grid-cols-[minmax(0,1fr)_420px]"
+        }`}
+      >
         {/* The work panel owns the composer as its own last row, so no amount of
             content above can ever push it out of reach. */}
         <div className="grid min-h-0 overflow-hidden">
@@ -525,6 +562,8 @@ export function WorkTab({
               runActive={runActive}
               stopBusy={stopBusy}
               tasks={tasks}
+              view={view}
+              onViewChange={setView}
               onLevelChange={async (level) => {
                 setBusy(true);
                 setFeedback("");
@@ -542,6 +581,13 @@ export function WorkTab({
             />
             {idle ? (
               <IdleBoard onPick={setComposer} />
+            ) : view === "map" ? (
+              <RunMap
+                inspection={inspection}
+                projection={projection}
+                selectedTaskId={projection.selectedTaskId}
+                onSelectTask={onSelectTask}
+              />
             ) : (
               <RunThread
                 endRef={activityEndRef}
@@ -588,9 +634,17 @@ export function WorkTab({
 
         {/* The rail holds state you glance at: what is running, and — only when
             you ask for it — what one agent is saying. */}
+        {tasks.length === 0 ? null : (
+        /* The task list takes the height it actually needs and the inspector
+           takes the rest. A fixed fraction starved a two-task list by a dozen
+           pixels and clipped its last row against the panel edge, which reads
+           as broken rather than as "scroll for more" -- Radix's scrollbar is
+           hover-only, so nothing on screen said otherwise. */
         <aside
           className={`grid min-h-0 gap-4 ${
-            selected ? "grid-rows-[minmax(0,1fr)_minmax(0,1.1fr)]" : "grid-rows-[minmax(0,1fr)]"
+            selected
+              ? "grid-rows-[minmax(0,auto)_minmax(200px,1fr)]"
+              : "grid-rows-[minmax(0,1fr)]"
           }`}
         >
           <Panel>
@@ -610,13 +664,16 @@ export function WorkTab({
           {selected ? (
             <Panel>
               <InspectorPane
+                busy={busy}
                 output={projection.selectedOutput}
                 task={selected}
                 onGuide={() => setRedirectOpen(true)}
+                onStop={() => void stopTask(selected.task_id, "Stopped from the rail")}
               />
             </Panel>
           ) : null}
         </aside>
+        )}
       </div>
 
       {displayedPlan ? (
@@ -875,6 +932,7 @@ function AttentionBar({
   rest,
   busy,
   planWaiting,
+  taskTitles,
   onApprove,
   onApproveOther,
   onDismiss,
@@ -886,6 +944,7 @@ function AttentionBar({
   rest: WorkspaceQueueItem[];
   busy: boolean;
   planWaiting: boolean;
+  taskTitles: Record<string, string>;
   onApprove: () => void;
   onApproveOther: (item: WorkspaceQueueItem) => void;
   onDismiss: () => void;
@@ -898,6 +957,7 @@ function AttentionBar({
     ? "border-clay/25 bg-clay-wash"
     : "border-amber/25 bg-amber-wash";
   const mark = failing ? "text-clay" : "text-amber";
+  const named = attentionHeadline(item, taskTitles);
   return (
     <Collapsible asChild>
       <section
@@ -928,9 +988,21 @@ function AttentionBar({
                 <span className="text-[12px] text-muted-foreground">a plan is also waiting</span>
               ) : null}
             </div>
-            <strong className="mt-1 block text-[15px] leading-snug font-semibold tracking-[-0.01em] text-ink">
-              {item.title}
+            {/* The row leads with what the work is; what happened to it, and the
+                identifier it happened to, sit underneath. */}
+            <strong className="mt-1 block text-[15px] leading-snug font-semibold tracking-[-0.01em] break-words text-ink">
+              {named.headline}
             </strong>
+            {named.predicate === null ? null : (
+              <span className={`mt-0.5 block text-[13px] font-medium ${mark}`}>
+                {sentenceCase(named.predicate)}
+                {named.taskId === null ? null : (
+                  <span className="ml-1.5 font-mono text-[12px] font-normal text-muted-foreground">
+                    {named.taskId}
+                  </span>
+                )}
+              </span>
+            )}
             <p className="mt-1.5 mb-0 max-w-[760px] text-[13px] leading-relaxed break-words text-muted-foreground">
               {plainPrimaryDetail(item.detail, item.kind)}
             </p>
@@ -955,13 +1027,18 @@ function AttentionBar({
 
         <CollapsibleContent>
           <ul className="mt-4 mb-0 grid list-none gap-3 border-t border-ink/10 p-0 pt-4">
-            {rest.map((other) => (
+            {rest.map((other) => {
+              const otherNamed = attentionHeadline(other, taskTitles);
+              return (
               <li className="flex items-start gap-3" key={other.id}>
                 <div className="min-w-0 flex-1">
                   <strong className="block text-[13px] leading-snug font-medium break-words text-ink">
-                    {other.title}
+                    {otherNamed.headline}
                   </strong>
                   <span className="mt-0.5 block text-[12px] leading-relaxed break-words text-muted-foreground">
+                    {otherNamed.predicate === null
+                      ? null
+                      : `${sentenceCase(otherNamed.predicate)} · `}
                     {plainPrimaryDetail(other.detail, other.kind)}
                   </span>
                 </div>
@@ -982,7 +1059,8 @@ function AttentionBar({
                   <X aria-hidden="true" />
                 </Button>
               </li>
-            ))}
+              );
+            })}
           </ul>
         </CollapsibleContent>
       </section>
@@ -1091,6 +1169,8 @@ function RunHeader({
   configuredLevel,
   busy,
   stopBusy,
+  view,
+  onViewChange,
   onOpenPlan,
   onStop,
   onLevelChange
@@ -1105,13 +1185,16 @@ function RunHeader({
   configuredLevel: AutonomyLevel;
   busy: boolean;
   stopBusy: boolean;
+  view: "thread" | "map";
+  onViewChange: (view: "thread" | "map") => void;
   onOpenPlan: () => void;
   onStop: () => void;
   onLevelChange: (level: AutonomyLevel) => Promise<void>;
 }): React.JSX.Element {
-  const working = tasks.filter((task) => task.state === "running").length;
-  const done = tasks.filter((task) => shipped(task) || task.state === "verified").length;
-  const files = tasks.reduce((count, task) => count + task.lease_files.length, 0);
+  const standing = runStanding(tasks);
+  const working = standing.working;
+  const done = standing.done;
+  const files = filesInFlight(tasks);
   const verification = integrationLanguage(integrationStatus);
   const headline =
     tasks.length === 0
@@ -1168,6 +1251,9 @@ function RunHeader({
       </div>
 
       <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        {tasks.length > 0 ? (
+          <ViewToggle value={view} onChange={onViewChange} />
+        ) : null}
         {planAvailable ? (
           <Button size="sm" type="button" variant="ghost" onClick={onOpenPlan}>
             <Layers3 aria-hidden="true" />
@@ -1231,6 +1317,47 @@ function RunHeader({
         />
       </span>
     </div>
+  );
+}
+
+/* Two drawings of one run. It costs a pair of buttons rather than a permanent
+   place in the shell, which is the whole reason it is here and not up there. */
+function ViewToggle({
+  value,
+  onChange
+}: {
+  value: "thread" | "map";
+  onChange: (view: "thread" | "map") => void;
+}): React.JSX.Element {
+  const options = [
+    { key: "thread" as const, label: "Story", icon: TextQuote },
+    { key: "map" as const, label: "Map", icon: ListTree }
+  ];
+  return (
+    <span
+      aria-label="How to show this run"
+      className="mr-1 inline-flex gap-0.5 rounded-md bg-canvas p-0.5"
+      role="group"
+    >
+      {options.map((option) => {
+        const Icon = option.icon;
+        const active = value === option.key;
+        return (
+          <button
+            aria-pressed={active}
+            className={`inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-[12px] font-medium transition-colors ${
+              active ? "bg-panel text-ink shadow-panel" : "text-muted-foreground hover:text-ink"
+            }`}
+            key={option.key}
+            type="button"
+            onClick={() => onChange(option.key)}
+          >
+            <Icon aria-hidden="true" className="size-3.5" />
+            {option.label}
+          </button>
+        );
+      })}
+    </span>
   );
 }
 
@@ -1373,6 +1500,7 @@ function TaskRow({
       ? stateLanguage[task.state]
       : { label: "Project checks blocked", tone: "danger" as const };
   const issue = integrationFailure ?? task.issue;
+  const phase = taskPhase(task);
   /* The only row where a dependency answers a real question: "why has this not
      started?" */
   const waitingFor =
@@ -1401,7 +1529,19 @@ function TaskRow({
             {language.label}
           </span>
         </span>
-        <span className="mt-1 block text-[12px] break-words text-muted-foreground">
+        {/* Four segments: how far this one change has got. Same model the map
+            draws in full, small enough to sit in a glanceable row. */}
+        <span aria-hidden="true" className="mt-1.5 flex gap-1">
+          {[0, 1, 2, 3].map((index) => (
+            <span
+              className={`h-[3px] flex-1 rounded-full ${
+                index < phase.reached ? toneEdge[language.tone] : "bg-rule"
+              }`}
+              key={index}
+            />
+          ))}
+        </span>
+        <span className="mt-1.5 block text-[12px] break-words text-muted-foreground">
           <span className="font-mono" title={task.task_id}>
             {task.task_id}
           </span>
@@ -1425,16 +1565,23 @@ function TaskRow({
 function InspectorPane({
   task,
   output,
-  onGuide
+  busy,
+  onGuide,
+  onStop
 }: {
   task: TaskProjection;
   output: BoardProjection["selectedOutput"];
+  busy: boolean;
   onGuide: () => void;
+  onStop: () => void;
 }): React.JSX.Element {
   const [mode, setMode] = useState<"summary" | "raw">("summary");
   const [filesOpen, setFilesOpen] = useState(false);
   useEffect(() => setMode("summary"), [task.task_id]);
   const files = task.lease_files;
+  const phase = taskPhase(task);
+  /* Only offer to stop something that is actually going. */
+  const stoppable = phase.standing === "working" || phase.standing === "waiting";
   const text =
     mode === "summary"
       ? summarizeWorkerOutput(output)
@@ -1463,7 +1610,24 @@ function InspectorPane({
           >
             <MessageSquareText aria-hidden="true" />
           </Button>
+          {stoppable ? (
+            <Button
+              aria-label="Stop this task"
+              className="text-clay hover:bg-clay-wash hover:text-clay"
+              disabled={busy}
+              size="icon-sm"
+              title="Stop this task"
+              type="button"
+              variant="outline"
+              onClick={onStop}
+            >
+              <CircleStop aria-hidden="true" />
+            </Button>
+          ) : null}
         </div>
+        <p className="m-0 text-[12px] leading-snug break-words text-muted-foreground">
+          {phase.summary}
+        </p>
         <div className="flex items-center gap-2">
           <span className="text-[12px] font-medium text-muted-foreground">Live output</span>
           <span
@@ -2415,12 +2579,32 @@ function shipped(task: TaskProjection): boolean {
   return task.integration === "merged" || task.state === "merged";
 }
 
+/* What to say instead, chosen by the item's typed `kind`. Keying on the kind is
+   safe in a way that reading Core's sentence is not: the kind is a contract
+   field this client is handed, and every one of these says only what that kind
+   already means. */
+const QUEUE_FALLBACK: Record<WorkspaceQueueItem["kind"], string> = {
+  plan_review: "A plan is ready for you to look at. Nothing starts until you approve it.",
+  manager_approval: "A step needs your approval before it can run.",
+  verification_blocked: "The project's checks could not finish.",
+  reverification_required:
+    "The checks that passed are older than the code as it stands now. They have to run again before this can ship.",
+  run_stalled: "Work stopped and has not picked up again.",
+  task_attention: "This task needs you before it can carry on.",
+  quality_cancel_failed:
+    "A second attempt may still be running. Check it before starting another one.",
+  memory_review: "There is something here for you to review outside the app.",
+  quality_review: "A second attempt is ready for you to compare.",
+  plan_amendment: "A change to the plan is queued for review.",
+  adoption_ready: "The checks passed. This is ready to go to your branch."
+};
+
 function plainPrimaryDetail(detail: string, kind: WorkspaceQueueItem["kind"]): string {
-  if (kind === "quality_cancel_failed") {
-    return "A second attempt may still be running. Check it before starting another one.";
-  }
-  if (/oracle|tier-?2|write[-_ ]intent|lease|durable trail|provider evidence/iu.test(detail)) {
-    return "Open the details to see what needs attention.";
+  if (kind === "quality_cancel_failed") return QUEUE_FALLBACK[kind];
+  /* Core's own sentence wins whenever it is sayable. It is more specific than
+     anything chosen by kind, and it is the text that was actually recorded. */
+  if (detail.trim() === "" || containsInternalVocabulary(detail)) {
+    return QUEUE_FALLBACK[kind];
   }
   return detail;
 }
@@ -2533,6 +2717,12 @@ function splitList(value: string): string[] {
 
 function capitalize(value: string): string {
   return value.length === 0 ? value : `${value[0]?.toUpperCase()}${value.slice(1)}`;
+}
+
+/* Core writes its predicates lowercase because they followed an identifier.
+   Once the identifier moves out of the way, they start a sentence. */
+function sentenceCase(value: string): string {
+  return value.replace(/^./u, (letter) => letter.toUpperCase());
 }
 
 function formatClock(value: string): string {
