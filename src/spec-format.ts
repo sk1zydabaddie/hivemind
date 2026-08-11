@@ -181,6 +181,7 @@ export function buildDraftedSpec(input: {
   nonGoals: string[];
   acceptance: string[];
   openQuestions: string[];
+  assumptions?: string[];
 }): string {
   const bullets = (items: string[]): string[] =>
     items.length === 0 ? [""] : items.map((item) => `- ${item.trim()}`);
@@ -200,6 +201,10 @@ export function buildDraftedSpec(input: {
     "## Acceptance criteria",
     "",
     ...bullets(input.acceptance),
+    "",
+    "## Assumptions",
+    "",
+    ...bullets(input.assumptions ?? []),
     "",
     "## Open questions",
     "",

@@ -233,6 +233,7 @@ export interface SpecReview {
   drafted_non_goals: string[];
   acceptance: string[];
   open_questions: string[];
+  assumptions: string[];
   asked_for: string | null;
 }
 

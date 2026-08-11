@@ -144,6 +144,58 @@ prevented — the data was one scope away, already in hand.
 The rule keeps catching things because it is asked too late. Ask it of the
 event when the event is written, not when a surface finally needs it.
 
+## Standing rule: when you loosen a gate, audit what GRANTS the thing it guarded
+
+The most serious hole found in this project, and the audit that missed it.
+
+**What happened.** Moving the planning gate — planning may run against an
+unratified spec, execution may not — silently widened a second gate that
+depended on it. Autonomy's policy branch reached plan ratification against an
+*unsigned* spec and ratified it: `.hivemind/plans/ratified/S-001/` existed on
+disk while `convergence.user` was `false`. **The human signature was bypassed on
+the path that leads to writing to the user's branch.** Not a near miss: the
+artifact was written, and only the adoption gate downstream stood between that
+and a merge.
+
+**Why the audit missed it.** Before the change I audited for anything that
+*infers* ratification from a plan's existence — does any code treat "a plan is
+here" as evidence a spec was signed? That audit was clean, and it was the wrong
+question. It asked about **consumers** of the invariant and never about
+**producers** of it. Nothing inferred ratification from a plan; something
+*granted* ratification without the act that produces it.
+
+So, alongside *the trail must rebuild the state* and *capture the trail and the
+project state*:
+
+> **When you loosen a gate, audit what grants the thing that gate guarded.**
+> Listing the readers of an invariant is half an audit. The other half is every
+> writer: which code paths can produce this state, and does each still require
+> the act that is supposed to produce it?
+
+### The full audit, run 2026-08-11
+
+Every state in the system that is *granted* rather than derived, and what grants
+it. This is the audit that should have been run the first time.
+
+| Granted state | Written by | Reachable without the act? |
+| --- | --- | --- |
+| Spec ratified | `ratifySpec` — CLI `--ratify`, `adoptSpec` | **No.** Both go through `checkIdeationRatifiable`, which requires both convergence signals, and `convergence.user` needs a challenge-bound authorization. |
+| Plan ratified | `ratifyPlanWithSource` — human via `plan.ratify`, policy via the `auto` branch | **No, after the fix.** Both callers now pass through `requireActiveSpecRatified` inside the granting function, before anything is written. This is the hole. |
+| Change adopted | `appendAdoptionCompletion`, only inside `adoptVerifiedSet` | **No.** Requires a pending authorization matching a durable recorded review, refused if already consumed. |
+| Canon promoted | `writeJsonAtomic(canonPath, …)` — one writer, in `memory-review.ts` | **No.** Behind a TTY check and a typed confirmation. |
+| Quality admission | `value-quality.ts` | **N/A.** Refuses; grants nothing. |
+
+The pattern that made the plan case dangerous and the others safe: **the check
+lives inside the granting function, not at its call sites.** `adoptVerifiedSet`
+verifies its own authorization; `ratifySpec` runs its own gate. Plan
+ratification had its spec check at one call site and not the other, so a second
+caller was one edit away from skipping it. It is inside
+`ratifyPlanWithSource` now.
+
+**Design rule that falls out:** a function that grants a privileged state should
+verify its own preconditions. A caller that has to remember is a caller that
+eventually forgets.
+
 ## Standing rule: capture the trail AND the project state
 
 Every verification run keeps its JSONL trail alongside its screenshots. A
@@ -578,6 +630,52 @@ the default and never prefilled — it has to be chosen — because the gate is
 collecting a person's judgement about scope, and "I considered it and there is
 nothing" is a judgement. `assessNonGoals` is unchanged: it measures *drafted*
 output quality, where a vacuous entry is still theatre.
+
+### The drafter was too eager
+
+Product call, taken 2026-08-11 after the first-run walk. "Add a way to validate
+email addresses" blocked on whether validation means practical syntax or the
+full standards range. The ambiguity is real, but a reasonable implementer picks
+practical syntax and ships, and the person corrects it if wrong.
+
+**Non-blocking ambiguity is the normal condition of software work.** If every
+ordinary request stops at a questionnaire, this is a requirements-gathering tool
+rather than a build tool.
+
+So the drafter now distinguishes two things:
+
+- **A stated assumption is the default.** Where the request leaves a choice open
+  and a competent person would just decide, decide — and record it. The review
+  shows "Decisions made for you", and the person can reject any of them.
+- **A blocking question is rare and expensive.** Only where no reasonable
+  default exists and choosing wrong wastes the whole run. *"Which of the three
+  services should this live in"* blocks. *"How strict should validation be"*
+  does not.
+
+Assumptions are shown as prominently as non-goals, for the same reason: the
+person is accepting a decision they did not make. Drafted non-goals are
+constraints somebody else wrote; assumptions are choices somebody else made.
+Both have to be visible or the review is a rubber stamp.
+
+The test of whether this worked is the same prompt, unchanged, reaching a plan
+with a stated assumption instead of a question.
+
+### Fresh install pins everything to the flagship
+
+Logged here, belongs in the settings / bring-your-own-keys work.
+
+`init` writes tier globs correctly, so the routing floor computes the right tier
+for each task. But it writes only three adapter profiles — `planner`, `manager`,
+`worker` — all pinned to `gpt-5.6-sol` at `routing_tier: "strong"`. The floor
+has nowhere to fall: there is no cheap or standard provider to route down to, so
+every role runs on the most expensive model available.
+
+Measured on the first-run walk: 4 calls, 83,816 tokens, all `gpt-5.6-sol`.
+
+Fixing it today means hand-writing `codex-terra` and `codex-luna` profiles,
+which is the terminal again — so it is not a first-run fix, it is the settings
+surface's job. `adapter.connect` in the Core-actions list below is where it
+belongs.
 
 ### Proposal: the front door
 

@@ -85,6 +85,39 @@ export function SpecReviewPanel({
         ) : null}
       </div>
 
+      {review.assumptions.length > 0 ? (
+        /* A choice the person did not make, shown as prominently as a
+           constraint they did not write. Same principle: accepting somebody
+           else's decision without being told is the failure. */
+        <div className="grid gap-2 rounded-lg border border-navy/25 bg-navy-wash px-5 py-4">
+          <div>
+            <h3 className="m-0 text-[15px] leading-snug font-semibold tracking-[-0.01em] text-ink">
+              Decisions made for you
+            </h3>
+            <p className="mt-1 mb-0 max-w-[620px] text-[13px] leading-relaxed text-muted-foreground">
+              You did not say, so these were chosen. If any is wrong, say so below
+              and Hivemind will plan again.
+            </p>
+          </div>
+          <ul className="m-0 grid list-none gap-1.5 p-0">
+            {review.assumptions.map((assumption) => (
+              <li
+                className="flex items-start gap-2.5 rounded-md border border-navy/20 bg-panel px-3 py-2"
+                key={assumption}
+              >
+                <span className="min-w-0 flex-1 text-[13px] leading-snug break-words text-ink">
+                  {assumption}
+                </span>
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-canvas px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  <Sparkles aria-hidden="true" className="size-3" />
+                  Assumed
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {/* The half people skip, given the weight of the half they do not. */}
       <div className="grid gap-2.5 rounded-lg border border-amber/30 bg-amber-wash px-5 py-4">
         <div>

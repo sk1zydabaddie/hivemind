@@ -39,6 +39,8 @@ export interface SpecReview {
   acceptance: string[];
   /** Non-empty means ratification is refused until these are answered. */
   open_questions: string[];
+  /** Choices the drafter made because the request did not say. */
+  assumptions: string[];
   /** What the person typed, verbatim, when this spec was drafted from a prompt. */
   asked_for: string | null;
 }
@@ -69,6 +71,7 @@ export async function readSpecForReview(repoRoot: string, specId: string): Promi
       drafted_non_goals: bullets(sectionBody(markdown, "Non-goals")),
       acceptance: bullets(sectionBody(markdown, "Acceptance criteria")),
       open_questions: bullets(sectionBody(markdown, "Open questions")),
+      assumptions: bullets(sectionBody(markdown, "Assumptions")),
       asked_for: (sectionBody(markdown, "What was asked for") ?? "").trim() || null
     }
   };

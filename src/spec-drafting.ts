@@ -27,6 +27,10 @@ export interface DraftedSpecProposal {
   non_goals: string[];
   acceptance: string[];
   open_questions: string[];
+  /* Choices made because the request did not say. Recorded so the person can
+     see and reject them: accepting a decision somebody else made is the same
+     hazard as adopting a constraint somebody else wrote. */
+  assumptions: string[];
   /* The ideation gate wants two real ways to do this, with what each costs.
      Asked for here rather than stubbed after the fact: a round assembled to
      satisfy a validator is the same theatre as a placeholder non-goal. */
@@ -50,7 +54,8 @@ export function buildSpecDraftingPrompt(input: {
     '  "goal": "one or two sentences: what should be true when this is done",',
     '  "non_goals": ["what this deliberately will NOT do"],',
     '  "acceptance": ["how someone checks it is done, in plain language"],',
-    '  "open_questions": ["a question whose answer would change what gets built"],',
+    '  "assumptions": ["a choice you made because the request did not say, stated plainly"],',
+    '  "open_questions": ["only where NO reasonable default exists"],',
     '  "alternatives": [{ "title": "a way to do this", "tradeoffs": ["what it costs", "what it buys"] }],',
     '  "self_critique": { "weakest_point": "the weakest thing about this spec", "cut_or_change": "what to cut or change" }',
     "}",
@@ -73,11 +78,27 @@ export function buildSpecDraftingPrompt(input: {
     "- If the request genuinely has no tempting adjacent scope, return an empty",
     "  list. An empty list is an honest answer.",
     "",
-    "OPEN QUESTIONS.",
-    "Raise one only when the answer would change what gets built and the request",
-    "does not settle it. Anything you raise stops the run until a person answers,",
-    "so do not raise preferences, naming, or anything you can reasonably decide.",
-    "If you would otherwise guess at something that changes the outcome, ask.",
+    "AMBIGUITY: assume, do not ask.",
+    "Most requests are underspecified. That is the normal condition of software",
+    "work, not a reason to stop. Where the request leaves a choice open and a",
+    "reasonable implementer would just pick, PICK -- and record the choice in",
+    "\"assumptions\" so the person can see it and say no.",
+    "",
+    "  \"Add a way to validate email addresses\" -> assume practical syntax",
+    "  validation, not RFC-strict parsing and not checking deliverability.",
+    "  State that assumption. Do not ask which one.",
+    "",
+    "OPEN QUESTIONS are rare and expensive.",
+    "An open question STOPS THE RUN until a person answers it. Raise one only",
+    "where no reasonable default exists and choosing wrong wastes the whole run --",
+    "typically because the request does not say WHERE the work goes:",
+    "",
+    "  blocking:     \"Which of the three services should this live in?\"",
+    "  NOT blocking: \"How strict should validation be?\" (assume, and say so)",
+    "  NOT blocking: naming, formatting, library choice, error message wording",
+    "",
+    "If you can imagine a competent person just deciding and getting on with it,",
+    "it is an assumption, not a question. When in doubt, assume and state it.",
     "",
     "ACCEPTANCE.",
     "Write checks a person could run or observe.",
@@ -109,10 +130,14 @@ export function parseDraftedSpec(modelOutput: string): SpecResult<DraftedSpecPro
   const nonGoals = readTextList(value.non_goals);
   const acceptance = readTextList(value.acceptance);
   const openQuestions = readTextList(value.open_questions);
+  const assumptions = readTextList(value.assumptions);
   if (nonGoals === null) return { ok: false, reason: "drafted spec non_goals must be a list of strings" };
   if (acceptance === null) return { ok: false, reason: "drafted spec acceptance must be a list of strings" };
   if (openQuestions === null) {
     return { ok: false, reason: "drafted spec open_questions must be a list of strings" };
+  }
+  if (assumptions === null) {
+    return { ok: false, reason: "drafted spec assumptions must be a list of strings" };
   }
   if (acceptance.length === 0) {
     return { ok: false, reason: "drafted spec must state at least one acceptance check" };
@@ -135,6 +160,7 @@ export function parseDraftedSpec(modelOutput: string): SpecResult<DraftedSpecPro
       non_goals: nonGoals,
       acceptance,
       open_questions: openQuestions,
+      assumptions,
       alternatives,
       self_critique: { weakest_point: weakest, cut_or_change: change }
     }

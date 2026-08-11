@@ -44,6 +44,7 @@ export interface DraftSpecResult {
   status: "draft";
   open_questions: string[];
   non_goals: string[];
+  assumptions: string[];
   alternatives: number;
 }
 
@@ -104,7 +105,8 @@ export async function draftSpecFromPrompt(
       goal: proposal.value.goal,
       nonGoals: proposal.value.non_goals,
       acceptance: proposal.value.acceptance,
-      openQuestions: proposal.value.open_questions
+      openQuestions: proposal.value.open_questions,
+      assumptions: proposal.value.assumptions
     })
   );
   await writeJsonAtomic(activeSpecPath(repoRoot), { version: 1, spec_id: specId.value });
@@ -136,6 +138,7 @@ export async function draftSpecFromPrompt(
       status: "draft",
       open_questions: proposal.value.open_questions,
       non_goals: proposal.value.non_goals,
+      assumptions: proposal.value.assumptions,
       alternatives: proposal.value.alternatives.length
     }
   };
