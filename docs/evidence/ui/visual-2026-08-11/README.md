@@ -75,6 +75,12 @@ Core-side, predating this pass, preserved rather than hidden.
 - **08 / `rejected add src/ledger.js`** renders as Core recorded it. This trail
   predates `plain_reason`; the client defers correctly and needs no change when
   a current Core rejects a patch.
+- **04 / the ship bar shows the SECOND of two states.** A real run first shows
+  "Fresh checks passed; review the change set" with **Show me the changes**;
+  only after that review binds does it become "Confirm this exact change set"
+  with **Ship it**. The `@ship` scenario is rebuilt with `exactReview = true`,
+  so it starts at step two — the first state had never been captured anywhere.
+  Found by the GUI walk in `docs/evidence/e2e-2026-08-11-gui-confirmation`.
 - **01, 06 / the spend meter reads "5 calls · 622.6K"** — the whole run's bill on
   a trail cut when three of five calls had been made. The ledger is a file and
   the trail carries no per-call resource event, so unlike the lease store it

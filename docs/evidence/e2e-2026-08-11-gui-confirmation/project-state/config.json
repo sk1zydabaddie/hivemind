@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "stack": "typescript-node",
+  "repo_root": "C:/Users/ethan/AppData/Local/Temp/claude/D--Projects-Hivemind-AI/4c2693c4-b685-4ac6-abd5-e3036f31c72b/scratchpad/guirepo",
+  "base_branch": "master",
+  "test_command": "npm test",
+  "allowed_globs": [],
+  "forbidden_globs": [
+    "**/*.lock",
+    "**/package.json",
+    "**/.git/**"
+  ],
+  "low_globs": [
+    "docs/**",
+    "**/*.md",
+    "**/*.txt"
+  ],
+  "medium_globs": [
+    "src/**",
+    "app/**",
+    "lib/**",
+    "test/**",
+    "tests/**"
+  ],
+  "high_globs": [
+    "package.json",
+    "tsconfig.json",
+    "**/*.config.*"
+  ],
+  "critical_globs": [
+    ".github/**",
+    "infra/**",
+    "**/auth/**"
+  ],
+  "manager_autonomy": {
+    "level": "auto"
+  },
+  "execution": {
+    "max_concurrent_workers": 2
+  },
+  "resource_policy": {
+    "run_ceiling": {
+      "tokens": 300000
+    },
+    "session_ceiling": {
+      "tokens": 3000000
+    }
+  }
+}

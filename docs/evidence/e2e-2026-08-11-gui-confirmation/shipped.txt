@@ -1,0 +1,6 @@
+ac5500e Hivemind adoption V-3325163c-8918-44bd-b235-6b17e2c3ade9
+43acfd8 base
+
+ src/shout.js       |  3 +++
+ test/shout.test.js | 12 ++++++++++++
+ 2 files changed, 15 insertions(+)

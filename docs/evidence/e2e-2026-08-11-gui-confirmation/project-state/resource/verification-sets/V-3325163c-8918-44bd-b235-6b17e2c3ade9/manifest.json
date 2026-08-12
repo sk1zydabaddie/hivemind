@@ -1,0 +1,163 @@
+{
+  "version": 1,
+  "verification_id": "V-3325163c-8918-44bd-b235-6b17e2c3ade9",
+  "created_at": "2026-08-12T03:53:15.496Z",
+  "base_branch": "master",
+  "base_commit": "43acfd869f62d4b9f165d6b70dd70413af66afa5",
+  "task_ids": [
+    "T-001",
+    "T-002"
+  ],
+  "inputs": [
+    {
+      "task_id": "T-001",
+      "contract_path": ".hivemind/tasks/T-001.contract.json",
+      "contract_sha256": "33ba8e22f1136de1ef54ccc240c2171d4b698c1aa825fede5c9afe808970d10e",
+      "patch_path": ".hivemind/patches/T-001/diff.patch",
+      "patch_sha256": "ffcd91f3d4a13ef0b1ff5090e4c0870a4f5fa19a982da1421060b715b0e12043"
+    },
+    {
+      "task_id": "T-002",
+      "contract_path": ".hivemind/tasks/T-002.contract.json",
+      "contract_sha256": "e888e5e1df0ce8de5aa29a68b2e0b93a11623844b4531a987831d7c17e7412c5",
+      "patch_path": ".hivemind/patches/T-002/diff.patch",
+      "patch_sha256": "e0d00b25a0e4394ddf7d15a33d34edd0337f33763f335617c607f2a9a0af48f8"
+    }
+  ],
+  "changed_files": [
+    "src/shout.js",
+    "test/shout.test.js"
+  ],
+  "result_tree": "656f61ad4fb3d8b70c3c81b70a4097bd799e0a71",
+  "config_path": ".hivemind/config.json",
+  "config_sha256": "6f81bcd103f5be85d7b908ff8b72d2c0baea2f5405e14e8e8dbe37b9e5220b35",
+  "verification": {
+    "audit": {
+      "mode": "full",
+      "reason": "structured verification inventory is missing",
+      "changed_files": [
+        "src/shout.js",
+        "test/shout.test.js"
+      ],
+      "impact_set": [
+        "src/shout.js",
+        "test/shout.test.js"
+      ],
+      "selected_checks": [
+        {
+          "id": "full-suite",
+          "command": "npm test",
+          "sources": [
+            "fail-safe"
+          ]
+        }
+      ],
+      "skipped_checks": [],
+      "graph_fingerprint": null,
+      "canon_ids": [],
+      "contract_validity_checks": [
+        {
+          "task_id": "T-001",
+          "id": "contract-validity:T-001",
+          "command": "node --experimental-default-type=module -e \"import('./src/shout.js').then(({shout}) => { if (shout('wow!') !== 'WOW!!') throw new Error('invalid shout behavior'); })\""
+        },
+        {
+          "task_id": "T-002",
+          "id": "contract-validity:T-002",
+          "command": "node --experimental-default-type=module -e \"import('./src/shout.js').then(({shout}) => { if (shout('hello') !== 'HELLO!' || shout('wow!') !== 'WOW!!') throw new Error('invalid shout behavior'); })\""
+        }
+      ],
+      "structural_oracle": {
+        "kind": "structural",
+        "status": "unknown",
+        "advisory_only": true,
+        "runtime_coverage": "not_measured",
+        "graph_fingerprint": null,
+        "impact_files": [
+          "src/shout.js",
+          "test/shout.test.js"
+        ],
+        "covered_impact_files": [],
+        "uncovered_impact_files": [],
+        "unknown_impact_files": [
+          "src/shout.js",
+          "test/shout.test.js"
+        ],
+        "check_associations": [],
+        "unknown_reasons": [
+          "structured verification inventory is missing"
+        ],
+        "limitations": [
+          "verification inventory entry_files are operator-declared; Hivemind does not prove that each command executes them"
+        ]
+      }
+    },
+    "checks": [
+      {
+        "id": "contract-validity:T-001",
+        "command": "node --experimental-default-type=module -e \"import('./src/shout.js').then(({shout}) => { if (shout('wow!') !== 'WOW!!') throw new Error('invalid shout behavior'); })\"",
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      {
+        "id": "contract-validity:T-002",
+        "command": "node --experimental-default-type=module -e \"import('./src/shout.js').then(({shout}) => { if (shout('hello') !== 'HELLO!' || shout('wow!') !== 'WOW!!') throw new Error('invalid shout behavior'); })\"",
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      {
+        "id": "full-suite",
+        "command": "npm test",
+        "exit_code": 0,
+        "stdout": "\n> test\n> node --test\n\nTAP version 13\n# (node:27816) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/ethan/AppData/Local/Temp/claude/D--Projects-Hivemind-AI/4c2693c4-b685-4ac6-abd5-e3036f31c72b/scratchpad/guirepo/.hivemind/integration/worktrees/20260812-035314438Z/test/shout.test.js is not specified and it doesn't parse as CommonJS.\n# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.\n# To eliminate this warning, add \"type\": \"module\" to C:\\\\Users\\\\ethan\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--Projects-Hivemind-AI\\\\4c2693c4-b685-4ac6-abd5-e3036f31c72b\\\\scratchpad\\\\guirepo\\\\.hivemind\\\\integration\\\\worktrees\\\\20260812-035314438Z\\\\package.json.\n# (Use `node --trace-warnings ...` to show where the warning was created)\n# Subtest: shout converts text to uppercase and appends an exclamation mark\nok 1 - shout converts text to uppercase and appends an exclamation mark\n  ---\n  duration_ms: 0.7852\n  type: 'test'\n  ...\n# Subtest: shout appends an exclamation mark even when input already ends with one\nok 2 - shout appends an exclamation mark even when input already ends with one\n  ---\n  duration_ms: 0.117\n  type: 'test'\n  ...\n1..2\n# tests 2\n# suites 0\n# pass 2\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 99.7179\n",
+        "stderr": ""
+      }
+    ],
+    "runtime_coverage": {
+      "kind": "runtime_changed_line",
+      "status": "unconfigured",
+      "advisory_only": true,
+      "coordinate_space": "post_patch_applied_tree",
+      "configured": false,
+      "command": null,
+      "report_path": null,
+      "report_hash": null,
+      "applied_tree": null,
+      "executable_changed_lines": 0,
+      "hit_changed_lines": 0,
+      "ratio": null,
+      "covered_lines": [],
+      "uncovered_lines": [],
+      "ignored_non_executable_lines": [],
+      "unknown_files": [],
+      "unknown_reasons": [],
+      "command_result": null,
+      "limitations": [
+        "LCOV DA records define executable lines; changed lines absent from DA are ignored only when the changed file has an LCOV source record",
+        "the configured coverage command is responsible for executing against the supplied shadow worktree; Hivemind binds its fresh report to the unchanged staged tree before and after execution"
+      ]
+    },
+    "tests": "pass"
+  },
+  "oracle": {
+    "coverage_configured": false,
+    "binding": false,
+    "task_tier": "medium",
+    "status": "unconfigured",
+    "decision": "proceed",
+    "diagnostic": "coverage is not configured; the structural oracle remains advisory and the M7.6d floor does not bind",
+    "uncovered_changed_lines": [],
+    "uncovered_impact_files": [],
+    "unknown_files": [
+      "src/shout.js",
+      "test/shout.test.js"
+    ],
+    "unknown_reasons": [
+      "structured verification inventory is missing"
+    ],
+    "recommendation": null,
+    "automatic_generation_launched": false
+  }
+}

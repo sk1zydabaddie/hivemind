@@ -540,24 +540,47 @@ itself (~176K: one drafting call, one planning call, one worker call). Worth
 stating plainly, because connecting three agents is a third of a first run's
 bill, and the screen says so before the click.
 
-### What this walk exercised, and what it did not
+### Confirmed by clicking, not only by dispatching
 
-Precision matters here, because the previous three claims were too loose.
+The action-level walk above proved every typed action works from a clean
+install, and said plainly that it had *not* pressed the buttons that send them.
+That gap was closed the same day: `docs/evidence/e2e-2026-08-11-gui-confirmation`
+drives the release build over the WebView2 debugger — real clicks, real
+`Control+Enter` in the real composer, **no action dispatched directly** — from
+`Set up this folder` through three `Connect` buttons, the prompt, the review,
+`Approve and start`, and the ship. It reached a shipped commit whose tests pass.
 
-- **Exercised:** every typed action the desktop sends, through the same
-  `executeWorkspaceAction` the Tauri bridge calls, in UI order, against a real
-  agent and a real repository. Nothing was hand-written; no terminal command
-  touched the project beyond `git init` and the first commit, which is the
-  person's own repository existing.
-- **Not exercised:** the clicking. The buttons that dispatch these actions were
-  read for wiring rather than pressed. A control could still be mislabelled or
-  absent for one of these steps without this walk noticing — which is exactly
-  the seam class this file keeps recording, so the next real GUI run should
-  confirm the controls, not the actions.
-- **Assumed from earlier evidence:** nothing. The `e2e-2026-08-11-textkit` run
-  had already gone prompt-to-shipped *through the GUI*, but it needed a terminal
-  to get there; this walk is the half that was missing, and the two together are
-  what closes the question.
+Every control did what its label said. Two things looked like defects and were
+the driver's fault, recorded so nobody chases them: `Set it up` on the setup
+screen opens the *agent* dialog and initialising is `Set up this folder` (the
+first script clicked the wrong one), and a visible-but-disabled `Ship it` was
+two CDP clients driving one app so `busy` was true from the other's in-flight
+action.
+
+#### What it found: shipping is two clicks, and the evidence showed one
+
+A real run's ship bar first reads **"Fresh checks passed; review the change
+set"** with **Show me the changes**. Only after that does it become **"Confirm
+this exact change set"** with **Ship it**. Core requires the review to bind the
+exact set before it will authorise a merge — `exactReview` is false until an
+`adoption.reviewed` event exists — so the two-step is correct.
+
+But `04-ship-bar.png` shows only the second state, because the `@ship` replay
+scenario is rebuilt with `exactReview = true`. **The first state a person
+actually meets had never been captured**, in any screenshot or scenario. That is
+the synthesized-boolean cost showing up exactly where this file predicted it
+would: a state reconstructed to be *interesting* skipped the state that comes
+before it. The capture-at-the-pause procedure fixes this too — a snapshot taken
+when the ship bar first appears is the missing one.
+
+#### Cost, measured against the estimate
+
+414,536 tokens against an estimate of 294,500. The three probes were within 1%
+(118,794 against 117,890); the run half doubled because the planner wrote a
+**two-task** plan where the previous prompt's was one. So the variance is plan
+shape, not estimation error, and the useful first-run number is: **connecting
+three agents costs ~118K regardless, and everything after depends on how many
+tasks the planner writes.**
 
 ### The four walls that used to be here, and what removed each
 
@@ -1027,47 +1050,110 @@ globs had been customised would have silently reset them. Two sources of truth
 for one default, and the second one clobbered the first. `project.init` is now a
 thin wrapper that adds nothing.
 
-#### Measured: subagent suppression is not verifiable, as predicted
+### HIGHEST-SEVERITY OPEN ITEM: nested sub-agents cannot be verified away
 
-The probe's one unverified capability is the strongest evidence yet for an open
-finding, and it turns a prediction into a measurement.
+Promoted here from a documentation caveat on 2026-08-11, because the probe
+turned a prediction into a measurement. Read this before picking a fix.
 
-`Hivemind_Build_Progress.md` records that refusing provider-owned ultra modes
-closes only *inspectable* paths, and states the limit explicitly: Hivemind
-cannot detect a provider-side or session-level mode that is absent from the
-profile, the invocation and the environment. That was reasoning about what
-*could* be observed. The probe now reports what *is* observed:
+`Hivemind_Build_Progress.md` recorded that refusing provider-owned ultra modes
+closes only *inspectable* paths, and stated the limit: Hivemind cannot detect a
+provider-side or session-level mode absent from the profile, the invocation and
+the environment. That was reasoning about what *could* be observed. The probe
+now reports what *is* observed:
 
 ```
 UNVERIFIED   Does not start agents of its own   asked off   got v2
 ```
 
-Codex's own `turn_context` reports `multi_agent_version: "v2"` — that a
-sub-agent capability exists — and reports **nothing at all** about whether it is
-switched off for this profile. So suppression is not merely undetected, it is
-**unreportable from the provider's own resolved context**, which is the readback
-that verifies every other capability. The finding is no longer a theory.
+Codex's `turn_context` reports `multi_agent_version: "v2"` — that the capability
+exists — and reports **nothing** about whether it is switched off for this
+profile. It is the same record that yields the model, the sandbox and the
+approval policy, so this is not a gap in our reading: **suppression is
+unreportable from the provider's own resolved context.** No probe we write can
+close it, because there is nothing on the other side to read.
 
-Why this raises the stakes rather than merely documenting them: Hivemind's whole
-execution model is one worker, one lease, one scope, one diff. A worker that
-quietly fans out underneath us breaks all four **invisibly** — the extra work
-carries no lease, touches files outside the scope the plan approved, and lands
-in a diff attributed to a single task. And because aggregate usage is not
-established to include nested calls, it would also under-report spend, so the
-ceilings would not catch it either. Every guard this project has would report
-normal.
+#### What actually breaks, corrected
 
-What would close it, in order of how much it would buy:
+An earlier version of this note — and the commit message that shipped it — said
+a nested fan-out breaks all four of one-worker / one-lease / one-scope /
+one-diff. **That was wrong, and the error mattered**, because it aimed the fix
+at the wrong layer. Checked against `decision.ts` and `analyze.ts`:
 
-1. a provider that reports its resolved sub-agent setting in the same startup
-   context it already reports the model and sandbox in — then the probe verifies
-   it with no new mechanism;
-2. failing that, a behavioural probe: a task whose only honest completion needs
-   fan-out, checked for whether more than one process appeared. Weaker, because
-   absence of fan-out on one prompt is not proof of suppression;
-3. failing both, the current answer is correct and must stay visible: report it
-   `unverified` on the screen, every time, rather than letting an unchecked
-   assumption sit behind a green mark.
+| Invariant | Survives a fan-out? | Why |
+| --- | --- | --- |
+| One scope | **Yes** | `decideOp` rejects `outside_allowed_files` on the *patch*. Enforcement is on the artifact, not on the agent's behaviour, so it does not care how many agents produced it. |
+| One diff | **Yes** | Same gate. Everything the worktree contains is analysed as one change set against one contract. |
+| One lease | **Yes** | The lease is over files, and the diff is what gets checked against it. |
+| One worker | **No** | Hivemind decides concurrency; a nested fan-out runs provider calls it never authorised. |
+
+That is the architecture working: **scope is enforced where the work lands, not
+where it is produced.** It is exactly why this design is defensible, and stating
+otherwise undersold it.
+
+So the hole is real but narrower and differently shaped than "correctness":
+
+1. **Cost control — the serious one.** If aggregate usage does not include
+   nested calls, every ceiling under-enforces by an unknown factor. Spend is the
+   one place where under-reporting is both silent and expensive, and there is
+   **no client-side accounting that can see spend the provider does not
+   report.** Reserved-versus-effective overshoot detection cannot help: it
+   compares against the same reported number.
+2. **Provenance.** `routing.observed` records that one provider at one tier did
+   the work. If a sub-agent on a different model did part of it, the routing
+   evidence is wrong — and routing-weight memory proposals *learn* from that
+   evidence, so a wrong attribution teaches the project a wrong preference.
+3. **Concurrency ownership.** `max_concurrent_workers` governs Hivemind's
+   workers, not calls made underneath one. Affects rate limits and quota
+   pacing rather than correctness.
+
+#### Closure options, in order of what each buys
+
+**A. The provider reports its resolved sub-agent setting.** One more field in
+the same `turn_context` that already carries model and sandbox.
+*Buys:* complete verification with **zero new mechanism** — the probe compares
+it like everything else, at connect time and re-checkably every run. It is the
+only option that actually closes the hole.
+*Costs:* nothing on our side.
+*Available today:* **No.** Entirely dependent on the provider exposing something
+it currently does not. We can file the ask; we cannot ship it.
+
+**B. Reconcile one real day's spend against the provider's own billing.**
+*Buys:* an answer to the question that decides how bad this is — *does aggregate
+usage include nested calls?* If it does, ceilings hold and severity collapses to
+provenance alone. If it does not, we learn the size of the gap.
+*Costs:* one real run plus a human reading their ChatGPT usage page. Manual,
+one-off, not automatable, and only as precise as that page.
+*Available today:* **Yes** — and it is the cheapest thing that would most reduce
+the uncertainty. **Recommended first move**, because A is unavailable and every
+other option is guesswork until this is known.
+
+**C. Keep refusing what is inspectable and report the rest as unverified.**
+*Buys:* closes every path we *can* see (profile, invocation, environment), and
+keeps the gap on screen at connect time instead of behind a green mark.
+*Costs:* nothing; already shipped.
+*Available today:* **Yes, in place.** This is the floor, not a fix — it makes the
+hole visible without making it smaller.
+
+**D. Watch the worker's process tree.** Count processes in the group Hivemind
+already spawns detached for `kill(-pgid)`.
+*Buys:* would catch a fan-out that spawns OS processes.
+*Costs:* small.
+*Available today:* Yes, but **evaluated and not recommended** — a coding agent's
+sub-agents are almost certainly further API calls inside one process, not new
+processes, so this would report clean while the thing it is looking for happens.
+Worth building only if someone first demonstrates the fan-out is process-shaped.
+
+**E. A behavioural probe: a prompt whose honest completion needs fan-out.**
+*Buys:* weak evidence from our side with no provider cooperation.
+*Costs:* a probe call, and a real risk of false confidence — absence of fan-out
+on one prompt is not suppression, and a green result here would be worse than no
+result.
+*Available today:* Yes; **not recommended** for that reason.
+
+**The reasoning in one line:** only **A** closes it and it is not ours to build,
+so the honest sequence is **B to size the risk, C to keep it visible, and A as
+the ask** — with D and E written down as considered and rejected so nobody
+rebuilds them.
 
 #### The probe, and what a real agent actually reports
 

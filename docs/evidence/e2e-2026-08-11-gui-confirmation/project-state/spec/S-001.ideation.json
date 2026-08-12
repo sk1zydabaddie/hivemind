@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "spec_id": "S-001",
+  "goal": "Add a `shout(text)` helper in `src/shout.js` that returns the input converted to uppercase with one exclamation mark appended. Add dedicated tests in `test/shout.test.js`.",
+  "status": "ratifiable",
+  "rounds": [
+    {
+      "index": 1,
+      "alternatives": [
+        {
+          "title": "CommonJS function export",
+          "tradeoffs": [
+            "Requires matching CommonJS import syntax in the test.",
+            "Fits projects using `require` and `module.exports`."
+          ]
+        },
+        {
+          "title": "ES module named export",
+          "tradeoffs": [
+            "Requires matching ES module import syntax in the test.",
+            "Provides explicit named-module semantics but depends on the project already supporting ES modules."
+          ]
+        }
+      ],
+      "self_critique": {
+        "weakest_point": "The request does not specify the project’s module system or behavior for non-string input.",
+        "cut_or_change": "Keep the string-input assumption, but verify the existing package and test conventions before choosing the export syntax."
+      },
+      "substantive_change": true,
+      "orchestrator_calls_convergence": true
+    }
+  ],
+  "divergence_complete": true,
+  "convergence": {
+    "user": true,
+    "orchestrator": true
+  },
+  "consecutive_non_substantive_rounds": 0,
+  "diminishing_returns_signal": false
+}

@@ -1,0 +1,101 @@
+{
+  "tasks": [
+    {
+      "task_id": "T-001",
+      "title": "Implement the shout helper",
+      "task_type": "deterministic",
+      "routing_task_type": "api",
+      "mode": "write",
+      "agent_role": "builder",
+      "draft_scope": {
+        "allowed_files": [
+          "src/shout.js"
+        ],
+        "allowed_file_intents": {
+          "src/shout.js": "create"
+        },
+        "read_only_files": [
+          "package.json",
+          "src/capitalize.js"
+        ],
+        "forbidden_files": [
+          "package.json",
+          "src/capitalize.js"
+        ],
+        "must_not_change": [
+          "package.json",
+          "src/capitalize.js"
+        ]
+      },
+      "depends_on": [],
+      "parallel_safe": true,
+      "acceptance_criterion": "src/shout.js exports shout(text), and shout(\"hello\") returns \"HELLO!\".",
+      "deterministic_validity_check": "node --experimental-default-type=module -e \"import('./src/shout.js').then(({shout}) => { if (shout('wow!') !== 'WOW!!') throw new Error('invalid shout behavior'); })\"",
+      "required_tests": [
+        "node --experimental-default-type=module -e \"import('./src/shout.js').then(({shout}) => { if (shout('hello') !== 'HELLO!') throw new Error('invalid shout behavior'); })\""
+      ],
+      "patch_requirements": [
+        "Create only src/shout.js.",
+        "Append exactly one exclamation mark unconditionally after uppercase conversion.",
+        "Follow the existing ES module export convention."
+      ],
+      "critical_path_approved": false
+    },
+    {
+      "task_id": "T-002",
+      "title": "Add dedicated shout tests",
+      "task_type": "deterministic",
+      "routing_task_type": "testing",
+      "mode": "write",
+      "agent_role": "builder",
+      "draft_scope": {
+        "allowed_files": [
+          "test/shout.test.js"
+        ],
+        "allowed_file_intents": {
+          "test/shout.test.js": "create"
+        },
+        "read_only_files": [
+          "package.json",
+          "src/capitalize.js"
+        ],
+        "forbidden_files": [
+          "package.json",
+          "src/capitalize.js"
+        ],
+        "must_not_change": [
+          "package.json",
+          "src/capitalize.js"
+        ]
+      },
+      "depends_on": [
+        "T-001"
+      ],
+      "parallel_safe": false,
+      "acceptance_criterion": "test/shout.test.js contains dedicated passing assertions for uppercase conversion and unconditional exclamation-mark appending, and the resulting diff changes only src/shout.js and test/shout.test.js.",
+      "deterministic_validity_check": "node --experimental-default-type=module -e \"import('./src/shout.js').then(({shout}) => { if (shout('hello') !== 'HELLO!' || shout('wow!') !== 'WOW!!') throw new Error('invalid shout behavior'); })\"",
+      "required_tests": [
+        "npm test",
+        "Review test/shout.test.js for assertions covering uppercase conversion and unconditional exclamation-mark appending."
+      ],
+      "patch_requirements": [
+        "Create only test/shout.test.js.",
+        "Use the repository's node:test conventions.",
+        "Assert shout(\"hello\") equals \"HELLO!\".",
+        "Assert an input already ending in ! receives another exclamation mark.",
+        "Do not modify any existing file."
+      ],
+      "critical_path_approved": false
+    }
+  ],
+  "execution_groups": [
+    {
+      "group_id": "G-1",
+      "mode": "sequence",
+      "task_ids": [
+        "T-001",
+        "T-002"
+      ]
+    }
+  ]
+}
