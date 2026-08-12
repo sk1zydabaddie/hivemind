@@ -34,6 +34,25 @@ export interface CatalogueAgent {
   timeout_ms: number;
   usage_parser: "codex-jsonl" | "codex-text" | "claude-json" | null;
   /**
+   * How this harness is kept out of a shell, which is now the PRIMARY
+   * confinement mechanism rather than a fallback.
+   *
+   * Hivemind does not need the agent to have a shell: Core runs the project's
+   * checks itself, captures the diff itself and decides admission itself. So
+   * the strongest posture is simply not to grant one -- it turns confinement
+   * and "does not commit" from properties of an OS sandbox nobody reports into
+   * properties of the argv we are holding.
+   *
+   * `sandbox` means this harness has no tool-level deny and is bounded by an
+   * OS sandbox instead; `none` means neither is available, which is a refusal.
+   */
+  shell_denial: {
+    mechanism: "tool-allowlist" | "config-deny" | "agent-spec" | "sandbox" | "none";
+    /** How the denial is confirmed to have TAKEN EFFECT, not merely accepted. */
+    confirmed_by: "runtime-readback" | "resolved-config" | "behavioural-canary" | "unconfirmed";
+    detail: string;
+  };
+  /**
    * How the probe reads back what took effect. `codex-rollout` reads the
    * session record the run writes; `none` means this agent reports nothing we
    * can compare a request against, and every capability that needs a readback
@@ -64,6 +83,50 @@ function codexInvoke(model: string): string[] {
     : ["codex", ...args];
 }
 
+/**
+ * Claude Code with no shell at all.
+ *
+ * `--tools` is a positive allowlist of the built-in tools, so Bash is absent
+ * rather than denied -- which is a stronger statement, and it is the thing that
+ * makes Claude Code adaptable on native Windows at all. Its OS sandbox covers
+ * the shell only, is unsupported on native Windows, and BY DEFAULT falls back
+ * to running the command unsandboxed when it cannot start. That last one is the
+ * exact silent-downgrade shape this project has shipped twice. Having no shell
+ * sidesteps all three.
+ *
+ * `--permission-mode acceptEdits` rather than any of the bypass modes: it
+ * auto-approves file edits, which is the only thing this profile can do, and
+ * the modes that would approve more are the ones the preflight refuses.
+ *
+ * Deliberately NOT `--bare`, despite it being the documented recommendation for
+ * scripted callers. Bare mode never reads OAuth credentials and requires an
+ * ANTHROPIC_API_KEY, which would break the one positioning rule this product
+ * has: Hivemind holds no provider credential and runs on the subscription the
+ * person already pays for.
+ */
+function claudeInvoke(model = "sonnet"): string[] {
+  const args = [
+    "-p",
+    "--model",
+    model,
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    /* The tools a worker needs to produce a diff, and nothing else. */
+    "--tools",
+    "Read,Write,Edit,Glob,Grep",
+    /* Belt as well as braces: if a future version changes what `--tools`
+       omits, an explicit deny still names the shell. */
+    "--disallowedTools",
+    "Bash",
+    "--permission-mode",
+    "acceptEdits"
+  ];
+  return process.platform === "win32"
+    ? ["cmd.exe", "/d", "/s", "/c", "claude.cmd", ...args]
+    : ["claude", ...args];
+}
+
 export const agentCatalogue: CatalogueAgent[] = [
   {
     id: "codex-terra",
@@ -78,6 +141,12 @@ export const agentCatalogue: CatalogueAgent[] = [
     context_window: 272_000,
     timeout_ms: 900_000,
     usage_parser: "codex-jsonl",
+    shell_denial: {
+      mechanism: "sandbox",
+      confirmed_by: "runtime-readback",
+      detail:
+        "Codex has no tool-level deny, so its boundary is the OS sandbox instead -- and it is the one harness here that reports the sandbox it resolved, which is why it is also the one that keeps its shell.",
+    },
     readback: "codex-rollout",
     invoke: codexInvoke("gpt-5.6-terra")
   },
@@ -94,6 +163,12 @@ export const agentCatalogue: CatalogueAgent[] = [
     context_window: 272_000,
     timeout_ms: 900_000,
     usage_parser: "codex-jsonl",
+    shell_denial: {
+      mechanism: "sandbox",
+      confirmed_by: "runtime-readback",
+      detail:
+        "Codex has no tool-level deny, so its boundary is the OS sandbox instead -- and it is the one harness here that reports the sandbox it resolved, which is why it is also the one that keeps its shell.",
+    },
     readback: "codex-rollout",
     invoke: codexInvoke("gpt-5.6-luna")
   },
@@ -110,6 +185,12 @@ export const agentCatalogue: CatalogueAgent[] = [
     context_window: 272_000,
     timeout_ms: 900_000,
     usage_parser: "codex-jsonl",
+    shell_denial: {
+      mechanism: "sandbox",
+      confirmed_by: "runtime-readback",
+      detail:
+        "Codex has no tool-level deny, so its boundary is the OS sandbox instead -- and it is the one harness here that reports the sandbox it resolved, which is why it is also the one that keeps its shell.",
+    },
     readback: "codex-rollout",
     invoke: codexInvoke("gpt-5.6-sol")
   },
@@ -133,7 +214,13 @@ export const agentCatalogue: CatalogueAgent[] = [
     timeout_ms: 900_000,
     usage_parser: "claude-json",
     readback: "none",
-    invoke: null
+    shell_denial: {
+      mechanism: "tool-allowlist",
+      confirmed_by: "runtime-readback",
+      detail:
+        "`--tools` is a positive allowlist of built-in tools, so the shell is absent rather than denied. Confirmed by the tools array the run reports at startup -- which is why this cannot be claimed until one real run has been read.",
+    },
+    invoke: claudeInvoke()
   },
   {
     id: "opencode",
@@ -142,7 +229,7 @@ export const agentCatalogue: CatalogueAgent[] = [
     subscription: "whatever provider you point it at",
     status: "unsupported",
     caveat:
-      "Nothing in Hivemind has been written for it: no argv, no usage parsing, and no run has ever gone through it. It is listed so the absence is visible rather than looking like an oversight.",
+      "It can be told to deny itself a shell and helper agents, and it will print the settings it resolved without being run -- which is more than any other agent here offers for free. What is missing is the reading of what it spends, because no run has ever gone through it, so nothing yet knows where its token counts appear. Connecting it runs the same probe as any other agent.",
     model: null,
     routing_tier: "standard",
     cost_rank: 10,
@@ -150,6 +237,60 @@ export const agentCatalogue: CatalogueAgent[] = [
     timeout_ms: 900_000,
     usage_parser: null,
     readback: "none",
+    shell_denial: {
+      mechanism: "config-deny",
+      confirmed_by: "resolved-config",
+      detail:
+        "`permission.bash: \"deny\"` in the project's own config. `opencode agent list` prints the resolved table for free and shows the rule landing on every agent -- but the print does not establish which rule WINS, so the denial is corroborated by a run that is told to use a shell and does not.",
+    },
+    invoke: null
+  },
+  {
+    /* Refused as measured, not as an oversight, and the reason is specific
+       enough to re-check when it changes. See docs/PROVIDER-DISCOVERY.md. */
+    id: "grok-build",
+    label: "Grok Build",
+    harness: "grok",
+    subscription: "an X.AI plan or an XAI_API_KEY",
+    status: "unverified",
+    caveat:
+      "Its flags are the best shaped of any agent here -- a real sandbox, a positive tool allowlist, and a switch that turns off helper agents. What is unknown is whether it reports any of that back once it runs, and that cannot be found out without an account. Connecting it runs the same probe as any other agent.",
+    model: null,
+    routing_tier: "standard",
+    cost_rank: 10,
+    context_window: 256_000,
+    timeout_ms: 900_000,
+    usage_parser: null,
+    readback: "none",
+    shell_denial: {
+      mechanism: "tool-allowlist",
+      confirmed_by: "unconfirmed",
+      detail:
+        "`--tools` allows exactly the built-in tools named and `--no-subagents` turns off helper agents. Nothing is known about whether either is reported back, because reading its version is free and running it is not.",
+    },
+    invoke: null
+  },
+  {
+    id: "kimi-code",
+    label: "Kimi Code",
+    harness: "kimi",
+    subscription: "a Kimi account or a Moonshot API key",
+    status: "unsupported",
+    caveat:
+      "Hivemind will not run this one against your code, and the reason is specific: its working-directory setting is not a boundary. Its own file-writing tool accepts any absolute path and tells the model in so many words that an absolute path is how to write outside the working directory -- and its non-interactive mode approves every action without asking. That was measured by running the check the tool itself uses, not inferred from its documentation.",
+    model: null,
+    routing_tier: "standard",
+    cost_rank: 10,
+    context_window: 256_000,
+    timeout_ms: 900_000,
+    usage_parser: null,
+    readback: "none",
+    shell_denial: {
+      mechanism: "agent-spec",
+      confirmed_by: "unconfirmed",
+      detail:
+        "Its shell CAN be removed -- the agent specification is a positive list of tools and dropping one line removes it. It would not help: the file-writing tool escapes the working directory on its own, so there is nothing for a shell denial to protect.",
+    },
     invoke: null
   }
 ];

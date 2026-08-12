@@ -1,7 +1,14 @@
 # Universal provider support: the contract, and what each provider can actually answer
 
-Discovery pass, 2026-08-12. **No paid calls were made.** Everything below comes
-from one of three sources, and each claim says which:
+Discovery pass, 2026-08-12, updated the same day after the free installs.
+**No paid calls were made.**
+
+> **Update.** Grok Build 1.0.3 and Kimi Code 1.49.0 were installed into a
+> temporary directory and dry-run, so their rows are now CLI rather than DOCS.
+> Kimi's verdict moved from *refused as documented* to **refused as measured**,
+> which is a stronger claim and a worse finding: see below.
+
+Everything below comes from one of three sources, and each claim says which:
 
 | Source | What it is | Strength |
 | --- | --- | --- |
@@ -10,8 +17,15 @@ from one of three sources, and each claim says which:
 | **NONE** | nobody has run it | A question, not a finding |
 
 Versions dry-run here: `codex-cli 0.147.0`, `claude 2.1.229`, `opencode
-1.18.15`. Grok Build and Kimi Code are not installed, so every claim about them
-is DOCS.
+1.18.15`, `grok 1.0.3`, `kimi-cli 1.49.0`. The last two were installed into a
+temporary directory (`GROK_BIN_DIR`, a throwaway venv) and never authenticated;
+installation needs no account, running does.
+
+**One trap worth recording:** the npm package named `kimi-code` is **not**
+Moonshot's. It is a third-party wrapper that proxies Claude Code to Kimi models.
+Installing it and calling the result "Kimi Code" would have poisoned the whole
+discovery. The official distribution is `kimi-cli` on PyPI, whose summary reads
+"Kimi Code CLI is your next CLI agent."
 
 ---
 
@@ -30,11 +44,40 @@ offers a way to make it a boundary, by denying the shell tool outright:
 
 | Provider | How the shell is removed | Source |
 | --- | --- | --- |
-| Claude Code | `--tools "Read,Edit,Write"` — a positive allowlist of built-in tools | CLI |
-| OpenCode | `permission.bash: "deny"` in config | CLI (schema) |
-| Grok Build | `--disallowed-tools` / `--deny` | DOCS |
-| Kimi Code | not documented | NONE |
+| Claude Code | `--tools "Read,Write,Edit,Glob,Grep"` — a positive allowlist, so the shell is *absent* rather than denied | CLI |
+| OpenCode | `permission.bash: "deny"` in the project's config | CLI |
+| Grok Build | `--tools` allowlist, plus `--no-subagents` | CLI |
+| Kimi Code | drop `kimi_cli.tools.shell:Shell` from an `--agent-file` spec | CLI |
 | Codex | not available — the sandbox is the boundary instead | CLI |
+
+**Built, in `src/agent-catalogue.ts`.** Each entry now carries a `shell_denial`
+recording the mechanism *and how the denial is confirmed to have taken effect* —
+because "we passed the flag" is not "the flag worked", which is the entire
+lesson of this project.
+
+| Provider | Confirmed by | Status today |
+| --- | --- | --- |
+| Claude Code | the tools array the run reports at startup | **needs one paid run** |
+| OpenCode | the resolved permission table, printed free | **accepted, precedence unproven** |
+| Grok Build | nothing yet | unconfirmed — needs an account |
+| Kimi Code | n/a — denial would not help | refused for another reason |
+
+Two of these were checked for free today:
+
+- **Claude Code's argv is valid.** Running the whole shell-denying invocation
+  with one deliberately invalid `--json-schema` produced *only*
+  `Error: --json-schema is not valid JSON` — every other flag was accepted by
+  `claude 2.1.229` before any call was made. That establishes **acceptance**,
+  not effect, which is exactly the distinction the contract is built on.
+- **OpenCode accepts the deny, and the print does not prove it wins.** With
+  `permission.bash: "deny"` in the project config, `opencode agent list` shows
+  `bash deny *` landing on the primary `build` agent — and byte-identical output
+  across repeated runs, so the readback is stable. But the `explore` subagent's
+  table contains **both** `bash allow *` (its own rule) and `bash deny *` (ours),
+  and the print does not say which wins. So the free readback establishes *the
+  rule was accepted*, and a run that is told to use a shell and does not is what
+  would establish *the rule holds*. Denying `task` as well means no subagent is
+  spawned in the first place, which is the belt to that brace.
 
 Denying the shell collapses the two capabilities that are otherwise hardest to
 verify:
@@ -51,10 +94,54 @@ worker submits its first attempt. That is a quality question, and §4 is the
 instrument for it — not a correctness question, because Core checks the diff
 either way.
 
-**Recommendation:** make the shell-less posture the *default* profile for every
-new provider, and treat a shell-enabled profile as a separate, separately
-verified posture. Codex, which has a real OS sandbox and is already proven, is
-the one that keeps its shell.
+### Can a shell-less worker still run the project's tests? No. Here is the call.
+
+The question is real and the two sides are not symmetric, so it is worth
+setting out rather than assuming.
+
+**What is lost.** A worker with no shell cannot run `npm test` before it
+answers. It writes its change and submits. Everything it would have caught by
+running the tests — a typo, a wrong import, an assertion it misread — now gets
+caught one layer later, by Core's shadow verification, and comes back as a
+rejection. Rejections cost a second worker call, so first-attempt quality is
+paid for in tokens either way; the question is only *who* pays and *when*.
+
+**What is gained.** Confinement stops being a property of an OS sandbox that
+one provider reports, one does not support on Windows, one silently disables
+when it cannot start, and one does not have. It becomes a property of the argv
+Hivemind is holding. `leaves_change_uncommitted` stops depending on the model
+obeying a sentence. And the two capabilities that `refuse` when unverified —
+the two whose failure is unbounded — become the two that are easiest to get
+right on a provider nobody has integrated yet.
+
+**Which way I would go: shell-less by default, and I would not treat it as
+provisional.** Three reasons, in order of weight.
+
+1. **The failure modes are not comparable.** A worse first-attempt rate costs
+   money and time, is visible in the ledger, and is bounded by the run ceiling.
+   An unconfined agent is unbounded and invisible until it has already
+   happened. When the two sides of a trade are "bounded and measurable" against
+   "unbounded and silent", the trade is not close.
+2. **It is the only posture that generalises.** The launch claim is "anything
+   else must pass the probe". A posture that depends on each provider having a
+   reportable OS sandbox cannot be offered to a harness that ships next month.
+   A positive tool allowlist can.
+3. **The cost is measurable before it is paid.** The corpus is exactly the
+   instrument: run the same three tasks shell-less and shell-enabled on Codex,
+   which is the one provider that can do both, and compare accepted-diff rate
+   and tokens-per-successful-task. That is a number, not an argument, and it
+   costs one corpus run against a provider already proven.
+
+**What I would NOT do is decide it globally and permanently.** The posture is
+per-profile and recorded on the connection, so a project that measures the
+tradeoff and wants its worker to self-verify can have a shell-enabled profile —
+on a provider whose confinement is `verified`, which today means Codex. What
+must never happen is a shell granted to a provider whose boundary is
+`unverified`, and the contract already refuses that.
+
+**Recommendation:** shell-less is the default profile for every new provider.
+Codex, which has a real OS sandbox and is already proven, keeps its shell — so
+it is also the control case for measuring what the shell is worth.
 
 ---
 
@@ -220,6 +307,36 @@ is what gets verified.
 
 ### Grok Build — **probably adaptable; every readback question is open**
 
+> **Updated after installing it.** `grok 1.0.3`, contained in a temp directory,
+> never authenticated. Every flag below is now CLI rather than DOCS, and one
+> third-party claim was confirmed against the binary itself.
+
+The flags are the best-shaped of the four: `-p/--single`, `--prompt-file`,
+`--prompt-json`, `-m/--model`, `--cwd`, `--max-turns`, `--tools` (allowlist),
+`--disallowed-tools`, `--allow`/`--deny` rules, **`--no-subagents`**, and
+`--sandbox <PROFILE>` (also settable as `GROK_SANDBOX`). `--output-format` has
+four values and two are structured in a *published* way:
+`streaming-json` is "NDJSON of the agent native ACP session updates" and
+`streaming-messages-json` is "NDJSON in the Anthropic Messages API wire format".
+An adapter reading a documented wire protocol is a much better position than one
+reading a bespoke shape.
+
+The five sandbox profile names — `workspace`, `read-only`, `strict`, `devbox`,
+`off` — were reported by a third-party page and are **confirmed present in the
+shipped binary** beside the string `sandbox`. `danger-full-access` is absent.
+
+It also ships `--dangerously-skip-permissions` and `--permission-mode
+bypassPermissions` as Claude-compatibility aliases; the preflight must refuse
+both by name.
+
+**What could not be learned for free:** the sandbox profile list cannot be
+elicited from the binary's own validation, because it checks authentication
+*before* it validates flags — `grok --sandbox bogus -p "x"` answers "Not signed
+in" rather than naming the valid profiles. Every readback question therefore
+needs an account.
+
+### Grok Build — the documentary picture, kept for the record
+
 | Question | Answer | Source |
 | --- | --- | --- |
 | Headless one-shot? | **Yes.** `-p/--single`, `-c/--continue`, `-s/--session-id` | DOCS |
@@ -244,7 +361,55 @@ the doc-derived flags, then one paid probe to find out whether
 `--output-format streaming-json` carries an init event. That single answer
 decides whether Grok is a fully-verified provider or a degraded one.
 
-### Kimi Code — **structurally hostile to this contract as documented**
+### Kimi Code — **REFUSED AS MEASURED**
+
+> **Verdict: refused. `confined_to_project = unsupported`.**
+> Not a missing integration — a measured property of the shipped code.
+
+Installed (`kimi-cli` 1.49.0, PyPI, into a throwaway venv) and dry-run. Two
+findings, the second decisive.
+
+**Its shell CAN be removed.** The agent specification is a YAML positive list of
+tools, supplied with `--agent-file`. Dropping one line removes
+`kimi_cli.tools.shell:Shell`, and dropping the `subagents:` block removes helper
+agents. This is the strongest shell-denial mechanism of the four.
+
+**It would not help, because the working directory is not a boundary.** Kimi's
+own file-writing tool was executed here — no model call, the validator is local
+code — and this is the shipped logic:
+
+```python
+# kimi_cli/tools/file/write.py
+if (not is_within_workspace(resolved_path, self._work_dir, self._additional_dirs)
+        and not path.is_absolute()):
+    return ToolError(message=f"`{path}` is not an absolute path. "
+        "You must provide an absolute path to write a file "
+        "outside the working directory.")
+```
+
+Run against a real path outside the working directory:
+
+```
+is_within_workspace(absolute outside): False
+absolute path outside work-dir     -> ALLOWED
+relative path outside work-dir     -> REFUSED
+```
+
+The check only refuses a path that is outside **and relative**. An absolute path
+outside the working directory passes — and the error message *instructs the
+model how to do it*. `--work-dir` is a default root, not a fence. The only thing
+between that and a write is approval, and `--print` auto-approves everything
+("Print mode auto-dismisses AskUserQuestion and auto-approves tool calls for
+this invocation" — its own `--help`).
+
+So denying the shell protects nothing: `WriteFile` alone leaves the project.
+
+**What would change the verdict**, and it is worth re-checking when Kimi
+releases: an enforced workspace boundary on the file tools, or a sandbox. The
+check above is four lines and one of them is the bug; a single `and` becoming an
+`or` would flip this to adaptable.
+
+### Kimi Code — the documentary picture, kept for the record
 
 | Question | Answer | Source |
 | --- | --- | --- |
@@ -398,11 +563,55 @@ connect probe already does.
 
 ---
 
-## What this pass did not do
+## 5. The paid probes, estimated
 
-No adapter was built. No probe was extended. No paid call was made. The
-contract is written and tested; `probeAdapter` still emits the older
-three-state shape and has **not** been migrated onto it — that migration is a
-build task, and it should happen alongside the first new provider rather than
-speculatively, so the generalisation is proven by a second case rather than
-designed for one.
+Nothing below has been run. These are the two the discovery says are worth
+buying, and what each answers.
+
+| Probe | Estimate | What it settles |
+| --- | --- | --- |
+| **Claude Code** ×1 connect | **~15–25K tokens**, ~15–30s | Whether `system/init` names the resolved tools and permission mode. That decides whether the shell denial is `verified` or `unverified` — and for confinement, `unverified` refuses, so this single run decides whether Claude Code is admissible at all. Also whether `claude-json` finds real token counts in a live run's own output, which is the caveat that has kept it `unverified` since it was added. |
+| **OpenCode** ×1 connect | **~15–25K tokens**, ~15–30s | Whether `opencode export` attributes tokens to one run, and whether a shell attempt is actually refused under `permission.bash: "deny"` — the precedence question the free readback cannot answer. |
+
+**Why so much less than Codex's ~40K per connect.** Codex's probe pays for a
+`--sandbox workspace-write` session with reasoning effort pinned high, on a
+272K-context model. Both probes above are one trivial file write with no
+reasoning pin, and Claude Code's is on `sonnet` rather than a flagship. The
+estimate is deliberately a range and deliberately wide: the probe prompt is
+fixed but the startup context a harness loads is not, and Claude Code loads
+`CLAUDE.md` and any project hooks unless `--bare` is used — which this profile
+deliberately does not use, because bare mode refuses OAuth and would break the
+"no provider credential" rule.
+
+**Worst case if both are wrong by 3×:** ~150K tokens total, about a fifth of one
+first-run walk. **These are cheap.** The expensive thing is the corpus
+certification, which is a separate decision and should be estimated separately
+per provider once these two have passed.
+
+**What I would buy first, if only one:** Claude Code. It is the provider most
+people asking for this already have, and its single unknown is load-bearing —
+if `system/init` does not name the tools, the shell denial cannot be verified
+by readback and needs a behavioural canary instead, which is a design change
+rather than a config change.
+
+## What this pass did and did not do
+
+**Built and tested:** the contract (`src/capability-contract.ts`, 12 tests); the
+version-staleness rule (`src/adapter-version.ts`); the measured commit check
+(`src/repo-observation.ts`, now a live capability in `probeAdapter`); the
+shell-denying invocations and the `shell_denial` record on every catalogue
+entry; and `test/provider-knowledge.test.ts`, which fails if a fourth file in
+`src/` branches on a provider by name.
+
+**Deliberately not built:** any new adapter, and the migration of
+`probeAdapter` onto the four-state contract. That migration happens alongside
+the first new provider so the generalisation is proven by a second case rather
+than designed for one — approved on that basis.
+
+**One rule changed as a result of this pass.** The catalogue used to require
+`invoke === null` for anything unproven, so an unproven agent could not be
+connected at all. That has been replaced: **the probe is the gate.** An agent
+may now carry the argv the probe will run — that is how it earns a status
+instead of keeping one forever — and `connectAdapter` still records nothing
+unless the probe passes. An `unsupported` agent keeps `invoke === null`, because
+it has been measured and refused and there is nothing left to attempt.

@@ -10,6 +10,8 @@ import {
   type AdapterProfile
 } from "./adapter.js";
 import type { CatalogueAgent } from "./agent-catalogue.js";
+import { readAdapterVersion } from "./adapter-version.js";
+import { compareRepoMarks, markRepo } from "./repo-observation.js";
 
 /**
  * Verifying an agent instead of believing it.
@@ -42,6 +44,7 @@ export interface ProbedCapability {
     | "pins_one_model"
     | "confined_to_project"
     | "reports_usage"
+    | "leaves_change_uncommitted"
     | "subagents_disabled";
   label: string;
   status: CapabilityStatus;
@@ -64,6 +67,9 @@ export interface AdapterProbeResult {
   effective_tokens: number;
   wall_time_ms: number;
   readback_source: string | null;
+  /* The version this probe verified. A later run against a different version
+     is stale rather than invalid -- see src/adapter-version.ts. */
+  provider_version: string | null;
 }
 
 export interface ProbeRunner {
@@ -292,7 +298,8 @@ export async function probeAdapter(
       ],
       effective_tokens: 0,
       wall_time_ms: 0,
-      readback_source: null
+      readback_source: null,
+      provider_version: null
     };
   }
   capabilities.push(
@@ -313,6 +320,10 @@ export async function probeAdapter(
     `Write the text ${nonce} into a new file called ${PROBE_DIR.replace(/\\/gu, "/")}/${nonceFile}.`,
     "Do not read anything else, do not verify it, and do not change any other file."
   ].join(" ");
+
+  /* Recorded BEFORE the agent starts, so the comparison afterwards is about
+     this run and nothing else. */
+  const repoBefore = await markRepo(repoRoot);
 
   const runner = options.runner ?? liveProbeRunner;
   let observation: ProbeObservation;
@@ -490,6 +501,49 @@ export async function probeAdapter(
     )
   );
 
+  /* Leaves the change for a person to approve. The cheapest capability here by
+     a wide margin -- two `git rev-parse` calls, no provider cooperation, and it
+     works on a harness nobody has written an adapter for. Until now the only
+     thing standing between an agent and a commit was a sentence in the worker
+     prompt. */
+  const branch = compareRepoMarks(repoBefore, await markRepo(repoRoot));
+  capabilities.push(
+    branch.standing === "unchanged"
+      ? capability(
+          "leaves_change_uncommitted",
+          "Leaves the change for you to approve",
+          true,
+          "verified",
+          branch.detail,
+          "no commit",
+          "branch unchanged"
+        )
+      : branch.standing === "moved"
+        ? capability(
+            "leaves_change_uncommitted",
+            "Leaves the change for you to approve",
+            true,
+            "failed",
+            branch.detail,
+            "no commit",
+            branch.after.head === null ? "moved" : branch.after.head.slice(0, 10)
+          )
+        : capability(
+            "leaves_change_uncommitted",
+            "Leaves the change for you to approve",
+            true,
+            "unverified",
+            branch.detail,
+            "no commit",
+            null
+          )
+  );
+
+  /* What was actually verified is verified about THIS binary. These harnesses
+     update themselves weekly, so the version is recorded and a later run
+     against a different one is stale. */
+  const providerVersion = await readAdapterVersion(profile.invoke, repoRoot);
+
   await rm(path.join(repoRoot, PROBE_DIR), { recursive: true, force: true }).catch(() => undefined);
 
   const failed = capabilities.filter((entry) => entry.required && entry.status === "failed");
@@ -504,7 +558,8 @@ export async function probeAdapter(
     capabilities,
     effective_tokens: Math.max(observation.effectiveTokens, totalTokens),
     wall_time_ms: observation.wallTimeMs,
-    readback_source: readback?.source ?? null
+    readback_source: readback?.source ?? null,
+    provider_version: providerVersion
   };
 }
 

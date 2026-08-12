@@ -232,12 +232,17 @@ test("a passed probe writes the profile and the capabilities it proved", async (
 test("an agent with no working invocation refuses with its real reason", async () => {
   const repo = await scratch();
   try {
-    const claude = await connectAdapter(repo, "worker", "claude-code");
-    assert.equal(claude.ok, false);
-    assert.match(claude.reason, /permission-bypass|never against a live run/u);
+    /* Refused because it was measured and failed, not because nobody wrote an
+       adapter for it: its working-directory setting is not a boundary. That is
+       the contract working rather than an integration missing. */
+    const kimi = await connectAdapter(repo, "worker", "kimi-code");
+    assert.equal(kimi.ok, false);
+    assert.match(kimi.reason, /not a boundary|absolute path/u);
+    /* Attemptable but not yet proven: no usage reader has ever been checked
+       against a live run, so no profile can be built for it. */
     const open = await connectAdapter(repo, "worker", "opencode");
     assert.equal(open.ok, false);
-    assert.match(open.reason, /no argv|Nothing in Hivemind has been written/u);
+    assert.match(open.reason, /no argv|reading of what it spends/u);
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

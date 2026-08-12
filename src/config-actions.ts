@@ -275,6 +275,12 @@ interface ConnectionRecord {
   connected_at: string;
   effective_tokens: number;
   readback_source: string | null;
+  /* The harness version the capabilities below were verified against. These
+     harnesses update themselves -- `claude doctor` reports auto-updates
+     enabled -- so a run against a different version is stale and the person is
+     asked to reconnect, rather than being quietly run against capabilities
+     nobody checked on the binary that is actually there. */
+  provider_version: string | null;
   capabilities: AdapterProbeResult["capabilities"];
 }
 
@@ -358,6 +364,7 @@ export async function connectAdapter(
     connected_at: new Date().toISOString(),
     effective_tokens: probe.effective_tokens,
     readback_source: probe.readback_source,
+    provider_version: probe.provider_version,
     capabilities: probe.capabilities
   };
   await writeJsonAtomic(connectionRecordPath(repoRoot, role), record);

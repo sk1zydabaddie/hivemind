@@ -158,7 +158,18 @@ test("the agent catalogue is honest about what has actually been run", () => {
       continue;
     }
     assert.ok((agent.caveat ?? "").length > 40, `${agent.id} must say what is missing`);
-    assert.equal(agent.invoke, null, `${agent.id} must not be connectable while unproven`);
+    /* This used to require `invoke === null` for anything unproven, on the
+       reasoning that an unproven agent must not be connectable at all. That
+       rule has been replaced by a better one: the PROBE is the gate. An agent
+       may carry the argv the probe will run -- that is how it earns a status
+       instead of keeping one forever -- and `connectAdapter` still records
+       nothing unless the probe passes. What must never happen is `supported`
+       without a live run, which the branch above asserts.
+       An `unsupported` agent is a different case: it has been measured and
+       refused, so there is nothing to attempt. */
+    if (agent.status === "unsupported") {
+      assert.equal(agent.invoke, null, `${agent.id} was refused, so it has nothing to run`);
+    }
   }
   // A spending limit built on unverified usage numbers is worse than none, so
   // an agent whose usage reporting is unproven cannot claim support.
