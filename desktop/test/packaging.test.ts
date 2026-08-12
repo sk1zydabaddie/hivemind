@@ -44,6 +44,11 @@ describe("desktop packaging", () => {
     ).scripts;
     expect(scripts["tauri:build"]).toContain("nsis");
     expect(scripts["tauri:build:linux"]).toMatch(/deb|appimage/u);
+    /* Every platform Hivemind claims names its own bundles. macOS is still
+       UNVERIFIED-ON-MACOS -- the script existing is not a claim that the bundle
+       has ever been built, only that the config is no longer shaped for two
+       platforms out of three. See docs/MACOS-CHECKLIST.md item 5. */
+    expect(scripts["tauri:build:mac"]).toMatch(/app|dmg/u);
     expect(config.bundle?.resources).toMatchObject({
       "../../dist": "core/dist",
       "../../node_modules": "core/node_modules",

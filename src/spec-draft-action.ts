@@ -6,13 +6,14 @@ import {
   findDangerousAdapterArgs,
   formatAdapterProcessFailure,
   loadAdapterProfile,
-  runAdapterProcess
+  runAdapterProcess,
+  type AdapterProfile
 } from "./adapter.js";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic.js";
 import { loadConfig } from "./config.js";
 import { recordIdeationRound, startIdeationSession } from "./ideation.js";
 import { trackedFilesAtBase, currentHead } from "./plan.js";
-import { buildSpecDraftingPrompt, parseDraftedSpec } from "./spec-drafting.js";
+import { buildSpecDraftingPrompt, parseDraftedSpec, type DraftedSpecProposal } from "./spec-drafting.js";
 import {
   activeSpecPath,
   buildDraftedSpec,
@@ -82,18 +83,9 @@ export async function draftSpecFromPrompt(
     trackedFiles: tracked.value,
     testCommand: config.config.test_command ?? null
   });
-  const process = await runAdapterProcess(repoRoot, profile.profile, repoRoot, drafting, {
-    outputLogPath: adapterRunLogPath(repoRoot, `drafting-${specId.value}`),
-    usageSessionId: specId.value,
-    usageRunId: specId.value
-  });
-  if (!process.ok) return process;
-  if (process.value.exitCode !== 0) {
-    return { ok: false, reason: formatAdapterProcessFailure(tool, process.value, "spec drafter") };
-  }
-
-  const proposal = parseDraftedSpec(process.value.modelOutput);
-  if (!proposal.ok) return proposal;
+  const drafted = await draftUntilReadable(repoRoot, profile.profile, tool, specId.value, drafting);
+  if (!drafted.ok) return drafted;
+  const proposal = drafted;
 
   /* Written before the ideation session opens, because the session reads the
      document it is about. */
@@ -141,6 +133,80 @@ export async function draftSpecFromPrompt(
       assumptions: proposal.value.assumptions,
       alternatives: proposal.value.alternatives.length
     }
+  };
+}
+
+/**
+ * How many times the drafter may be asked before the front door gives up.
+ *
+ * Three, because the failure this exists for is sampling variance from a cheap
+ * model: the one observed case succeeded on the very next attempt with the same
+ * prompt and the same model. Bounded because each attempt is a real call --
+ * roughly 20K tokens on the first run measured -- and an unbounded retry on the
+ * front door is a way to spend somebody's money without telling them.
+ */
+const DRAFT_ATTEMPTS = 3;
+
+/**
+ * Ask the drafter until its answer can be READ, and no further.
+ *
+ * The distinction that matters is what counts as retryable. Only a failure to
+ * parse the model's output is:
+ *
+ * - An **adapter failure** -- a non-zero exit, a timeout, a quota wall -- is
+ *   returned immediately. Retrying could spend money against a wall that is
+ *   still there, and the reason is already accurate.
+ * - A **blocking question** never reaches here at all. It is a SUCCESSFUL parse
+ *   whose `open_questions` are non-empty, and it flows through to the spec to
+ *   stop ratification later. Nothing in this loop can retry one away, which is
+ *   the property that makes retrying safe: the drafter's judgement is in the
+ *   parsed value, never in a parse error.
+ *
+ * A retry restates the same request to the same model at the same tier -- no
+ * escalation -- with one line naming what was unreadable, because a model told
+ * what it got wrong does better than one asked identically twice.
+ */
+async function draftUntilReadable(
+  repoRoot: string,
+  profile: AdapterProfile,
+  tool: string,
+  specId: string,
+  drafting: string
+): Promise<SpecResult<DraftedSpecProposal>> {
+  let lastReason = "";
+  for (let attempt = 1; attempt <= DRAFT_ATTEMPTS; attempt += 1) {
+    const prompt =
+      attempt === 1
+        ? drafting
+        : [
+            drafting,
+            "",
+            `Your previous reply could not be read: ${lastReason}`,
+            "Reply with the JSON object only. No prose before or after it, no code fence."
+          ].join("\n");
+    const process = await runAdapterProcess(repoRoot, profile, repoRoot, prompt, {
+      /* Every attempt keeps its own log, so the trail shows what was actually
+         returned each time rather than only the last one. */
+      outputLogPath: adapterRunLogPath(repoRoot, `drafting-${specId}-${attempt}`),
+      usageSessionId: specId,
+      usageRunId: specId
+    });
+    if (!process.ok) return process;
+    if (process.value.exitCode !== 0) {
+      return { ok: false, reason: formatAdapterProcessFailure(tool, process.value, "spec drafter") };
+    }
+    const parsed = parseDraftedSpec(process.value.modelOutput);
+    if (parsed.ok) return parsed;
+    lastReason = parsed.reason;
+  }
+  return {
+    ok: false,
+    reason:
+      `The agent that turns your request into a plan replied with something this build could not read, ` +
+      `${DRAFT_ATTEMPTS} times in a row. The last attempt: ${lastReason}. ` +
+      `This is almost always the agent rather than your request, so sending the same thing again often works. ` +
+      `If it keeps happening, try describing what you want in a sentence or two more detail, or connect a stronger ` +
+      `agent as your planner in Settings. Nothing has been written to your project.`
   };
 }
 

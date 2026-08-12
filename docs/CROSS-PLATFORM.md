@@ -2,14 +2,15 @@
 
 "Green" used to mean green on Windows. It now means green on both.
 
-| Platform | Tests | Pass | Fail | Skipped |
-| --- | --- | --- | --- | --- |
-| Windows 11 (native) | 667 | 665 | **0** | 2 |
-| Linux 6.6 (WSL2, Ubuntu 22.04, ext4) | 667 | 667 | **0** | 0 |
+| Platform | Tests | Pass | Fail | Skipped | Desktop |
+| --- | --- | --- | --- | --- | --- |
+| Windows 11 (native) | 672 | 670 | **0** | 2 | 83 pass |
+| Linux 6.6 (WSL2, Ubuntu 22.04, ext4) | 672 | 672 | **0** | 0 | 83 pass |
 
-Both run green after every change in this pass; Linux twice. The two skips on
-Windows are platform-guarded tests that Linux runs, which is why its pass count
-is higher — the suite is the same 667 either way. Desktop: 83 pass.
+Both run green after every change in this pass. The two skips on Windows are
+platform-guarded tests that Linux runs, which is why its pass count is higher —
+the suite is the same 672 either way. It was 667 before the drafter-retry tests
+below.
 
 **The Linux filesystem matters.** The first Linux attempt ran from `/mnt/d`, a
 Windows drive mounted through drvfs, where git sees `core.fileMode = false`
@@ -174,10 +175,90 @@ first-run walk exercises end to end through the same typed actions the GUI
 dispatches. The React bundle is byte-identical on both platforms; only the
 engine rendering it differs.
 
+### The drafter refusal is fixed
+
+The Linux first run's finding — *"the spec drafter returned invalid JSON and
+there is no retry"* — is closed. `draftUntilReadable` (`src/spec-draft-action.ts`)
+asks up to three times, and the boundary is drawn at **what counts as
+retryable**:
+
+- **A parse failure** is retried, at the same tier with no escalation, plus one
+  line naming what was unreadable. This is the observed failure: cheap-model
+  sampling variance that succeeded on the very next attempt.
+- **An adapter failure** — non-zero exit, timeout, quota wall — returns at once.
+  Retrying spends money against a wall that is still there.
+- **A blocking question** cannot be retried away, because it never reaches the
+  loop: it is a *successful* parse whose `open_questions` are non-empty. That is
+  the property that makes retrying safe at all — the drafter's judgement lives in
+  the parsed value, never in a parse error.
+
+When three attempts are exhausted the refusal tells the person what to do
+(press it again, add a sentence of detail, or connect a stronger planner) and
+states that nothing was written. `test/spec-draft-retry.test.ts` pins all five
+behaviours, including that a readable answer costs exactly one call and that a
+failed draft leaves no spec behind.
+
+## The sweep for other Windows-masked defaults
+
+The AppImage icon was found by trying to build on Linux, not by reading. So the
+rest of the tree was read looking for the same shape: a default that is correct
+on Windows and silently wrong elsewhere. Seven things checked; three findings.
+
+**1. A GUI-launched app may not be able to find `codex`.** The most likely
+remaining first-run break, and Windows masks it completely — Explorer hands GUI
+processes the full user `PATH` from the registry, so `node` and `codex` resolve.
+macOS launchd gives a Finder-launched `.app` `/usr/bin:/bin:/usr/sbin:/sbin` and
+nothing else; a Linux `.desktop` launch inherits the session's `PATH`, which may
+or may not include wherever npm put `codex`. `node` has an escape hatch
+(`HIVEMIND_NODE_PATH`, `project.rs:516`); **`codex` has none** — it is `invoke[0]`
+in every generated profile and is spawned as-is. Unverified on both non-Windows
+platforms for the same reason: no GUI walk can attach to WebKitGTK, and no Mac
+exists here. Written up as item 4 of `MACOS-CHECKLIST.md`, which is where it will
+be either confirmed or killed.
+
+**2. `tauri:build` was the only unqualified build script.** `tauri:build:linux`
+was added in this pass; `tauri:build` still means NSIS and macOS had nothing.
+`tauri:build:mac` now names `app,dmg` and the packaging test asserts all three.
+This is config shape, not a verification claim — nobody has built a `.app`.
+
+**3. Case-folding is `win32`-only in six places.** Five in Core
+(`config.ts:524`, `events.ts:300`, `project-temp.ts:567` and `:572`,
+`daemon-client.ts:184`) and one in the shell (`project.rs:677`). Every one of
+them lowercases on Windows and compares literally everywhere else, which is right
+for Linux and wrong for a default APFS volume. None is the scope gate — that
+keys off `canonicalize()`, whose answer comes from `fs.realpath` — so the whole
+question reduces to one fact that needs a Mac to settle. It is item 1 of
+`MACOS-CHECKLIST.md`, and it is the reason that checklist exists.
+
+Four things checked that turned out to be nothing, recorded so nobody re-checks
+them:
+
+- **BSD vs GNU flags do not apply.** Every external binary spawned was
+  enumerated: Core runs `git` and (Windows-gated) `taskkill.exe`; the shell runs
+  `git`, `hivemind`, and Windows-gated `powershell`. No `sed`, `awk`, `find`,
+  `stat`, `date` or `xargs` anywhere. The one `sleep 30` is a Rust test fixture
+  and passes no flags.
+- **`test_command` is never spawned by Core.** It is validated as non-empty
+  (`integrate.ts:162`) and handed to the agent in a prompt. There is no shell
+  assumption to get wrong, and the detected default is `npm test`.
+- **Line endings are a non-issue.** There is no `.gitattributes`, but the tree
+  contains **zero** checked-in `.sh`/`.bash`/`.ps1` files and **zero** files with
+  the executable bit set in the index, so there is nothing a CRLF checkout could
+  render unrunnable.
+- **`node --test "dist/**/*.test.js"`** quotes its glob and lets Node expand it,
+  rather than depending on a shell — which is why the same script works under
+  PowerShell, bash and zsh.
+
 ### Still not verifiable from here
 
 **macOS remains UNVERIFIED-ON-MACOS.** It takes the POSIX `detached` /
 `kill(-pgid)` path and the `["codex", …]` shell branch that Linux now exercises,
-which makes it *likely* fine — an inference, not a result. `.app`/`.dmg`
+which makes that half *likely* fine — an inference, not a result. `.app`/`.dmg`
 bundling, code signing and notarisation are untouched and untestable without
 hardware.
+
+What inference cannot settle is narrower than "macOS" and is written up as
+`docs/MACOS-CHECKLIST.md` — an hour of checks ordered so that if the hour runs
+out, the two answers that change what gets built are already in hand: whether
+the one-writer-per-file invariant survives a case-insensitive volume, and
+whether a Finder-launched app can find `codex`.
