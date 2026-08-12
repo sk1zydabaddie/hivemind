@@ -448,7 +448,7 @@ function busiestPrefix(run) {
  * that the readiness check would say "ready". Per the standing rule, that is
  * marked here, in the scenario's `source`, and in the DESIGN-NOTES.
  */
-function shipReadyCut(run) {
+function shipReadyCut(run, { bound = true } = {}) {
   const completedAt = run.findIndex((event) => event.type === "adoption.completed");
   if (completedAt < 1) return null;
   const reviewed = [...run.slice(0, completedAt)]
@@ -467,22 +467,34 @@ function shipReadyCut(run) {
     return null;
   }
   const baseBranch = typeof data.base_branch === "string" ? data.base_branch : "the project branch";
+  /* Shipping is TWO steps, and the first one had never been captured.
+     `exactReview` is false until an `adoption.reviewed` event exists, so the
+     bar a person actually meets first says "Fresh checks passed; review the
+     change set" and offers `adoption.review`. Only after that does it become
+     "Confirm this exact change set" with `adoption.execute`. Both are Core's
+     own wording from `buildQueues`; `bound` chooses which step to draw. */
   const item = {
-    id: `adoption:${data.verification_id}:${data.pending_adoption_id}`,
+    id: `adoption:${data.verification_id}:${bound ? data.pending_adoption_id : "review"}`,
     kind: "adoption_ready",
-    title: "Confirm this exact change set",
-    detail: `${data.task_ids.join(" + ")} / ${data.changed_files.length} files / base ${data.expected_base_head.slice(0, 8)}. This one action moves the verified set onto ${baseBranch}.`,
+    title: bound ? "Confirm this exact change set" : "Fresh checks passed; review the change set",
+    detail: `${data.task_ids.join(" + ")} / ${data.changed_files.length} files / base ${data.expected_base_head.slice(0, 8)}. ${
+      bound
+        ? `This one action moves the verified set onto ${baseBranch}.`
+        : "Review binds this exact set before merge authorization appears."
+    }`,
     created_at: reviewed.ts,
     task_id: null,
-    action: {
-      type: "adoption.execute",
-      payload: {
-        pending_adoption_id: data.pending_adoption_id,
-        verification_id: data.verification_id,
-        expected_base_head: data.expected_base_head,
-        expected_state_hash: data.expected_state_hash
-      }
-    },
+    action: bound
+      ? {
+          type: "adoption.execute",
+          payload: {
+            pending_adoption_id: data.pending_adoption_id,
+            verification_id: data.verification_id,
+            expected_base_head: data.expected_base_head,
+            expected_state_hash: data.expected_state_hash
+          }
+        }
+      : { type: "adoption.review", payload: { verification_id: data.verification_id } },
     change_set: {
       verification_id: data.verification_id,
       base_branch: baseBranch,
@@ -626,7 +638,8 @@ for (const file of files) {
       );
     }
 
-    const ship = shipReadyCut(run);
+    for (const bound of [true, false]) {
+    const ship = shipReadyCut(run, { bound });
     if (ship !== null) {
       const shipProjected = await inspect(ship.events, file);
       if (shipProjected.ok) {
@@ -638,17 +651,18 @@ for (const file of files) {
           (item) => item.kind !== "reverification_required"
         );
         scenarios.push({
-          id: `${id}@ship`,
-          source: `${relative} (cut before adoption; readiness rebuilt from adoption.reviewed)`,
+          id: `${id}@ship${bound ? "" : "-review"}`,
+          source: `${relative} (cut before adoption; readiness rebuilt from adoption.reviewed, ${bound ? "bound" : "unbound"} step)`,
           events: ship.events,
           span_ms: Date.parse(ship.events.at(-1).ts) - Date.parse(ship.events[0].ts),
           inspection: { ...shipProjected.inspection, needs_you: [ship.item, ...rest] },
           inspection_error: null
         });
         console.log(
-          `${`${id}@ship`.padEnd(34)} ${String(ship.events.length).padStart(3)} events  projected + readiness rebuilt`
+          `${`${id}@ship${bound ? "" : "-review"}`.padEnd(34)} ${String(ship.events.length).padStart(3)} events  projected + readiness rebuilt`
         );
       }
+    }
     }
 
     const midrun = busiestPrefix(run);

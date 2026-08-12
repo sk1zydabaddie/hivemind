@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -91,6 +91,13 @@ test("CLI analyze prints reject JSON and exits non-zero for an out-of-scope bund
 test("CLI analyze prints escalate JSON and exits non-zero for an escalated bundle", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit, ["script.sh"]);
+    /* The mode has to change on disk as well as in the index. `git diff HEAD`
+     compares against the WORKING TREE, so a staged-only mode bit is invisible
+     wherever `core.fileMode` is true -- which is every real POSIX checkout.
+     Windows hides that, because NTFS has no executable bit and git ignores
+     worktree modes there, so the index-only change showed up and this fixture
+     looked correct for years. */
+    await chmod(path.join(repo, "script.sh"), 0o755);
     await git(repo, ["update-index", "--chmod=+x", "script.sh"]);
     await writePatch(repo, "T-001");
     await resetRepo(repo, baseCommit);

@@ -201,10 +201,23 @@ export async function runConcurrentManagerFixture(options: {
       events,
       intervals,
       workerWindowMs,
+      /* A task's own CAUSAL sequence, which is what "serial per-task trails"
+         claims is unchanged by concurrency.
+
+         `cache.read` is excluded because it records a lookup, not a step: the
+         same task doing the same work reads a warm cache a different number of
+         times depending on what else has run, and one extra read shifts every
+         later element so a whole-trail comparison reports a mismatch at an
+         arbitrary index. That is what it did on Linux under full-suite load --
+         reproducibly, while passing in isolation, and naming a different event
+         each run. The guarantee under test is causal; the cache is not part of
+         it. */
       perTaskTrail: Object.fromEntries(
         fixture.taskIds.map((taskId) => [
           taskId,
-          events.filter((event) => event.task_id === taskId).map((event) => event.type)
+          events
+            .filter((event) => event.task_id === taskId && event.type !== "cache.read")
+            .map((event) => event.type)
         ])
       )
     };

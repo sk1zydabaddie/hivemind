@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -182,7 +182,14 @@ async function buildForbiddenFileDeletionFixture(repo: string): Promise<GateCorp
 
 async function buildModeBitFlipFixture(repo: string): Promise<GateCorpusFixture> {
   const baseCommit = await head(repo);
-  await git(repo, ["update-index", "--chmod=+x", "scripts/run.sh"]);
+  /* The mode has to change on disk as well as in the index. `git diff HEAD`
+     compares against the WORKING TREE, so a staged-only mode bit is invisible
+     wherever `core.fileMode` is true -- which is every real POSIX checkout.
+     Windows hides that, because NTFS has no executable bit and git ignores
+     worktree modes there, so the index-only change showed up and this fixture
+     looked correct for years. */
+    await chmod(path.join(repo, "scripts/run.sh"), 0o755);
+    await git(repo, ["update-index", "--chmod=+x", "scripts/run.sh"]);
   const patchPath = await writePatch(repo, "mode-bit-flip.patch");
   await resetRepo(repo, baseCommit);
 

@@ -256,7 +256,13 @@ test("runTask captures diff but returns failure when the adapter times out", asy
       "setInterval(() => undefined, 1000);"
     ]);
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
-    await writeProfile(repo, "fake", agentPath, 50);
+    /* The agent writes and then hangs forever, so the timeout is what ends it
+       either way. It used to be 50ms, which is inside Node's own startup cost:
+       the race was whether the process could boot and append before the killer
+       fired, and on a slower filesystem it lost, capturing zero changed files.
+       The window only has to be long enough for the write to land -- the
+       `setInterval` guarantees the timeout still fires. */
+    await writeProfile(repo, "fake", agentPath, 2_000);
     await grantLease(repo, "T-001", ["README.md"]);
 
     const result = await runTask(repo, "T-001", "fake");
@@ -1059,7 +1065,7 @@ test("restart reconciliation never reclaims an ambiguously-live cancelled worker
     await appendEvent(repo, {
       type: "task.worker_process_started",
       task_id: "T-STOP-UNKNOWN",
-      data: { run_id: "R-UNKNOWN", pid: 4242, process_instance_id: "unknown-worker" }
+      data: { run_id: "R-UNKNOWN", pid: 4242, process_group_id: process.platform === "win32" ? null : 4242, process_instance_id: "unknown-worker" }
     });
     await appendEvent(repo, { type: "task.cancel_requested", task_id: "T-STOP-UNKNOWN", data: { reason: "daemon stopped mid-cancel" } });
 
@@ -1088,7 +1094,7 @@ test("ordinary restart reconciliation treats EPERM-style ambiguity as alive", as
     await appendEvent(repo, {
       type: "task.worker_process_started",
       task_id: "T-RUN-UNKNOWN",
-      data: { run_id: "R-UNKNOWN", pid: 4242, process_instance_id: "unknown-worker" }
+      data: { run_id: "R-UNKNOWN", pid: 4242, process_group_id: process.platform === "win32" ? null : 4242, process_instance_id: "unknown-worker" }
     });
 
     const reconciled = await reconcileTaskRunOnStartup(repo, "T-RUN-UNKNOWN", { probeLiveness: () => "unknown" });
@@ -1113,7 +1119,7 @@ test("restart reconciliation reclaims a provably-dead worker and reaches task.ca
     await appendEvent(repo, {
       type: "task.worker_process_started",
       task_id: "T-STOP-DEAD",
-      data: { run_id: "R-DEAD", pid: 4343, process_instance_id: "dead-worker" }
+      data: { run_id: "R-DEAD", pid: 4343, process_group_id: process.platform === "win32" ? null : 4343, process_instance_id: "dead-worker" }
     });
     await appendEvent(repo, { type: "task.cancel_requested", task_id: "T-STOP-DEAD", data: { reason: "daemon stopped mid-cancel" } });
 
@@ -1139,7 +1145,7 @@ test("ordinary restart reconciliation cleans a proven-dead worker before releasi
     await appendEvent(repo, {
       type: "task.worker_process_started",
       task_id: "T-RUN-DEAD",
-      data: { run_id: "R-DEAD", pid: 4343, process_instance_id: "dead-worker" }
+      data: { run_id: "R-DEAD", pid: 4343, process_group_id: process.platform === "win32" ? null : 4343, process_instance_id: "dead-worker" }
     });
 
     const reconciled = await reconcileTaskRunOnStartup(repo, "T-RUN-DEAD", { probeLiveness: () => "dead" });
@@ -1184,7 +1190,7 @@ test("restart reconciles dead, live, and ambiguous workers independently without
         task_id: worker.taskId,
         data: {
           run_id: `R-${worker.taskId}`,
-          pid: worker.pid,
+          pid: worker.pid, process_group_id: process.platform === "win32" ? null : worker.pid,
           process_instance_id: worker.processId
         }
       });

@@ -303,7 +303,7 @@ test("run cancellation prevents new launches before fanning out through task.sto
       await appendEvent(repo, {
         type: "task.worker_process_started",
         task_id: taskId,
-        data: { version: 1, run_id: runId, tool: "concurrent-worker", pid: 2_000_000_000 + index, process_instance_id: `dead-${index}` }
+        data: { version: 1, run_id: runId, tool: "concurrent-worker", pid: 2_000_000_000 + index, process_group_id: process.platform === "win32" ? null : 2_000_000_000 + index, process_instance_id: `dead-${index}` }
       });
       await appendEvent(repo, {
         type: "task.worker_process_stopped",

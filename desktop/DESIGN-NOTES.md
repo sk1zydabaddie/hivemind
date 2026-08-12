@@ -360,6 +360,48 @@ instead of serving the finished projection over an unfinished thread.
 A finished run is the easy state to render. The states that have been wrong five
 times are the ones in the middle.
 
+## Harness notes: two things that look like defects and are not
+
+Both cost real diagnosis time once. Written down so the next person skips it.
+
+**A control found only by its visible text misses the icon-only ones.** The
+first GUI driver could not find Settings, because it matches `hasText` and that
+button has none — its accessible name is its only label. A driver has to look at
+`aria-label` too, which is also how a screen reader finds it. Related, and the
+same shape: on the setup screen **`Set it up` opens the agent dialog** and
+initialising is **`Set up this folder`**; a driver that greps for "set" clicks
+the wrong one and then reports that setup did nothing.
+
+**Two CDP clients driving one app produce fake disabled states.** A second
+script attached while the first was mid-action saw `Ship it` visible and
+disabled, because `busy` was true from the other client's in-flight request.
+That reads exactly like a control wired wrong. One driver at a time, or accept
+that every enabled/disabled reading is unreliable.
+
+## Reconciling spend against the provider — option B, ready to run
+
+The subagent finding turns on one unanswered question: **does the provider's
+aggregate usage include nested calls?** The cheapest way to find out is to
+compare a day of Hivemind's own accounting against the provider's billing.
+
+Hivemind's side for **2026-08-11**, from the ledgers in `docs/evidence`:
+
+| Run | Calls | Tokens |
+| --- | --- | --- |
+| `e2e-2026-08-11-firstrun-noterminal` | 6 | 294,500 |
+| `e2e-2026-08-11-gui-confirmation` | 7 | 414,536 |
+| **Total inside projects** | **13** | **709,036** |
+
+Plus roughly 185K over 3 calls from standalone probe experiments run outside any
+project, which have no ledger. So Hivemind believes it spent **about 894K
+tokens across 16 Codex calls** that day.
+
+If the ChatGPT usage page for 2026-08-11 shows materially more, the difference
+is work Hivemind never saw — which is the nested-call gap, measured. If it
+matches, the risk is sized at roughly zero and the finding downgrades to
+provenance only. The comparison needs a person with the account open; the
+number above is the half that could be computed here.
+
 ## Playback: the demo comes out of the capture
 
 `/replay.html?scenario=<id>&play=6` replays a run on its own clock: events on

@@ -287,7 +287,7 @@ test("daemon startup does not reclaim a live unfinished worker", async () => {
     await appendEvent(repo, {
       type: "task.worker_process_started",
       task_id: "T-LIVE",
-      data: { run_id: "R-LIVE", pid: worker.pid, process_instance_id: "live-worker" }
+      data: { run_id: "R-LIVE", pid: worker.pid, process_group_id: process.platform === "win32" ? null : worker.pid, process_instance_id: "live-worker" }
     });
 
     const daemon = await startDaemon(repo);

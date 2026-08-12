@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -45,7 +45,7 @@ test("checked-in Codex profiles are explicit, confined tier pins and preserve ro
   );
 
   await withHostRepo(async (repo) => {
-    await installProfiles(repo, path.join(repo, "fake-bin", "codex.cmd"));
+    await installProfiles(repo, (await installFakeCodex(repo)).command);
     const config = hostConfig(repo);
     const low = await routeTaskProvider(repo, routeContract("README.md"), config);
     const medium = await routeTaskProvider(repo, routeContract("src/library.mjs"), config);
@@ -81,16 +81,8 @@ test("capability corpus description is fixed, shadow-only, and dependency-aware"
 
 test("fake Codex corpus uses the real disposer and exposes cost per successful task", async () => {
   await withHostRepo(async (repo) => {
-    const fakeBin = path.join(repo, "fake-bin");
-    const tracePath = path.join(fakeBin, "calls.jsonl");
-    await mkdir(fakeBin, { recursive: true });
-    await writeFile(path.join(fakeBin, "fake-codex.mjs"), fakeCodexSource(tracePath), "utf8");
-    await writeFile(
-      path.join(fakeBin, "codex.cmd"),
-      `@echo off\r\n"${process.execPath}" "%~dp0fake-codex.mjs" %*\r\n`,
-      "utf8"
-    );
-    await installProfiles(repo, path.join(fakeBin, "codex.cmd"));
+    const { tracePath, command } = await installFakeCodex(repo);
+    await installProfiles(repo, command);
 
     const before = await protectedState(repo);
     const result = await runCapabilityCorpus(repo, { corpusRunId: "CC-FIXTURE" });
@@ -187,16 +179,8 @@ test("fake Codex corpus uses the real disposer and exposes cost per successful t
 
 test("capability corpus repeats one selected profile in fresh immutable iterations", async () => {
   await withHostRepo(async (repo) => {
-    const fakeBin = path.join(repo, "fake-bin");
-    const tracePath = path.join(fakeBin, "calls.jsonl");
-    await mkdir(fakeBin, { recursive: true });
-    await writeFile(path.join(fakeBin, "fake-codex.mjs"), fakeCodexSource(tracePath), "utf8");
-    await writeFile(
-      path.join(fakeBin, "codex.cmd"),
-      `@echo off\r\n"${process.execPath}" "%~dp0fake-codex.mjs" %*\r\n`,
-      "utf8"
-    );
-    await installProfiles(repo, path.join(fakeBin, "codex.cmd"));
+    const { tracePath, command } = await installFakeCodex(repo);
+    await installProfiles(repo, command);
 
     const result = await runCapabilityCorpus(repo, {
       corpusRunId: "CC-REPETITION",
@@ -220,16 +204,8 @@ test("capability corpus repeats one selected profile in fresh immutable iteratio
 
 test("capability corpus rejects unbounded or invalid repetition requests before spawn", async () => {
   await withHostRepo(async (repo) => {
-    const fakeBin = path.join(repo, "fake-bin");
-    const tracePath = path.join(fakeBin, "calls.jsonl");
-    await mkdir(fakeBin, { recursive: true });
-    await writeFile(path.join(fakeBin, "fake-codex.mjs"), fakeCodexSource(tracePath), "utf8");
-    await writeFile(
-      path.join(fakeBin, "codex.cmd"),
-      `@echo off\r\n"${process.execPath}" "%~dp0fake-codex.mjs" %*\r\n`,
-      "utf8"
-    );
-    await installProfiles(repo, path.join(fakeBin, "codex.cmd"));
+    const { tracePath, command } = await installFakeCodex(repo);
+    await installProfiles(repo, command);
 
     for (const options of [
       { tools: ["codex-luna"], iterations: 0 },
@@ -246,12 +222,8 @@ test("capability corpus rejects unbounded or invalid repetition requests before 
 
 test("registered corpus evidence is hash-bound, source-labeled, and cannot use an unrelated policy identity", async () => {
   await withHostRepo(async (repo) => {
-    const fakeBin = path.join(repo, "fake-bin");
-    const tracePath = path.join(fakeBin, "calls.jsonl");
-    await mkdir(fakeBin, { recursive: true });
-    await writeFile(path.join(fakeBin, "fake-codex.mjs"), fakeCodexSource(tracePath), "utf8");
-    await writeFile(path.join(fakeBin, "codex.cmd"), `@echo off\r\n"${process.execPath}" "%~dp0fake-codex.mjs" %*\r\n`, "utf8");
-    await installProfiles(repo, path.join(fakeBin, "codex.cmd"));
+    const { tracePath, command } = await installFakeCodex(repo);
+    await installProfiles(repo, command);
     const corpus = await runCapabilityCorpus(repo, {
       corpusRunId: "CC-ROUTING-EVIDENCE",
       tools: ["codex-luna", "codex-terra"]
@@ -352,12 +324,8 @@ test("registered corpus evidence is hash-bound, source-labeled, and cannot use a
 
 test("tampering with a corpus report is refused by verification and routing derivation", async () => {
   await withHostRepo(async (repo) => {
-    const fakeBin = path.join(repo, "fake-bin");
-    const tracePath = path.join(fakeBin, "calls.jsonl");
-    await mkdir(fakeBin, { recursive: true });
-    await writeFile(path.join(fakeBin, "fake-codex.mjs"), fakeCodexSource(tracePath), "utf8");
-    await writeFile(path.join(fakeBin, "codex.cmd"), `@echo off\r\n"${process.execPath}" "%~dp0fake-codex.mjs" %*\r\n`, "utf8");
-    await installProfiles(repo, path.join(fakeBin, "codex.cmd"));
+    const { tracePath, command } = await installFakeCodex(repo);
+    await installProfiles(repo, command);
     const corpus = await runCapabilityCorpus(repo, { corpusRunId: "CC-TAMPER", tools: ["codex-terra"] });
     assert.equal(corpus.ok, true, corpus.ok ? undefined : corpus.reason);
     if (!corpus.ok) return;
@@ -391,12 +359,7 @@ test("capability corpus retains usage, cache economics, and overshoot evidence w
       }),
       "utf8"
     );
-    await writeFile(
-      path.join(fakeBin, "codex.cmd"),
-      `@echo off\r\n"${process.execPath}" "%~dp0fake-codex.mjs" %*\r\n`,
-      "utf8"
-    );
-    await installProfiles(repo, path.join(fakeBin, "codex.cmd"));
+    await installProfiles(repo, await fakeCodexCommand(fakeBin));
     const configPath = path.join(repo, ".hivemind", "config.json");
     const config = JSON.parse(await readFile(configPath, "utf8"));
     config.resource_policy = {
@@ -474,15 +437,61 @@ async function runInteractiveReview(repo: string, proposalId: string) {
   }
 }
 
-async function installProfiles(repo: string, fakeCodexPath: string): Promise<void> {
-  await mkdir(path.dirname(fakeCodexPath), { recursive: true });
+/**
+ * A fake coding agent the corpus can actually run, on whichever OS is running
+ * the suite.
+ *
+ * This used to write `codex.cmd` -- a batch shim -- and leave the profile's
+ * `cmd.exe /d /s /c` prefix in place. That is unrunnable on Linux, so all four
+ * corpus tests died on a missing trace file rather than on anything they were
+ * testing. The shape of the fake has to match the platform, not the machine it
+ * was first written on.
+ */
+async function installFakeCodex(repo: string): Promise<{ tracePath: string; command: string[] }> {
+  const fakeBin = path.join(repo, "fake-bin");
+  const tracePath = path.join(fakeBin, "calls.jsonl");
+  await mkdir(fakeBin, { recursive: true });
+  await writeFile(path.join(fakeBin, "fake-codex.mjs"), fakeCodexSource(tracePath), "utf8");
+  return { tracePath, command: await fakeCodexCommand(fakeBin) };
+}
+
+/**
+ * The shim, and the argv that can actually start it. Split out because one
+ * test writes its own `fake-codex.mjs` with different usage numbers and needs
+ * the same platform decision without the default source.
+ */
+async function fakeCodexCommand(fakeBin: string): Promise<string[]> {
+  if (process.platform === "win32") {
+    const shim = path.join(fakeBin, "codex.cmd");
+    await writeFile(shim, `@echo off\r\n"${process.execPath}" "%~dp0fake-codex.mjs" %*\r\n`, "utf8");
+    /* Windows cannot spawn a .cmd directly, so the interpreter stays. */
+    return ["cmd.exe", "/d", "/s", "/c", shim];
+  }
+  const shim = path.join(fakeBin, "codex");
+  await writeFile(
+    shim,
+    `#!/bin/sh\nexec "${process.execPath}" "$(dirname "$0")/fake-codex.mjs" "$@"\n`,
+    "utf8"
+  );
+  await chmod(shim, 0o755);
+  return [shim];
+}
+
+/**
+ * The profile ships a Windows invocation; the corpus needs the same profile
+ * pointed at the fake agent with a command the running platform can spawn. The
+ * whole leading command is replaced, not just the binary name, because the
+ * `cmd.exe` prefix is part of what is platform-specific.
+ */
+async function installProfiles(repo: string, command: string[]): Promise<void> {
   for (const tool of ["codex-luna", "codex-terra", "codex"]) {
     const source = JSON.parse(await readFile(path.join(sourceRoot, ".hivemind", "adapters", `${tool}.profile.json`), "utf8"));
     const commandIndex = source.invoke.indexOf("codex.cmd");
-    source.invoke[commandIndex] = fakeCodexPath;
+    source.invoke = [...command, ...source.invoke.slice(commandIndex + 1)];
     await writeFile(
       path.join(repo, ".hivemind", "adapters", `${tool}.profile.json`),
-      `${JSON.stringify(source, null, 2)}\n`,
+      `${JSON.stringify(source, null, 2)}
+`,
       "utf8"
     );
   }
