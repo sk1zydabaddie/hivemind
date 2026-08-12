@@ -7,7 +7,7 @@ import test from "node:test";
 import { promisify } from "node:util";
 
 import { agentCatalogue } from "../src/agent-catalogue.js";
-import { DEFAULT_TIER_GLOBS, initProjectForDesktop, inspectProjectConfig, setProjectConfig } from "../src/config-actions.js";
+import { initProjectForDesktop, inspectProjectConfig, setProjectConfig } from "../src/config-actions.js";
 import { executeWorkspaceAction } from "../src/workspace-actions.js";
 
 const run = promisify(execFile);
@@ -29,11 +29,14 @@ test("project.init leaves a project that is not in its most expensive shape", as
     const result = await initProjectForDesktop(repo);
     assert.equal(result.ok, true);
     const view = result.ok ? (result.value as { config: { low_globs: string[]; medium_globs: string[] } }) : null;
-    /* `inferScopeTier` returns High for a path matching no glob, and High's
-       floor excludes every cheap provider -- so an unconfigured project routes
-       everything to the strongest model it has. */
-    assert.deepEqual(view!.config.low_globs, [...DEFAULT_TIER_GLOBS.low_globs]);
-    assert.ok(view!.config.medium_globs.includes("src/**"));
+    /* A project with no tier globs infers High for every path, and High's
+       floor excludes every cheap provider -- so it would route every task to
+       the strongest model it has. Core's own init fills the missing keys; this
+       asserts the result rather than a second copy of the defaults, because
+       two sources of truth for one default is how the second one clobbers the
+       first. */
+    assert.ok(view!.config.low_globs.length > 0);
+    assert.ok(view!.config.medium_globs.length > 0);
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

@@ -36,30 +36,6 @@ type ActionResult = { ok: true; value: unknown } | { ok: false; reason: string }
  * and `adapter.connect` refuses to record a profile that has not been probed.
  */
 
-/* Defaults so a new project does not start in its most expensive shape.
-   `inferScopeTier` returns "high" for a path matching no glob, and High's floor
-   excludes every cheap provider — so an unconfigured project routes every task
-   to the strongest model it has. */
-export const DEFAULT_TIER_GLOBS = {
-  low_globs: ["docs/**", "**/*.md", "**/*.txt", "examples/**"],
-  medium_globs: ["src/**", "test/**", "tests/**", "lib/**", "app/**"],
-  high_globs: [
-    "package.json",
-    "package-lock.json",
-    "tsconfig*.json",
-    "**/*.config.*",
-    ".github/**",
-    "Dockerfile*"
-  ],
-  critical_globs: [
-    ".hivemind/**",
-    "**/auth/**",
-    "**/*secret*",
-    "**/*credential*",
-    "**/migrations/**"
-  ]
-} as const;
-
 export interface InspectedAdapter {
   role: AdapterRoleName;
   installed: boolean;
@@ -264,11 +240,21 @@ export async function setProjectConfig(
 /**
  * `project.init` — set a folder up so it can take a first prompt.
  *
- * It writes the tier globs `initProject` does not, because a project without
- * them starts in its most expensive configuration. It deliberately does NOT
- * write adapter profiles: a profile written here would be a declaration that no
- * probe has checked, which is the exact thing `adapter.connect` exists to
- * replace. Connecting an agent is the next step, and it is one call.
+ * It is a thin wrapper on purpose, and does two things beyond calling
+ * `initProject`: nothing.
+ *
+ * An earlier version also wrote its own tier globs, because DESIGN-NOTES
+ * recorded that `initProject` wrote none and an unconfigured project routes
+ * every task to the strongest model. Core has since fixed that itself —
+ * `ensureTierGlobsRecorded` fills only the keys that are ABSENT — so the copy
+ * here was both redundant and destructive: it overwrote whole lists, and
+ * re-running setup on a project whose globs had been customised would have
+ * silently reset them. Two sources of truth for one default, and the second one
+ * clobbered the first.
+ *
+ * It also deliberately writes NO adapter profile. A profile written here would
+ * be a declaration that no probe has checked, which is the exact thing
+ * `adapter.connect` exists to replace.
  */
 export async function initProjectForDesktop(repoRoot: string): Promise<ActionResult> {
   /* `initProject` is a CLI entry point: it returns an exit code and reports on
@@ -277,17 +263,10 @@ export async function initProjectForDesktop(repoRoot: string): Promise<ActionRes
   if (code !== 0) {
     return { ok: false, reason: "this folder could not be set up; it must be a git repository" };
   }
-  const configPath = path.join(repoRoot, ".hivemind", "config.json");
-  let raw: Record<string, unknown>;
-  try {
-    raw = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
-  } catch {
-    return { ok: false, reason: "init did not leave a readable .hivemind/config.json" };
+  const loaded = await loadConfig(repoRoot);
+  if (!loaded.ok) {
+    return { ok: false, reason: `this folder was set up but its settings cannot be read: ${loaded.reason}` };
   }
-  const next = { ...raw, ...DEFAULT_TIER_GLOBS };
-  const problems = validateConfig(next);
-  if (problems.length > 0) return { ok: false, reason: problems.join("; ") };
-  await writeJsonAtomic(configPath, normalizeConfig(next));
   return inspectProjectConfig(repoRoot);
 }
 

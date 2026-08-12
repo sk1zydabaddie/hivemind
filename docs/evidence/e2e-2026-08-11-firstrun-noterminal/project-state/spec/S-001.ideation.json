@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "spec_id": "S-001",
+  "goal": "Create src/greet.js with a greet(name) helper that returns exactly \"Hello, <name>!\". Add focused coverage in test/greet.test.js.",
+  "status": "ratifiable",
+  "rounds": [
+    {
+      "index": 1,
+      "alternatives": [
+        {
+          "title": "CommonJS export",
+          "tradeoffs": [
+            "Fits projects using require/module.exports.",
+            "Does not match projects configured exclusively for ES modules."
+          ]
+        },
+        {
+          "title": "ES module export",
+          "tradeoffs": [
+            "Uses modern import/export syntax.",
+            "Requires the project configuration and test runner to support ES modules."
+          ]
+        }
+      ],
+      "self_critique": {
+        "weakest_point": "The module-system choice cannot be confirmed from the file list alone.",
+        "cut_or_change": "Inspect package.json or the existing source style before selecting the export syntax."
+      },
+      "substantive_change": true,
+      "orchestrator_calls_convergence": true
+    }
+  ],
+  "divergence_complete": true,
+  "convergence": {
+    "user": true,
+    "orchestrator": true
+  },
+  "consecutive_non_substantive_rounds": 0,
+  "diminishing_returns_signal": false
+}

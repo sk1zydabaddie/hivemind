@@ -503,7 +503,72 @@ Separately, `plainActionError` must stop matching patterns inside aggregated
 reasons. The durable fix is the plain-language field on the daemon error noted
 below; until then the client should not infer meaning from a substring.
 
-## First run, and why it still needs a terminal
+## First run: closed on 2026-08-11. It does not need a terminal.
+
+**A clean install reaches a shipped change with no terminal command and no
+hand-written document, including connecting the agent.** Walked, not reasoned
+about — the history below records the front door being called finished three
+times, and each walk found something, so this one was run end to end before the
+claim was made.
+
+`docs/evidence/e2e-2026-08-11-firstrun-noterminal/` holds the trail. A fresh git
+repository with a `package.json`, one source file and **no `.hivemind`**, driven
+through the exact typed actions the desktop dispatches, in the order it
+dispatches them:
+
+| | Step | Action |
+| --- | --- | --- |
+| 1 | Set this folder up | `project.init` |
+| 2–4 | Connect an agent for each role, each probed | `adapter.connect` ×3 |
+| 5 | Type what you want built | `spec.draft` |
+| 6 | Prepare a plan | `plan.prepare` |
+| 7–8 | The one review: sign the spec, ratify the plan | `spec.adopt`, `plan.ratify` |
+| 9–10 | Let it work | `manager.start`, `manager.continue` |
+| 11–12 | Ship it | `adoption.review`, `adoption.execute` |
+
+Every step returned ok. What that produced, verified in the repository rather
+than in the action results:
+
+```
+bd64af8 Hivemind adoption V-335aa795-...   src/greet.js | 3 ++
+17b51e0 base                               test/greet.test.js | 8 ++
+npm test on master after adoption: 1 test, 1 pass, 0 fail
+```
+
+**Cost: 294,500 tokens over 6 calls** — three probes (~118K) and the work
+itself (~176K: one drafting call, one planning call, one worker call). Worth
+stating plainly, because connecting three agents is a third of a first run's
+bill, and the screen says so before the click.
+
+### What this walk exercised, and what it did not
+
+Precision matters here, because the previous three claims were too loose.
+
+- **Exercised:** every typed action the desktop sends, through the same
+  `executeWorkspaceAction` the Tauri bridge calls, in UI order, against a real
+  agent and a real repository. Nothing was hand-written; no terminal command
+  touched the project beyond `git init` and the first commit, which is the
+  person's own repository existing.
+- **Not exercised:** the clicking. The buttons that dispatch these actions were
+  read for wiring rather than pressed. A control could still be mislabelled or
+  absent for one of these steps without this walk noticing — which is exactly
+  the seam class this file keeps recording, so the next real GUI run should
+  confirm the controls, not the actions.
+- **Assumed from earlier evidence:** nothing. The `e2e-2026-08-11-textkit` run
+  had already gone prompt-to-shipped *through the GUI*, but it needed a terminal
+  to get there; this walk is the half that was missing, and the two together are
+  what closes the question.
+
+### The four walls that used to be here, and what removed each
+
+| Wall | Removed by |
+| --- | --- |
+| The desktop could not initialise a project | `initialize_project` (Tauri) and `project.init` (typed action) |
+| Adapter profiles had to be hand-written | `adapter.connect`, which also verifies them |
+| A spec had to be written by hand in nine sections | `spec.draft` + the one review |
+| An unconfigured project routed everything to the flagship | Core's `initProject` writes tier globs itself |
+
+## The original first-run walls, kept for the record
 
 Nobody had walked a clean install. What actually happens:
 
@@ -933,19 +998,76 @@ asks for one. (The first version of that test banned the *words* — and caught
 dangerous file scope. Banning the vocabulary would have banned the sentence that
 protects it. It checks inputs now.)
 
-#### One deviation from the spec, taken deliberately
+#### Deliberate departure: `project.init` writes NO adapter profile
+
+**Do not "complete" the spec by adding this later.** It was left out on purpose
+and approved as a departure on 2026-08-11.
 
 The spec has `project.init` write `planner` and `manager` profiles for the
-chosen provider. It does not, and it should not: **a profile written there is a
-declaration no probe has checked**, which is the exact thing `adapter.connect`
-exists to replace. `project.init` writes the tier globs and stops; connecting an
-agent is the next call and it is one click per role.
+chosen provider. It does not, because **a profile written there is a
+declaration no probe has checked** — which is the exact thing `adapter.connect`
+exists to replace. Writing one at init would reintroduce, in the same commit,
+the failure the probe was built to end: a profile that claims capabilities
+nobody verified. Connecting an agent is the next call and it is one click per
+role.
 
 `initProject` does still write its own default profiles, so a first prompt has
 something to resolve. Those are declarations too, and `config.inspect` now says
 so: they come back `installed` with `connected_at: null`, and the screen reads
 *"Installed before Hivemind could check it — reconnect to verify what it can
-do."* That sentence is the whole difference between this build and the last one.
+do."* against *"Checked when you connected it"* for a probed one. That
+distinction is the whole difference between this build and the last one, and it
+only exists because init's profiles are not treated as connected.
+
+The same reasoning removed a second thing after the walk below: an earlier
+`project.init` also wrote its own tier globs, from a constant that duplicated
+Core's. Core's `ensureTierGlobsRecorded` fills only the keys that are **absent**;
+the copy here overwrote whole lists, so re-running setup on a project whose
+globs had been customised would have silently reset them. Two sources of truth
+for one default, and the second one clobbered the first. `project.init` is now a
+thin wrapper that adds nothing.
+
+#### Measured: subagent suppression is not verifiable, as predicted
+
+The probe's one unverified capability is the strongest evidence yet for an open
+finding, and it turns a prediction into a measurement.
+
+`Hivemind_Build_Progress.md` records that refusing provider-owned ultra modes
+closes only *inspectable* paths, and states the limit explicitly: Hivemind
+cannot detect a provider-side or session-level mode that is absent from the
+profile, the invocation and the environment. That was reasoning about what
+*could* be observed. The probe now reports what *is* observed:
+
+```
+UNVERIFIED   Does not start agents of its own   asked off   got v2
+```
+
+Codex's own `turn_context` reports `multi_agent_version: "v2"` — that a
+sub-agent capability exists — and reports **nothing at all** about whether it is
+switched off for this profile. So suppression is not merely undetected, it is
+**unreportable from the provider's own resolved context**, which is the readback
+that verifies every other capability. The finding is no longer a theory.
+
+Why this raises the stakes rather than merely documenting them: Hivemind's whole
+execution model is one worker, one lease, one scope, one diff. A worker that
+quietly fans out underneath us breaks all four **invisibly** — the extra work
+carries no lease, touches files outside the scope the plan approved, and lands
+in a diff attributed to a single task. And because aggregate usage is not
+established to include nested calls, it would also under-report spend, so the
+ceilings would not catch it either. Every guard this project has would report
+normal.
+
+What would close it, in order of how much it would buy:
+
+1. a provider that reports its resolved sub-agent setting in the same startup
+   context it already reports the model and sandbox in — then the probe verifies
+   it with no new mechanism;
+2. failing that, a behavioural probe: a task whose only honest completion needs
+   fan-out, checked for whether more than one process appeared. Weaker, because
+   absence of fan-out on one prompt is not proof of suppression;
+3. failing both, the current answer is correct and must stay visible: report it
+   `unverified` on the screen, every time, rather than letting an unchecked
+   assumption sit behind a green mark.
 
 #### The probe, and what a real agent actually reports
 
