@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "spec_id": "S-001",
+  "goal": "Create `src/greet.js` with a `greet(name)` helper that returns exactly `Hello, <name>!`. Add focused tests in `test/greet.test.js` without modifying any other file.",
+  "status": "ratifiable",
+  "rounds": [
+    {
+      "index": 1,
+      "alternatives": [
+        {
+          "title": "Named export",
+          "tradeoffs": [
+            "Requires callers and tests to import the named symbol explicitly.",
+            "Fits projects that expose multiple helpers from modules."
+          ]
+        },
+        {
+          "title": "Default export",
+          "tradeoffs": [
+            "Simplifies importing the single helper.",
+            "May conflict with the project’s existing module convention or future additional exports."
+          ]
+        }
+      ],
+      "self_critique": {
+        "weakest_point": "The specification cannot verify the project’s module convention from the file list alone.",
+        "cut_or_change": "Inspect the existing package and source conventions before choosing the export form, while still limiting edits to the two requested files."
+      },
+      "substantive_change": true,
+      "orchestrator_calls_convergence": true
+    }
+  ],
+  "divergence_complete": true,
+  "convergence": {
+    "user": true,
+    "orchestrator": true
+  },
+  "consecutive_non_substantive_rounds": 0,
+  "diminishing_returns_signal": false
+}

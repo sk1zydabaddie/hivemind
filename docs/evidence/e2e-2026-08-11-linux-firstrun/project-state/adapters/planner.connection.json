@@ -1,0 +1,62 @@
+{
+  "agent_id": "codex-luna",
+  "connected_at": "2026-08-12T05:18:34.582Z",
+  "effective_tokens": 37295,
+  "readback_source": "rollout-2026-08-11T22-18-11-019ff468-1d84-7502-9d4e-07edbbb10f04.jsonl",
+  "capabilities": [
+    {
+      "id": "no_bypass_flags",
+      "label": "Carries no permission-bypass flags",
+      "status": "verified",
+      "requested": null,
+      "reported": null,
+      "detail": "Checked against the refused-flag list before the agent was started, and again every time it runs.",
+      "required": true
+    },
+    {
+      "id": "non_interactive",
+      "label": "Runs without asking you anything",
+      "status": "verified",
+      "requested": "no prompts",
+      "reported": "never",
+      "detail": "It finished on its own in 23s with nothing attached to its input.",
+      "required": true
+    },
+    {
+      "id": "confined_to_project",
+      "label": "Can write in this project, and only here",
+      "status": "verified",
+      "requested": "workspace-write",
+      "reported": "workspace-write",
+      "detail": "It reported a workspace-write sandbox rooted at this project, and the file it was asked to write is on disk.",
+      "required": true
+    },
+    {
+      "id": "pins_one_model",
+      "label": "Runs the one model you chose",
+      "status": "verified",
+      "requested": "gpt-5.6-luna",
+      "reported": "gpt-5.6-luna",
+      "detail": "It reported running gpt-5.6-luna, which is what was asked for.",
+      "required": true
+    },
+    {
+      "id": "reports_usage",
+      "label": "Reports what it spent",
+      "status": "verified",
+      "requested": "codex-jsonl",
+      "reported": "37,295 tokens",
+      "detail": "The codex-jsonl reader found 37,295 tokens in this run's own output.",
+      "required": true
+    },
+    {
+      "id": "subagents_disabled",
+      "label": "Does not start agents of its own",
+      "status": "unverified",
+      "requested": "off",
+      "reported": "v1",
+      "detail": "It reports a sub-agent capability (v1). Whether it is switched off for this profile is not something it reports, so this stays unconfirmed.",
+      "required": false
+    }
+  ]
+}

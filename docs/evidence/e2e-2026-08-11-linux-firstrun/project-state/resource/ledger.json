@@ -1,0 +1,358 @@
+{
+  "version": 2,
+  "providers": {
+    "manager": {
+      "self_measured": {
+        "requests": 1,
+        "input_tokens_estimated": 42,
+        "output_tokens_estimated": 37,
+        "wall_time_ms": 23399
+      },
+      "provider_reported": {
+        "reports": 1,
+        "input_tokens": 37074,
+        "cached_input_tokens": 27136,
+        "output_tokens": 171,
+        "reasoning_tokens": 58,
+        "total_tokens": 37245,
+        "self_measured_tokens_for_reported_requests": 79
+      },
+      "provider_usage_capture": {
+        "captured_requests": 1,
+        "not_available_requests": 0,
+        "expected_but_unparseable_requests": 0,
+        "last_status": "captured",
+        "last_parser": "codex-jsonl",
+        "last_reason": null
+      },
+      "last_request": {
+        "self_measured_tokens": 79,
+        "provider_reported_tokens": 37245,
+        "effective_tokens": 37245,
+        "accounting_source": "provider_reported",
+        "provider_usage_status": "captured"
+      },
+      "session_usage": {
+        "probe-manager": {
+          "requests": 1,
+          "self_measured_tokens": 79,
+          "provider_reported_tokens": 37245,
+          "provider_reported_requests": 1,
+          "effective_tokens": 37245
+        }
+      },
+      "reconciliation": {
+        "self_measured_tokens_for_reported_requests": 79,
+        "provider_reported_total_tokens": 37245,
+        "absolute_divergence_tokens": 37166,
+        "provider_to_self_ratio": 471.45569620253167,
+        "accounting_source": "provider_reported",
+        "routing_source": "profile_policy"
+      },
+      "observed_limit": null,
+      "resets_at": null,
+      "source": "dual-channel",
+      "updated_at": "2026-08-12T05:18:57.994Z",
+      "unmetered": false
+    },
+    "planner": {
+      "self_measured": {
+        "requests": 4,
+        "input_tokens_estimated": 3441,
+        "output_tokens_estimated": 1025,
+        "wall_time_ms": 126646
+      },
+      "provider_reported": {
+        "reports": 4,
+        "input_tokens": 95347,
+        "cached_input_tokens": 36096,
+        "output_tokens": 3023,
+        "reasoning_tokens": 2025,
+        "total_tokens": 98370,
+        "self_measured_tokens_for_reported_requests": 4466
+      },
+      "provider_usage_capture": {
+        "captured_requests": 4,
+        "not_available_requests": 0,
+        "expected_but_unparseable_requests": 0,
+        "last_status": "captured",
+        "last_parser": "codex-jsonl",
+        "last_reason": null
+      },
+      "last_request": {
+        "self_measured_tokens": 2059,
+        "provider_reported_tokens": 21277,
+        "effective_tokens": 21277,
+        "accounting_source": "provider_reported",
+        "provider_usage_status": "captured"
+      },
+      "session_usage": {
+        "probe-planner": {
+          "requests": 1,
+          "self_measured_tokens": 88,
+          "provider_reported_tokens": 37295,
+          "provider_reported_requests": 1,
+          "effective_tokens": 37295
+        },
+        "S-001": {
+          "requests": 2,
+          "self_measured_tokens": 2319,
+          "provider_reported_tokens": 39798,
+          "provider_reported_requests": 2,
+          "effective_tokens": 39798
+        },
+        "af3a44c3-8324-43e5-a653-7148fdea1e59": {
+          "requests": 1,
+          "self_measured_tokens": 2059,
+          "provider_reported_tokens": 21277,
+          "provider_reported_requests": 1,
+          "effective_tokens": 21277
+        }
+      },
+      "reconciliation": {
+        "self_measured_tokens_for_reported_requests": 4466,
+        "provider_reported_total_tokens": 98370,
+        "absolute_divergence_tokens": 93904,
+        "provider_to_self_ratio": 22.02642185400806,
+        "accounting_source": "provider_reported",
+        "routing_source": "profile_policy"
+      },
+      "observed_limit": null,
+      "resets_at": null,
+      "source": "dual-channel",
+      "updated_at": "2026-08-12T05:21:48.103Z",
+      "unmetered": false
+    },
+    "worker": {
+      "self_measured": {
+        "requests": 2,
+        "input_tokens_estimated": 545,
+        "output_tokens_estimated": 308,
+        "wall_time_ms": 89614
+      },
+      "provider_reported": {
+        "reports": 2,
+        "input_tokens": 152145,
+        "cached_input_tokens": 125184,
+        "output_tokens": 1984,
+        "reasoning_tokens": 888,
+        "total_tokens": 154129,
+        "self_measured_tokens_for_reported_requests": 853
+      },
+      "provider_usage_capture": {
+        "captured_requests": 2,
+        "not_available_requests": 0,
+        "expected_but_unparseable_requests": 0,
+        "last_status": "captured",
+        "last_parser": "codex-jsonl",
+        "last_reason": null
+      },
+      "last_request": {
+        "self_measured_tokens": 769,
+        "provider_reported_tokens": 113770,
+        "effective_tokens": 113770,
+        "accounting_source": "provider_reported",
+        "provider_usage_status": "captured"
+      },
+      "session_usage": {
+        "probe-worker": {
+          "requests": 1,
+          "self_measured_tokens": 84,
+          "provider_reported_tokens": 40359,
+          "provider_reported_requests": 1,
+          "effective_tokens": 40359
+        },
+        "af3a44c3-8324-43e5-a653-7148fdea1e59": {
+          "requests": 1,
+          "self_measured_tokens": 769,
+          "provider_reported_tokens": 113770,
+          "provider_reported_requests": 1,
+          "effective_tokens": 113770
+        }
+      },
+      "reconciliation": {
+        "self_measured_tokens_for_reported_requests": 853,
+        "provider_reported_total_tokens": 154129,
+        "absolute_divergence_tokens": 153276,
+        "provider_to_self_ratio": 180.6905041031653,
+        "accounting_source": "provider_reported",
+        "routing_source": "profile_policy"
+      },
+      "observed_limit": null,
+      "resets_at": null,
+      "source": "dual-channel",
+      "updated_at": "2026-08-12T05:22:55.687Z",
+      "unmetered": false
+    }
+  },
+  "reservations": {
+    "3f4c8b00-38e8-4bb2-8d45-1453a24fa290": {
+      "version": 1,
+      "reservation_id": "3f4c8b00-38e8-4bb2-8d45-1453a24fa290",
+      "status": "settled",
+      "provider": "worker",
+      "session_id": "af3a44c3-8324-43e5-a653-7148fdea1e59",
+      "run_id": "af3a44c3-8324-43e5-a653-7148fdea1e59",
+      "task_id": "T-001",
+      "daemon_instance_id": "e5423f30-896e-4c6d-a8d8-8198e6d2fab8",
+      "reserved_tokens": 300000,
+      "created_at": "2026-08-12T05:21:48.469Z",
+      "process_identity": {
+        "pid": 88189,
+        "process_instance_id": "e88ba813-80c8-4ab9-8a26-a73bee3d5ca9",
+        "process_group_id": 88189
+      },
+      "usage_artifact_path": "/root/linuxwalk/.hivemind/resource/reservations/3f4c8b00-38e8-4bb2-8d45-1453a24fa290.usage.json",
+      "settlement": {
+        "settled_at": "2026-08-12T05:22:55.688Z",
+        "reason": "completed",
+        "charged_tokens": 113770,
+        "accounting_source": "provider_reported"
+      }
+    },
+    "4a43da43-decb-45be-9a6b-2f1385c5524e": {
+      "version": 1,
+      "reservation_id": "4a43da43-decb-45be-9a6b-2f1385c5524e",
+      "status": "settled",
+      "provider": "planner",
+      "session_id": "S-001",
+      "run_id": "S-001",
+      "task_id": null,
+      "daemon_instance_id": "de1a91de-0ebc-4107-9f83-93a7c3173be3",
+      "reserved_tokens": 300000,
+      "created_at": "2026-08-12T05:19:20.726Z",
+      "process_identity": {
+        "pid": 87421,
+        "process_instance_id": "3309df63-e3d0-4a59-a124-f51f3bd112a9",
+        "process_group_id": 87421
+      },
+      "usage_artifact_path": "/root/linuxwalk/.hivemind/resource/reservations/4a43da43-decb-45be-9a6b-2f1385c5524e.usage.json",
+      "settlement": {
+        "settled_at": "2026-08-12T05:19:52.094Z",
+        "reason": "completed",
+        "charged_tokens": 19886,
+        "accounting_source": "provider_reported"
+      }
+    },
+    "744944eb-67bf-47b0-bb52-ca3ca7dc5b3e": {
+      "version": 1,
+      "reservation_id": "744944eb-67bf-47b0-bb52-ca3ca7dc5b3e",
+      "status": "settled",
+      "provider": "planner",
+      "session_id": "af3a44c3-8324-43e5-a653-7148fdea1e59",
+      "run_id": "af3a44c3-8324-43e5-a653-7148fdea1e59",
+      "task_id": null,
+      "daemon_instance_id": "e5423f30-896e-4c6d-a8d8-8198e6d2fab8",
+      "reserved_tokens": 300000,
+      "created_at": "2026-08-12T05:21:06.378Z",
+      "process_identity": {
+        "pid": 87925,
+        "process_instance_id": "fe201ed9-feb4-40e4-a252-77c50207cadf",
+        "process_group_id": 87925
+      },
+      "usage_artifact_path": "/root/linuxwalk/.hivemind/resource/reservations/744944eb-67bf-47b0-bb52-ca3ca7dc5b3e.usage.json",
+      "settlement": {
+        "settled_at": "2026-08-12T05:21:48.103Z",
+        "reason": "completed",
+        "charged_tokens": 21277,
+        "accounting_source": "provider_reported"
+      }
+    },
+    "aa74db30-0824-4783-b59f-085869184890": {
+      "version": 1,
+      "reservation_id": "aa74db30-0824-4783-b59f-085869184890",
+      "status": "settled",
+      "provider": "planner",
+      "session_id": "S-001",
+      "run_id": "S-001",
+      "task_id": null,
+      "daemon_instance_id": "e5423f30-896e-4c6d-a8d8-8198e6d2fab8",
+      "reserved_tokens": 300000,
+      "created_at": "2026-08-12T05:20:35.869Z",
+      "process_identity": {
+        "pid": 87683,
+        "process_instance_id": "e7cb8e92-fa37-431d-8c3e-9a894c6da530",
+        "process_group_id": 87683
+      },
+      "usage_artifact_path": "/root/linuxwalk/.hivemind/resource/reservations/aa74db30-0824-4783-b59f-085869184890.usage.json",
+      "settlement": {
+        "settled_at": "2026-08-12T05:21:06.351Z",
+        "reason": "completed",
+        "charged_tokens": 19912,
+        "accounting_source": "provider_reported"
+      }
+    },
+    "d46cdbcc-fcf2-4bea-b60a-ab96cab3f0cc": {
+      "version": 1,
+      "reservation_id": "d46cdbcc-fcf2-4bea-b60a-ab96cab3f0cc",
+      "status": "settled",
+      "provider": "manager",
+      "session_id": "probe-manager",
+      "run_id": "probe-manager",
+      "task_id": null,
+      "daemon_instance_id": "de1a91de-0ebc-4107-9f83-93a7c3173be3",
+      "reserved_tokens": 300000,
+      "created_at": "2026-08-12T05:18:34.590Z",
+      "process_identity": {
+        "pid": 86843,
+        "process_instance_id": "90b19d05-d49f-46b5-a157-fdbd004409d3",
+        "process_group_id": 86843
+      },
+      "usage_artifact_path": "/root/linuxwalk/.hivemind/resource/reservations/d46cdbcc-fcf2-4bea-b60a-ab96cab3f0cc.usage.json",
+      "settlement": {
+        "settled_at": "2026-08-12T05:18:57.994Z",
+        "reason": "completed",
+        "charged_tokens": 37245,
+        "accounting_source": "provider_reported"
+      }
+    },
+    "de0d1853-bf28-4e59-8335-6a7983ddaf74": {
+      "version": 1,
+      "reservation_id": "de0d1853-bf28-4e59-8335-6a7983ddaf74",
+      "status": "settled",
+      "provider": "worker",
+      "session_id": "probe-worker",
+      "run_id": "probe-worker",
+      "task_id": null,
+      "daemon_instance_id": "de1a91de-0ebc-4107-9f83-93a7c3173be3",
+      "reserved_tokens": 300000,
+      "created_at": "2026-08-12T05:18:58.158Z",
+      "process_identity": {
+        "pid": 87131,
+        "process_instance_id": "69752799-2804-483f-b623-4d468c6fd169",
+        "process_group_id": 87131
+      },
+      "usage_artifact_path": "/root/linuxwalk/.hivemind/resource/reservations/de0d1853-bf28-4e59-8335-6a7983ddaf74.usage.json",
+      "settlement": {
+        "settled_at": "2026-08-12T05:19:20.563Z",
+        "reason": "completed",
+        "charged_tokens": 40359,
+        "accounting_source": "provider_reported"
+      }
+    },
+    "e696719b-6a8f-4bc2-87ea-11cf0f8c65da": {
+      "version": 1,
+      "reservation_id": "e696719b-6a8f-4bc2-87ea-11cf0f8c65da",
+      "status": "settled",
+      "provider": "planner",
+      "session_id": "probe-planner",
+      "run_id": "probe-planner",
+      "task_id": null,
+      "daemon_instance_id": "de1a91de-0ebc-4107-9f83-93a7c3173be3",
+      "reserved_tokens": 300000,
+      "created_at": "2026-08-12T05:18:11.272Z",
+      "process_identity": {
+        "pid": 86555,
+        "process_instance_id": "94d9ebe8-e5e3-4513-9975-9981ac1315ed",
+        "process_group_id": 86555
+      },
+      "usage_artifact_path": "/root/linuxwalk/.hivemind/resource/reservations/e696719b-6a8f-4bc2-87ea-11cf0f8c65da.usage.json",
+      "settlement": {
+        "settled_at": "2026-08-12T05:18:34.369Z",
+        "reason": "completed",
+        "charged_tokens": 37295,
+        "accounting_source": "provider_reported"
+      }
+    }
+  }
+}

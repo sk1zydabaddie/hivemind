@@ -1,0 +1,26 @@
+{
+  "tool": "worker-cheap",
+  "invoke": [
+    "codex",
+    "exec",
+    "--model",
+    "gpt-5.6-luna",
+    "--sandbox",
+    "workspace-write",
+    "--config",
+    "model_reasoning_effort=\"high\"",
+    "--ephemeral",
+    "--json",
+    "-"
+  ],
+  "prompt_arg": "stdin",
+  "verified_on": "configured-by-init",
+  "roles": [
+    "worker"
+  ],
+  "routing_tier": "cheap",
+  "cost_rank": 4,
+  "context_window": 272000,
+  "timeout_ms": 600000,
+  "usage_parser": "codex-jsonl"
+}

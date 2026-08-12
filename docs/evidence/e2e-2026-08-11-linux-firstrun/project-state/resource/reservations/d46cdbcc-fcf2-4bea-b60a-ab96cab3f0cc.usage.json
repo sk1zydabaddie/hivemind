@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "reservation_id": "d46cdbcc-fcf2-4bea-b60a-ab96cab3f0cc",
+  "process_identity": {
+    "pid": 86843,
+    "process_instance_id": "90b19d05-d49f-46b5-a157-fdbd004409d3",
+    "process_group_id": 86843
+  },
+  "usage": {
+    "input_tokens_estimated": 42,
+    "output_tokens_estimated": 37,
+    "wall_time_ms": 23399,
+    "throttled": false,
+    "provider_usage": {
+      "status": "captured",
+      "parser": "codex-jsonl",
+      "usage": {
+        "input_tokens": 37074,
+        "cached_input_tokens": 27136,
+        "output_tokens": 171,
+        "reasoning_tokens": 58,
+        "total_tokens": 37245
+      }
+    }
+  }
+}

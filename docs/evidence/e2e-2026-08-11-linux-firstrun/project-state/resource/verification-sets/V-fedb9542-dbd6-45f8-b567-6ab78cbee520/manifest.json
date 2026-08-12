@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "verification_id": "V-fedb9542-dbd6-45f8-b567-6ab78cbee520",
+  "created_at": "2026-08-12T05:22:56.685Z",
+  "base_branch": "master",
+  "base_commit": "9002ab0d4ec4dd3443ad699deecf4400281a3b7c",
+  "task_ids": [
+    "T-001"
+  ],
+  "inputs": [
+    {
+      "task_id": "T-001",
+      "contract_path": ".hivemind/tasks/T-001.contract.json",
+      "contract_sha256": "f035d0ea65546ccfef99ce21ce0de2f2ab7e6c7a9a2fb4bd21d3039867c03fa3",
+      "patch_path": ".hivemind/patches/T-001/diff.patch",
+      "patch_sha256": "95ae7cfee876364fc20663b4313cd4c97e009a27ecc19275f885d07bc82d59cc"
+    }
+  ],
+  "changed_files": [
+    "src/greet.js",
+    "test/greet.test.js"
+  ],
+  "result_tree": "32f39befe65bc4aa67d585859be6f619954bfa97",
+  "config_path": ".hivemind/config.json",
+  "config_sha256": "26b41df6a2ef270d8fdb0f5642367da34373ab607d53ef2b91f475a5946982e7",
+  "verification": {
+    "audit": {
+      "mode": "full",
+      "reason": "structured verification inventory is missing",
+      "changed_files": [
+        "src/greet.js",
+        "test/greet.test.js"
+      ],
+      "impact_set": [
+        "src/greet.js",
+        "test/greet.test.js"
+      ],
+      "selected_checks": [
+        {
+          "id": "full-suite",
+          "command": "npm test",
+          "sources": [
+            "fail-safe"
+          ]
+        }
+      ],
+      "skipped_checks": [],
+      "graph_fingerprint": null,
+      "canon_ids": [],
+      "contract_validity_checks": [
+        {
+          "task_id": "T-001",
+          "id": "contract-validity:T-001",
+          "command": "node -e \"const { greet } = require('./src/greet.js'); if (typeof greet !== 'function' || greet('Ada') !== 'Hello, Ada!') process.exit(1)\""
+        }
+      ],
+      "structural_oracle": {
+        "kind": "structural",
+        "status": "unknown",
+        "advisory_only": true,
+        "runtime_coverage": "not_measured",
+        "graph_fingerprint": null,
+        "impact_files": [
+          "src/greet.js",
+          "test/greet.test.js"
+        ],
+        "covered_impact_files": [],
+        "uncovered_impact_files": [],
+        "unknown_impact_files": [
+          "src/greet.js",
+          "test/greet.test.js"
+        ],
+        "check_associations": [],
+        "unknown_reasons": [
+          "structured verification inventory is missing"
+        ],
+        "limitations": [
+          "verification inventory entry_files are operator-declared; Hivemind does not prove that each command executes them"
+        ]
+      }
+    },
+    "checks": [
+      {
+        "id": "contract-validity:T-001",
+        "command": "node -e \"const { greet } = require('./src/greet.js'); if (typeof greet !== 'function' || greet('Ada') !== 'Hello, Ada!') process.exit(1)\"",
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      {
+        "id": "full-suite",
+        "command": "npm test",
+        "exit_code": 0,
+        "stdout": "\n> test\n> node --test\n\nTAP version 13\n# Subtest: greet returns the exact greeting\nok 1 - greet returns the exact greeting\n  ---\n  duration_ms: 0.616719\n  type: 'test'\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 56.048485\n",
+        "stderr": ""
+      }
+    ],
+    "runtime_coverage": {
+      "kind": "runtime_changed_line",
+      "status": "unconfigured",
+      "advisory_only": true,
+      "coordinate_space": "post_patch_applied_tree",
+      "configured": false,
+      "command": null,
+      "report_path": null,
+      "report_hash": null,
+      "applied_tree": null,
+      "executable_changed_lines": 0,
+      "hit_changed_lines": 0,
+      "ratio": null,
+      "covered_lines": [],
+      "uncovered_lines": [],
+      "ignored_non_executable_lines": [],
+      "unknown_files": [],
+      "unknown_reasons": [],
+      "command_result": null,
+      "limitations": [
+        "LCOV DA records define executable lines; changed lines absent from DA are ignored only when the changed file has an LCOV source record",
+        "the configured coverage command is responsible for executing against the supplied shadow worktree; Hivemind binds its fresh report to the unchanged staged tree before and after execution"
+      ]
+    },
+    "tests": "pass"
+  },
+  "oracle": {
+    "coverage_configured": false,
+    "binding": false,
+    "task_tier": "medium",
+    "status": "unconfigured",
+    "decision": "proceed",
+    "diagnostic": "coverage is not configured; the structural oracle remains advisory and the M7.6d floor does not bind",
+    "uncovered_changed_lines": [],
+    "uncovered_impact_files": [],
+    "unknown_files": [
+      "src/greet.js",
+      "test/greet.test.js"
+    ],
+    "unknown_reasons": [
+      "structured verification inventory is missing"
+    ],
+    "recommendation": null,
+    "automatic_generation_launched": false
+  }
+}

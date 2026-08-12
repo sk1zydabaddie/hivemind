@@ -1,0 +1,57 @@
+{
+  "tasks": [
+    {
+      "task_id": "T-001",
+      "title": "Add greet helper and focused test",
+      "task_type": "deterministic",
+      "routing_task_type": "api",
+      "mode": "write",
+      "agent_role": "builder",
+      "draft_scope": {
+        "allowed_files": [
+          "src/greet.js",
+          "test/greet.test.js"
+        ],
+        "allowed_file_intents": {
+          "src/greet.js": "create",
+          "test/greet.test.js": "create"
+        },
+        "read_only_files": [
+          "package.json",
+          "src/capitalize.js"
+        ],
+        "forbidden_files": [
+          "package.json",
+          "src/capitalize.js"
+        ],
+        "must_not_change": [
+          "package.json",
+          "src/capitalize.js"
+        ]
+      },
+      "depends_on": [],
+      "parallel_safe": true,
+      "acceptance_criterion": "src/greet.js exports greet(name), returning exactly \"Hello, <name>!\", and test/greet.test.js verifies that exact output without changing any other file.",
+      "deterministic_validity_check": "node -e \"const { greet } = require('./src/greet.js'); if (typeof greet !== 'function' || greet('Ada') !== 'Hello, Ada!') process.exit(1)\"",
+      "required_tests": [
+        "npm test"
+      ],
+      "patch_requirements": [
+        "Create only src/greet.js and test/greet.test.js.",
+        "Use the module export convention established by the existing project.",
+        "Keep greeting spacing and punctuation exact.",
+        "Do not modify package.json or src/capitalize.js."
+      ],
+      "critical_path_approved": false
+    }
+  ],
+  "execution_groups": [
+    {
+      "group_id": "G-1",
+      "mode": "sequence",
+      "task_ids": [
+        "T-001"
+      ]
+    }
+  ]
+}
