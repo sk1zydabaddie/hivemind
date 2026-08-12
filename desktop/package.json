@@ -8,9 +8,10 @@
     "build": "tsc --noEmit && vite build",
     "bundle:prepare": "node scripts/prepare-bundle.mjs",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build",
+    "tauri:build": "tauri build --bundles nsis",
     "test": "vitest run",
-    "replay:collect": "node tools/collect-replay.mjs"
+    "replay:collect": "node tools/collect-replay.mjs",
+    "tauri:build:linux": "tauri build --bundles deb,appimage"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

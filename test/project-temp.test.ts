@@ -14,6 +14,7 @@ import {
   WINDOWS_DISPOSABLE_ROOT_BUDGET,
   withProjectTempDirectory
 } from "../src/project-temp.js";
+import { getProcessLiveness } from "../src/process-liveness.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -348,3 +349,85 @@ async function exists(targetPath: string): Promise<boolean> {
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
+
+/**
+ * A shared /tmp is a Linux fact, not a Windows one: Windows gives every user a
+ * private temp directory, so two people on one machine can never see each
+ * other's disposables. On Linux they share `/tmp` by default.
+ *
+ * The dangerous direction is a LIVE owner's directory being reclaimed, and the
+ * cross-user case is the one that could do it: `kill(pid, 0)` against another
+ * user's process fails with EPERM, and a probe that read that as "gone" would
+ * delete a directory out from under a running instance.
+ *
+ * PL-1 says nothing is reclaimed on a maybe. This proves the link the other
+ * tests assume: only ESRCH means dead.
+ */
+test("another user's live process is never read as dead", () => {
+  const eperm = Object.assign(new Error("operation not permitted"), { code: "EPERM" });
+  assert.equal(
+    getProcessLiveness(4242, () => {
+      throw eperm;
+    }),
+    "unknown"
+  );
+
+  const esrch = Object.assign(new Error("no such process"), { code: "ESRCH" });
+  assert.equal(
+    getProcessLiveness(4242, () => {
+      throw esrch;
+    }),
+    "dead"
+  );
+
+  /* Anything unrecognised is also a maybe, never a death certificate. */
+  assert.equal(
+    getProcessLiveness(4242, () => {
+      throw Object.assign(new Error("io"), { code: "EIO" });
+    }),
+    "unknown"
+  );
+
+  /* And against a real process this machine does not own: pid 1 exists on
+     every POSIX host. Whether this user may signal it or not, it is never
+     dead -- which is the property that matters. */
+  if (process.platform !== "win32") {
+    assert.notEqual(getProcessLiveness(1), "dead");
+  }
+});
+
+test("two instances sharing one temp root cannot reclaim a live owner's directory", async () => {
+  await withRepo(async ({ repo, tempRoot }) => {
+    /* Same project, two instances, one shared temp root -- the Linux shape. */
+    const foreignUserPid = 900_101;
+    const deadPid = 900_102;
+    const live = await createProjectTempDirectory(repo, "checkout", {
+      tempRoot,
+      reconcile: false,
+      pid: foreignUserPid
+    });
+    const dead = await createProjectTempDirectory(repo, "checkout", {
+      tempRoot,
+      reconcile: false,
+      pid: deadPid
+    });
+
+    /* The other instance belongs to another user: the kernel answers EPERM,
+       which PL-1 maps to unknown. The genuinely absent one answers ESRCH. */
+    const result = await reconcileProjectTempDirectories(repo, {
+      tempRoot,
+      probeLiveness: (pid) =>
+        getProcessLiveness(pid, () => {
+          throw Object.assign(new Error(pid === foreignUserPid ? "eperm" : "esrch"), {
+            code: pid === foreignUserPid ? "EPERM" : "ESRCH"
+          });
+        })
+    });
+
+    assert.equal(result.removed.includes(live.path), false, "a live owner's directory was reclaimed");
+    assert.equal(await exists(live.path), true);
+    /* The reclaimer still has to work, or this test would pass by doing nothing. */
+    assert.equal(result.removed.includes(dead.path), true);
+    assert.equal(await exists(dead.path), false);
+  });
+});

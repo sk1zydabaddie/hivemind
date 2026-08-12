@@ -13,6 +13,7 @@ import {
   validateCapabilityCorpusProfiles
 } from "../src/capability-corpus.js";
 import { readVerifiedCapabilityCorpusReport } from "../src/capability-corpus-evidence.js";
+import { corpusProfile, writeLocalAdapterProfiles } from "../src/local-adapters.js";
 import type { HivemindConfig } from "../src/config.js";
 import type { TaskContract } from "../src/contract.js";
 import { readQuotaLedgerState } from "../src/resource-ledger.js";
@@ -31,8 +32,24 @@ import { routeTaskProvider } from "../src/routing.js";
 const execFileAsync = promisify(execFile);
 const sourceRoot = process.cwd();
 
-test("checked-in Codex profiles are explicit, confined tier pins and preserve routing floors", async () => {
-  const validated = await validateCapabilityCorpusProfiles(sourceRoot);
+/**
+ * The ladder is generated, not committed.
+ *
+ * These three profiles used to be checked in, which made the repository
+ * platform-biased: they named `cmd.exe`, so a Linux clone held three profiles
+ * it could never spawn, and nothing caught it until the suite ran on Linux. It
+ * was also a profile on disk that no probe had checked -- the declaration
+ * `project.init` already refuses to write.
+ *
+ * Core's `profileSpecs` still owns the pins, tiers and cost ranks; only the
+ * argv is per-platform, and it is generated. This test therefore validates the
+ * generator's output rather than a committed artefact, and asserts exactly the
+ * same ladder it always did.
+ */
+test("the generated Codex ladder is explicit, confined tier pins and preserves routing floors", async () => {
+  const generated = await mkdtemp(path.join(tmpdir(), "hivemind-ladder-"));
+  await writeLocalAdapterProfiles(generated);
+  const validated = await validateCapabilityCorpusProfiles(generated);
   assert.equal(validated.ok, true, validated.ok ? undefined : validated.reason);
   if (!validated.ok) return;
   assert.deepEqual(
@@ -484,12 +501,14 @@ async function fakeCodexCommand(fakeBin: string): Promise<string[]> {
  * `cmd.exe` prefix is part of what is platform-specific.
  */
 async function installProfiles(repo: string, command: string[]): Promise<void> {
-  for (const tool of ["codex-luna", "codex-terra", "codex"]) {
-    const source = JSON.parse(await readFile(path.join(sourceRoot, ".hivemind", "adapters", `${tool}.profile.json`), "utf8"));
-    const commandIndex = source.invoke.indexOf("codex.cmd");
-    source.invoke = [...command, ...source.invoke.slice(commandIndex + 1)];
+  for (const spec of describeCapabilityCorpus().profiles) {
+    const built = corpusProfile(spec.tool, spec.model, spec.routing_tier, spec.cost_rank);
+    /* Drop everything up to and including the codex entry point -- whatever
+       this platform calls it -- and put the fake command in its place. */
+    const entry = built.invoke.findIndex((arg) => arg === "codex.cmd" || arg === "codex");
+    const source = { ...built, invoke: [...command, ...built.invoke.slice(entry + 1)] };
     await writeFile(
-      path.join(repo, ".hivemind", "adapters", `${tool}.profile.json`),
+      path.join(repo, ".hivemind", "adapters", `${spec.tool}.profile.json`),
       `${JSON.stringify(source, null, 2)}
 `,
       "utf8"

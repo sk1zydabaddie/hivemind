@@ -25,7 +25,25 @@ describe("desktop packaging", () => {
     );
 
     expect(config.bundle?.active).toBe(true);
-    expect(config.bundle?.targets).toContain("nsis");
+
+    /* The bundle config must not be shaped for one platform. It used to pin
+       `["nsis"]`, which is Windows-only, and it declared no icon set at all --
+       Windows fell back to a default and the AppImage bundler failed with
+       "couldn't find a square icon" the first time Linux packaging was
+       attempted. `all` lets each host build what it can, and each platform's
+       npm script names the bundles it actually ships. */
+    expect(config.bundle?.targets).toBe("all");
+    expect(config.bundle?.icon).toEqual(
+      expect.arrayContaining(["icons/128x128.png", "icons/icon.ico", "icons/icon.icns"])
+    );
+
+    const scripts = (
+      JSON.parse(await readFile(path.join(repoRoot, "desktop", "package.json"), "utf8")) as {
+        scripts: Record<string, string>;
+      }
+    ).scripts;
+    expect(scripts["tauri:build"]).toContain("nsis");
+    expect(scripts["tauri:build:linux"]).toMatch(/deb|appimage/u);
     expect(config.bundle?.resources).toMatchObject({
       "../../dist": "core/dist",
       "../../node_modules": "core/node_modules",

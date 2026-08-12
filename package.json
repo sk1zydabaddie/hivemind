@@ -10,7 +10,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test \"dist/**/*.test.js\"",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "adapters:local": "node -e \"import(\\\"./dist/src/local-adapters.js\\\").then(m=>m.writeLocalAdapterProfiles(process.cwd())).then(w=>console.log(\\\"wrote\\\",w.join(\\\", \\\")))\""
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
