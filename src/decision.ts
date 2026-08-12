@@ -2,7 +2,8 @@ import type { ChangesetOpType } from "./changeset.js";
 import { canonicalize } from "./canonicalize.js";
 import type { HivemindConfig } from "./config.js";
 import type { TaskContract } from "./contract.js";
-import { matchesAny } from "./glob.js";
+import { matchesAny, type MatchOptions } from "./glob.js";
+import { pathCaseBehaviour } from "./path-identity.js";
 import { workerProtectedPathReason } from "./worker-protected-paths.js";
 
 export type DecisionVerdict = "pass" | "reject" | "escalate";
@@ -78,17 +79,30 @@ export async function decideOpOutcome(
   }
 
   const resolvedPath = canonical.resolved;
+
+  /* The same filesystem fact answers two questions with OPPOSITE safe defaults,
+     so it is read once and applied twice rather than folded globally.
+     Widening what is allowed on a guess would let a genuinely different file
+     through on a case-sensitive volume, so `allowed` folds only when the
+     filesystem is PROVEN to be case-insensitive. Narrowing what is forbidden on
+     a guess would let a worker evade a forbidden entry by shifting a letter, so
+     `forbidden` and `critical` fold unless the filesystem is proven sensitive.
+     Both directions refuse when unsure; neither invents a new failure mode. */
+  const behaviour = await pathCaseBehaviour(config.repo_root);
+  const allowMatch: MatchOptions = { caseInsensitive: behaviour === "case-insensitive" };
+  const denyMatch: MatchOptions = { caseInsensitive: behaviour !== "case-sensitive" };
+
   if (workerProtectedPathReason(resolvedPath) !== null) {
     return { verdict: "reject", cause: "protected_path" };
   }
-  if (!isAllowedPath(resolvedPath, contract, config)) {
+  if (!isAllowedPath(resolvedPath, contract, config, allowMatch)) {
     return { verdict: "reject", cause: "outside_allowed_files" };
   }
 
-  if (op.op === "delete" && isForbiddenPath(resolvedPath, contract, config)) {
+  if (op.op === "delete" && isForbiddenPath(resolvedPath, contract, config, denyMatch)) {
     return { verdict: "reject", cause: "delete_forbidden_path" };
   }
-  if (op.op === "delete" && isCriticalPath(resolvedPath, config)) {
+  if (op.op === "delete" && isCriticalPath(resolvedPath, config, denyMatch)) {
     return { verdict: "reject", cause: "delete_critical_path" };
   }
 
@@ -143,16 +157,32 @@ export function plainDecisionReason(cause: DecisionCause, op: DecisionOp): strin
   }
 }
 
-function isAllowedPath(pathValue: string, contract: TaskContract, config: DecisionConfig): boolean {
-  return matchesAny(pathValue, contract.allowed_files) || matchesAny(pathValue, config.allowed_globs);
+function isAllowedPath(
+  pathValue: string,
+  contract: TaskContract,
+  config: DecisionConfig,
+  match: MatchOptions
+): boolean {
+  return (
+    matchesAny(pathValue, contract.allowed_files, match) ||
+    matchesAny(pathValue, config.allowed_globs, match)
+  );
 }
 
-function isForbiddenPath(pathValue: string, contract: TaskContract, config: DecisionConfig): boolean {
-  return matchesAny(pathValue, contract.forbidden_files) || matchesAny(pathValue, config.forbidden_globs);
+function isForbiddenPath(
+  pathValue: string,
+  contract: TaskContract,
+  config: DecisionConfig,
+  match: MatchOptions
+): boolean {
+  return (
+    matchesAny(pathValue, contract.forbidden_files, match) ||
+    matchesAny(pathValue, config.forbidden_globs, match)
+  );
 }
 
-function isCriticalPath(pathValue: string, config: DecisionConfig): boolean {
-  return matchesAny(pathValue, config.critical_globs ?? []);
+function isCriticalPath(pathValue: string, config: DecisionConfig, match: MatchOptions): boolean {
+  return matchesAny(pathValue, config.critical_globs ?? [], match);
 }
 
 function isGitBehaviorPath(pathValue: string): boolean {

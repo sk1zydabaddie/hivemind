@@ -846,7 +846,13 @@ test("invokeAgent returns a scoped error when the adapter command cannot start",
     if (result.ok) {
       return;
     }
-    assert.match(result.reason, /failed to start adapter "fake"/);
+    /* A program that is not there is the one spawn failure with a specific
+       remedy, so it says the remedy instead of quoting the errno. The tool name
+       is deliberately absent: "fake" is our word for the profile, and the person
+       reading this installed something called `definitely-missing-hivemind-
+       command`. */
+    assert.match(result.reason, /could not find definitely-missing-hivemind-command/u);
+    assert.match(result.reason, /HIVEMIND_DEFINITELY_MISSING_HIVEMIND_COMMAND_PATH/u);
     const ledger = await readQuotaLedgerState(repo);
     assert.equal(ledger.ok, true);
     if (!ledger.ok) return;

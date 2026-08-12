@@ -1,14 +1,28 @@
-export function matchesAny(pathValue: string, patterns: string[]): boolean {
-  return patterns.some((pattern) => matchesPattern(pathValue, pattern));
+import { foldPath } from "./path-identity.js";
+
+/**
+ * `caseInsensitive` exists for filesystems where two spellings are one file.
+ * It folds BOTH sides with the same function the lease store keys by, rather
+ * than setting the regex `i` flag on one side, so a path and a pattern that
+ * compare equal here are the same two strings the lease index treats as one.
+ */
+export interface MatchOptions {
+  caseInsensitive?: boolean;
 }
 
-export function matchesPattern(pathValue: string, pattern: string): boolean {
-  const normalizedPattern = normalizePattern(pattern);
+export function matchesAny(pathValue: string, patterns: string[], options: MatchOptions = {}): boolean {
+  return patterns.some((pattern) => matchesPattern(pathValue, pattern, options));
+}
+
+export function matchesPattern(pathValue: string, pattern: string, options: MatchOptions = {}): boolean {
+  const fold = (value: string): string => (options.caseInsensitive === true ? foldPath(value) : value);
+  const normalizedPattern = fold(normalizePattern(pattern));
+  const normalizedPath = fold(pathValue);
   if (!normalizedPattern.includes("*")) {
-    return pathValue === normalizedPattern;
+    return normalizedPath === normalizedPattern;
   }
 
-  return globToRegExp(normalizedPattern).test(pathValue);
+  return globToRegExp(normalizedPattern).test(normalizedPath);
 }
 
 function normalizePattern(pattern: string): string {

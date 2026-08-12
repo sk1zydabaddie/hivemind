@@ -6,7 +6,9 @@ import { loadAndValidateContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent } from "./events.js";
 import { canonicalizeConcreteFileScope } from "./file-scope.js";
+import { buildLeaseIndex, findLeaseStoreCollisions, type LeaseStore } from "./lease-index.js";
 import { withLeaseLock } from "./lease-lock.js";
+import { pathCaseBehaviour } from "./path-identity.js";
 import { requireTaskDependenciesIntegrated, resolveContractFilesAtBase } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { requireActiveSpecRatified } from "./spec.js";
@@ -28,7 +30,7 @@ export interface TaskLeaseRequirement {
   files: string[];
 }
 
-export type LeaseStore = Record<string, string>;
+export type { LeaseStore } from "./lease-index.js";
 type LeaseResult<T> = { ok: true; value: T } | { ok: false; reason: string };
 
 export async function leaseCommand(cwd: string, args: string[]): Promise<number> {
@@ -143,8 +145,9 @@ export async function verifyLeaseCoverage(
     return storeResult;
   }
 
+  const index = buildLeaseIndex(storeResult.store, await pathCaseBehaviour(repoRoot));
   const missing = paths
-    .map((filePath) => ({ filePath, holder: storeResult.store[filePath] }))
+    .map((filePath) => ({ filePath, holder: index.holderOf(filePath) }))
     .filter((entry) => entry.holder !== taskId);
   if (missing.length > 0) {
     return {
@@ -198,14 +201,16 @@ async function requestLeaseValidated(repoRoot: string, taskId: string, files: st
     return { ok: false, reason: protectedProblem };
   }
 
+  const behaviour = await pathCaseBehaviour(repoRoot);
   return withLeaseLock(repoRoot, async () => {
     const storeResult = await readActiveLeases(repoRoot);
     if (!storeResult.ok) {
       return storeResult;
     }
 
+    const index = buildLeaseIndex(storeResult.store, behaviour);
     const conflicts = pathsResult.paths
-      .map((filePath) => ({ filePath, holder: storeResult.store[filePath] }))
+      .map((filePath) => ({ filePath, holder: index.holderOf(filePath) }))
       .filter((entry): entry is { filePath: string; holder: string } => entry.holder !== undefined && entry.holder !== taskId);
     if (conflicts.length > 0) {
       return {
@@ -216,7 +221,11 @@ async function requestLeaseValidated(repoRoot: string, taskId: string, files: st
 
     const nextStore = { ...storeResult.store };
     for (const filePath of pathsResult.paths) {
-      nextStore[filePath] = taskId;
+      /* Re-request under a different spelling writes through to the key already
+         there rather than adding a second one -- otherwise the same task would
+         quietly create the two-keys-one-file state this index exists to
+         prevent. */
+      nextStore[index.keyOf(filePath) ?? filePath] = taskId;
     }
     await writeActiveLeases(repoRoot, nextStore);
     return { ok: true, value: { task_id: taskId, granted: pathsResult.paths } };
@@ -284,12 +293,14 @@ export async function runWithHeldTaskLeases<T>(
 ): Promise<LeaseResult<T>> {
   const taskIds = [...new Set(requirements.map((requirement) => requirement.task_id))].sort();
   const releasedByTask = new Map(taskIds.map((taskId) => [taskId, [] as string[]]));
+  const behaviour = await pathCaseBehaviour(repoRoot);
   const result = await withLeaseLock(repoRoot, async () => {
     const storeResult = await readActiveLeases(repoRoot);
     if (!storeResult.ok) return storeResult;
+    const index = buildLeaseIndex(storeResult.store, behaviour);
     for (const requirement of requirements) {
       for (const file of requirement.files) {
-        const holder = storeResult.store[file];
+        const holder = index.holderOf(file);
         if (holder !== requirement.task_id) {
           return {
             ok: false,
@@ -360,6 +371,20 @@ async function validateLeaseStore(repoRoot: string, raw: unknown): Promise<{ ok:
     if (!canonical.ok || canonical.resolved !== filePath) {
       return { ok: false, reason: `lease path ${filePath} is invalid` };
     }
+  }
+
+  /* Unreachable once grants go through the index, so reaching it means the file
+     predates this build or was edited by hand. Refusing to read it is the point:
+     two keys naming one file is precisely the state where two tasks hold write
+     scope over the same bytes and every surface reports normal. */
+  const collision = findLeaseStoreCollisions(raw, await pathCaseBehaviour(repoRoot));
+  if (collision !== null) {
+    return {
+      ok: false,
+      reason:
+        `lease store holds ${collision.left} and ${collision.right}, which are the same file on this ` +
+        `filesystem; release the leases for this project and request them again`
+    };
   }
 
   return { ok: true };

@@ -22,9 +22,21 @@ npm ci && npm test
 
 ---
 
-## 1. The scope gate on a case-insensitive filesystem — 15 min
+## 1. The scope gate on a case-insensitive filesystem — 5 min
 
-**This is the item worth the hour.** APFS is case-**insensitive** by default, so
+> **Mostly closed since this was written.** The lease store, the decision gate
+> and scope canonicalisation now key off a *measured* filesystem verdict rather
+> than a path string — see "The case-collision lease hole, closed" in
+> `CROSS-PLATFORM.md`. Windows was exposed to the same defect and is the
+> platform the fix is verified on, in **both** directions: NTFS conflicts on two
+> spellings, and a directory switched to case-sensitive with
+> `fsutil setCaseSensitiveInfo` does not.
+>
+> What is left here is confirmation that macOS behaves like the other two
+> case-insensitive volumes, which 1a and 1b answer in five minutes. **Item 4 is
+> now the one worth the hour.**
+
+APFS is case-**insensitive** by default, so
 `src/Foo.js` and `src/foo.js` are one file. Every other platform Hivemind runs on
 either agrees with that (Windows, and the code knows it) or disagrees with it
 consistently (Linux, where they really are two files). macOS is the only place
@@ -90,29 +102,24 @@ two requests from two task ids over the two spellings.)*
   invariant is broken on macOS specifically. **That is a real defect, not a
   packaging nit** — record it as such.
 
-### 1c. The case that survives even a passing 1a
+### 1c. The case that used to survive a passing 1a — now fixed, still worth running
 
-A file that does **not yet exist** takes a different path.
-`canonicalizeIntentPath` (`src/canonicalize.ts:45`) realpaths the deepest
-*existing* ancestor and then appends the remaining segments **verbatim**
-(`src/canonicalize.ts:67`). For a new file there is nothing on disk to correct
-the case against, so `src/Foo.js` and `src/foo.js` are two keys no matter what
-realpath does.
+A file that does **not yet exist** never had an on-disk spelling to be corrected
+against, so `src/NewThing.js` and `src/newthing.js` were two lease keys no
+matter what realpath did. That was the actual hole, and it is closed: identity
+is now a measured filesystem property rather than a string comparison.
 
 ```sh
 node <REPO>/dist/src/cli.js lease request --task T-003 --file src/NewThing.js
 node <REPO>/dist/src/cli.js lease request --task T-004 --file src/newthing.js
 ```
 
-Expect **both to be granted**, on every platform including this one. On Linux
-that is correct — they are two files. On macOS it means two tasks can be handed
-overlapping write scope over one file that does not exist yet but will after the
-first write.
-
-The honest framing: this is not new on macOS, it is *reachable* on macOS. It
-needs a planner that emits two casings of one intended path, which is unlikely
-but not impossible. Record what you observe; the fix (case-folding intent keys
-on case-insensitive volumes) is a decision, not a bug report.
+- **Pass:** the second is refused. The suite proves this on NTFS and on a
+  Windows directory switched to case-sensitive; macOS should behave like the
+  first of those.
+- **Fail:** both granted. Then the probe read this volume as case-sensitive when
+  it is not — check `npm test 2>&1 | grep "probe agrees"`, which compares the
+  probe against a real write-then-read-under-another-spelling.
 
 ### 1d. What git thinks
 
@@ -140,7 +147,7 @@ is a confirmation rather than an exploration.
 npm test 2>&1 | tail -20
 ```
 
-- **Expect:** the same counts Linux reports (667 tests, 667 pass, 0 fail, 0
+- **Expect:** the same counts Linux reports (687 tests, 687 pass, 0 fail, 0
   skipped — the two Windows skips are Windows-only guards).
 - The tests to watch by name are the cancellation ones. A failure mentioning
   *"has no recorded process group"* means a spawn path lost `detached`, which is
@@ -171,45 +178,71 @@ Confirm with `npm test` passing (item 2). If it passes, this item is closed.
 
 ---
 
-## 4. PATH when launched from Finder — 10 min
+## 4. PATH when launched from Finder — 15 min
 
-**Expected to fail, and it is the most likely thing to break a real user's first
-run.** A `.app` launched from Finder or Dock inherits launchd's minimal PATH
+**This is now the item worth the hour, and it is expected to fail.** A `.app`
+launched from Finder or Dock inherits launchd's minimal PATH
 (`/usr/bin:/bin:/usr/sbin:/sbin`), **not** the shell's. Neither Homebrew's
 `/opt/homebrew/bin` nor nvm's node directory is in it. Two things then fail to
 resolve:
 
 - `node`, spawned by name at `desktop/src-tauri/src/project.rs:516` unless
-  `HIVEMIND_NODE_PATH` is set. There is an escape hatch here.
+  `HIVEMIND_NODE_PATH` is set.
 - `codex`, which is `invoke[0]` in every generated adapter profile
-  (`src/project-defaults.ts:137`). **There is no escape hatch here** — the argv
-  is spawned as-is by `src/adapter.ts:447`.
+  (`src/project-defaults.ts:137`), spawned by `src/adapter.ts`.
 
 Windows masks this completely: Explorer hands GUI apps the full user PATH from
 the registry. It is unverified on Linux too, for a different reason — the GUI
 walk cannot attach to WebKitGTK, so no Linux run has ever exercised a
 Finder-equivalent launch.
 
+**Both now have an escape hatch, and the failure now explains itself.**
+`HIVEMIND_CODEX_PATH` overrides the agent (derived from the program name, so
+`HIVEMIND_CLAUDE_PATH` and so on work the same way), and a program that cannot
+be found produces a message naming it, saying why a desktop launch differs from
+a terminal, and giving the `which` command that prints the value the variable
+wants. So this item is no longer "does it break" — it is **"does it break
+comprehensibly, and does the hatch work"**.
+
+### 4a. Does it break, and does it say so
+
 ```sh
 open -a "Hivemind AI"                        # from Finder/Dock, NOT from a terminal
 # then in the app: open a project and connect an agent
 ```
 
-- **Pass:** `adapter.connect` completes with a probe report.
-- **Fail:** it refuses with a spawn error naming `codex` or `node`. Confirm the
-  cause rather than guessing:
+- **Pass:** `adapter.connect` completes with a probe report. macOS resolves the
+  agent from a Finder launch and nothing more is needed.
+- **Expected failure:** it refuses with *"We could not find codex on this
+  computer's PATH…"*. That is the intended outcome of a missing agent — record
+  the message verbatim, and confirm the PATH is the cause rather than guessing:
 
   ```sh
   /Applications/Hivemind\ AI.app/Contents/MacOS/hivemind_desktop &
   ps eww $! | tr ' ' '\n' | grep ^PATH=
   ```
 
-  Launching the binary from a terminal inherits *your* PATH and will work, which
-  is exactly why this must be tested from Finder.
+- **Bad failure:** a raw `spawn codex ENOENT`, or a hang, or a message naming an
+  adapter profile. That means the diagnosis did not fire on this platform and is
+  worth reporting.
 
-If it fails, the fix is a resolution step at connect time (absolute-path the
-agent binary into the profile the way the probe already verifies everything
-else), not a documentation note telling users to launch from a terminal.
+### 4b. Does the hatch actually work
+
+```sh
+which codex                                  # e.g. /opt/homebrew/bin/codex
+launchctl setenv HIVEMIND_CODEX_PATH "$(which codex)"
+launchctl setenv HIVEMIND_NODE_PATH "$(which node)"
+# fully quit the app, then relaunch from Finder
+```
+
+`launchctl setenv` is what puts a variable into the environment Finder-launched
+apps inherit; exporting it in a shell will not reach them. **Pass:**
+`adapter.connect` now completes from a Finder launch.
+
+If 4a fails and 4b passes, the remaining decision is whether Hivemind should
+resolve the agent to an absolute path at connect time — the probe already
+verifies everything else about it — rather than asking a person to set a
+variable. That is a design call, not a bug report.
 
 ---
 
@@ -294,10 +327,11 @@ loss — but if a test flakes here, that is the mechanism.
 ## What to write down
 
 For each item: **pass**, **fail with the observed output**, or **not reached**.
-The two answers that change what gets built are:
+The one answer that still changes what gets built is **item 4** — whether a
+Finder-launched app can find `codex`, and whether the escape hatch reaches it.
 
-1. **1b** — whether the one-writer invariant survives a case-insensitive volume.
-2. **4** — whether a Finder-launched app can find `codex`.
-
-Everything else is confirmation or packaging. If only those two get done, the
-hour was worth spending.
+Item 1 used to share that billing. It no longer does: the lease hole it was
+written to find was fixed in the machinery and is verified in both directions on
+Windows, so 1a and 1b are now confirmation that macOS behaves like the other
+case-insensitive volume rather than an open question. Everything else here is
+packaging.

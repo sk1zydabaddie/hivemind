@@ -1,6 +1,8 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { canonicalizeIntentPath } from "./canonicalize.js";
+import { findCaseCollision } from "./lease-index.js";
+import { pathCaseBehaviour } from "./path-identity.js";
 
 export async function canonicalizeConcreteFileScope(
   repoRoot: string,
@@ -25,6 +27,22 @@ export async function canonicalizeConcreteFileScope(
       seen.add(canonical.resolved);
     }
   }
+
+  /* An exact repeat is a harmless list, already deduplicated above. Two
+     DIFFERENT spellings of one file are not: on this filesystem the scope names
+     one file while reading as two, and whoever wrote the list meant two. Said
+     out loud rather than quietly collapsed, because collapsing it is how a task
+     ends up with half the scope it asked for and no indication why. */
+  const collision = findCaseCollision(paths, await pathCaseBehaviour(repoRoot));
+  if (collision !== null) {
+    return {
+      ok: false,
+      reason:
+        `${label} names ${collision.left} and ${collision.right}, which are the same file on this ` +
+        `filesystem; these differ only in capitalisation`
+    };
+  }
+
   return { ok: true, paths };
 }
 

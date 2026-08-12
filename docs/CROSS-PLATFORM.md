@@ -4,13 +4,13 @@
 
 | Platform | Tests | Pass | Fail | Skipped | Desktop |
 | --- | --- | --- | --- | --- | --- |
-| Windows 11 (native) | 672 | 670 | **0** | 2 | 83 pass |
-| Linux 6.6 (WSL2, Ubuntu 22.04, ext4) | 672 | 672 | **0** | 0 | 83 pass |
+| Windows 11 (native, NTFS) | 687 | 685 | **0** | 2 | 83 pass |
+| Linux 6.6 (WSL2, Ubuntu 22.04, ext4) | 687 | 687 | **0** | 0 | 83 pass |
 
 Both run green after every change in this pass. The two skips on Windows are
 platform-guarded tests that Linux runs, which is why its pass count is higher —
-the suite is the same 672 either way. It was 667 before the drafter-retry tests
-below.
+the suite is the same 687 either way. It was 667 before the drafter retry, and
+672 before the case-identity work below.
 
 **The Linux filesystem matters.** The first Linux attempt ran from `/mnt/d`, a
 Windows drive mounted through drvfs, where git sees `core.fileMode = false`
@@ -198,6 +198,107 @@ states that nothing was written. `test/spec-draft-retry.test.ts` pins all five
 behaviours, including that a readable answer costs exactly one call and that a
 failed draft leaves no spec behind.
 
+## The case-collision lease hole, closed
+
+**The invariant, stated before it was changed:** *at most one task holds write
+scope over any given **file**.* The lease store substituted "byte-equal
+repo-relative string" for "file". That substitution is exact on a case-sensitive
+filesystem and wrong on a case-insensitive one, where `src/Foo.js` and
+`src/foo.js` are one file with two names — two keys, two grants, two workers
+writing the same bytes, and the store and the decision gate both reporting
+normal.
+
+This was written up as a macOS item. It is not one: **Windows is
+case-insensitive and was already exposed.** It went unnoticed because
+`canonicalize` realpaths existing files, and realpath returns the on-disk
+spelling — so for a file that already exists the two spellings converge on their
+own. `canonicalizeIntentPath` is the gap: for a file that does *not* exist yet
+it appends the tail verbatim, because there is nothing on disk to take the
+spelling from. New files are exactly what a plan leases.
+
+Three arguments with the framing, all narrowing rather than widening it:
+
+**The fix belongs at the path-identity layer, not inside the lease store.** If
+only the lease folded, the two layers would disagree: a task granted
+`src/newthing.js` writing `src/NewThing.js` would pass the lease check and be
+rejected by `decideOp` as `outside_allowed_files`. `src/path-identity.ts` owns
+the question and the lease store, the decision gate and scope canonicalisation
+all consume it.
+
+**Fold the comparison key, never the stored value.** The lease store's on-disk
+shape is unchanged — the spelling the plan used is what is stored, recorded in
+the trail and shown to a person. Folding the value would make the record lie
+about what was asked for and could hand a worker a path spelled differently from
+the one its contract names. `src/lease-index.ts` builds a folded index over an
+unfolded store, and a re-request under a second spelling writes through to the
+key already there.
+
+**One filesystem fact, two opposite safe defaults.** Widening what is *allowed*
+on a guess lets a genuinely different file through, so `allowed_files` folds only
+when the filesystem is **proven** case-insensitive. Narrowing what is
+*forbidden* on a guess lets a worker evade an entry by shifting a letter, so
+forbidden, critical and protected paths fold unless it is **proven**
+case-sensitive. Both refuse when unsure, and neither needs a new failure mode.
+`.hivemind/canon` folds unconditionally: it is our path, there is one of it, and
+a guard stricter than the filesystem costs nothing.
+
+### Detection is a measurement
+
+`process.platform` is the wrong proxy and is not used. macOS is insensitive by
+default and sensitive if formatted that way; Linux is sensitive unless a
+directory carries the ext4 casefold flag; a disk image or network mount can be
+either anywhere. The probe flips the case of a name that already exists in the
+repo root — `.git` first — and compares `dev`/`ino`. **Nothing is written**: an
+earlier draft created a probe file under `.hivemind/`, which pollutes a
+directory between create and unlink and fails on a read-only checkout. Inode
+identity rather than "did the stat succeed", because on a case-sensitive volume
+somebody may genuinely have both `.git` and `.GIT`, and that is two files.
+
+### Both directions, on real filesystems
+
+The dangerous direction is tested, not just the safe one, and on both platforms
+the *real* lease store is driven rather than a model of it:
+
+| | Windows (NTFS) | Linux (ext4) | Windows + `fsutil setCaseSensitiveInfo` |
+| --- | --- | --- | --- |
+| probe says | case-insensitive | case-sensitive | case-sensitive |
+| two tasks, `src/Widget.ts` and `src/widget.ts` | **conflict** | both granted | both granted |
+
+That third column matters: Windows can switch a single directory to genuinely
+case-sensitive, which is the only way to prove the *safe* direction on a machine
+whose volumes are otherwise all insensitive. It runs — it is not skipped on this
+hardware — so both answers are observed on one kernel rather than inferred from
+two. The decision itself is pure arithmetic over the verdict and is exercised
+for both answers everywhere.
+
+Mutation-tested rather than assumed: making `pathIdentityKey` never fold kills 7
+of the 9 tests; inverting the probe's verdict kills the case-sensitive one.
+
+**What this changes for macOS:** item 1 of `MACOS-CHECKLIST.md` is no longer the
+question that decides anything. 1a is still worth the two minutes as a
+confirmation, but 1b and 1c are now covered by machinery that measures the
+filesystem instead of trusting the platform.
+
+## The `codex` escape hatch
+
+`invoke[0]` is a bare name resolved against `PATH`, and a GUI launch does not
+get the `PATH` a terminal does. `node` had `HIVEMIND_NODE_PATH` on the shell
+side; the agent had nothing, and the failure was `spawn codex ENOENT`.
+
+`HIVEMIND_<AGENT>_PATH` is derived from the program name rather than listed, so
+it covers an agent this build has never heard of, and one variable covers
+`codex` and `codex.cmd` — a person setting it has one agent in mind, not one
+spelling of it. On Windows the override replaces element **four**, not element
+zero, because element zero is `cmd.exe` and replacing it would swap the
+interpreter rather than the agent.
+
+ENOENT is the one spawn failure with a specific remedy, so it now says the
+remedy — naming the program, why a desktop launch differs from a terminal, and
+the exact `which`/`where` command that prints the value the variable wants —
+instead of quoting an errno. Every other errno keeps the detail it came with.
+`adapter.connect` runs through the same path, so this is what a first-time GUI
+user meets rather than a stack of nothing.
+
 ## The sweep for other Windows-masked defaults
 
 The AppImage icon was found by trying to build on Linux, not by reading. So the
@@ -258,7 +359,32 @@ bundling, code signing and notarisation are untouched and untestable without
 hardware.
 
 What inference cannot settle is narrower than "macOS" and is written up as
-`docs/MACOS-CHECKLIST.md` — an hour of checks ordered so that if the hour runs
-out, the two answers that change what gets built are already in hand: whether
-the one-writer-per-file invariant survives a case-insensitive volume, and
-whether a Finder-launched app can find `codex`.
+`docs/MACOS-CHECKLIST.md`.
+
+## What is actually left
+
+No engine work. Every remaining item is packaging or verification — something to
+build and sign, or something to observe on hardware that is not here.
+
+| # | Item | Kind | Size | Needs a Mac |
+| --- | --- | --- | --- | --- |
+| 1 | Confirm the case verdict and process control on macOS | verification | 15 min | yes |
+| 2 | Finder-launch PATH: does it break, does the hatch reach it | verification | 15 min | yes |
+| 3 | Build `.app`/`.dmg` and check it launches installed | packaging | 20 min | yes |
+| 4 | Codesigning + notarisation | packaging | half a day, plus an Apple Developer account | yes |
+| 5 | Decide: resolve the agent to an absolute path at connect time | design | 2 h | no — but item 2 decides whether it is needed |
+| 6 | A GUI walk that speaks the WebKit Inspector protocol | verification | 1–2 days | no (Linux gets it too) |
+| 7 | Linux `.desktop` launch: same PATH question as item 2 | verification | 20 min | no |
+
+Items 1–3 are the hour. Item 4 is the only one that is genuinely expensive and
+it buys distribution rather than correctness — an unsigned `.app` runs fine
+after a right-click Open, so it is a shipping decision rather than a port one.
+
+Item 7 is the one worth doing without any hardware at all: Linux has exactly the
+same launch-PATH exposure as macOS and has never been checked, because the GUI
+walk cannot attach there. Installing the `.deb` and launching it from a desktop
+environment answers most of item 2 on a machine that already exists.
+
+Item 6 is what would let a GUI walk run anywhere but Windows. It is the largest
+piece of remaining work and the only one that is engine-adjacent; it verifies the
+click-level seam that the headless walk already covers behind the controls.

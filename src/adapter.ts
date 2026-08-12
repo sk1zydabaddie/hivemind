@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 import path from "node:path";
+import { explainMissingAdapterProgram, resolveAdapterInvocation } from "./adapter-command.js";
 import { writeFileAtomic } from "./atomic.js";
 import { loadAndValidateContract, TaskContract } from "./contract.js";
 import { formatErrorDetail } from "./error-detail.js";
@@ -425,7 +426,10 @@ export async function runAdapterProcess(
   const reservation = reservationResult.value.reservation;
   const startedAt = Date.now();
   return new Promise((resolve) => {
-    const [command, ...baseArgs] = profile.invoke;
+    /* HIVEMIND_<AGENT>_PATH, applied here rather than at profile load, so the
+       profile on disk stays the platform-correct thing the probe verified and
+       the override stays a property of where the app was started from. */
+    const [command, ...baseArgs] = resolveAdapterInvocation(profile.invoke);
     const args = profile.prompt_arg === "arg" ? [...baseArgs, prompt] : baseArgs;
     // `detached` on POSIX calls setsid(), so the worker leads its own process
     // group and `kill(-pgid)` reaches the agent CLI's own children. Without it
@@ -530,7 +534,7 @@ export async function runAdapterProcess(
           ? { ok: true as const }
           : await releaseMeteredCallAfterSpawnFailure(repoRoot, reservation.reservation_id);
         const suffix = release.ok ? "" : `; reservation release failed: ${release.reason}`;
-        await resolveStartFailure(profile.tool, error, options.outputLogPath, resolve, suffix);
+        await resolveStartFailure(profile.tool, profile.invoke, error, options.outputLogPath, resolve, suffix);
       })();
     });
     child.on("close", (code) => {
@@ -851,12 +855,13 @@ async function resolveProcessResult(
 
 async function resolveStartFailure(
   tool: string,
+  invoke: string[],
   error: NodeJS.ErrnoException,
   outputLogPath: string | undefined,
   resolve: (value: AdapterProcessExecutionResult) => void,
   suffix = ""
 ): Promise<void> {
-  const reason = `${formatSpawnError(tool, error)}${suffix}`;
+  const reason = `${formatSpawnError(tool, invoke, error)}${suffix}`;
   if (outputLogPath !== undefined) {
     try {
       await writeFileAtomic(
@@ -1028,7 +1033,18 @@ function stripAnsi(value: string): string {
   return value.replace(/\u001b\[[0-9;]*m/gu, "");
 }
 
-function formatSpawnError(tool: string, error: NodeJS.ErrnoException): string {
+/**
+ * ENOENT here means the program itself was not found, not that some file it
+ * wanted was missing -- so it is the one spawn failure that has a specific,
+ * actionable explanation rather than a generic one. Every other errno keeps the
+ * detail it came with, because guessing at those would be worse than quoting
+ * them.
+ */
+function formatSpawnError(tool: string, invoke: string[], error: NodeJS.ErrnoException): string {
+  if (error.code === "ENOENT") {
+    const explanation = explainMissingAdapterProgram(invoke);
+    if (explanation !== null) return explanation;
+  }
   return `failed to start adapter "${tool}": ${formatErrorDetail(error, "unknown spawn error")}`;
 }
 
