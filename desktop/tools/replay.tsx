@@ -48,6 +48,17 @@ interface ReplayScenario {
 const HEX = "9f".repeat(32);
 const params = new URLSearchParams(window.location.search);
 
+/* Captured settings state. Written by running `project.init` and
+   `adapter.connect` against a real repository and a real coding agent, so the
+   settings surface is replayed from what Core actually returned rather than
+   from a hand-written shape. */
+const settings = await fetch("/tools/settings-live.json")
+  .then(async (response) => (response.ok ? ((await response.json()) as {
+    config: Record<string, unknown>;
+    connect: Record<string, unknown>;
+  }) : null))
+  .catch(() => null);
+
 const response = await fetch("/tools/replay-data.json");
 if (!response.ok) {
   document.body.textContent =
@@ -266,6 +277,18 @@ class ReplayEventSource {
         return inspection;
       }
       if (action.type === "trail.inspect") return scenario.events.slice(0, delivered);
+      /* The settings surface, served from a REAL capture: `config.inspect` and
+         `adapter.connect` recorded from a project that was actually
+         initialised and actually probed against codex-cli. The probe's
+         capabilities are what the provider reported back, not a fixture. */
+      if (action.type === "config.inspect" || action.type === "config.set") {
+        if (settings === null) throw new Error("no captured settings state");
+        return settings.config;
+      }
+      if (action.type === "adapter.connect") {
+        if (settings === null) throw new Error("no captured settings state");
+        return settings.connect;
+      }
       /* The spec half of the review, served from a REAL drafted spec captured
          by the drafting experiment rather than a fixture. */
       if (action.type === "spec.review" && scenario.spec_review !== undefined) {
@@ -307,7 +330,11 @@ const drive = (): void => {
     params.get("view") === "map" ? "Map" : null,
     params.get("open") === "plan" ? "View plan" : null,
     params.get("open") === "commands" ? "Commands" : null,
-    params.get("open") === "settings" ? "Settings" : null
+    params.get("open") === "settings" ? "Settings" : null,
+    /* The connect flow: open settings, then ask one agent to take one role.
+       The probe result it renders is the captured one. */
+    ...(params.get("open") === "connect" ? ["Settings", "worker"] : []),
+    params.get("open") === "limits" ? "Settings" : null
   ].filter((step): step is string => step !== null);
   if (steps.length === 0) return;
   let attempts = 0;
@@ -326,7 +353,18 @@ const drive = (): void => {
         if (active instanceof HTMLElement && active.closest("[role=tablist]") !== null) {
           active.blur();
         }
-      }, 200);
+        /* Bring the probe's answer into frame, since it lands below the fold
+           of a dialog the capture cannot scroll by hand. */
+        const scrollTo = { connect: "compared what it reported", limits: "Spending limits" }[
+          params.get("open") ?? ""
+        ];
+        if (scrollTo !== undefined) {
+          const target = [...document.querySelectorAll("section")].find((node) =>
+            (node.textContent ?? "").includes(scrollTo)
+          );
+          target?.scrollIntoView({ block: scrollTo === "Spending limits" ? "start" : "end" });
+        }
+      }, 400);
     }
   }, 100);
 };

@@ -20,6 +20,13 @@ import { inspectWorkspace } from "./workspace-inspection.js";
 
 import { resumeTask } from "./task-resume.js";
 import { draftSpecFromPrompt } from "./spec-draft-action.js";
+import { adapterRoleNames, isAdapterRoleName } from "./agent-catalogue.js";
+import {
+  connectAdapter,
+  initProjectForDesktop,
+  inspectProjectConfig,
+  setProjectConfig
+} from "./config-actions.js";
 import { adoptSpec, readSpecForReview } from "./spec-review.js";
 
 export const workspaceActionTypes = [
@@ -52,7 +59,15 @@ export const workspaceActionTypes = [
   "memory.review_handoff",
   "verification.rerun",
   "adoption.review",
-  "adoption.execute"
+  "adoption.execute",
+  /* The settings surface. `config.inspect` is read-only; `config.set` accepts a
+     fixed key list and cannot reach a gate; `project.init` sets a folder up;
+     `adapter.connect` writes a profile only after a probe has confirmed the
+     capabilities it claims. */
+  "config.inspect",
+  "config.set",
+  "project.init",
+  "adapter.connect"
 ] as const;
 
 export type WorkspaceActionType = (typeof workspaceActionTypes)[number];
@@ -217,6 +232,23 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
       expected_base_head: parsed.value.expected_base_head,
       expected_state_hash: parsed.value.expected_state_hash
     }) : parsed;
+  }
+  if (raw.type === "config.inspect") {
+    if (Object.keys(payload).length > 0) return { ok: false, reason: "config.inspect takes no fields" };
+    return inspectProjectConfig(repoRoot);
+  }
+  if (raw.type === "config.set") return setProjectConfig(repoRoot, payload);
+  if (raw.type === "project.init") {
+    if (Object.keys(payload).length > 0) return { ok: false, reason: "project.init takes no fields" };
+    return initProjectForDesktop(repoRoot);
+  }
+  if (raw.type === "adapter.connect") {
+    const parsed = exactStrings(payload, ["role", "agent_id"]);
+    if (!parsed.ok) return parsed;
+    if (!isAdapterRoleName(parsed.value.role)) {
+      return { ok: false, reason: `role must be one of ${adapterRoleNames.join(", ")}` };
+    }
+    return connectAdapter(repoRoot, parsed.value.role, parsed.value.agent_id);
   }
   return { ok: false, reason: "unsupported workspace action" };
 }

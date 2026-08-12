@@ -237,6 +237,85 @@ export interface SpecReview {
   asked_for: string | null;
 }
 
+/* The settings surface. Everything here is read or narrowly-whitelisted write;
+   nothing in this group can reach a gate, and  records only
+   what a probe confirmed. */
+export type CapabilityStatus = "verified" | "failed" | "unverified";
+
+export interface ProbedCapability {
+  id: string;
+  label: string;
+  status: CapabilityStatus;
+  requested: string | null;
+  reported: string | null;
+  detail: string;
+  required: boolean;
+}
+
+export interface AdapterProbeResult {
+  agent_id: string;
+  tool: string;
+  ok: boolean;
+  refusal: string | null;
+  capabilities: ProbedCapability[];
+  effective_tokens: number;
+  wall_time_ms: number;
+  readback_source: string | null;
+}
+
+export interface CatalogueAgent {
+  id: string;
+  label: string;
+  harness: string;
+  subscription: string;
+  status: "supported" | "unverified" | "unsupported";
+  caveat: string | null;
+  model: string | null;
+  routing_tier: string;
+  context_window: number;
+  connectable: boolean;
+}
+
+export interface InspectedAdapter {
+  role: string;
+  installed: boolean;
+  tool: string | null;
+  agent_id: string | null;
+  model: string | null;
+  routing_tier: string | null;
+  problems: string[];
+  connected_at: string | null;
+  capabilities: ProbedCapability[];
+}
+
+export interface ProjectConfigView {
+  initialized: boolean;
+  config_problem: string | null;
+  config: {
+    test_command: string;
+    base_branch: string | null;
+    allowed_globs: string[];
+    forbidden_globs: string[];
+    low_globs: string[];
+    medium_globs: string[];
+    high_globs: string[];
+    critical_globs: string[];
+    run_ceiling_tokens: number | null;
+    session_ceiling_tokens: number | null;
+    max_concurrent_workers: number | null;
+    verification_checks: Array<{ id: string; command: string }>;
+  } | null;
+  roles: string[];
+  adapters: InspectedAdapter[];
+  catalogue: CatalogueAgent[];
+  limits: {
+    max_concurrent_workers_hard_max: number;
+    max_concurrent_workers_default: number;
+    observed_worker_call_tokens: { low: number; high: number };
+  };
+  writable_keys: string[];
+}
+
 export type WorkspaceAction = {
   type:
     | "autonomy.set"
@@ -268,7 +347,11 @@ export type WorkspaceAction = {
     | "memory.review_handoff"
     | "verification.rerun"
     | "adoption.review"
-    | "adoption.execute";
+    | "adoption.execute"
+    | "config.inspect"
+    | "config.set"
+    | "project.init"
+    | "adapter.connect";
   payload: Record<string, unknown>;
 };
 

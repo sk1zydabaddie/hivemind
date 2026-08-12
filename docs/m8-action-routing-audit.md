@@ -75,3 +75,42 @@ Two actions added for the single first-run review.
   fresh run applies (ratified spec, task in the approved plan, lease still this
   task's, worktree present) and refuses with a plain sentence if any went stale.
   Never re-plans and never re-ratifies: none of that state was lost.
+
+## Settings and bring-your-own-agent
+
+Four actions added so a fresh install never needs a text editor. None of them
+can widen a gate: two are read-only or key-whitelisted, one wraps the existing
+`initProject`, and the fourth writes only what a probe confirmed.
+
+- `config.inspect` — `inspectProjectConfig()`. Read-only projection of the
+  resolved config, the three adapter roles Core resolves by name, each
+  installed profile with the problems `validateAdapterProfile` found, and the
+  agent catalogue with its real status. Holds no secret because Hivemind never
+  holds a provider credential. Takes no fields; anything supplied refuses.
+- `config.set` — `setProjectConfig()`. Accepts a fixed key list
+  (`low_globs`/`medium_globs`/`high_globs`/`critical_globs`, `test_command`,
+  `run_ceiling_tokens`, `session_ceiling_tokens`, `max_concurrent_workers`) and
+  refuses anything else rather than merging it. Every write is re-validated by
+  the same `validateConfig` the loader uses and written atomically, so a value
+  this action cannot express cannot be reached through it. It cannot lower a
+  routing floor: the floors are derived from tier, and only the glob lists that
+  *assign* a tier are writable.
+- `project.init` — `initProjectForDesktop()`. Wraps `initProject` and then
+  writes default tier globs, because a project with no globs infers High for
+  every path and routes all work to the most expensive provider. It deliberately
+  writes **no** adapter profile: a profile written here would be a declaration
+  no probe had checked, which is the exact thing `adapter.connect` exists to
+  replace.
+- `adapter.connect` — `connectAdapter()`. Builds the profile server-side from
+  the catalogue, refuses bypass flags and refused orchestration modes before
+  spawning anything, runs one real probe, and records the profile **only** if
+  every required capability came back verified. The recorded
+  `<role>.connection.json` stores what the provider reported, not what was
+  requested. A failed probe writes nothing at all.
+
+The probe is the point. `validateAdapterProfile` checks fields and
+`findDangerousAdapterArgs` refuses flags at spawn; neither has ever confirmed a
+flag took effect, and this project has twice shipped a flag that was accepted
+and ignored. So the connection compares the provider's own startup readback
+against the request and reports the delta. A capability with no readback is
+reported `unverified` and never `verified`.

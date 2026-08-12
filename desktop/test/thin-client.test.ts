@@ -367,6 +367,78 @@ describe("React workspace boundary", () => {
     expect(providers).toMatch(/export const PROVIDERS/u);
   });
 
+  /**
+   * The settings surface reads Core's catalogue rather than carrying its own,
+   * so the honesty rule has to hold where the catalogue now lives. One harness
+   * is proven; everything else states what specifically is missing and cannot
+   * be connected while it is unproven.
+   */
+  test("the agent catalogue Core serves cannot imply an integration that does not exist", async () => {
+    const catalogue = await readFile(
+      path.resolve(desktopRoot, "..", "src", "agent-catalogue.ts"),
+      "utf8"
+    );
+    const settings = await readFile(
+      path.join(desktopRoot, "src", "components", "settings-dialog.tsx"),
+      "utf8"
+    );
+
+    /* Every non-supported entry has a caveat and no invocation, so the UI can
+       list it without offering a button that cannot work. */
+    expect(catalogue).toMatch(/status: "unverified"[\s\S]{0,900}invoke: null/u);
+    expect(catalogue).toMatch(/status: "unsupported"[\s\S]{0,900}invoke: null/u);
+    expect(catalogue).toMatch(/never against a live run/u);
+    expect(catalogue).toMatch(/permission-bypass flag/u);
+
+    /* Hivemind is an ADE: the agent is a harness plus the subscription that
+       pays for it, and Hivemind never asks for a key of its own. */
+    expect(settings).toMatch(/never asks for a\s+key of its own/u);
+    /* No credential input exists, which is the claim that matters. Asserting
+       the WORDS never appear was wrong: "Auth, secrets, migrations" is the
+       plain-language name of the most dangerous file scope, and banning the
+       vocabulary would have banned the sentence that protects it. */
+    expect(settings).not.toMatch(/type="password"/u);
+    const inputLabels = [
+      ...settings.matchAll(/(?:aria-label|placeholder|label)=["'{]([^"'}]+)/gu)
+    ].map((match) => match[1].toLowerCase());
+    for (const label of inputLabels) {
+      expect(label).not.toMatch(/api key|access token|credential|password/u);
+    }
+
+    /* Settings dispatches only the four audited settings actions plus the
+       interruption level it already owned. */
+    const dispatched = [...settings.matchAll(/type: "([a-z_.]+)"/gu)].map((match) => match[1]);
+    expect(new Set(dispatched)).toEqual(
+      new Set(["config.inspect", "config.set", "project.init", "adapter.connect", "autonomy.set"])
+    );
+    const audit = await readFile(
+      path.resolve(desktopRoot, "..", "docs", "m8-action-routing-audit.md"),
+      "utf8"
+    );
+    for (const action of dispatched) expect(audit).toContain(`\`${action}\``);
+
+    /* An unproven capability is reported as unverified, never as supported --
+       a spending limit built on unverified usage numbers is worse than none. */
+    expect(settings).toMatch(/Unverified/u);
+    expect(settings).toMatch(/what it reported against what was\s+asked for/u);
+  });
+
+  test("settings shows the measured cost of a real call, not a guess", async () => {
+    const settings = await readFile(
+      path.join(desktopRoot, "src", "components", "settings-dialog.tsx"),
+      "utf8"
+    );
+    const core = await readFile(
+      path.resolve(desktopRoot, "..", "src", "config-actions.ts"),
+      "utf8"
+    );
+    /* The number comes from Core, measured on this project's own runs, so the
+       ceiling warning cannot drift away from what a call actually costs. */
+    expect(core).toMatch(/observed_worker_call_tokens: \{ low: 106_792, high: 179_698 \}/u);
+    expect(settings).toMatch(/observed_worker_call_tokens/u);
+    expect(settings).toMatch(/stops the run after you have paid for the call/u);
+  });
+
   test("the run thread is built from durable daemon events, not client memory", async () => {
     const work = await readFile(
       path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"),

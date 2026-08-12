@@ -917,6 +917,118 @@ history lose their subject line. I lean toward keeping it, marked as drafted,
 because the ideation record already distinguishes who converged — but this is a
 product call about what the project's memory should contain.
 
+### Built: the settings surface, and a probe instead of a declaration
+
+All four actions below exist now, and the screen that needed them replaces
+"Hivemind cannot read these from here yet" with the values themselves. What
+follows is what changed against the spec and why, then the part that matters.
+
+**Positioning, so the copy is coherent.** Hivemind is an agent development
+environment; a coding agent is a *harness* that runs inside it, paid for by a
+subscription the person already has. The screen therefore asks *which coding
+agent do you have* and the answer is a harness plus a subscription. Hivemind
+holds no provider credential, and a desktop test asserts no input on that screen
+asks for one. (The first version of that test banned the *words* — and caught
+"Auth, secrets, migrations", which is the plain-language name of the most
+dangerous file scope. Banning the vocabulary would have banned the sentence that
+protects it. It checks inputs now.)
+
+#### One deviation from the spec, taken deliberately
+
+The spec has `project.init` write `planner` and `manager` profiles for the
+chosen provider. It does not, and it should not: **a profile written there is a
+declaration no probe has checked**, which is the exact thing `adapter.connect`
+exists to replace. `project.init` writes the tier globs and stops; connecting an
+agent is the next call and it is one click per role.
+
+`initProject` does still write its own default profiles, so a first prompt has
+something to resolve. Those are declarations too, and `config.inspect` now says
+so: they come back `installed` with `connected_at: null`, and the screen reads
+*"Installed before Hivemind could check it — reconnect to verify what it can
+do."* That sentence is the whole difference between this build and the last one.
+
+#### The probe, and what a real agent actually reports
+
+There was no capability probe anywhere. `validateAdapterProfile` is static field
+validation and `findDangerousAdapterArgs` refuses bypass flags at spawn; neither
+had ever confirmed that a flag TOOK EFFECT — and this project has shipped that
+failure twice, with `--ignore-user-config` silently forcing a read-only sandbox
+and, separately, a model pin silently ignored for months.
+
+So connecting runs the agent once and compares what it reports against what was
+asked for. Designing that meant finding out what a real agent actually says,
+which took three live runs against codex-cli 0.147.0:
+
+1. `codex exec --json` emits `thread.started`, `turn.started`, `item.*` and
+   `turn.completed`. **It names no model and no sandbox anywhere.** Reading the
+   stream alone, four of five capabilities would be unverifiable.
+2. Codex writes a session rollout file per run — but `--ephemeral`, which every
+   profile carries, suppresses it.
+3. Dropping only `--ephemeral` produces a rollout whose **`turn_context`** record
+   states `model`, `sandbox_policy.type`, `approval_policy`, `workspace_roots`
+   and `multi_agent_version`. That is a genuine startup readback of what
+   resolved, not what was requested.
+
+The probe therefore runs **the profile's own argv with exactly one flag
+removed**, and finds the rollout by the `thread_id` the run prints on its own
+stdout — so it never guesses which file belongs to which run. Probing a
+different invocation would prove nothing about the one that runs real work;
+dropping that one flag changes only whether the session is persisted.
+
+| Capability | How it is verified |
+| --- | --- |
+| Carries no bypass flags | static, before anything spawns; a refused profile is never executed |
+| Runs without asking anything | exits on its own inside the timeout, and `approval_policy` is read back |
+| Can write in this project | `sandbox_policy.type` read back **and** the file it was told to write is on disk — two independent proofs, because a silently read-only sandbox reports success and writes nothing |
+| Runs the one model you chose | `turn_context.model` compared to the `--model` argument |
+| Reports what it spent | the configured parser has to find real tokens in **this run's own output** |
+| Does not start agents of its own | **unverified.** It reports a sub-agent capability; whether it is off is not something it reports |
+
+A live connect on 2026-08-11 verified the first five and reported the sixth as
+unverified. `docs/evidence/adapter-probe-2026-08-11/` holds the profile and the
+connection record it wrote.
+
+**What is proven live and what is proven by test.** The readback *mechanism* is
+live: a real run, a real rollout, real values compared. The *mismatch branches*
+are covered by `test/adapter-probe.test.ts` with a stubbed readback, because
+making Codex genuinely ignore its own `--model` is not something a test can
+arrange. Both regressions have a test named after them.
+
+**Cost, stated before the click.** A connect is one real model call — about 40K
+tokens and ten seconds on Codex. The button says so.
+
+**Unverified never becomes supported.** A capability with no readback is
+reported `unverified`; only a *failed* required capability refuses. Nothing is
+written when a probe fails, so a project can never hold a profile whose
+capabilities were assumed.
+
+#### Honest about what works
+
+The catalogue is Core's now, and the client reads it rather than carrying its
+own. Three Codex tiers are `supported` — one harness, three models, which is
+what tier routing needs. Claude Code is `unverified` and **not connectable**: its
+usage parsing has only been checked against recorded output, and its old profile
+carried `bypassPermissions`, which this build refuses. OpenCode is
+`unsupported`: no argv, no usage parsing, no run. Both carry the specific reason
+on screen. A test asserts exactly one harness is supported and that every other
+entry has a caveat and no invocation — so the catalogue cannot grow a button
+that cannot work.
+
+#### Everything that used to need a text editor
+
+Found by reading Core's config rather than from a list: tier globs (as *Simple /
+Ordinary / Risky / Dangerous*, never "tier" or "glob"), both token ceilings, the
+worker concurrency limit, the test command, and the interruption level. The run
+ceiling shows the measured reality beside it — one real worker call cost between
+106,792 and 179,698 tokens on this project's own runs, so a ceiling below that
+stops the run *after* the money is spent. The number comes from Core so the
+warning cannot drift from what a call costs.
+
+`config.set` takes a fixed key list and refuses anything else rather than
+merging it; every write goes back through the same `validateConfig` the loader
+uses. It cannot lower a routing floor, because floors are derived from tier and
+only the lists that *assign* a tier are writable.
+
 ### Core actions the settings surface needs
 
 Named to match the existing dispatcher style. All would be additions to
