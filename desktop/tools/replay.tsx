@@ -301,16 +301,19 @@ class ReplayEventSource {
 };
 
 /* Drive the replayed app to a surface that normally needs a click, so a
- * headless capture can reach the map and the project record. Harness only --
- * the app has no idea this exists and gets no test hooks of its own.
+ * headless capture can reach the agent graph and the project record. Harness
+ * only -- the app has no idea this exists and gets no test hooks of its own.
  *
  *   /replay.html?scenario=<id>&tab=project
- *   /replay.html?scenario=<id>&view=map
+ *   /replay.html?scenario=<id>&tab=agents
  */
 const clickByName = (name: string): boolean => {
   const match = [...document.querySelectorAll("button")].find(
     (button) =>
       (button.textContent ?? "").trim() === name ||
+      /* A tab may carry a live count after its label ("Agents3"), so a prefix
+         match is what actually finds it. Harness-only tolerance. */
+      (button.textContent ?? "").trim().startsWith(name) ||
       button.getAttribute("aria-label") === name
   );
   if (!match) return false;
@@ -327,7 +330,7 @@ const clickByName = (name: string): boolean => {
 const drive = (): void => {
   const steps = [
     params.get("tab") === "project" ? "Project" : null,
-    params.get("view") === "map" ? "Map" : null,
+    params.get("tab") === "agents" ? "Agents" : null,
     params.get("open") === "plan" ? "View plan" : null,
     params.get("open") === "commands" ? "Commands" : null,
     params.get("open") === "settings" ? "Settings" : null,

@@ -1,3 +1,4 @@
+import { ANONYMOUS_TASK, stripIdentifiers, taskTitleOrNull } from "./identifiers";
 import type { HivemindEvent, OutputRecord } from "./projection";
 
 export interface ActivityGroup {
@@ -5,44 +6,56 @@ export interface ActivityGroup {
   count: number;
 }
 
-/* Core composes queue titles as "T-001 needs a revision" while the row beside
- * them reads "Initialize CLI package metadata and usage docs". Leading with the
- * identifier is the one rule every other surface follows in reverse.
+/* Core composes queue titles two ways, and both used to leak.
  *
- * This removes the identifier only when the title literally begins with the
- * exact `task_id` the item already carries -- an exact token this client was
- * handed, not a guess at what Core meant. Anything else is passed through
- * untouched. The durable fix is `taskAttentionTitle` leading with the title
- * Core already has in the contract it just loaded; until then this keeps the
- * two halves of one row from disagreeing.
+ * "T-209 stopped" leads with the identifier. "Initialize CLI package metadata
+ * and usage docs needs a revision" leads with the title — and the old rule only
+ * stripped a literal `${task_id} ` prefix, so the second shape fell through to
+ * the predicate untouched and the bar rendered the title, then the whole title
+ * again with "T-001" after it. That is the sentence this pass was asked to
+ * delete for the fifth time.
+ *
+ * The rule now: the headline is the task's title; the predicate is whatever the
+ * queue title says MINUS the title it just repeated and MINUS every identifier.
+ * A task with no known title gets an honest anonymous headline rather than its
+ * identifier — trails that predate `task.created` carrying titles cannot name
+ * their tasks, and the identifier is not a name.
  */
 export interface AttentionHeadline {
   /** What the item is about: the task's title where one is known. */
   headline: string;
-  /** What happened to it, with the identifier stripped where it led. */
+  /** What happened to it. Never repeats the headline, never carries an id. */
   predicate: string | null;
-  /** Shown as secondary detail, never as the headline. */
-  taskId: string | null;
 }
 
 export function attentionHeadline(
   item: { title: string; task_id: string | null },
   taskTitles: Record<string, string>
 ): AttentionHeadline {
-  const taskId = item.task_id;
-  if (taskId === null) {
-    return { headline: item.title, predicate: null, taskId: null };
+  const cleanTitle = stripIdentifiers(item.title);
+  const taskTitle = taskTitleOrNull(item.task_id, taskTitles);
+
+  if (taskTitle === null) {
+    /* No title to lead with. Core's own sentence, scrubbed, is the best thing
+       available — and when scrubbing leaves nothing but a predicate ("stopped"),
+       the item is named for what it is instead of for a task nobody can name. */
+    return cleanTitle === ""
+      ? { headline: ANONYMOUS_TASK, predicate: null }
+      : item.task_id === null
+        ? { headline: cleanTitle, predicate: null }
+        : { headline: ANONYMOUS_TASK, predicate: cleanTitle };
   }
-  const title = taskTitles[taskId];
-  const named = title !== undefined && title.trim() !== "" && title !== taskId;
-  if (!named) {
-    return { headline: item.title, predicate: null, taskId };
-  }
-  const prefix = `${taskId} `;
-  const predicate = item.title.startsWith(prefix)
-    ? item.title.slice(prefix.length)
-    : item.title;
-  return { headline: title, predicate, taskId };
+
+  /* Core's title often already contains the task title, because Core composes
+     it the same way. Saying it twice in two type sizes reads as a rendering
+     bug, which is exactly how it was reported. */
+  const predicate = cleanTitle.startsWith(taskTitle)
+    ? cleanTitle.slice(taskTitle.length).trim()
+    : cleanTitle;
+  return {
+    headline: taskTitle,
+    predicate: predicate === "" || predicate === taskTitle ? null : predicate
+  };
 }
 
 export function groupConsecutiveActivity(eventsNewestFirst: HivemindEvent[]): ActivityGroup[] {

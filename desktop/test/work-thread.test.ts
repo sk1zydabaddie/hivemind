@@ -95,20 +95,22 @@ describe("run thread", () => {
     ]);
   });
 
-  test("never renders an unnamed task as an indefinite article", () => {
-    // Real trails carry events for tasks the projection cannot name.
+  test("names an unnameable task without showing its identifier", () => {
+    /* Real trails carry events for tasks the projection cannot name. This used
+       to fall back to the identifier so two failing tasks stayed distinct;
+       `taskId` on the entry does that job, and the identifier was only ever
+       leaking to the screen. */
     const thread = buildRunThread(
       newestFirst([event("task.failed", "T-209", {}), event("patch.rejected", "T-107", {})]),
       {}
     );
 
     expect(thread).toMatchObject([
-      { kind: "milestone", text: "T-209 stopped unexpectedly", taskId: "T-209" },
-      { kind: "milestone", text: "T-107 has to revise its change", taskId: "T-107" }
+      { kind: "milestone", text: "One of the tasks stopped unexpectedly", taskId: "T-209" },
+      { kind: "milestone", text: "One of the tasks has to revise its change", taskId: "T-107" }
     ]);
-    for (const entry of thread) {
-      expect(entry.kind === "milestone" ? entry.text : "").not.toMatch(/^A task/u);
-    }
+    // Two entries, not one collapsed pair: the grouping key is the task id.
+    expect(thread).toHaveLength(2);
   });
 
   test("never merges different tasks into one count", () => {

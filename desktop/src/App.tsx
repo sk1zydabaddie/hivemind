@@ -3,6 +3,7 @@ import {
   FolderGit2,
   LayoutList,
   Library,
+  Workflow,
   Search,
   Settings,
   Terminal
@@ -41,6 +42,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { displayProjectPath, projectNameFromPath } from "@/lib/project-session";
+import { taskPhase } from "@/lib/phases";
 
 export default function App(): React.JSX.Element {
   const workspace = useWorkspace();
@@ -85,6 +87,11 @@ export default function App(): React.JSX.Element {
   /* Only the daemon answering with real project state counts as ready. Until
      then this is a setup problem, not an empty workspace. */
   const ready = workspace.inspection !== null;
+  /* A count on the tab, so a run in flight advertises itself from whichever
+     view you are in. Core's task states counted -- nothing derived. */
+  const agentsWorking = (workspace.inspection?.tasks ?? []).filter((task) =>
+    taskPhase(task).standing === "working"
+  ).length;
 
   return (
     <TooltipProvider delayDuration={180}>
@@ -105,14 +112,31 @@ export default function App(): React.JSX.Element {
             </span>
           </div>
 
-          {/* Two sections, because the product asks for two decisions. Work is
-              the run you are having; Project is every run you have had. The
-              agent map is a way of drawing Work, not a third place to be. */}
+          {/* Three places, and each answers a different question. Work is what
+              has happened and what you have to decide. Agents is who is doing
+              what, right now. Project is every run you have had.
+
+              Agents was demoted to a Story/Map toggle inside Work on the
+              argument that its inputs are a subset of Work's. They are; the
+              picture is not. A list can say three tasks are running, and only a
+              shape can show three agents on one branch with a fourth waiting
+              under them. It is a view worth navigating to, and the toggle it
+              was folded into was a false choice between two drawings of one
+              thing -- which is a worse question to ask than this one. */}
           {ready ? (
           <TabsList aria-label="Workspace sections">
             <TabsTrigger value="work">
               <LayoutList aria-hidden="true" />
               Work
+            </TabsTrigger>
+            <TabsTrigger value="agents">
+              <Workflow aria-hidden="true" />
+              Agents
+              {agentsWorking > 0 ? (
+                <span className="ml-0.5 font-mono text-[11px] text-navy">
+                  {agentsWorking}
+                </span>
+              ) : null}
             </TabsTrigger>
             <TabsTrigger value="project">
               <Library aria-hidden="true" />
@@ -210,13 +234,19 @@ export default function App(): React.JSX.Element {
 
         {ready ? (
         <>
-        <TabsContent value="work">
+        {/* One component renders both stages, which is what keeps the single
+            inspector single: the rail, the attention bar, the ship bar and the
+            composer are the same instances either way, so shipping never
+            depends on which view you happen to be looking at. */}
+        {(["work", "agents"] as const).map((value) => (
+        <TabsContent key={value} value={value}>
           <WorkTab
             actionError={workspace.actionError}
             connectionDetail={workspace.connectionDetail}
             connectionState={workspace.connectionState}
             inspection={workspace.inspection}
             projection={workspace.projection}
+            stage={value === "agents" ? "graph" : "thread"}
             onAction={workspace.performAction}
             onReconnect={() =>
               workspace.switchProject(
@@ -226,6 +256,7 @@ export default function App(): React.JSX.Element {
             onSelectTask={workspace.selectTaskOutput}
           />
         </TabsContent>
+        ))}
         <TabsContent value="project">
           <ProjectTab
             inspection={workspace.inspection}
@@ -297,6 +328,7 @@ export default function App(): React.JSX.Element {
           <CommandGroup heading="Go to">
             {[
               { value: "work", label: "Work", icon: <LayoutList aria-hidden="true" /> },
+              { value: "agents", label: "Agents", icon: <Workflow aria-hidden="true" /> },
               { value: "project", label: "Project", icon: <Library aria-hidden="true" /> }
             ].map((entry) => (
               <CommandItem

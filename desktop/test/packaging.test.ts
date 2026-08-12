@@ -11,7 +11,8 @@ describe("desktop packaging", () => {
     ) as {
       bundle?: {
         active?: boolean;
-        targets?: string[];
+        targets?: string[] | string;
+        icon?: string[];
         resources?: Record<string, string>;
       };
     };

@@ -28,6 +28,8 @@ import {
   PanelLabel
 } from "@/components/ui/panel";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { ANONYMOUS_TASK, taskTitleOrNull } from "@/lib/identifiers";
+import { projectTotals, type ProjectTotals } from "@/lib/project-totals";
 import { plainActionError } from "@/lib/plain-language";
 import type {
   WorkspaceAction,
@@ -69,6 +71,7 @@ export function ProjectTab({
   const [trailOpen, setTrailOpen] = useState(false);
 
   const runs = inspection?.history.runs ?? [];
+  const totals = projectTotals(runs);
   const memory = inspection?.memory;
   const learned = memory?.canon ?? [];
   const waiting: Array<{ key: string; node: React.ReactNode }> = [
@@ -86,7 +89,10 @@ export function ProjectTab({
         <DraftTestCard
           candidate={candidate}
           key={candidate.candidate_id}
-          taskTitle={inspection?.task_titles[candidate.task_id] ?? candidate.task_id}
+          taskTitle={
+            taskTitleOrNull(candidate.task_id, inspection?.task_titles ?? {}) ??
+            ANONYMOUS_TASK
+          }
         />
       )
     }))
@@ -119,10 +125,14 @@ export function ProjectTab({
           <h2 className="m-0 text-[15px] leading-tight font-semibold tracking-tight text-ink">
             What {projectName} has done
           </h2>
-          <p className="mt-1 mb-0 max-w-[560px] text-[12px] leading-relaxed text-muted-foreground">
-            Every run this project has finished, and everything it has been told
-            to remember. Nothing here changes your code.
-          </p>
+          {totals.runsRecorded === 0 ? (
+            <p className="mt-1 mb-0 max-w-[560px] text-[12px] leading-relaxed text-muted-foreground">
+              Every run this project has finished, and everything it has been
+              told to remember. Nothing here changes your code.
+            </p>
+          ) : (
+            <Totals totals={totals} />
+          )}
         </div>
         <Button
           disabled={trailLoading}
@@ -331,8 +341,6 @@ function RunCard({
                 <Clock3 aria-hidden="true" className="size-3 translate-y-0.5" />
                 {formatDuration(run.duration_ms)}
               </span>
-              <Rule />
-              <span className="font-mono text-muted-foreground">{run.spec_id}</span>
             </div>
           </div>
           <CollapsibleTrigger asChild>
@@ -355,7 +363,7 @@ function RunCard({
               empty="Nothing from this run reached your branch."
               items={run.merged_tasks.map((taskId) => ({
                 id: taskId,
-                title: taskTitles[taskId] ?? taskId
+                title: taskTitleOrNull(taskId, taskTitles) ?? ANONYMOUS_TASK
               }))}
               title="Shipped to your branch"
             />
@@ -368,7 +376,7 @@ function RunCard({
                   {run.stopped_tasks.map((task) => (
                     <li key={task.task_id}>
                       <strong className="block text-[13px] leading-snug font-medium break-words text-ink">
-                        {taskTitles[task.task_id] ?? task.task_id}
+                        {taskTitleOrNull(task.task_id, taskTitles) ?? ANONYMOUS_TASK}
                       </strong>
                       <span className="block text-[12px] leading-relaxed break-words text-muted-foreground">
                         {task.reason}
@@ -390,6 +398,67 @@ function RunCard({
         </CollapsibleContent>
       </article>
     </Collapsible>
+  );
+}
+
+/* What has piled up, on the surface whose whole subject is the past.
+ *
+ * The figures are the satisfying part and the last line is the honest part:
+ * every number is a sum over runs Core recorded, and the two a person would
+ * most like to see — files touched, time saved — are named as missing rather
+ * than estimated into existence. A fabricated "you saved 14 hours" would be the
+ * single most corrosive thing this app could put on a screen.
+ */
+function Totals({ totals }: { totals: ProjectTotals }): React.JSX.Element {
+  return (
+    <div className="mt-2 grid gap-1.5">
+      <dl className="m-0 flex flex-wrap items-baseline gap-x-5 gap-y-1.5">
+        <Total
+          label={totals.tasksShipped === 1 ? "task shipped" : "tasks shipped"}
+          strong
+          value={formatNumber(totals.tasksShipped)}
+        />
+        <Total
+          label={totals.runsShipped === 1 ? "run shipped" : "runs shipped"}
+          value={`${formatNumber(totals.runsShipped)}`}
+        />
+        <Total label="working" value={formatDuration(totals.workingMs)} />
+        <Total
+          label={`over ${formatNumber(totals.calls)} ${totals.calls === 1 ? "call" : "calls"}`}
+          value={formatCompact(totals.effectiveTokens)}
+        />
+      </dl>
+      {totals.absent.length === 0 ? null : (
+        <p className="m-0 text-[11px] leading-relaxed text-muted-foreground">
+          Not counted here, because this project's record does not carry it:{" "}
+          {totals.absent.join(", and ")}.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Total({
+  value,
+  label,
+  strong = false
+}: {
+  value: string;
+  label: string;
+  strong?: boolean;
+}): React.JSX.Element {
+  return (
+    <div className="flex items-baseline gap-1.5">
+      <dt className="sr-only">{label}</dt>
+      <dd
+        className={`m-0 font-mono font-semibold ${
+          strong ? "text-[20px] tracking-tighter text-navy" : "text-[15px] text-ink"
+        }`}
+      >
+        {value}
+      </dd>
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+    </div>
   );
 }
 
@@ -610,9 +679,13 @@ function TrailDialog({
           <DialogTitle>
             Everything this project recorded
           </DialogTitle>
+          {/* The one surface that shows internal identifiers, and the reason
+              they are gone everywhere else: a person who needs one is reading
+              the raw record or quoting it to support, and has asked for it. */}
           <DialogDescription>
             Every step the project wrote down, oldest first. This is the record
-            the app reads; it is shown here exactly as it was written.
+            the app reads, shown exactly as it was written — including the
+            internal names for things, which is what support will ask for.
           </DialogDescription>
         </DialogHeader>
         <ScrollArea className="min-h-0 bg-canvas">

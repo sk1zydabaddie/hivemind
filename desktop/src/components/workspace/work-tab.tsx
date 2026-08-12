@@ -8,13 +8,11 @@ import {
   CircleStop,
   FileCode2,
   Layers3,
-  ListTree,
   MessageSquareText,
   Plus,
   RotateCcw,
   Send,
   SlidersHorizontal,
-  TextQuote,
   X
 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
@@ -50,13 +48,15 @@ import {
   PanelLabel
 } from "@/components/ui/panel";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { PhaseSpine, RunMap, phaseRatio } from "@/components/workspace/agent-map";
+import { AgentGraph } from "@/components/workspace/agent-graph";
+import { PhaseSpine, phaseRatio } from "@/components/workspace/phase-spine";
 import {
   SpecReviewPanel,
   initialNonGoals,
   NOTHING_TO_DECLINE,
   type NonGoalEntry
 } from "@/components/workspace/spec-review";
+import { ANONYMOUS_TASK, taskTitleOrNull } from "@/lib/identifiers";
 import { plainActionError } from "@/lib/plain-language";
 import {
   RECENT_EVENT_LIMIT,
@@ -90,6 +90,11 @@ interface WorkTabProps {
   actionError: string;
   connectionState: string;
   connectionDetail: string;
+  /* Which drawing of the run occupies the centre. The shell owns this, because
+     the agent graph is a place you go rather than a way you have set a widget:
+     a toggle in this header asked "which of these two do you want?" about two
+     things a person cannot choose between before they have seen either. */
+  stage: "thread" | "graph";
   onReconnect: () => Promise<void>;
   onSelectTask: (taskId: string) => void;
   onAction: <T>(action: WorkspaceAction) => Promise<T>;
@@ -121,7 +126,8 @@ const stateLanguage: Record<TaskState, { label: string; tone: Tone }> = {
   failed: { label: "Worker stopped", tone: "danger" },
   cancelled: { label: "Stopped", tone: "neutral" },
   verified: { label: "Ready to ship", tone: "good" },
-  merged: { label: "Merged", tone: "good" }
+  /* "Merged" is a git word. The product says ship, everywhere. */
+  merged: { label: "Shipped", tone: "good" }
 };
 
 /* Tasks are grouped by what the person watching would do about them, not by the
@@ -169,6 +175,7 @@ export function WorkTab({
   actionError,
   connectionState,
   connectionDetail,
+  stage,
   onReconnect,
   onSelectTask,
   onAction
@@ -179,9 +186,6 @@ export function WorkTab({
     : null;
   const [dismissedAttention, setDismissedAttention] = useState<string[]>([]);
   const [dismissedPlanHash, setDismissedPlanHash] = useState<string | null>(null);
-  /* The map is the same run drawn as shape. It is a way of looking, not a place
-     to be, so it lives here rather than in the shell's navigation. */
-  const [view, setView] = useState<"thread" | "map">("thread");
   const [reviewOpen, setReviewOpen] = useState(false);
   /* The spec half of the one review. Read through the audited dispatcher; the
      client decides nothing about it. */
@@ -505,7 +509,12 @@ export function WorkTab({
           type: "change.inspect",
           payload: { task_id: taskId }
         });
-        sections.push(`# ${result.task_id}\n${result.diff.trimEnd()}`);
+        /* The diff is headed by what the change was FOR, not by the name the
+           system files it under. This read `# T-001` until the pass that took
+           identifiers off every other surface. */
+        const heading =
+          taskTitleOrNull(result.task_id, inspection?.task_titles ?? {}) ?? ANONYMOUS_TASK;
+        sections.push(`# ${heading}\n${result.diff.trimEnd()}`);
       }
       setChangeSetPatch({
         verificationId: changeSet.verification_id,
@@ -591,6 +600,7 @@ export function WorkTab({
         <div className="grid min-h-0 overflow-hidden">
           <Panel className="grid-rows-[auto_minmax(0,1fr)_auto]">
             <RunHeader
+              advancing={projection.artifactMovements.at(-1)?.id ?? null}
               attentionCount={openQueue.length}
               configuredLevel={inspection?.autonomy.configured_level ?? "auto"}
               busy={busy}
@@ -601,8 +611,6 @@ export function WorkTab({
               runActive={runActive}
               stopBusy={stopBusy}
               tasks={tasks}
-              view={view}
-              onViewChange={setView}
               onLevelChange={async (level) => {
                 setBusy(true);
                 setFeedback("");
@@ -620,8 +628,8 @@ export function WorkTab({
             />
             {idle ? (
               <IdleBoard onPick={setComposer} />
-            ) : view === "map" ? (
-              <RunMap
+            ) : stage === "graph" ? (
+              <AgentGraph
                 inspection={inspection}
                 projection={projection}
                 selectedTaskId={projection.selectedTaskId}
@@ -1036,19 +1044,17 @@ function AttentionBar({
                 <span className="text-[12px] text-muted-foreground">a plan is also waiting</span>
               ) : null}
             </div>
-            {/* The row leads with what the work is; what happened to it, and the
-                identifier it happened to, sit underneath. */}
+            {/* The row leads with what the work IS -- its title -- and says what
+                happened to it underneath. It used to append the identifier here,
+                which is how this bar came to read "Initialize CLI package
+                metadata and usage docs needs a revision T-001" under a heading
+                already saying the first half of that. */}
             <strong className="mt-1 block text-[14px] leading-snug font-semibold tracking-tight break-words text-ink">
               {named.headline}
             </strong>
             {named.predicate === null ? null : (
               <span className={`mt-0.5 block text-[12px] font-medium ${mark}`}>
                 {sentenceCase(named.predicate)}
-                {named.taskId === null ? null : (
-                  <span className="ml-1.5 font-mono font-normal text-muted-foreground">
-                    {named.taskId}
-                  </span>
-                )}
               </span>
             )}
             <p className="mt-1 mb-0 max-w-[760px] text-[12px] leading-relaxed break-words text-muted-foreground">
@@ -1217,8 +1223,7 @@ function RunHeader({
   configuredLevel,
   busy,
   stopBusy,
-  view,
-  onViewChange,
+  advancing,
   onOpenPlan,
   onStop,
   onLevelChange
@@ -1233,8 +1238,7 @@ function RunHeader({
   configuredLevel: AutonomyLevel;
   busy: boolean;
   stopBusy: boolean;
-  view: "thread" | "map";
-  onViewChange: (view: "thread" | "map") => void;
+  advancing: string | null;
   onOpenPlan: () => void;
   onStop: () => void;
   onLevelChange: (level: AutonomyLevel) => Promise<void>;
@@ -1250,20 +1254,19 @@ function RunHeader({
         ? "Planning the work"
         : "Nothing running"
       : working > 0
-        ? `${working} ${working === 1 ? "task" : "tasks"} running`
+        ? `${working} ${working === 1 ? "agent is" : "agents are"} working`
         : runActive
-          ? "Waiting on the next task"
+          ? "Waiting on the next agent"
           : done === tasks.length
             ? attentionCount > 0
-              ? "All tasks finished, with something to decide"
-              : "All tasks finished"
-            : `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"} in this run`;
+              ? "All the work is done, with something to decide"
+              : "All the work is done"
+            : `${tasks.length} ${tasks.length === 1 ? "agent" : "agents"} in this run`;
   /* Progress through phases, not through completed tasks.
-     Counting only finished tasks meant the rule under this header sat at 0%
-     for the entire first wave of a run — three agents working, and the one
-     ambient-free progress signal in the app showing nothing having happened.
-     Every task clearing a phase now moves it, which is what the four-segment
-     gauge in the rail and the map already say per task. */
+     Counting only finished tasks left this at 0% for the entire first wave of a
+     run -- three agents working, and the one progress signal in the app showing
+     nothing having happened. Every task clearing a phase moves it, which is the
+     same fact the four-segment gauge states per agent. */
   const progress =
     tasks.length === 0
       ? 0
@@ -1274,124 +1277,182 @@ function RunHeader({
         );
 
   return (
-    <div className="relative flex shrink-0 items-start gap-4 border-b border-rule bg-canvas px-4 py-3">
-      <div className="min-w-0">
-        {/* The run's subject is a sentence somebody wrote, not a field name.
-            Setting it in the label voice shouted it. */}
-        {subject === null ? null : (
-          <span className="mb-0.5 block text-[12px] leading-snug break-words text-muted-foreground">
-            {subject}
-          </span>
-        )}
-        <h2 className="m-0 text-[15px] leading-tight font-semibold tracking-tight text-ink">
-          {headline}
-        </h2>
-        {/* One instrument line: the figures that answer "where is this", in
-            mono, separated by hairlines rather than by middots. The readings
-            are collected first and the separators interleaved after, because
-            rendering a separator beside each optional reading printed a
-            leading hairline whenever the first one was absent. */}
-        <MetaLine
-          readings={[
-            tasks.length > 0 ? (
-              <span className="font-mono text-ink" key="done">
-                {done}/{tasks.length}
-                <span className="ml-1 font-sans text-muted-foreground">done</span>
+    <div className="grid shrink-0 gap-2.5 border-b border-rule bg-canvas px-4 py-3">
+      {/* Three kinds of information, in three places instead of on one line:
+          what you asked for, what is happening now, and how far it has got.
+          They used to be interleaved with an interruption SETTING in a single
+          row of middot-separated readings, where a person had no way to tell
+          which was status and which was a control they had set. */}
+      <div className="flex items-start gap-4">
+        <div className="min-w-0 flex-1">
+          {subject === null ? null : (
+            <>
+              <span className="block text-[11px] font-medium tracking-label text-muted-foreground uppercase">
+                What you asked for
               </span>
-            ) : null,
-            files > 0 ? (
-              <span className="font-mono text-ink" key="files">
-                {files}
-                <span className="ml-1 font-sans text-muted-foreground">
-                  {files === 1 ? "file open" : "files open"}
-                </span>
+              <span className="mt-0.5 mb-1.5 block text-[13px] leading-snug break-words text-ink">
+                {subject}
               </span>
-            ) : null,
-            spanMs === null ? null : (
-              <span className="font-mono" key="span">
-                {runActive ? `running ${formatDuration(spanMs)}` : `took ${formatDuration(spanMs)}`}
-              </span>
-            ),
-            /* One projection decides the top-level claim. Core's queue is the
-               authority on whether anything is waiting, so the header never
-               says "Ready to ship" over a bar saying it cannot ship. */
-            attentionCount > 0 ? (
-              <span className="font-medium text-amber" key="attention">
+            </>
+          )}
+          <h2 className="m-0 flex flex-wrap items-baseline gap-x-2.5 text-[15px] leading-tight font-semibold tracking-tight text-ink">
+            {headline}
+            {attentionCount > 0 ? (
+              <span className="text-[12px] font-medium text-amber">
                 {attentionCount === 1 ? "1 thing needs you" : `${attentionCount} things need you`}
               </span>
             ) : integrationStatus !== "idle" && tasks.length > 0 ? (
-              <span className={`font-medium ${toneText[verification.tone]}`} key="check">
+              <span className={`text-[12px] font-medium ${toneText[verification.tone]}`}>
                 {verification.label}
               </span>
-            ) : null
-          ]}
-        />
-      </div>
+            ) : null}
+          </h2>
+        </div>
 
-      <div className="ml-auto flex shrink-0 items-center gap-1">
-        {tasks.length > 0 ? (
-          <ViewToggle value={view} onChange={onViewChange} />
-        ) : null}
-        {planAvailable ? (
-          <Button size="sm" type="button" variant="ghost" onClick={onOpenPlan}>
-            <Layers3 aria-hidden="true" />
-            View plan
-          </Button>
-        ) : null}
-        {runActive ? (
-          <Button
-            className="text-clay hover:bg-clay-wash hover:text-clay"
-            disabled={stopBusy}
-            size="sm"
-            type="button"
-            variant="ghost"
-            onClick={onStop}
-          >
-            <CircleStop aria-hidden="true" />
-            Stop
-          </Button>
-        ) : null}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+        <div className="flex shrink-0 items-center gap-1">
+          {planAvailable ? (
+            <Button size="sm" type="button" variant="ghost" onClick={onOpenPlan}>
+              <Layers3 aria-hidden="true" />
+              View plan
+            </Button>
+          ) : null}
+          {runActive ? (
             <Button
-              aria-label="How often Hivemind interrupts you"
+              className="text-clay hover:bg-clay-wash hover:text-clay"
+              disabled={stopBusy}
               size="sm"
               type="button"
               variant="ghost"
+              onClick={onStop}
             >
-              <SlidersHorizontal aria-hidden="true" />
-              {autonomyLabel(configuredLevel)}
-              <ChevronDown aria-hidden="true" />
+              <CircleStop aria-hidden="true" />
+              Stop
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-[260px]">
-            <DropdownMenuLabel>Interrupt me for</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuRadioGroup
-              value={configuredLevel}
-              onValueChange={(value) => void onLevelChange(value as AutonomyLevel)}
-            >
-              <DropdownMenuRadioItem disabled={busy} value="auto">
-                Only what needs me
-              </DropdownMenuRadioItem>
-              <DropdownMenuRadioItem disabled={busy} value="review_plan">
-                The plan, then only what needs me
-              </DropdownMenuRadioItem>
-              <DropdownMenuRadioItem disabled={busy} value="review_everything">
-                Every step
-              </DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+          ) : null}
+          {/* A setting, labelled as one. It used to render its VALUE -- "Only
+              what needs me" -- beside two live readings, so the header's last
+              word looked like a third status. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                aria-label="How often Hivemind interrupts you"
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                <SlidersHorizontal aria-hidden="true" />
+                Interruptions
+                <ChevronDown aria-hidden="true" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-[260px]">
+              <DropdownMenuLabel>Interrupt me for</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuRadioGroup
+                value={configuredLevel}
+                onValueChange={(value) => void onLevelChange(value as AutonomyLevel)}
+              >
+                <DropdownMenuRadioItem disabled={busy} value="auto">
+                  Only what needs me
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem disabled={busy} value="review_plan">
+                  The plan, then only what needs me
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem disabled={busy} value="review_everything">
+                  Every step
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
-      {/* The header's own edge doubles as run progress. It only moves when a task
-          actually finishes. */}
-      <span aria-hidden="true" className="absolute inset-x-0 -bottom-px h-[2px]">
+      {tasks.length === 0 ? null : (
+        <RunProgress
+          advancing={advancing}
+          done={done}
+          files={files}
+          progress={progress}
+          runActive={runActive}
+          spanMs={spanMs}
+          total={tasks.length}
+        />
+      )}
+    </div>
+  );
+}
+
+/* The run's progress, promoted from a 2px hairline on the header's own edge to
+ * something a person can watch.
+ *
+ * Every number in it is the trail's: the fill is cleared phases over total
+ * phases, the ratio is Core's task states counted, and the clock is the trail's
+ * own first and last timestamps. Nothing here moves on a timer -- if the run
+ * makes no progress for a minute, this does not move for a minute, which is the
+ * whole difference between a progress bar and a spinner.
+ */
+function RunProgress({
+  progress,
+  done,
+  total,
+  files,
+  spanMs,
+  runActive,
+  advancing
+}: {
+  progress: number;
+  done: number;
+  total: number;
+  files: number;
+  spanMs: number | null;
+  runActive: boolean;
+  advancing: string | null;
+}): React.JSX.Element {
+  return (
+    <div className="grid gap-1.5">
+      <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 text-[12px] text-muted-foreground">
+        <span className="font-mono text-[13px] font-semibold text-ink">
+          {done}/{total}
+        </span>
+        <span>{total === 1 ? "task done" : "tasks done"}</span>
+        {files > 0 ? (
+          <>
+            <Divider />
+            <span>
+              <span className="font-mono text-ink">{files}</span>{" "}
+              {files === 1 ? "file open" : "files open"}
+            </span>
+          </>
+        ) : null}
+        {spanMs === null ? null : (
+          <>
+            <Divider />
+            <span className="font-mono">
+              {runActive ? `running ${formatDuration(spanMs)}` : `took ${formatDuration(spanMs)}`}
+            </span>
+          </>
+        )}
+        <span className="ml-auto font-mono text-[13px] font-semibold text-navy">
+          {progress}%
+        </span>
+      </div>
+      {/* A real track, so the fill has something to be measured against. The
+          overlay is the existing artifact marker: it fires when the live stream
+          reports a change clearing a phase, plays once, and sits ON TOP of an
+          already-correct fill, which is what lets reduced motion hide it and
+          leave the bar underneath still true. */}
+      <span aria-hidden="true" className="relative block h-1.5 overflow-hidden bg-rule">
         <span
-          className="block h-[2px] bg-navy transition-[width] duration-500 ease-out"
+          className="block h-1.5 bg-navy transition-[width] duration-700 ease-out"
           style={{ width: `${progress}%` }}
         />
+        {advancing === null ? null : (
+          <span
+            className="artifact-marker absolute inset-y-0 left-0 bg-panel/70"
+            key={advancing}
+            style={{ width: `${progress}%` }}
+          />
+        )}
       </span>
     </div>
   );
@@ -1420,49 +1481,6 @@ function MetaLine({
         </Fragment>
       ))}
     </div>
-  );
-}
-
-/* Two drawings of one run. It costs a pair of buttons rather than a permanent
-   place in the shell, which is the whole reason it is here and not up there. */
-function ViewToggle({
-  value,
-  onChange
-}: {
-  value: "thread" | "map";
-  onChange: (view: "thread" | "map") => void;
-}): React.JSX.Element {
-  const options = [
-    { key: "thread" as const, label: "Story", icon: TextQuote },
-    { key: "map" as const, label: "Map", icon: ListTree }
-  ];
-  return (
-    <span
-      aria-label="How to show this run"
-      className="mr-1 inline-flex divide-x divide-rule overflow-hidden rounded-md border border-rule"
-      role="group"
-    >
-      {options.map((option) => {
-        const Icon = option.icon;
-        const active = value === option.key;
-        return (
-          <button
-            aria-pressed={active}
-            className={`inline-flex h-7 cursor-pointer items-center gap-1.5 px-2.5 text-[12px] font-medium transition-colors ${
-              active
-                ? "bg-navy-wash text-navy"
-                : "bg-panel text-muted-foreground hover:text-ink"
-            }`}
-            key={option.key}
-            type="button"
-            onClick={() => onChange(option.key)}
-          >
-            <Icon aria-hidden="true" className="size-3.5" />
-            {option.label}
-          </button>
-        );
-      })}
-    </span>
   );
 }
 
@@ -1662,17 +1680,12 @@ function TaskRow({
             {language.label}
           </span>
         </span>
-        {/* The map's gauge, not a smaller worse copy of it. Four named phases,
-            the current one in the standing's colour, and the count beside the
-            identifier — which is exactly where the map's card puts it. */}
+        {/* The graph's gauge, not a smaller worse copy of it. Four named
+            phases, the current one in the standing's colour. */}
         <span className="mt-2 block">
           <PhaseSpine advanceKey={null} phase={phase} standing={phase.standing} />
         </span>
         <span className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px] break-words text-muted-foreground">
-          <span className="font-mono" title={task.task_id}>
-            {task.task_id}
-          </span>
-          <span aria-hidden="true" className="h-2.5 w-px bg-rule" />
           <span className="font-mono">{phaseRatio(phase)}</span>
           {task.lease_files.length > 0 ? (
             <>
@@ -1743,8 +1756,7 @@ function InspectorPane({
               {task.title}
             </strong>
             <span className="mt-0.5 block text-[11px] break-words text-muted-foreground">
-              <span className="font-mono">{task.task_id}</span>
-              {task.agent ? ` · ${task.agent}` : " · no agent yet"}
+              {task.agent ?? "no agent yet"}
             </span>
           </div>
           <Button
@@ -2054,35 +2066,40 @@ function ShippedCard({
 }): React.JSX.Element {
   const [filesOpen, setFilesOpen] = useState(false);
   return (
-    <article className="max-w-[720px] rounded-md border border-navy/25 border-l-2 border-l-navy bg-navy-wash px-4 py-3.5">
-      <div className="flex items-center gap-2.5">
+    /* The payoff, and the one place in this app allowed to look like one.
+       Everything in it is a durable fact from `adoption.completed` -- the task
+       count, the branch, the commit, the files -- rendered at the size the
+       moment deserves rather than as another row in a log. */
+    <article className="max-w-[720px] overflow-hidden rounded-md border border-navy/30 bg-navy-wash">
+      <div className="flex items-center gap-3 bg-navy px-4 py-3 text-panel">
         <span
           aria-hidden="true"
-          className="grid size-6 shrink-0 place-items-center rounded-sm bg-navy text-panel"
+          className="grid size-8 shrink-0 place-items-center rounded-sm bg-panel/15"
         >
-          <Check className="size-3.5" />
+          <Check className="size-5" />
         </span>
         <div className="min-w-0 flex-1">
-          <strong className="block text-[14px] leading-snug font-semibold tracking-tight text-ink">
-            Shipped {entry.taskIds.length}{" "}
-            {entry.taskIds.length === 1 ? "task" : "tasks"}
-            {entry.branch ? ` to ${entry.branch}` : ""}
+          <strong className="block text-[17px] leading-tight font-semibold tracking-tighter">
+            Shipped
           </strong>
-          <span className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-            <time className="font-mono">{formatClock(entry.at)}</time>
-            <Divider />
-            <span>this is now part of your project</span>
+          <span className="mt-0.5 block text-[12px] text-panel/75">
+            {entry.taskIds.length} {entry.taskIds.length === 1 ? "task" : "tasks"} landed
+            {entry.branch ? ` on ${entry.branch}` : ""} — this is part of your
+            project now
           </span>
         </div>
+        <time className="shrink-0 font-mono text-[11px] text-panel/70">
+          {formatClock(entry.at)}
+        </time>
       </div>
-
-      <ul className="mt-3 mb-0 grid list-none gap-2 border-t border-navy/15 p-0 pt-3">
+      <div className="px-4 pt-3 pb-3.5">
+      <ul className="m-0 grid list-none gap-2 p-0">
         {entry.taskIds.map((taskId) => {
           const planned = plan?.tasks.find((task) => task.task_id === taskId);
           return (
             <li key={taskId}>
               <strong className="block text-[13px] leading-snug font-medium break-words text-ink">
-                {planned?.title ?? taskTitles[taskId] ?? taskId}
+                {planned?.title ?? taskTitleOrNull(taskId, taskTitles) ?? ANONYMOUS_TASK}
               </strong>
               {planned?.acceptance_criterion ? (
                 <span className="mt-0.5 block text-[12px] leading-relaxed break-words text-muted-foreground">
@@ -2133,6 +2150,7 @@ function ShippedCard({
           </ul>
         </CollapsibleContent>
       </Collapsible>
+      </div>
     </article>
   );
 }
@@ -2392,9 +2410,6 @@ function PlanTakeover({
                         ? `${group.task_ids.length} at the same time`
                         : `${group.task_ids.length} in order`}
                     </strong>
-                    <span className="mt-0.5 block font-mono text-[11px] break-words text-muted-foreground">
-                      {group.group_id}
-                    </span>
                   </div>
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
@@ -2417,9 +2432,9 @@ function PlanTakeover({
 
         <DialogFooter className="items-center justify-between border-t border-rule bg-panel px-6 py-3 sm:justify-between">
           <div className="flex min-w-0 items-center gap-2.5">
-            <code className="rounded-sm border border-rule bg-canvas px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
-              {plan.plan_hash.slice(0, 12)}
-            </code>
+            {/* The plan's fingerprint used to sit here as a bare hash. It names
+                nothing a person can act on, and the full-record dialog is where
+                anything internal belongs. */}
             <span className="text-[12px] text-muted-foreground">
               {ratificationPending
                 ? "Any regenerated or edited plan needs a fresh approval."
@@ -2487,9 +2502,6 @@ function PlanTaskCard({
           <h3 className="m-0 text-[13px] leading-snug font-semibold break-words text-ink">
             {task.title}
           </h3>
-          <span className="mt-0.5 block font-mono text-[11px] text-muted-foreground">
-            {task.task_id}
-          </span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {task.tier === "high" || task.tier === "critical" ? (
@@ -2864,7 +2876,7 @@ function plainPrimaryDetail(detail: string, kind: WorkspaceQueueItem["kind"]): s
 }
 
 function integrationLanguage(status: string): { label: string; tone: Tone } {
-  if (status === "merged") return { label: "Merged", tone: "good" };
+  if (status === "merged") return { label: "Shipped", tone: "good" };
   if (status === "blocked") return { label: "Project checks blocked", tone: "danger" };
   if (status === "low-confidence") return { label: "Thin test coverage", tone: "warning" };
   if (status === "failed") return { label: "Checks failed", tone: "danger" };

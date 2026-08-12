@@ -1,3 +1,4 @@
+import { ANONYMOUS_TASK, taskTitleOrNull } from "./identifiers";
 import type { HivemindEvent } from "./projection";
 
 /* The run thread is a plain-language narrative of what the project did, built
@@ -135,11 +136,16 @@ const SUPPRESSED = new Set([
   "verification.completed"
 ]);
 
-/* A task the projection cannot name is still a specific task. Naming it by its
-   identifier keeps two failing tasks apart; "A task" does not. */
+/* A task the projection cannot name is still a specific task — but its
+ * identifier is not a name, and showing one to a person has never helped them.
+ *
+ * Keeping two unnamed failing tasks apart used to be this function's job, and
+ * it is not any more: `pushMilestone` keys on `taskId` as well as on the text,
+ * so two anonymous tasks stay two rows with two different details. The
+ * identifier was doing nothing here that the grouping key does not already do.
+ */
 export function taskLabel(taskId: string, taskTitles: Record<string, string>): string {
-  const title = taskTitles[taskId];
-  return title === undefined || title.trim() === "" || title === taskId ? taskId : title;
+  return taskTitleOrNull(taskId, taskTitles) ?? ANONYMOUS_TASK;
 }
 
 const STARTED_TYPES = new Set(["task.started", "task.resumed", "task.run_accepted"]);

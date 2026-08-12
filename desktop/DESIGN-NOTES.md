@@ -76,17 +76,151 @@ near 400. The limit is 4,000 (~1MB of small objects). When the buffer has
 actually dropped events, the thread says so instead of silently losing its
 beginning.
 
-## Done: four tabs became two
+## The identifier rule, and why it took five asks — 2026-08-12
 
-The shell is now **Work** (the run) and **Project** (its past). Swarm became a
-view toggle inside Work; Memory and History merged into Project.
+**A person never sees `T-001`, `G-1`, `S-001` or `V-…`.** Not smaller, not
+muted, not on hover. A task is identified by its title; two tasks with the same
+title are a planner problem.
 
-Reading the code made the case harder than the original argument did:
+This was asked four times and answered four times with *"we lead with the title
+and keep the identifier secondary"*, which is a different thing. Worth recording
+why that kept happening, because the shape generalises:
 
-- **Swarm could not show anything Work did not already have.** `buildSwarmTree`
-  takes exactly `inspection.execution_groups`, `inspection.tasks` and
-  `projection.subagents` — the same inputs the rail reads. A tab whose inputs are
-  a subset of another tab's is a *rendering*, not a place.
+- **Every individual placement was defensible.** A mono `T-001` under a row
+  title is *secondary*. A `taskTitles[id] ?? id` fallback is *honest*. Reviewed
+  one at a time, each one survives.
+- **Nothing looked at the composite.** `attentionHeadline` stripped a literal
+  `${task_id} ` prefix and passed everything else through, so a title Core had
+  already composed *from the task title* fell through to the predicate slot
+  intact — and the bar rendered the title, then the whole title again, then
+  `T-001`. Nobody wrote that sentence; it was assembled by two correct-looking
+  rules meeting.
+- **The tests asserted the wrong contract.** `work-presentation.test.ts` pinned
+  `taskId: "T-001"` as an *expected field*, so the behaviour being asked about
+  was protected by a passing test.
+
+So the fix is not another careful placement. `src/lib/identifiers.ts` owns one
+pattern and three functions, `taskTitleOrNull` returns **null** rather than the
+identifier so a caller cannot accidentally fall back to one, and
+`test/identifiers.test.ts` **renders the real components against real replayed
+trails** with `react-dom/server` and scans the markup. Restoring the identifier
+in the rail row fails 12 render assertions; that mutation was run.
+
+Two things the render guard needed to avoid being vacuous, both learned from
+the `design-tokens` mutation experiment: it asserts the corpus really does
+contain identifiers to leak, and it asserts the surfaces really do render their
+content (real task titles from `@midrun`), so a scan that passes because nothing
+rendered fails instead.
+
+**Where identifiers still live, deliberately:** the full-record dialog, which
+says in its own description that it shows the internal names because that is
+what support will ask for. One place, and you have to open it.
+
+## Restored: the agent graph is a place again — 2026-08-12
+
+Folding Swarm into a Story/Map toggle was defensible on the code and wrong on
+the product, and this file made the wrong argument for it: *"a tab whose inputs
+are a subset of another tab's is a rendering, not a place."* The inputs are a
+subset. **The picture is not.** A list can say three tasks are running; only a
+shape can show three agents hanging off one branch with a fourth waiting under
+them, which is the one thing this product does that a person cannot get
+anywhere else.
+
+`src/components/workspace/agent-graph.tsx` is built to be understood in about a
+second, by someone who has never seen the app:
+
+| Question | Answered by |
+| --- | --- |
+| which agents exist | one node each, all on screen at once |
+| what is each doing | the node's own sentence, from its phase |
+| what waits on what | the connector — a fan-out branches, a chain drops |
+| which needs a human | the only clay node, and the only one with a glyph badge |
+
+**Parallel versus sequential is shape, not label.** Three agents at the same
+time are drawn under a branch: trunk down, bar across, a drop into each. A
+dependent stage is a single line with `THEN`. A stage nobody has reached yet is
+dashed and faint. The words above each stage confirm what the drawing already
+said rather than being the only way to know it.
+
+**What was right about the consolidation is kept.** The graph dispatches
+nothing. It selects an agent; the rail acts on it. `App.tsx` renders one
+`WorkTab` for both the Work and Agents tabs with a different `stage`, so the
+attention bar, the ship bar, the rail inspector and the composer are the *same
+instances* either way — there is still exactly one inspector, and shipping never
+depends on which view you are looking at.
+
+`PhaseSpine` moved to its own file, because three surfaces draw it and the rail
+should not need the graph to exist in order to have a gauge.
+
+## Comprehension: the three fixes — 2026-08-12
+
+**The Story/Map toggle is gone.** Two renderings of one run, presented as
+navigation, made a person choose between them before they had seen either. The
+graph is a tab; the thread is the Work tab; there is no toggle.
+
+**The header carried three kinds of information on one line.** `0/4 done · took
+26m 27s · Only what needs me` mixed progress, a duration and *a setting the
+person had chosen* into one middot-separated row where nothing said which was
+which. It is now three placed things: an eyebrow-labelled **What you asked for**,
+the headline of what is happening now, and a real progress element underneath.
+The interruption control moved into the button group and is labelled
+**Interruptions** rather than rendering its own value, so the header's last word
+can no longer be read as a third status.
+
+**Where a first-time user looks** is now decided: the largest thing on an idle
+screen is the composer's own instruction, and on a live run it is the headline
+with the progress bar directly beneath it.
+
+## Gamification, and the line it must not cross — 2026-08-12
+
+Progress should feel good; nothing may be invented. Every number below is a sum
+over the durable record, and the two that would feel best are named as missing
+rather than estimated.
+
+- **Progress that moves on events.** The run bar is cleared phases over total
+  phases — the same fact the per-agent gauge states — promoted from a 2px
+  hairline on the header's edge to a real track with a figure. If the run makes
+  no progress for a minute, it does not move for a minute. That is the whole
+  difference between a progress bar and a spinner, and `thin-client.test.ts`
+  asserts no timer drives it.
+- **A completion moment.** One wipe of the run's colour across an agent node the
+  instant the live stream reports its work landed. It reuses `.artifact-marker`
+  — still the only animation in the app — as an overlay on a node that is
+  already correct underneath, so reduced motion removes it and loses nothing.
+  It cannot fire on a replayed history, because `recordArtifactMovements` only
+  writes from the live stream. Reading an old trail should not celebrate.
+- **A ship confirmation worth reaching.** The shipped card is a navy band with
+  the real count, the real branch and the real commit, at the size the moment
+  deserves rather than as another row in a log.
+- **Accumulation in Project.** `src/lib/project-totals.ts` sums tasks shipped,
+  runs shipped, working time, calls and tokens across `history.runs`.
+
+**No badges, no confetti, no XP, no streaks — and no time saved.** Time saved
+needs how long a person *would* have taken, which is a counterfactual and is in
+no record, ever. Files touched is in the adoption events but not in the per-run
+summary Core builds, so it is not totalled either. Both are named on screen:
+*"Not counted here, because this project's record does not carry it: how many
+files all of this changed, and how much time it saved you."* `projectTotals`
+returns them in an `absent` array and a test asserts there is no `timeSaved` or
+`streak` field for one to hide in.
+
+## Done: four tabs became two, then three
+
+The shell went **Work** + **Project**; it is now **Work**, **Agents** and
+**Project**. Memory and History stay merged into Project — that half was right
+and is unchanged. The Swarm half was reverted on 2026-08-12; see "Restored: the
+agent graph is a place again" above.
+
+Reading the code made the case harder than the original argument did, and the
+first bullet is the one that turned out to be wrong:
+
+- ~~**Swarm could not show anything Work did not already have.**~~ `buildSwarmTree`
+  does take exactly `inspection.execution_groups`, `inspection.tasks` and
+  `projection.subagents` — the same inputs the rail reads. **That was true and
+  irrelevant.** Identical inputs do not make identical output: a graph of agents
+  shows parallelism as a shape, and no list of the same facts does. Judging a
+  view by its inputs rather than by what a person can see in it is the mistake
+  here, and it is worth not repeating.
 - **It was a second inspector for the same tasks.** `TaskInspector` in the tree
   and `InspectorPane` in Work rendered one task, one output stream and the same
   three controls, in two code paths with two vocabularies ("Redirect" against

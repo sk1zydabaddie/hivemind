@@ -40,11 +40,28 @@ describe("Work presentation", () => {
 describe("what a needs-you item is called", () => {
   const titles = { "T-001": "Initialize CLI package metadata and usage docs" };
 
-  test("leads with the task's title and demotes the identifier", () => {
+  test("leads with the task's title and drops the identifier entirely", () => {
     expect(attentionHeadline({ title: "T-001 needs a revision", task_id: "T-001" }, titles)).toEqual({
       headline: "Initialize CLI package metadata and usage docs",
-      predicate: "needs a revision",
-      taskId: "T-001"
+      predicate: "needs a revision"
+    });
+  });
+
+  /* The shape the brief quoted. Core composes the title from the task title,
+     so the bar used to render it, then render the whole of it again as the
+     predicate, then append "T-001" to that. */
+  test("does not say the task's name twice when Core already said it", () => {
+    expect(
+      attentionHeadline(
+        {
+          title: "Initialize CLI package metadata and usage docs needs a revision",
+          task_id: "T-001"
+        },
+        titles
+      )
+    ).toEqual({
+      headline: "Initialize CLI package metadata and usage docs",
+      predicate: "needs a revision"
     });
   });
 
@@ -54,12 +71,13 @@ describe("what a needs-you item is called", () => {
     ).toBe("Something else entirely");
   });
 
-  test("keeps Core's wording when no title is known for the task", () => {
-    // Guessing at a name would be worse than showing the identifier Core used.
+  test("names an unnameable task rather than numbering it", () => {
+    /* A trail with no `task.created` cannot name its tasks. The identifier is
+       not a name and is never the answer; "one of the tasks" plus Core's own
+       predicate is what is actually known. */
     expect(attentionHeadline({ title: "T-209 stopped", task_id: "T-209" }, titles)).toEqual({
-      headline: "T-209 stopped",
-      predicate: null,
-      taskId: "T-209"
+      headline: "One of the tasks",
+      predicate: "stopped"
     });
   });
 
@@ -67,8 +85,7 @@ describe("what a needs-you item is called", () => {
     const item = { title: "This change needs fresh checks before it can merge", task_id: null };
     expect(attentionHeadline(item, titles)).toEqual({
       headline: item.title,
-      predicate: null,
-      taskId: null
+      predicate: null
     });
   });
 

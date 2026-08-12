@@ -24,7 +24,8 @@ describe("React workspace boundary", () => {
     const files = [
       "src/App.tsx",
       "src/components/workspace/work-tab.tsx",
-      "src/components/workspace/agent-map.tsx",
+      "src/components/workspace/agent-graph.tsx",
+      "src/components/workspace/phase-spine.tsx",
       "src/components/workspace/project-tab.tsx",
       "src/hooks/use-workspace.ts",
       "src/lib/phases.ts",
@@ -84,13 +85,15 @@ describe("React workspace boundary", () => {
     expect(config).toMatch(/ui\.shadcn\.com/u);
     expect(styles).toMatch(/prefers-reduced-motion/u);
 
-    /* Two sections, because the product asks for two decisions. The run map is
-       a view toggle inside Work and the project's past is one surface, so
-       neither may reappear as a permanent place in the shell. */
+    /* Three places, each answering a different question: what happened and
+       what you must decide, who is doing what right now, and every run before
+       this one. Memory and History stay merged into Project -- they were two
+       tabs over one subject that could not act -- and the agent graph is back,
+       because a shape shows something a list cannot. */
     const triggers = [...app.matchAll(/<TabsTrigger value="([a-z]+)">/gu)].map(
       (match) => match[1]
     );
-    expect(triggers).toEqual(["work", "project"]);
+    expect(triggers).toEqual(["work", "agents", "project"]);
     for (const collapsed of ["swarm", "memory", "history"]) {
       expect(triggers).not.toContain(collapsed);
     }
@@ -211,10 +214,15 @@ describe("React workspace boundary", () => {
     }
     expect(visibleSource).not.toMatch(/High-tier oracle floor|fake-metered reported this state/u);
     expect(visibleSource).not.toMatch(/Reached merge|Waiting to merge|blocked before merge|merge checks/iu);
-    expect(work).toMatch(/merged:\s*\{ label: "Merged"/u);
-    // Merged still traces to adoption.completed and never to verification, but
-    // it is now Core's answer read from the inspection payload. The projection
-    // carries only the board banner and must not derive per-task state again.
+    /* The product says ship. "Merged" is a git word that a person who typed a
+       sentence into a build tool has no reason to know, and it was the last one
+       left on a primary surface. */
+    expect(work).toMatch(/merged:\s*\{ label: "Shipped"/u);
+    expect(work).not.toMatch(/label: "Merged"/u);
+    // The shipped state still traces to adoption.completed and never to
+    // verification, and it is Core's answer read from the inspection payload.
+    // The projection carries only the board banner and must not derive
+    // per-task state again.
     expect(projection).toMatch(/case "adoption\.completed":[\s\S]*integration\.status = "merged"/u);
     expect(projection).not.toMatch(/\.state = "merged"|\.state = "verified"/u);
 
@@ -505,9 +513,9 @@ describe("React workspace boundary", () => {
     }
   });
 
-  test("the run map is a view, not a place: it selects and never acts", async () => {
+  test("the agent graph is a view, not a second inspector: it selects and never acts", async () => {
     const map = await readFile(
-      path.join(desktopRoot, "src", "components", "workspace", "agent-map.tsx"),
+      path.join(desktopRoot, "src", "components", "workspace", "agent-graph.tsx"),
       "utf8"
     );
     const work = await readFile(
@@ -519,10 +527,16 @@ describe("React workspace boundary", () => {
       "utf8"
     );
     const styles = await readFile(path.join(desktopRoot, "src", "styles.css"), "utf8");
+    const spine = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "phase-spine.tsx"),
+      "utf8"
+    );
+    const app = await readFile(path.join(desktopRoot, "src", "App.tsx"), "utf8");
 
-    /* The map dispatches nothing at all. Every control that acts on a task
-       lives in the one rail inspector, which is why the tree stopped being a
-       tab: it was a second inspector for the same tasks. */
+    /* The graph dispatches nothing at all. Every control that acts on a task
+       lives in the one rail inspector. THAT is what was wrong with the old
+       Swarm tab and what stays fixed now the graph is a tab again: two
+       inspectors with two vocabularies, not one view too many. */
     expect(map).not.toMatch(/onAction|type:\s*"[a-z]+\.[a-z_]+"|invokeWorkspaceAction/u);
     expect(map).not.toMatch(/runGate|integrateShadow|requestLease|reviewMemoryProposal/u);
     expect(map).toMatch(/buildSwarmTree\(projection, inspection\)/u);
@@ -538,16 +552,24 @@ describe("React workspace boundary", () => {
     expect(map).toMatch(/const standing = phase\.standing;/u);
     expect(map).not.toMatch(/flagged[^\n]*\?\s*"attention"/u);
 
-    // The toggle lives inside Work, so the map costs no permanent navigation.
-    expect(work).toMatch(/view === "map" \? \(\s*<RunMap/u);
-    expect(work).toMatch(/<ViewToggle/u);
+    /* The shell owns which drawing is on screen, and there is no toggle: two
+       renderings of one run presented as a choice made the person guess which
+       one they wanted before they had seen either. */
+    expect(work).toMatch(/stage === "graph" \? \(\s*<AgentGraph/u);
+    expect(work).not.toMatch(/ViewToggle/u);
+    expect(app).toMatch(/stage=\{value === "agents" \? "graph" : "thread"\}/u);
 
     /* Motion stays bound to a live record: the spine animates only where an
        artifact movement names that task, and reduced motion removes the
        overlay while the filled segment underneath survives. */
     expect(projection).toMatch(/message\.source === "live"[\s\S]*recordArtifactMovements/u);
     expect(map).toMatch(/projection\.artifactMovements/u);
-    expect(map).toMatch(/artifact-marker/u);
+    expect(spine).toMatch(/artifact-marker/u);
+    /* The run's own progress bar is the same rule at run scale: a real track
+       whose fill is cleared phases over total phases, with the marker as an
+       overlay. Nothing in it is driven by a clock. */
+    expect(work).toMatch(/function RunProgress/u);
+    expect(work).not.toMatch(/setInterval|setTimeout\(\(\) => set/u);
     expect(styles).toMatch(/animation:\s*artifact-advance/u);
     expect(styles).toMatch(/prefers-reduced-motion[\s\S]*\.artifact-marker\s*\{\s*display:\s*none/u);
   });
@@ -564,20 +586,28 @@ describe("React workspace boundary", () => {
 
   test("every surface shares the daemon task projection and leads with titles", async () => {
     const work = await readFile(path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"), "utf8");
-    const map = await readFile(path.join(desktopRoot, "src", "components", "workspace", "agent-map.tsx"), "utf8");
+    const map = await readFile(path.join(desktopRoot, "src", "components", "workspace", "agent-graph.tsx"), "utf8");
     const model = await readFile(path.join(desktopRoot, "src", "lib", "swarm-model.ts"), "utf8");
     const project = await readFile(path.join(desktopRoot, "src", "components", "workspace", "project-tab.tsx"), "utf8");
     expect(work).toMatch(/const tasks = inspection\?\.tasks \?\? \[\]/u);
     expect(model).toMatch(/inspection\?\.tasks \?\? \[\]/u);
     expect(work).not.toMatch(/taskRows\(projection\)|projection\.tasks/u);
     expect(model).not.toMatch(/taskRows\(projection\)|projection\.tasks/u);
-    // Rows lead with the title; the id is secondary metadata beneath it.
-    expect(work).toMatch(/\{task\.title\}[\s\S]{0,500}\{task\.task_id\}/u);
-    expect(work).not.toMatch(/\{task\.task_id\}[\s\S]{0,120}\{task\.title\}/u);
-    // Ordering, not proximity: the card renders the title before the id.
-    expect(map.indexOf("{task.title}")).toBeGreaterThan(-1);
-    expect(map.indexOf("{task.title}")).toBeLessThan(map.indexOf("{task.task_id}"));
-    expect(project).toMatch(/taskTitles\[taskId\] \?\? taskId/u);
+    /* A task is identified by its title and by nothing else. "Lead with the
+       title, keep the id secondary" was the answer given four times to a
+       request to REMOVE them, so the assertion is now absence, and
+       test/identifiers.test.ts renders the surfaces to prove it. */
+    expect(work).toMatch(/\{task\.title\}/u);
+    expect(map).toMatch(/\{task\.title\}/u);
+    /* A React key is not a render, so it is allowed and nothing else is. */
+    for (const source of [work, map]) {
+      const rendered = [...source.matchAll(/(\w+=)?\{task\.task_id\}/gu)].filter(
+        (match) => match[1] !== "key="
+      );
+      expect(rendered).toEqual([]);
+    }
+    expect(project).not.toMatch(/\?\? taskId/u);
+    expect(project).not.toMatch(/\{run\.spec_id\}/u);
     // A past run leads with what it did, not with the id that names it.
     expect(project).toMatch(/\{run\.outcome_detail \|\| plainOutcome\(run\.outcome\)\}/u);
 
@@ -622,9 +652,9 @@ describe("React workspace boundary", () => {
     expect(app).not.toMatch(/FutureWorkspaceTab/u);
   });
 
-  test("no internal vocabulary reaches the map or the Project surface either", async () => {
+  test("no internal vocabulary reaches the graph or the Project surface either", async () => {
     const map = await readFile(
-      path.join(desktopRoot, "src", "components", "workspace", "agent-map.tsx"),
+      path.join(desktopRoot, "src", "components", "workspace", "agent-graph.tsx"),
       "utf8"
     );
     const project = await readFile(
