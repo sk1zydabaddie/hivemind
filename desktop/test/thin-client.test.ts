@@ -396,13 +396,15 @@ describe("React workspace boundary", () => {
        one may now carry the argv the probe will run -- the probe is the gate,
        and that is how an agent earns a status instead of keeping one forever.
        `connectAdapter` still records nothing unless the probe passes. */
-    expect(catalogue).toMatch(/status: "unsupported"[\s\S]{0,1600}invoke: null/u);
     expect(catalogue).not.toMatch(/status: "supported"[\s\S]{0,600}invoke: null/u);
 
-    /* Every non-supported entry says specifically what is missing, and the
-       refusals name a measured reason rather than an absent integration. */
+    /* Every non-supported entry says specifically what is missing. There are
+       deliberately NO `unsupported` entries right now: nothing has been
+       measured and refused. A REFUSED verdict was published for one agent and
+       withdrawn, because it had been measured against the wrong distribution —
+       see the provenance rule in DESIGN-NOTES. */
     expect(catalogue).toMatch(/never against a live run/u);
-    expect(catalogue).toMatch(/not a boundary/u);
+    expect(catalogue).toMatch(/cannot be found out without an account/u);
 
     /* Hivemind is an ADE: the agent is a harness plus the subscription that
        pays for it, and Hivemind never asks for a key of its own. */

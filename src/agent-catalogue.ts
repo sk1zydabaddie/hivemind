@@ -275,9 +275,9 @@ export const agentCatalogue: CatalogueAgent[] = [
     label: "Kimi Code",
     harness: "kimi",
     subscription: "a Kimi account or a Moonshot API key",
-    status: "unsupported",
+    status: "unverified",
     caveat:
-      "Hivemind will not run this one against your code, and the reason is specific: its working-directory setting is not a boundary. Its own file-writing tool accepts any absolute path and tells the model in so many words that an absolute path is how to write outside the working directory -- and its non-interactive mode approves every action without asking. That was measured by running the check the tool itself uses, not inferred from its documentation.",
+      "It can be told to run with a fixed list of tools and no shell, and that list is enforced before a tool runs rather than only suggested to the model. What is unknown is whether its file tools stay inside the folder you point them at -- nothing it reports says so, and that cannot be found out without an account. Connecting it runs the same probe as any other agent.",
     model: null,
     routing_tier: "standard",
     cost_rank: 10,
@@ -286,10 +286,10 @@ export const agentCatalogue: CatalogueAgent[] = [
     usage_parser: null,
     readback: "none",
     shell_denial: {
-      mechanism: "agent-spec",
+      mechanism: "tool-allowlist",
       confirmed_by: "unconfirmed",
       detail:
-        "Its shell CAN be removed -- the agent specification is a positive list of tools and dropping one line removes it. It would not help: the file-writing tool escapes the working directory on its own, so there is nothing for a shell denial to protect.",
+        "`[tools] enabled` in its own settings is a positive allowlist that its documentation says is enforced again before a tool executes, not merely shown to the model. Naming the file tools and omitting the shell also omits the two tools that start helper agents. Nothing reports back that it took effect.",
     },
     invoke: null
   }

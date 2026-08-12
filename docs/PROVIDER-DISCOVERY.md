@@ -361,13 +361,60 @@ the doc-derived flags, then one paid probe to find out whether
 `--output-format streaming-json` carries an init event. That single answer
 decides whether Grok is a fully-verified provider or a degraded one.
 
-### Kimi Code — **REFUSED AS MEASURED**
+### Kimi Code — **verdict withdrawn; re-measured against the vendor's build**
 
-> **Verdict: refused. `confined_to_project = unsupported`.**
-> Not a missing integration — a measured property of the shipped code.
+> **A REFUSED AS MEASURED verdict was published here and is wrong.** It was
+> measured against `kimi-cli` 1.49.0 from PyPI, which is a *legacy Moonshot
+> product*, not Kimi Code. See "Standing rule: verify the DISTRIBUTION before
+> you verify the capabilities" in `desktop/DESIGN-NOTES.md`.
+>
+> **Current verdict: `unverified`, attemptable, one open question.**
 
-Installed (`kimi-cli` 1.49.0, PyPI, into a throwaway venv) and dry-run. Two
-findings, the second decisive.
+The vendor's distribution is `curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash`
+(repo `MoonshotAI/kimi-code`), which installs a single binary — **kimi-code
+0.35.0**, installed here into a contained directory in WSL2 and dry-run. It
+ships a `kimi migrate` subcommand whose help reads *"Migrate data from a legacy
+kimi-cli installation into kimi-code"*, which is the vendor saying plainly that
+the thing measured before was a different product.
+
+| Question | kimi-code 0.35.0 | Source |
+| --- | --- | --- |
+| Headless one-shot? | **Yes.** `-p/--prompt`, and it implies nothing about approval | CLI |
+| Structured output? | **Yes.** `--output-format text \| stream-json` | CLI |
+| Model pinned? | **Yes.** `-m/--model`; current models are K2.7 Code and K3 (1M context) | CLI |
+| Approval | **Opt-in.** Read-only tools auto-allow; `Write`, `Edit`, `Bash` need approval by default. `--yolo` skips regular approvals, `--auto` is fully autonomous | DOCS |
+| Shell denial? | **Yes, and the strongest kind.** `[tools] enabled` is a positive allowlist its docs say is *"enforced again before execution"*, not merely shown to the model | DOCS |
+| Sub-agents? | **Yes, and they are the concurrency finding of this pass.** `Agent` and `AgentSwarm`; a swarm takes **up to 128** subagents and by default "ramps up concurrency **without an upper limit**" | DOCS |
+| Disable sub-agents? | **Yes** — same allowlist: omit `Agent` and `AgentSwarm` | DOCS |
+| Permission rules? | `[[permission.rules]]` with `allow`/`deny`/`ask` and patterns like `Read(path-pattern)` | DOCS |
+| Confinement readback? | **No.** Nothing reports the workspace it resolved | DOCS |
+| Confinement itself? | **UNKNOWN — the open question** | NONE |
+
+**What changed and what did not.** The earlier finding — that an absolute path
+outside the working directory passes validation — was true of `kimi-cli` and
+says nothing about `kimi-code`, whose file tools are a different
+implementation. It has not been re-measured, and it cannot be without an
+account: the binary is compiled, so there is no validator to run the way there
+was in the Python package.
+
+**So Kimi Code is `unverified`, not refused**, and the contract handles it
+correctly either way: `confined_to_project` unverified **refuses admission**
+until a probe answers it. The difference is that the reason is now honest — "we
+have not checked" rather than "we checked and it failed".
+
+**`KIMI_CODE_HOME` relocates its config directory**, so a Hivemind profile can
+supply `[tools] enabled` without touching anything in the person's home.
+
+**One thing worth flagging beyond Kimi:** an `AgentSwarm` of up to 128
+subagents with no default concurrency cap is the sharpest example yet of why
+`no_nested_agents` exists. Hivemind's `max_concurrent_workers` would be
+governing one process that can fan out 128 ways underneath it.
+
+### The withdrawn measurement, kept for the record
+
+Recorded because the *procedure* failure matters more than the finding.
+Installed `kimi-cli` 1.49.0 from PyPI and dry-ran it. Two findings, the second
+decisive — **about the wrong product**.
 
 **Its shell CAN be removed.** The agent specification is a YAML positive list of
 tools, supplied with `--agent-file`. Dropping one line removes

@@ -76,6 +76,94 @@ near 400. The limit is 4,000 (~1MB of small objects). When the buffer has
 actually dropped events, the thread says so instead of silently losing its
 beginning.
 
+## Standing rule: verify the DISTRIBUTION before you verify the capabilities
+
+Added 2026-08-12 after getting this wrong twice in one pass, the second time
+while congratulating myself for catching the first.
+
+**Before probing anything, confirm the artifact is the vendor's, by the
+vendor's own install instructions and repository — never by a package registry
+name.**
+
+### What happened
+
+Discovery for Kimi Code went looking for a distribution and found `kimi-code`
+on npm. It turned out to be a third-party wrapper that proxies Claude Code to
+Kimi models. Caught it, wrote it up as a trap worth recording, and then
+installed `kimi-cli` from PyPI **because its summary string matched the repo's
+description** — and reported it as "the official distribution".
+
+It was not. Kimi Code ships as a single binary from
+`curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash`, repo
+`MoonshotAI/kimi-code`, version **0.35.0**. `kimi-cli` 1.49.0 is a *legacy
+Moonshot product* — the real CLI ships a `kimi migrate` subcommand whose help
+text reads "Migrate data from a legacy kimi-cli installation into kimi-code",
+which is the vendor telling you they are different things.
+
+Everything measured against it was therefore measured against the wrong
+artifact, and the verdict built on it — `confined_to_project = unsupported`,
+REFUSED — was withdrawn. The two products differ on nearly every question the
+contract asks:
+
+| | `kimi-cli` 1.49.0 (wrong) | `kimi-code` 0.35.0 (right) |
+| --- | --- | --- |
+| Headless | `--print`, **implies `--afk`** | `-p/--prompt`, implies nothing |
+| Approval | auto-approved by print mode | opt-in via `--yolo` / `--auto` |
+| Tool allowlist | a YAML agent spec | `[tools] enabled`, enforced before execution |
+| Subagents | three named in the spec | `Agent` / `AgentSwarm`, up to **128** per call |
+| Confinement | absolute paths escaped, proven | **unknown** — the real open question |
+
+### Why the error is worse than an ordinary mistake
+
+**A wrapper passes every capability check by inheriting someone else's.** The
+npm `kimi-code` wraps Claude Code — so it would have reported Claude Code's
+model pin, Claude Code's usage numbers, Claude Code's tools, and passed. The
+probe cannot detect this, because the probe's whole design is to believe what
+the process in front of it reports. Provenance is the one question that has to
+be answered *before* the process is started, and it is the one question no
+readback can answer.
+
+**And a registry will serve you someone else's product under the name you
+expected.** That is not an attack; it is what open registries are for. The name
+you expected is not evidence.
+
+### The procedure
+
+Every provider, before it is probed, and re-checked whenever it is re-probed:
+
+1. **Find the vendor's own install instruction** — on the vendor's product page
+   or its official repository README. Not a blog, not a registry search, not a
+   summary string that sounds right.
+2. **Install by that instruction**, contained where possible (`KIMI_INSTALL_DIR`,
+   `GROK_BIN_DIR`, a throwaway venv or npm prefix). Read a `curl | bash` script
+   before running it.
+3. **Confirm the installed artifact identifies itself as the vendor's** — the
+   npm scope (`@anthropic-ai/…`), the download host (`code.kimi.com`,
+   `x.ai`), a checksum the installer verified, or a package the vendor's own
+   docs name.
+4. **Record the version and the provenance evidence on the connection**, beside
+   the capabilities. `provider_version` already exists for staleness; the
+   evidence of *which product* that version belongs to is the same field's job.
+5. **A mismatch is a refusal, not a warning.** An artifact that cannot be traced
+   to the vendor is refused before it is run, for the same reason a
+   permission-bypass flag is: running it is the thing you are trying to avoid.
+
+### The three that were already installed here
+
+Provenance was not chosen by this project for `claude`, `opencode` or `codex` —
+somebody else installed them. Checked retrospectively rather than assumed:
+
+- **Claude Code** — `@anthropic-ai/claude-code` 2.1.229, author
+  `Anthropic <support@anthropic.com>`, in Anthropic's own npm scope. ✓
+- **OpenCode** — `opencode-ai` 1.18.15, which is the package name
+  `opencode.ai/docs` itself gives (`npm install -g opencode-ai`), published by
+  Anomaly, repo `anomalyco/opencode`. ✓
+- **Grok Build** — installed here from `https://x.ai/cli/install.sh`, which is
+  the command xAI's own docs and the `xai-org/grok-build` README both give. ✓
+
+None of the three was wrong. All three were *unverified* until checked, which
+is the point: an installed binary is an assumption until somebody traces it.
+
 ## The identifier rule, and why it took five asks — 2026-08-12
 
 **A person never sees `T-001`, `G-1`, `S-001` or `V-…`.** Not smaller, not

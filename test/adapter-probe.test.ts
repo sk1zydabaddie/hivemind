@@ -232,12 +232,12 @@ test("a passed probe writes the profile and the capabilities it proved", async (
 test("an agent with no working invocation refuses with its real reason", async () => {
   const repo = await scratch();
   try {
-    /* Refused because it was measured and failed, not because nobody wrote an
-       adapter for it: its working-directory setting is not a boundary. That is
-       the contract working rather than an integration missing. */
+    /* Attemptable but unproven: it can be given a fixed tool list with no
+       shell, and nothing it reports says whether its file tools stay inside the
+       folder. No profile can be built while its usage reader is unwritten. */
     const kimi = await connectAdapter(repo, "worker", "kimi-code");
     assert.equal(kimi.ok, false);
-    assert.match(kimi.reason, /not a boundary|absolute path/u);
+    assert.match(kimi.reason, /no argv|stay inside the folder/u);
     /* Attemptable but not yet proven: no usage reader has ever been checked
        against a live run, so no profile can be built for it. */
     const open = await connectAdapter(repo, "worker", "opencode");
