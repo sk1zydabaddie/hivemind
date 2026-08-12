@@ -610,7 +610,113 @@ connect probe already does.
 
 ---
 
-## 5. The paid probes, estimated
+## 5. The probes, RUN — results
+
+Both approved probes were run on 2026-08-12 against a scratch repository.
+**Total cost: about $0.13, all of it Claude Code; the OpenCode probe ran on a
+free model and cost nothing.** Both estimates (~15–25K tokens) were right.
+
+### Claude Code — **passes, and reports more than expected**
+
+`connectAdapter` returns `ok: true`. `system/init` carries everything the
+discovery hoped for and one thing it did not:
+
+```
+INIT model      : claude-sonnet-5
+INIT tools      : ["Edit","Glob","Grep","Read","Write"]
+INIT permission : acceptEdits
+INIT cwd        : <the project root>
+INIT version    : 2.1.229
+```
+
+**The shell denial is verified by runtime readback.** `tools` came back as
+exactly the allowlist that was passed, with no `Bash`. That was the single
+load-bearing unknown and it is closed: Claude Code's shell denial can be
+`verified` rather than `unverified`, which is what makes it admissible under
+the contract at all.
+
+**`claude_code_version` in the same event retires the separate `--version`
+call** for this provider — the staleness check can read it from the run it
+already made.
+
+**One thing found that no amount of reading would have produced.** The `result`
+record carries `modelUsage`, a per-model breakdown, and it shows **two** models
+ran:
+
+```
+claude-haiku-4-5 : 541 in / 14 out / $0.000611
+claude-sonnet-5  :   4 in / 167 out / 19,903 cache read / $0.0426
+```
+
+The pin took — the main agent ran the model asked for — but the process spent
+tokens on a second model of its own choosing. So `pins_one_model` must compare
+the **main agent's** model from `init` and separately report that other models
+appear in `modelUsage`; comparing a single number would have hidden this.
+Codex cannot report this at all, which means Claude Code is the first provider
+where the cost-attribution half of the sub-agent concern is *observable*.
+
+Note also `init.model` is `claude-sonnet-5` while the profile asked for
+`sonnet`. The comparison has to resolve an alias to a canonical name rather
+than test string equality, or every run would report a mismatch.
+
+**A real defect was found and fixed by running this.** `claude-json` fed the
+whole JSONL document to a single-object JSON parse, found nothing, and the
+probe refused with *"the claude-json reader found no token counts"* — the right
+refusal for the wrong reason. It now reads either shape. This is the third time
+this project has had a capability that was only ever checked against recorded
+output fail against a live one.
+
+**Still `unverified`, and honestly so:** `confined_to_project` and
+`pins_one_model`, because no `claude-init` readback reader is wired into the
+probe yet. The raw capture proves the data is there; reading it is the build
+task. Worth stating plainly: **the current three-state probe admits Claude Code
+while the four-state contract would refuse it**, because confinement unverified
+refuses. That gap is the argument for the migration, and it is exactly the case
+the migration was meant to be proven against.
+
+### OpenCode — **the shell deny holds, and usage is per step**
+
+Run with `permission: { bash: "deny", task: "deny" }` and a prompt that asked
+for a shell command. The model's own answer:
+
+> *"I don't have a shell/bash tool available in this session, so I can't run
+> `echo hello`. I'll create the file with the write tool instead."*
+
+**The deny removes the tool from the model's toolset rather than refusing the
+call.** That settles the precedence question the free readback could not: the
+project rule wins, and the `bash allow *` sitting in the `explore` subagent's
+table is unreachable once `task` is denied. It also demonstrates the shell-less
+posture working end to end — the agent noticed, adapted, and completed the task
+with `write`.
+
+**Usage does not need `opencode export`.** Every `step_finish` event carries it
+inline:
+
+```json
+"tokens": { "total": 6075, "input": 5754, "output": 117,
+            "reasoning": 204, "cache": { "write": 0, "read": 0 } },
+"cost": 0
+```
+
+So an `opencode-json` parser sums or takes the last `step_finish.part.tokens` —
+simpler than the session-export route the discovery assumed.
+
+**HEAD was unchanged** after the run, so `leaves_change_uncommitted` verifies on
+the first provider it was written for. One thing to watch: every step carries a
+`snapshot` hash, so OpenCode is writing git objects as it works. It did not move
+the branch, which is what the capability measures, but a future adapter should
+know those objects appear.
+
+### What each provider needs next
+
+| Provider | Remaining work |
+| --- | --- |
+| Claude Code | a `claude-init` readback reader (model / tools / cwd / version), and alias→canonical model comparison. Then it is verified on five of seven. |
+| OpenCode | an `opencode-json` usage parser and an invocation; its readback is `agent list` plus the behavioural shell check, both proven today. |
+| Grok Build | an account. Every readback question is still open. |
+| Kimi Code | an account, and one question: are its file tools confined to the workspace? |
+
+## The estimates that were given before running
 
 Nothing below has been run. These are the two the discovery says are worth
 buying, and what each answers.

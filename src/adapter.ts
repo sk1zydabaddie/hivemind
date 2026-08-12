@@ -661,6 +661,27 @@ function containsRefusedModeMarker(value: string): boolean {
   return /(?:^|[^a-z0-9])ultra(?:code)?(?:$|[^a-z0-9])|dynamic[_ -]?workflows?/iu.test(value);
 }
 
+/* The `result` line of a stream-json document: the last record, carrying the
+   run's own totals. Scanned newest-first so a resumed session's earlier result
+   can never be mistaken for this run's. */
+function findResultRecord(stdout: string): Record<string, unknown> | null {
+  const lines = stdout.split(/\r?\n/u);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]!.trim();
+    if (line === "" || !line.startsWith("{")) continue;
+    let record: unknown;
+    try {
+      record = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (isRecord(record) && record.type === "result" && isRecord(record.usage)) {
+      return record;
+    }
+  }
+  return null;
+}
+
 export function parseAdapterProviderUsage(
   parser: AdapterUsageParser,
   stdout: string,
@@ -673,7 +694,18 @@ export function parseAdapterProviderUsage(
   }
 
   if (parser === "claude-json") {
-    const parsed = parseJsonObject(stdout);
+    /* Two shapes, because the profile has to choose between them and only one
+       of them carries the startup readback.
+       `--output-format json` prints ONE object. `--output-format stream-json`
+       prints JSONL whose last line is the result -- and only the streaming
+       form emits the `system/init` record naming the model, the resolved tool
+       set and the permission mode, which is what the probe compares against.
+       So the profile uses streaming and this reads either.
+       Measured on claude 2.1.229: this parser found nothing at all against a
+       real streaming run, because it fed the whole JSONL document to a
+       single-object parse. The capability came back `failed`, which was the
+       correct refusal for a wrong reason. */
+    const parsed = parseJsonObject(stdout) ?? findResultRecord(stdout);
     if (parsed === null) {
       return null;
     }
