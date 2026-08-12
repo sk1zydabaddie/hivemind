@@ -273,6 +273,50 @@ The M10.8 concurrent run and the M8 end-to-end runs are lost to replay because
 only PNGs and prose were kept. Their durations, their nine-task plan and their
 adoption refs exist as numbers in a README and cannot be rendered by anything.
 
+### The capture procedure, and why it snapshots at the pauses
+
+**Capture `project-state/` at every point the run stops for a human, not only
+when it ends.** A run pauses exactly twice on a clean path — at the plan review
+and at the ship bar — and those two pauses are the only moments the two most
+important states in the product exist. A single end-of-run snapshot has neither,
+which is why the plan review, the ship readiness and the mid-run spend all had
+to be synthesized or corrected after the fact.
+
+For the next real run, alongside the trail:
+
+```
+# 1. the moment the plan review appears, before pressing Approve
+cp -r .hivemind docs/evidence/<run>/project-state-at-review/
+
+# 2. mid-run, while more than one agent is working
+cp -r .hivemind docs/evidence/<run>/project-state-at-midrun/
+
+# 3. the moment the ship bar appears, before pressing Ship it
+cp -r .hivemind docs/evidence/<run>/project-state-at-ship/
+
+# 4. after adoption, as today
+cp -r .hivemind docs/evidence/<run>/project-state/
+```
+
+Each is a few hundred KB and takes a second. What each one retires:
+
+| Snapshot | Retires |
+| --- | --- |
+| at-review | the `@review-*` pending-plan boolean, and gives a real unratified spec |
+| at-midrun | the mid-run **spend ledger**, which is the last synthesized value left in the set — the whole run's bill currently shows over a trail cut at three of five calls, and unlike the lease store it cannot be rebuilt because no per-call resource event exists |
+| at-ship | the `@ship` readiness boolean |
+
+The collector should prefer a snapshot whose name matches the cut it is building
+and fall back to `project-state/` — which is what it reads today, and is why
+every cut is currently served state from after itself.
+
+**The generalisation, which is the third correction to this rule:** the rule
+first said *keep the trail*, then *and the project state*, then *and the state
+is later than the cut*. All three are the same question asked at different
+times — **what does this surface read, and when was it true?** A capture is
+complete when every input to the surface is in it **and dated at the moment the
+surface is being replayed at.**
+
 ### The rule as first written was incomplete, and quietly so
 
 "Capture the trail" was not enough, because **a run's state is not all events**.
@@ -1191,6 +1235,17 @@ acceptance criterion names, and marks it.
 - **Accessibility beyond the basics.** The task list is buttons inside sections;
   a listbox with roving focus is probably more correct. Keyboard traversal and
   screen-reader flow have not been tested on the redesigned markup.
+- **Spacing drift has no guard, and needs a different instrument.**
+  `design-tokens.test.ts` covers colour, token resolution and — since the
+  mutation experiment — radius, because all three are declared as literals in
+  `@theme inline`. Spacing is not declared anywhere: it is Tailwind's default
+  scale, spent as utilities in TSX, so `px-3` against `px-3.5` is invisible to a
+  CSS assertion no matter how it is written. Catching it needs **a lint over the
+  markup** — scan the TSX for spacing utilities outside an allowed set, and for
+  arbitrary values like `p-[13px]` — which is a different kind of test from a
+  token contract and should not be bolted onto that file. Worth building if
+  spacing starts drifting; recorded now so the gap is deliberate rather than
+  assumed covered.
 
 ## Styling
 

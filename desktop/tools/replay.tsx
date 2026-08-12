@@ -314,7 +314,20 @@ const drive = (): void => {
   const timer = window.setInterval(() => {
     attempts += 1;
     if (steps.length > 0 && clickByName(steps[0]!)) steps.shift();
-    if (steps.length === 0 || attempts > 60) window.clearInterval(timer);
+    if (steps.length === 0 || attempts > 60) {
+      window.clearInterval(timer);
+      /* The harness focuses what it clicks, and a programmatic focus() counts
+         as :focus-visible — so a captured surface wore a focus ring that no
+         person would see after clicking the same control with a mouse. Blur it
+         once the driving is done, unless the surface legitimately took focus
+         itself (a dialog's autofocus, which IS what a person sees). */
+      window.setTimeout(() => {
+        const active = document.activeElement;
+        if (active instanceof HTMLElement && active.closest("[role=tablist]") !== null) {
+          active.blur();
+        }
+      }, 200);
+    }
   }, 100);
 };
 
