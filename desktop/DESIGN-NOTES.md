@@ -76,6 +76,67 @@ near 400. The limit is 4,000 (~1MB of small objects). When the buffer has
 actually dropped events, the thread says so instead of silently losing its
 beginning.
 
+## The guarantee we called unclosable is closable — on the harness that is NOT proven
+
+Recorded prominently because it inverts what the status field implies, and it is
+a real product statement rather than a footnote.
+
+`no_nested_agents` — "does not start agents of its own" — has been carried as
+the highest-severity open item in this file since 2026-08-11, on the finding
+that **suppression is unreportable from Codex's own resolved context**. Codex
+reports `multi_agent_version: "v2"`, meaning the capability exists, and reports
+nothing about whether it is switched off. No probe we write can close that,
+because there is nothing on the other side to read.
+
+**On Claude Code it is closed.** The `system/init` record names the exact tool
+set the session loaded:
+
+```
+"tools": ["Edit","Glob","Grep","Read","Write"]
+```
+
+The agent-dispatch tool is not in it. That is a **positive report**, not a
+silence: the list was read, and the tool is absent, so nothing in that session
+can start an agent of its own. `no_nested_agents` comes back **`verified`** —
+the first and so far only harness where it does.
+
+| Harness | `no_nested_agents` | Why |
+| --- | --- | --- |
+| **Claude Code** | **`verified`** | reports the resolved tool set; the dispatch tool is absent |
+| Codex | `unverified`, permanently | reports the capability exists, never whether it is off |
+| OpenCode | `verified` | `permission.task: "deny"` in the resolved table |
+| Grok Build | unknown | has `--no-subagents`; nothing known about readback |
+| Kimi Code | unknown | `[tools] enabled` can omit `Agent`/`AgentSwarm`; no readback |
+
+### Why this is the reverse of what "proven" suggests
+
+Codex is the only `supported` harness — three tiers, real end-to-end runs,
+everything else measured against it. And it is the one harness that **can never
+verify this particular guarantee**. Claude Code is `unverified` as an
+integration and **fully verified as a contract**: 7 of 7, nothing degraded.
+
+Those are two different claims and the catalogue keeps them apart on purpose.
+`status` answers *has real work been built and shipped through this?*. The
+contract answers *can this agent's boundaries be confirmed?*. A harness can be
+strong on one and weak on the other, and Codex and Claude Code are each strong
+on the opposite one.
+
+### The product statement
+
+**A person who specifically cares that no unaccounted agents run underneath
+their work has a reason to prefer Claude Code**, and that reason is checkable
+rather than promotional: connect it, and the connect screen says `verified`
+against that line, with the tool list it read.
+
+That is worth saying out loud in a product that sells "Hivemind decides
+concurrency". On Codex, that claim rests on the provider not doing something it
+does not report; on Claude Code, it rests on a list the run printed.
+
+**What it does not mean.** It is not a reason to prefer Claude Code overall —
+Codex is the one with proven end-to-end runs, and `pins_one_model` plus the
+per-model cost breakdown behave differently on each. It is one capability, and
+the honest framing is a table, not a winner.
+
 ## Standing rule: recorded output is necessary and never sufficient
 
 Three for three. Every capability that was verified only against recorded output

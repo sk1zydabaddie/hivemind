@@ -96,7 +96,12 @@ test("every capability whose failure is unbounded refuses when unverified", () =
     "confined_to_project",
     "leaves_change_uncommitted"
   ];
-  const mayDegrade: CapabilityId[] = ["pins_one_model", "reports_usage", "no_nested_agents"];
+  const mayDegrade: CapabilityId[] = [
+    "pins_one_model",
+    "reports_usage",
+    "reports_model_attribution",
+    "no_nested_agents"
+  ];
 
   assert.deepEqual(
     [...mustRefuse, ...mayDegrade].sort(),

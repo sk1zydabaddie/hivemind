@@ -8,7 +8,9 @@ import {
   normalizeVersionOutput,
   versionInvocation
 } from "../src/adapter-version.js";
+import { readModelAttribution } from "../src/adapter-probe.js";
 import { agentCatalogue } from "../src/agent-catalogue.js";
+import { capabilityDefinition } from "../src/capability-contract.js";
 import { compareRepoMarks, type RepoMark } from "../src/repo-observation.js";
 
 /**
@@ -179,3 +181,64 @@ test("a repository that could not be read claims nothing", () => {
   assert.equal(observation.standing, "unknown");
   assert.match(observation.detail, /could not read/u);
 });
+
+/* ── The capability split, and the question it stops nobody asking ───────── */
+
+test("a provider that reports one total is flagged, not silently passed", () => {
+  /* Split out from "reports what it spent" after a Claude Code probe pinned to
+     one model reported a SECOND model in its own breakdown. Codex reports one
+     total and no breakdown, so before this capability existed the question was
+     never asked of it -- and the answer is not "fine", it is "unknown". */
+  assert.equal(readModelAttribution("codex-jsonl", CODEX_STDOUT), null);
+  assert.equal(readModelAttribution("codex-text", "tokens used\n1,234\n"), null);
+  assert.equal(readModelAttribution("opencode-json", OPENCODE_STDOUT), null);
+});
+
+test("a per-model breakdown names every model that actually ran", () => {
+  const models = readModelAttribution("claude-json", CLAUDE_STDOUT);
+  assert.notEqual(models, null);
+  assert.deepEqual(
+    models!.map((entry) => entry.model).sort(),
+    ["claude-haiku-4-5-20251001", "claude-sonnet-5"]
+  );
+  /* The measurement this exists for: the pin took AND a second model ran. */
+  assert.equal(models!.length > 1, true);
+});
+
+test("an unreadable breakdown costs prediction and provenance, never the ceiling", () => {
+  /* A total counts every model whether or not it names them, so the spending
+     limit is unaffected. Saying otherwise would be inventing a risk. */
+  const attribution = capabilityDefinition("reports_model_attribution");
+  for (const state of ["unverified", "unsupported"] as const) {
+    const admission = attribution.admission[state];
+    assert.equal(admission.decision, "admit", `${state} must not refuse`);
+    assert.deepEqual(admission.degrades.sort(), ["cost_prediction", "routing_provenance"]);
+    assert.equal(admission.degrades.includes("spend_ceilings" as never), false);
+  }
+  /* And it says so in words a person can act on, without a number that would
+     imply a precision nobody has. */
+  assert.match(attribution.admission.unverified.consequence, /limits are unaffected/u);
+  assert.match(attribution.admission.unsupported.consequence, /wrong by an amount nobody can measure/u);
+});
+
+const CODEX_STDOUT = [
+  '{"type":"thread.started","thread_id":"abc"}',
+  '{"type":"turn.completed","usage":{"input_tokens":120,"output_tokens":80}}'
+].join("\n");
+
+const OPENCODE_STDOUT = JSON.stringify({
+  type: "step_finish",
+  part: { type: "step-finish", tokens: { total: 6075, input: 5754, output: 117 } }
+});
+
+const CLAUDE_STDOUT = [
+  JSON.stringify({ type: "system", subtype: "init", model: "claude-sonnet-5", tools: ["Read"] }),
+  JSON.stringify({
+    type: "result",
+    usage: { input_tokens: 4, output_tokens: 167 },
+    modelUsage: {
+      "claude-sonnet-5": { inputTokens: 4, outputTokens: 167 },
+      "claude-haiku-4-5-20251001": { inputTokens: 541, outputTokens: 14 }
+    }
+  })
+].join("\n");

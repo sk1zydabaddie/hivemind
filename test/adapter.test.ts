@@ -167,7 +167,7 @@ test("validateAdapterProfile rejects unknown provider usage parsers", () => {
       },
       "fake"
     ),
-    ["usage_parser must be one of codex-jsonl, codex-text, claude-json when provided"]
+    ["usage_parser must be one of codex-jsonl, codex-text, claude-json, opencode-json when provided"]
   );
 });
 

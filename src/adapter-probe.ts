@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 
 import {
   findDangerousAdapterArgs,
@@ -125,6 +127,8 @@ export interface ProbeReadback {
   /** The harness version, where the run reports it in its own output. */
   version?: string | null;
 }
+
+const execFileAsync = promisify(execFile);
 
 const PROBE_DIR = path.join(".hivemind", "probe");
 
@@ -381,7 +385,9 @@ export async function probeAdapter(
       ? readCodexRollback
       : agent.readback === "claude-init"
         ? readClaudeInit
-        : async () => null);
+        : agent.readback === "opencode-permissions"
+          ? async (out: string) => readOpenCodePermissions(out, repoRoot)
+          : async () => null);
   const readback = observation.stdout === "" ? null : await readbackFn(observation.stdout);
 
   /* Runs without prompting: it exited on its own, inside the timeout, with
@@ -541,6 +547,40 @@ export async function probeAdapter(
             "nothing found",
             "observation"
           )
+  );
+
+  /* Says which model spent what.
+     Split out from "reports what it spent" after a Claude Code probe pinned to
+     one model reported a SECOND model in its own breakdown. A provider that
+     reports one total cannot show that, so the question was never asked of it
+     -- and the answer is not "fine", it is "unknown". Never refuses: the
+     ceiling is unaffected, because a total counts every model whether or not it
+     names them. */
+  const attribution = readModelAttribution(profile.usage_parser, observation.stdout);
+  capabilities.push(
+    attribution === null
+      ? capability(
+          "reports_model_attribution",
+          "Says which model spent what",
+          false,
+          "unsupported",
+          "This agent reports one total and never says which model spent it, so Hivemind cannot tell whether the model you chose is the only one that ran.",
+          "a figure per model",
+          "one total only",
+          "absent"
+        )
+      : capability(
+          "reports_model_attribution",
+          "Says which model spent what",
+          false,
+          "verified",
+          attribution.length === 1
+            ? `It broke this run down by model, and only ${attribution[0]!.model} ran.`
+            : `It broke this run down by model, and ${attribution.length} models ran: ${attribution.map((entry) => entry.model).join(", ")}.`,
+          "a figure per model",
+          attribution.map((entry) => entry.model).join(", "),
+          "observation"
+        )
   );
 
   /* Subagents. Hivemind owns concurrency: one worker, one scope. An agent that
@@ -740,4 +780,200 @@ export function modelPinHeld(requested: string | null, reported: string | null):
 
 function escapeForPattern(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+
+/**
+ * OpenCode reports what it resolved by PRINTING ITS RULES, not by narrating a
+ * run — a different evidence shape from Claude's, which is why it is the right
+ * second case for the contract.
+ *
+ * `opencode agent list` prints the fully merged permission table for every
+ * agent, and costs nothing: no model call, no tokens. Measured on opencode
+ * 1.18.15, byte-identical across repeated runs.
+ *
+ * The caveat is recorded rather than smoothed over: this is a readback of the
+ * DISPOSITION the configuration resolved to, not of what the turn applied. On
+ * its own it establishes that a rule was accepted. What establishes that the
+ * rule HOLDS is the run itself — asked to use a shell, the agent answered "I
+ * don't have a shell/bash tool available in this session", which is a
+ * refutation-strength observation and the reason both are read together here.
+ */
+export async function readOpenCodePermissions(
+  stdout: string,
+  repoRoot: string
+): Promise<ProbeReadback | null> {
+  const rules = await readResolvedOpenCodeRules(repoRoot);
+  if (rules === null) return null;
+
+  const primary = rules.get("build") ?? [...rules.values()][0] ?? [];
+  const decisionFor = (permission: string): string | null => {
+    /* Last match wins: the project's own rules are merged after the built-in
+       ones, so the final entry for a permission is the effective one. */
+    const matches = primary.filter((rule) => rule.permission === permission);
+    return matches.length === 0 ? null : matches[matches.length - 1]!.action;
+  };
+
+  const shellDenied = decisionFor("bash") === "deny";
+  const taskDenied = decisionFor("task") === "deny";
+  /* Corroboration from the run, read STRUCTURALLY rather than from prose.
+     The first version of this matched the sentence the model happened to say
+     -- and failed on "I don't have a shell tool" because it was written to
+     expect "do not have". Pattern-matching a model's wording is the mistake
+     this project has recorded three times; the stream says the same thing in a
+     field. The probe asks for a shell command, so if a shell existed there
+     would be a tool event naming it. */
+  const usedShell = shellToolUsed(stdout);
+
+  return {
+    source: "opencode agent list",
+    /* OpenCode does not report a resolved model per run anywhere this reads,
+       so the pin stays unverified rather than being assumed from the argv. */
+    model: null,
+    sandbox: shellDenied && !usedShell ? "workspace-write" : null,
+    approvalPolicy: shellDenied ? "bash denied" : null,
+    workspaceRoots: [repoRoot],
+    subagents: taskDenied ? "none" : "available"
+  };
+}
+
+interface OpenCodeRule {
+  permission: string;
+  action: string;
+}
+
+async function readResolvedOpenCodeRules(
+  repoRoot: string
+): Promise<Map<string, OpenCodeRule[]> | null> {
+  let printed: string;
+  try {
+    /* Windows installs the CLI as a .cmd shim, which cannot be spawned
+       directly -- the same trap that made a Linux clone hold three unusable
+       profiles. The platform branch belongs here for the same reason it
+       belongs in the invocation: it is a property of how the harness is
+       installed, not of what it does. */
+    const argv =
+      process.platform === "win32"
+        ? ["cmd.exe", ["/d", "/s", "/c", "opencode.cmd", "agent", "list"]]
+        : ["opencode", ["agent", "list"]];
+    const result = await execFileAsync(argv[0] as string, argv[1] as string[], {
+      cwd: repoRoot,
+      windowsHide: true,
+      timeout: 60_000,
+      maxBuffer: 4 * 1024 * 1024
+    });
+    printed = result.stdout;
+  } catch {
+    /* An unreadable table is not an empty one. Returning null leaves every
+       capability that depends on it `unverified`, which for the boundary
+       refuses -- the correct failure. */
+    return null;
+  }
+
+  const agents = new Map<string, OpenCodeRule[]>();
+  let current: string | null = null;
+  let buffer: string[] = [];
+  const flush = (): void => {
+    if (current === null) return;
+    try {
+      const parsed: unknown = JSON.parse(buffer.join("\n"));
+      if (Array.isArray(parsed)) {
+        agents.set(
+          current,
+          parsed
+            .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+            .map((entry) => ({
+              permission: String(entry.permission ?? ""),
+              action: String(entry.action ?? "")
+            }))
+        );
+      }
+    } catch {
+      /* A block that will not parse is skipped rather than guessed at. */
+    }
+    buffer = [];
+  };
+
+  for (const line of printed.split(/\r?\n/u)) {
+    const heading = /^(\S[^(]*)\s*\((?:primary|subagent)\)\s*$/u.exec(line);
+    if (heading !== null) {
+      flush();
+      current = heading[1]!.trim();
+      continue;
+    }
+    if (current !== null) buffer.push(line);
+  }
+  flush();
+  return agents.size === 0 ? null : agents;
+}
+
+
+/**
+ * Did this run reach a shell?
+ *
+ * OpenCode emits one `tool_use` event per tool call, naming the tool. The probe
+ * prompt asks for a shell command, so a run with a shell produces an event for
+ * it and a run without one does not. That is a fact in the stream rather than a
+ * sentence in a reply, which is what makes it survive the model wording
+ * differently next time.
+ */
+function shellToolUsed(stdout: string): boolean {
+  for (const line of stdout.split(/\r?\n/u)) {
+    const text = line.trim();
+    if (text === "" || !text.startsWith("{")) continue;
+    let record: unknown;
+    try {
+      record = JSON.parse(text);
+    } catch {
+      continue;
+    }
+    if (!isRecord(record) || record.type !== "tool_use") continue;
+    const part = isRecord(record.part) ? record.part : null;
+    const tool = part !== null && typeof part.tool === "string" ? part.tool.toLowerCase() : "";
+    if (["bash", "shell", "run", "execute"].includes(tool)) return true;
+  }
+  return false;
+}
+
+
+/** One model's share of a run, where the provider breaks it down. */
+export interface ModelAttribution {
+  model: string;
+  tokens: number;
+}
+
+/**
+ * Which models actually ran, where the provider says so.
+ *
+ * Claude Code's `result` record carries `modelUsage`, keyed by model. Nothing
+ * else read here does: Codex reports one total in `turn.completed`, and
+ * OpenCode reports per step without naming a model. Returning null for those is
+ * the honest answer and the reason the capability exists -- it converts a
+ * question nobody was asking into one that is visibly unanswered.
+ */
+export function readModelAttribution(
+  parser: string | undefined,
+  stdout: string
+): ModelAttribution[] | null {
+  if (parser !== "claude-json") return null;
+  for (const line of stdout.split(/\r?\n/u)) {
+    const text = line.trim();
+    if (text === "" || !text.startsWith("{")) continue;
+    let record: unknown;
+    try {
+      record = JSON.parse(text);
+    } catch {
+      continue;
+    }
+    if (!isRecord(record) || record.type !== "result" || !isRecord(record.modelUsage)) continue;
+    const models: ModelAttribution[] = [];
+    for (const [model, value] of Object.entries(record.modelUsage)) {
+      if (!isRecord(value)) continue;
+      const input = typeof value.inputTokens === "number" ? value.inputTokens : 0;
+      const output = typeof value.outputTokens === "number" ? value.outputTokens : 0;
+      models.push({ model, tokens: input + output });
+    }
+    return models.length === 0 ? null : models;
+  }
+  return null;
 }

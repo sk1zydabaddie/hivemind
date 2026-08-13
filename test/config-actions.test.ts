@@ -170,6 +170,11 @@ test("the agent catalogue is honest about what has actually been run", () => {
     if (agent.status === "unsupported") {
       assert.equal(agent.invoke, null, `${agent.id} was refused, so it has nothing to run`);
     }
+    /* An agent with an invocation must also have a usage reader, or its probe
+       refuses on a capability nothing could ever satisfy. */
+    if (agent.invoke !== null) {
+      assert.notEqual(agent.usage_parser, null, `${agent.id} can be run with nothing to read`);
+    }
   }
   // A spending limit built on unverified usage numbers is worse than none, so
   // an agent whose usage reporting is unproven cannot claim support.

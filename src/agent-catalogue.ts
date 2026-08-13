@@ -32,7 +32,7 @@ export interface CatalogueAgent {
   cost_rank: number;
   context_window: number;
   timeout_ms: number;
-  usage_parser: "codex-jsonl" | "codex-text" | "claude-json" | null;
+  usage_parser: "codex-jsonl" | "codex-text" | "claude-json" | "opencode-json" | null;
   /**
    * How this harness is kept out of a shell, which is now the PRIMARY
    * confinement mechanism rather than a fallback.
@@ -58,7 +58,7 @@ export interface CatalogueAgent {
    * can compare a request against, and every capability that needs a readback
    * comes back `unverified` rather than `verified`.
    */
-  readback: "codex-rollout" | "claude-init" | "none";
+  readback: "codex-rollout" | "claude-init" | "opencode-permissions" | "none";
   /** Argv template. `{cwd}` is replaced with the project root at connect time. */
   invoke: string[] | null;
 }
@@ -127,6 +127,27 @@ function claudeInvoke(model = "sonnet"): string[] {
     : ["claude", ...args];
 }
 
+
+/**
+ * OpenCode with no shell and no helper agents.
+ *
+ * The denial is not on the command line -- OpenCode takes it from the project's
+ * own `opencode.json`, which `project.init` writes. That is why this agent's
+ * readback reads the resolved table rather than the run: the rule lives in
+ * config, so config is where it has to be confirmed.
+ *
+ * `--format json` streams events; every `step_finish` carries its own token
+ * block, which is where the usage reader looks. Deliberately NOT `--auto`,
+ * whose own help calls it "dangerous!" -- with the shell and helper agents
+ * denied there is nothing left that needs blanket approval.
+ */
+function openCodeInvoke(model = "opencode/deepseek-v4-flash-free"): string[] {
+  const args = ["run", "--format", "json", "--model", model];
+  return process.platform === "win32"
+    ? ["cmd.exe", "/d", "/s", "/c", "opencode.cmd", ...args]
+    : ["opencode", ...args];
+}
+
 export const agentCatalogue: CatalogueAgent[] = [
   {
     id: "codex-terra",
@@ -145,7 +166,7 @@ export const agentCatalogue: CatalogueAgent[] = [
       mechanism: "sandbox",
       confirmed_by: "runtime-readback",
       detail:
-        "Codex has no tool-level deny, so its boundary is the OS sandbox instead -- and it is the one harness here that reports the sandbox it resolved, which is why it is also the one that keeps its shell.",
+        "`--disable shell_tool` removes the shell, which its own feature list confirms is a stable flag rather than an experiment -- so the shell-less posture is available here too, and an earlier note in this file saying otherwise was wrong. This profile keeps its shell deliberately: Codex is the one harness that reports the sandbox it resolved, so its boundary is verified either way, and it is the control case for measuring what a shell is worth.",
     },
     readback: "codex-rollout",
     invoke: codexInvoke("gpt-5.6-terra")
@@ -167,7 +188,7 @@ export const agentCatalogue: CatalogueAgent[] = [
       mechanism: "sandbox",
       confirmed_by: "runtime-readback",
       detail:
-        "Codex has no tool-level deny, so its boundary is the OS sandbox instead -- and it is the one harness here that reports the sandbox it resolved, which is why it is also the one that keeps its shell.",
+        "`--disable shell_tool` removes the shell, which its own feature list confirms is a stable flag rather than an experiment -- so the shell-less posture is available here too, and an earlier note in this file saying otherwise was wrong. This profile keeps its shell deliberately: Codex is the one harness that reports the sandbox it resolved, so its boundary is verified either way, and it is the control case for measuring what a shell is worth.",
     },
     readback: "codex-rollout",
     invoke: codexInvoke("gpt-5.6-luna")
@@ -189,7 +210,7 @@ export const agentCatalogue: CatalogueAgent[] = [
       mechanism: "sandbox",
       confirmed_by: "runtime-readback",
       detail:
-        "Codex has no tool-level deny, so its boundary is the OS sandbox instead -- and it is the one harness here that reports the sandbox it resolved, which is why it is also the one that keeps its shell.",
+        "`--disable shell_tool` removes the shell, which its own feature list confirms is a stable flag rather than an experiment -- so the shell-less posture is available here too, and an earlier note in this file saying otherwise was wrong. This profile keeps its shell deliberately: Codex is the one harness that reports the sandbox it resolved, so its boundary is verified either way, and it is the control case for measuring what a shell is worth.",
     },
     readback: "codex-rollout",
     invoke: codexInvoke("gpt-5.6-sol")
@@ -227,23 +248,23 @@ export const agentCatalogue: CatalogueAgent[] = [
     label: "OpenCode",
     harness: "opencode",
     subscription: "whatever provider you point it at",
-    status: "unsupported",
+    status: "unverified",
     caveat:
-      "It can be told to deny itself a shell and helper agents, and it will print the settings it resolved without being run -- which is more than any other agent here offers for free. What is missing is the reading of what it spends, because no run has ever gone through it, so nothing yet knows where its token counts appear. Connecting it runs the same probe as any other agent.",
+      "A probe has been through it and it passed: it denies itself a shell and helper agents, it says so before it runs, and its token counts are read from its own output. What it does not report is which model actually answered, so Hivemind cannot send cheaper work to a cheaper model on this one. No whole piece of work has been built and shipped through it yet, which is what would make it proven.",
     model: null,
     routing_tier: "standard",
     cost_rank: 10,
     context_window: 200_000,
     timeout_ms: 900_000,
-    usage_parser: null,
-    readback: "none",
+    usage_parser: "opencode-json",
+    readback: "opencode-permissions",
     shell_denial: {
       mechanism: "config-deny",
       confirmed_by: "resolved-config",
       detail:
         "`permission.bash: \"deny\"` in the project's own config. `opencode agent list` prints the resolved table for free and shows the rule landing on every agent -- but the print does not establish which rule WINS, so the denial is corroborated by a run that is told to use a shell and does not.",
     },
-    invoke: null
+    invoke: openCodeInvoke(),
   },
   {
     /* Refused as measured, not as an oversight, and the reason is specific

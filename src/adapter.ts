@@ -28,7 +28,7 @@ import {
 
 export type PromptArgMode = "stdin" | "arg";
 export type ProviderRoutingTier = "local" | "cheap" | "standard" | "strong";
-export type AdapterUsageParser = "codex-jsonl" | "codex-text" | "claude-json";
+export type AdapterUsageParser = "codex-jsonl" | "codex-text" | "claude-json" | "opencode-json";
 
 /**
  * What a profile may be *selected* for.
@@ -332,7 +332,7 @@ export function validateAdapterProfile(raw: unknown, expectedTool?: string): str
     problems.push("cost_rank must be a positive integer when provided");
   }
   if ("usage_parser" in raw && !isAdapterUsageParser(raw.usage_parser)) {
-    problems.push("usage_parser must be one of codex-jsonl, codex-text, claude-json when provided");
+    problems.push("usage_parser must be one of codex-jsonl, codex-text, claude-json, opencode-json when provided");
   }
   if ("roles" in raw) {
     // An empty list would mean "selectable for nothing", which is a profile
@@ -693,6 +693,51 @@ export function parseAdapterProviderUsage(
     return total === undefined ? null : reportedUsage({ total_tokens: parseTokenInteger(total) });
   }
 
+  if (parser === "opencode-json") {
+    /* OpenCode reports per STEP, not per run: every `step_finish` event carries
+       its own `tokens` block and there is no run-level total anywhere. Measured
+       on opencode 1.18.15 -- a two-step run emitted 6,075 then 6,122, and each
+       figure is that step's own input + output + reasoning + cache read.
+       Summing the steps is therefore the run's consumption. The discovery
+       assumed this would need `opencode export`; it does not, which is one
+       fewer process and one fewer thing to be wrong about. */
+    let input: number | null = null;
+    let output: number | null = null;
+    let cached: number | null = null;
+    let total: number | null = null;
+    for (const line of stdout.split(/\r?\n/u)) {
+      const text = line.trim();
+      if (text === "" || !text.startsWith("{")) continue;
+      let record: unknown;
+      try {
+        record = JSON.parse(text);
+      } catch {
+        continue;
+      }
+      if (!isRecord(record) || record.type !== "step_finish") continue;
+      const part = isRecord(record.part) ? record.part : null;
+      const tokens = part !== null && isRecord(part.tokens) ? part.tokens : null;
+      if (tokens === null) continue;
+      const cache = isRecord(tokens.cache) ? tokens.cache : null;
+      input = sumKnown(input, tokenField(tokens, "input"));
+      output = sumKnown(output, tokenField(tokens, "output"), tokenField(tokens, "reasoning"));
+      cached = sumKnown(
+        cached,
+        cache === null ? null : tokenField(cache, "read"),
+        cache === null ? null : tokenField(cache, "write")
+      );
+      total = sumKnown(total, tokenField(tokens, "total"));
+    }
+    return total === null
+      ? null
+      : reportedUsage({
+          input_tokens: input,
+          cached_input_tokens: cached,
+          output_tokens: output,
+          total_tokens: total
+        });
+  }
+
   if (parser === "claude-json") {
     /* Two shapes, because the profile has to choose between them and only one
        of them carries the startup readback.
@@ -985,6 +1030,26 @@ function extractModelOutput(parser: AdapterUsageParser, stdout: string): string 
   if (parser === "codex-text") {
     return stdout;
   }
+  if (parser === "opencode-json") {
+    /* OpenCode streams events rather than a final message, so the readable
+       reply is the last  part it emitted. */
+    let latest = "";
+    for (const line of stdout.split(/\r?\n/u)) {
+      const text = line.trim();
+      if (text === "" || !text.startsWith("{")) continue;
+      let record: unknown;
+      try {
+        record = JSON.parse(text);
+      } catch {
+        continue;
+      }
+      if (!isRecord(record) || record.type !== "text") continue;
+      const part = isRecord(record.part) ? record.part : null;
+      if (part !== null && typeof part.text === "string") latest = part.text;
+    }
+    return latest;
+  }
+
   if (parser === "claude-json") {
     const parsed = parseJsonObject(stdout);
     return parsed !== null && typeof parsed.result === "string" ? parsed.result : "";
@@ -1101,7 +1166,12 @@ function isProviderRoutingTier(value: unknown): value is ProviderRoutingTier {
 }
 
 function isAdapterUsageParser(value: unknown): value is AdapterUsageParser {
-  return value === "codex-jsonl" || value === "codex-text" || value === "claude-json";
+  return (
+    value === "codex-jsonl" ||
+    value === "codex-text" ||
+    value === "claude-json" ||
+    value === "opencode-json"
+  );
 }
 
 function isNodeError(error: unknown, code: string): boolean {

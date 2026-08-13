@@ -160,7 +160,7 @@ offers a way to make it a boundary, by denying the shell tool outright:
 | OpenCode | `permission.bash: "deny"` in the project's config | CLI |
 | Grok Build | `--tools` allowlist, plus `--no-subagents` | CLI |
 | Kimi Code | drop `kimi_cli.tools.shell:Shell` from an `--agent-file` spec | CLI |
-| Codex | not available — the sandbox is the boundary instead | CLI |
+| Codex | **`--disable shell_tool`** — a stable feature flag, found by interrogating the binary | CLI |
 
 **Built, in `src/agent-catalogue.ts`.** Each entry now carries a `shell_denial`
 recording the mechanism *and how the denial is confirmed to have taken effect* —
@@ -252,8 +252,24 @@ must never happen is a shell granted to a provider whose boundary is
 `unverified`, and the contract already refuses that.
 
 **Recommendation:** shell-less is the default profile for every new provider.
-Codex, which has a real OS sandbox and is already proven, keeps its shell — so
-it is also the control case for measuring what the shell is worth.
+Codex keeps its shell deliberately — its boundary is a sandbox it reports, so it
+is verified either way — which makes it the control case for measuring what a
+shell is worth.
+
+> **Correction, 2026-08-12.** This document previously said Codex has no
+> tool-level deny and must rely on its sandbox. That was wrong.
+> `codex features list` names **`shell_tool`** as a *stable* flag, and
+> `--disable shell_tool` removes it. Nothing in the documentation says so; it
+> took asking the binary, which is the same shape as the `--ephemeral`
+> discovery.
+>
+> **And a shell-less Codex still writes files.** Measured: with
+> `--disable shell_tool`, a trivial write task emitted a `file_change` item and
+> the file appeared on disk. `apply_patch` does not go through the shell tool,
+> so removing the shell costs the agent its ability to run commands and nothing
+> else. That is the fact the whole posture depends on, and it is now observed
+> rather than assumed — **on all four harnesses the shell can be removed
+> without removing the ability to produce a diff.**
 
 ---
 
@@ -907,6 +923,102 @@ it always did.
 **And the separate `--version` call is retired for this agent**, because
 `claude_code_version` is in the same record. Spawning the binary again to ask
 what it just told us is a wasted process and a second chance to be wrong.
+
+## 7. OpenCode, adapted — the second provider through the contract
+
+Written because the discovery was complete: the deny holds, tokens are inline,
+the permission table is readable, and `leaves_change_uncommitted` verified on it
+first. It is the second case through the four-state contract and it has a
+**different evidence shape from Claude's**, which is what makes it a real test
+of the generalisation rather than a second instance of the same thing.
+
+```
+ok: true | version: 1.18.15 | 11,189 tokens
+  verified    no_bypass_flags            ev=static       got=none
+  verified    non_interactive            ev=observation  got=bash denied
+  verified    confined_to_project        ev=readback     got=workspace-write
+  unverified  pins_one_model             ev=absent       req=opencode/deepseek-v4-flash-free
+  verified    reports_usage              ev=observation  got=11,189 tokens
+  unsupported reports_model_attribution  ev=absent       got=one total only
+  verified    no_nested_agents           ev=readback     got=none
+  verified    leaves_change_uncommitted  ev=observation  got=branch unchanged
+degraded: ["cost_prediction","routing_provenance","tier_routing"]
+```
+
+**Six verified, one unverified, one unsupported — admitted, with three things
+switched off and said out loud.** That is the degraded admission the contract
+was built for, arrived at rather than designed: OpenCode reports no model
+anywhere this reads, so the pin cannot be confirmed and tier routing is off.
+
+**Where the evidence differs from Claude's, and why that matters.** Claude Code
+reports what it resolved *in the run*. OpenCode reports what it resolved
+*before* the run — `opencode agent list` prints the merged permission table for
+free, no model call. The contract needed no change to accommodate that, which is
+the generalisation holding: `readback` is a class of evidence, not a place it
+comes from.
+
+But the free readback proves only that a rule was **accepted**, not that it
+**wins** — the `explore` subagent's table carries both `bash allow *` and our
+`bash deny *`, and the print does not say which. So the probe corroborates from
+the run itself.
+
+**And the corroboration had to be rewritten before it was right.** The first
+version matched the model's sentence — and failed, because it expected "do not
+have" and the model wrote "I don't have a shell tool". Matching a model's prose
+is the mistake this project has now recorded three times. It reads the stream
+structurally instead: the probe prompt asks for a shell command, and a run with
+a shell emits a `tool_use` event naming it. A fact in a field, not a sentence in
+a reply.
+
+**Two things the adapter needed that the discovery had not surfaced:**
+
+- **`opencode` is a `.cmd` shim on Windows**, so the readback could not spawn it
+  directly — the identical trap that once left a Linux clone holding three
+  unusable profiles. The platform branch belongs in the readback for the same
+  reason it belongs in the invocation.
+- **The usage parser is per-step, not per-run.** Every `step_finish` carries its
+  own `tokens` block and there is no run-level total anywhere, so the reader
+  sums the steps.
+
+## 8. The corpus comparison — estimated, and over budget
+
+**Not run. It comes to roughly 270K, against a ~200K approval, so it is a
+decision rather than something to spend into.**
+
+The design changed once during estimation, for a good reason. The plan was
+"shell-less versus shell-enabled on Codex", and this document had recorded that
+Codex cannot be made shell-less at all. **That was wrong**: `codex features list`
+names `shell_tool` as a *stable* flag and `--disable shell_tool` removes it. So
+the comparison can run exactly as intended, on the harness that is already
+proven — which is the better control, because only one variable moves.
+
+**Preflight, run and paid for (~37K):** a shell-less Codex was asked to write one
+file. It emitted a `file_change` item and the file appeared. `apply_patch` does
+not route through the shell tool, so removing the shell costs the ability to run
+commands and nothing else. Without that fact the comparison would have been
+measuring a broken configuration.
+
+**The estimate:**
+
+| | |
+| --- | --- |
+| Tasks in the corpus | 3 (a README, a sort module + tests, a CLI + tests) |
+| Postures | 2 (shell-enabled, shell-less) |
+| Calls | **6** |
+| Measured cost of one trivial call | 36,847 in / 104 out at **low** effort |
+| Corpus profile effort | **high**, and the tasks write real modules |
+| Estimate per call | 40–55K |
+| **Total** | **~270K** (range 240–330K) |
+
+The input dominates and is largely fixed — the contract, the substrate and
+Codex's own preamble — so the floor does not move much with task size, and 6
+calls is the minimum that keeps the comparison honest. Cutting to two tasks
+saves ~90K and drops the one task that has a dependency, which is where a
+shell-less worker is most likely to differ.
+
+**What it would settle:** accepted-diff rate and tokens-per-successful-task for
+each posture, on the same model and the same three tasks. That is the number
+that turns the shell-less recommendation from an argument into a measurement.
 
 ## What this pass did and did not do
 

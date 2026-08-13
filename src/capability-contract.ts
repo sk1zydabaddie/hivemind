@@ -112,6 +112,8 @@ export type DegradedFunction =
   | "tier_routing"
   /** `routing.observed` may attribute work to the wrong model. */
   | "routing_provenance"
+  /** A per-task cost worked out from model prices is wrong by an unknown amount. */
+  | "cost_prediction"
   /** `max_concurrent_workers` governs our workers, not calls made under one. */
   | "concurrency_accounting";
 
@@ -137,6 +139,7 @@ export type CapabilityId =
   | "confined_to_project"
   | "leaves_change_uncommitted"
   | "reports_usage"
+  | "reports_model_attribution"
   | "no_nested_agents";
 
 const admit = (consequence: string, degrades: DegradedFunction[] = []): Admission => ({
@@ -276,6 +279,43 @@ export const CAPABILITY_CONTRACT: CapabilityDefinition[] = [
       unsupported: admit(
         "This agent reports no usage at all. Spending limits are switched off and the cost readout will stay empty rather than show a number that is not true.",
         ["spend_ceilings"]
+      )
+    }
+  },
+  {
+    /**
+     * Split out from "reports what it spent" after a measurement, not a
+     * theory. A Claude Code probe pinned to one model reported a SECOND model
+     * in its own per-model breakdown: the pin took, and the harness still ran
+     * something of its own choosing. A provider that reports one total cannot
+     * show that, so the question was never being asked of it -- Codex passed
+     * `reports_usage` while the same thing could have been happening
+     * invisibly. Kimi documents a secondary model for helper agents by design,
+     * so this is not one harness's quirk.
+     *
+     * The distinction is: "reports what it spent" is about whether a CEILING
+     * can hold, and "reports what each model cost" is about whether a PRICE
+     * can be predicted. The first still holds when the second does not,
+     * because a total includes every model whether or not it names them.
+     */
+    id: "reports_model_attribution",
+    label: "Says which model spent what",
+    whyItMatters:
+      "Sending cheap work to a cheap model only saves money if the cheap model is what actually ran. A total that does not break down by model cannot tell you.",
+    scope: "this-run",
+    admission: {
+      verified: admit("Its own report breaks the run down by model."),
+      /* Never refuses. The ceiling is unaffected -- a total counts every model
+         whether or not it names them -- so the honest cost is a limitation,
+         not a refusal. And refusing here would refuse Codex, which is the one
+         harness that is actually proven. */
+      unverified: admit(
+        "This agent reports one total rather than a figure per model, so Hivemind cannot tell whether the model you chose is the only one that ran. Spending limits are unaffected, because the total counts everything. What is not reliable is working out what a task cost from the price of the model you picked.",
+        ["routing_provenance", "cost_prediction"]
+      ),
+      unsupported: admit(
+        "This agent cannot break its usage down by model. Spending limits still hold, but a per-task cost worked out from model prices will be wrong by an amount nobody can measure.",
+        ["routing_provenance", "cost_prediction"]
       )
     }
   },
