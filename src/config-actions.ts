@@ -23,6 +23,8 @@ import {
   type HivemindConfig
 } from "./config.js";
 import { initProject } from "./init.js";
+import { ACCOUNT_HOME_VARIABLES } from "./agent-catalogue.js";
+import { readAccounts, selectedAccount } from "./provider-accounts.js";
 import { writeJsonAtomic } from "./atomic.js";
 
 type ActionResult = { ok: true; value: unknown } | { ok: false; reason: string };
@@ -47,6 +49,18 @@ export interface InspectedAdapter {
   /** The probe result recorded when this profile was connected, if any. */
   connected_at: string | null;
   capabilities: AdapterProbeResult["capabilities"];
+  /**
+   * Why the recorded capabilities no longer describe what would run, or null.
+   *
+   * A probe result is evidence about the tool, the profile AND the account it
+   * ran under. Switching accounts sets this, because a different plan can
+   * change which models are available to pin and whether usage is reported at
+   * all -- carrying the verification across would assert something nobody
+   * measured.
+   */
+  capabilities_stale: string | null;
+  /** The account this role runs as, where one has been chosen. */
+  account: { id: string; label: string; harness: string } | null;
 }
 
 /**
@@ -55,6 +69,7 @@ export interface InspectedAdapter {
  * Hivemind never holds a provider credential.
  */
 export async function inspectProjectConfig(repoRoot: string): Promise<ActionResult> {
+  const accountsFile = await readAccounts(repoRoot);
   const loaded = await loadConfig(repoRoot);
   const config = loaded.ok ? loaded.config : null;
   const adapters: InspectedAdapter[] = [];
@@ -74,6 +89,8 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
         routing_tier: null,
         problems: [],
         connected_at: null,
+      capabilities_stale: null,
+      account: null,
         capabilities: []
       });
       continue;
@@ -86,6 +103,7 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
     const dangerous = findDangerousAdapterArgs(invoke);
     if (dangerous.length > 0) problems.push(`carries a refused flag: ${dangerous.join(", ")}`);
     const record = await readConnectionRecord(repoRoot, role);
+    const chosen = selectedAccount(accountsFile, typeof profile.tool === "string" ? profile.tool : null);
     adapters.push({
       role,
       installed: true,
@@ -95,7 +113,12 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
       routing_tier: typeof profile.routing_tier === "string" ? profile.routing_tier : null,
       problems,
       connected_at: record?.connected_at ?? null,
-      capabilities: record?.capabilities ?? []
+      capabilities: record?.capabilities ?? [],
+      capabilities_stale: record?.capabilities_stale ?? null,
+      account:
+        chosen === null
+          ? null
+          : { id: chosen.id, label: chosen.label, harness: chosen.harness }
     });
   }
 
@@ -272,6 +295,7 @@ export async function initProjectForDesktop(repoRoot: string): Promise<ActionRes
 
 interface ConnectionRecord {
   agent_id: string;
+  capabilities_stale?: string | null;
   connected_at: string;
   effective_tokens: number;
   readback_source: string | null;
@@ -365,7 +389,10 @@ export async function connectAdapter(
     effective_tokens: probe.effective_tokens,
     readback_source: probe.readback_source,
     provider_version: probe.provider_version,
-    capabilities: probe.capabilities
+    capabilities: probe.capabilities,
+    /* A fresh probe is a fresh verification, so whatever made the previous one
+       stale is answered by having run this one. */
+    capabilities_stale: null
   };
   await writeJsonAtomic(connectionRecordPath(repoRoot, role), record);
 
@@ -393,4 +420,78 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export async function writeTextFile(file: string, text: string): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, text, "utf8");
+}
+
+/**
+ * Mark a role's recorded capabilities as no longer describing what will run.
+ *
+ * Deliberately does NOT delete them. The previous verification is still the
+ * best available description of the tool and profile; what changed is that it
+ * was measured under a different account, and the honest presentation is
+ * "measured, but not for what is running now" rather than a blank. The client
+ * renders it the same way it renders an unverified capability, which is the
+ * pattern that already exists rather than a second one.
+ */
+export async function invalidateVerificationForHarness(
+  repoRoot: string,
+  harness: string,
+  reason: string
+): Promise<void> {
+  for (const role of adapterRoleNames) {
+    const profilePath = path.join(repoRoot, ".hivemind", "adapters", `${role}.profile.json`);
+    let tool: string | null = null;
+    try {
+      const raw: unknown = JSON.parse(await readFile(profilePath, "utf8"));
+      tool = isRecord(raw) && typeof raw.tool === "string" ? raw.tool : null;
+    } catch {
+      continue;
+    }
+    if (tool !== harness) continue;
+    const record = await readConnectionRecord(repoRoot, role);
+    if (record === null) continue;
+    await writeJsonAtomic(connectionRecordPath(repoRoot, role), {
+      ...record,
+      capabilities_stale: reason
+    });
+  }
+}
+
+/**
+ * Which accounts exist, which role runs as which, and what each has spent.
+ *
+ * Spend is NOT computed here: it comes from `routing.observed` in the trail,
+ * which the client already sums for its usage panel. This action reports who
+ * the accounts are; the trail reports what they cost. Keeping those apart is
+ * what stops a second, disagreeing spend number from existing.
+ */
+export async function inspectProviderAccounts(repoRoot: string): Promise<ActionResult> {
+  const file = await readAccounts(repoRoot);
+  const config = await inspectProjectConfig(repoRoot);
+  if (!config.ok) return config;
+  const inspected = config.value as { adapters: InspectedAdapter[] };
+  return {
+    ok: true,
+    value: {
+      accounts: file.accounts.map((account) => ({
+        id: account.id,
+        label: account.label,
+        harness: account.harness,
+        /* The directory, so a person can tell two accounts apart. It is a path,
+           never a credential -- Hivemind does not read inside it. */
+        home_dir: account.home_dir,
+        added_at: account.added_at
+      })),
+      /* Which harnesses can be switched at all, and the one variable each is
+         switched with. Reported so the surface never offers a control for a
+         harness Hivemind cannot actually point anywhere. */
+      switchable: ACCOUNT_HOME_VARIABLES,
+      roles: inspected.adapters.map((adapter) => ({
+        role: adapter.role,
+        tool: adapter.tool,
+        account: adapter.account,
+        capabilities_stale: adapter.capabilities_stale,
+        connected_at: adapter.connected_at
+      }))
+    }
+  };
 }

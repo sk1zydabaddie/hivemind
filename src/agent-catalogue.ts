@@ -331,3 +331,31 @@ export type AdapterRoleName = (typeof adapterRoleNames)[number];
 export function isAdapterRoleName(value: unknown): value is AdapterRoleName {
   return typeof value === "string" && (adapterRoleNames as readonly string[]).includes(value);
 }
+
+/**
+ * Which directory variable points each harness at one of its own logins.
+ *
+ * Lives here because this file is the one that knows **how to start a
+ * provider**, and which home it starts against is part of that. It was briefly
+ * its own module and `provider-knowledge.test.ts` correctly refused it: a
+ * fourth file knowing providers by name is the thing that test exists to stop,
+ * and the right answer was to put the knowledge where it belonged rather than
+ * to widen the allowlist.
+ *
+ * **Measured, not assumed** — read out of the shipped artifacts on 2026-08-13:
+ *
+ * | Harness | Variable | Confirmed by |
+ * | --- | --- | --- |
+ * | `codex` | `CODEX_HOME` | `codex --help`: "Layer `$CODEX_HOME/<name>.config.toml`…" |
+ * | `claude` | `CLAUDE_CONFIG_DIR` | present in the shipped `claude.exe` |
+ * | `opencode` | `OPENCODE_CONFIG_DIR` | present in the shipped `opencode.exe` |
+ *
+ * A literal, deliberately: a configurable variable name would let a project
+ * point a harness at `ANTHROPIC_API_KEY` and hand Hivemind a credential to
+ * carry. Those names sit two entries away from these in the same binaries.
+ */
+export const ACCOUNT_HOME_VARIABLES: Record<string, string> = {
+  codex: "CODEX_HOME",
+  claude: "CLAUDE_CONFIG_DIR",
+  opencode: "OPENCODE_CONFIG_DIR"
+};

@@ -800,6 +800,63 @@ describe("React workspace boundary", () => {
     expect(core).not.toMatch(/data:\s*\{[\s\S]{0,400}stdout/u);
   });
 
+  test("the accounts surface can switch an account and can never carry a credential", async () => {
+    const panel = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "accounts-panel.tsx"),
+      "utf8"
+    );
+    const code = panel.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/^\s*\/\/.*$/gmu, "");
+
+    /* The whole promise: authentication stays with the harness. So this
+       surface has no input of any kind -- a text field here is the beginning
+       of a credential channel even if nothing reads it yet -- and dispatches
+       only the three account actions. */
+    /* Structural, not lexical. The first version of this banned the WORDS
+       api_key/token/secret/password -- and failed on the panel's own visible
+       sentence "never sees your password, key or token", which is the
+       guarantee being enforced, rendered for the person who needs to read it.
+       Fourth instance of this trap in this project, and the first where the
+       offending prose was not a comment but UI copy, so stripping comments
+       would not have saved it either. What actually matters is that there is
+       nowhere to TYPE a secret and no action to send one. */
+    expect(code).not.toMatch(/<(?:input|textarea)/u);
+    expect(code).not.toMatch(/type=\{?["']password/u);
+    const actions = [...code.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
+    for (const action of actions) {
+      expect(["accounts.inspect", "accounts.select"]).toContain(action!);
+    }
+    expect(code).not.toMatch(/invokeWorkspaceAction|fetch\(|method:\s*["']POST/u);
+
+    /* And it says, where a person is looking at it, what it does not do. */
+    expect(panel).toMatch(/never sees your password, key or token/u);
+
+    /* Core's half: one allowlisted directory variable per harness, and a
+       credential-shaped name refused twice. */
+    /* The variable names live in the catalogue -- the file allowed to know how
+       to start a provider, including which of its own homes to start it
+       against. `provider-knowledge.test.ts` put them there by failing when they
+       had their own module, and that was the right outcome. */
+    const catalogue = await readFile(
+      path.resolve(desktopRoot, "..", "src", "agent-catalogue.ts"),
+      "utf8"
+    );
+    expect(catalogue).toMatch(/CODEX_HOME/u);
+    expect(catalogue).toMatch(/CLAUDE_CONFIG_DIR/u);
+    expect(catalogue).toMatch(/OPENCODE_CONFIG_DIR/u);
+    const accounts = await readFile(
+      path.resolve(desktopRoot, "..", "src", "provider-accounts.ts"),
+      "utf8"
+    );
+    expect(accounts).toMatch(/isCredentialVariable/u);
+    /* Switching invalidates the verification, which is the guardrail that
+       makes a switch safe rather than merely possible. */
+    const actionsSource = await readFile(
+      path.resolve(desktopRoot, "..", "src", "workspace-actions.ts"),
+      "utf8"
+    );
+    expect(actionsSource).toMatch(/invalidateVerificationForHarness/u);
+  });
+
   test("the accounts panel refuses to draw a figure it cannot trust", async () => {
     const usage = await readFile(path.join(desktopRoot, "src", "lib", "provider-usage.ts"), "utf8");
     const project = await readFile(

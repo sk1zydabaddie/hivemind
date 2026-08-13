@@ -345,10 +345,9 @@ needed a Core action that did not exist, which was outside a `desktop/`-only
 scope. The second pass added that action. Recorded in that order because the
 refusal and the blockage carry more information than the code does.
 
-One item is **not** built and should not read as if it were: **account
-switching**. What exists is per-role connection and honest usage reporting.
-Changing which account a role uses still means reconnecting the adapter through
-settings; there is no switch affordance.
+**Account switching closed the last of them — 2026-08-13.** See below for the
+mechanism and for the question it turned on: whether a capability probe is
+account-independent.
 
 Screenshots: `docs/evidence/ui/ade-2026-08-13/`.
 
@@ -535,6 +534,24 @@ about a trap is not the same as not stepping in it, which is why the fix is
 mechanical — comments are stripped before every one of these scans — rather
 than a resolution to be careful.
 
+**Fourth instance, and it breaks the fix.** The guard asserting the accounts
+panel can never carry a credential banned the words `api_key|token|secret|
+password` — and failed on the panel's own visible sentence:
+
+> Hivemind points the agent at one of them and **never sees your password, key
+> or token**.
+
+That is not a comment. It is UI copy, rendered for the person who needs to read
+it, so stripping comments would not have saved it. The correction is therefore
+stronger than "strip comments first":
+
+> **A word ban cannot express a structural rule.** What mattered was that there
+> is nowhere to type a secret and no action to send one — asserted as *no
+> `<input>`, no `type="password"`, and only the two account reads dispatched*.
+> Constrain the shape. The prose that explains a guarantee will always contain
+> the words the guarantee is about, and the clearer the prose the more certainly
+> it trips.
+
 ## Finding: an embedded terminal breaks two invariants — 2026-08-13
 
 **Recorded as a finding rather than a preference, because it is one.** An
@@ -576,6 +593,151 @@ UUID and UUID is not chronology.
 The pane reads and cannot run. Re-running is `verification.rerun`, a different
 action behind a different gate, and it is not reachable from there.
 
+## Account switching, and whether a probe is account-independent — 2026-08-13
+
+Built for one reported failure: **three days lost to an exhausted Codex quota
+with nothing on screen saying so.** Seeing what is left is half of it; moving to
+another account is the other half.
+
+### The mechanism, and why it holds no credential
+
+Every one of these harnesses keeps its own credentials in its own directory,
+written by its own `login` command. So **an account here is nothing but a
+directory the harness already owns**, named so a person can pick between them.
+Hivemind sets exactly one environment variable to point the harness at one of
+its own homes. It never reads inside the directory, never writes one, and never
+sees a token.
+
+The variable names are **measured, not assumed** — read out of the shipped
+artifacts of the installed harnesses:
+
+| Harness | Variable | Where it was confirmed |
+| --- | --- | --- |
+| `codex` | `CODEX_HOME` | `codex --help`: "Layer `$CODEX_HOME/<name>.config.toml`…" |
+| `claude` | `CLAUDE_CONFIG_DIR` | present in the shipped `claude.exe` |
+| `opencode` | `OPENCODE_CONFIG_DIR` | present in the shipped `opencode.exe` |
+
+That table is the whole allowlist, and it is deliberately **not extensible by
+configuration**: a config-supplied variable name would let a project point the
+harness at `ANTHROPIC_API_KEY` and hand Hivemind a credential to carry. Those
+names sit *right next to* the allowed ones in the same binaries —
+`OPENCODE_API_KEY` and `OPENCODE_AUTH_CONTENT` are two entries away from
+`OPENCODE_CONFIG_DIR` — which is exactly why the allowlist is a literal.
+
+**It lives in `agent-catalogue.ts`, and it took a failing test to put it
+there.** The first draft gave the map its own module, and a quota reader
+another. `provider-knowledge.test.ts` — the guard added two passes ago,
+forbidding a fourth file that knows a provider by name — failed on both.
+
+The response that matters is the one not taken: the allowlist in that test has
+an escape hatch, and adding two names to it would have been a one-line green
+build. Instead the knowledge moved to the files that already own it — *which
+home to start a harness against* is startup knowledge, so the map went to the
+catalogue; *what a provider says is left* is the same question as what it spent,
+so the quota reader went to `adapter.ts`. Neither new module names a provider
+at all now; one holds the mechanism, the other is gone.
+
+> **A guard with an escape hatch tests your judgement, not your code.** The
+> hatch exists for the case where the fourth file is genuinely right. It is not
+> there to make a failing build green, and the tell is whether you can say what
+> the new file knows that the three existing ones do not.
+
+Two checks, not one: a name must be on the allowlist **and** must not be
+credential-shaped, re-checked at the spawn itself. And selection is keyed by
+**harness rather than by role**, which is not cosmetic — the only thing known
+when a provider process is spawned is its profile's `tool`. Keying by role would
+have left eight call sites each threading an account through, each able to
+forget. Keyed by harness, `runAdapterProcess` resolves it itself and nothing can
+bypass it.
+
+### Is the probe account-independent? No — and that is not a guess
+
+The honest answer has two parts, and the second matters more.
+
+**There is a mechanism by which an account changes a measured capability.**
+`pins_one_model` asks whether the model Hivemind requested is the model that
+loaded. Model availability is a property of the *plan*, not the binary — a pin
+to a model the new account's plan does not carry cannot resolve the same way.
+`reports_usage` and `reports_model_attribution` are weaker but not immune:
+subscription and API-key auth are different code paths in these harnesses, and
+this project has already recorded one harness running a second model it was
+never asked for.
+
+**And the rest cannot be certified independent, because that is a claim too.**
+`no_bypass_flags`, `non_interactive`, `confined_to_project`,
+`leaves_change_uncommitted` and `no_nested_agents` all *look* like properties of
+the binary and the argv. But this project has a standing rule that a claim a
+provider **lacks** something needs the same standard as a claim that it has it
+— and asserting "these five are account-independent" is precisely that shape of
+negative claim. It would need two accounts to measure, and there is one.
+
+So: **switching invalidates the verification for every role on that harness.**
+It is the version-staleness problem wearing a different hat, and it gets the
+same answer — a probe result is evidence about the tool, the profile **and the
+account it ran under**, and evidence does not travel to a configuration nobody
+measured.
+
+The capabilities are **marked stale, not deleted**. The previous measurement is
+still the best available description of the *tool*; what changed is that it no
+longer refers to what is running. The surface says exactly that — "measured, but
+not for what is running now" — in the same amber the usage panel already uses
+for a figure it cannot trust, which extends the existing honesty pattern rather
+than inventing a second one.
+
+> **What would retire this:** a two-account measurement on one harness, probing
+> the same binary and profile under both. That would let the invalidation
+> narrow from *all capabilities* to *the ones actually shown to move*. Until
+> then, blanket invalidation is the conservative direction and the only one the
+> evidence supports.
+
+### Quota: Codex was reporting it the whole time
+
+The shipped `codex.exe` carries a `RateLimitWindow` of `used_percent` /
+`window_minutes` / `resets_at`, and a `RateLimitSnapshot` with `primary` and
+`secondary` windows and a `planType`, emitted on its token-count event.
+**Hivemind was discarding all of it** — the same shape as the check output that
+got thrown away, and the same fix.
+
+The negative is measured too: the shipped `claude.exe` carries no such field,
+its only `RATE_LIMITED` strings belonging to the QUIC stack. So Claude Code's
+answer is **"not reported"**, which is a different fact from "0% used" and must
+not collapse into one. `parseProviderQuota` returns `null` rather than an empty
+snapshot for exactly that reason, and the parser finds the snapshot **by shape**
+— the first object carrying a `rate_limits` key — rather than by path, because
+matching a path would break on the next envelope change and look like the
+provider having stopped reporting.
+
+## Standing rule: a platform result must come off that platform's native filesystem
+
+**Second time a WSL mount has produced a false result, and the two failed in
+opposite directions.** That is what makes this a rule rather than a war story:
+one direction hides failures, the other manufactures them, and both arrive
+looking exactly like results.
+
+| Mount | What it did | Direction |
+| --- | --- | --- |
+| `drvfs` (Windows drive from Linux) | Made git see `core.fileMode=false`, so three real file-mode failures **passed** | Hid failures |
+| `9p` / `/mnt/d` (this pass) | Invented three `daemon did not become ready` timeouts, then **hung outright** with two orphaned daemon processes | Manufactured failures |
+
+> **A cross-mount run is not evidence, in either direction.** A platform's test
+> result must come off that platform's native filesystem.
+
+Applied the same day it was written: the Linux suite was re-run after
+`rsync`ing the repository to ext4 and `npm ci` there. **733 passed, 0 failed,
+0 skipped** — including every daemon test that had hung. The mount was the
+whole of the difference.
+
+The trap is that the cross-mount run is *so much more convenient*. It needs no
+copy, no second install, and it usually works. That is precisely why it has now
+produced two false results: a rig that is right most of the time is the one
+nobody re-examines. Convenience is not a property of an instrument that makes
+it more trustworthy.
+
+Corollary, and the reason the hang mattered more than the failures: **a hung
+run is worse than a failing one.** A failure names itself. This one sat at 191
+of 733 tests with two live daemon processes and no output for minutes, which
+reads identically to "slow" until someone goes looking.
+
 ## Standing rule: an instrument that can only return one answer is not evidence
 
 **Third instance, so it is a pattern rather than three accidents.** Each time,
@@ -597,17 +759,37 @@ absence of what never was.** The shot harness now polls for a named string from
 each surface and *throws* if it never appears, so a blank frame fails at capture
 instead of on disk.
 
-A fourth instance was caught in the same pass and is worth recording because it
-is the same rule in a different costume. Two confinement tests built their
-hazard with `symlink(..., "file")` and fell back to a bare `return` when the OS
-refused — and Windows refuses with `EPERM` unless developer mode is on. On the
-machine they were written on, both tests built **no hazard at all** and reported
-`ok`. They now use a directory junction, which needs no privilege and which
-`realpath` resolves through, and where even that fails they **skip loudly**
-through the test context. `skipped` is visible in the output; `return` is not.
+### The fourth instance is the most serious of the four
 
-Corollary, learned the expensive way: **when you cannot build the hazard, say
-so.** A silent fallback turns "untested" into "passing".
+Recorded separately because the first three were instruments that *measured
+badly*. This one **did not measure at all**, on the guarantee this project
+refuses providers over.
+
+Two confinement tests built their hazard with `symlink(..., "file")` and fell
+back to a bare `return` when the OS refused — and Windows refuses with `EPERM`
+unless developer mode is on. On the machine they were written on, both tests
+built **no hazard whatsoever** and reported `ok`.
+
+What they were nominally proving is the confinement of `files.read`: that a
+link inside the repository pointing outside it is refused on where it *lands*
+rather than how it is spelled. That is the same class of guarantee as
+`confined_to_project`, which this project **refuses an entire provider** for
+failing. So the ranking is not sentiment:
+
+- Instances 1–3 produced a number or a verdict that was wrong or unearned.
+- Instance 4 produced a **green check on a security boundary that was never
+  exercised** — and would have kept producing one for as long as the tests were
+  run on Windows.
+
+They now use a directory junction, which needs no privilege and which
+`realpath` resolves through, so the hazard is real on both platforms; where even
+that fails they **skip loudly** through the test context. `skipped` is visible
+in the output, `return` is not. Confirmed non-vacuous afterwards: the Windows
+run reports `# skipped 0`, and the Linux run exercises real symlinks.
+
+> **When you cannot build the hazard, say so.** A silent fallback turns
+> *untested* into *passing* — and does it most readily on exactly the platform
+> where the hazard is hardest to build, which is where you needed the test.
 
 ## The identifier rule, and why it took five asks — 2026-08-12
 

@@ -13,6 +13,7 @@ import { authorizeManualTask, prepareWorkspaceTentativePlan, queuePlanAmendment,
 import { cancelQualityRun } from "./quality-control.js";
 import { reverifyQueuedPatchSet } from "./reverify.js";
 import { readCheckOutput } from "./check-output.js";
+import { addAccount, selectAccount } from "./provider-accounts.js";
 import { listProjectFiles, readProjectFile } from "./project-files.js";
 import { findGitRoot } from "./repo.js";
 import { readEvents } from "./events.js";
@@ -27,6 +28,8 @@ import {
   connectAdapter,
   initProjectForDesktop,
   inspectProjectConfig,
+  inspectProviderAccounts,
+  invalidateVerificationForHarness,
   setProjectConfig
 } from "./config-actions.js";
 import { adoptSpec, readSpecForReview } from "./spec-review.js";
@@ -77,7 +80,13 @@ export const workspaceActionTypes = [
   "files.read",
   /* What the project's checks printed. Read-only, and the thing an embedded
      terminal was actually being asked for -- see src/check-output.ts. */
-  "checks.inspect"
+  "checks.inspect",
+  /* Which account each provider runs as. Hivemind never holds a credential:
+     an account is a directory the harness itself owns, and selecting one sets
+     a single allowlisted variable -- see src/provider-accounts.ts. */
+  "accounts.inspect",
+  "accounts.add",
+  "accounts.select"
 ] as const;
 
 export type WorkspaceActionType = (typeof workspaceActionTypes)[number];
@@ -216,6 +225,39 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
       return { ok: false, reason: "checks.inspect takes no fields; Core serves the most recent run" };
     }
     return latestCheckOutput(repoRoot);
+  }
+  if (raw.type === "accounts.inspect") {
+    if (Object.keys(payload).length > 0) {
+      return { ok: false, reason: "accounts.inspect takes no fields" };
+    }
+    return inspectProviderAccounts(repoRoot);
+  }
+  if (raw.type === "accounts.add") {
+    const parsed = exactStrings(payload, ["label", "harness", "home_dir"]);
+    if (!parsed.ok) return parsed;
+    const added = await addAccount(repoRoot, {
+      label: parsed.value.label,
+      harness: parsed.value.harness,
+      home_dir: parsed.value.home_dir
+    });
+    return added.ok ? inspectProviderAccounts(repoRoot) : added;
+  }
+  if (raw.type === "accounts.select") {
+    const parsed = exactStrings(payload, ["account_id"]);
+    if (!parsed.ok) return parsed;
+    const selected = await selectAccount(repoRoot, parsed.value.account_id);
+    if (!selected.ok) return selected;
+    /* The switch invalidates the capability verification for that role.
+       A probe result is evidence about the tool, the profile AND the account
+       it ran under: a different plan can change which models can be pinned and
+       whether usage is reported at all. Carrying the verification across would
+       assert something nobody measured. */
+    if (selected.value.invalidated) {
+      /* Every role running on that harness, not just one: the verification
+         belonged to the account, and they all just changed account. */
+      await invalidateVerificationForHarness(repoRoot, selected.value.account.harness, "account_changed");
+    }
+    return inspectProviderAccounts(repoRoot);
   }
   if (raw.type === "manager.start") {
     const parsed = exactStrings(payload, ["message", "tool"]);

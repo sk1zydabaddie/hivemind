@@ -10,6 +10,8 @@ import { readJsonFile } from "./json.js";
 import { terminateProcessTreeAndVerify, type DurableProcessIdentity } from "./process-control.js";
 import { assembleAgentPrompt, buildAgentPromptFromContract } from "./prompt-cache.js";
 import type { FailureCode } from "./failure-code.js";
+import { ACCOUNT_HOME_VARIABLES } from "./agent-catalogue.js";
+import { accountEnvironmentForTool, isCredentialVariable } from "./provider-accounts.js";
 import {
   adapterOutputIndicatesThrottle,
   bindMeteredCallProcess,
@@ -109,6 +111,10 @@ export interface InvokeAgentOptions {
   usageSessionId?: string;
   shouldCancel?: () => Promise<boolean>;
   onProcessStart?: (identity: DurableProcessIdentity) => Promise<{ ok: true } | { ok: false; reason: string }>;
+  /* Which of the harness's own homes to run against, as a single allowlisted
+     directory variable. Built by `accountEnvironment` and refused here if it
+     ever arrives carrying anything else -- see src/provider-accounts.ts. */
+  accountEnv?: Record<string, string>;
 }
 
 export interface AdapterProcessResult {
@@ -151,6 +157,10 @@ export interface AdapterProcessOptions {
   usageTaskId?: string;
   shouldCancel?: () => Promise<boolean>;
   onProcessStart?: (identity: DurableProcessIdentity) => Promise<{ ok: true } | { ok: false; reason: string }>;
+  /* Which of the harness's own homes to run against, as a single allowlisted
+     directory variable. Built by `accountEnvironment` and re-checked at the
+     spawn -- see src/provider-accounts.ts. */
+  accountEnv?: Record<string, string>;
 }
 
 export type AdapterProcessFailure = {
@@ -395,6 +405,25 @@ export function findRefusedAdapterModes(
   return [...refused].sort((left, right) => left.localeCompare(right));
 }
 
+/**
+ * The last gate before a variable reaches a provider process.
+ *
+ * Accepts only names that are the registered home variable of some harness,
+ * and drops anything credential-shaped even if it somehow reached the
+ * allowlist. Two checks for one rule, because this one is worth stating twice.
+ */
+function safeAccountEnvironment(input: Record<string, string> | undefined): Record<string, string> {
+  if (input === undefined) return {};
+  const allowed = new Set(Object.values(ACCOUNT_HOME_VARIABLES));
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (!allowed.has(key) || isCredentialVariable(key)) continue;
+    if (typeof value !== "string" || value.trim() === "") continue;
+    out[key] = value;
+  }
+  return out;
+}
+
 export function buildAgentPrompt(contract: TaskContract): string {
   return buildAgentPromptFromContract(contract);
 }
@@ -413,6 +442,14 @@ export async function runAdapterProcess(
       reason: `adapter invocation refused before spawn: ultra or dynamic-workflow orchestration would violate one-worker/one-scope ownership (${refusedModes.join(", ")})`
     };
   }
+  /* Resolved once, here, rather than at each of the eight call sites: nothing
+     that spawns a provider can forget to apply the account, and nothing can
+     apply a different one. Re-checked at the spawn itself by
+     `safeAccountEnvironment`, which is the last point before a variable
+     reaches a provider process. */
+  const resolvedAccountEnv = safeAccountEnvironment(
+    options.accountEnv ?? (await accountEnvironmentForTool(repoRoot, profile.tool))
+  );
   const usageSessionId = options.usageSessionId ?? `standalone-${randomUUID()}`;
   const reservationResult = await reserveMeteredCall(repoRoot, {
     provider: profile.tool,
@@ -448,7 +485,17 @@ export async function runAdapterProcess(
     // - NOT set on Windows, where `detached` means a new console window and
     //   `taskkill /t` is already the correct tree primitive.
     const detached = process.platform !== "win32";
-    const child = spawn(command, args, { cwd, windowsHide: true, detached });
+    /* One allowlisted directory variable, or nothing. Re-checked at the spawn
+       rather than trusted from the caller: this is the last point before a
+       credential-shaped variable would reach a provider process, and the whole
+       promise is that Hivemind never carries one. */
+    const accountEnv = resolvedAccountEnv;
+    const child = spawn(command, args, {
+      cwd,
+      windowsHide: true,
+      detached,
+      ...(Object.keys(accountEnv).length === 0 ? {} : { env: { ...process.env, ...accountEnv } })
+    });
     const processIdentity: DurableProcessIdentity | null = child.pid === undefined
       ? null
       : {
@@ -1176,4 +1223,92 @@ function isAdapterUsageParser(value: unknown): value is AdapterUsageParser {
 
 function isNodeError(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
+/* ── What a provider says is LEFT ──────────────────────────────────────────
+   Kept in this file because this is the one allowed to know how to read what a
+   provider spent, and what is left is the same question asked forward. It was
+   briefly its own module and `provider-knowledge.test.ts` refused it, rightly.
+*/
+export interface QuotaWindow {
+  /** What the provider called it: "primary", "secondary". */
+  name: string;
+  used_percent: number;
+  /** The window's length, where the provider gives one. */
+  window_minutes: number | null;
+  /** When it resets, as the provider reported it. Never computed here. */
+  resets_at: string | null;
+}
+
+export interface ProviderQuota {
+  windows: QuotaWindow[];
+  /** The plan the provider named, where it named one. */
+  plan: string | null;
+}
+
+/**
+ * Read a quota snapshot out of a run's own output.
+ *
+ * Returns null when the provider reported nothing — which is a fact worth
+ * keeping distinct from "reported zero headroom", and is why this is nullable
+ * rather than defaulting to an empty snapshot.
+ */
+export function parseProviderQuota(parser: string, stdout: string): ProviderQuota | null {
+  if (!parser.startsWith("codex")) return null;
+
+  /* Newest-first: a long run emits several token-count events and the last one
+     is the only one that describes the state the next call will meet. */
+  const lines = stdout.split(/\r?\n/u);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]!.trim();
+    if (line === "" || !line.startsWith("{")) continue;
+    let record: unknown;
+    try {
+      record = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const snapshot = findRateLimits(record, 0);
+    if (snapshot === null) continue;
+    const windows: QuotaWindow[] = [];
+    for (const name of ["primary", "secondary"]) {
+      const window = isRecord(snapshot[name]) ? (snapshot[name] as Record<string, unknown>) : null;
+      if (window === null) continue;
+      const used = quotaNumberField(window, "used_percent");
+      if (used === null) continue;
+      windows.push({
+        name,
+        used_percent: used,
+        window_minutes:
+          quotaNumberField(window, "window_minutes") ??
+          quotaNumberField(window, "window_duration_mins"),
+        resets_at: typeof window.resets_at === "string" ? window.resets_at : null
+      });
+    }
+    if (windows.length === 0) continue;
+    return {
+      windows,
+      plan: typeof snapshot.planType === "string" ? snapshot.planType : null
+    };
+  }
+  return null;
+}
+
+/* The snapshot is nested under an event envelope whose exact shape has changed
+   between Codex versions, so it is found by SHAPE rather than by path: the
+   first object carrying a `rate_limits` key. Matching a path would break on the
+   next envelope change and look like the provider having stopped reporting. */
+function findRateLimits(value: unknown, depth: number): Record<string, unknown> | null {
+  if (depth > 6 || !isRecord(value)) return null;
+  if (isRecord(value.rate_limits)) return value.rate_limits;
+  for (const nested of Object.values(value)) {
+    const found = findRateLimits(nested, depth + 1);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
+function quotaNumberField(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }

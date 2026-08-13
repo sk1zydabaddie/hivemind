@@ -28,6 +28,7 @@ import {
   PanelLabel
 } from "@/components/ui/panel";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { AccountsPanel } from "@/components/workspace/accounts-panel";
 import { ANONYMOUS_TASK, taskTitleOrNull } from "@/lib/identifiers";
 import type { BoardProjection } from "@/lib/projection";
 import { buildUsagePanel, formatTokens, type UsagePanel } from "@/lib/provider-usage";
@@ -217,8 +218,9 @@ export function ProjectTab({
             </ScrollArea>
           </Panel>
 
-          <aside className="grid max-h-full min-h-0 grid-rows-[auto_minmax(0,auto)] gap-3 overflow-hidden">
-            <AccountsPanel usage={usage} />
+          <aside className="grid max-h-full min-h-0 grid-rows-[auto_auto_minmax(0,auto)] gap-3 overflow-hidden">
+            <AccountsPanel onAction={onAction} />
+            <SpendPanel usage={usage} />
             <Panel className="max-h-full">
               <PanelHeader className="bg-panel">
                 <PanelLabel className="text-ink">What it has learned</PanelLabel>
@@ -495,7 +497,7 @@ function Total({
  * unreadable, never rendered as a confident zero. A meter reading nought when
  * it means "I cannot see" is how the next three days go.
  */
-function AccountsPanel({ usage }: { usage: UsagePanel }): React.JSX.Element | null {
+function SpendPanel({ usage }: { usage: UsagePanel }): React.JSX.Element | null {
   if (usage.providers.length === 0) return null;
   return (
     <Panel>

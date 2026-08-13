@@ -253,6 +253,29 @@ export type CapabilityStatus = "verified" | "mismatched" | "unverified" | "unsup
 /** How the state was reached. Not all evidence is equally strong. */
 export type CapabilityEvidence = "readback" | "observation" | "static" | "absent";
 
+/** One of a harness's own homes, registered under a name a person chose. */
+export interface ProviderAccountView {
+  id: string;
+  label: string;
+  harness: string;
+  home_dir: string;
+  added_at: string;
+}
+
+export interface AccountsView {
+  accounts: ProviderAccountView[];
+  /** Harness -> the one variable it is switched with. Empty means no switch. */
+  switchable: Record<string, string>;
+  roles: {
+    role: string;
+    tool: string | null;
+    account: { id: string; label: string; harness: string } | null;
+    /** Why the recorded capabilities no longer describe what would run. */
+    capabilities_stale: string | null;
+    connected_at: string | null;
+  }[];
+}
+
 export interface ProbedCapability {
   id: string;
   label: string;
@@ -378,7 +401,12 @@ export type WorkspaceAction = {
     | "files.list"
     | "files.read"
     /* What the checks printed. Reading a record, never running one. */
-    | "checks.inspect";
+    | "checks.inspect"
+    /* Which account each harness runs as. No credential ever crosses this
+       boundary: an account is a directory the harness itself owns. */
+    | "accounts.inspect"
+    | "accounts.add"
+    | "accounts.select";
   payload: Record<string, unknown>;
 };
 
