@@ -636,8 +636,16 @@ describe("React workspace boundary", () => {
 
     /* Memory and History were two tabs describing one subject and neither could
        act. Merged, that must stay true: exactly one audited read, no writes. */
+    /* The invariant is READ-ONLY, not "exactly one action". Project reads the
+       durable trail and the connected agents; it writes nothing. Asserting the
+       property rather than the list is what lets a second read be added without
+       weakening the thing being protected. */
     const actions = [...project.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
-    expect(new Set(actions)).toEqual(new Set(["trail.inspect"]));
+    const READS = new Set(["trail.inspect", "config.inspect", "status.inspect", "change.inspect"]);
+    for (const action of actions) {
+      expect(READS.has(action!), `${action} is not a read`).toBe(true);
+    }
+    expect(actions).toContain("trail.inspect");
     expect(audit).toContain("`trail.inspect`");
     expect(project).not.toMatch(/invokeWorkspaceAction|fetch\(|method:\s*["']POST/u);
     expect(project).not.toMatch(/reviewMemoryProposal|memory\.review_handoff/u);
@@ -698,5 +706,123 @@ describe("React workspace boundary", () => {
     ]) {
       expect(readable).not.toContain(banned);
     }
+  });
+
+  test("the diff view can read a change and can never approve one", async () => {
+    const diff = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "diff-view.tsx"),
+      "utf8"
+    );
+    const model = await readFile(path.join(desktopRoot, "src", "lib", "diff-model.ts"), "utf8");
+    const work = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"),
+      "utf8"
+    );
+
+    /* A diff view that could stage, apply or approve what it is showing would
+       be the adoption gate with an extra door in it. So it dispatches nothing
+       at all: the only action the annotation flow reaches is `task.redirect`,
+       and that is sent from the tab, not from here. */
+    expect(diff).not.toMatch(/onAction|invokeWorkspaceAction|type:\s*"[a-z]+\.[a-z_]+"/u);
+    expect(model).not.toMatch(/onAction|invokeWorkspaceAction|fetch\(/u);
+    for (const forbidden of ["adoption.execute", "plan.ratify", "spec.adopt", "manager.approve_pending"]) {
+      expect(diff).not.toContain(forbidden);
+    }
+
+    /* Annotations are guidance and the surface says so where a person is
+       writing one, not in a footnote somewhere else. */
+    expect(diff).toMatch(/Notes are guidance/u);
+    expect(diff).toMatch(/do not approve or ship anything/u);
+
+    /* They travel through M6.3's existing correction channel -- no new
+       machinery, and every gate that was in the way still is. */
+    expect(work).toMatch(/type:\s*"task\.redirect"[\s\S]{0,240}annotationsAsCorrection/u);
+  });
+
+  test("the file tree and the file viewer can read, and can do nothing else", async () => {
+    const tree = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "file-tree.tsx"),
+      "utf8"
+    );
+    const viewer = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "file-viewer.tsx"),
+      "utf8"
+    );
+
+    /* The file tree is the surface most likely to grow a write. An IDE's tree
+       creates, renames and deletes; ours must never, because there is no such
+       action and inventing a path to one would be a write with no event behind
+       it -- the same mistake the embedded terminal was refused for. Asserted by
+       the ACTIONS these two dispatch: only the two reads exist. */
+    const READS = new Set(["files.list", "files.read"]);
+    for (const source of [tree, viewer]) {
+      const actions = [...source.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
+      expect(actions.length).toBeGreaterThan(0);
+      for (const action of actions) {
+        expect(READS.has(action!), `${action} is not one of the two file reads`).toBe(true);
+      }
+      expect(source).not.toMatch(/invokeWorkspaceAction|fetch\(|method:\s*["']POST/u);
+    }
+
+    /* And no control offering one, in either. A tree that renders "New file"
+       has already made the promise even if the handler is missing. */
+    expect(tree).not.toMatch(/>\s*(?:New|Delete|Rename|Save|Add)\b/u);
+    expect(viewer).not.toMatch(/<(?:textarea|input)\b|contentEditable/u);
+  });
+
+  test("the checks pane reads a record and cannot run one", async () => {
+    const pane = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "checks-output.tsx"),
+      "utf8"
+    );
+    const actions = [...pane.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
+    expect(actions).toEqual(["checks.inspect"]);
+
+    /* This pane is what the embedded terminal was refused in favour of, so the
+       line it must not cross is the one the terminal would have: it reads what
+       a command printed and never causes a command to run. Re-running is a
+       different action behind a different gate, and it is not reachable here.
+       COMMENTS ARE STRIPPED FIRST. The first version of this assertion failed
+       on the comment above naming the very action it forbids -- the third time
+       this trap has been sprung in this project, after "secrets" and
+       "estimate". Prose explains the rule; code is what is constrained. */
+    const paneCode = pane.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/^\s*\/\/.*$/gmu, "");
+    expect(paneCode).not.toMatch(/verification\.rerun|manager\.|adoption\./u);
+    expect(paneCode).not.toMatch(/invokeWorkspaceAction|fetch\(|method:\s*["']POST/u);
+
+    /* Core keeps the bytes beside the trail rather than inside it, and the
+       action that serves them takes no fields -- both asserted at the source,
+       so a later change that starts writing megabytes into events fails here. */
+    const store = await readFile(path.resolve(desktopRoot, "..", "src", "check-output.ts"), "utf8");
+    expect(store).toMatch(/CHECK_OUTPUT_LIMIT_BYTES/u);
+    const core = await readFile(path.resolve(desktopRoot, "..", "src", "verification.ts"), "utf8");
+    expect(core).toMatch(/checks_run_id: stored\.ok \? checksRunId : null/u);
+    expect(core).not.toMatch(/data:\s*\{[\s\S]{0,400}stdout/u);
+  });
+
+  test("the accounts panel refuses to draw a figure it cannot trust", async () => {
+    const usage = await readFile(path.join(desktopRoot, "src", "lib", "provider-usage.ts"), "utf8");
+    const project = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "project-tab.tsx"),
+      "utf8"
+    );
+
+    /* The rule the whole panel exists for. A provider whose `reports_usage` is
+       not verified is marked unreadable rather than drawn as a confident zero,
+       because a meter reading nought when it means "I cannot see" is how three
+       days get lost to an exhausted quota. */
+    expect(usage).toMatch(/entry\?\.status === "verified" \? "measured" : "unreadable"/u);
+    expect(project).toMatch(/not readable/u);
+    /* And the bar is only ever drawn from Core's own ledger, never from a sum
+       of events -- the ledger is what the ceiling is enforced against. */
+    expect(usage).toMatch(/inspection\?\.spend/u);
+    /* Checked against CODE, not prose. The first version of this banned the
+       word "estimate" outright and failed on the comment that says this module
+       never estimates -- the same shape as the settings test that once banned
+       "secrets" and caught the sentence protecting the most dangerous file
+       scope. Comments explain; code is what is constrained. */
+    const usageCode = usage.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/^\s*\/\/.*$/gmu, "");
+    expect(usageCode).not.toMatch(/Math\.round\([^)]*\*\s*1\.\d/u);
+    expect(usageCode).not.toMatch(/estimate[A-Za-z]*\s*\(/u);
   });
 });

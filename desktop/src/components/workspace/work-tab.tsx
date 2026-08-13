@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronRight,
   CircleStop,
+  ClipboardList,
   FileCode2,
   Layers3,
   MessageSquareText,
@@ -49,6 +50,14 @@ import {
 } from "@/components/ui/panel";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AgentGraph } from "@/components/workspace/agent-graph";
+import {
+  DiffView,
+  annotationsAsCorrection,
+  type DiffAnnotation
+} from "@/components/workspace/diff-view";
+import { ChecksOutputPane } from "@/components/workspace/checks-output";
+import { FileTree } from "@/components/workspace/file-tree";
+import { FileViewer } from "@/components/workspace/file-viewer";
 import { PhaseSpine, phaseRatio } from "@/components/workspace/phase-spine";
 import {
   SpecReviewPanel,
@@ -187,6 +196,18 @@ export function WorkTab({
   const [dismissedAttention, setDismissedAttention] = useState<string[]>([]);
   const [dismissedPlanHash, setDismissedPlanHash] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
+  /* One agent's change, opened from the rail. `patch` is a READ through
+     `change.inspect`; the annotations are client-side until they are sent, and
+     sending them is `task.redirect` and nothing else. */
+  const [taskDiff, setTaskDiff] = useState<{
+    taskId: string;
+    title: string;
+    focusFile: string | null;
+    patch: string | null;
+    loading: boolean;
+    error: string;
+  } | null>(null);
+  const [annotations, setAnnotations] = useState<DiffAnnotation[]>([]);
   /* The spec half of the one review. Read through the audited dispatcher; the
      client decides nothing about it. */
   const [specReview, setSpecReview] = useState<SpecReview | null>(null);
@@ -199,6 +220,11 @@ export function WorkTab({
     draft: AmendmentDraft;
   } | null>(null);
   const [redirectOpen, setRedirectOpen] = useState(false);
+  /* The checks' own output. Read on open rather than held in the projection:
+     it is a record of one past run, not live state, and re-reading it on every
+     event would be a lot of bytes to keep current for a dialog nobody has
+     open. */
+  const [checksOpen, setChecksOpen] = useState(false);
   const [redirectText, setRedirectText] = useState("");
   const [replanOpen, setReplanOpen] = useState(false);
   const [replanText, setReplanText] = useState("");
@@ -495,6 +521,66 @@ export function WorkTab({
     }
   };
 
+  /* Read one task's submitted change. `change.inspect` is an audited read and
+     the only thing this does; the annotations that ride on top of it live in
+     React until somebody presses send. */
+  const openTaskDiff = async (task: TaskProjection, focusFile: string | null): Promise<void> => {
+    setAnnotations([]);
+    setTaskDiff({
+      taskId: task.task_id,
+      title: task.title,
+      focusFile,
+      patch: null,
+      loading: true,
+      error: ""
+    });
+    try {
+      const result = await onAction<{ task_id: string; diff: string }>({
+        type: "change.inspect",
+        payload: { task_id: task.task_id }
+      });
+      setTaskDiff((current) =>
+        current === null || current.taskId !== task.task_id
+          ? current
+          : { ...current, patch: result.diff, loading: false }
+      );
+    } catch (error) {
+      setTaskDiff((current) =>
+        current === null || current.taskId !== task.task_id
+          ? current
+          : { ...current, loading: false, error: plainActionError(error) }
+      );
+    }
+  };
+
+  /* Notes become one correction through M6.3's redirect channel. Nothing about
+     this call is new machinery: it is the same action the "Guide this agent"
+     control has always sent, with the message composed from the lines the
+     person marked instead of typed from scratch. */
+  const sendAnnotations = async (): Promise<void> => {
+    if (taskDiff === null || annotations.length === 0) return;
+    setBusy(true);
+    setFeedback("");
+    try {
+      await onAction({
+        type: "task.redirect",
+        payload: {
+          task_id: taskDiff.taskId,
+          correction: annotationsAsCorrection(annotations)
+        }
+      });
+      setAnnotations([]);
+      setTaskDiff(null);
+      setFeedback(
+        "Your notes are queued at the agent's existing safe boundary. Every file and project check still applies."
+      );
+    } catch (error) {
+      setFeedback(plainActionError(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const loadChangeSetPatch = async (item: WorkspaceQueueItem): Promise<void> => {
     const changeSet = item.change_set;
     if (!changeSet) return;
@@ -623,6 +709,7 @@ export function WorkTab({
                   setBusy(false);
                 }
               }}
+              onOpenChecks={() => setChecksOpen(true)}
               onOpenPlan={() => void openPlanReview()}
               onStop={() => void stopRun()}
             />
@@ -721,6 +808,7 @@ export function WorkTab({
                 output={projection.selectedOutput}
                 task={selected}
                 onGuide={() => setRedirectOpen(true)}
+                onOpenFile={(file) => void openTaskDiff(selected, file)}
                 onStop={() => void stopTask(selected.task_id, "Stopped from the rail")}
               />
             </Panel>
@@ -881,6 +969,41 @@ export function WorkTab({
           }
         }}
       />
+
+      <Dialog open={checksOpen} onOpenChange={setChecksOpen}>
+        <DialogContent className="grid h-[min(720px,calc(100vh-40px))] w-[min(920px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)] gap-0 p-0 sm:max-w-none">
+          <DialogHeader className="border-b border-rule px-5 py-4">
+            <DialogTitle>What the checks said</DialogTitle>
+            <DialogDescription>
+              The recorded output of the last time Hivemind ran this project's checks.
+              Nothing here runs anything.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid min-h-0 bg-canvas">
+            {checksOpen ? <ChecksOutputPane onAction={onAction} /> : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {taskDiff === null ? null : (
+        <TaskDiffDialog
+          annotations={annotations}
+          busy={busy}
+          onAction={onAction}
+          error={taskDiff.error}
+          focusFile={taskDiff.focusFile}
+          leasedFiles={tasks.find((entry) => entry.task_id === taskDiff.taskId)?.lease_files ?? []}
+          loading={taskDiff.loading}
+          open
+          patch={taskDiff.patch}
+          taskTitle={taskDiff.title}
+          onAnnotate={setAnnotations}
+          onOpenChange={(next) => {
+            if (!next) setTaskDiff(null);
+          }}
+          onSend={() => void sendAnnotations()}
+        />
+      )}
 
       <PatchDialog
         error={changeSetPatchError}
@@ -1224,6 +1347,7 @@ function RunHeader({
   busy,
   stopBusy,
   advancing,
+  onOpenChecks,
   onOpenPlan,
   onStop,
   onLevelChange
@@ -1239,6 +1363,7 @@ function RunHeader({
   busy: boolean;
   stopBusy: boolean;
   advancing: string | null;
+  onOpenChecks: () => void;
   onOpenPlan: () => void;
   onStop: () => void;
   onLevelChange: (level: AutonomyLevel) => Promise<void>;
@@ -1316,6 +1441,15 @@ function RunHeader({
               View plan
             </Button>
           ) : null}
+          {/* The answer to "why did the checks fail", which is what an embedded
+              terminal was actually being asked for. Always offered rather than
+              only on a failure: a person wants to read a passing run's output
+              too, and a control that appears only in trouble is a control
+              nobody can find when they need it. */}
+          <Button size="sm" type="button" variant="ghost" onClick={onOpenChecks}>
+            <ClipboardList aria-hidden="true" />
+            Checks
+          </Button>
           {runActive ? (
             <Button
               className="text-clay hover:bg-clay-wash hover:text-clay"
@@ -1721,8 +1855,10 @@ function InspectorPane({
   output,
   busy,
   onGuide,
+  onOpenFile,
   onStop
 }: {
+  onOpenFile: (file: string) => void;
   task: TaskProjection;
   output: BoardProjection["selectedOutput"];
   busy: boolean;
@@ -1868,11 +2004,19 @@ function InspectorPane({
             ) : (
               <ul className="m-0 max-h-[140px] list-none overflow-auto border-t border-rule p-0 py-1.5">
                 {files.map((file) => (
-                  <li
-                    className="px-3 py-0.5 font-mono text-[12px] break-all text-muted-foreground"
-                    key={file}
-                  >
-                    {file}
+                  <li key={file}>
+                    {/* "editing 2 files" is a claim about specific files, so it
+                        is clickable: one click opens what this agent actually
+                        did to that file. It opens a READ of the submitted
+                        patch -- there is no path from here to the file on
+                        disk, and none to changing it. */}
+                    <button
+                      className="w-full cursor-pointer px-3 py-0.5 text-left font-mono text-[12px] break-all text-muted-foreground hover:text-navy"
+                      type="button"
+                      onClick={() => onOpenFile(file)}
+                    >
+                      {file}
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -2768,6 +2912,174 @@ function TextActionDialog({
   );
 }
 
+/* One agent's change, line by line, with the notes a person leaves on it.
+ *
+ * The notes are the feature worth stealing and the guardrail is what makes it
+ * safe: they are GUIDANCE. Sending them dispatches `task.redirect`, which is
+ * M6.3's correction channel -- the message reaches the agent at its next safe
+ * stopping point, and every gate that was already in the way is still in the
+ * way. The scope check still rejects a file the task was not given, whatever a
+ * note asked for.
+ *
+ * So this dialog can queue a message and read a patch. It cannot approve,
+ * ratify, ship, or edit anything, and there is no control on it that does.
+ */
+function TaskDiffDialog({
+  open,
+  taskTitle,
+  focusFile,
+  patch,
+  leasedFiles,
+  loading,
+  error,
+  busy,
+  annotations,
+  onAction,
+  onAnnotate,
+  onOpenChange,
+  onSend
+}: {
+  open: boolean;
+  taskTitle: string;
+  focusFile: string | null;
+  patch: string | null;
+  leasedFiles: string[];
+  loading: boolean;
+  error: string;
+  busy: boolean;
+  annotations: DiffAnnotation[];
+  onAction: <T>(action: WorkspaceAction) => Promise<T>;
+  onAnnotate: (next: DiffAnnotation[]) => void;
+  onOpenChange: (open: boolean) => void;
+  onSend: () => void;
+}): React.JSX.Element {
+  /* Two questions, one surface. The diff answers "what did this task change";
+     the file answers "what does it say now". Clicking a file in the rail used
+     to answer only the first, which is the wrong one when the record has no
+     lines to show -- and on a run whose patches were never retained, the wrong
+     one is the ONLY one it could answer. */
+  const [pane, setPane] = useState<"changes" | "file">("changes");
+  const [viewing, setViewing] = useState<string | null>(focusFile);
+  useEffect(() => {
+    setViewing(focusFile);
+    setPane("changes");
+  }, [focusFile, open]);
+
+  const openFile = (file: string): void => {
+    setViewing(file);
+    setPane("file");
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="grid h-[min(720px,calc(100vh-40px))] w-[min(1180px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 p-0 sm:max-w-none">
+        <DialogHeader className="border-b border-rule px-5 py-4">
+          <DialogTitle>{taskTitle}</DialogTitle>
+          <DialogDescription>
+            {focusFile === null
+              ? "What this agent has changed so far. Leave a note on any line to steer it."
+              : `What this agent has changed so far, starting at ${focusFile}. Leave a note on any line to steer it.`}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid min-h-0 grid-cols-[240px_minmax(0,1fr)] bg-canvas">
+          {/* Read-only. There is no action behind this that could create,
+              rename or delete anything -- `files.list` and `files.read` are the
+              whole surface, and Core refuses its own record before this
+              component is consulted. */}
+          <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border-r border-rule bg-panel">
+            <p className="m-0 border-b border-rule px-3 py-2 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
+              Project files
+            </p>
+            <FileTree selectedPath={viewing} onAction={onAction} onOpenFile={openFile} />
+          </div>
+          <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+            <div className="flex items-center gap-1 border-b border-rule px-3 py-1.5">
+              <PaneButton active={pane === "changes"} onClick={() => setPane("changes")}>
+                What changed
+              </PaneButton>
+              <PaneButton
+                active={pane === "file"}
+                disabled={viewing === null}
+                onClick={() => setPane("file")}
+              >
+                The whole file
+              </PaneButton>
+            </div>
+            {pane === "file" && viewing !== null ? (
+              <FileViewer path={viewing} onAction={onAction} />
+            ) : (
+              <div className="grid min-h-0">
+                {loading ? (
+                  <p className="m-0 px-5 py-4 text-[13px] text-muted-foreground">
+                    Reading what it changed…
+                  </p>
+                ) : null}
+                {error ? (
+                  <div className="grid content-start gap-2 px-5 py-4">
+                    <p className="m-0 text-[13px] text-clay" role="status">
+                      {error}
+                    </p>
+                    {/* The honest dead end used to be the end of the road. Now
+                        it points at the thing that IS readable. */}
+                    <p className="m-0 text-[12px] leading-relaxed text-muted-foreground">
+                      The files themselves can still be read — pick one on the left, or
+                      switch to <strong className="font-medium text-ink">the whole file</strong>.
+                    </p>
+                  </div>
+                ) : null}
+                {patch === null || loading || error ? null : (
+                  <DiffView
+                    annotations={annotations}
+                    leasedFiles={leasedFiles}
+                    patch={patch}
+                    onAnnotate={onAnnotate}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+        <DialogFooter className="items-center justify-between gap-3 border-t border-rule bg-panel px-5 py-3 sm:justify-between">
+          <span className="text-[12px] text-muted-foreground">
+            {annotations.length === 0
+              ? "Notes steer the agent. They never approve or ship anything."
+              : `${annotations.length} ${annotations.length === 1 ? "note" : "notes"} — sent together, read at the agent's next safe stopping point.`}
+          </span>
+          <Button disabled={busy || annotations.length === 0} type="button" onClick={onSend}>
+            <Send aria-hidden="true" />
+            Send {annotations.length === 1 ? "note" : "notes"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PaneButton({
+  active,
+  disabled,
+  children,
+  onClick
+}: {
+  active: boolean;
+  disabled?: boolean;
+  children: React.ReactNode;
+  onClick: () => void;
+}): React.JSX.Element {
+  return (
+    <button
+      className={`rounded-sm px-2.5 py-1 text-[12px] transition-colors disabled:opacity-40 ${
+        active ? "bg-panel font-medium text-ink" : "text-muted-foreground hover:text-ink"
+      }`}
+      disabled={disabled}
+      type="button"
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
 function PatchDialog({
   open,
   patch,
@@ -2792,7 +3104,7 @@ function PatchDialog({
             Exactly what was checked. Nothing here has touched your branch yet.
           </DialogDescription>
         </DialogHeader>
-        <ScrollArea className="min-h-0 bg-canvas">
+        <div className="grid min-h-0 bg-canvas">
           {loading ? (
             <p className="m-0 px-5 py-4 text-[13px] text-muted-foreground">Loading the checked changes…</p>
           ) : null}
@@ -2801,12 +3113,14 @@ function PatchDialog({
               {error}
             </p>
           ) : null}
-          {patch ? (
-            <pre className="m-0 px-5 py-4 font-mono text-[12px] leading-[1.65] break-words whitespace-pre-wrap text-ink">
-              {patch}
-            </pre>
-          ) : null}
-        </ScrollArea>
+          {/* The whole verified set, line by line. Read-only on purpose: this
+              is the surface a person reaches through "See every line" on the
+              ship bar, and a diff view that could approve what it is showing
+              would be the adoption gate with an extra door. No annotations
+              either -- the change is already checked and the agents that made
+              it are finished. */}
+          {patch ? <DiffView patch={patch} /> : null}
+        </div>
       </DialogContent>
     </Dialog>
   );

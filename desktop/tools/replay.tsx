@@ -41,6 +41,8 @@ interface ReplayScenario {
   timeline?: ReplayFrame[];
   /** Captured worker output, keyed by task. Playback only. */
   output?: Record<string, ReplayOutputRecord[]>;
+  /** Real submitted diffs, keyed by task, where the capture kept them. */
+  patches?: Record<string, string>;
   /** A real drafted spec, for replaying the one review. */
   spec_review?: Record<string, unknown>;
 }
@@ -65,7 +67,15 @@ if (!response.ok) {
     "No replay data. Run: node tools/collect-replay.mjs";
   throw new Error("replay data missing");
 }
-const data = (await response.json()) as { scenarios: ReplayScenario[] };
+const data = (await response.json()) as {
+  scenarios: ReplayScenario[];
+  /* Live captures rather than replayed trails -- see the stubs below. */
+  project_files?: {
+    listings?: Record<string, unknown>;
+    files?: Record<string, unknown>;
+  };
+  check_output?: unknown;
+};
 const wanted = params.get("scenario");
 const scenario =
   data.scenarios.find((entry) => entry.id === wanted) ?? data.scenarios[0];
@@ -289,6 +299,51 @@ class ReplayEventSource {
         if (settings === null) throw new Error("no captured settings state");
         return settings.connect;
       }
+      /* A worker's real submitted diff, where the evidence folder kept one.
+         A scenario without a captured patch answers with nothing rather than a
+         stand-in, so the change viewer shows its "no lines to show" state --
+         which is the honest rendering of a run whose diffs were never kept. */
+      if (action.type === "change.inspect") {
+        const payload = (action as { payload?: { task_id?: unknown } }).payload ?? {};
+        const taskId = String(payload.task_id ?? "");
+        const patch = scenario.patches?.[taskId];
+        if (patch === undefined) {
+          throw new Error("this run's record does not include the lines it changed");
+        }
+        return { task_id: taskId, diff: patch };
+      }
+
+      /* The project's own files and what its checks printed.
+         Neither is replayed state: no trail in the corpus retained the source
+         tree or the checks' output, so these are LIVE captures taken by
+         `collect-replay.mjs` running the real Core functions over a real
+         directory and a real failing command. Named as such in the evidence
+         README rather than passed off as a replayed run. */
+      if (action.type === "files.list") {
+        const payload = (action as { payload?: { path?: unknown } }).payload ?? {};
+        const directory = String(payload.path ?? ".");
+        const listing = data.project_files?.listings?.[directory];
+        if (listing === undefined) {
+          throw new Error("this capture does not include that directory");
+        }
+        return listing;
+      }
+      if (action.type === "files.read") {
+        const payload = (action as { payload?: { path?: unknown } }).payload ?? {};
+        const file = String(payload.path ?? "");
+        const content = data.project_files?.files?.[file];
+        if (content === undefined) {
+          throw new Error("this capture did not keep the text of that file");
+        }
+        return content;
+      }
+      if (action.type === "checks.inspect") {
+        if (data.check_output == null) {
+          throw new Error("no checks have been run and recorded in this project yet");
+        }
+        return data.check_output;
+      }
+
       /* The spec half of the review, served from a REAL drafted spec captured
          by the drafting experiment rather than a fixture. */
       if (action.type === "spec.review" && scenario.spec_review !== undefined) {
@@ -306,16 +361,26 @@ class ReplayEventSource {
  *
  *   /replay.html?scenario=<id>&tab=project
  *   /replay.html?scenario=<id>&tab=agents
+ *   /replay.html?scenario=<id>&open=changes
+ *   /replay.html?scenario=<id>&open=file&file=<path an agent is holding>
  */
 const clickByName = (name: string): boolean => {
-  const match = [...document.querySelectorAll("button")].find(
-    (button) =>
-      (button.textContent ?? "").trim() === name ||
-      /* A tab may carry a live count after its label ("Agents3"), so a prefix
-         match is what actually finds it. Harness-only tolerance. */
-      (button.textContent ?? "").trim().startsWith(name) ||
-      button.getAttribute("aria-label") === name
-  );
+  /* Scoped to the open dialog when there is one.
+     Radix dismisses a modal on an outside pointerdown, so a driver that clicks
+     a button BEHIND the overlay closes the very dialog it just opened -- which
+     is what a multi-step walk into a file tree did, silently, and looked like
+     the tree failing to respond. */
+  const scope: ParentNode = document.querySelector("[role=dialog]") ?? document;
+  const buttons = [...scope.querySelectorAll("button")];
+  /* Exact before prefix: "src" must not match "src/slugify.js" when the tree
+     really does have a folder called `src`. A tab may still carry a live count
+     after its label ("Agents3"), so prefix stays as the fallback. */
+  const match =
+    buttons.find(
+      (button) =>
+        (button.textContent ?? "").trim() === name ||
+        button.getAttribute("aria-label") === name
+    ) ?? buttons.find((button) => (button.textContent ?? "").trim().startsWith(name));
   if (!match) return false;
   /* Radix's tab trigger activates on mousedown and on focus, not on a bare
      programmatic click -- so drive the whole sequence rather than `.click()`. */
@@ -332,6 +397,16 @@ const drive = (): void => {
     params.get("tab") === "project" ? "Project" : null,
     params.get("tab") === "agents" ? "Agents" : null,
     params.get("open") === "plan" ? "View plan" : null,
+    params.get("open") === "changes" ? "See every line" : null,
+    params.get("open") === "checks" ? "Checks" : null,
+    /* A file an agent is holding, opened from the rail. Names the file rather
+       than a control, because the file list IS the control. */
+    params.get("open") === "file" ? (params.get("file") ?? "") : null,
+    /* Open the change dialog from the rail, then walk the tree to a file whose
+       text the capture actually kept. */
+    ...(params.get("open") === "filetext"
+      ? [params.get("file") ?? "", ...(params.get("walk") ?? "").split("/").filter((s) => s !== "")]
+      : []),
     params.get("open") === "commands" ? "Commands" : null,
     params.get("open") === "settings" ? "Settings" : null,
     /* The connect flow: open settings, then ask one agent to take one role.

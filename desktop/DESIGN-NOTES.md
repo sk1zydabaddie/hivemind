@@ -334,6 +334,281 @@ somebody else installed them. Checked retrospectively rather than assumed:
 None of the three was wrong. All three were *unverified* until checked, which
 is the point: an installed binary is an assumption until somebody traces it.
 
+## ADE surfaces: what was built, what was refused — 2026-08-13
+
+Six development-environment features were asked for across two passes. Five
+were built; one — the embedded terminal — was argued against, the argument was
+accepted as a finding, and a checks-output pane was built in its place.
+
+The first pass reported the file tree as **blocked rather than skipped**: it
+needed a Core action that did not exist, which was outside a `desktop/`-only
+scope. The second pass added that action. Recorded in that order because the
+refusal and the blockage carry more information than the code does.
+
+One item is **not** built and should not read as if it were: **account
+switching**. What exists is per-role connection and honest usage reporting.
+Changing which account a role uses still means reconnecting the adapter through
+settings; there is no switch affordance.
+
+Screenshots: `docs/evidence/ui/ade-2026-08-13/`.
+
+### The rule the whole pass hangs on
+
+> **Chat steers. Buttons authorize.** A note on a diff line cannot approve,
+> ratify, or ship anything.
+
+Every ADE feature is a new surface next to a gate, which makes each one a chance
+to build a path around it. Stated per feature, in the form "what it can and
+cannot do":
+
+| Feature | Can | Cannot |
+| --- | --- | --- |
+| Ship-bar diff (`open=changes`) | Show every line of the verified set | Annotate, edit, stage, approve. It is read-only, deliberately |
+| Per-task diff, from a held file | Show a task's lines; collect notes | Send anything except `task.redirect`; approve, ratify or ship |
+| Diff notes | Become **one** `correction` string on `task.redirect` | Authorize. They are guidance, and the editor says so where they are written |
+| Accounts panel | Read `config.inspect`, sum `routing.observed` | Write. It dispatches reads only, and estimates nothing |
+| File tree | List directories under the project root, read-only | Create, rename, delete, move or edit. Reach `.hivemind/` or `.git/`. Reach outside the resolved root by any spelling |
+| File viewer | Show a file's current text | Edit or save. There is no writable element in it and no write action behind it |
+| Checks pane | Read what the last recorded run of the project's checks printed | Run anything. Re-running is `verification.rerun`, behind its own gate and unreachable from here |
+
+The notes case is the one worth being explicit about. Notes ride M6.3's proven
+redirect channel — the same write-intent boundary a typed correction goes
+through — and `annotationsAsCorrection` flattens them into human-authored prose.
+There is no second channel, no new action, and no privileged path. A person who
+writes six notes has written one correction in six bullets.
+
+The ship-bar dialog carries **no** note affordance. It sits directly above the
+ship button, and a comment box there is the adoption gate with an extra door.
+
+`diff-view.tsx` was added to the identifier guard's surface list at the same
+time, since it renders patch text and the change viewer once headed every diff
+with `# ${result.task_id}`. It has **one** bounded raw-record exception, the
+same shape as the full-record dialog: when nothing in a patch can be laid out
+line by line, the record is shown verbatim under a sentence saying so. Verbatim
+is the promise there, so it is not filtered — but it is reachable only when zero
+files parsed, which is the case where hiding anything would be worse.
+
+### The terminal does not earn its place
+
+Asked for as table stakes, with an invitation to push back. Pushed back, and the
+argument was accepted as a **finding** — recorded in full under *Finding: an
+embedded terminal breaks two invariants* below, along with the checks-output
+pane built in its place. The short form:
+
+An embedded terminal is not a viewer; it is a **second, unaudited write path
+into the same repository**. Two concrete failures, not a principle:
+
+1. **It would make Hivemind lie about the agent.** `leaves_change_uncommitted`
+   is a *measured* capability: Hivemind checks whether an agent committed when
+   it was told not to. A human typing `git commit` in a pane inside Hivemind
+   produces exactly the state that capability treats as a violation. Hivemind
+   would report `mismatched` — accusing the agent of what the person did — and
+   the accusation would be indistinguishable from a real one.
+
+2. **It would mutate the repository through a path that emits no event.** The
+   trail-rebuild rule is that the projection can be reconstructed from durable
+   events. A shell writing files under the daemon breaks that silently: the
+   projection stays confidently wrong, and every screen built on it inherits the
+   error. This is the same shape as the discovery two passes ago that a
+   *provider's* shell had to be denied — denying the agent a shell while opening
+   one for the person, in the same working tree, would be theatre.
+
+There is a real need underneath the ask: **seeing why the checks failed.** That
+is a checks-output pane — the recorded stdout of the command Core already ran,
+which needs no shell. **It was built**; see the finding below.
+
+Note also that `## First run … does not need a terminal` (below) is the same
+finding from the other end: a clean install reaches a shipped change with no
+terminal command at all. Adding one now would re-open a door that was closed by
+walking it.
+
+### The file tree: blocked in the first pass, then built
+
+The first pass reported it as blocked rather than skipping it. The desktop's
+entire authority is three Tauri commands (`select_project`,
+`initialize_project`, `workspace_action`), and none of the 32 workspace actions
+listed or read a project file — so a file tree was not buildable in `desktop/`
+at all.
+
+`files.list` and `files.read` now exist. **They are a new authorization surface
+even though they only read**, and they are treated as one, because read-only is
+not the same as harmless: a reader that can be talked out of its confinement
+hands over source, credentials, and the trail itself.
+
+| Rule | How it is enforced |
+| --- | --- |
+| Read-only | No writing verb exists in `project-files.ts`, asserted against the source — a behavioural test can only prove that *these* calls wrote nothing |
+| Confined to the project root | Every path is realpath'd and judged on **where it lands**, not how it is spelled. `..` and absolute paths are also refused lexically, for a usable message |
+| `.hivemind/` refused entirely | None of it is user code. It is the trail, the canon, the patches and the config — each already served by an action that shapes what a person may see. The refusal *names* that action |
+| `.git/` refused | Not project source, and it holds every credential a helper ever cached |
+| Not a write path | `files.list` and `files.read` are the whole surface |
+
+Two details that are the actual guard rather than decoration:
+
+- **The refused-root check runs on the RESOLVED path.** Checking the spelling
+  would let a symlink named anything at all reach `.hivemind`. Mutation-tested:
+  reverting it to check the input fails exactly one test, the one written for
+  it.
+- **A listing OMITS `.git` and `.hivemind` rather than erroring**, because a
+  tree that will not draw its own root is useless. Naming one of them directly
+  is what earns a refusal.
+
+Tested from **every caller** — in process, over the CLI, and over the daemon's
+HTTP route — because a guard that lives in one of three entry points is not a
+guard. Each of the three also has a non-vacuous positive case, so the refusals
+cannot pass against an action that never works at all.
+
+And "editing 2 files" now opens the file, not only its diff. The dialog carries
+both: *what changed* and *the whole file*, with the tree beside them. That also
+turns the honest dead end into a door — a run whose patches were never retained
+used to answer "this run's record does not include the lines it changed" and
+stop, and now points at the files, which are still readable.
+
+### A defect this pass found: capability types drifted
+
+`workspace-actions.ts` still declared the **three**-state `CapabilityStatus`
+after Core moved to four. `mismatched` — the state that means *the agent
+answered, and answered wrong* — fell through every branch and rendered neutral.
+TypeScript was silent, because a narrower union is assignable to a wider one at
+every place it was read.
+
+The lesson is not "keep the types in sync". It is that **a status enum shared
+across a process boundary needs a total mapping at the render site**, so an
+unhandled member is a compile error rather than a neutral pixel. `capabilityMark`
+now switches exhaustively over the union and assigns the fallthrough to `never`.
+
+Mutation-tested rather than assumed: adding a fifth member to `CapabilityStatus`
+fails the typecheck at that function, and only there. A trailing `default`
+branch — which is what was there before — cannot fail that test.
+
+### The honesty rule for usage, which is the whole reason it exists
+
+> A connection whose usage is unverified shows that it is unverified. It never
+> draws a confident meter.
+
+A provider whose `reports_usage` capability is not `verified` reads **not
+readable** in amber, with one sentence saying why. Never a zero — a meter
+reading nought when it means *I cannot see* is how three days go to an exhausted
+quota with nothing on screen.
+
+Two supporting rules fell out of building it:
+
+- **Unattributable spend is reported, never absorbed.** Tokens the trail cannot
+  place against a connected provider get their own line. A total that quietly
+  swallows work nobody can attribute is precisely the total that hides the
+  problem.
+- **The session bar is Core's ledger, not a sum of events.** It is the figure
+  the ceiling is actually enforced against. Summing events would produce a
+  second opinion, and the two would drift.
+
+### The bug the types were happy with, and the screenshot was not
+
+`routing.observed.provider` reads `codex-terra` — the **agent**. The adapter's
+`tool` reads `worker` — the **role**. Matching on `tool` alone put a run's
+entire 599K into "unattributed" while the agent that spent it read 0.
+
+Both types were `string`. Both values were real. The join was wrong, and no test
+and no compiler could see it — it was caught by *looking at the rendered panel*
+and asking why a working agent had spent nothing. `test/provider-usage.test.ts`
+now pins `codex-terra` as a literal, so the two names can never quietly diverge
+again.
+
+Standing lesson, which generalises past this bug: **when two systems each name
+the same thing, a join between them is a claim that needs a test with the real
+strings in it.** Type identity is not name identity.
+
+### A trap this project has now stepped in twice
+
+The usage test originally asserted that the source must not match `/estimate/`,
+to forbid inventing figures. It failed — on the comment *"never estimates a
+figure of its own"*, the sentence that documents the rule being enforced.
+
+This is the second time: banning the word "secrets" once caught the sentence
+protecting the most dangerous file scope. **Banned-word assertions catch the
+prose that explains the rule before they catch a violation.** Constrain code
+shapes, and strip comments before scanning.
+
+**Third instance, in the same pass, while writing the rule down.** The guard
+asserting the checks pane cannot reach `verification.rerun` failed on its own
+comment explaining that `verification.rerun` is unreachable from there. Knowing
+about a trap is not the same as not stepping in it, which is why the fix is
+mechanical — comments are stripped before every one of these scans — rather
+than a resolution to be careful.
+
+## Finding: an embedded terminal breaks two invariants — 2026-08-13
+
+**Recorded as a finding rather than a preference, because it is one.** An
+embedded terminal was asked for as table stakes; it is refused, and what
+follows is a mechanism, not a taste.
+
+> A human shell inside Hivemind makes `leaves_change_uncommitted` report
+> `mismatched`, accusing the agent of what the person did — and mutates the
+> repository through a path that emits no event.
+
+Both halves are checkable claims about existing machinery:
+
+1. `leaves_change_uncommitted` is a **measured** capability. The probe checks
+   whether an agent committed when it was told not to. A person typing
+   `git commit` in a pane inside Hivemind produces byte-for-byte the state that
+   capability treats as a violation, and nothing in the trail distinguishes the
+   two. The accusation would be indistinguishable from a real one — and the
+   capability contract's whole value is that `mismatched` means something.
+2. The trail-rebuild rule is that the projection can be reconstructed from
+   durable events. A shell writing files under the daemon breaks that silently:
+   the projection stays confidently wrong, and every surface built on it
+   inherits the error without a symptom.
+
+**What was built instead: the checks-output pane.** The need underneath the ask
+was *seeing why the checks failed*, and that never required a shell — Hivemind
+already ran the command. It only required keeping the output, which until this
+pass it threw away: `verification.completed` recorded each check's `id`,
+`command` and `exit_code` and dropped stdout and stderr on the floor. A person
+could see that `npm test` exited 1 and never what it said.
+
+`.hivemind/checks/<checks_run_id>/` now holds it, beside the trail rather than
+inside it — the same shape as a patch bundle, and for the same reason: an event
+carrying a megabyte of test output is a record nobody can append quickly and
+every reader has to page past. The event keeps the identifier, the file keeps
+the bytes, and `checks.inspect` serves the most recent run found *through the
+trail* rather than by sorting a directory, because two run identifiers sort by
+UUID and UUID is not chronology.
+
+The pane reads and cannot run. Re-running is `verification.rerun`, a different
+action behind a different gate, and it is not reachable from there.
+
+## Standing rule: an instrument that can only return one answer is not evidence
+
+**Third instance, so it is a pattern rather than three accidents.** Each time,
+something that looked like a passing check was structurally incapable of
+failing, and each time it read as a result.
+
+| # | The instrument | Why it could only say yes |
+| --- | --- | --- |
+| 1 | `design-tokens.test.ts` asserting a string was **absent** | The string had never been present. The assertion passed on an empty file, on a deleted file, and on the real one — it distinguished nothing |
+| 2 | The **shell-less preflight** on the provider comparison | Without it, the measurement would have run against a configuration that was silently broken, and produced numbers. Numbers from a broken rig look exactly like numbers |
+| 3 | The **screenshot harness waiting on a timer** | 2.6 seconds is plenty for a warm dev server and not enough for a cold one. The first shot came back a blank white PNG and the harness reported `shot 01-ship-diff` |
+
+> **An instrument must be able to return the answer you do not want.** If it
+> cannot, it is not measuring — it is asserting, in the shape of a measurement.
+
+The general form of the fix, which is the same in all three: **wait on the
+content, not on the clock; assert the presence of what should be there, not the
+absence of what never was.** The shot harness now polls for a named string from
+each surface and *throws* if it never appears, so a blank frame fails at capture
+instead of on disk.
+
+A fourth instance was caught in the same pass and is worth recording because it
+is the same rule in a different costume. Two confinement tests built their
+hazard with `symlink(..., "file")` and fell back to a bare `return` when the OS
+refused — and Windows refuses with `EPERM` unless developer mode is on. On the
+machine they were written on, both tests built **no hazard at all** and reported
+`ok`. They now use a directory junction, which needs no privilege and which
+`realpath` resolves through, and where even that fails they **skip loudly**
+through the test context. `skipped` is visible in the output; `return` is not.
+
+Corollary, learned the expensive way: **when you cannot build the hazard, say
+so.** A silent fallback turns "untested" into "passing".
+
 ## The identifier rule, and why it took five asks — 2026-08-12
 
 **A person never sees `T-001`, `G-1`, `S-001` or `V-…`.** Not smaller, not
@@ -688,6 +963,9 @@ cp -r .hivemind docs/evidence/<run>/project-state-at-ship/
 
 # 4. after adoption, as today
 cp -r .hivemind docs/evidence/<run>/project-state/
+
+# 5. mid-run, the project's SOURCE tree — not .hivemind
+git -C . ls-files -z | tar --null -cf docs/evidence/<run>/source-at-midrun.tar -T -
 ```
 
 Each is a few hundred KB and takes a second. What each one retires:
@@ -697,6 +975,15 @@ Each is a few hundred KB and takes a second. What each one retires:
 | at-review | the `@review-*` pending-plan boolean, and gives a real unratified spec |
 | at-midrun | the mid-run **spend ledger**, which is the last synthesized value left in the set — the whole run's bill currently shows over a trail cut at three of five calls, and unlike the lease store it cannot be rebuilt because no per-call resource event exists |
 | at-ship | the `@ship` readiness boolean |
+| **at-midrun, taken while a task holds a lease AND has submitted a patch** | the **note editor**, which has no screenshot at all. Reaching it needs a task that is both leasing and has a diff, and no trail in the corpus is both: walk4 retained patches but its task record carries no `lease_files`, textkit carries leases and retained no patches. This is a timing requirement on snapshot 2, not a new snapshot — take it *after* the first `task.patch_submitted` while other agents are still working |
+| **source-at-midrun** | the **file tree** and the **file viewer**, which today are served from a live capture of this repository rather than from a trail, because `project-state` is `.hivemind` and no trail ever kept the project's own source |
+| **`.hivemind/checks/`, inside snapshots 2–4** | the **checks pane**. New in this pass and therefore absent from every existing trail; it comes along free with the `cp -r` once a run is recorded by a build that writes it |
+
+Two of these are the same lesson as the original rule, one level down: **a capture
+is complete when every input to the surface is in it**, and "the surface" now
+includes surfaces that read the working tree rather than the record. The
+`project-state` snapshot was named for `.hivemind` when `.hivemind` was
+everything a surface could read. It no longer is.
 
 The collector should prefer a snapshot whose name matches the cut it is building
 and fall back to `project-state/` — which is what it reads today, and is why

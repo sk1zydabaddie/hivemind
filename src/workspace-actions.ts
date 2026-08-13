@@ -12,6 +12,8 @@ import { approvePendingManagerAction, cancelManagerRun, continueAutonomousManage
 import { authorizeManualTask, prepareWorkspaceTentativePlan, queuePlanAmendment, ratifyPlan, reviewManualTaskForAuthorization, reviewPlanForRatification } from "./plan.js";
 import { cancelQualityRun } from "./quality-control.js";
 import { reverifyQueuedPatchSet } from "./reverify.js";
+import { readCheckOutput } from "./check-output.js";
+import { listProjectFiles, readProjectFile } from "./project-files.js";
 import { findGitRoot } from "./repo.js";
 import { readEvents } from "./events.js";
 import { requestTaskRedirect } from "./supervision.js";
@@ -67,7 +69,15 @@ export const workspaceActionTypes = [
   "config.inspect",
   "config.set",
   "project.init",
-  "adapter.connect"
+  "adapter.connect",
+  /* The file tree and the file viewer. Read-only, confined to the resolved
+     project root, and refusing `.hivemind/` and `.git/` outright -- see
+     src/project-files.ts for why a reader is still an authorization surface. */
+  "files.list",
+  "files.read",
+  /* What the project's checks printed. Read-only, and the thing an embedded
+     terminal was actually being asked for -- see src/check-output.ts. */
+  "checks.inspect"
 ] as const;
 
 export type WorkspaceActionType = (typeof workspaceActionTypes)[number];
@@ -186,6 +196,27 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
       return { ok: false, reason: `change not found for ${parsed.value.task_id}` };
     }
   }
+  /* `path` is optional on a listing and means the project root, so a tree can
+     open without knowing anything. It is required on a read: there is no
+     sensible default file, and defaulting one would be a surprise. */
+  if (raw.type === "files.list") {
+    const parsed = exactStrings(payload, ["path"], ["path"]);
+    return parsed.ok ? listProjectFiles(repoRoot, parsed.value.path ?? ".") : parsed;
+  }
+  if (raw.type === "files.read") {
+    const parsed = exactStrings(payload, ["path"]);
+    return parsed.ok ? readProjectFile(repoRoot, parsed.value.path) : parsed;
+  }
+  /* No payload: the question a person has is "why did THIS fail", and the
+     answer is the most recent recorded run. Naming one would make the caller
+     carry an identifier it has no other use for, and every caller would find
+     the latest anyway. */
+  if (raw.type === "checks.inspect") {
+    if (Object.keys(payload).length > 0) {
+      return { ok: false, reason: "checks.inspect takes no fields; Core serves the most recent run" };
+    }
+    return latestCheckOutput(repoRoot);
+  }
   if (raw.type === "manager.start") {
     const parsed = exactStrings(payload, ["message", "tool"]);
     return parsed.ok ? startWorkspaceManagerSession(repoRoot, parsed.value.message, parsed.value.tool) : parsed;
@@ -251,6 +282,43 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
     return connectAdapter(repoRoot, parsed.value.role, parsed.value.agent_id);
   }
   return { ok: false, reason: "unsupported workspace action" };
+}
+
+/**
+ * The most recently recorded check output, found through the trail.
+ *
+ * The trail is the index: the `checks_run_id` lives on `verification.completed`
+ * (and on `quality.draft_verified`), so nothing here scans a directory to guess
+ * which run was last. A directory listing sorted by name would answer a
+ * different question, and answer it wrong the moment a run is retried.
+ */
+async function latestCheckOutput(repoRoot: string): Promise<ActionResult> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return events;
+  const recorded = [...events.value]
+    .reverse()
+    .find(
+      (event) =>
+        (event.type === "verification.completed" || event.type === "quality.draft_verified") &&
+        typeof event.data.checks_run_id === "string"
+    );
+  if (recorded === undefined) {
+    return {
+      ok: false,
+      reason: "no checks have been run and recorded in this project yet"
+    };
+  }
+  const output = await readCheckOutput(repoRoot, String(recorded.data.checks_run_id));
+  if (!output.ok) return output;
+  return {
+    ok: true,
+    value: {
+      ...output.value,
+      ran_at: recorded.ts,
+      task_ids: Array.isArray(recorded.data.task_ids) ? recorded.data.task_ids : [],
+      tests: typeof recorded.data.tests === "string" ? recorded.data.tests : null
+    }
+  };
 }
 
 function parseManagerContinue(

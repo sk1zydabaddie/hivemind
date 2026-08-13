@@ -260,6 +260,7 @@ export default function App(): React.JSX.Element {
         <TabsContent value="project">
           <ProjectTab
             inspection={workspace.inspection}
+            projection={workspace.projection}
             projectName={projectName}
             onAction={workspace.performAction}
           />

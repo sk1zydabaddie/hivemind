@@ -1,4 +1,5 @@
 import path from "node:path";
+import { newChecksRunId, storeCheckOutput } from "./check-output.js";
 import { runNamedCheck, type NamedCheckResult } from "./check-runner.js";
 import type { HivemindConfig, VerificationCheckConfig } from "./config.js";
 import { loadAndValidateContract } from "./contract.js";
@@ -95,6 +96,14 @@ export async function runVerification(
     runtime_coverage: runtimeCoverage,
     tests: checks.every((check) => check.exit_code === 0) ? "pass" : "fail"
   };
+  /* Keep what the checks printed, beside the trail rather than in it. Until
+     this existed the event recorded that `npm test` exited 1 and nothing about
+     what it said, which is the whole of "seeing why the checks failed" -- the
+     real need under the embedded-terminal ask. A failure to store is not a
+     failure to verify: the run stands, and the pane says the output is
+     missing rather than the verification being thrown away over a log. */
+  const checksRunId = newChecksRunId();
+  const stored = await storeCheckOutput(repoRoot, checksRunId, checks);
   const eventResult = await appendEvent(repoRoot, {
     type: qualityDraft === undefined ? "verification.completed" : "quality.draft_verified",
     task_id: qualityDraft?.task_id ?? null,
@@ -114,6 +123,9 @@ export async function runVerification(
         command: check.command,
         exit_code: check.exit_code
       })),
+      /* Null when the output could not be kept, so a reader can tell "no output
+         was recorded" apart from "the output was empty". */
+      checks_run_id: stored.ok ? checksRunId : null,
       tests: result.tests
     }
   });

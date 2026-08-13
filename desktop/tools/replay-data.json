@@ -1946,6 +1946,7 @@
           }
         }
       ],
+      "patches": {},
       "span_ms": 1842967,
       "inspection": {
         "status": {
@@ -7337,7 +7338,7 @@
                 "id": "reverify:2026-08-11T05:49:38.503Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-Bv8dId\\.hivemind\\resource\\verification-sets\\V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-oxLpBh\\.hivemind\\resource\\verification-sets\\V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T05:49:38.503Z",
                 "task_id": "T-001",
                 "action": {
@@ -7921,7 +7922,7 @@
                 "id": "reverify:2026-08-11T05:49:38.503Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-Bv8dId\\.hivemind\\resource\\verification-sets\\V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-oxLpBh\\.hivemind\\resource\\verification-sets\\V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T05:49:38.503Z",
                 "task_id": "T-001",
                 "action": {
@@ -8505,7 +8506,7 @@
                 "id": "reverify:2026-08-11T05:49:38.503Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-Bv8dId\\.hivemind\\resource\\verification-sets\\V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-oxLpBh\\.hivemind\\resource\\verification-sets\\V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T05:49:38.503Z",
                 "task_id": "T-001",
                 "action": {
@@ -9089,7 +9090,7 @@
                 "id": "reverify:2026-08-11T05:50:41.550Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-Bv8dId\\.hivemind\\resource\\verification-sets\\V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003 + T-004; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-oxLpBh\\.hivemind\\resource\\verification-sets\\V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003 + T-004; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T05:50:41.550Z",
                 "task_id": "T-001",
                 "action": {
@@ -9674,7 +9675,7 @@
                 "id": "reverify:2026-08-11T05:50:41.550Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-Bv8dId\\.hivemind\\resource\\verification-sets\\V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003 + T-004; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-oxLpBh\\.hivemind\\resource\\verification-sets\\V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003 + T-004; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T05:50:41.550Z",
                 "task_id": "T-001",
                 "action": {
@@ -10837,6 +10838,7 @@
     {
       "id": "e2e-textkit-parallel-run@ship",
       "source": "docs/evidence/e2e-2026-08-11-textkit/e2e-textkit-parallel-run.jsonl (cut before adoption; readiness rebuilt from adoption.reviewed, bound step)",
+      "patches": {},
       "events": [
         {
           "ts": "2026-08-11T05:21:29.169Z",
@@ -13331,6 +13333,7 @@
     {
       "id": "e2e-textkit-parallel-run@ship-review",
       "source": "docs/evidence/e2e-2026-08-11-textkit/e2e-textkit-parallel-run.jsonl (cut before adoption; readiness rebuilt from adoption.reviewed, unbound step)",
+      "patches": {},
       "events": [
         {
           "ts": "2026-08-11T05:21:29.169Z",
@@ -16874,6 +16877,7 @@
           }
         }
       ],
+      "patches": {},
       "span_ms": 545331,
       "inspection": {
         "status": {
@@ -19250,6 +19254,7 @@
           }
         }
       ],
+      "patches": {},
       "span_ms": 181332,
       "inspection": {
         "status": {
@@ -20039,7 +20044,7 @@
                 "id": "reverify:2026-08-11T22:02:17.710Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-CTmvBW\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-THXtJR\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T22:02:17.710Z",
                 "task_id": "T-001",
                 "action": {
@@ -20189,7 +20194,7 @@
                 "id": "reverify:2026-08-11T22:02:17.710Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-CTmvBW\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-THXtJR\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T22:02:17.710Z",
                 "task_id": "T-001",
                 "action": {
@@ -21011,6 +21016,9 @@
           }
         }
       ],
+      "patches": {
+        "T-001": "diff --git a/src/email.js b/src/email.js\nnew file mode 100644\nindex 0000000..46ed820\n--- /dev/null\n+++ b/src/email.js\n@@ -0,0 +1,13 @@\n+const EMAIL_PATTERN = /^(?:[A-Z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[A-Z0-9!#$%&'*+/=?^_`{|}~-]+)*)@(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\\.)+[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?$/iu;\n+\n+/**\n+ * Performs a local, practical syntax check for an email address.\n+ *\n+ * This intentionally does not verify DNS records or mailbox existence.\n+ *\n+ * @param {unknown} value\n+ * @returns {boolean}\n+ */\n+export function isValidEmail(value) {\n+  return typeof value === \"string\" && value === value.trim() && EMAIL_PATTERN.test(value);\n+}\ndiff --git a/src/index.js b/src/index.js\nindex 28d4ba1..c9e71cd 100644\n--- a/src/index.js\n+++ b/src/index.js\n@@ -1,2 +1,3 @@\n export { normalizeName } from \"./name.js\";\n+export { isValidEmail } from \"./email.js\";\n \ndiff --git a/test/email.test.js b/test/email.test.js\nnew file mode 100644\nindex 0000000..f5ec6c5\n--- /dev/null\n+++ b/test/email.test.js\n@@ -0,0 +1,25 @@\n+import assert from \"node:assert/strict\";\n+import test from \"node:test\";\n+import { isValidEmail } from \"../src/index.js\";\n+\n+test(\"accepts a common email address\", () => {\n+  assert.equal(isValidEmail(\"person@example.com\"), true);\n+});\n+\n+test(\"rejects malformed addresses and non-string values\", () => {\n+  for (const value of [\n+    \"person\",\n+    \"@example.com\",\n+    \"person@\",\n+    \"   \",\n+    \" person@example.com\",\n+    \"person@example.com \",\n+    null,\n+    undefined,\n+    42,\n+    {},\n+    [],\n+  ]) {\n+    assert.doesNotThrow(() => assert.equal(isValidEmail(value), false));\n+  }\n+});\n"
+      },
       "span_ms": 181332,
       "inspection": {
         "status": {
@@ -21800,7 +21808,7 @@
                 "id": "reverify:2026-08-11T22:02:17.710Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-t4SZNi\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-mYgoYQ\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T22:02:17.710Z",
                 "task_id": "T-001",
                 "action": {
@@ -21950,7 +21958,7 @@
                 "id": "reverify:2026-08-11T22:02:17.710Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-t4SZNi\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-mYgoYQ\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T22:02:17.710Z",
                 "task_id": "T-001",
                 "action": {
@@ -22137,6 +22145,7 @@
     {
       "id": "events@ship",
       "source": "docs/evidence/e2e-2026-08-11-walk4/project-state-after/log/events.jsonl (cut before adoption; readiness rebuilt from adoption.reviewed, bound step)",
+      "patches": {},
       "events": [
         {
           "ts": "2026-08-11T21:59:46.155Z",
@@ -22899,6 +22908,7 @@
     {
       "id": "events@ship-review",
       "source": "docs/evidence/e2e-2026-08-11-walk4/project-state-after/log/events.jsonl (cut before adoption; readiness rebuilt from adoption.reviewed, unbound step)",
+      "patches": {},
       "events": [
         {
           "ts": "2026-08-11T21:59:46.155Z",
@@ -23658,6 +23668,9 @@
     {
       "id": "walk4-prompt-to-shipped@ship",
       "source": "docs/evidence/e2e-2026-08-11-walk4/walk4-prompt-to-shipped.jsonl (cut before adoption; readiness rebuilt from adoption.reviewed, bound step)",
+      "patches": {
+        "T-001": "diff --git a/src/email.js b/src/email.js\nnew file mode 100644\nindex 0000000..46ed820\n--- /dev/null\n+++ b/src/email.js\n@@ -0,0 +1,13 @@\n+const EMAIL_PATTERN = /^(?:[A-Z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[A-Z0-9!#$%&'*+/=?^_`{|}~-]+)*)@(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\\.)+[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?$/iu;\n+\n+/**\n+ * Performs a local, practical syntax check for an email address.\n+ *\n+ * This intentionally does not verify DNS records or mailbox existence.\n+ *\n+ * @param {unknown} value\n+ * @returns {boolean}\n+ */\n+export function isValidEmail(value) {\n+  return typeof value === \"string\" && value === value.trim() && EMAIL_PATTERN.test(value);\n+}\ndiff --git a/src/index.js b/src/index.js\nindex 28d4ba1..c9e71cd 100644\n--- a/src/index.js\n+++ b/src/index.js\n@@ -1,2 +1,3 @@\n export { normalizeName } from \"./name.js\";\n+export { isValidEmail } from \"./email.js\";\n \ndiff --git a/test/email.test.js b/test/email.test.js\nnew file mode 100644\nindex 0000000..f5ec6c5\n--- /dev/null\n+++ b/test/email.test.js\n@@ -0,0 +1,25 @@\n+import assert from \"node:assert/strict\";\n+import test from \"node:test\";\n+import { isValidEmail } from \"../src/index.js\";\n+\n+test(\"accepts a common email address\", () => {\n+  assert.equal(isValidEmail(\"person@example.com\"), true);\n+});\n+\n+test(\"rejects malformed addresses and non-string values\", () => {\n+  for (const value of [\n+    \"person\",\n+    \"@example.com\",\n+    \"person@\",\n+    \"   \",\n+    \" person@example.com\",\n+    \"person@example.com \",\n+    null,\n+    undefined,\n+    42,\n+    {},\n+    [],\n+  ]) {\n+    assert.doesNotThrow(() => assert.equal(isValidEmail(value), false));\n+  }\n+});\n"
+      },
       "events": [
         {
           "ts": "2026-08-11T21:59:46.155Z",
@@ -24420,6 +24433,9 @@
     {
       "id": "walk4-prompt-to-shipped@ship-review",
       "source": "docs/evidence/e2e-2026-08-11-walk4/walk4-prompt-to-shipped.jsonl (cut before adoption; readiness rebuilt from adoption.reviewed, unbound step)",
+      "patches": {
+        "T-001": "diff --git a/src/email.js b/src/email.js\nnew file mode 100644\nindex 0000000..46ed820\n--- /dev/null\n+++ b/src/email.js\n@@ -0,0 +1,13 @@\n+const EMAIL_PATTERN = /^(?:[A-Z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[A-Z0-9!#$%&'*+/=?^_`{|}~-]+)*)@(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\\.)+[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?$/iu;\n+\n+/**\n+ * Performs a local, practical syntax check for an email address.\n+ *\n+ * This intentionally does not verify DNS records or mailbox existence.\n+ *\n+ * @param {unknown} value\n+ * @returns {boolean}\n+ */\n+export function isValidEmail(value) {\n+  return typeof value === \"string\" && value === value.trim() && EMAIL_PATTERN.test(value);\n+}\ndiff --git a/src/index.js b/src/index.js\nindex 28d4ba1..c9e71cd 100644\n--- a/src/index.js\n+++ b/src/index.js\n@@ -1,2 +1,3 @@\n export { normalizeName } from \"./name.js\";\n+export { isValidEmail } from \"./email.js\";\n \ndiff --git a/test/email.test.js b/test/email.test.js\nnew file mode 100644\nindex 0000000..f5ec6c5\n--- /dev/null\n+++ b/test/email.test.js\n@@ -0,0 +1,25 @@\n+import assert from \"node:assert/strict\";\n+import test from \"node:test\";\n+import { isValidEmail } from \"../src/index.js\";\n+\n+test(\"accepts a common email address\", () => {\n+  assert.equal(isValidEmail(\"person@example.com\"), true);\n+});\n+\n+test(\"rejects malformed addresses and non-string values\", () => {\n+  for (const value of [\n+    \"person\",\n+    \"@example.com\",\n+    \"person@\",\n+    \"   \",\n+    \" person@example.com\",\n+    \"person@example.com \",\n+    null,\n+    undefined,\n+    42,\n+    {},\n+    [],\n+  ]) {\n+    assert.doesNotThrow(() => assert.equal(isValidEmail(value), false));\n+  }\n+});\n"
+      },
       "events": [
         {
           "ts": "2026-08-11T21:59:46.155Z",
@@ -25775,6 +25791,7 @@
           }
         }
       ],
+      "patches": {},
       "span_ms": 59845,
       "inspection": {
         "status": {
@@ -26139,6 +26156,998 @@
               "effective_tokens": 176610,
               "reserved_tokens": 0,
               "committed_tokens": 176610,
+              "run_ceiling_tokens": 300000,
+              "session_ceiling_tokens": 3000000,
+              "near_session_ceiling": false
+            },
+            "swarm": {
+              "characterizations": [],
+              "warnings": []
+            },
+            "memory": {
+              "pending_lessons": [],
+              "routing_changes": [],
+              "draft_tests": [],
+              "canon": [],
+              "active_routing": {
+                "status": "absent",
+                "canon_id": null,
+                "reason": "no human-promoted learned routing policy exists",
+                "task_types": []
+              },
+              "warnings": []
+            },
+            "history": {
+              "runs": [],
+              "run_ceiling_tokens": 300000,
+              "session_ceiling_tokens": 3000000,
+              "warnings": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "linux-first-run",
+      "source": "docs/evidence/e2e-2026-08-11-linux-firstrun/linux-first-run.jsonl",
+      "events": [
+        {
+          "ts": "2026-08-12T05:21:48.146Z",
+          "type": "plan.prepared",
+          "task_id": null,
+          "data": {
+            "version": 1,
+            "spec_id": "S-001",
+            "plan_hash": "234bedf75d2a1f4d67edbf93887542bd0c129db1f3d4755aeb3c7ac50d16b459",
+            "plan_path": ".hivemind/plans/S-001.tentative.json",
+            "proposal_path": ".hivemind/resource/planning/af3a44c3-8324-43e5-a653-7148fdea1e59.proposal.json",
+            "usage_session_id": "af3a44c3-8324-43e5-a653-7148fdea1e59",
+            "tool": "planner",
+            "prompt": "Add a greet(name) helper in its own file src/greet.js that returns 'Hello, <name>!', with its own test file test/greet.test.js. Do not change any other file.",
+            "prompt_hash": "7da747a2aeabc8d4699eb4434c9132c61cde0966c513a230b0c502942dd4597e",
+            "autonomy_level": "auto",
+            "status": "awaiting_ratification",
+            "authorization_effect": "none"
+          }
+        },
+        {
+          "ts": "2026-08-12T05:21:48.153Z",
+          "type": "autonomy.decision_recorded",
+          "task_id": null,
+          "data": {
+            "version": 1,
+            "level": "auto",
+            "session_id": "af3a44c3-8324-43e5-a653-7148fdea1e59",
+            "decision": "plan_ratification",
+            "action_type": "plan.ratify",
+            "interruption": "required",
+            "authorization_source": "human",
+            "result": "paused",
+            "reason": "auto requires exact-hash human plan ratification before execution."
+          }
+        },
+        {
+          "ts": "2026-08-12T05:21:48.194Z",
+          "type": "plan.ratified",
+          "task_id": null,
+          "data": {
+            "version": 1,
+            "spec_id": "S-001",
+            "plan_hash": "234bedf75d2a1f4d67edbf93887542bd0c129db1f3d4755aeb3c7ac50d16b459",
+            "plan_path": ".hivemind/plans/ratified/S-001/234bedf75d2a1f4d67edbf93887542bd0c129db1f3d4755aeb3c7ac50d16b459.json",
+            "base_commit": "9002ab0d4ec4dd3443ad699deecf4400281a3b7c",
+            "task_count": 1,
+            "confirmation": "exact_plan_hash",
+            "authorization_source": "human",
+            "autonomy_level": "auto"
+          }
+        },
+        {
+          "ts": "2026-08-12T05:21:48.215Z",
+          "type": "autonomy.decision_recorded",
+          "task_id": null,
+          "data": {
+            "version": 1,
+            "level": "auto",
+            "session_id": "af3a44c3-8324-43e5-a653-7148fdea1e59",
+            "decision": "run_started",
+            "action_type": "manager.start",
+            "interruption": "not_applicable",
+            "authorization_source": "deterministic_pipeline",
+            "result": "started",
+            "reason": "Manager run started with project autonomy level auto."
+          }
+        },
+        {
+          "ts": "2026-08-12T05:21:48.247Z",
+          "type": "task.created",
+          "task_id": "T-001",
+          "data": {
+            "title": "Add greet helper and focused test",
+            "agent_role": "builder",
+            "routing_task_type": "api",
+            "base_commit": "9002ab0d4ec4dd3443ad699deecf4400281a3b7c",
+            "acceptance_criterion": "src/greet.js exports greet(name), returning exactly \"Hello, <name>!\", and test/greet.test.js verifies that exact output without changing any other file.",
+            "allowed_files": [
+              "src/greet.js",
+              "test/greet.test.js"
+            ],
+            "contract_path": ".hivemind/tasks/T-001.contract.json",
+            "source": "contract.create"
+          }
+        },
+        {
+          "ts": "2026-08-12T05:21:48.273Z",
+          "type": "lease.approved",
+          "task_id": "T-001",
+          "data": {
+            "requested_files": [
+              "src/greet.js",
+              "test/greet.test.js"
+            ],
+            "granted": [
+              "src/greet.js",
+              "test/greet.test.js"
+            ]
+          }
+        },
+        {
+          "ts": "2026-08-12T05:21:48.286Z",
+          "type": "write_intent.submitted",
+          "task_id": "T-001",
+          "data": {
+            "intended_files": [
+              "src/greet.js",
+              "test/greet.test.js"
+            ],
+            "intended_symbols": [],
+            "possible_risks": [
+              "Create only src/greet.js and test/greet.test.js.",
+              "Use the module export convention established by the existing project.",
+              "Keep greeting spacing and punctuation exact.",
+              "Do not modify package.json or src/capitalize.js."
+            ],
+            "will_not_change": [
+              "package.json",
+              "src/capitalize.js"
+            ]
+          }
+        },
+        {
+          "ts": "2026-08-12T05:21:48.295Z",
+          "type": "write_intent.approved",
+          "task_id": "T-001",
+          "data": {
+            "intended_files": [
+              "src/greet.js",
+              "test/greet.test.js"
+            ]
+          }
+        },
+        {
+          "ts": "2026-08-12T05:21:48.348Z",
+          "type": "task.authoring_base_prepared",
+          "task_id": "T-001",
+          "data": {
+            "contract_base_commit": "9002ab0d4ec4dd3443ad699deecf4400281a3b7c",
+            "authoring_base_commit": "9002ab0d4ec4dd3443ad699deecf4400281a3b7c",
+            "authoring_base_tree": "f85094efbe884367a34b63fc41991f0d0ba4242f",
+            "dependency_task_ids": [],
+            "dependency_verification_id": null
+          }
+        },
+        {
+          "ts": "2026-08-12T05:21:48.416Z",
+          "type": "task.run_accepted",
+          "task_id": "T-001",
+          "data": {
+            "run_id": "283e44cb-7070-457a-86b8-0f8e42dfe876",
+            "tool": "worker",
+            "routing_task_type": "api",
+            "worktree": "/root/linuxwalk/.hivemind/worktrees/T-001",
+            "contract_base_commit": "9002ab0d4ec4dd3443ad699deecf4400281a3b7c",
+            "authoring_base_commit": "9002ab0d4ec4dd3443ad699deecf4400281a3b7c",
+            "dependency_verification_id": null
+          }
+        },
+        {
+          "ts": "2026-08-12T05:21:48.422Z",
+          "type": "task.started",
+          "task_id": "T-001",
+          "data": {
+            "run_id": "283e44cb-7070-457a-86b8-0f8e42dfe876",
+            "tool": "worker",
+            "routing_task_type": "api",
+            "worktree": "/root/linuxwalk/.hivemind/worktrees/T-001",
+            "contract_base_commit": "9002ab0d4ec4dd3443ad699deecf4400281a3b7c",
+            "authoring_base_commit": "9002ab0d4ec4dd3443ad699deecf4400281a3b7c",
+            "dependency_verification_id": null
+          }
+        },
+        {
+          "ts": "2026-08-12T05:21:48.455Z",
+          "type": "cache.read",
+          "task_id": "T-001",
+          "data": {
+            "path": "package.json",
+            "content_hash": "6ebba108d263f3195d547a24c18590d4463ede01846828b85f56614f17340f35",
+            "bytes": 64,
+            "result": "miss",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-08-12T05:21:48.462Z",
+          "type": "cache.read",
+          "task_id": "T-001",
+          "data": {
+            "path": "src/capitalize.js",
+            "content_hash": "42834d2e4d5fee903ed2968b03ef983c0631da7e368bc6f099071aad4b66c3a0",
+            "bytes": 77,
+            "result": "miss",
+            "mode": "write-context"
+          }
+        },
+        {
+          "ts": "2026-08-12T05:21:48.475Z",
+          "type": "task.worker_process_started",
+          "task_id": "T-001",
+          "data": {
+            "version": 1,
+            "run_id": "283e44cb-7070-457a-86b8-0f8e42dfe876",
+            "tool": "worker",
+            "pid": 88189,
+            "process_instance_id": "e88ba813-80c8-4ab9-8a26-a73bee3d5ca9",
+            "process_group_id": 88189
+          }
+        },
+        {
+          "ts": "2026-08-12T05:22:55.689Z",
+          "type": "task.worker_process_stopped",
+          "task_id": "T-001",
+          "data": {
+            "version": 1,
+            "run_id": "283e44cb-7070-457a-86b8-0f8e42dfe876",
+            "pid": 88189,
+            "process_instance_id": "e88ba813-80c8-4ab9-8a26-a73bee3d5ca9",
+            "adapter_result": "closed"
+          }
+        },
+        {
+          "ts": "2026-08-12T05:22:55.714Z",
+          "type": "routing.observed",
+          "task_id": "T-001",
+          "data": {
+            "version": 1,
+            "run_id": "283e44cb-7070-457a-86b8-0f8e42dfe876",
+            "provider": "worker",
+            "routing_task_type": "api",
+            "request_count": 1,
+            "wall_time_ms": 67213,
+            "self_measured_tokens": 769,
+            "provider_reported_tokens": 113770,
+            "effective_tokens": 113770,
+            "cost_source": "provider_reported",
+            "diff_bytes": 608,
+            "exit_code": 0,
+            "timed_out": false,
+            "handoff_from": null
+          }
+        },
+        {
+          "ts": "2026-08-12T05:22:55.720Z",
+          "type": "task.completed",
+          "task_id": "T-001",
+          "data": {
+            "task_id": "T-001",
+            "status": "completed",
+            "tool": "worker",
+            "diff_path": "/root/linuxwalk/.hivemind/patches/T-001/diff.patch",
+            "tool_exit": 0,
+            "changed_files": 2,
+            "run_id": "283e44cb-7070-457a-86b8-0f8e42dfe876",
+            "routing_task_type": "api"
+          }
+        },
+        {
+          "ts": "2026-08-12T05:22:56.035Z",
+          "type": "autonomy.decision_recorded",
+          "task_id": null,
+          "data": {
+            "version": 1,
+            "level": "auto",
+            "session_id": "af3a44c3-8324-43e5-a653-7148fdea1e59",
+            "decision": "manager_action",
+            "action_type": "run_worker",
+            "interruption": "suppressed",
+            "authorization_source": "autonomy_policy",
+            "pending_action_id": "18faff01-0c6f-4e39-be83-ab40db339bb6",
+            "result": "authorized",
+            "reason": "action run_worker is configured as high-risk/consequential"
+          }
+        },
+        {
+          "ts": "2026-08-12T05:22:56.041Z",
+          "type": "manager.action_approved",
+          "task_id": "T-001",
+          "data": {
+            "version": 1,
+            "pending_action_id": "18faff01-0c6f-4e39-be83-ab40db339bb6",
+            "session_id": "af3a44c3-8324-43e5-a653-7148fdea1e59",
+            "action_type": "run_worker",
+            "subject": "T-001",
+            "expected_state_hash": "5c42ec175e8c1a7ec65e24a904925fcbd423a79325f9c8d1eddcd241fb282559",
+            "result_ok": true,
+            "authorization_source": "autonomy_policy",
+            "autonomy_level": "auto"
+          }
+        },
+        {
+          "ts": "2026-08-12T05:22:56.086Z",
+          "type": "patch.submitted",
+          "task_id": "T-001",
+          "data": {
+            "bundle_path": ".hivemind/patches/T-001",
+            "files": [
+              "diff.patch",
+              "summary.md",
+              "files_changed.json",
+              "symbols_changed.json",
+              "tests_run.json",
+              "risks.md",
+              "memory_proposals.json"
+            ],
+            "changed_files": 2
+          }
+        },
+        {
+          "ts": "2026-08-12T05:22:56.190Z",
+          "type": "patch.accepted",
+          "task_id": "T-001",
+          "data": {
+            "verdict": "accept",
+            "reason": "all changes are within scope",
+            "plain_reason": "Every file it changed was one this task was given."
+          }
+        },
+        {
+          "ts": "2026-08-12T05:22:56.219Z",
+          "type": "integration.queued",
+          "task_id": "T-001",
+          "data": {
+            "queue_path": ".hivemind/integration/queue.json",
+            "position": 1,
+            "queue": [
+              "T-001"
+            ]
+          }
+        },
+        {
+          "ts": "2026-08-12T05:22:56.325Z",
+          "type": "patch.accepted",
+          "task_id": "T-001",
+          "data": {
+            "verdict": "accept",
+            "reason": "all changes are within scope",
+            "plain_reason": "Every file it changed was one this task was given."
+          }
+        },
+        {
+          "ts": "2026-08-12T05:22:56.644Z",
+          "type": "verification.completed",
+          "task_id": null,
+          "data": {
+            "task_ids": [
+              "T-001"
+            ],
+            "mode": "full",
+            "reason": "structured verification inventory is missing",
+            "changed_files": [
+              "src/greet.js",
+              "test/greet.test.js"
+            ],
+            "impact_set": [
+              "src/greet.js",
+              "test/greet.test.js"
+            ],
+            "selected_checks": [
+              {
+                "id": "full-suite",
+                "command": "npm test",
+                "sources": [
+                  "fail-safe"
+                ]
+              }
+            ],
+            "skipped_checks": [],
+            "graph_fingerprint": null,
+            "canon_ids": [],
+            "contract_validity_checks": [
+              {
+                "task_id": "T-001",
+                "id": "contract-validity:T-001",
+                "command": "node -e \"const { greet } = require('./src/greet.js'); if (typeof greet !== 'function' || greet('Ada') !== 'Hello, Ada!') process.exit(1)\""
+              }
+            ],
+            "structural_oracle": {
+              "kind": "structural",
+              "status": "unknown",
+              "advisory_only": true,
+              "runtime_coverage": "not_measured",
+              "graph_fingerprint": null,
+              "impact_files": [
+                "src/greet.js",
+                "test/greet.test.js"
+              ],
+              "covered_impact_files": [],
+              "uncovered_impact_files": [],
+              "unknown_impact_files": [
+                "src/greet.js",
+                "test/greet.test.js"
+              ],
+              "check_associations": [],
+              "unknown_reasons": [
+                "structured verification inventory is missing"
+              ],
+              "limitations": [
+                "verification inventory entry_files are operator-declared; Hivemind does not prove that each command executes them"
+              ]
+            },
+            "runtime_coverage": {
+              "kind": "runtime_changed_line",
+              "status": "unconfigured",
+              "advisory_only": true,
+              "coordinate_space": "post_patch_applied_tree",
+              "configured": false,
+              "command": null,
+              "report_path": null,
+              "report_hash": null,
+              "applied_tree": null,
+              "executable_changed_lines": 0,
+              "hit_changed_lines": 0,
+              "ratio": null,
+              "covered_lines": [],
+              "uncovered_lines": [],
+              "ignored_non_executable_lines": [],
+              "unknown_files": [],
+              "unknown_reasons": [],
+              "command_result": null,
+              "limitations": [
+                "LCOV DA records define executable lines; changed lines absent from DA are ignored only when the changed file has an LCOV source record",
+                "the configured coverage command is responsible for executing against the supplied shadow worktree; Hivemind binds its fresh report to the unchanged staged tree before and after execution"
+              ]
+            },
+            "results": [
+              {
+                "id": "contract-validity:T-001",
+                "command": "node -e \"const { greet } = require('./src/greet.js'); if (typeof greet !== 'function' || greet('Ada') !== 'Hello, Ada!') process.exit(1)\"",
+                "exit_code": 0
+              },
+              {
+                "id": "full-suite",
+                "command": "npm test",
+                "exit_code": 0
+              }
+            ],
+            "tests": "pass"
+          }
+        },
+        {
+          "ts": "2026-08-12T05:22:56.688Z",
+          "type": "integration.passed",
+          "task_id": null,
+          "data": {
+            "branch": "integration/20260812-052256333Z",
+            "applied": [
+              "T-001"
+            ],
+            "tests": "pass",
+            "report": "gate results:\n- T-001: accept (all changes are within scope)\nverification mode: full\nverification reason: structured verification inventory is missing\nstructural oracle: unknown (advisory; structural evidence is not runtime coverage)\nstructurally covered impact files: (none)\nstructurally uncovered impact files: (none)\nstructurally unknown impact files: src/greet.js, test/greet.test.js\nstructural oracle unknown reasons: structured verification inventory is missing\nruntime changed-line coverage: unconfigured\nruntime coverage coordinate space: post_patch_applied_tree\nruntime coverage applied tree: (none)\nruntime coverage ratio: 0/0\nruntime coverage unknown files: (none)\nruntime coverage unknown reasons: (none)\nselected checks: full-suite\ncontract validity checks: contract-validity:T-001\nskipped checks: (none)\ncheck contract-validity:T-001: node -e \"const { greet } = require('./src/greet.js'); if (typeof greet !== 'function' || greet('Ada') !== 'Hello, Ada!') process.exit(1)\"\ncheck contract-validity:T-001 exit code: 0\nstdout:\n\nstderr:\n\ncheck full-suite: npm test\ncheck full-suite exit code: 0\nstdout:\n> test\n> node --test\n\nTAP version 13\n# Subtest: greet returns the exact greeting\nok 1 - greet returns the exact greeting\n  ---\n  duration_ms: 0.616719\n  type: 'test'\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 56.048485\nstderr:\n\noracle floor task tier: medium\noracle floor coverage configured: false\noracle floor binding: false\noracle floor status: unconfigured\noracle floor decision: proceed\noracle floor diagnostic: coverage is not configured; the structural oracle remains advisory and the M7.6d floor does not bind\noracle floor uncovered changed lines: (none)\noracle floor uncovered impact files: (none)\noracle floor unknown files: src/greet.js, test/greet.test.js\noracle floor unknown reasons: structured verification inventory is missing\noracle floor remediation: (none)\noracle floor automatic characterization launched: false\n",
+            "verification_id": "V-fedb9542-dbd6-45f8-b567-6ab78cbee520",
+            "verification_manifest_path": ".hivemind/resource/verification-sets/V-fedb9542-dbd6-45f8-b567-6ab78cbee520/manifest.json",
+            "verification_manifest_sha256": "442b316f82e9e3b7fd1c80911e65819d803c1da56788c8447459a390fce32027"
+          }
+        },
+        {
+          "ts": "2026-08-12T05:22:56.720Z",
+          "type": "autonomy.decision_recorded",
+          "task_id": null,
+          "data": {
+            "version": 1,
+            "level": "auto",
+            "session_id": "af3a44c3-8324-43e5-a653-7148fdea1e59",
+            "decision": "manager_action",
+            "action_type": "integrate_shadow",
+            "interruption": "suppressed",
+            "authorization_source": "autonomy_policy",
+            "pending_action_id": "e336d473-4eda-4bfd-a75a-ee80d024d98b",
+            "result": "authorized",
+            "reason": "action integrate_shadow is configured as high-risk/consequential"
+          }
+        },
+        {
+          "ts": "2026-08-12T05:22:56.726Z",
+          "type": "manager.action_approved",
+          "task_id": null,
+          "data": {
+            "version": 1,
+            "pending_action_id": "e336d473-4eda-4bfd-a75a-ee80d024d98b",
+            "session_id": "af3a44c3-8324-43e5-a653-7148fdea1e59",
+            "action_type": "integrate_shadow",
+            "subject": "integrate_shadow",
+            "expected_state_hash": "9710979cbc9820ec0e1b110c107392a36439e0cbcb76b28960f032daf1929c23",
+            "result_ok": true,
+            "authorization_source": "autonomy_policy",
+            "autonomy_level": "auto"
+          }
+        },
+        {
+          "ts": "2026-08-12T05:22:56.916Z",
+          "type": "adoption.reviewed",
+          "task_id": null,
+          "data": {
+            "pending_adoption_id": "PA-d1b6151e-140c-42f8-ab78-15fcbc14034d",
+            "verification_id": "V-fedb9542-dbd6-45f8-b567-6ab78cbee520",
+            "expected_base_head": "9002ab0d4ec4dd3443ad699deecf4400281a3b7c",
+            "expected_state_hash": "2a3b3e3dd6e901bfc36729579cff7cd92440e432e2df07076cdbe6b6ff79c239",
+            "base_branch": "master",
+            "task_ids": [
+              "T-001"
+            ],
+            "changed_files": [
+              "src/greet.js",
+              "test/greet.test.js"
+            ]
+          }
+        },
+        {
+          "ts": "2026-08-12T05:22:57.123Z",
+          "type": "adoption.started",
+          "task_id": null,
+          "data": {
+            "adoption_id": "A-86c72abe-743a-46ea-b146-a387ee655cdd",
+            "pending_adoption_id": "PA-d1b6151e-140c-42f8-ab78-15fcbc14034d",
+            "verification_id": "V-fedb9542-dbd6-45f8-b567-6ab78cbee520",
+            "manifest_path": ".hivemind/resource/verification-sets/V-fedb9542-dbd6-45f8-b567-6ab78cbee520/manifest.json",
+            "manifest_sha256": "442b316f82e9e3b7fd1c80911e65819d803c1da56788c8447459a390fce32027",
+            "base_branch": "master",
+            "pre_adoption_ref": "9002ab0d4ec4dd3443ad699deecf4400281a3b7c",
+            "candidate_commit": "0f10878cac25150bb4b44172dfe44c64a95728f3",
+            "candidate_tree": "32f39befe65bc4aa67d585859be6f619954bfa97",
+            "task_ids": [
+              "T-001"
+            ],
+            "changed_files": [
+              "src/greet.js",
+              "test/greet.test.js"
+            ],
+            "lease_requirements": [
+              {
+                "task_id": "T-001",
+                "files": [
+                  "src/greet.js",
+                  "test/greet.test.js"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "ts": "2026-08-12T05:22:57.154Z",
+          "type": "lease.released",
+          "task_id": "T-001",
+          "data": {
+            "released": [
+              "src/greet.js",
+              "test/greet.test.js"
+            ],
+            "reason": "verified set adopted"
+          }
+        },
+        {
+          "ts": "2026-08-12T05:22:57.173Z",
+          "type": "adoption.completed",
+          "task_id": null,
+          "data": {
+            "adoption_id": "A-86c72abe-743a-46ea-b146-a387ee655cdd",
+            "pending_adoption_id": "PA-d1b6151e-140c-42f8-ab78-15fcbc14034d",
+            "verification_id": "V-fedb9542-dbd6-45f8-b567-6ab78cbee520",
+            "manifest_path": ".hivemind/resource/verification-sets/V-fedb9542-dbd6-45f8-b567-6ab78cbee520/manifest.json",
+            "manifest_sha256": "442b316f82e9e3b7fd1c80911e65819d803c1da56788c8447459a390fce32027",
+            "base_branch": "master",
+            "pre_adoption_ref": "9002ab0d4ec4dd3443ad699deecf4400281a3b7c",
+            "candidate_commit": "0f10878cac25150bb4b44172dfe44c64a95728f3",
+            "candidate_tree": "32f39befe65bc4aa67d585859be6f619954bfa97",
+            "task_ids": [
+              "T-001"
+            ],
+            "changed_files": [
+              "src/greet.js",
+              "test/greet.test.js"
+            ],
+            "lease_requirements": [
+              {
+                "task_id": "T-001",
+                "files": [
+                  "src/greet.js",
+                  "test/greet.test.js"
+                ]
+              }
+            ],
+            "adopted_ref": "0f10878cac25150bb4b44172dfe44c64a95728f3",
+            "result_tree": "32f39befe65bc4aa67d585859be6f619954bfa97",
+            "reconciled": false,
+            "recoverability": {
+              "pre_adoption_ref": "9002ab0d4ec4dd3443ad699deecf4400281a3b7c",
+              "adopted_ref": "0f10878cac25150bb4b44172dfe44c64a95728f3",
+              "automatic_rollback": false
+            }
+          }
+        }
+      ],
+      "patches": {},
+      "span_ms": 69027,
+      "inspection": {
+        "status": {
+          "tasks": [
+            {
+              "task_id": "T-001",
+              "title": "Add greet helper and focused test",
+              "allowed_files": [
+                "src/greet.js",
+                "test/greet.test.js"
+              ],
+              "lease": {
+                "held": false,
+                "files": []
+              },
+              "worktree": "missing",
+              "patch": {
+                "bundle": "absent",
+                "submitted": false,
+                "analyzed": false,
+                "accepted": false,
+                "verdict": null,
+                "reason": "patch bundle not found",
+                "submitted_at": null,
+                "analyzed_at": null
+              },
+              "queued": false,
+              "integrated": true
+            }
+          ],
+          "leases": {},
+          "integration": {
+            "queue": [],
+            "status": null
+          },
+          "replans": []
+        },
+        "tasks": [
+          {
+            "task_id": "T-001",
+            "title": "Add greet helper and focused test",
+            "state": "merged",
+            "agent": "worker",
+            "worktree": "/root/linuxwalk/.hivemind/worktrees/T-001",
+            "lease_files": [],
+            "patch": {
+              "submitted": true,
+              "analyzed": true,
+              "verdict": "accept",
+              "reason": "all changes are within scope",
+              "changed_files": 2
+            },
+            "integration": "merged",
+            "issue": null,
+            "stalled": false,
+            "last_event": "lease.released",
+            "last_event_at": "2026-08-12T05:22:57.154Z",
+            "execution_group": "G-1",
+            "group_mode": "sequence",
+            "depends_on": [],
+            "started_at": "2026-08-12T05:21:48.422Z",
+            "worker_finished_at": "2026-08-12T05:22:55.720Z"
+          }
+        ],
+        "execution_groups": [
+          {
+            "group_id": "G-1",
+            "mode": "sequence",
+            "task_ids": [
+              "T-001"
+            ],
+            "label": "1 done",
+            "counts": {
+              "working": 0,
+              "waiting": 0,
+              "needs_you": 0,
+              "done": 1
+            },
+            "configured_cap": null,
+            "effective_concurrency": null,
+            "binding_limit": null,
+            "capacity_note": null
+          }
+        ],
+        "task_titles": {
+          "T-001": "Add greet helper and focused test"
+        },
+        "active_spec_id": "S-001",
+        "active_spec_title": "Add greet helper",
+        "manager_session": null,
+        "autonomy": {
+          "configured_level": "auto",
+          "run_levels": []
+        },
+        "plan_review": null,
+        "current_plan": {
+          "spec_id": "S-001",
+          "plan_hash": "234bedf75d2a1f4d67edbf93887542bd0c129db1f3d4755aeb3c7ac50d16b459",
+          "plan_path": ".hivemind/plans/ratified/S-001/234bedf75d2a1f4d67edbf93887542bd0c129db1f3d4755aeb3c7ac50d16b459.json",
+          "base_commit": "9002ab0d4ec4dd3443ad699deecf4400281a3b7c",
+          "created_at": "2026-08-12T05:21:48.119Z",
+          "tasks": [
+            {
+              "task_id": "T-001",
+              "title": "Add greet helper and focused test",
+              "tier": "medium",
+              "task_type": "deterministic",
+              "routing_task_type": "api",
+              "mode": "write",
+              "agent_role": "builder",
+              "scope": [
+                "src/greet.js",
+                "test/greet.test.js"
+              ],
+              "allowed_file_intents": {
+                "src/greet.js": "create",
+                "test/greet.test.js": "create"
+              },
+              "read_only_scope": [
+                "package.json",
+                "src/capitalize.js"
+              ],
+              "forbidden_scope": [
+                "package.json",
+                "src/capitalize.js"
+              ],
+              "must_not_change": [
+                "package.json",
+                "src/capitalize.js"
+              ],
+              "depends_on": [],
+              "parallel_safe": true,
+              "acceptance_criterion": "src/greet.js exports greet(name), returning exactly \"Hello, <name>!\", and test/greet.test.js verifies that exact output without changing any other file.",
+              "deterministic_validity_check": "node -e \"const { greet } = require('./src/greet.js'); if (typeof greet !== 'function' || greet('Ada') !== 'Hello, Ada!') process.exit(1)\"",
+              "required_tests": [
+                "npm test"
+              ],
+              "patch_requirements": [
+                "Create only src/greet.js and test/greet.test.js.",
+                "Use the module export convention established by the existing project.",
+                "Keep greeting spacing and punctuation exact.",
+                "Do not modify package.json or src/capitalize.js."
+              ],
+              "critical_path_approved": false
+            }
+          ],
+          "execution_groups": [
+            {
+              "group_id": "G-1",
+              "mode": "sequence",
+              "task_ids": [
+                "T-001"
+              ]
+            }
+          ]
+        },
+        "integration_failure": null,
+        "needs_you": [],
+        "later": [],
+        "spend": {
+          "session_id": "af3a44c3-8324-43e5-a653-7148fdea1e59",
+          "calls": 4,
+          "effective_tokens": 174845,
+          "reserved_tokens": 0,
+          "committed_tokens": 174845,
+          "run_ceiling_tokens": 300000,
+          "session_ceiling_tokens": 3000000,
+          "near_session_ceiling": false
+        },
+        "swarm": {
+          "characterizations": [],
+          "warnings": []
+        },
+        "memory": {
+          "pending_lessons": [],
+          "routing_changes": [],
+          "draft_tests": [],
+          "canon": [],
+          "active_routing": {
+            "status": "absent",
+            "canon_id": null,
+            "reason": "no human-promoted learned routing policy exists",
+            "task_types": []
+          },
+          "warnings": []
+        },
+        "history": {
+          "runs": [],
+          "run_ceiling_tokens": 300000,
+          "session_ceiling_tokens": 3000000,
+          "warnings": []
+        }
+      },
+      "inspection_error": null,
+      "timeline": [
+        {
+          "event_index": 30,
+          "at_ms": 69027,
+          "inspection": {
+            "status": {
+              "tasks": [
+                {
+                  "task_id": "T-001",
+                  "title": "Add greet helper and focused test",
+                  "allowed_files": [
+                    "src/greet.js",
+                    "test/greet.test.js"
+                  ],
+                  "lease": {
+                    "held": false,
+                    "files": []
+                  },
+                  "worktree": "missing",
+                  "patch": {
+                    "bundle": "absent",
+                    "submitted": false,
+                    "analyzed": false,
+                    "accepted": false,
+                    "verdict": null,
+                    "reason": "patch bundle not found",
+                    "submitted_at": null,
+                    "analyzed_at": null
+                  },
+                  "queued": false,
+                  "integrated": true
+                }
+              ],
+              "leases": {},
+              "integration": {
+                "queue": [],
+                "status": null
+              },
+              "replans": []
+            },
+            "tasks": [
+              {
+                "task_id": "T-001",
+                "title": "Add greet helper and focused test",
+                "state": "merged",
+                "agent": "worker",
+                "worktree": "/root/linuxwalk/.hivemind/worktrees/T-001",
+                "lease_files": [],
+                "patch": {
+                  "submitted": true,
+                  "analyzed": true,
+                  "verdict": "accept",
+                  "reason": "all changes are within scope",
+                  "changed_files": 2
+                },
+                "integration": "merged",
+                "issue": null,
+                "stalled": false,
+                "last_event": "lease.released",
+                "last_event_at": "2026-08-12T05:22:57.154Z",
+                "execution_group": "G-1",
+                "group_mode": "sequence",
+                "depends_on": [],
+                "started_at": "2026-08-12T05:21:48.422Z",
+                "worker_finished_at": "2026-08-12T05:22:55.720Z"
+              }
+            ],
+            "execution_groups": [
+              {
+                "group_id": "G-1",
+                "mode": "sequence",
+                "task_ids": [
+                  "T-001"
+                ],
+                "label": "1 done",
+                "counts": {
+                  "working": 0,
+                  "waiting": 0,
+                  "needs_you": 0,
+                  "done": 1
+                },
+                "configured_cap": null,
+                "effective_concurrency": null,
+                "binding_limit": null,
+                "capacity_note": null
+              }
+            ],
+            "task_titles": {
+              "T-001": "Add greet helper and focused test"
+            },
+            "active_spec_id": "S-001",
+            "active_spec_title": "Add greet helper",
+            "manager_session": null,
+            "autonomy": {
+              "configured_level": "auto",
+              "run_levels": []
+            },
+            "plan_review": null,
+            "current_plan": {
+              "spec_id": "S-001",
+              "plan_hash": "234bedf75d2a1f4d67edbf93887542bd0c129db1f3d4755aeb3c7ac50d16b459",
+              "plan_path": ".hivemind/plans/ratified/S-001/234bedf75d2a1f4d67edbf93887542bd0c129db1f3d4755aeb3c7ac50d16b459.json",
+              "base_commit": "9002ab0d4ec4dd3443ad699deecf4400281a3b7c",
+              "created_at": "2026-08-12T05:21:48.119Z",
+              "tasks": [
+                {
+                  "task_id": "T-001",
+                  "title": "Add greet helper and focused test",
+                  "tier": "medium",
+                  "task_type": "deterministic",
+                  "routing_task_type": "api",
+                  "mode": "write",
+                  "agent_role": "builder",
+                  "scope": [
+                    "src/greet.js",
+                    "test/greet.test.js"
+                  ],
+                  "allowed_file_intents": {
+                    "src/greet.js": "create",
+                    "test/greet.test.js": "create"
+                  },
+                  "read_only_scope": [
+                    "package.json",
+                    "src/capitalize.js"
+                  ],
+                  "forbidden_scope": [
+                    "package.json",
+                    "src/capitalize.js"
+                  ],
+                  "must_not_change": [
+                    "package.json",
+                    "src/capitalize.js"
+                  ],
+                  "depends_on": [],
+                  "parallel_safe": true,
+                  "acceptance_criterion": "src/greet.js exports greet(name), returning exactly \"Hello, <name>!\", and test/greet.test.js verifies that exact output without changing any other file.",
+                  "deterministic_validity_check": "node -e \"const { greet } = require('./src/greet.js'); if (typeof greet !== 'function' || greet('Ada') !== 'Hello, Ada!') process.exit(1)\"",
+                  "required_tests": [
+                    "npm test"
+                  ],
+                  "patch_requirements": [
+                    "Create only src/greet.js and test/greet.test.js.",
+                    "Use the module export convention established by the existing project.",
+                    "Keep greeting spacing and punctuation exact.",
+                    "Do not modify package.json or src/capitalize.js."
+                  ],
+                  "critical_path_approved": false
+                }
+              ],
+              "execution_groups": [
+                {
+                  "group_id": "G-1",
+                  "mode": "sequence",
+                  "task_ids": [
+                    "T-001"
+                  ]
+                }
+              ]
+            },
+            "integration_failure": null,
+            "needs_you": [],
+            "later": [],
+            "spend": {
+              "session_id": "af3a44c3-8324-43e5-a653-7148fdea1e59",
+              "calls": 4,
+              "effective_tokens": 174845,
+              "reserved_tokens": 0,
+              "committed_tokens": 174845,
               "run_ceiling_tokens": 300000,
               "session_ceiling_tokens": 3000000,
               "near_session_ceiling": false
@@ -28168,9 +29177,10 @@
           }
         }
       ],
+      "patches": {},
       "span_ms": 122866,
       "inspection": null,
-      "inspection_error": "plan-lint failed: GROUNDING_FRESHNESS: tentative plan base 6b0e28b3f0f406deeb659313bcb8977436eebf44 is stale relative to current HEAD 560514190579be5f17633fa0d7bc904d07a1cf6d"
+      "inspection_error": "plan-lint failed: GROUNDING_FRESHNESS: tentative plan base 6b0e28b3f0f406deeb659313bcb8977436eebf44 is stale relative to current HEAD 3a2820bf841003a953584d9b968ff15efe9ae76a"
     },
     {
       "id": "final-run-transcript-4",
@@ -28389,6 +29399,7 @@
           }
         }
       ],
+      "patches": {},
       "span_ms": 337210,
       "inspection": {
         "status": {
@@ -28780,6 +29791,7 @@
           }
         }
       ],
+      "patches": {},
       "span_ms": 501944,
       "inspection": {
         "status": {
@@ -29179,6 +30191,7 @@
           }
         }
       ],
+      "patches": {},
       "span_ms": 6,
       "inspection": {
         "status": {
@@ -29412,6 +30425,7 @@
           }
         }
       ],
+      "patches": {},
       "span_ms": 553496,
       "inspection": {
         "status": {
@@ -29681,6 +30695,7 @@
           }
         }
       ],
+      "patches": {},
       "span_ms": 208500,
       "inspection": {
         "status": {
@@ -29935,6 +30950,7 @@
           }
         }
       ],
+      "patches": {},
       "span_ms": 33310,
       "inspection": {
         "status": {
@@ -30158,6 +31174,7 @@
           }
         }
       ],
+      "patches": {},
       "span_ms": 415741,
       "inspection": {
         "status": {
@@ -30377,6 +31394,7 @@
           }
         }
       ],
+      "patches": {},
       "span_ms": 65063,
       "inspection": {
         "status": {
@@ -30561,9 +31579,10 @@
           }
         }
       ],
+      "patches": {},
       "span_ms": 14,
       "inspection": null,
-      "inspection_error": "plan-lint failed: GROUNDING_FRESHNESS: tentative plan base 6b0e28b3f0f406deeb659313bcb8977436eebf44 is stale relative to current HEAD 8d7afc0f7ccd304f150bf1be01e03fe44bf67b36"
+      "inspection_error": "plan-lint failed: GROUNDING_FRESHNESS: tentative plan base 6b0e28b3f0f406deeb659313bcb8977436eebf44 is stale relative to current HEAD 2dda5f98746df97af9516dcca67bbb07e715bd55"
     },
     {
       "id": "firstrun-quota-stop",
@@ -30605,9 +31624,10 @@
           }
         }
       ],
+      "patches": {},
       "span_ms": 14,
       "inspection": null,
-      "inspection_error": "plan-lint failed: GROUNDING_FRESHNESS: tentative plan base 6b0e28b3f0f406deeb659313bcb8977436eebf44 is stale relative to current HEAD 560514190579be5f17633fa0d7bc904d07a1cf6d"
+      "inspection_error": "plan-lint failed: GROUNDING_FRESHNESS: tentative plan base 6b0e28b3f0f406deeb659313bcb8977436eebf44 is stale relative to current HEAD 3a2820bf841003a953584d9b968ff15efe9ae76a"
     },
     {
       "id": "empty-project",
@@ -30701,5 +31721,1027 @@
       },
       "inspection_error": null
     }
-  ]
+  ],
+  "project_files": {
+    "listings": {
+      ".": {
+        "path": ".",
+        "entries": [
+          {
+            "name": "app",
+            "path": "app",
+            "kind": "directory"
+          },
+          {
+            "name": "dist",
+            "path": "dist",
+            "kind": "directory"
+          },
+          {
+            "name": "node_modules",
+            "path": "node_modules",
+            "kind": "directory"
+          },
+          {
+            "name": "scripts",
+            "path": "scripts",
+            "kind": "directory"
+          },
+          {
+            "name": "src",
+            "path": "src",
+            "kind": "directory"
+          },
+          {
+            "name": "src-tauri",
+            "path": "src-tauri",
+            "kind": "directory"
+          },
+          {
+            "name": "test",
+            "path": "test",
+            "kind": "directory"
+          },
+          {
+            "name": "tools",
+            "path": "tools",
+            "kind": "directory"
+          },
+          {
+            "name": "components.json",
+            "path": "components.json",
+            "kind": "file"
+          },
+          {
+            "name": "DESIGN-NOTES.md",
+            "path": "DESIGN-NOTES.md",
+            "kind": "file"
+          },
+          {
+            "name": "index.html",
+            "path": "index.html",
+            "kind": "file"
+          },
+          {
+            "name": "package-lock.json",
+            "path": "package-lock.json",
+            "kind": "file"
+          },
+          {
+            "name": "package.json",
+            "path": "package.json",
+            "kind": "file"
+          },
+          {
+            "name": "placeholder-icon.png",
+            "path": "placeholder-icon.png",
+            "kind": "file"
+          },
+          {
+            "name": "replay.html",
+            "path": "replay.html",
+            "kind": "file"
+          },
+          {
+            "name": "tsconfig.json",
+            "path": "tsconfig.json",
+            "kind": "file"
+          },
+          {
+            "name": "vite.config.ts",
+            "path": "vite.config.ts",
+            "kind": "file"
+          }
+        ]
+      },
+      "app": {
+        "path": "app",
+        "entries": []
+      },
+      "scripts": {
+        "path": "scripts",
+        "entries": [
+          {
+            "name": "prepare-bundle.mjs",
+            "path": "scripts/prepare-bundle.mjs",
+            "kind": "file"
+          }
+        ]
+      },
+      "src": {
+        "path": "src",
+        "entries": [
+          {
+            "name": "components",
+            "path": "src/components",
+            "kind": "directory"
+          },
+          {
+            "name": "hooks",
+            "path": "src/hooks",
+            "kind": "directory"
+          },
+          {
+            "name": "lib",
+            "path": "src/lib",
+            "kind": "directory"
+          },
+          {
+            "name": "App.tsx",
+            "path": "src/App.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "main.tsx",
+            "path": "src/main.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "styles.css",
+            "path": "src/styles.css",
+            "kind": "file"
+          }
+        ]
+      },
+      "src-tauri": {
+        "path": "src-tauri",
+        "entries": [
+          {
+            "name": "gen",
+            "path": "src-tauri/gen",
+            "kind": "directory"
+          },
+          {
+            "name": "icons",
+            "path": "src-tauri/icons",
+            "kind": "directory"
+          },
+          {
+            "name": "src",
+            "path": "src-tauri/src",
+            "kind": "directory"
+          },
+          {
+            "name": "target",
+            "path": "src-tauri/target",
+            "kind": "directory"
+          },
+          {
+            "name": "build.rs",
+            "path": "src-tauri/build.rs",
+            "kind": "file"
+          },
+          {
+            "name": "Cargo.lock",
+            "path": "src-tauri/Cargo.lock",
+            "kind": "file"
+          },
+          {
+            "name": "Cargo.toml",
+            "path": "src-tauri/Cargo.toml",
+            "kind": "file"
+          },
+          {
+            "name": "tauri.conf.json",
+            "path": "src-tauri/tauri.conf.json",
+            "kind": "file"
+          }
+        ]
+      },
+      "test": {
+        "path": "test",
+        "entries": [
+          {
+            "name": "design-tokens.test.ts",
+            "path": "test/design-tokens.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "diff-model.test.ts",
+            "path": "test/diff-model.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "identifiers.test.ts",
+            "path": "test/identifiers.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "packaging.test.ts",
+            "path": "test/packaging.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "phases.test.ts",
+            "path": "test/phases.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "plain-language.test.ts",
+            "path": "test/plain-language.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "project-session.test.ts",
+            "path": "test/project-session.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "project-totals.test.ts",
+            "path": "test/project-totals.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "projection.test.ts",
+            "path": "test/projection.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "provider-usage.test.ts",
+            "path": "test/provider-usage.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "swarm-model.test.ts",
+            "path": "test/swarm-model.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "thin-client.test.ts",
+            "path": "test/thin-client.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "vocabulary.test.ts",
+            "path": "test/vocabulary.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "work-presentation.test.ts",
+            "path": "test/work-presentation.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "work-thread.test.ts",
+            "path": "test/work-thread.test.ts",
+            "kind": "file"
+          }
+        ]
+      },
+      "tools": {
+        "path": "tools",
+        "entries": [
+          {
+            "name": "collect-replay.mjs",
+            "path": "tools/collect-replay.mjs",
+            "kind": "file"
+          },
+          {
+            "name": "replay-data.json",
+            "path": "tools/replay-data.json",
+            "kind": "file"
+          },
+          {
+            "name": "replay.tsx",
+            "path": "tools/replay.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "settings-live.json",
+            "path": "tools/settings-live.json",
+            "kind": "file"
+          }
+        ]
+      },
+      "src/components": {
+        "path": "src/components",
+        "entries": [
+          {
+            "name": "ui",
+            "path": "src/components/ui",
+            "kind": "directory"
+          },
+          {
+            "name": "workspace",
+            "path": "src/components/workspace",
+            "kind": "directory"
+          },
+          {
+            "name": "agent-setup-dialog.tsx",
+            "path": "src/components/agent-setup-dialog.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "settings-dialog.tsx",
+            "path": "src/components/settings-dialog.tsx",
+            "kind": "file"
+          }
+        ]
+      },
+      "src/hooks": {
+        "path": "src/hooks",
+        "entries": [
+          {
+            "name": "use-workspace.ts",
+            "path": "src/hooks/use-workspace.ts",
+            "kind": "file"
+          }
+        ]
+      },
+      "src/lib": {
+        "path": "src/lib",
+        "entries": [
+          {
+            "name": "diff-model.ts",
+            "path": "src/lib/diff-model.ts",
+            "kind": "file"
+          },
+          {
+            "name": "identifiers.ts",
+            "path": "src/lib/identifiers.ts",
+            "kind": "file"
+          },
+          {
+            "name": "phases.ts",
+            "path": "src/lib/phases.ts",
+            "kind": "file"
+          },
+          {
+            "name": "plain-language.ts",
+            "path": "src/lib/plain-language.ts",
+            "kind": "file"
+          },
+          {
+            "name": "project-session.ts",
+            "path": "src/lib/project-session.ts",
+            "kind": "file"
+          },
+          {
+            "name": "project-totals.ts",
+            "path": "src/lib/project-totals.ts",
+            "kind": "file"
+          },
+          {
+            "name": "projection.ts",
+            "path": "src/lib/projection.ts",
+            "kind": "file"
+          },
+          {
+            "name": "provider-usage.ts",
+            "path": "src/lib/provider-usage.ts",
+            "kind": "file"
+          },
+          {
+            "name": "providers.ts",
+            "path": "src/lib/providers.ts",
+            "kind": "file"
+          },
+          {
+            "name": "swarm-model.ts",
+            "path": "src/lib/swarm-model.ts",
+            "kind": "file"
+          },
+          {
+            "name": "utils.ts",
+            "path": "src/lib/utils.ts",
+            "kind": "file"
+          },
+          {
+            "name": "vocabulary.ts",
+            "path": "src/lib/vocabulary.ts",
+            "kind": "file"
+          },
+          {
+            "name": "work-presentation.ts",
+            "path": "src/lib/work-presentation.ts",
+            "kind": "file"
+          },
+          {
+            "name": "work-thread.ts",
+            "path": "src/lib/work-thread.ts",
+            "kind": "file"
+          },
+          {
+            "name": "workspace-actions.ts",
+            "path": "src/lib/workspace-actions.ts",
+            "kind": "file"
+          }
+        ]
+      },
+      "src-tauri/gen": {
+        "path": "src-tauri/gen",
+        "entries": [
+          {
+            "name": "schemas",
+            "path": "src-tauri/gen/schemas",
+            "kind": "directory"
+          },
+          {
+            "name": "shell-build-id.txt",
+            "path": "src-tauri/gen/shell-build-id.txt",
+            "kind": "file"
+          }
+        ]
+      },
+      "src-tauri/icons": {
+        "path": "src-tauri/icons",
+        "entries": [
+          {
+            "name": "android",
+            "path": "src-tauri/icons/android",
+            "kind": "directory"
+          },
+          {
+            "name": "ios",
+            "path": "src-tauri/icons/ios",
+            "kind": "directory"
+          },
+          {
+            "name": "128x128.png",
+            "path": "src-tauri/icons/128x128.png",
+            "kind": "file"
+          },
+          {
+            "name": "128x128@2x.png",
+            "path": "src-tauri/icons/128x128@2x.png",
+            "kind": "file"
+          },
+          {
+            "name": "32x32.png",
+            "path": "src-tauri/icons/32x32.png",
+            "kind": "file"
+          },
+          {
+            "name": "64x64.png",
+            "path": "src-tauri/icons/64x64.png",
+            "kind": "file"
+          },
+          {
+            "name": "icon.icns",
+            "path": "src-tauri/icons/icon.icns",
+            "kind": "file"
+          },
+          {
+            "name": "icon.ico",
+            "path": "src-tauri/icons/icon.ico",
+            "kind": "file"
+          },
+          {
+            "name": "icon.png",
+            "path": "src-tauri/icons/icon.png",
+            "kind": "file"
+          },
+          {
+            "name": "Square107x107Logo.png",
+            "path": "src-tauri/icons/Square107x107Logo.png",
+            "kind": "file"
+          },
+          {
+            "name": "Square142x142Logo.png",
+            "path": "src-tauri/icons/Square142x142Logo.png",
+            "kind": "file"
+          },
+          {
+            "name": "Square150x150Logo.png",
+            "path": "src-tauri/icons/Square150x150Logo.png",
+            "kind": "file"
+          },
+          {
+            "name": "Square284x284Logo.png",
+            "path": "src-tauri/icons/Square284x284Logo.png",
+            "kind": "file"
+          },
+          {
+            "name": "Square30x30Logo.png",
+            "path": "src-tauri/icons/Square30x30Logo.png",
+            "kind": "file"
+          },
+          {
+            "name": "Square310x310Logo.png",
+            "path": "src-tauri/icons/Square310x310Logo.png",
+            "kind": "file"
+          },
+          {
+            "name": "Square44x44Logo.png",
+            "path": "src-tauri/icons/Square44x44Logo.png",
+            "kind": "file"
+          },
+          {
+            "name": "Square71x71Logo.png",
+            "path": "src-tauri/icons/Square71x71Logo.png",
+            "kind": "file"
+          },
+          {
+            "name": "Square89x89Logo.png",
+            "path": "src-tauri/icons/Square89x89Logo.png",
+            "kind": "file"
+          },
+          {
+            "name": "StoreLogo.png",
+            "path": "src-tauri/icons/StoreLogo.png",
+            "kind": "file"
+          }
+        ]
+      },
+      "src-tauri/src": {
+        "path": "src-tauri/src",
+        "entries": [
+          {
+            "name": "main.rs",
+            "path": "src-tauri/src/main.rs",
+            "kind": "file"
+          },
+          {
+            "name": "project.rs",
+            "path": "src-tauri/src/project.rs",
+            "kind": "file"
+          }
+        ]
+      },
+      "src-tauri/target": {
+        "path": "src-tauri/target",
+        "entries": [
+          {
+            "name": "debug",
+            "path": "src-tauri/target/debug",
+            "kind": "directory"
+          },
+          {
+            "name": "release",
+            "path": "src-tauri/target/release",
+            "kind": "directory"
+          },
+          {
+            "name": ".rustc_info.json",
+            "path": "src-tauri/target/.rustc_info.json",
+            "kind": "file"
+          },
+          {
+            "name": "CACHEDIR.TAG",
+            "path": "src-tauri/target/CACHEDIR.TAG",
+            "kind": "file"
+          }
+        ]
+      },
+      "src/components/ui": {
+        "path": "src/components/ui",
+        "entries": [
+          {
+            "name": "badge.tsx",
+            "path": "src/components/ui/badge.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "button.tsx",
+            "path": "src/components/ui/button.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "collapsible.tsx",
+            "path": "src/components/ui/collapsible.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "command.tsx",
+            "path": "src/components/ui/command.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "dialog.tsx",
+            "path": "src/components/ui/dialog.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "dropdown-menu.tsx",
+            "path": "src/components/ui/dropdown-menu.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "empty.tsx",
+            "path": "src/components/ui/empty.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "panel.tsx",
+            "path": "src/components/ui/panel.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "scroll-area.tsx",
+            "path": "src/components/ui/scroll-area.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "tabs.tsx",
+            "path": "src/components/ui/tabs.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "tooltip.tsx",
+            "path": "src/components/ui/tooltip.tsx",
+            "kind": "file"
+          }
+        ]
+      },
+      "src/components/workspace": {
+        "path": "src/components/workspace",
+        "entries": [
+          {
+            "name": "agent-graph.tsx",
+            "path": "src/components/workspace/agent-graph.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "checks-output.tsx",
+            "path": "src/components/workspace/checks-output.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "diff-view.tsx",
+            "path": "src/components/workspace/diff-view.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "file-tree.tsx",
+            "path": "src/components/workspace/file-tree.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "file-viewer.tsx",
+            "path": "src/components/workspace/file-viewer.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "phase-spine.tsx",
+            "path": "src/components/workspace/phase-spine.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "project-tab.tsx",
+            "path": "src/components/workspace/project-tab.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "setup-screen.tsx",
+            "path": "src/components/workspace/setup-screen.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "spec-review.tsx",
+            "path": "src/components/workspace/spec-review.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "work-tab.tsx",
+            "path": "src/components/workspace/work-tab.tsx",
+            "kind": "file"
+          }
+        ]
+      },
+      "src-tauri/gen/schemas": {
+        "path": "src-tauri/gen/schemas",
+        "entries": [
+          {
+            "name": "acl-manifests.json",
+            "path": "src-tauri/gen/schemas/acl-manifests.json",
+            "kind": "file"
+          },
+          {
+            "name": "capabilities.json",
+            "path": "src-tauri/gen/schemas/capabilities.json",
+            "kind": "file"
+          },
+          {
+            "name": "desktop-schema.json",
+            "path": "src-tauri/gen/schemas/desktop-schema.json",
+            "kind": "file"
+          },
+          {
+            "name": "windows-schema.json",
+            "path": "src-tauri/gen/schemas/windows-schema.json",
+            "kind": "file"
+          }
+        ]
+      },
+      "src-tauri/icons/android": {
+        "path": "src-tauri/icons/android",
+        "entries": [
+          {
+            "name": "mipmap-anydpi-v26",
+            "path": "src-tauri/icons/android/mipmap-anydpi-v26",
+            "kind": "directory"
+          },
+          {
+            "name": "mipmap-hdpi",
+            "path": "src-tauri/icons/android/mipmap-hdpi",
+            "kind": "directory"
+          },
+          {
+            "name": "mipmap-mdpi",
+            "path": "src-tauri/icons/android/mipmap-mdpi",
+            "kind": "directory"
+          },
+          {
+            "name": "mipmap-xhdpi",
+            "path": "src-tauri/icons/android/mipmap-xhdpi",
+            "kind": "directory"
+          },
+          {
+            "name": "mipmap-xxhdpi",
+            "path": "src-tauri/icons/android/mipmap-xxhdpi",
+            "kind": "directory"
+          },
+          {
+            "name": "mipmap-xxxhdpi",
+            "path": "src-tauri/icons/android/mipmap-xxxhdpi",
+            "kind": "directory"
+          },
+          {
+            "name": "values",
+            "path": "src-tauri/icons/android/values",
+            "kind": "directory"
+          }
+        ]
+      },
+      "src-tauri/icons/ios": {
+        "path": "src-tauri/icons/ios",
+        "entries": [
+          {
+            "name": "AppIcon-20x20@1x.png",
+            "path": "src-tauri/icons/ios/AppIcon-20x20@1x.png",
+            "kind": "file"
+          },
+          {
+            "name": "AppIcon-20x20@2x-1.png",
+            "path": "src-tauri/icons/ios/AppIcon-20x20@2x-1.png",
+            "kind": "file"
+          },
+          {
+            "name": "AppIcon-20x20@2x.png",
+            "path": "src-tauri/icons/ios/AppIcon-20x20@2x.png",
+            "kind": "file"
+          },
+          {
+            "name": "AppIcon-20x20@3x.png",
+            "path": "src-tauri/icons/ios/AppIcon-20x20@3x.png",
+            "kind": "file"
+          },
+          {
+            "name": "AppIcon-29x29@1x.png",
+            "path": "src-tauri/icons/ios/AppIcon-29x29@1x.png",
+            "kind": "file"
+          },
+          {
+            "name": "AppIcon-29x29@2x-1.png",
+            "path": "src-tauri/icons/ios/AppIcon-29x29@2x-1.png",
+            "kind": "file"
+          },
+          {
+            "name": "AppIcon-29x29@2x.png",
+            "path": "src-tauri/icons/ios/AppIcon-29x29@2x.png",
+            "kind": "file"
+          },
+          {
+            "name": "AppIcon-29x29@3x.png",
+            "path": "src-tauri/icons/ios/AppIcon-29x29@3x.png",
+            "kind": "file"
+          },
+          {
+            "name": "AppIcon-40x40@1x.png",
+            "path": "src-tauri/icons/ios/AppIcon-40x40@1x.png",
+            "kind": "file"
+          },
+          {
+            "name": "AppIcon-40x40@2x-1.png",
+            "path": "src-tauri/icons/ios/AppIcon-40x40@2x-1.png",
+            "kind": "file"
+          },
+          {
+            "name": "AppIcon-40x40@2x.png",
+            "path": "src-tauri/icons/ios/AppIcon-40x40@2x.png",
+            "kind": "file"
+          },
+          {
+            "name": "AppIcon-40x40@3x.png",
+            "path": "src-tauri/icons/ios/AppIcon-40x40@3x.png",
+            "kind": "file"
+          },
+          {
+            "name": "AppIcon-512@2x.png",
+            "path": "src-tauri/icons/ios/AppIcon-512@2x.png",
+            "kind": "file"
+          },
+          {
+            "name": "AppIcon-60x60@2x.png",
+            "path": "src-tauri/icons/ios/AppIcon-60x60@2x.png",
+            "kind": "file"
+          },
+          {
+            "name": "AppIcon-60x60@3x.png",
+            "path": "src-tauri/icons/ios/AppIcon-60x60@3x.png",
+            "kind": "file"
+          },
+          {
+            "name": "AppIcon-76x76@1x.png",
+            "path": "src-tauri/icons/ios/AppIcon-76x76@1x.png",
+            "kind": "file"
+          },
+          {
+            "name": "AppIcon-76x76@2x.png",
+            "path": "src-tauri/icons/ios/AppIcon-76x76@2x.png",
+            "kind": "file"
+          },
+          {
+            "name": "AppIcon-83.5x83.5@2x.png",
+            "path": "src-tauri/icons/ios/AppIcon-83.5x83.5@2x.png",
+            "kind": "file"
+          }
+        ]
+      },
+      "src-tauri/target/debug": {
+        "path": "src-tauri/target/debug",
+        "entries": [
+          {
+            "name": ".fingerprint",
+            "path": "src-tauri/target/debug/.fingerprint",
+            "kind": "directory"
+          },
+          {
+            "name": "build",
+            "path": "src-tauri/target/debug/build",
+            "kind": "directory"
+          },
+          {
+            "name": "core",
+            "path": "src-tauri/target/debug/core",
+            "kind": "directory"
+          },
+          {
+            "name": "deps",
+            "path": "src-tauri/target/debug/deps",
+            "kind": "directory"
+          },
+          {
+            "name": "examples",
+            "path": "src-tauri/target/debug/examples",
+            "kind": "directory"
+          },
+          {
+            "name": "incremental",
+            "path": "src-tauri/target/debug/incremental",
+            "kind": "directory"
+          },
+          {
+            "name": ".cargo-artifact-lock",
+            "path": "src-tauri/target/debug/.cargo-artifact-lock",
+            "kind": "file"
+          },
+          {
+            "name": ".cargo-build-lock",
+            "path": "src-tauri/target/debug/.cargo-build-lock",
+            "kind": "file"
+          },
+          {
+            "name": ".cargo-lock",
+            "path": "src-tauri/target/debug/.cargo-lock",
+            "kind": "file"
+          },
+          {
+            "name": "hivemind_desktop.d",
+            "path": "src-tauri/target/debug/hivemind_desktop.d",
+            "kind": "file"
+          },
+          {
+            "name": "hivemind_desktop.exe",
+            "path": "src-tauri/target/debug/hivemind_desktop.exe",
+            "kind": "file"
+          },
+          {
+            "name": "hivemind_desktop.pdb",
+            "path": "src-tauri/target/debug/hivemind_desktop.pdb",
+            "kind": "file"
+          }
+        ]
+      },
+      "src-tauri/target/release": {
+        "path": "src-tauri/target/release",
+        "entries": [
+          {
+            "name": ".fingerprint",
+            "path": "src-tauri/target/release/.fingerprint",
+            "kind": "directory"
+          },
+          {
+            "name": "build",
+            "path": "src-tauri/target/release/build",
+            "kind": "directory"
+          },
+          {
+            "name": "bundle",
+            "path": "src-tauri/target/release/bundle",
+            "kind": "directory"
+          },
+          {
+            "name": "core",
+            "path": "src-tauri/target/release/core",
+            "kind": "directory"
+          },
+          {
+            "name": "deps",
+            "path": "src-tauri/target/release/deps",
+            "kind": "directory"
+          },
+          {
+            "name": "examples",
+            "path": "src-tauri/target/release/examples",
+            "kind": "directory"
+          },
+          {
+            "name": "incremental",
+            "path": "src-tauri/target/release/incremental",
+            "kind": "directory"
+          },
+          {
+            "name": "nsis",
+            "path": "src-tauri/target/release/nsis",
+            "kind": "directory"
+          },
+          {
+            "name": ".cargo-artifact-lock",
+            "path": "src-tauri/target/release/.cargo-artifact-lock",
+            "kind": "file"
+          },
+          {
+            "name": ".cargo-build-lock",
+            "path": "src-tauri/target/release/.cargo-build-lock",
+            "kind": "file"
+          },
+          {
+            "name": ".cargo-lock",
+            "path": "src-tauri/target/release/.cargo-lock",
+            "kind": "file"
+          },
+          {
+            "name": "hivemind_desktop.d",
+            "path": "src-tauri/target/release/hivemind_desktop.d",
+            "kind": "file"
+          },
+          {
+            "name": "hivemind_desktop.exe",
+            "path": "src-tauri/target/release/hivemind_desktop.exe",
+            "kind": "file"
+          },
+          {
+            "name": "hivemind_desktop.pdb",
+            "path": "src-tauri/target/release/hivemind_desktop.pdb",
+            "kind": "file"
+          }
+        ]
+      }
+    },
+    "files": {
+      "src/lib/diff-model.ts": {
+        "path": "src/lib/diff-model.ts",
+        "text": "/* A unified diff, parsed into something a person can read line by line.\n *\n * \"See every line\" has been a control since the ship bar existed, and until now\n * it opened a dialog containing the raw patch as one block of monospace text.\n * That is the patch, not the lines: a person reading it has to do the parsing\n * themselves, and the thing they came to check -- what actually changed in which\n * file -- is the thing the rendering makes hardest.\n *\n * Everything here is presentation of a string Core produced. It parses; it\n * decides nothing. A diff view that could stage, approve or apply anything\n * would be a path around the adoption gate, so this module has no concept of\n * any of those and the components over it dispatch no actions.\n */\n\nexport type DiffLineKind = \"added\" | \"removed\" | \"context\" | \"meta\";\n\nexport interface DiffLine {\n  kind: DiffLineKind;\n  /** Line number in the file before the change, where one exists. */\n  before: number | null;\n  /** Line number in the file after the change, where one exists. */\n  after: number | null;\n  text: string;\n}\n\nexport interface DiffHunk {\n  /** The `@@ … @@` header, kept verbatim for anyone who wants it. */\n  header: string;\n  lines: DiffLine[];\n}\n\nexport interface DiffFile {\n  /** The path as a person would say it: the post-change name where there is one. */\n  path: string;\n  /** Set when a rename moved it, so the row can say so. */\n  previousPath: string | null;\n  change: \"added\" | \"removed\" | \"modified\" | \"renamed\";\n  added: number;\n  removed: number;\n  hunks: DiffHunk[];\n  /** True when the patch names the file but carries no text (binary, mode-only). */\n  textless: boolean;\n}\n\nexport interface ParsedDiff {\n  files: DiffFile[];\n  added: number;\n  removed: number;\n  /** Headings this parser was handed but did not recognise, reported not hidden. */\n  unparsed: string[];\n}\n\nconst FILE_HEADER = /^diff --git a\\/(.+?) b\\/(.+)$/u;\nconst HUNK_HEADER = /^@@ -(\\d+)(?:,(\\d+))? \\+(\\d+)(?:,(\\d+))? @@(.*)$/u;\n\n/**\n * Parse a unified diff, tolerantly.\n *\n * Tolerantly because the input is whatever the provider's patch looked like,\n * and a parser that throws on an unfamiliar header would replace a readable\n * diff with an error. Anything unrecognised is collected in `unparsed` and\n * shown to the person rather than dropped -- the same rule the containment\n * guard follows: decline to render, never pretend it was not there.\n */\nexport function parseUnifiedDiff(patch: string): ParsedDiff {\n  const files: DiffFile[] = [];\n  const unparsed: string[] = [];\n  let file: DiffFile | null = null;\n  let hunk: DiffHunk | null = null;\n  let before = 0;\n  let after = 0;\n\n  const closeFile = (): void => {\n    if (file === null) return;\n    file.textless = file.hunks.length === 0;\n    files.push(file);\n    file = null;\n    hunk = null;\n  };\n\n  for (const raw of patch.split(/\\r?\\n/u)) {\n    const line = raw.replace(/\\r$/u, \"\");\n\n    const header = FILE_HEADER.exec(line);\n    if (header !== null) {\n      closeFile();\n      file = {\n        path: header[2]!,\n        previousPath: header[1] === header[2] ? null : header[1]!,\n        change: header[1] === header[2] ? \"modified\" : \"renamed\",\n        added: 0,\n        removed: 0,\n        hunks: [],\n        textless: false\n      };\n      continue;\n    }\n\n    /* Hivemind's own change viewer heads each task's section with a plain\n       markdown rule rather than a git header. Recognised so a multi-task\n       change set does not read as one enormous file. */\n    if (file === null && line.startsWith(\"# \")) {\n      unparsed.push(line);\n      continue;\n    }\n\n    if (file === null) {\n      if (line.trim() !== \"\") unparsed.push(line);\n      continue;\n    }\n\n    if (line.startsWith(\"new file mode\")) {\n      file.change = \"added\";\n      continue;\n    }\n    if (line.startsWith(\"deleted file mode\")) {\n      file.change = \"removed\";\n      continue;\n    }\n    /* `---`/`+++` restate the paths the git header already gave, and `index`\n       is a pair of object names. None of it is a line that changed. */\n    if (\n      line.startsWith(\"index \") ||\n      line.startsWith(\"--- \") ||\n      line.startsWith(\"+++ \") ||\n      line.startsWith(\"similarity index\") ||\n      line.startsWith(\"rename from\") ||\n      line.startsWith(\"rename to\") ||\n      line.startsWith(\"old mode\") ||\n      line.startsWith(\"new mode\")\n    ) {\n      continue;\n    }\n\n    const hunkHeader = HUNK_HEADER.exec(line);\n    if (hunkHeader !== null) {\n      before = Number.parseInt(hunkHeader[1]!, 10);\n      after = Number.parseInt(hunkHeader[3]!, 10);\n      hunk = { header: line, lines: [] };\n      file.hunks.push(hunk);\n      continue;\n    }\n\n    if (hunk === null) continue;\n\n    if (line.startsWith(\"+\")) {\n      hunk.lines.push({ kind: \"added\", before: null, after, text: line.slice(1) });\n      after += 1;\n      file.added += 1;\n      continue;\n    }\n    if (line.startsWith(\"-\")) {\n      hunk.lines.push({ kind: \"removed\", before, after: null, text: line.slice(1) });\n      before += 1;\n      file.removed += 1;\n      continue;\n    }\n    if (line.startsWith(\"\\\\\")) {\n      /* \"\\ No newline at end of file\" belongs to the line above it. */\n      hunk.lines.push({ kind: \"meta\", before: null, after: null, text: line.slice(2) });\n      continue;\n    }\n    /* A context line, or the empty line git writes as a bare \"\". */\n    hunk.lines.push({ kind: \"context\", before, after, text: line.startsWith(\" \") ? line.slice(1) : line });\n    before += 1;\n    after += 1;\n  }\n\n  closeFile();\n\n  return {\n    files,\n    added: files.reduce((total, entry) => total + entry.added, 0),\n    removed: files.reduce((total, entry) => total + entry.removed, 0),\n    unparsed\n  };\n}\n\n/**\n * A stable key for one line of one file, so an annotation can name the line it\n * is about without the client inventing an identifier scheme.\n *\n * Keyed on the post-change line number where there is one, because that is the\n * number the person can see in their editor. A removed line has no post-change\n * number and is keyed on its pre-change one.\n */\nexport function diffLineKey(file: DiffFile, line: DiffLine): string {\n  return `${file.path}:${line.after === null ? `-${line.before ?? 0}` : `+${line.after}`}`;\n}\n\n/** The line's number as a person reads it, for the gutter. */\nexport function diffLineNumber(line: DiffLine): string {\n  if (line.kind === \"meta\") return \"\";\n  return String(line.after ?? line.before ?? \"\");\n}\n\n/** Files a task has spoken for that the patch does not mention. */\nexport function filesWithoutChanges(leased: string[], parsed: ParsedDiff): string[] {\n  const changed = new Set(parsed.files.map((entry) => entry.path));\n  return leased.filter((path) => !changed.has(path));\n}\n",
+        "bytes": 6684,
+        "truncated": false
+      },
+      "src/lib/provider-usage.ts": {
+        "path": "src/lib/provider-usage.ts",
+        "text": "import type { BoardProjection } from \"./projection\";\r\nimport type { InspectedAdapter, WorkspaceInspection } from \"./workspace-actions\";\r\n\r\n/**\r\n * What each connected provider has spent, and whether that number can be\r\n * believed.\r\n *\r\n * This exists because three days were lost to an exhausted Codex quota with no\r\n * visibility. The fix is not a prettier meter — it is a meter that refuses to\r\n * draw itself when the number behind it is not trustworthy.\r\n *\r\n * Everything here is derived from `routing.observed`, a durable event that\r\n * records which provider did a task and what it cost. That is presentation of\r\n * the trail, not a second opinion about it: the client sums events the daemon\r\n * wrote and never estimates a figure of its own.\r\n *\r\n * The honesty rule, and the whole point:\r\n *\r\n * > A provider whose `reports_usage` capability is not `verified` has its\r\n * > figure marked **unreadable**, not drawn small. A confident bar built on an\r\n * > unverifiable number is how the next three days get lost.\r\n */\r\n\r\nexport type UsageStanding =\r\n  /** The probe confirmed this agent reports what it spends. */\r\n  | \"measured\"\r\n  /** Connected, but nothing here can read what it spends. */\r\n  | \"unreadable\"\r\n  /** Installed before any probe ran, so nothing about it was checked. */\r\n  | \"unchecked\";\r\n\r\nexport interface ProviderUsage {\r\n  /** The role a person chose it for: planner, manager, worker. */\r\n  role: string;\r\n  /** The agent as the catalogue names it, where a probe recorded one. */\r\n  agentId: string | null;\r\n  model: string | null;\r\n  standing: UsageStanding;\r\n  /** Tokens attributed to this provider by `routing.observed`. */\r\n  tokens: number;\r\n  /** How many task-level observations that figure is made of. */\r\n  observations: number;\r\n  /** When it was connected, or null if it was never probed. */\r\n  connectedAt: string | null;\r\n  /** One sentence for the person, in place of a number that cannot be trusted. */\r\n  caveat: string | null;\r\n}\r\n\r\nexport interface UsagePanel {\r\n  providers: ProviderUsage[];\r\n  /** This run's spend, from Core's own ledger rather than from events. */\r\n  session: {\r\n    calls: number;\r\n    tokens: number;\r\n    runCeiling: number;\r\n    sessionCeiling: number;\r\n    nearCeiling: boolean;\r\n  } | null;\r\n  /** Quota state as the provider last reported it, where it reported one. */\r\n  quota: { status: string; provider: string | null; at: string | null } | null;\r\n  /**\r\n   * Tokens the trail attributes to no connected provider. Reported rather than\r\n   * folded into a total, because a number that quietly absorbs work nobody can\r\n   * attribute is exactly the number that hides a problem.\r\n   */\r\n  unattributedTokens: number;\r\n}\r\n\r\nconst USAGE_CAPABILITY = \"reports_usage\";\r\n\r\nexport function buildUsagePanel(\r\n  inspection: WorkspaceInspection | null,\r\n  projection: BoardProjection,\r\n  adapters: InspectedAdapter[]\r\n): UsagePanel {\r\n  const byProvider = new Map<string, { tokens: number; observations: number }>();\r\n  for (const observation of projection.routingObservations) {\r\n    const key = observation.provider;\r\n    const current = byProvider.get(key) ?? { tokens: 0, observations: 0 };\r\n    current.tokens += observation.effective_tokens ?? 0;\r\n    current.observations += 1;\r\n    byProvider.set(key, current);\r\n  }\r\n\r\n  const providers: ProviderUsage[] = [];\r\n  const claimed = new Set<string>();\r\n  for (const adapter of adapters) {\r\n    if (!adapter.installed) continue;\r\n    /* `routing.observed` names the provider by whatever the profile is called,\r\n       and that is not always the role. On the textkit trail it reads\r\n       `codex-terra` -- the agent -- while the adapter's tool is `worker`. So\r\n       both names are tried, and both are claimed, or a run's whole spend lands\r\n       in \"unattributed\" while the agent that did it reads zero. Caught by\r\n       looking at the panel rather than by the types, which were happy. */\r\n    const names = [adapter.tool, adapter.agent_id].filter(\r\n      (name): name is string => name !== null\r\n    );\r\n    const observed = names\r\n      .map((name) => byProvider.get(name))\r\n      .find((entry) => entry !== undefined);\r\n    for (const name of names) claimed.add(name);\r\n    const standing = usageStanding(adapter);\r\n    providers.push({\r\n      role: adapter.role,\r\n      agentId: adapter.agent_id,\r\n      model: adapter.model,\r\n      standing,\r\n      tokens: observed?.tokens ?? 0,\r\n      observations: observed?.observations ?? 0,\r\n      connectedAt: adapter.connected_at,\r\n      caveat: caveatFor(standing)\r\n    });\r\n  }\r\n\r\n  const unattributed = [...byProvider.entries()]\r\n    .filter(([tool]) => !claimed.has(tool))\r\n    .reduce((total, [, entry]) => total + entry.tokens, 0);\r\n\r\n  const spend = inspection?.spend ?? null;\r\n  const quotaEvent = projection.quota.lastEvent;\r\n\r\n  return {\r\n    providers,\r\n    session:\r\n      spend === null\r\n        ? null\r\n        : {\r\n            calls: spend.calls,\r\n            tokens: spend.effective_tokens,\r\n            runCeiling: spend.run_ceiling_tokens,\r\n            sessionCeiling: spend.session_ceiling_tokens,\r\n            nearCeiling: spend.near_session_ceiling\r\n          },\r\n    quota:\r\n      projection.quota.status === \"unknown\"\r\n        ? null\r\n        : {\r\n            status: projection.quota.status,\r\n            provider: projection.quota.provider,\r\n            at: quotaEvent?.ts ?? null\r\n          },\r\n    unattributedTokens: unattributed\r\n  };\r\n}\r\n\r\nfunction usageStanding(adapter: InspectedAdapter): UsageStanding {\r\n  if (adapter.connected_at === null) return \"unchecked\";\r\n  const entry = adapter.capabilities.find((capability) => capability.id === USAGE_CAPABILITY);\r\n  return entry?.status === \"verified\" ? \"measured\" : \"unreadable\";\r\n}\r\n\r\nfunction caveatFor(standing: UsageStanding): string | null {\r\n  if (standing === \"measured\") return null;\r\n  if (standing === \"unchecked\") {\r\n    return \"This agent was installed before Hivemind could check it, so nothing here knows whether its spending can be read. Reconnect it to find out.\";\r\n  }\r\n  return \"This agent does not report what it spends in a way Hivemind can read, so no figure here would be true. Watch your usage on the provider's own page.\";\r\n}\r\n\r\n/** A token count as a person reads it. Never rounded up into something larger. */\r\nexport function formatTokens(value: number): string {\r\n  if (value < 1000) return String(value);\r\n  if (value < 1_000_000) return `${(value / 1000).toFixed(value < 10_000 ? 1 : 0)}K`;\r\n  return `${(value / 1_000_000).toFixed(2)}M`;\r\n}\r\n",
+        "bytes": 6525,
+        "truncated": false
+      },
+      "package.json": {
+        "path": "package.json",
+        "text": "{\n  \"name\": \"hivemind-desktop\",\n  \"version\": \"0.0.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"dev\": \"vite\",\n    \"build\": \"tsc --noEmit && vite build\",\n    \"bundle:prepare\": \"node scripts/prepare-bundle.mjs\",\n    \"tauri:dev\": \"tauri dev\",\n    \"tauri:build\": \"tauri build --bundles nsis\",\n    \"test\": \"vitest run\",\n    \"replay:collect\": \"node tools/collect-replay.mjs\",\n    \"tauri:build:linux\": \"tauri build --bundles deb,appimage\",\n    \"tauri:build:mac\": \"tauri build --bundles app,dmg\"\n  },\n  \"dependencies\": {\n    \"@fontsource-variable/geist\": \"^5.3.0\",\n    \"@fontsource-variable/geist-mono\": \"^5.3.0\",\n    \"@tailwindcss/vite\": \"^4.3.3\",\n    \"@tauri-apps/api\": \"^2.8.0\",\n    \"class-variance-authority\": \"^0.7.1\",\n    \"clsx\": \"^2.1.1\",\n    \"cmdk\": \"^1.1.1\",\n    \"lucide-react\": \"^0.468.0\",\n    \"radix-ui\": \"^1.6.7\",\n    \"react\": \"^19.1.1\",\n    \"react-dom\": \"^19.1.1\",\n    \"tailwind-merge\": \"^3.3.1\",\n    \"tailwindcss\": \"^4.3.3\",\n    \"tw-animate-css\": \"^1.4.0\"\n  },\n  \"devDependencies\": {\n    \"@tauri-apps/cli\": \"^2.0.0\",\n    \"@types/node\": \"^22.15.30\",\n    \"@types/react\": \"^19.1.8\",\n    \"@types/react-dom\": \"^19.1.6\",\n    \"@vitejs/plugin-react\": \"^4.5.2\",\n    \"typescript\": \"^5.8.3\",\n    \"vite\": \"^6.3.5\",\n    \"vitest\": \"^3.2.4\"\n  }\n}\n",
+        "bytes": 1255,
+        "truncated": false
+      }
+    }
+  },
+  "check_output": {
+    "checks_run_id": "C-517ca6ab-68dd-495e-87a6-baa461cf6df8",
+    "checks": [
+      {
+        "id": "lint",
+        "command": "\"C:\\\\nvm4w\\\\nodejs\\\\node.exe\" --check test/slugify.test.js",
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "truncated": false
+      },
+      {
+        "id": "tests",
+        "command": "\"C:\\\\nvm4w\\\\nodejs\\\\node.exe\" --test test/slugify.test.js",
+        "exit_code": 1,
+        "stdout": "TAP version 13\n# Subtest: lowercases and hyphenates\nok 1 - lowercases and hyphenates\n  ---\n  duration_ms: 0.8167\n  type: 'test'\n  ...\n# Subtest: strips punctuation\nnot ok 2 - strips punctuation\n  ---\n  duration_ms: 0.8396\n  type: 'test'\n  location: 'C:\\\\Users\\\\ethan\\\\AppData\\\\Local\\\\Temp\\\\hivemind-replay-checks-pGWDHi\\\\test\\\\slugify.test.js:7:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly equal:\n    + actual - expected\n    \n    + 'hello,-world!'\n    - 'hello-world'\n            ^\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: 'hello-world'\n  actual: 'hello,-world!'\n  operator: 'strictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///C:/Users/ethan/AppData/Local/Temp/hivemind-replay-checks-pGWDHi/test/slugify.test.js:8:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n    Test.postRun (node:internal/test_runner/test:1173:19)\n    Test.run (node:internal/test_runner/test:1101:12)\n    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)\n  ...\n1..2\n# tests 2\n# suites 0\n# pass 1\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 96.2028\n",
+        "stderr": "",
+        "truncated": false
+      }
+    ],
+    "ran_at": "2026-08-13T20:21:12.345Z",
+    "task_ids": [],
+    "tests": "fail"
+  }
 }

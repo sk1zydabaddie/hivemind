@@ -1,5 +1,5 @@
 import { ChevronRight, Clock3, FileSearch, Lightbulb, ScrollText } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +29,8 @@ import {
 } from "@/components/ui/panel";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ANONYMOUS_TASK, taskTitleOrNull } from "@/lib/identifiers";
+import type { BoardProjection } from "@/lib/projection";
+import { buildUsagePanel, formatTokens, type UsagePanel } from "@/lib/provider-usage";
 import { projectTotals, type ProjectTotals } from "@/lib/project-totals";
 import { plainActionError } from "@/lib/plain-language";
 import type {
@@ -38,7 +40,8 @@ import type {
   WorkspaceInspection,
   WorkspaceMemoryProposal,
   WorkspaceRoutingChange,
-  WorkspaceRoutingTaskType
+  WorkspaceRoutingTaskType,
+  ProjectConfigView
 } from "@/lib/workspace-actions";
 
 /* Memory and History were two tabs describing one subject: this project's past.
@@ -58,13 +61,34 @@ interface DurableTrailEvent {
 
 export function ProjectTab({
   inspection,
+  projection,
   projectName,
   onAction
 }: {
   inspection: WorkspaceInspection | null;
+  projection: BoardProjection;
   projectName: string;
   onAction: <T>(action: WorkspaceAction) => Promise<T>;
 }): React.JSX.Element {
+  /* Which accounts are connected and what each has spent. Read through the
+     audited `config.inspect`; the figures come from `routing.observed`, which
+     is a durable event. Nothing here writes, and nothing here estimates. */
+  const [config, setConfig] = useState<ProjectConfigView | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void onAction<ProjectConfigView>({ type: "config.inspect", payload: {} })
+      .then((value) => {
+        if (!cancelled) setConfig(value);
+      })
+      .catch(() => {
+        /* The panel simply does not appear. A usage surface that renders an
+           error where a figure belongs is worse than one that is absent. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [onAction]);
+  const usage = buildUsagePanel(inspection, projection, config?.adapters ?? []);
   const [trail, setTrail] = useState<DurableTrailEvent[] | null>(null);
   const [trailError, setTrailError] = useState("");
   const [trailLoading, setTrailLoading] = useState(false);
@@ -193,7 +217,8 @@ export function ProjectTab({
             </ScrollArea>
           </Panel>
 
-          <aside className="grid max-h-full min-h-0 grid-rows-[minmax(0,auto)] gap-3 overflow-hidden">
+          <aside className="grid max-h-full min-h-0 grid-rows-[auto_minmax(0,auto)] gap-3 overflow-hidden">
+            <AccountsPanel usage={usage} />
             <Panel className="max-h-full">
               <PanelHeader className="bg-panel">
                 <PanelLabel className="text-ink">What it has learned</PanelLabel>
@@ -459,6 +484,105 @@ function Total({
       </dd>
       <span className="text-[11px] text-muted-foreground">{label}</span>
     </div>
+  );
+}
+
+/* Which accounts are connected, and what each has spent.
+ *
+ * Built because three days went to an exhausted quota with nothing on screen
+ * saying so. The rule that makes it worth having is the one about what it
+ * REFUSES to draw: a provider whose spending Hivemind cannot read is marked
+ * unreadable, never rendered as a confident zero. A meter reading nought when
+ * it means "I cannot see" is how the next three days go.
+ */
+function AccountsPanel({ usage }: { usage: UsagePanel }): React.JSX.Element | null {
+  if (usage.providers.length === 0) return null;
+  return (
+    <Panel>
+      <PanelHeader className="bg-panel">
+        <PanelLabel className="text-ink">Agents and what they spent</PanelLabel>
+        <PanelCount>{usage.providers.length}</PanelCount>
+      </PanelHeader>
+      <div className="grid gap-2.5 px-3 py-3">
+        {usage.providers.map((provider) => (
+          <article className="grid gap-1" key={provider.role}>
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <strong className="text-[13px] font-semibold text-ink">{provider.role}</strong>
+              {provider.model === null ? null : (
+                <span className="font-mono text-[11px] text-muted-foreground">
+                  {provider.model}
+                </span>
+              )}
+              <span className="ml-auto font-mono text-[13px] font-semibold">
+                {provider.standing === "measured" ? (
+                  <span className="text-ink">{formatTokens(provider.tokens)}</span>
+                ) : (
+                  <span className="text-amber">not readable</span>
+                )}
+              </span>
+            </div>
+            {provider.standing === "measured" ? (
+              <span className="text-[11px] text-muted-foreground">
+                {provider.observations === 0
+                  ? "Nothing recorded against it in this project yet."
+                  : `across ${provider.observations} ${provider.observations === 1 ? "task" : "tasks"}`}
+              </span>
+            ) : (
+              <span className="text-[11px] leading-relaxed text-amber">{provider.caveat}</span>
+            )}
+          </article>
+        ))}
+
+        {usage.unattributedTokens === 0 ? null : (
+          <p className="m-0 border-t border-rule pt-2 text-[11px] leading-relaxed text-muted-foreground">
+            <span className="font-mono text-ink">{formatTokens(usage.unattributedTokens)}</span>{" "}
+            was spent by something that is not one of the agents above. It is shown
+            separately rather than added in, because a total that absorbs work
+            nobody can place is the one that hides a problem.
+          </p>
+        )}
+
+        {usage.session === null ? null : (
+          <div className="grid gap-1 border-t border-rule pt-2">
+            <div className="flex flex-wrap items-baseline gap-x-2 text-[11px] text-muted-foreground">
+              <span className="font-medium tracking-label uppercase">This run</span>
+              <span className="ml-auto font-mono text-ink">
+                {formatTokens(usage.session.tokens)}
+              </span>
+              <span>
+                of {formatTokens(usage.session.sessionCeiling)}
+              </span>
+            </div>
+            {/* Core's own ledger, not a sum of events -- it is the number the
+                ceiling is actually enforced against. */}
+            <span
+              aria-hidden="true"
+              className="block h-1 w-full overflow-hidden bg-rule"
+            >
+              <span
+                className={`block h-1 ${usage.session.nearCeiling ? "bg-amber" : "bg-navy"}`}
+                style={{
+                  width: `${Math.min(100, Math.round((usage.session.tokens / Math.max(1, usage.session.sessionCeiling)) * 100))}%`
+                }}
+              />
+            </span>
+            {usage.session.nearCeiling ? (
+              <span className="text-[11px] text-amber">
+                Close to this project's limit. Work will stop rather than overrun it.
+              </span>
+            ) : null}
+          </div>
+        )}
+
+        {usage.quota === null ? null : (
+          <p className="m-0 border-t border-rule pt-2 text-[11px] leading-relaxed text-amber">
+            The provider last reported: {usage.quota.status}
+            {usage.quota.provider === null ? "" : ` (${usage.quota.provider})`}
+            {usage.quota.at === null ? "" : ` at ${formatDateTime(usage.quota.at)}`}.
+          </p>
+        )}
+      </div>
+    </Panel>
   );
 }
 

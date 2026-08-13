@@ -13,6 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { plainActionError } from "@/lib/plain-language";
 import { displayProjectPath } from "@/lib/project-session";
 import type {
+  CapabilityStatus,
   AutonomyLevel,
   CatalogueAgent,
   InspectedAdapter,
@@ -509,7 +510,7 @@ function ProbeReport({
       <ul className="m-0 grid list-none gap-1.5 p-0">
         {capabilities.map((entry) => (
           <li className="grid grid-cols-[16px_minmax(0,1fr)] gap-2" key={entry.id}>
-            <StatusMark state={entry.status === "verified" ? "ok" : entry.status === "failed" ? "bad" : "unverified"} />
+            <StatusMark state={capabilityMark(entry.status)} />
             <div className="min-w-0">
               <span className="text-[12px] font-medium text-ink">{entry.label}</span>
               {entry.requested === null && entry.reported === null ? null : (
@@ -679,4 +680,31 @@ function Section({
       {children}
     </section>
   );
+}
+
+/* `mismatched` and `unsupported` are not the same thing and must not share a
+   mark. One means the agent reported doing something other than what it was
+   told -- the state the whole probe exists to catch. The other means it has no
+   such feature, which is a fact about the tool rather than a betrayal by it.
+
+   Exhaustive on purpose, rather than an if-chain ending in a default. This
+   file already shipped a bug of exactly that shape: the local `CapabilityStatus`
+   still had three members after Core moved to four, so `mismatched` fell
+   through to the neutral branch and the most dangerous state a probe can find
+   drew as "not checked". A trailing `default` cannot fail. The `never`
+   assignment below turns the next added member into a compile error here. */
+function capabilityMark(status: CapabilityStatus): "ok" | "bad" | "unverified" {
+  switch (status) {
+    case "verified":
+      return "ok";
+    case "mismatched":
+      return "bad";
+    case "unverified":
+    case "unsupported":
+      return "unverified";
+    default: {
+      const unhandled: never = status;
+      return unhandled;
+    }
+  }
 }

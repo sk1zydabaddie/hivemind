@@ -109,6 +109,7 @@ describe("internal identifiers never reach a person", () => {
     const markup = renderToStaticMarkup(
       createElement(ProjectTab, {
         inspection: scenario.inspection ?? null,
+        projection: projectionFor(scenario),
         projectName: "textkit",
         onAction: async () => undefined as never
       })
@@ -159,7 +160,11 @@ describe("no surface renders an identifier field at all", () => {
     "src/components/workspace/work-tab.tsx",
     "src/components/workspace/agent-graph.tsx",
     "src/components/workspace/project-tab.tsx",
-    "src/components/workspace/spec-review.tsx"
+    "src/components/workspace/spec-review.tsx",
+    /* Added 2026-08-13 with the diff surfaces. It renders file paths and patch
+       text, which is exactly the kind of content an identifier used to ride in
+       on -- the change viewer once headed every diff `# ${result.task_id}`. */
+    "src/components/workspace/diff-view.tsx"
   ];
 
   test.each(surfaces)("%s", async (relative) => {

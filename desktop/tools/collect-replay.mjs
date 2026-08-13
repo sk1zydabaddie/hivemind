@@ -99,6 +99,37 @@ function splitRuns(events, gapMs = 30 * 60 * 1000) {
  * reconstruction. Captured, never invented: if the folder is absent the replay
  * behaves exactly as before.
  */
+/**
+ * The diffs a run's workers actually produced, if the capture kept them.
+ *
+ * `.hivemind/patches/<task>/diff.patch` is where Core writes a submitted
+ * change, so an evidence folder that mirrored `.hivemind` has the real thing.
+ * This is what lets the change viewer be verified against a real patch rather
+ * than a hand-written one -- and a run whose capture predates the practice
+ * simply has none, which the viewer states plainly.
+ */
+async function readCapturedPatches(trailPath) {
+  const patches = {};
+  for (const stateDir of ["project-state", "project-state-after"]) {
+    const root = path.join(path.dirname(trailPath), stateDir, "patches");
+    let entries;
+    try {
+      entries = await readdir(root, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      try {
+        patches[entry.name] = await readFile(path.join(root, entry.name, "diff.patch"), "utf8");
+      } catch {
+        /* A task directory with no diff is a task that submitted nothing. */
+      }
+    }
+  }
+  return patches;
+}
+
 async function restoreProjectState(repo, trailPath) {
   const stateDir = path.join(path.dirname(trailPath), "project-state");
   try {
@@ -603,10 +634,17 @@ for (const file of files) {
     if (run.length < 3 && !run.some((event) => event.type.startsWith("plan."))) continue;
     const id = `${path.basename(file).replace(/\.(jsonl|md)$/u, "")}${index === 0 ? "" : `-${index + 1}`}`;
     const projected = await inspect(run, file);
+    const patches = await readCapturedPatches(file);
     scenarios.push({
       id,
       source: relative,
       events: run,
+      /* The real diffs a worker produced, where the evidence folder kept them.
+         Captured, never invented: a scenario without them replays exactly as
+         before and the change viewer says it has nothing to show. Serving one
+         run's patch under another run's scenario would be the same class of
+         mistake as serving a finished projection over a mid-run trail. */
+      patches,
       span_ms: Date.parse(run.at(-1).ts) - Date.parse(run[0].ts),
       inspection: projected.ok ? projected.inspection : null,
       inspection_error: projected.ok ? null : projected.reason
@@ -653,6 +691,7 @@ for (const file of files) {
         scenarios.push({
           id: `${id}@ship${bound ? "" : "-review"}`,
           source: `${relative} (cut before adoption; readiness rebuilt from adoption.reviewed, ${bound ? "bound" : "unbound"} step)`,
+          patches,
           events: ship.events,
           span_ms: Date.parse(ship.events.at(-1).ts) - Date.parse(ship.events[0].ts),
           inspection: { ...shipProjected.inspection, needs_you: [ship.item, ...rest] },
@@ -717,10 +756,120 @@ if (empty !== null) {
   console.log(`${empty.id.padEnd(34)}   0 events  cleared from ${richest.id}`);
 }
 
+/* The two surfaces the evidence corpus cannot serve, captured for real instead.
+ *
+ * The `project-state` capture in every trail is the `.hivemind` directory -- Hivemind's
+ * own record -- and none of them retained the project's SOURCE tree or what its
+ * checks printed. So neither the file tree nor the checks pane has captured
+ * state to replay, and inventing some would be a fixture pretending to be a
+ * trail.
+ *
+ * These run the REAL Core functions -- `listProjectFiles`, `readProjectFile`,
+ * `runNamedCheck`, `storeCheckOutput`, `readCheckOutput` -- over a real
+ * directory and a real command, and keep what comes back. It is genuinely
+ * produced rather than authored, and it is named in the README as a live
+ * capture rather than a replayed trail, because that is what it is.
+ *
+ * The capture procedure has been changed so the next run retains both from the
+ * trail itself; see desktop/DESIGN-NOTES.md. When it does, this is deleted.
+ */
+async function captureProjectFiles() {
+  const { listProjectFiles, readProjectFile } = await import(
+    new URL(`file://${path.join(repoRoot, "dist", "src", "project-files.js").replaceAll("\\", "/")}`)
+  );
+  /* A real project: this repository's own desktop client. */
+  const listings = {};
+  const files = {};
+  const queue = ["."];
+  let budget = 40;
+  while (queue.length > 0 && budget > 0) {
+    const directory = queue.shift();
+    const listed = await listProjectFiles(desktopRoot, directory);
+    if (!listed.ok) continue;
+    listings[directory] = listed.value;
+    budget -= 1;
+    for (const entry of listed.value.entries) {
+      /* Bounded on purpose: a full walk of node_modules would be most of a
+         gigabyte of replay data for a screenshot of a tree. Named here rather
+         than silently truncated. */
+      if (entry.kind === "directory" && !["node_modules", "dist"].includes(entry.name)) {
+        if (directory.split("/").length < 3) queue.push(entry.path);
+      }
+    }
+  }
+  for (const wanted of ["src/lib/diff-model.ts", "src/lib/provider-usage.ts", "package.json"]) {
+    const read = await readProjectFile(desktopRoot, wanted);
+    if (read.ok) files[wanted] = read.value;
+  }
+  return { listings, files };
+}
+
+async function captureCheckOutput() {
+  const { runNamedCheck } = await import(
+    new URL(`file://${path.join(repoRoot, "dist", "src", "check-runner.js").replaceAll("\\", "/")}`)
+  );
+  const { newChecksRunId, storeCheckOutput, readCheckOutput } = await import(
+    new URL(`file://${path.join(repoRoot, "dist", "src", "check-output.js").replaceAll("\\", "/")}`)
+  );
+  const repo = await mkdtemp(path.join(tmpdir(), "hivemind-replay-checks-"));
+  try {
+    await mkdir(path.join(repo, "test"), { recursive: true });
+    await writeFile(
+      path.join(repo, "test", "slugify.test.js"),
+      [
+        'import test from "node:test";',
+        'import assert from "node:assert/strict";',
+        'const slugify = (value) => value.toLowerCase().replaceAll(" ", "-");',
+        'test("lowercases and hyphenates", () => {',
+        '  assert.equal(slugify("Hello World"), "hello-world");',
+        "});",
+        'test("strips punctuation", () => {',
+        '  assert.equal(slugify("Hello, World!"), "hello-world");',
+        "});",
+        ""
+      ].join("\n"),
+      "utf8"
+    );
+    await writeFile(path.join(repo, "package.json"), `${JSON.stringify({ type: "module" }, null, 2)}\n`, "utf8");
+    /* A real command, really run, really failing -- the second assertion is
+       genuinely wrong. Nothing about the output below is authored. */
+    const checks = [
+      await runNamedCheck(repo, "lint", `${JSON.stringify(process.execPath)} --check test/slugify.test.js`),
+      await runNamedCheck(repo, "tests", `${JSON.stringify(process.execPath)} --test test/slugify.test.js`)
+    ];
+    const runId = newChecksRunId();
+    const stored = await storeCheckOutput(repo, runId, checks);
+    if (!stored.ok) return null;
+    const read = await readCheckOutput(repo, runId);
+    if (!read.ok) return null;
+    return {
+      ...read.value,
+      ran_at: new Date().toISOString(),
+      task_ids: [],
+      tests: checks.every((check) => check.exit_code === 0) ? "pass" : "fail"
+    };
+  } finally {
+    await rm(repo, { recursive: true, force: true, maxRetries: 3 });
+  }
+}
+
+const projectFiles = await captureProjectFiles();
+console.log(
+  `${"live: project files".padEnd(34)}   ${String(Object.keys(projectFiles.listings).length)} directories, ${String(Object.keys(projectFiles.files).length)} files`
+);
+const checkOutput = await captureCheckOutput();
+console.log(
+  `${"live: check output".padEnd(34)}   ${checkOutput === null ? "unavailable" : `${String(checkOutput.checks.length)} checks, ${checkOutput.tests}`}`
+);
+
 scenarios.sort((left, right) => right.events.length - left.events.length);
 await writeFile(
   path.join(desktopRoot, "tools", "replay-data.json"),
-  `${JSON.stringify({ generated_from: "docs/evidence", scenarios }, null, 2)}\n`,
+  `${JSON.stringify(
+    { generated_from: "docs/evidence", scenarios, project_files: projectFiles, check_output: checkOutput },
+    null,
+    2
+  )}\n`,
   "utf8"
 );
 console.log(`\n${scenarios.length} scenarios -> tools/replay-data.json`);

@@ -240,17 +240,37 @@ export interface SpecReview {
 /* The settings surface. Everything here is read or narrowly-whitelisted write;
    nothing in this group can reach a gate, and  records only
    what a probe confirmed. */
-export type CapabilityStatus = "verified" | "failed" | "unverified";
+/* Four states, mirroring Core's contract. This declared three until 2026-08-13
+   and the drift was not cosmetic: the settings dialog branched on `"failed"`,
+   which Core stopped emitting when it split that state into `mismatched` (it
+   reported something other than what was asked) and `unsupported` (it has no
+   such feature). A `mismatched` capability -- the single most dangerous thing a
+   probe can report -- therefore rendered with the neutral unverified mark.
+   Two true things, one drawn as the other, which is a shape this project has
+   now recorded three times. */
+export type CapabilityStatus = "verified" | "mismatched" | "unverified" | "unsupported";
+
+/** How the state was reached. Not all evidence is equally strong. */
+export type CapabilityEvidence = "readback" | "observation" | "static" | "absent";
 
 export interface ProbedCapability {
   id: string;
   label: string;
   status: CapabilityStatus;
+  evidence: CapabilityEvidence;
   requested: string | null;
   reported: string | null;
   detail: string;
   required: boolean;
 }
+
+/** What stops working when a capability is admitted without being verified. */
+export type DegradedFunction =
+  | "spend_ceilings"
+  | "tier_routing"
+  | "routing_provenance"
+  | "cost_prediction"
+  | "concurrency_accounting";
 
 export interface AdapterProbeResult {
   agent_id: string;
@@ -351,9 +371,30 @@ export type WorkspaceAction = {
     | "config.inspect"
     | "config.set"
     | "project.init"
-    | "adapter.connect";
+    | "adapter.connect"
+    /* The file tree and the file viewer. Read-only and confined in Core -- see
+       src/project-files.ts. The client cannot widen either: it names a path and
+       Core decides, exactly as with every other action. */
+    | "files.list"
+    | "files.read"
+    /* What the checks printed. Reading a record, never running one. */
+    | "checks.inspect";
   payload: Record<string, unknown>;
 };
+
+/** One directory's immediate children, as `files.list` returns them. */
+export interface ProjectFileListing {
+  path: string;
+  entries: { name: string; path: string; kind: "file" | "directory" }[];
+}
+
+/** One file's text, as `files.read` returns it. */
+export interface ProjectFileContent {
+  path: string;
+  text: string;
+  bytes: number;
+  truncated: boolean;
+}
 
 export function invokeWorkspaceAction<T>(projectPath: string, action: WorkspaceAction): Promise<T> {
   return invoke<T>("workspace_action", { projectPath, action });
