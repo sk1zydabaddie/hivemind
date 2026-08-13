@@ -980,45 +980,72 @@ a reply.
   own `tokens` block and there is no run-level total anywhere, so the reader
   sums the steps.
 
-## 8. The corpus comparison — estimated, and over budget
+## 8. The corpus comparison — half run, and the estimate was wrong
 
-**Not run. It comes to roughly 270K, against a ~200K approval, so it is a
-decision rather than something to spend into.**
+**Posture A is measured. Posture B is not, because the estimate was wrong by
+enough that continuing was a decision rather than an execution.**
 
-The design changed once during estimation, for a good reason. The plan was
-"shell-less versus shell-enabled on Codex", and this document had recorded that
-Codex cannot be made shell-less at all. **That was wrong**: `codex features list`
-names `shell_tool` as a *stable* flag and `--disable shell_tool` removes it. So
-the comparison can run exactly as intended, on the harness that is already
-proven — which is the better control, because only one variable moves.
+### What was measured
 
-**Preflight, run and paid for (~37K):** a shell-less Codex was asked to write one
-file. It emitted a `file_change` item and the file appeared. `apply_patch` does
-not route through the shell tool, so removing the shell costs the ability to run
-commands and nothing else. Without that fact the comparison would have been
-measuring a broken configuration.
+Codex `gpt-5.6-luna`, high reasoning effort, the three corpus tasks including
+the dependent one, shell **enabled**:
 
-**The estimate:**
+| | shell-enabled |
+| --- | --- |
+| Attempted / succeeded | 3 / 3 |
+| Revisions | **0** |
+| Tokens | **403,544** |
+| Cost | $0.0147 |
+| **Cost per successful task** | **$0.0049** |
+
+| Task | Tokens | Files | Revisions | Checks |
+| --- | --- | --- | --- | --- |
+| T-001 document the format | 123,202 | 1 | 0 | pass |
+| T-002 sort module + tests | 92,665 | 2 | 0 | pass |
+| T-003 CLI + tests (**dependent**) | 187,677 | 2 | 0 | pass |
+
+Every task landed on its first attempt with the validity check and the shadow
+tests passing. That is the baseline the shell-less posture has to be compared
+against, and it is a demanding one: **there is no revision headroom to lose**.
+A shell-less worker cannot do better than 0 revisions; it can only do worse.
+
+### The estimate was wrong, and how
+
+**Estimated 40–55K per call. Actual 92K–188K.** Posture A alone came to 403K
+against a 270K approval for *both* postures.
+
+The error has a specific cause worth recording: the estimate was extrapolated
+from the preflight, which was **one trivial file write at `low` reasoning
+effort**. The corpus profile runs at `high` effort on tasks that write real
+modules with tests. Reasoning tokens and iteration count both scale with that,
+and neither was in the sample the estimate came from.
+
+> **An estimate extrapolated from a cheaper configuration than the one being
+> estimated is not conservative — it is wrong in the direction that gets
+> approved.** The preflight was the right thing to run and the wrong thing to
+> extrapolate from.
+
+### What finishing would cost
+
+Posture B is the same three tasks with `--disable shell_tool`. Expect a similar
+403K if the shell-less worker performs comparably, and **more** if it revises —
+which is the outcome the comparison exists to detect, so the cost is correlated
+with the result being interesting.
 
 | | |
 | --- | --- |
-| Tasks in the corpus | 3 (a README, a sort module + tests, a CLI + tests) |
-| Postures | 2 (shell-enabled, shell-less) |
-| Calls | **6** |
-| Measured cost of one trivial call | 36,847 in / 104 out at **low** effort |
-| Corpus profile effort | **high**, and the tasks write real modules |
-| Estimate per call | 40–55K |
-| **Total** | **~270K** (range 240–330K) |
+| Spent so far | **403K** (posture A) + 37K (preflight) |
+| Posture B estimate | **400–550K** |
+| Total to finish | **~840–990K** |
 
-The input dominates and is largely fixed — the contract, the substrate and
-Codex's own preamble — so the floor does not move much with task size, and 6
-calls is the minimum that keeps the comparison honest. Cutting to two tasks
-saves ~90K and drops the one task that has a dependency, which is where a
-shell-less worker is most likely to differ.
+Against an approval of 270K. Not spent.
 
-**What it would settle:** accepted-diff rate and tokens-per-successful-task for
-each posture, on the same model and the same three tasks. That is the number
-that turns the shell-less recommendation from an argument into a measurement.
+### What the half-measurement is still worth
+
+Not nothing, and not the answer. It establishes the control arm precisely, and
+it sets the bar: any claim that the shell-less posture is cheap has to beat 0
+revisions and $0.0049 per successful task on these three tasks. It does not
+say whether the posture clears that bar, which was the whole question.
 
 ## What this pass did and did not do
 

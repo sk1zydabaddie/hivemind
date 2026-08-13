@@ -165,6 +165,70 @@ Fixtures are for the mismatch branches — making a provider genuinely ignore it
 own `--model` is not something a test can arrange — and live runs are for the
 happy path, which is the one that gets claimed.
 
+## Standing rule: a provider's documented surface is a LOWER BOUND on its actual surface
+
+Two undocumented capability discoveries now, both found by running the binary
+rather than reading about it, both changing a design conclusion, and both
+contradicting something already written down here as settled.
+
+| # | Discovery | What was recorded before | What it changed |
+| --- | --- | --- | --- |
+| 1 | **`--ephemeral` suppresses the session rollout** that carries the capability readback | that Codex reports nothing comparable at startup, so four of five capabilities were unverifiable | the entire probe design — drop that one flag and the readback exists |
+| 2 | **`--disable shell_tool`** is a *stable* feature flag | this file said "Codex has no tool-level deny, so its boundary is the OS sandbox instead" | the shell-less posture went from "unavailable on Codex" to available on **all four** harnesses |
+
+Neither appears in the provider's documentation. The first was found by
+comparing three real invocations; the second by running `codex features list`,
+which is not referenced anywhere in the material the discovery pass read.
+
+> **The rule: a provider's documented surface is a lower bound on its actual
+> surface. Docs establish what a provider WILL do, never the limit of what it
+> CAN do — so a capability that the documentation does not mention is
+> `unknown`, never `absent`.**
+
+The practical form of that, for the next provider:
+
+- **Interrogate the binary before concluding a capability is missing.** `--help`
+  on every subcommand, any `features`/`config`/`doctor` command, and the strings
+  in the binary itself. All four of these harnesses answered questions their
+  docs did not.
+- **A conclusion of "cannot" needs an experiment, not an absence.** Both errors
+  above were negative claims written from silence. `unsupported` is a strong
+  state in the contract — it refuses things — and it should be as hard to reach
+  as `verified`.
+- **Re-check the negative claims when a provider updates.** A feature flag that
+  is "under development" today is stable next month, and the staleness rule
+  already forces a reconnect; what it does not yet force is a re-read of what
+  was concluded impossible.
+
+## Standing rule: check the instrument before you spend on the measurement
+
+The corpus comparison — shell-less versus shell-enabled — was approved at 270K
+tokens. Before running it, one preflight call went out: **can a shell-less Codex
+still produce a diff at all?**
+
+It can. With `--disable shell_tool` a trivial write task emitted a `file_change`
+item and the file appeared on disk: `apply_patch` does not route through the
+shell tool, so removing the shell costs the agent its ability to run commands
+and nothing else.
+
+**That check cost 37K. Skipping it risked the whole 270K.** A shell-less posture
+that could not write would have produced a comparison where one arm failed every
+task — and the arresting thing is that the *number would have looked fine*. A
+0% accepted-diff rate for the shell-less posture reads as a devastating result
+for the posture, gets written into a presentation, and is entirely an artefact
+of a broken configuration. Nothing downstream would have caught it, because
+every part of the pipeline would have behaved correctly.
+
+> **Before an expensive measurement, spend a cheap call proving the instrument
+> can register a result at all. A measurement that cannot produce the answer
+> "yes" is not a measurement, and a broken arm of an A/B produces a plausible
+> number rather than an obvious error.**
+
+This generalises past provider work: it is the same shape as the vacuous
+assertion in `design-tokens.test.ts`, which passed because the string it looked
+for was gone. Both are instruments that could only ever return one answer, and
+in both cases the failure was silent and looked like a result.
+
 ## Standing rule: verify the DISTRIBUTION before you verify the capabilities
 
 Added 2026-08-12 after getting this wrong twice in one pass, the second time
