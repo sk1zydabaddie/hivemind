@@ -1040,12 +1040,33 @@ with the result being interesting.
 
 Against an approval of 270K. Not spent.
 
-### What the half-measurement is still worth
+### Deferred, not abandoned — and why stopping was right
 
-Not nothing, and not the answer. It establishes the control arm precisely, and
-it sets the bar: any claim that the shell-less posture is cheap has to beat 0
-revisions and $0.0049 per successful task on these three tasks. It does not
-say whether the posture clears that bar, which was the whole question.
+**Posture B will not be run.** The control arm settled the question it needed
+to, in a way that made the second half not worth its price:
+
+- **There is no revision headroom to lose.** 0 revisions is the floor. A
+  shell-less worker can match it or fall short; it cannot beat it. So posture B
+  cannot produce a result that favours the shell-less posture — only one that
+  is neutral or negative.
+- **The informative outcome is also the expensive one.** If shell-less workers
+  revise, the run costs *more* than 403K, and the more interesting the finding
+  the larger the bill.
+- **It would not change the decision.** Shell-less was adopted on
+  **correctness and generalisation** — it makes confinement a property of the
+  argv rather than of an OS sandbox that one harness does not report, one does
+  not support on Windows, and one silently disables when it cannot start. Cost
+  was never the argument for it, so a cost number cannot settle it.
+
+**What the baseline is worth on its own.** It is a shell-**enabled** Codex
+measurement at high reasoning effort over three tasks including a dependent
+one, and it bounds how bad shell-less could be: any degradation shows up
+against 0 revisions and $0.0049 per successful task.
+
+**What would make it worth running.** A real report of degraded first-attempt
+quality from a shell-less worker — a rejection rate that looks worse than this
+baseline in ordinary use. Then the comparison has a hypothesis to test rather
+than a number to collect, and this baseline is what it is measured against.
 
 ## What this pass did and did not do
 
@@ -1068,3 +1089,23 @@ may now carry the argv the probe will run — that is how it earns a status
 instead of keeping one forever — and `connectAdapter` still records nothing
 unless the probe passes. An `unsupported` agent keeps `invoke === null`, because
 it has been measured and refused and there is nothing left to attempt.
+
+---
+
+## Presentation material
+
+`docs/evidence/presentation/provider-board.html` — the provider table, the six
+headline numbers with what each does and does not measure, the T-002 story, and
+the verified replay details, in one page. Published as a private artifact.
+
+Two things it says that are worth keeping straight when the numbers are quoted
+out loud:
+
+- **Tier routing saves roughly half, not 54.7×.** The 54.7× is real and applies
+  to Low-tier work in isolation. Across one task of each shape it is 52.4%,
+  because Medium is 2.4× and High and Critical stay on the flagship by design.
+  And it bought a *cheaper token*, not less work: Luna and Terra used token
+  volumes 0.22% apart.
+- **The replay's event clock is 28.9s; page-load to shipped is ~34s.** The
+  difference is app boot before the first event lands. A recording should start
+  when the four tasks appear.

@@ -200,6 +200,23 @@ The practical form of that, for the next provider:
   already forces a reconnect; what it does not yet force is a re-read of what
   was concluded impossible.
 
+### The corollary for this file itself
+
+`unsupported` **refuses things**. It is not a softer word than `verified`; it is
+the same weight pointing the other way, and it should be as hard to reach.
+
+Both discoveries above contradicted an entry in this file that read as settled.
+So:
+
+> **A DESIGN-NOTES entry asserting a provider LACKS a capability is held to the
+> same standard as one asserting it has it: it must name the experiment that
+> established it, not the search that failed to find it.**
+
+And the entries already written in that shape are **suspect until re-checked**,
+not trusted because they are old. Two are now known wrong and were corrected in
+place. Any remaining sentence of the form "provider X cannot do Y" should be
+read as "nobody has found how" until an experiment is named beside it.
+
 ## Standing rule: check the instrument before you spend on the measurement
 
 The corpus comparison — shell-less versus shell-enabled — was approved at 270K

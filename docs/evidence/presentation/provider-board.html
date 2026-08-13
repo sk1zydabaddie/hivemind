@@ -1,0 +1,544 @@
+<title>Verified, Not Claimed</title>
+<style>
+  :root {
+    --ground: #ffffff;
+    --surface: #f5f6f8;
+    --ink: #1f2328;
+    --navy: #1b3a6b;
+    --navy-wash: #eef2f8;
+    --rule: #e3e6ea;
+    --muted: #667085;
+    --amber: #b88936;
+    --amber-wash: #fbf4e7;
+    --clay: #b65b4f;
+    --clay-wash: #fbeeec;
+    --sans: ui-sans-serif, -apple-system, "Segoe UI Variable Text", "Segoe UI",
+      system-ui, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+  }
+  :root:not([data-theme="light"]) {
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #14171a;
+      --surface: #1b1f23;
+      --ink: #e8eaed;
+      --navy: #8fb0e0;
+      --navy-wash: #1a2536;
+      --rule: #2a2f35;
+      --muted: #98a2b3;
+      --amber: #d4a65a;
+      --amber-wash: #2a2318;
+      --clay: #d98474;
+      --clay-wash: #2c1d1a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #14171a;
+    --surface: #1b1f23;
+    --ink: #e8eaed;
+    --navy: #8fb0e0;
+    --navy-wash: #1a2536;
+    --rule: #2a2f35;
+    --muted: #98a2b3;
+    --amber: #d4a65a;
+    --amber-wash: #2a2318;
+    --clay: #d98474;
+    --clay-wash: #2c1d1a;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  code, .fig, table { font-variant-numeric: tabular-nums; }
+
+  .sheet {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 56px 32px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 56px;
+  }
+
+  /* ── masthead ─────────────────────────────────────────── */
+  .masthead { display: flex; flex-direction: column; gap: 14px; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0;
+  }
+  h1 {
+    margin: 0;
+    font-size: clamp(30px, 4.6vw, 46px);
+    letter-spacing: -0.03em;
+    line-height: 1.04;
+    font-weight: 640;
+    text-wrap: balance;
+  }
+  .standfirst {
+    margin: 0;
+    max-width: 62ch;
+    font-size: 16px;
+    color: var(--muted);
+  }
+  .standfirst strong { color: var(--ink); font-weight: 580; }
+
+  section { display: flex; flex-direction: column; gap: 18px; }
+  h2 {
+    margin: 0;
+    font-size: 20px;
+    letter-spacing: -0.02em;
+    font-weight: 620;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--rule);
+  }
+  h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  p { margin: 0; max-width: 68ch; }
+  .note { font-size: 13.5px; color: var(--muted); max-width: 72ch; }
+
+  /* ── tables ───────────────────────────────────────────── */
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td {
+    text-align: left;
+    padding: 9px 12px 9px 0;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+  thead th {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  tbody th { font-weight: 600; white-space: nowrap; padding-right: 20px; }
+  .num { font-family: var(--mono); white-space: nowrap; }
+
+  /* ── capability marks: 6px squares, never pills ───────── */
+  .mark { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+  .mark::before {
+    content: "";
+    width: 6px; height: 6px;
+    flex: none;
+    background: currentColor;
+  }
+  .v { color: var(--navy); }
+  .u { color: var(--amber); }
+  .x { color: var(--clay); }
+  .n { color: var(--muted); }
+  .n::before { background: none; box-shadow: inset 0 0 0 1px currentColor; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 12.5px; }
+  .legend span { color: var(--muted); }
+  .legend b { font-weight: 600; }
+
+  /* the two verdict columns, adjacent so disagreement is visible */
+  .verdict { background: var(--surface); }
+  .disagree td, .disagree th { background: var(--navy-wash); }
+
+  /* ── figures ──────────────────────────────────────────── */
+  .figures { display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+  .figure {
+    background: var(--ground);
+    padding: 18px 20px;
+    display: grid;
+    gap: 6px;
+    grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
+  }
+  @media (max-width: 720px) { .figure { grid-template-columns: 1fr; } }
+  .figure .value {
+    font-family: var(--mono);
+    font-size: 22px;
+    letter-spacing: -0.02em;
+    color: var(--navy);
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  .figure .value small {
+    display: block;
+    font-family: var(--sans);
+    font-size: 12px;
+    letter-spacing: 0;
+    color: var(--muted);
+    font-weight: 500;
+    margin-top: 2px;
+  }
+  .figure dl { margin: 0; display: grid; gap: 7px; }
+  .figure dt {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .figure dd { margin: 0; font-size: 13.5px; }
+  .figure .caveat dd { color: var(--clay); }
+
+  /* ── quote / story ────────────────────────────────────── */
+  .story {
+    border-left: 2px solid var(--navy);
+    padding: 4px 0 4px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 72ch;
+  }
+  .story p { font-size: 16.5px; line-height: 1.5; }
+
+  .panel {
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .kv { display: grid; grid-template-columns: minmax(0,150px) minmax(0,1fr); gap: 6px 18px; font-size: 13.5px; }
+  .kv dt { font-family: var(--mono); font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+  .kv dd { margin: 0; }
+  .url {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    background: var(--ground);
+    border: 1px solid var(--rule);
+    padding: 9px 11px;
+    overflow-x: auto;
+    white-space: nowrap;
+    color: var(--ink);
+  }
+  .timeline { display: grid; gap: 0; font-family: var(--mono); font-size: 12.5px; }
+  .timeline div {
+    display: grid;
+    grid-template-columns: 54px minmax(0,1fr);
+    gap: 14px;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .timeline div:last-child { border-bottom: none; }
+  .timeline span:first-child { color: var(--muted); }
+  em.tag { font-style: normal; color: var(--navy); font-weight: 600; }
+</style>
+
+<div class="sheet">
+
+  <header class="masthead">
+    <p class="eyebrow">Hivemind · provider verification · 12 August 2026</p>
+    <h1>Verified, not claimed</h1>
+    <p class="standfirst">
+      Five coding agents were put through one capability contract. Four are
+      adaptable and one is refused with a reason. The interesting result is that
+      <strong>the two verdicts disagree</strong>: the only harness proven on real
+      end-to-end work is the one that can never confirm the guarantee the product
+      is built on.
+    </p>
+  </header>
+
+  <!-- ══ 1. the table ══════════════════════════════════════ -->
+  <section>
+    <h2>The provider table</h2>
+
+    <div class="legend">
+      <span class="mark v"><b>verified</b>&nbsp;— read back and matched</span>
+      <span class="mark u"><b>unverified</b>&nbsp;— nothing to read back</span>
+      <span class="mark x"><b>unsupported</b>&nbsp;— demonstrably absent</span>
+      <span class="mark n"><b>unknown</b>&nbsp;— needs an account</span>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Harness</th>
+            <th>No bypass<br>flags</th>
+            <th>Runs without<br>asking</th>
+            <th>Confined to<br>the project</th>
+            <th>Pins one<br>model</th>
+            <th>Reports<br>what it spent</th>
+            <th>Says which model<br>spent what</th>
+            <th>No agents<br>of its own</th>
+            <th>Leaves the change<br>for you</th>
+            <th class="verdict">Contract</th>
+            <th class="verdict">Integration</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="disagree">
+            <th>Codex</th>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark x"></span></td>
+            <td><span class="mark u"></span></td>
+            <td><span class="mark v"></span></td>
+            <td class="verdict"><span class="mark u">6 / 8</span></td>
+            <td class="verdict"><span class="mark v">proven</span></td>
+          </tr>
+          <tr class="disagree">
+            <th>Claude Code</th>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td class="verdict"><span class="mark v">8 / 8</span></td>
+            <td class="verdict"><span class="mark u">probe only</span></td>
+          </tr>
+          <tr>
+            <th>OpenCode</th>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark u"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark x"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td class="verdict"><span class="mark u">6 / 8</span></td>
+            <td class="verdict"><span class="mark u">probe only</span></td>
+          </tr>
+          <tr>
+            <th>Grok Build</th>
+            <td><span class="mark n"></span></td>
+            <td><span class="mark n"></span></td>
+            <td><span class="mark n"></span></td>
+            <td><span class="mark n"></span></td>
+            <td><span class="mark n"></span></td>
+            <td><span class="mark n"></span></td>
+            <td><span class="mark n"></span></td>
+            <td><span class="mark n"></span></td>
+            <td class="verdict"><span class="mark n">pending key</span></td>
+            <td class="verdict"><span class="mark n">—</span></td>
+          </tr>
+          <tr>
+            <th>Kimi Code</th>
+            <td><span class="mark n"></span></td>
+            <td><span class="mark n"></span></td>
+            <td><span class="mark n"></span></td>
+            <td><span class="mark n"></span></td>
+            <td><span class="mark n"></span></td>
+            <td><span class="mark n"></span></td>
+            <td><span class="mark n"></span></td>
+            <td><span class="mark n"></span></td>
+            <td class="verdict"><span class="mark n">pending key</span></td>
+            <td class="verdict"><span class="mark n">—</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th style="width:220px">Column</th><th>What it means, in one line</th></tr>
+        </thead>
+        <tbody>
+          <tr><th>No bypass flags</th><td>It cannot be started with the checks turned off.</td></tr>
+          <tr><th>Runs without asking</th><td>It finishes on its own — an agent that stops to ask just stops.</td></tr>
+          <tr><th>Confined to the project</th><td>It can write here and nowhere else. The one that cannot be got wrong.</td></tr>
+          <tr><th>Pins one model</th><td>The model you chose is the model that answered.</td></tr>
+          <tr><th>Reports what it spent</th><td>Spending limits have real numbers to hold against.</td></tr>
+          <tr><th>Says which model spent what</th><td>A total cannot tell you whether a cheap task ran on the cheap model.</td></tr>
+          <tr><th>No agents of its own</th><td>Nothing runs underneath that nobody counted.</td></tr>
+          <tr><th>Leaves the change for you</th><td>It did not commit — measured, not promised.</td></tr>
+          <tr><th class="verdict">Contract</th><td>Can this agent's boundaries be confirmed? Decided by a probe, per run.</td></tr>
+          <tr><th class="verdict">Integration</th><td>Has real work been built and shipped through it? Decided by history.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>The story in the table</h3>
+    <p>
+      Codex is the only harness with proven end-to-end runs — three tiers, real
+      shipped commits, everything else measured against it. It is also the only
+      one that can <em class="tag">never</em> confirm that it starts no agents of
+      its own: it reports that the capability exists and reports nothing about
+      whether it is switched off. No probe can close that, because there is
+      nothing on the other side to read.
+    </p>
+    <p>
+      Claude Code closes it. Its startup record names the exact tool set the
+      session loaded, the agent-dispatch tool is absent, and absence in a list
+      that was read is evidence rather than silence. It scores <em class="tag">8
+      of 8, nothing degraded</em> — and has never shipped a line of real work.
+    </p>
+    <p class="note">
+      So a person who specifically needs the no-unaccounted-agents guarantee has
+      a checkable reason to prefer Claude Code, and a person who needs proven
+      throughput has a reason to prefer Codex. That is the honest slide: two
+      columns, one table, no winner. Codex's last full probe predates two of
+      these capabilities; its <em>says which model spent what</em> is determinable
+      from its output format without a run, and its <em>leaves the change for
+      you</em> follows from the same worktree discipline every shipped run used.
+    </p>
+  </section>
+
+  <!-- ══ 2. numbers ════════════════════════════════════════ -->
+  <section>
+    <h2>Headline numbers</h2>
+    <p class="note">
+      Every figure below is measured, and every figure below has a boundary. The
+      second column is the one that keeps the first honest.
+    </p>
+
+    <div class="figures">
+
+      <div class="figure">
+        <div class="value">118,794<small>tokens · connecting three agents</small></div>
+        <dl>
+          <dt>Measures</dt>
+          <dd>One real probe call per role, on a clean install. Estimated 117,890, measured 118,794 — within 1%.</dd>
+          <dt class="caveat">Does not measure</dt>
+          <dd>Any work. This is the price of admission before a single line is written, and it is a third of a first run's bill.</dd>
+        </dl>
+      </div>
+
+      <div class="figure">
+        <div class="value">289,744<small>tokens · prompt to shipped, first run</small></div>
+        <dl>
+          <dt>Measures</dt>
+          <dd>A clean git repository to a shipped commit whose tests pass, with no terminal: init, three connects, prompt, plan, review, work, ship. Windows measured 294,500 on the same path.</dd>
+          <dt class="caveat">Does not measure</dt>
+          <dd>A typical run. The same walk with a two-task plan cost 414,536 — the variance is <em>plan shape</em>, not estimation error. Connecting is fixed; everything after depends on how many tasks the planner writes.</dd>
+        </dl>
+      </div>
+
+      <div class="figure">
+        <div class="value">403,544<small>tokens · 3 tasks, 0 revisions</small></div>
+        <dl>
+          <dt>Measures</dt>
+          <dd>A shell-<strong>enabled</strong> Codex baseline at high reasoning effort over the fixed three-task corpus, including the dependent one. $0.0049 per successful task. Every task landed first attempt with checks passing.</dd>
+          <dt class="caveat">Does not measure</dt>
+          <dd>The shell-less posture. That arm was not run: with zero revisions there is no headroom to lose, so it could only match or fall short, and the posture was adopted on correctness, not cost.</dd>
+        </dl>
+      </div>
+
+      <div class="figure">
+        <div class="value">1.57×<small>speedup · two workers in parallel</small></div>
+        <dl>
+          <dt>Measures</dt>
+          <dd>Two independent tasks, two confined workers, real run. 97.4s concurrent against a 152.9s serial equivalent — 55.5s and 36.3% less wall time.</dd>
+          <dt class="caveat">Does not measure</dt>
+          <dd>What more capacity would buy. Elapsed time is bounded by the longest lane: the 56.6s worker finished while the 96.3s worker kept going, so extra workers could not shorten that tail.</dd>
+        </dl>
+      </div>
+
+      <div class="figure">
+        <div class="value">78.6%<small>fewer calls · 52.9% fewer tokens</small></div>
+        <dl>
+          <dt>Measures</dt>
+          <dd>Deriving the happy path from the ratified plan instead of asking a model at every step: 14 calls and 337,023 tokens become 3 calls and about 158,902, with the same ordered work-event trail.</dd>
+          <dt class="caveat">Does not measure</dt>
+          <dd>A paid run. This is a fixture-backed projection over a real accepted two-task run, not a new measurement — and it applies to the clean path, which is exactly the path that stops at the first refusal.</dd>
+        </dl>
+      </div>
+
+      <div class="figure">
+        <div class="value">~52%<small>saved by tier routing — not 54.7×</small></div>
+        <dl>
+          <dt>Measures</dt>
+          <dd>Across one task of each shape, routing costs $0.3159 against $0.6635 all-flagship. The 54.7× figure is real but applies to <em>Low-tier work alone</em>; Medium is 2.4×, and High and Critical stay on the flagship by design.</dd>
+          <dt class="caveat">Does not measure</dt>
+          <dd>Fewer tokens. Luna used 3,532,577 and Terra 3,540,326 — <strong>0.22% apart</strong>. Tier routing bought a cheaper token, not less work. Quoting 54.7× as a headline overstates it by an order of magnitude.</dd>
+        </dl>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ══ 3. the story ══════════════════════════════════════ -->
+  <section>
+    <h2>The agent that graded its own homework</h2>
+    <div class="story">
+      <p>
+        A worker was told to build a command-line interface, and built one with
+        the wrong argument shape.
+      </p>
+      <p>
+        It then wrote the tests for it — tests that described the interface it
+        had actually built — and its own suite passed clean.
+      </p>
+      <p>
+        It was caught because the check that mattered was not its to write: the
+        planner had authored an independent executable check, stored in the root
+        contract outside the worker's reach, and it runs <em class="tag">before</em>
+        the worker's own tests in a fresh tree.
+      </p>
+    </div>
+    <p class="note">
+      The regression test for this reproduces the wrong interface with green
+      self-authored tests, has those tests try to overwrite the repository's
+      validator, and still records the contract check failing first. A contract
+      forged inside the worker's own tree has zero influence. This is the demo's
+      emotional beat: the failure mode is not an agent that breaks, it is an
+      agent that <em>succeeds convincingly at the wrong thing</em>.
+    </p>
+  </section>
+
+  <!-- ══ 4. the recording ══════════════════════════════════ -->
+  <section>
+    <h2>The replay recording</h2>
+    <p>
+      A real captured run, played on its own clock at six times speed. Everything
+      it shows is captured — the events and their timestamps, the worker output,
+      and a real projection at each point the run changed. Nothing is simulated.
+    </p>
+
+    <div class="panel">
+      <div class="url">/replay.html?scenario=e2e-textkit-parallel-run&amp;play=6</div>
+      <dl class="kv">
+        <dt>Serve with</dt><dd><code>npm run dev</code> from <code>desktop/</code>, then open the path above on port 1420</dd>
+        <dt>Event clock</dt><dd class="num">28.9s</dd>
+        <dt>Page load → shipped</dt><dd class="num">~34s</dd>
+        <dt>Trim the front</dt><dd>The first ~7s is app boot before the first event lands. Start the recording when the four tasks appear.</dd>
+        <dt>Contents</dt><dd class="num">105 events · 14 projections · 4 tasks · 3 in parallel</dd>
+        <dt>Other speeds</dt><dd class="num">4× = 43.3s · 8× = 21.7s</dd>
+      </dl>
+    </div>
+
+    <h3>Verified end to end, this pass</h3>
+    <div class="timeline">
+      <div><span>0–8s</span><span>boot, then the run header appears at 0% · 0/4 tasks</span></div>
+      <div><span>12s</span><span>19% — three agents working in parallel</span></div>
+      <div><span>20s</span><span>38%</span></div>
+      <div><span>22s</span><span>63% — 3/4 done</span></div>
+      <div><span>26s</span><span>75% — 4/4 done, the dependent task clears</span></div>
+      <div><span>34s</span><span>100% — <em class="tag">Shipped</em></span></div>
+    </div>
+    <p class="note">
+      Sampled every two seconds through a headless browser at 1440×900. Progress
+      advanced monotonically, no error state appeared at any sample, and the run
+      reached the shipped card and stayed there. Two liberties, both about time
+      and neither about content: dead air is capped at 20 seconds before scaling,
+      so the 24 minutes between a settings change and the prompt do not become 24
+      minutes of demo; and worker output rides the events' clock rather than its
+      own, so a line of agent output lands between the two events it really
+      happened between.
+    </p>
+  </section>
+
+</div>
