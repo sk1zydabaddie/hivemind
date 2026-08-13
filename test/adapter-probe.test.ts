@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -18,8 +20,20 @@ import type { AdapterProfile } from "../src/adapter.js";
 
 const agent = findCatalogueAgent("codex-terra")!;
 
+const execFileAsync = promisify(execFile);
+
 async function scratch(): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), "hivemind-probe-test-"));
+  /* A real repository, because `leaves_change_uncommitted` is measured by
+     comparing HEAD before and after. A directory git cannot read answers
+     "unknown", which the contract refuses -- correctly, and it caught this
+     fixture the moment the capability was added. */
+  await execFileAsync("git", ["init", "-q"], { cwd: dir });
+  await execFileAsync("git", ["config", "user.email", "t@example.test"], { cwd: dir });
+  await execFileAsync("git", ["config", "user.name", "t"], { cwd: dir });
+  await writeFile(path.join(dir, "seed.txt"), "seed\n", "utf8");
+  await execFileAsync("git", ["add", "-A"], { cwd: dir });
+  await execFileAsync("git", ["commit", "-qm", "base"], { cwd: dir });
   return dir;
 }
 
@@ -81,7 +95,7 @@ test("a model that does not match the pin refuses the connection", async () => {
     });
     assert.equal(result.ok, false);
     const pinned = result.capabilities.find((entry) => entry.id === "pins_one_model")!;
-    assert.equal(pinned.status, "failed");
+    assert.equal(pinned.status, "mismatched");
     assert.equal(pinned.requested, "gpt-5.6-terra");
     assert.equal(pinned.reported, "gpt-5.5");
   } finally {
@@ -101,7 +115,7 @@ test("a run that writes nothing refuses, however successfully it exited", async 
     });
     assert.equal(result.ok, false);
     const confined = result.capabilities.find((entry) => entry.id === "confined_to_project")!;
-    assert.equal(confined.status, "failed");
+    assert.equal(confined.status, "mismatched");
     assert.match(confined.detail, /no file appeared/u);
   } finally {
     await rm(repo, { recursive: true, force: true });
@@ -119,8 +133,18 @@ test("a provider that reports nothing is unverified, never verified", async () =
     const pinned = result.capabilities.find((entry) => entry.id === "pins_one_model")!;
     assert.equal(pinned.status, "unverified");
     assert.equal(pinned.reported, null);
-    // Unverified is not failure: it does not block, but it never claims support.
-    assert.equal(result.ok, true);
+    /* Unverified is not the same as failure -- but what it COSTS depends on the
+       capability, and the contract decides that rather than this file.
+       An unreadable model pin degrades: routing switches off and the agent is
+       still admitted. An unconfirmed BOUNDARY refuses, because being wrong
+       about it is unbounded. This probe reports nothing at all, so the
+       connection is refused and the reason names the boundary. */
+    assert.equal(result.ok, false);
+    assert.match(result.refusal ?? "", /where this agent is allowed to write/u);
+    assert.ok(
+      result.degraded.includes("tier_routing"),
+      "an unreadable pin has to switch routing off, not be shrugged at"
+    );
     /* The invariant that matters: a capability whose only evidence is a
        readback can never be "verified" without one. `no_bypass_flags` is
        excluded deliberately -- it is a static check of our own argv, decided
@@ -144,7 +168,7 @@ test("usage that cannot be read refuses, because a ceiling would rest on nothing
     });
     assert.equal(result.ok, false);
     const usage = result.capabilities.find((entry) => entry.id === "reports_usage")!;
-    assert.equal(usage.status, "failed");
+    assert.equal(usage.status, "mismatched");
   } finally {
     await rm(repo, { recursive: true, force: true });
   }
@@ -159,7 +183,7 @@ test("a timeout is treated as waiting for input", async () => {
       readback: readback()
     });
     assert.equal(result.ok, false);
-    assert.equal(result.capabilities.find((entry) => entry.id === "non_interactive")!.status, "failed");
+    assert.equal(result.capabilities.find((entry) => entry.id === "non_interactive")!.status, "mismatched");
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

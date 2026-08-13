@@ -76,6 +76,34 @@ near 400. The limit is 4,000 (~1MB of small objects). When the buffer has
 actually dropped events, the thread says so instead of silently losing its
 beginning.
 
+## Standing rule: recorded output is necessary and never sufficient
+
+Three for three. Every capability that was verified only against recorded output
+has failed the first time it met a live run.
+
+| # | What was recorded-only | How it failed live |
+| --- | --- | --- |
+| 1 | `--ignore-user-config` accepted | It silently forced a **read-only sandbox**; a worker that could write nothing reported fine |
+| 2 | A model pin accepted | **Silently ignored for months** while config said otherwise |
+| 3 | `claude-json` parsing a captured `--output-format json` object | Fed a whole **JSONL** document to a single-object parse, found nothing, and refused with *"found no token counts"* — the right refusal for the wrong reason |
+
+The third is the cheapest to have prevented and the most embarrassing: the
+parser was correct about the *fields*, and wrong about the *document*. It had
+only ever been shown one object. Claude Code's profile needs `stream-json`,
+because the startup readback lives only in the streaming form — so the very
+choice that makes the harness verifiable is the one the recorded fixture did not
+cover.
+
+> **The rule: a capability may be developed against recorded output and may
+> never be CLAIMED from it. Every capability must be observed live at least
+> once before it is reported as anything other than `unverified`.**
+
+This is why the catalogue's `status` field means "real runs have gone through
+it" and not "the tests pass". It is also why `verified_on` exists on a profile.
+Fixtures are for the mismatch branches — making a provider genuinely ignore its
+own `--model` is not something a test can arrange — and live runs are for the
+happy path, which is the one that gets claimed.
+
 ## Standing rule: verify the DISTRIBUTION before you verify the capabilities
 
 Added 2026-08-12 after getting this wrong twice in one pass, the second time

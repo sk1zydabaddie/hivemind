@@ -8,6 +8,118 @@ Discovery pass, 2026-08-12, updated the same day after the free installs.
 > Kimi's verdict moved from *refused as documented* to **refused as measured**,
 > which is a stronger claim and a worse finding: see below.
 
+## HEADLINE: a pinned model is not the only model you pay for
+
+**Observed, not inferred.** A Claude Code probe pinned to `sonnet` returned this
+in its own `result` record:
+
+```
+claude-sonnet-5           :  4 in / 167 out / 19,903 cache read   $0.042
+claude-haiku-4-5-20251001: 541 in /  14 out                       $0.000611
+```
+
+The pin **took** — `system/init` reported `model: claude-sonnet-5`, exactly what
+was asked for. And the harness still ran a second model of its own choosing.
+This is the cost half of the sub-agent concern **observed for the first time**,
+on a real run, rather than reasoned about.
+
+### Why Haiku ran — answered, not guessed
+
+It is documented, and it is not a sub-agent. `ANTHROPIC_DEFAULT_HAIKU_MODEL` is
+described in Claude Code's own docs as *"The model to use for `haiku`, or
+background functionality"*, and the costs page names what that covers:
+
+> **Background token usage.** Claude Code uses tokens for some background
+> functionality even when idle: **conversation summarization** (background jobs
+> that summarize previous conversations for `claude --resume`) and **command
+> processing**. These background processes consume a small amount of tokens
+> (typically under $0.04 per session).
+
+So it is internal housekeeping, as expected. The open question was whether it
+**scales**, because a variable component nobody controls would be a different
+problem from a fixed one.
+
+### It does not scale — measured
+
+Two probes in the same repository, one trivial and one 2.2× the cost:
+
+| Task | Sonnet cost | Haiku in/out | Haiku cost | Haiku share |
+| --- | --- | --- | --- | --- |
+| write one file | $0.0420 | 532 / 16 | $0.000612 | **1.44%** |
+| read 6 files, write 7 | $0.0939 | 583 / 15 | $0.000658 | **0.70%** |
+
+Sonnet's cost rose **2.24×**. Haiku's rose **1.07×** — input up 9.6%, output
+flat. **The Haiku component is effectively fixed per session, not proportional
+to the work**, which matches the documented "under $0.04 per session" and means
+the Claude Code cost model has a small fixed overhead rather than an
+uncontrollable variable one.
+
+That is the better of the two possible answers, and it is worth stating in the
+same breath as the finding: this weakens the tier-routing claim by a **bounded,
+near-constant amount**, not by an unknown one.
+
+### The product consequence, stated before it reaches a slide
+
+**Tier routing means less on Claude Code than on Codex.**
+
+Hivemind's routing claim is "cheap work goes to a cheap model". On Codex that is
+the whole story: you pin a model, that model does the work, you pay for it. On
+Claude Code you pin a model and pay for **that model plus whatever the harness
+picks for its own housekeeping**. The pin governs the agent; it does not govern
+the process.
+
+What this does **not** break, and the distinction matters:
+
+- **Ceilings still hold.** `reports_usage` reads the run's total, which includes
+  every model. Nothing escapes the budget, and no limit is defeated.
+- **The work still routes.** A cheap task still runs its agent on the cheap
+  model. The saving is real, just smaller than the model prices imply.
+- **It is bounded.** Measured at ~1.4% of a trivial run and falling as the task
+  grows; documented at under $0.04 per session.
+
+What it **does** mean:
+
+- **Per-task cost predictions from model prices are wrong on Claude Code**, by a
+  small fixed amount per session. Any figure quoted as "this task costs X
+  because it ran on the cheap model" needs the overhead added.
+- **`routing.observed` provenance is incomplete.** It records one provider at
+  one tier; a second model contributed. The routing-weight memory proposals
+  learn from that evidence, so they are learning from a slightly wrong
+  attribution.
+
+### The asymmetry, which is the bigger point
+
+**Codex reports a total with no per-model breakdown. The same thing could be
+happening there and would be invisible.**
+
+This finding is as much about *which providers let you see anything* as it is
+about Claude Code. Claude Code did not do something worse than Codex — it did
+something **observable**. `modelUsage` is the reason we know, and Codex's
+`turn_context` has no equivalent field.
+
+The honest ranking is therefore the opposite of how it first reads:
+
+| Harness | Second model? | Can we tell? |
+| --- | --- | --- |
+| Claude Code | **Yes, measured** | **Yes** — `modelUsage`, per model, per run |
+| Codex | Unknown | **No** — one total, no breakdown |
+| OpenCode | Unknown | Partly — per-step tokens, no model attribution seen yet |
+| Grok Build | Unknown | Unknown |
+| Kimi Code | Unknown, and it has a documented **secondary model** for subagents | Unknown |
+
+**So the contract needs a capability it does not yet have:** *reports what each
+model cost*, distinct from *reports what it spent*. A provider that reports one
+total is `unsupported` for that finer capability, which correctly degrades
+`routing_provenance` — and would have flagged Codex rather than leaving the
+question unasked. That is a proposal, not built.
+
+Kimi Code's docs describe `[secondary_model]`, whose "consumer today is subagent
+spawning: when set, newly spawned subagents bind to it by default instead of
+inheriting the main agent's model." So at least one other harness has this by
+design, deliberately, and says so.
+
+---
+
 Everything below comes from one of three sources, and each claim says which:
 
 | Source | What it is | Strength |
@@ -746,6 +858,55 @@ people asking for this already have, and its single unknown is load-bearing —
 if `system/init` does not name the tools, the shell denial cannot be verified
 by readback and needs a behavioural canary instead, which is a design change
 rather than a config change.
+
+## 6. The migration, done and proven against the case that exposed the gap
+
+`probeAdapter` now OBSERVES and `capability-contract.ts` DECIDES. The old rule
+was `required && failed`, which admitted an agent whose confinement came back
+`unverified`. That is the gap, and it is closed: admission is
+`decideAdmission(findings)` and nothing else.
+
+**Proven on the case that exposed it.** Claude Code, re-probed after the
+`claude-init` readback was wired:
+
+```
+ok: true | version: 2.1.229 (from the run, not a second spawn) | 25,763 tokens
+  verified   no_bypass_flags            ev=static       req=none       got=none
+  verified   non_interactive            ev=observation  req=no prompts got=acceptEdits
+  verified   confined_to_project        ev=readback     req=null       got=workspace-write
+  verified   pins_one_model             ev=readback     req=sonnet     got=claude-sonnet-5
+  verified   reports_usage              ev=observation  req=claude-json got=25,763 tokens
+  verified   no_nested_agents           ev=readback     req=off        got=none
+  verified   leaves_change_uncommitted  ev=observation  req=no commit  got=branch unchanged
+degraded: []
+```
+
+**Seven of seven verified, nothing degraded.** It is admitted because its
+boundary is now `verified` by readback — not because the probe is lenient. The
+before/after is the point: the same agent, the same argv, refused by the
+contract this morning and admitted this evening, and the only thing that changed
+is that something now reads what the run reports.
+
+Two results worth separating out:
+
+**`no_nested_agents` is `verified` — the first time on any harness.** The tools
+array is a positive report: it was read, and the dispatch tool is not in it. So
+absence is evidence here, where on Codex the provider reports the capability
+exists and nothing about whether it is off, which is why Codex's stays
+`unverified` forever. **Claude Code is verifiable on the one capability the
+project has been calling unclosable.**
+
+**The model pin needed alias resolution.** `init.model` is `claude-sonnet-5`
+where the profile asked for `sonnet`. String equality would have reported a
+mismatch on every single run and refused a harness that did exactly what it was
+told — the opposite failure to the one this check exists for, and just as wrong.
+`modelPinHeld` treats a version-free name as an alias and requires an exact
+match for anything carrying a digit, so the `gpt-5.5` regression still fails as
+it always did.
+
+**And the separate `--version` call is retired for this agent**, because
+`claude_code_version` is in the same record. Spawning the binary again to ask
+what it just told us is a wasted process and a second chance to be wrong.
 
 ## What this pass did and did not do
 

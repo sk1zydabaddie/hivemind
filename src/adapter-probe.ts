@@ -10,6 +10,14 @@ import {
   type AdapterProfile
 } from "./adapter.js";
 import type { CatalogueAgent } from "./agent-catalogue.js";
+import {
+  decideAdmission,
+  type CapabilityEvidence,
+  type CapabilityFinding,
+  type CapabilityId,
+  type CapabilityState,
+  type DegradedFunction
+} from "./capability-contract.js";
 import { readAdapterVersion } from "./adapter-version.js";
 import { compareRepoMarks, markRepo } from "./repo-observation.js";
 
@@ -35,25 +43,33 @@ import { compareRepoMarks, markRepo } from "./repo-observation.js";
  * integration at all.
  */
 
-export type CapabilityStatus = "verified" | "failed" | "unverified";
+/**
+ * Migrated onto the four-state contract in `src/capability-contract.ts`.
+ *
+ * `failed` is gone and `mismatched` replaces it, because "asked for one thing
+ * and it reported another" needed to stop sharing a word with "this tool has no
+ * such feature". `unsupported` is new and says the second of those.
+ *
+ * Admission is no longer decided here at all: this file OBSERVES and the
+ * contract DECIDES. That split is what closed the gap this migration exists
+ * for -- the probe used to admit Claude Code on `required && failed`, which let
+ * an unverified confinement through, while the contract refuses it.
+ */
+export type CapabilityStatus = CapabilityState;
 
 export interface ProbedCapability {
-  id:
-    | "no_bypass_flags"
-    | "non_interactive"
-    | "pins_one_model"
-    | "confined_to_project"
-    | "reports_usage"
-    | "leaves_change_uncommitted"
-    | "subagents_disabled";
+  id: CapabilityId;
   label: string;
   status: CapabilityStatus;
+  /** How the state was reached. The contract uses it to refuse a `verified`
+      backed by evidence too weak for the claim's scope. */
+  evidence: CapabilityEvidence;
   /** What the profile asked for, where there is something to ask for. */
   requested: string | null;
   /** What the provider said it actually did. Null when it said nothing. */
   reported: string | null;
   detail: string;
-  /** A failed required capability refuses the connection. */
+  /** Kept for the surfaces that render it; admission no longer reads it. */
   required: boolean;
 }
 
@@ -64,6 +80,9 @@ export interface AdapterProbeResult {
   /** Set when the probe could not be run at all, rather than run and failed. */
   refusal: string | null;
   capabilities: ProbedCapability[];
+  /** What will not work if this connection is accepted, from the contract. */
+  degraded: DegradedFunction[];
+  limitations: Array<{ id: CapabilityId; label: string; consequence: string }>;
   effective_tokens: number;
   wall_time_ms: number;
   readback_source: string | null;
@@ -103,6 +122,8 @@ export interface ProbeReadback {
   approvalPolicy: string | null;
   workspaceRoots: string[];
   subagents: string | null;
+  /** The harness version, where the run reports it in its own output. */
+  version?: string | null;
 }
 
 const PROBE_DIR = path.join(".hivemind", "probe");
@@ -130,9 +151,22 @@ function capability(
   status: CapabilityStatus,
   detail: string,
   requested: string | null = null,
-  reported: string | null = null
+  reported: string | null = null,
+  evidence: CapabilityEvidence = "readback"
 ): ProbedCapability {
-  return { id, label, status, requested, reported, detail, required };
+  return { id, label, status, requested, reported, detail, required, evidence };
+}
+
+/** What the contract decides over, from what the probe observed. */
+function toFindings(capabilities: ProbedCapability[]): CapabilityFinding[] {
+  return capabilities.map((entry) => ({
+    id: entry.id,
+    state: entry.status,
+    evidence: entry.evidence,
+    requested: entry.requested,
+    reported: entry.reported,
+    detail: entry.detail
+  }));
 }
 
 /** The model the profile pins, taken from its own argv. */
@@ -292,10 +326,15 @@ export async function probeAdapter(
           "no_bypass_flags",
           "Carries no permission-bypass flags",
           true,
-          "failed",
-          `Refused before it was run: ${problems}.`
+          "mismatched",
+          `Refused before it was run: ${problems}.`,
+          "none",
+          problems,
+          "static"
         )
       ],
+      degraded: [],
+      limitations: [],
       effective_tokens: 0,
       wall_time_ms: 0,
       readback_source: null,
@@ -308,7 +347,10 @@ export async function probeAdapter(
       "Carries no permission-bypass flags",
       true,
       "verified",
-      "Checked against the refused-flag list before the agent was started, and again every time it runs."
+      "Checked against the refused-flag list before the agent was started, and again every time it runs.",
+      "none",
+      "none",
+      "static"
     )
   );
 
@@ -334,7 +376,12 @@ export async function probeAdapter(
   }
 
   const readbackFn =
-    options.readback ?? (agent.readback === "codex-rollout" ? readCodexRollback : async () => null);
+    options.readback ??
+    (agent.readback === "codex-rollout"
+      ? readCodexRollback
+      : agent.readback === "claude-init"
+        ? readClaudeInit
+        : async () => null);
   const readback = observation.stdout === "" ? null : await readbackFn(observation.stdout);
 
   /* Runs without prompting: it exited on its own, inside the timeout, with
@@ -346,10 +393,11 @@ export async function probeAdapter(
           "non_interactive",
           "Runs without asking you anything",
           true,
-          "failed",
+          "mismatched",
           "It did not finish inside the timeout, which is what waiting for input looks like from outside.",
           "no prompts",
-          "timed out"
+          "timed out",
+          "observation"
         )
       : observation.ok
         ? capability(
@@ -359,16 +407,18 @@ export async function probeAdapter(
             "verified",
             `It finished on its own in ${Math.round(observation.wallTimeMs / 1000)}s with nothing attached to its input.`,
             "no prompts",
-            readback?.approvalPolicy ?? "exited on its own"
+            readback?.approvalPolicy ?? "exited on its own",
+            "observation"
           )
         : capability(
             "non_interactive",
             "Runs without asking you anything",
             true,
-            "failed",
+            "mismatched",
             observation.reason ?? `It exited with code ${observation.exitCode}.`,
             "no prompts",
-            `exit ${observation.exitCode}`
+            `exit ${observation.exitCode}`,
+            "observation"
           )
   );
 
@@ -386,7 +436,8 @@ export async function probeAdapter(
           "verified",
           `It reported a ${readback.sandbox} sandbox rooted at this project, and the file it was asked to write is on disk.`,
           wantedSandbox,
-          readback.sandbox
+          readback.sandbox,
+          "readback"
         )
       : observation.wroteNonceFile
         ? capability(
@@ -396,22 +447,25 @@ export async function probeAdapter(
             "unverified",
             "The file it was asked to write is on disk, so it is not silently read-only — but this agent does not report which sandbox it applied, so the confinement itself is unconfirmed.",
             wantedSandbox,
-            readback?.sandbox ?? null
+            readback?.sandbox ?? null,
+            "observation"
           )
         : capability(
             "confined_to_project",
             "Can write in this project, and only here",
             true,
-            "failed",
+            "mismatched",
             "It was asked to write one file in this project and no file appeared. A sandbox that was silently downgraded to read-only looks exactly like this.",
             wantedSandbox,
-            readback?.sandbox ?? "wrote nothing"
+            readback?.sandbox ?? "wrote nothing",
+            "observation"
           )
   );
 
   /* Runs one exact model. The pin travels on the command line; the readback is
      the only evidence it took effect. */
   const wantedModel = requestedModel(profile.invoke);
+  const pinHeld = modelPinHeld(wantedModel, readback?.model ?? null);
   capabilities.push(
     readback?.model == null
       ? capability(
@@ -421,14 +475,15 @@ export async function probeAdapter(
           "unverified",
           "This agent does not report which model it loaded, so the pin was sent but cannot be read back. A pin that is silently ignored looks identical to one that worked.",
           wantedModel,
-          null
+          null,
+          "absent"
         )
-      : wantedModel !== null && readback.model !== wantedModel
+      : !pinHeld
         ? capability(
             "pins_one_model",
             "Runs the one model you chose",
             true,
-            "failed",
+            "mismatched",
             `It was asked for ${wantedModel} and reported running ${readback.model}.`,
             wantedModel,
             readback.model
@@ -440,7 +495,8 @@ export async function probeAdapter(
             "verified",
             `It reported running ${readback.model}, which is what was asked for.`,
             wantedModel,
-            readback.model
+            readback.model,
+            "readback"
           )
   );
 
@@ -458,10 +514,11 @@ export async function probeAdapter(
           "reports_usage",
           "Reports what it spent",
           true,
-          "failed",
-          "No usage parser is configured for this agent, so nothing it spends can be counted and no ceiling could hold.",
+          "unsupported",
+          "Nothing here knows how to read what this agent spends, so no ceiling could hold.",
           null,
-          null
+          null,
+          "absent"
         )
       : totalTokens > 0
         ? capability(
@@ -471,16 +528,18 @@ export async function probeAdapter(
             "verified",
             `The ${parser} reader found ${totalTokens.toLocaleString()} tokens in this run's own output.`,
             parser,
-            `${totalTokens.toLocaleString()} tokens`
+            `${totalTokens.toLocaleString()} tokens`,
+            "observation"
           )
         : capability(
             "reports_usage",
             "Reports what it spent",
             true,
-            "failed",
+            "mismatched",
             `The ${parser} reader found no token counts in this run's output. Spending limits would be built on nothing.`,
             parser,
-            "nothing found"
+            "nothing found",
+            "observation"
           )
   );
 
@@ -489,15 +548,18 @@ export async function probeAdapter(
      provider currently reports whether it is switched off. */
   capabilities.push(
     capability(
-      "subagents_disabled",
+      "no_nested_agents",
       "Does not start agents of its own",
       false,
-      readback?.subagents == null ? "unverified" : "unverified",
-      readback?.subagents == null
+      readback?.subagents === "none" ? "verified" : "unverified",
+      readback?.subagents === "none"
+        ? "It reported the exact set of tools it loaded, and nothing in it can start another agent."
+        : readback?.subagents == null
         ? "This agent does not report whether it can start sub-agents, so it is neither confirmed nor ruled out. Hivemind decides concurrency itself, and a nested fan-out would sit outside that."
         : `It reports a sub-agent capability (${readback.subagents}). Whether it is switched off for this profile is not something it reports, so this stays unconfirmed.`,
       "off",
-      readback?.subagents ?? null
+      readback?.subagents ?? null,
+      readback?.subagents == null ? "absent" : "readback"
     )
   );
 
@@ -516,17 +578,19 @@ export async function probeAdapter(
           "verified",
           branch.detail,
           "no commit",
-          "branch unchanged"
+          "branch unchanged",
+          "observation"
         )
       : branch.standing === "moved"
         ? capability(
             "leaves_change_uncommitted",
             "Leaves the change for you to approve",
             true,
-            "failed",
+            "mismatched",
             branch.detail,
             "no commit",
-            branch.after.head === null ? "moved" : branch.after.head.slice(0, 10)
+            branch.after.head === null ? "moved" : branch.after.head.slice(0, 10),
+            "observation"
           )
         : capability(
             "leaves_change_uncommitted",
@@ -535,26 +599,36 @@ export async function probeAdapter(
             "unverified",
             branch.detail,
             "no commit",
-            null
+            null,
+            "observation"
           )
   );
 
   /* What was actually verified is verified about THIS binary. These harnesses
      update themselves weekly, so the version is recorded and a later run
      against a different one is stale. */
-  const providerVersion = await readAdapterVersion(profile.invoke, repoRoot);
+  /* The run may already have said which version it is -- Claude Code reports
+      in the same record that carries the tools. Spawning
+     the binary a second time to ask what it just told us is a wasted process
+     and a second chance to be wrong. */
+  const providerVersion =
+    readback?.version ?? (await readAdapterVersion(profile.invoke, repoRoot));
 
   await rm(path.join(repoRoot, PROBE_DIR), { recursive: true, force: true }).catch(() => undefined);
 
-  const failed = capabilities.filter((entry) => entry.required && entry.status === "failed");
+  /* The contract decides, not this file. The rule here used to be
+     `required && failed`, which admitted an agent whose confinement came back
+     `unverified` -- exactly the gap this migration closes. */
+  const verdict = decideAdmission(toFindings(capabilities));
   return {
     agent_id: agent.id,
     tool: profile.tool,
-    ok: failed.length === 0,
-    refusal:
-      failed.length === 0
-        ? null
-        : `this agent could not be connected: ${failed.map((entry) => entry.label.toLowerCase()).join("; ")}`,
+    ok: verdict.admitted,
+    refusal: verdict.admitted
+      ? null
+      : `this agent could not be connected: ${verdict.refusals.map((entry) => entry.consequence).join(" ")}`,
+    degraded: verdict.degraded,
+    limitations: verdict.limitations,
     capabilities,
     effective_tokens: Math.max(observation.effectiveTokens, totalTokens),
     wall_time_ms: observation.wallTimeMs,
@@ -573,4 +647,97 @@ export async function probeDirectoryExists(repoRoot: string): Promise<boolean> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Claude Code reports what it resolved in its first `stream-json` line.
+ *
+ * Measured against claude 2.1.229 on 2026-08-12, and it answers more than the
+ * discovery hoped for:
+ *
+ *   {"type":"system","subtype":"init","model":"claude-sonnet-5",
+ *    "tools":["Edit","Glob","Grep","Read","Write"],
+ *    "permissionMode":"acceptEdits","cwd":"…","claude_code_version":"2.1.229"}
+ *
+ * `tools` is the load-bearing field. Claude Code has no reportable OS sandbox
+ * on Windows at all, so the boundary is the ABSENCE OF A SHELL -- and this is
+ * the only place that absence is confirmed rather than merely requested. A
+ * tools array with no shell in it, rooted at a `cwd` inside the project, is
+ * what makes `confined_to_project` verifiable for this harness.
+ *
+ * `claude_code_version` in the same record retires the separate `--version`
+ * call for this agent: the run already said it.
+ */
+export async function readClaudeInit(stdout: string): Promise<ProbeReadback | null> {
+  for (const line of stdout.split(/\r?\n/u)) {
+    const text = line.trim();
+    if (text === "" || !text.startsWith("{")) continue;
+    let record: unknown;
+    try {
+      record = JSON.parse(text);
+    } catch {
+      continue;
+    }
+    if (!isRecord(record) || record.type !== "system" || record.subtype !== "init") continue;
+
+    const tools = Array.isArray(record.tools)
+      ? record.tools.filter((entry): entry is string => typeof entry === "string")
+      : [];
+    /* Any tool that can start a process is a shell for this purpose. Named
+       rather than pattern-matched, because a new tool that runs commands
+       should show up as an unrecognised name and be reviewed, not silently
+       pass a regex. */
+    const shellTools = tools.filter((entry) => ["Bash", "BashOutput", "KillShell"].includes(entry));
+    const cwd = typeof record.cwd === "string" ? record.cwd : null;
+
+    return {
+      source: "system/init",
+      model: typeof record.model === "string" ? record.model : null,
+      /* There is no sandbox to report, so the boundary is stated in the terms
+         that are actually true of this harness: no shell, rooted here. */
+      sandbox: shellTools.length === 0 && cwd !== null ? "workspace-write" : null,
+      approvalPolicy:
+        typeof record.permissionMode === "string" ? record.permissionMode : null,
+      workspaceRoots: cwd === null ? [] : [cwd],
+      /* The tools list is the whole answer: the agent-dispatch tool is absent,
+         so nothing in this session can start an agent of its own. */
+      /* "none" is a POSITIVE report, not a silence: the tools array was read
+         and the dispatch tool is not in it. That distinction makes Claude Code
+         the first harness where this can be verified rather than shrugged at --
+         Codex reports the capability exists and nothing about whether it is
+         off, which is why it stays unverified there forever. */
+      subagents: tools.some((entry) => ["Task", "Agent", "AgentTeam"].includes(entry))
+        ? "available"
+        : "none",
+      version:
+        typeof record.claude_code_version === "string" ? record.claude_code_version : null
+    };
+  }
+  return null;
+}
+
+/**
+ * Did the model pin hold?
+ *
+ * Not string equality, because a pin is written as an alias and reported as a
+ * concrete model: `sonnet` came back as `claude-sonnet-5`. Comparing those for
+ * equality would report a mismatch on every single run and refuse a harness
+ * that did exactly what it was told -- the opposite failure to the one this
+ * check exists for, and just as wrong.
+ *
+ * An alias holds when the reported model names it. A fully-qualified pin still
+ * has to match exactly, so `gpt-5.6-terra` answered by `gpt-5.5` is a mismatch
+ * as it always was.
+ */
+export function modelPinHeld(requested: string | null, reported: string | null): boolean {
+  if (requested === null || reported === null) return true;
+  if (requested === reported) return true;
+  /* An alias is a bare family name with no version in it. Anything carrying a
+     digit is a specific model and is compared exactly. */
+  if (/\d/u.test(requested)) return false;
+  return new RegExp(`(?:^|[-_/])${escapeForPattern(requested)}(?:[-_/]|$)`, "iu").test(reported);
+}
+
+function escapeForPattern(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }

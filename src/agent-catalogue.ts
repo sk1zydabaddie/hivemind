@@ -58,7 +58,7 @@ export interface CatalogueAgent {
    * can compare a request against, and every capability that needs a readback
    * comes back `unverified` rather than `verified`.
    */
-  readback: "codex-rollout" | "none";
+  readback: "codex-rollout" | "claude-init" | "none";
   /** Argv template. `{cwd}` is replaced with the project root at connect time. */
   invoke: string[] | null;
 }
@@ -213,7 +213,7 @@ export const agentCatalogue: CatalogueAgent[] = [
     context_window: 200_000,
     timeout_ms: 900_000,
     usage_parser: "claude-json",
-    readback: "none",
+    readback: "claude-init",
     shell_denial: {
       mechanism: "tool-allowlist",
       confirmed_by: "runtime-readback",
