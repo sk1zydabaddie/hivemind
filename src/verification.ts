@@ -1,5 +1,10 @@
 import path from "node:path";
 import { newChecksRunId, storeCheckOutput } from "./check-output.js";
+import {
+  buildVerificationProvenance,
+  type CheckScope,
+  type VerificationProvenance
+} from "./verification-provenance.js";
 import { runNamedCheck, type NamedCheckResult } from "./check-runner.js";
 import type { HivemindConfig, VerificationCheckConfig } from "./config.js";
 import { loadAndValidateContract } from "./contract.js";
@@ -52,6 +57,14 @@ export interface VerificationRunResult {
   checks: VerificationCheckResult[];
   runtime_coverage: RuntimeCoverageMeasurement;
   tests: "pass" | "fail";
+  /**
+   * What this result was standing on, assembled HERE rather than reconstructed
+   * later. Reconstruction would have to re-derive the adapter, the check
+   * authors and the build from a trail that has since moved on; binding it at
+   * verification time is the same reason M8.7 binds the base commit and the
+   * patch hashes at review time. Advisory: nothing gates on it.
+   */
+  provenance: VerificationProvenance;
 }
 
 export interface QualityDraftVerificationContext {
@@ -68,7 +81,12 @@ export async function runVerification(
   config: HivemindConfig,
   taskIds: string[],
   changedFiles: string[],
-  qualityDraft?: QualityDraftVerificationContext
+  qualityDraft?: QualityDraftVerificationContext,
+  /* Where these checks ran. Passed rather than inferred: the caller is the
+     only thing that knows whether `worktreeRoot` is the shadow-integrated set
+     or one task's own checkout, and guessing from the path would be wrong the
+     first time a layout changed. Defaults to the narrower claim. */
+  scope: CheckScope = "single_worktree"
 ): Promise<VerificationResult<VerificationRunResult>> {
   const selectedAudit = await selectVerificationChecks(repoRoot, config, taskIds, changedFiles);
   const contractChecks = await loadContractValidityChecks(repoRoot, taskIds);
@@ -90,11 +108,21 @@ export async function runVerification(
     config.verification?.coverage,
     (command) => runNamedCheck(worktreeRoot, "coverage", command)
   );
+  const provenance = await buildVerificationProvenance(
+    repoRoot,
+    taskIds,
+    [
+      ...audit.contract_validity_checks.map((check) => ({ id: check.id })),
+      ...audit.selected_checks.map((check) => ({ id: check.id, sources: check.sources }))
+    ],
+    scope
+  );
   const result: VerificationRunResult = {
     audit,
     checks,
     runtime_coverage: runtimeCoverage,
-    tests: checks.every((check) => check.exit_code === 0) ? "pass" : "fail"
+    tests: checks.every((check) => check.exit_code === 0) ? "pass" : "fail",
+    provenance
   };
   /* Keep what the checks printed, beside the trail rather than in it. Until
      this existed the event recorded that `npm test` exited 1 and nothing about
@@ -126,6 +154,7 @@ export async function runVerification(
       /* Null when the output could not be kept, so a reader can tell "no output
          was recorded" apart from "the output was empty". */
       checks_run_id: stored.ok ? checksRunId : null,
+      provenance,
       tests: result.tests
     }
   });

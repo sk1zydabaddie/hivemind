@@ -34,6 +34,7 @@ import {
   type StoredVerificationSet,
   type VerificationSetOracleAssessment
 } from "./verification-set.js";
+import type { CheckScope } from "./verification-provenance.js";
 
 export type { IntegrationQueueEntry, IntegrationStatus } from "./integration-state.js";
 export type { VerificationRunResult } from "./verification.js";
@@ -79,9 +80,10 @@ export async function runShadowVerification(
   config: HivemindConfig,
   taskIds: string[],
   changedFiles: string[],
-  qualityDraft?: QualityDraftVerificationContext
+  qualityDraft?: QualityDraftVerificationContext,
+  scope: CheckScope = "single_worktree"
 ) {
-  return runVerification(repoRoot, worktreeRoot, config, taskIds, changedFiles, qualityDraft);
+  return runVerification(repoRoot, worktreeRoot, config, taskIds, changedFiles, qualityDraft, scope);
 }
 
 interface GateSummary {
@@ -237,7 +239,11 @@ export async function integrateShadow(
             worktreePath,
             configResult.config,
             accepted,
-            changedFilesResult.stdout.split("\0").filter(Boolean)
+            changedFilesResult.stdout.split("\0").filter(Boolean),
+            undefined,
+            /* Every accepted task's change, together. The only place in the
+               system that earns the wider claim. */
+            "integrated_set"
           );
           if (!verification.ok) {
             outcome = verification;

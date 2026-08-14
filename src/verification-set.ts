@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { TaskTier } from "./routing.js";
+import type { VerificationProvenance } from "./verification-provenance.js";
 import { writeImmutableJsonArtifact } from "./immutable-artifact.js";
 import { checkFormatVersion, formatVersions } from "./format-version.js";
 
@@ -33,6 +34,20 @@ export interface VerificationSetEvidence {
   checks: unknown;
   runtime_coverage: unknown;
   tests: "pass";
+  /**
+   * What the pass was standing on: which adapter produced the code, who wrote
+   * each check, where they ran, and which build ran them.
+   *
+   * Bound HERE, at the same point and for the same reason the base commit and
+   * the patch hashes are bound — reconstructing it later would mean re-deriving
+   * the adapter and the build from a trail that has since moved on, and a
+   * manifest whose provenance is a later guess is worth less than none.
+   *
+   * Optional so a manifest written before this existed stays readable, which
+   * the upcast-at-read rule requires. Absent means "written before provenance
+   * was recorded", never "nothing to say".
+   */
+  provenance?: VerificationProvenance;
 }
 
 export interface VerificationSetManifest {

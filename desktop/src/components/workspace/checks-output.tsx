@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { ProvenanceNote } from "@/components/workspace/provenance-note";
 import type { WorkspaceAction } from "@/lib/workspace-actions";
 
 /* Why the checks failed, in the checks' own words.
@@ -91,6 +92,10 @@ export function ChecksOutputPane({
           <span aria-hidden="true" className="h-2.5 w-px bg-rule" />
           <span>{formatWhen(output.ran_at)}</span>
         </div>
+
+        {/* A result never stands alone. What it was standing on renders with
+            it, and so does what that does not cover. */}
+        <ProvenanceNote onAction={onAction} />
 
         {output.checks.length === 0 ? (
           <p className="m-0 text-[13px] text-muted-foreground">

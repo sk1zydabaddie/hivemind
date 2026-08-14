@@ -56,6 +56,7 @@ import {
   type DiffAnnotation
 } from "@/components/workspace/diff-view";
 import { ChecksOutputPane } from "@/components/workspace/checks-output";
+import { ProvenanceNote } from "@/components/workspace/provenance-note";
 import { FileTree } from "@/components/workspace/file-tree";
 import { FileViewer } from "@/components/workspace/file-viewer";
 import { PhaseSpine, phaseRatio } from "@/components/workspace/phase-spine";
@@ -635,6 +636,7 @@ export function WorkTab({
           <ShipBar
             busy={busy}
             item={shipItem}
+            onAction={onAction}
             onInspect={() => void loadChangeSetPatch(shipItem)}
             onShip={() => void approveQueueItem(shipItem)}
           />
@@ -1021,11 +1023,14 @@ export function WorkTab({
 function ShipBar({
   item,
   busy,
+  onAction,
   onInspect,
   onShip
 }: {
   item: WorkspaceQueueItem;
   busy: boolean;
+  /* Read-only here: the bar reads what the pass stood on. It cannot ship. */
+  onAction: <T>(action: WorkspaceAction) => Promise<T>;
   onInspect: () => void;
   onShip: () => void;
 }): React.JSX.Element {
@@ -1067,6 +1072,9 @@ function ShipBar({
                 <span>
                   · into <span className="font-mono text-ink">{changeSet.base_branch}</span>
                 </span>
+                {/* "Passed" never renders without what it stood on. */}
+                <span>·</span>
+                <ProvenanceNote compact onAction={onAction} />
               </span>
             ) : (
               <span className="mt-0.5 block text-[12px] break-words text-muted-foreground">

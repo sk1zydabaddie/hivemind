@@ -800,6 +800,48 @@ describe("React workspace boundary", () => {
     expect(core).not.toMatch(/data:\s*\{[\s\S]{0,400}stdout/u);
   });
 
+  test("a passed result never renders without what it stood on, or without its limits", async () => {
+    const note = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "provenance-note.tsx"),
+      "utf8"
+    );
+
+    /* Advisory: it reads, it never acts. */
+    const actions = [...note.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
+    expect(actions).toEqual(["checks.inspect"]);
+    expect(note).not.toMatch(/invokeWorkspaceAction|fetch\(|method:\s*["']POST/u);
+
+    /* The blind spot is stated where it renders, not in a document nobody
+       opens. This is the sentence that stops the label over-claiming. */
+    /* Whitespace-tolerant: JSX wraps prose across lines, so a regex written
+       with single spaces asserts the formatter's choices rather than the copy. */
+    const prose = note.replace(/\s+/gu, " ");
+    expect(prose).toMatch(/never sees inside a check/u);
+    expect(prose).toMatch(/full of stand-ins/u);
+    expect(prose).toMatch(/not known/u);
+
+    /* The naming rule. "Depth" would be read as "no mocks", which this cannot
+       support -- a worker-written suite full of doubles scores well on every
+       axis Core can observe. Checked against the RENDERED strings only, since
+       the comment above legitimately explains why the word is wrong. */
+    const rendered = [...note.matchAll(/>([^<>{}]{4,})</gu)].map((match) => match[1]!.toLowerCase());
+    for (const claim of ["depth", "deeply tested", "no mocks", "fully tested"]) {
+      expect(rendered.some((text) => text.includes(claim))).toBe(false);
+    }
+
+    /* Both surfaces that claim a pass render it. */
+    const ship = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"),
+      "utf8"
+    );
+    expect(ship).toMatch(/<ProvenanceNote compact onAction=\{onAction\} \/>/u);
+    const checks = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "checks-output.tsx"),
+      "utf8"
+    );
+    expect(checks).toMatch(/<ProvenanceNote onAction=\{onAction\} \/>/u);
+  });
+
   test("the accounts surface can switch an account and can never carry a credential", async () => {
     const panel = await readFile(
       path.join(desktopRoot, "src", "components", "workspace", "accounts-panel.tsx"),

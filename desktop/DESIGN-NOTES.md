@@ -733,10 +733,73 @@ produced two false results: a rig that is right most of the time is the one
 nobody re-examines. Convenience is not a property of an instrument that makes
 it more trustworthy.
 
+**Third instance, 2026-08-14, and this one was self-inflicted.** The copy to
+ext4 was made faster by adding `--exclude docs/evidence` to the rsync. One test
+reads a real captured trail out of that folder, so it failed with `ENOENT` and
+the run reported **743 pass / 1 fail** — a failure that existed only in the
+copy. Same shape as the mount cases: the rig, not the code, and it arrived
+looking exactly like a result.
+
+> **Whatever you exclude to make a platform run faster, you have also excluded
+> from what the run measured.** An optimisation to a test rig is a change to the
+> instrument.
+
+Re-run with the evidence present: **744 pass / 0 fail**.
+
 Corollary, and the reason the hang mattered more than the failures: **a hung
 run is worse than a failing one.** A failure names itself. This one sat at 191
 of 733 tests with two live daemon processes and no output for minutes, which
 reads identically to "slow" until someone goes looking.
+
+## Standing rule: the rig measures something other than what you think
+
+**Three instances, and they are the same family as the six instrument failures
+seen from the other side.** An instrument failure returns one answer regardless
+of the truth. A rig failure returns a true answer *about something other than
+what you meant to measure*. Both arrive looking like results.
+
+| # | The rig | What it actually measured |
+| --- | --- | --- |
+| 1 | `drvfs` — a Windows drive mounted into Linux | git saw `core.fileMode=false` exactly as on Windows, so three real mode failures **passed**. It measured Windows semantics and called them Linux |
+| 2 | `9p` — `/mnt/d` from WSL | Invented three daemon timeouts, then hung outright with orphaned processes. It measured the mount's latency and called it the daemon |
+| 3 | `rsync --exclude docs/evidence` — 2026-08-14 | Added to make the Linux copy faster. One test reads a real captured trail out of that folder, so the run reported **743 pass / 1 fail** — a failure that existed only in the copy. Re-run with the evidence present: **744 / 0** |
+
+The third is the instructive one, because nothing was wrong with the mount, the
+platform or the code. **The optimisation was the defect.**
+
+> **Whatever you exclude to make a platform run faster, you have also excluded
+> from what the run measured.** An optimisation to a test rig is a change to the
+> instrument, and has to be justified as one.
+
+The two families together:
+
+> An instrument that can only return one answer is not evidence.
+> A rig that measures something other than what you think is not evidence either.
+
+Nine occurrences across six instruments and three rigs, all rediscovered
+independently. That count is what motivates recording provenance mechanically
+rather than trusting each session to re-derive the question.
+
+## Standing rule: a list that lives only in a session's context is already lost
+
+**Retention and verification provenance both spent time in exactly that state**,
+and were only written down on 2026-08-14 because an inventory was demanded and
+they surfaced by being *absent* from every file.
+
+The same pass turned up the inverse failure: a §7–§22 audit backlog that a
+collaborator was prioritising against **did not exist and never had**. It came
+from a session's context, not the repository. Nobody could check it, because
+there was nothing to check.
+
+> **Anything worth tracking gets written to a file in the pass that creates
+> it.** Not the pass after. A list held in a session's context is lost when that
+> session ends, and — worse — a list *remembered* from one is unfalsifiable:
+> it cannot be verified, corrected, or closed, and it competes for attention
+> with work that can.
+
+Both directions cost the same thing. An item that exists but is unrecorded gets
+dropped; an item that is recorded nowhere but remembered gets worked on. The fix
+for both is a file.
 
 ## Standing rule: an instrument that can only return one answer is not evidence
 

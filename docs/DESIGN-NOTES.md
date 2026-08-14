@@ -647,7 +647,17 @@ load-bearing and least obviously prunable), and anything removed should leave a
 tombstone, because "this run's output was pruned" and "this run produced no
 output" are different facts and the surfaces already distinguish them.
 
-## Depth provenance: "tests passed" without what was exercised
+## Verification provenance: "tests passed" without what was exercised
+
+**Built 2026-08-14 as `src/verification-provenance.ts`, and renamed before it
+shipped.** It was scoped as *depth provenance*; the name was the first thing to
+go. Core runs a command and reads an exit code, so it cannot speak to how deeply
+anything is tested, and "depth" would be read as "no mocks" — a claim it cannot
+support. What it records is where each input came from: the adapter, the check
+author, the scope, the build. That is provenance.
+
+The original proposal and its five axes follow, kept because the reasoning that
+produced the rename is more useful than the conclusion alone.
 
 **Recorded 2026-08-14. Proposal, not built.** The one item here that is a new
 idea rather than a known gap, so it is written up with its case and its
@@ -766,3 +776,46 @@ risk is entirely in over-claiming, which is the failure this whole family of
 rules exists to prevent — and it would be a poor outcome for the instrument
 built to stop green checks meaning nothing to itself mean something narrower
 than its name.
+
+### What shipped, against what was proposed
+
+| Axis | Proposed as | Shipped as | Where |
+| --- | --- | --- | --- |
+| a | real thing or stand-in | **`code`** — which adapter produced each task's change, and whether its probe still describes it | read from `task.started` in the trail |
+| b | assembled or component | **`scope`** — integrated set or one worktree | declared by the caller; only `integrate.ts` passes `integrated_set` |
+| c | who authored the oracle | **`checks`** — contract / project config / fail-safe | derived from the check id and its `sources`, both of which already existed |
+| d | dangerous inverse | **`adversarial_coverage: "unknown"`** — present, never omitted | constant |
+| e | running artifact | **`artifact_identity`** | `currentBuildIdentity()` |
+
+Four decisions worth keeping:
+
+- **Bound at verification time, in `runVerification`**, and carried into the
+  manifest as an optional field. Reconstructing later would mean re-deriving the
+  adapter and the build from a trail that has moved on; a manifest whose
+  provenance is a later guess is worth less than none. Optional so a manifest
+  written before this existed stays readable, which the upcast-at-read rule
+  requires.
+- **`probe_verified` deliberately does not distinguish** never-probed, no
+  profile, and probed-under-a-different-account. All three mean the same thing
+  here: this code came from something nobody has verified.
+- **Scope is passed, not inferred.** Only the caller knows whether the worktree
+  it hands over is the integrated set or one checkout, and guessing from the
+  path would be wrong the first time a layout changed. It defaults to the
+  narrower claim. A call-site edit that silently failed to apply was caught by
+  the test that asserts `integrate.ts` passes the wider one — the integrated set
+  had been reporting `single_worktree`.
+- **Nothing gates on it**, asserted across `integrate`, `adoption` and
+  `verification`. M7.2's posture.
+
+And the limit is rendered **beside the badge**, on both surfaces that claim a
+pass:
+
+> This says where the code and the checks came from — not how deeply they test.
+> Hivemind runs a command and reads its exit code; it never sees inside a check.
+> A suite written by the agent, full of stand-ins, would still show everything
+> above.
+
+That sentence is the whole reason the rename mattered. The instrument exists
+because a green check can measure nothing; it would be a poor outcome for the
+instrument itself to over-claim, and a person who reads "provenance" and checks
+what it covers is in a better position than one who reads "depth" and does not.

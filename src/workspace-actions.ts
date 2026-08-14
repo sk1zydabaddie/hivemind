@@ -358,7 +358,11 @@ async function latestCheckOutput(repoRoot: string): Promise<ActionResult> {
       ...output.value,
       ran_at: recorded.ts,
       task_ids: Array.isArray(recorded.data.task_ids) ? recorded.data.task_ids : [],
-      tests: typeof recorded.data.tests === "string" ? recorded.data.tests : null
+      tests: typeof recorded.data.tests === "string" ? recorded.data.tests : null,
+      /* What the result was standing on. Null for a run recorded before
+         provenance existed, which is a different fact from "nothing to say"
+         and the surface says so. */
+      provenance: isRecord(recorded.data.provenance) ? recorded.data.provenance : null
     }
   };
 }
