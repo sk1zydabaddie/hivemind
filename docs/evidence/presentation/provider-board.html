@@ -432,6 +432,8 @@
         <dl>
           <dt>Measures</dt>
           <dd>A shell-<strong>enabled</strong> Codex baseline at high reasoning effort over the fixed three-task corpus, including the dependent one. $0.0049 per successful task. Every task landed first attempt with checks passing. <strong>Caveat added 2026-08-13:</strong> the corpus listed its own conformance check in every task’s readable files, so the agent could read the check it was scored by. The run is real; what it is evidence <em>of</em> is narrower — it measures satisfying a printed check, not understanding the contract. The same caveat attaches to the 30/30 and to the routing weights promoted on that evidence.</dd>
+          <dt>Raw Codex, no Hivemind — what we could not show</dt>
+          <dd>Two tasks built on observed failure modes, conformance check held out of the repository, raw Codex given the full plan and criteria. <strong>It passed both.</strong> Given a precise specification with the edge cases enumerated it produced correct code and a test suite that rejects a wrong implementation — the gates had nothing to do. Read with the caveat in the same breath: the specification that made that possible was <em>planner output</em>, so the evidence supports the planner rather than enforcement, and the two failure modes where enforcement most plausibly matters were never run. This measured a case where the gates were not needed; it is not evidence about the gates. See docs/BENCHMARK-STAGE1.md.</dd>
           <dt class="caveat">Does not measure</dt>
           <dd>The shell-less posture. That arm was not run: with zero revisions there is no headroom to lose, so it could only match or fall short, and the posture was adopted on correctness, not cost.</dd>
         </dl>

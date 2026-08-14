@@ -759,6 +759,53 @@ absence of what never was.** The shot harness now polls for a named string from
 each surface and *throws* if it never appears, so a blank frame fails at capture
 instead of on disk.
 
+## The benchmark that measured the wrong component — 2026-08-13
+
+Built to test whether **enforcement** catches defects a stated rule does not.
+Raw Codex passed both tasks that were run, so it produced **no evidence for
+enforcement at all** — and the reason it passed is the finding worth keeping.
+
+> A precise acceptance criterion, with the edge cases enumerated, was sufficient
+> on its own. And that criterion was **planner output** — not something a person
+> types into a prompt box.
+
+So such evidence as there is supports Hivemind's **planner**, not its
+**enforcement**, which is not the claim the instrument was aimed at. The
+benchmark measured a different component than the one it was pointed at and
+found in its favour, which is worth exactly as much as it sounds.
+
+Two specific results, both unflattering to the case for gates:
+
+- The `--limit 0` trap — the obvious `if (limit)` inverts the contract — was
+  **avoided**, and the agent's own tests **rejected** a known-wrong reference.
+  It tested the contract, not its own interpretation.
+- The `package.json` trap was **not sprung**. It read the file and left it
+  alone. The prohibition was its own line, in capitals; there is no reading
+  under which editing it was permitted. So *"enforcement caught what a stated
+  rule didn't"* does not hold — on that task the stated rule sufficed.
+
+**Where the case for the gates actually rests, then.** Not here. On the
+observational evidence that already existed: a real worker that reached for
+`package.json` in an actual run, and T-002's wrong interface shipped with green
+self-authored tests. Both single incidents, neither a rate. The honest position
+is that the gates are justified by *failures that did happen*, not by a
+benchmark showing they would happen again — and the benchmark run to look for
+the second kind of evidence did not find it.
+
+> **The drift to refuse: "inconclusive, so the gates are probably fine."** That
+> inverts the burden. Inconclusive means we still do not know. A write-up that
+> reads as validation because it failed to disprove anything is the same
+> instrument failure as the five below, arriving through the conclusion instead
+> of the method.
+
+Also recorded, from the cost side: the design predicted the raw arm would be
+*cheaper* per prompt with no planner or verification calls. It was **more
+expensive** — 212K and 151K against a predicted 60–125K — because raw Codex with
+a shell explores, and every turn re-sends the accumulated context.
+
+> **Removing a component does not necessarily remove its cost, because the
+> component may have been suppressing a larger one.**
+
 ### The fifth instance: a judge visible to the judged — 2026-08-13
 
 > **A judge visible to the judged measures compliance with the judge, not the

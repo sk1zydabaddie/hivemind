@@ -1,6 +1,10 @@
 # Benchmark design: what enforcement buys, measured where enforcement has something to do
 
-**Status: designed, not run. No tokens spent.**
+**Status: stage 1 run, then stopped. Tasks 1 and 3 only; tasks 2a and 2 were
+cut for cost and never ran.** Results and what they failed to establish:
+`docs/BENCHMARK-STAGE1.md`. The headline is that raw Codex passed both, so this
+design did not produce evidence for enforcement — read the caveats there before
+citing any of it.
 
 ## Why the existing corpus is the wrong instrument
 
