@@ -48,6 +48,30 @@
   --navy-deep: color-mix(in oklab, var(--navy) 88%, #000000);
   --clay-deep: color-mix(in oklab, var(--clay) 88%, #000000);
 
+  /* MOTION.
+     Spring curves rather than linear easing, because a panel that decelerates
+     reads as a thing with mass and a panel that stops dead reads as a redraw.
+     Two curves and no more: one for things arriving, one for things responding
+     to a press. Both slightly overshoot -- that overshoot IS the spring, and it
+     is small enough to feel physical rather than bouncy.
+
+     Durations stay short. This is an instrument, and an instrument that takes
+     300ms to acknowledge a click is a slow instrument however nice the curve. */
+  --spring: cubic-bezier(0.22, 1.2, 0.36, 1);
+  --spring-firm: cubic-bezier(0.32, 1.08, 0.4, 1);
+  --motion-fast: 120ms;
+  --motion: 180ms;
+  --motion-panel: 240ms;
+
+  /* DEPTH, for things that genuinely float and nothing else.
+     `--shadow-panel` was deleted deliberately: a panel sits ON the canvas and a
+     shadow under it was decoration pretending to be hierarchy. A dialog is
+     different -- it is above the app, and the depth says which layer owns the
+     next click. */
+  --shadow-float: 0 12px 32px -8px color-mix(in oklab, var(--ink) 22%, transparent),
+    0 2px 8px -2px color-mix(in oklab, var(--ink) 12%, transparent);
+  --shadow-lift: 0 2px 6px -2px color-mix(in oklab, var(--ink) 14%, transparent);
+
   /* Barely rounded. A 10px panel corner reads as a card on a marketing page;
      an instrument's panels are square enough that the rule is what you see. */
   --radius: 5px;
@@ -97,6 +121,10 @@
   --color-ink: var(--ink);
   --color-navy: var(--navy);
   --color-navy-deep: var(--navy-deep);
+  --ease-spring: var(--spring);
+  --ease-spring-firm: var(--spring-firm);
+  --shadow-float: var(--shadow-float);
+  --shadow-lift: var(--shadow-lift);
   --color-clay-deep: var(--clay-deep);
   --color-rule: var(--rule);
   --color-amber: var(--amber);
@@ -283,7 +311,67 @@
     transition-duration: 0.01ms !important;
   }
 
+  /* The attention edge is the one effect that carries MEANING rather than
+     polish, so reduced motion stops it pulsing without removing it. A person
+     who has asked for less movement still needs to know which thing needs
+     them. */
+  .attention-edge {
+    animation: none !important;
+  }
+
   .artifact-marker {
     display: none;
   }
+}
+
+/* ── The attention edge ─────────────────────────────────────────────────────
+ *
+ * Exactly ONE thing may carry this at a time, and that constraint is the whole
+ * feature. Amber already means needs-you; the edge makes the single most urgent
+ * instance of it findable across a full screen without a person scanning.
+ *
+ * If two things glow, neither means anything -- so the rule is enforced in the
+ * markup (one queue item is the primary) and asserted by test, not left to
+ * discipline.
+ */
+.attention-edge {
+  position: relative;
+  animation: attention-breathe 2.8s ease-in-out infinite;
+}
+
+@keyframes attention-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--amber) 45%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--amber) 70%, transparent),
+      0 0 14px -2px color-mix(in oklab, var(--amber) 40%, transparent);
+  }
+}
+
+/* ── Hover lift, for things that are actually clickable ─────────────────────
+ *
+ * Subtle on purpose: 1px and a soft shadow. A card that jumps is a card that
+ * moves the thing you were about to click.
+ */
+.lift {
+  transition:
+    transform var(--motion-fast) var(--spring),
+    box-shadow var(--motion-fast) var(--spring),
+    border-color var(--motion-fast) var(--spring);
+}
+
+.lift:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lift);
+}
+
+/* A press should feel like the surface gave way, which means it must go DOWN
+   past where it started rather than back to rest. */
+.lift:active {
+  transform: translateY(0);
+  box-shadow: none;
+  transition-duration: 60ms;
 }

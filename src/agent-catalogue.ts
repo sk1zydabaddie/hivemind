@@ -148,6 +148,65 @@ function openCodeInvoke(model = "opencode/deepseek-v4-flash-free"): string[] {
     : ["opencode", ...args];
 }
 
+/**
+ * Grok Build, prepared but never run.
+ *
+ * Every flag below is doc-derived and, where noted in
+ * `docs/PROVIDER-DISCOVERY.md`, confirmed present in the shipped binary. None
+ * of it has been *exercised*, because the binary checks authentication before
+ * it validates flags -- `grok --sandbox bogus -p "x"` answers "Not signed in"
+ * rather than naming the valid profiles -- so every readback question needs an
+ * account and nothing more can be learned for free.
+ *
+ * The posture matches the other three: deny the shell by ALLOWLIST rather than
+ * by denylist, pin the model, refuse sub-agents, and read a documented wire
+ * format rather than a bespoke one.
+ *
+ * OUTPUT FORMAT: `streaming-messages-json`, not `streaming-json`, and the trade
+ * is worth stating. `streaming-json` is the agent's own ACP session updates and
+ * is where an init event would appear if one exists -- the readback question.
+ * `streaming-messages-json` is documented as **NDJSON in the Anthropic Messages
+ * API wire format**, which means its usage block has a shape this project
+ * already parses and has verified against that exact format.
+ *
+ * Usage decided it. An agent with an invocation and no usage reader refuses on
+ * a capability nothing could ever satisfy, so a "prepared" probe with no parser
+ * would never pass -- `config-actions.test.ts` says so and is right. Reusing
+ * `claude-json` for a format the vendor documents AS that wire format is not a
+ * guess; inventing a parser for an unmeasured shape would be.
+ *
+ * It fails in the safe direction either way: if Grok's stream differs, the
+ * parser finds nothing, `reports_usage` comes back unverified, and the contract
+ * ADMITS with spend ceilings switched off and the person told -- rather than
+ * refusing. The readback question then needs a second probe against
+ * `streaming-json`, which is a config change and not a design one.
+ *
+ * `--dangerously-skip-permissions` and `--permission-mode bypassPermissions`
+ * are Claude-compatibility aliases it also ships; `findDangerousAdapterArgs`
+ * already refuses both by name, and no invocation here may carry them.
+ */
+function grokInvoke(model = "grok-code-fast-1"): string[] {
+  const args = [
+    "--single",
+    "--model",
+    model,
+    /* The shell is absent rather than denied: a positive allowlist of the
+       built-in tools, which is the same shape as Claude Code's. */
+    "--tools",
+    "read,write,edit,glob,grep",
+    "--no-subagents",
+    /* An OS-level profile, not a promise. `workspace` is the narrowest profile
+       that still permits the writes a worker must make. */
+    "--sandbox",
+    "workspace",
+    "--output-format",
+    "streaming-messages-json"
+  ];
+  return process.platform === "win32"
+    ? ["cmd.exe", "/d", "/s", "/c", "grok.cmd", ...args]
+    : ["grok", ...args];
+}
+
 export const agentCatalogue: CatalogueAgent[] = [
   {
     id: "codex-terra",
@@ -281,7 +340,11 @@ export const agentCatalogue: CatalogueAgent[] = [
     cost_rank: 10,
     context_window: 256_000,
     timeout_ms: 900_000,
-    usage_parser: null,
+    /* Documented as the Anthropic Messages wire format, which `claude-json`
+       already reads. Unverified against a live Grok run; if it differs, usage
+       comes back unverified and ceilings degrade rather than the probe
+       refusing. */
+    usage_parser: "claude-json",
     readback: "none",
     shell_denial: {
       mechanism: "tool-allowlist",
@@ -289,7 +352,9 @@ export const agentCatalogue: CatalogueAgent[] = [
       detail:
         "`--tools` allows exactly the built-in tools named and `--no-subagents` turns off helper agents. Nothing is known about whether either is reported back, because reading its version is free and running it is not.",
     },
-    invoke: null
+    /* Prepared 2026-08-14, never run. Connecting it runs the same probe as any
+       other agent -- there is no Grok-specific path to write. */
+    invoke: grokInvoke()
   },
   {
     id: "kimi-code",

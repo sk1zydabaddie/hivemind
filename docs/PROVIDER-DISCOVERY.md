@@ -1214,3 +1214,83 @@ One implementation note worth keeping: the config search is textual rather than
 a TOML/JSON parse. Three harnesses use three formats, and a parser that fails on
 an unfamiliar dialect would report "no override" for a file that has one. A
 regex errs toward *finding* an override, which is the safe direction here.
+
+## 10. Grok Build — prepared, not run — 2026-08-14
+
+**Nothing was spent.** The invocation exists so the probe is one command when
+credentials arrive; no paid call has been made and none can be made by accident,
+because Grok is not installed on this machine.
+
+### What is needed
+
+| | |
+| --- | --- |
+| **Account** | An **X.AI plan** (the consumer subscription that includes Grok Build) **or** an `XAI_API_KEY` |
+| **Install** | `curl -fsSL https://x.ai/cli/install.sh \| sh` — the command xAI's own docs and the `xai-org/grok-build` README both give. Distribution-provenance rule satisfied |
+| **Then** | Connect it in Settings like any other agent. There is no Grok-specific path to write |
+
+Either credential works. The API key is the cheaper way to answer the one
+question below if a plan is not wanted, though a plan is the shape the product
+assumes elsewhere.
+
+### The prepared invocation
+
+```
+grok --single
+     --model grok-code-fast-1
+     --tools read,write,edit,glob,grep
+     --no-subagents
+     --sandbox workspace
+     --output-format streaming-messages-json
+```
+
+Windows takes the `cmd.exe /d /s /c grok.cmd` prefix, like the other two `.cmd`
+shims. Verified against the guards already: `findDangerousAdapterArgs` returns
+`[]` and `findRefusedAdapterModes` returns `[]`, so the prepared argv cannot
+carry `--dangerously-skip-permissions` or `--permission-mode bypassPermissions`
+— the two Claude-compatibility aliases Grok also ships.
+
+Four deliberate choices:
+
+- **`--tools` as a positive allowlist**, so the shell is *absent* rather than
+  denied. Same shape as Claude Code, which is the posture that verified there.
+- **`--no-subagents`** — the only provider with a dedicated switch for it.
+- **`--sandbox workspace`**, the narrowest profile that still permits the writes
+  a worker must make. `danger-full-access` is absent from the binary entirely.
+- **`streaming-messages-json` over `streaming-json`**, and the trade is worth
+  stating. `streaming-json` is the ACP session stream and is where an init event
+  would appear if one exists — the readback question. `streaming-messages-json`
+  is documented as **NDJSON in the Anthropic Messages API wire format**, whose
+  usage block `claude-json` already parses and is verified against.
+
+  **Usage decided it.** An agent with an invocation and no usage reader refuses
+  on a capability nothing could satisfy, so a prepared probe with no parser
+  would never pass — `config-actions.test.ts` enforces exactly that, and caught
+  the first attempt. Reusing a parser for a format the vendor documents *as*
+  that wire format is not a guess; writing one for an unmeasured shape would be.
+
+  It fails safe either way: if Grok's stream differs, the parser finds nothing,
+  `reports_usage` returns unverified, and the contract **admits with spend
+  ceilings off and the person told** rather than refusing.
+
+### The one question the first probe settles
+
+**Does the stream carry an init event naming the resolved model, tools and
+sandbox?**
+
+- **If yes**, every capability can verify by readback and Grok becomes a
+  fully-verified provider — likely the best-instrumented of the four, given the
+  flags.
+- **If no**, the shell denial cannot be verified by readback, and
+  `confined_to_project` refuses on unverified. Grok would then need a
+  behavioural canary the way OpenCode did, which is a design change rather than
+  a config change. A second probe against `streaming-json` would settle whether
+  the ACP stream carries one before that design work is started — a config
+  change, and cheap.
+
+Estimated cost, on the same basis as the Claude Code and OpenCode probes that
+came in accurate: **~15–25K tokens, one call.** The estimate is deliberately not
+extrapolated from a cheaper configuration.
+
+Everything below is doc-derived and unexercised until then. The binary checks
+authentication *before* it validates flags, so no more can be learned for free.

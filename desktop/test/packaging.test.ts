@@ -62,3 +62,52 @@ describe("desktop packaging", () => {
     expect(project).toContain("packaged shell build identity is missing");
   });
 });
+
+/* Installing is a step, and it verifies.
+ *
+ * `npm run tauri:build` writes an installer into `target/` and nothing ran it.
+ * The Start menu opened the same binary for two weeks, faithfully, because it
+ * was the only build ever installed -- and two earlier fixes (a real version
+ * string, a stray shortcut) were both true and both downstream of the step that
+ * was missing entirely.
+ *
+ *   Building is not installing.
+ *
+ * The verification is the point rather than the convenience: an install step
+ * that silently does nothing is precisely the failure being fixed.
+ */
+describe("shipping", () => {
+  it("installs what it built, and proves it landed", async () => {
+  const scripts = (
+    JSON.parse(await readFile(path.join(repoRoot, "desktop", "package.json"), "utf8")) as {
+      scripts: Record<string, string>;
+    }
+  ).scripts;
+
+  expect(scripts["install:local"]).toBeDefined();
+  /* One command that does both, so the two cannot drift apart in someone's
+     head the way they did for two weeks. */
+  expect(scripts.ship).toMatch(/tauri:build/u);
+  expect(scripts.ship).toMatch(/install:local/u);
+
+  const installer = await readFile(
+    path.join(repoRoot, "desktop", "scripts", "install-local.mjs"),
+    "utf8"
+  );
+
+  /* It compares the version stamped into the build against the version of the
+     binary actually on disk -- read from the FILE, not from the running app,
+     because what was wrong was the bytes on disk rather than the app's ability
+     to start. */
+  expect(installer).toMatch(/VersionInfo\.FileVersion/u);
+  expect(installer).toMatch(/installed !== expected/u);
+  expect(installer).toMatch(/INSTALL DID NOT TAKE/u);
+  /* And it exits non-zero, or the check is decoration. */
+  expect(installer).toMatch(/process\.exit\(1\)/u);
+
+  /* It refuses to claim success when there is nothing to install, which is the
+     state the repository was in the whole time. */
+  expect(installer).toMatch(/No build to install/u);
+  expect(installer).toMatch(/No installer for version/u);
+});
+});

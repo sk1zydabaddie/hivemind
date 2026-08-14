@@ -16,7 +16,10 @@ const buttonVariants = cva(
      reads as pressable -- "Start building" sat over an empty box looking like
      it would do something -- so the filled variants drop to the canvas instead
      of fading. */
-  "inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-md text-[13px] font-medium whitespace-nowrap transition-colors disabled:pointer-events-none disabled:cursor-default aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+  /* Motion: a spring curve on colour AND transform, so a press reads as the
+     surface giving way rather than as a repaint. `active:` goes DOWN past rest
+     -- returning to zero would feel like nothing happened. */
+  "relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-md text-[13px] font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow,transform] duration-[120ms] ease-[var(--spring)] active:duration-[60ms] disabled:pointer-events-none disabled:cursor-default aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
   {
     variants: {
       variant: {
@@ -28,9 +31,9 @@ const buttonVariants = cva(
            Filled primary actions only: outline, ghost, secondary and link stay
            flat, so the gradient continues to mean "this is the action". */
         default:
-          "bg-navy bg-gradient-to-b from-navy to-navy-deep text-primary-foreground hover:from-navy-deep hover:to-navy-deep disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground",
+          "bg-navy bg-gradient-to-b from-navy to-navy-deep text-primary-foreground shadow-[inset_0_1px_0_0_color-mix(in_oklab,#fff_18%,transparent)] hover:from-navy-deep hover:to-navy-deep active:translate-y-px active:shadow-[inset_0_2px_4px_0_color-mix(in_oklab,#000_28%,transparent)] disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground disabled:shadow-none",
         destructive:
-          "bg-clay bg-gradient-to-b from-clay to-clay-deep text-destructive-foreground hover:from-clay-deep hover:to-clay-deep disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground",
+          "bg-clay bg-gradient-to-b from-clay to-clay-deep text-destructive-foreground shadow-[inset_0_1px_0_0_color-mix(in_oklab,#fff_18%,transparent)] hover:from-clay-deep hover:to-clay-deep active:translate-y-px active:shadow-[inset_0_2px_4px_0_color-mix(in_oklab,#000_28%,transparent)] disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground disabled:shadow-none",
         outline:
           "border border-rule bg-panel text-ink hover:border-navy/45 hover:bg-navy-wash hover:text-navy disabled:opacity-45",
         secondary: "bg-secondary text-secondary-foreground hover:bg-rule/60 disabled:opacity-45",
@@ -78,4 +81,33 @@ function Button({
   )
 }
 
-export { Button, buttonVariants }
+/**
+ * The button that started the work, showing the work.
+ *
+ * The action and its progress are ONE object. A button that starts a run and a
+ * separate bar that reports it are two things a person has to associate; the
+ * progress filling the control they just pressed needs no association at all.
+ *
+ * `ratio` is real or it is absent. It comes from Core's own phase counts --
+ * never from a timer, never from an animation that advances on its own. A bar
+ * that moves while nothing is happening is the thing this project refuses
+ * everywhere else, and it would be worse here because it sits on the control
+ * that appears to be causing it.
+ *
+ * `null` means "working, and nothing knows how far" -- rendered as a still
+ * fill rather than an indeterminate sweep, because a sweep is motion carrying
+ * no information.
+ */
+function ButtonProgress({ ratio }: { ratio: number | null }): React.JSX.Element {
+  const clamped = ratio === null ? null : Math.max(0, Math.min(1, ratio));
+  return (
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-y-0 left-0 bg-[color-mix(in_oklab,#fff_22%,transparent)] transition-[width] duration-[240ms] ease-[var(--spring)]"
+      style={{ width: clamped === null ? "100%" : `${String(clamped * 100)}%` }}
+      data-indeterminate={clamped === null ? "true" : undefined}
+    />
+  );
+}
+
+export { Button, ButtonProgress, buttonVariants }

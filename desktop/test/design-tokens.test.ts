@@ -265,6 +265,62 @@ describe("palette discipline", () => {
     }
   });
 
+  test("exactly one thing can carry the attention edge, and panels never float", async () => {
+    const root = path.join(desktopRoot, "src");
+    const files: string[] = [];
+    const walk = async (dir: string): Promise<void> => {
+      for (const entry of await readdir(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) await walk(full);
+        else if (entry.name.endsWith(".tsx") || entry.name.endsWith(".css")) files.push(full);
+      }
+    };
+    await walk(root);
+
+    /* If two things glow, neither means anything. The edge lives on the ONE
+       primary queue item -- the rest collapse inside it -- so uniqueness is a
+       property of placement, and this asserts the placement rather than
+       trusting it. */
+    const users: string[] = [];
+    for (const file of files) {
+      if (file.endsWith(".css")) continue;
+      const source = await readFile(file, "utf8");
+      if (/attention-edge/u.test(source)) users.push(path.basename(file));
+    }
+    expect(users, "the attention edge appears in more than one surface").toEqual(["work-tab.tsx"]);
+
+    /* And `--shadow-panel` stays deleted. Depth is for things that genuinely
+       float; a shadow under a panel was decoration pretending to be
+       hierarchy. */
+    /* The DECLARATION, not the word. Both mentions in styles.css are comments
+       explaining that the token was deleted -- banning the string catches the
+       prose that documents the rule, which is this project's most-repeated
+       trap. What must not exist is a declaration. */
+    const styles = await readStyles();
+    const cssCode = styles.replace(/\/\*[\s\S]*?\*\//gu, "");
+    expect(cssCode).not.toMatch(/--shadow-panel\s*:/u);
+    for (const file of files) {
+      if (!file.endsWith(".tsx")) continue;
+      const source = await readFile(file, "utf8");
+      expect(source, `${path.basename(file)} gives a panel a float shadow`).not.toMatch(
+        /Panel[^>]{0,120}shadow-\[var\(--shadow-float\)\]/u
+      );
+    }
+  });
+
+  test("motion is spring-curved and reduced motion still shows what needs you", async () => {
+    const styles = await readStyles();
+    /* Two curves and no more -- a vocabulary, not a collection. */
+    expect(styles).toMatch(/--spring:\s*cubic-bezier/u);
+    expect(styles).toMatch(/--spring-firm:\s*cubic-bezier/u);
+
+    /* Reduced motion stops the edge PULSING without removing it: somebody who
+       asked for less movement still needs to know which thing needs them. */
+    const reduced = styles.slice(styles.indexOf("@media (prefers-reduced-motion: reduce)"));
+    expect(reduced).toMatch(/\.attention-edge/u);
+    expect(reduced).toMatch(/animation: none/u);
+  });
+
   test("every gradient in the markup is vertical and stays on one hue", async () => {
     const root = path.join(desktopRoot, "src");
     const files: string[] = [];

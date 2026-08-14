@@ -1010,6 +1010,67 @@ actually declares — **a key nothing can match is a feature that silently does
 nothing**, and that one is cheap, general, and would have caught this on the day
 it was written.
 
+## Effects, and the six that earned their place — 2026-08-14
+
+The constraint that decided all of them: **this visual language spends attention
+on STATE.** Amber means needs-you, navy means active. An effect that spends
+attention on decoration competes with that, and makes the interface worse even
+when each piece looks nice on its own.
+
+### Built
+
+| Effect | Why it earns its place |
+| --- | --- |
+| **Spring curves** on panels, dialogs, the phase spine | Two curves, no more — a vocabulary, not a collection. A panel that decelerates reads as a thing with mass; one that stops dead reads as a redraw. Both overshoot slightly, small enough to feel physical rather than bouncy |
+| **Hover lift** on clickable cards | 1px and a soft shadow. A card that jumps is a card that moves the thing you were about to click |
+| **Progress inside the button that started it** | The action and its progress are one object, so there is nothing to associate. **Indeterminate on purpose**: a queued action has no sub-steps Core reports, and a sweeping animation would be motion carrying no information |
+| **Deeper press** on primary actions | `active:` goes *down past rest* with an inset shadow. Returning to zero would feel like nothing happened |
+| **Attention edge** on the one thing needing you | The only effect carrying meaning rather than polish |
+| **Float depth** on dialogs only | Says which layer owns the next click. `--shadow-panel` stays deleted |
+
+Two rules hold the set together, both asserted by test:
+
+- **Exactly one attention edge.** It lives on the single primary queue item —
+  the rest collapse inside it — so uniqueness is a property of *placement*
+  rather than a rule anyone has to keep. If two things glow, neither means
+  anything.
+- **Reduced motion stops the edge pulsing without removing it.** Somebody who
+  asked for less movement still needs to know which thing needs them. Everything
+  else drops to 0.01ms.
+
+And nothing animates on a replayed trail that did not animate live: the
+completion animation still fires only on artifact movements, which
+`recordArtifactMovements` writes from the live stream alone. Reading an old run
+should not celebrate.
+
+### Skipped, with reasons
+
+| Skipped | Why |
+| --- | --- |
+| **Cursor glows** | Decoration that follows the pointer rather than the state. It draws the eye to *where you already are* — the one place attention does not need directing — and fights the instrument aesthetic directly |
+| **Subtle grain** | A texture for dark, atmospheric surfaces. This is a light app on a near-white canvas where grain reads as a rendering artefact, and it would sit underneath dense mono figures that need a clean ground |
+| **Dynamic refraction** | Expensive per frame, and gimmicky in a window that is mostly text. It would be the most computationally costly effect in the app in service of the least information |
+
+### Acrylic/Mica, argued and declined
+
+The case for was real: it is the single effect that would make this read as a
+native Windows 11 application rather than a web page in a frame, and Windows is
+the primary platform. Three things decided against, and the third is the one
+that could not be got past:
+
+1. **Two visual identities.** WebKitGTK has no equivalent, so Linux keeps the
+   fallback permanently and every screenshot in `docs/evidence/` is taken on one
+   of two different-looking products.
+2. **Legibility against dense mono.** The spend meter, token counts, diff
+   gutters and the checks pane are all small mono figures, which is exactly
+   where translucency costs most.
+3. **It spends attention on chrome.** Mica tints the entire window surface — the
+   least targeted effect available, applied to the largest area, sitting
+   *behind* the amber edge that is supposed to be the one thing pulling the eye.
+
+That last point is the same constraint the whole set was judged against, and
+Mica fails it worst of anything considered.
+
 ## Standing rule: the rig measures something other than what you think
 
 **Three instances, and they are the same family as the six instrument failures

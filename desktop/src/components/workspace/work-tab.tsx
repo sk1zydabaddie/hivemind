@@ -19,7 +19,7 @@ import {
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonProgress } from "@/components/ui/button";
 import {
   Collapsible,
   CollapsibleContent,
@@ -1143,9 +1143,13 @@ function AttentionBar({
   const named = attentionHeadline(item, taskTitles);
   return (
     <Collapsible asChild>
+      {/* THE one attention edge. `AttentionBar` renders the single primary
+          queue item -- the rest are collapsed inside it -- so "exactly one"
+          is a property of where this sits, not a rule anyone has to keep. If
+          two things glowed, neither would mean anything. */}
       <section
         aria-label="Needs you"
-        className={`mb-3 rounded-lg border border-l-2 px-4 py-3 ${skin}`}
+        className={`attention-edge mb-3 rounded-lg border border-l-2 px-4 py-3 ${skin}`}
       >
         <div className="flex items-start gap-3">
           <span
@@ -1270,8 +1274,17 @@ function AttentionActions({
 }): React.JSX.Element | null {
   if (item.action) {
     return (
+      /* The action and its progress are one object. While this action is in
+         flight the button it was pressed on fills -- there is no second bar
+         somewhere else to associate it with.
+
+         Indeterminate on purpose: a single queued action has no sub-steps
+         Core reports, and a sweeping animation would be motion carrying no
+         information. A still fill says "working" honestly; a moving one would
+         imply a measurement nobody has. */
       <Button disabled={busy} size={size} type="button" onClick={onApprove}>
-        {queueActionLabel(item.action.type)}
+        {busy ? <ButtonProgress ratio={null} /> : null}
+        <span className="relative">{queueActionLabel(item.action.type)}</span>
       </Button>
     );
   }
@@ -1799,7 +1812,7 @@ function TaskRow({
   return (
     <button
       aria-pressed={selected}
-      className={`relative flex w-full cursor-pointer items-start gap-2.5 border-b border-rule px-3 py-2.5 pl-2.5 text-left transition-colors ${
+      className={`lift relative flex w-full cursor-pointer items-start gap-2.5 border-b border-rule px-3 py-2.5 pl-2.5 text-left ${
         selected
           ? "bg-navy-wash before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-navy"
           : "bg-panel hover:bg-canvas"
