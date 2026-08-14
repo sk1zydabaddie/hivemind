@@ -374,7 +374,7 @@ build and sign, or something to observe on hardware that is not here.
 | 4 | Codesigning + notarisation | packaging | half a day, plus an Apple Developer account | yes |
 | 5 | Decide: resolve the agent to an absolute path at connect time | design | 2 h | no — but item 2 decides whether it is needed |
 | 6 | A GUI walk that speaks the WebKit Inspector protocol | verification | 1–2 days | no (Linux gets it too) |
-| 7 | Linux `.desktop` launch: same PATH question as item 2 | verification | 20 min | no |
+| 7 | Linux `.desktop` launch: same PATH question as item 2 | verification | **half done** | no |
 
 Items 1–3 are the hour. Item 4 is the only one that is genuinely expensive and
 it buys distribution rather than correctness — an unsigned `.app` runs fine
@@ -384,6 +384,21 @@ Item 7 is the one worth doing without any hardware at all: Linux has exactly the
 same launch-PATH exposure as macOS and has never been checked, because the GUI
 walk cannot attach there. Installing the `.deb` and launching it from a desktop
 environment answers most of item 2 on a machine that already exists.
+
+**Half of item 7 closed on 2026-08-14, and it is worth being exact about which
+half.** The question has two parts, and only one of them needs a desktop
+session:
+
+| | Question | State |
+| --- | --- | --- |
+| a | Under a launcher-minimal PATH, does the failure explain itself and does the escape hatch resolve? | **Closed.** `test/adapter-command.test.ts` runs it behaviourally against `/usr/bin:/bin:/usr/sbin:/sbin`: the message names the program and the variable, the hatch points the invocation at an absolute path, and without the hatch nothing is silently substituted |
+| b | Does a real display manager actually hand the app that minimal PATH? | **Still open.** Needs a machine with a desktop environment. WSL has no session to launch from |
+
+The distinction matters because (a) is the part that determines whether a person
+can recover, and (b) only determines whether they will need to. Closing (a)
+means the worst case is now a comprehensible message with a documented fix
+rather than an unexplained failure — on both POSIX platforms, since the same
+code path serves the `.app` and the `.desktop` launch.
 
 Item 6 is what would let a GUI walk run anywhere but Windows. It is the largest
 piece of remaining work and the only one that is engine-adjacent; it verifies the

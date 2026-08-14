@@ -31,6 +31,7 @@ import { validateRequestedTaskId } from "./task-id.js";
 import { reconcileTaskRunsOnStartup } from "./task-control.js";
 import { admitValueQuality } from "./value-quality.js";
 import { createTaskWorktree, removeTaskWorktree } from "./worktree.js";
+import { withPlainReason } from "./plain-reason.js";
 import { executeWorkspaceAction } from "./workspace-actions.js";
 
 interface DaemonOptions {
@@ -185,7 +186,10 @@ export function createDaemonServer(repoRoot: string, buildId: string) {
         ? await execute()
         : await queue.run(execute);
       await eventBus.publishNewDurableEvents(repoRoot, previousEvents.value.length);
-      writeJson(response, result.ok ? 200 : 400, result);
+      /* A refusal carries the sentence a person is shown, attached by the
+         side that knows what the refusal means. Additive: `reason` is
+         untouched for anything matching on it. */
+      writeJson(response, result.ok ? 200 : 400, withPlainReason(result));
     } catch (error: unknown) {
       writeJson(response, 500, { ok: false, reason: formatErrorDetail(error, "unexpected daemon failure") });
     }

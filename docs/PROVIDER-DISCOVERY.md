@@ -837,12 +837,19 @@ know those objects appear.
 
 ### What each provider needs next
 
-| Provider | Remaining work |
-| --- | --- |
-| Claude Code | a `claude-init` readback reader (model / tools / cwd / version), and alias→canonical model comparison. Then it is verified on five of seven. |
-| OpenCode | an `opencode-json` usage parser and an invocation; its readback is `agent list` plus the behavioural shell check, both proven today. |
-| Grok Build | an account. Every readback question is still open. |
-| Kimi Code | an account, and one question: are its file tools confined to the workspace? |
+> **Superseded 2026-08-12 — the first two rows are done.** This table was
+> written before the probes ran. Both readers were built and both probes ran on
+> 2026-08-12 (about $0.13, all of it Claude Code); Claude Code came back
+> verified on 7 of 7 and OpenCode's deny was confirmed behaviourally. Kept for
+> the record of what was outstanding at the time, with the current state below.
+> Section 5 has the results.
+
+| Provider | Remaining work, as of 2026-08-11 | State now |
+| --- | --- | --- |
+| Claude Code | a `claude-init` readback reader (model / tools / cwd / version), and alias→canonical model comparison. Then it is verified on five of seven. | **Built and probed.** Verified 7/7. Not corpus-certified — that is a separate paid decision |
+| OpenCode | an `opencode-json` usage parser and an invocation; its readback is `agent list` plus the behavioural shell check, both proven today. | **Built and probed.** Deny confirmed from the run itself. Not corpus-certified |
+| Grok Build | an account. Every readback question is still open. | **Unchanged.** Still needs an account |
+| Kimi Code | an account, and one question: are its file tools confined to the workspace? | **Unchanged.** Still needs an account |
 
 ## The estimates that were given before running
 

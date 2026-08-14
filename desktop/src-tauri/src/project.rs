@@ -616,9 +616,15 @@ fn post_workspace_action(
     let parsed: serde_json::Value = serde_json::from_str(body)
         .map_err(|error| format!("daemon action returned invalid JSON: {error}"))?;
     if !headers.lines().next().unwrap_or("").contains(" 200 ") {
+        // Core attaches `plain` to a refusal it can phrase for a person, and
+        // leaves it off when the raw reason is the best there is. Preferring it
+        // here keeps the client out of the business of interpreting Core's
+        // failure prose -- the producer of the failure is the only thing that
+        // knows what it means.
         let reason = parsed
-            .get("reason")
+            .get("plain")
             .and_then(|value| value.as_str())
+            .or_else(|| parsed.get("reason").and_then(|value| value.as_str()))
             .unwrap_or("daemon action refused");
         return Err(reason.to_string());
     }

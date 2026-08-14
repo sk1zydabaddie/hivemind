@@ -93,3 +93,56 @@ test("Windows is told to run where rather than which", () => {
   /* The command, not the relative pronoun the sentence around it uses. */
   assert.equal(message.includes("`which"), false);
 });
+
+/* CROSS-PLATFORM item 7 — the Linux half of the launcher-PATH question.
+ *
+ * A `.desktop` launcher runs its `Exec` line with the graphical session's
+ * environment, which is set by the display manager and does NOT include what a
+ * shell rc adds. nvm's node directory and a user-local `codex` both live there
+ * and both disappear. It is the same exposure as a Finder-launched `.app`, on a
+ * platform that is already here — which is why this item was flagged as the one
+ * worth doing without any hardware.
+ *
+ * What can be settled without a desktop session is the half that matters most:
+ * under a genuinely minimal PATH, does the failure explain itself, and does the
+ * escape hatch actually resolve? Both are behavioural, and neither needs a GUI.
+ *
+ * What CANNOT be settled here is whether a real display manager hands the app a
+ * minimal PATH in the first place. That still needs a machine with a desktop
+ * environment, and CROSS-PLATFORM records it as still open.
+ */
+test("under a launcher-minimal PATH the failure names the program and the hatch resolves", async () => {
+  /* The PATH a graphical session typically provides -- no /usr/local/bin, no
+     nvm, no ~/.local/bin. Written out rather than mutating process.env, so the
+     test says what it is simulating. */
+  const LAUNCHER_PATH = process.platform === "win32"
+    ? "C:\Windows\system32;C:\Windows"
+    : "/usr/bin:/bin:/usr/sbin:/sbin";
+
+  const invoke = ["definitely-not-installed-agent", "exec", "-"];
+
+  /* 1. It explains itself. The message must name the program, say why a
+        desktop launch differs from a terminal, and give the command that
+        prints the value the variable wants -- a bare "not found" would send a
+        person hunting a broken install that is not broken. */
+  const explanation = explainMissingAdapterProgram(invoke);
+  assert.ok(explanation !== null, "a missing program produced no explanation at all");
+  assert.match(explanation, /definitely-not-installed-agent/u);
+  assert.match(explanation, /HIVEMIND_DEFINITELY_NOT_INSTALLED_AGENT_PATH/u);
+
+  /* 2. The hatch resolves. Given the variable, the invocation points at the
+        absolute path and no longer depends on PATH at all. */
+  const resolvedPath = process.platform === "win32" ? "C:\tools\agent.exe" : "/opt/agent/bin/agent";
+  const resolved = resolveAdapterInvocation(invoke, {
+    PATH: LAUNCHER_PATH,
+    HIVEMIND_DEFINITELY_NOT_INSTALLED_AGENT_PATH: resolvedPath
+  });
+  assert.equal(resolved[0], resolvedPath, "the escape hatch did not reach the invocation");
+  assert.deepEqual(resolved.slice(1), ["exec", "-"], "the hatch changed more than the program");
+
+  /* 3. Without the hatch, nothing is silently substituted. The invocation is
+        returned unchanged so the spawn fails on the real name, which is what
+        makes the message above the thing a person sees. */
+  const unresolved = resolveAdapterInvocation(invoke, { PATH: LAUNCHER_PATH });
+  assert.deepEqual(unresolved, invoke, "a missing program was quietly rewritten");
+});

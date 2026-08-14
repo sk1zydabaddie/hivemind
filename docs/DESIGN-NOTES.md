@@ -597,3 +597,172 @@ about the work, not about the reasoning that decides what the work is. If a
 future change makes the planner tier-routable, it must be argued on its own
 merits and it must contend with this note, not treat the current state as an
 oversight.
+
+## `.hivemind` grows without bound, and pruning is not free
+
+**Recorded 2026-08-14. Not built. Low urgency, and it becomes a support burden
+rather than a bug.**
+
+Everything Hivemind writes under `.hivemind/` is append-only or
+write-once-per-artifact, and nothing ever removes any of it:
+
+| What | Grows with |
+| --- | --- |
+| `log/events.jsonl` | every event, forever |
+| `log/tasks/<task>.output.jsonl` | every worker's stdout, per task |
+| `patches/<task>/diff.patch` | every submitted patch bundle |
+| `resource/verification-sets/<id>/manifest.json` | every verification |
+| quality-run artifacts | every best-of-N and draft-refine draft |
+| capability corpus reports | every certification run |
+| `checks/<checks_run_id>/` | every recorded check output (new 2026-08-13) |
+
+Scale, measured rather than guessed: **one corpus run logged roughly 7M tokens
+of evidence.** A long-lived project accumulates that indefinitely.
+
+### The constraint that makes it non-trivial
+
+Retention interacts with the rule that **the projection must be rebuildable
+from the durable trail.** So this is not "delete files older than N days":
+
+> **You cannot prune what a reconstruction needs.** Retention has to know which
+> records are load-bearing, and that is a property of the record's role, not of
+> its age or size.
+
+Some of it is clearly load-bearing — `events.jsonl` is the trail itself, and
+`verificationInputsStillMatch` re-hashes contracts, so anything a hash is bound
+to is untouchable while that verification could still be adopted. Some of it
+clearly is not: a worker's raw stdout for a task that shipped three months ago
+reconstructs nothing.
+
+The honest shape of the work is therefore **classify first, then prune** —
+decide per artifact kind whether a reconstruction can need it, and only then
+write a policy. A size-based or age-based sweep written without that
+classification would eventually delete the one record a rebuild required, and
+would do it silently, because nothing reads these files until something goes
+wrong.
+
+Two smaller notes for whoever picks this up: compaction is probably a better
+first move than deletion for `events.jsonl` (it is the file most obviously
+load-bearing and least obviously prunable), and anything removed should leave a
+tombstone, because "this run's output was pruned" and "this run produced no
+output" are different facts and the surfaces already distinguish them.
+
+## Depth provenance: "tests passed" without what was exercised
+
+**Recorded 2026-08-14. Proposal, not built.** The one item here that is a new
+idea rather than a known gap, so it is written up with its case and its
+weaknesses rather than as a task.
+
+### The problem
+
+Every "checks passed" in this system is recorded without recording **what was
+actually exercised**. Two runs produce the same green and mean very different
+things:
+
+> Passed — fixture adapter, worker-authored oracle, component-level
+> Passed — real provider, contract-authored oracle, assembled build
+
+Both are true. Only one is evidence about the shipped product.
+
+### The five axes
+
+| | Axis | Observable by Core without a self-report? |
+| --- | --- | --- |
+| a | **Real thing or a stand-in** | **Yes** — Core knows which adapter profile it invoked |
+| b | **Assembled artifact or one component** | **Yes** — Core knows what it built and where the check ran |
+| c | **Who authored the oracle** | **Yes** — a check comes from the contract's `deterministic_validity_check` or from the worker's own diff, and those are different sources |
+| d | **Was the dangerous inverse tested** | **Probably not mechanizable.** See below |
+| e | **Is the running artifact the tested one** | **Yes** — the build hash is already computed |
+
+Four of five are observable **without asking anyone to declare anything**,
+which is what makes this different from a metadata field somebody has to
+maintain honestly. That distinction is the whole design: this project's standing
+position is that a capability is measured, never declared, and depth provenance
+either follows that rule or it is worthless.
+
+**(d) is the one that does not fit.** "Did the test try the case that would have
+failed?" is mutation testing, and mutation testing is expensive, slow, and
+language-specific. It should be recorded as *not captured* rather than inferred,
+guessed, or quietly dropped — an axis that reports "unknown" honestly is worth
+more than four axes pretending to be five.
+
+### The proposal
+
+**Bind depth into the verification manifest at verification time**, the way M8.7
+already binds the base commit and the patch hashes — same mechanism, same
+immutability, same point in the flow. Then surface it so **"checks passed" never
+appears without its depth**.
+
+**Advisory and surfaced, never blocking.** This is M7.2's posture, and for
+M7.2's reason: a signal that classifies its own evidence must not be able to
+refuse work, because when it is wrong it would refuse correct work for a reason
+nobody can argue with. It changes what a person is told, not what is permitted.
+
+### The case for it
+
+This project has independently rediscovered that **a green check can measure
+nothing** six times:
+
+1. The vacuous token assertion
+2. The no-hazard confinement tests — which built no hazard at all on Windows and reported `ok`
+3. The shell-less preflight, which would have measured a broken configuration
+4. The screenshot harness waiting on a clock rather than on content
+5. `corpus-check.mjs` visible to the agent it judged
+6. Five fixture-only UI passes called verified
+
+Six independent rediscoveries of one lesson is not six mistakes; it is a missing
+instrument. **Depth provenance is the mechanised form of that lesson** — instead
+of each session relearning to ask "what did this green actually touch", the
+answer travels with the result.
+
+### Where it is weak, stated before anyone builds it
+
+- **It records what was exercised, not whether that was enough.** A run can be
+  real-provider, contract-authored and assembled and still test the wrong
+  thing. Depth is a floor, not a verdict, and the copy must not let it read as
+  one.
+- **Four axes are cheap because Core already knows them.** The temptation will
+  be to add a fifth, sixth and seventh that need a self-report, and the moment
+  one does, it becomes a declaration — which is the thing this project refuses
+  everywhere else.
+- **It has no consumer yet.** Advisory-and-surfaced means the value is entirely
+  in whether anyone reads it. A label nobody acts on is a label, not a control.
+
+### Assessment after writing it down: buildable, but two axes mean something narrower than they sound
+
+Writing the proposal out changed one thing materially, and it is worth fixing
+before anyone builds it rather than after.
+
+**The claim "four of five are observable without a self-report" is true only
+under a Core-side redefinition of two axes.** Core runs a *command* and reads an
+*exit code*. It never sees inside the test.
+
+| Axis | What it sounds like | What Core can actually observe |
+| --- | --- | --- |
+| a — real thing or stand-in | *did the test exercise a real dependency, or a mock?* | **Not observable.** Whether a test uses a double is a property of the test's own source. What Core knows is which **adapter profile produced the code** — real provider or fixture — which is a different fact |
+| b — assembled or component | *did the test import the whole thing, or one unit?* | **Not observable.** What Core knows is **where the check ran** — against the shadow-integrated set, or one task's worktree |
+| c — who authored the oracle | who wrote the check | **Observable, and already half-recorded.** Contract checks are already prefixed `contract-validity:` and `selected_checks` already carry a `sources` array |
+| d — dangerous inverse tested | was the failing case tried | **Not mechanizable.** This is mutation testing. Record as unknown |
+| e — running artifact is the tested one | build identity | **Observable.** `currentBuildIdentity()` already exists |
+
+So the honest count is **two observable as stated (c, e), two observable under a
+narrower reading (a, b), one not mechanizable (d)** — not four of five.
+
+**This does not kill it.** The redefined (a) and (b) are genuinely worth having:
+*"passed — real provider, shadow-integrated set, contract-authored check"* is a
+true and useful sentence, and it distinguishes runs that today look identical.
+The proposal stands.
+
+**What must change is the label.** If this ships calling itself *depth*, a
+reader will take it to mean "no mocks were involved", which it does not and
+cannot mean. A test full of doubles, written by the worker, passing against a
+real provider's code in a shadow set, would score well on every axis Core can
+see. The name has to describe what is actually measured — provenance of the
+code, the checks and the artifact — not the depth of the testing.
+
+That is the correction. The mechanism is sound, the binding point is right, the
+advisory posture is right, and one of the five axes is already half-built. The
+risk is entirely in over-claiming, which is the failure this whole family of
+rules exists to prevent — and it would be a poor outcome for the instrument
+built to stop green checks meaning nothing to itself mean something narrower
+than its name.
