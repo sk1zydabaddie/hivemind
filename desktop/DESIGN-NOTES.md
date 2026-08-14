@@ -751,6 +751,113 @@ run is worse than a failing one.** A failure names itself. This one sat at 191
 of 733 tests with two live daemon processes and no output for minutes, which
 reads identically to "slow" until someone goes looking.
 
+## Gradients, permitted with a shape — 2026-08-14
+
+The constraint was lifted, with a limit, and the limit is the interesting part.
+
+> One gradient shape: a **vertical ramp from a meaning colour to a darker mix of
+> itself**. Same hue, two stops, top to bottom, on filled primary actions only.
+
+What was ever wrong with gradients was never gradients. It was the **two-colour
+multi-hue button** — navy into violet, teal into blue — which is the visual tell
+of a product assembled from a template. A same-hue ramp is what a physical
+control looks like.
+
+The darker stop is `color-mix(in oklab, var(--navy) 88%, #000000)` rather than a
+second hand-picked hex, and that is load-bearing: two hand-picked stops are one
+careless edit from being two different hues, and a mix cannot drift from its own
+base. `design-tokens.test.ts` enforces both halves — every `-deep` token must be
+a `color-mix` of a palette colour, and every `from-`/`to-` pair in the markup
+must resolve to the same base name. Mutation-tested: `from-navy to-amber` fails.
+
+Outline, ghost, secondary and link stay flat, so the gradient keeps meaning
+*this is the action* rather than becoming decoration.
+
+## Per-task-type routing: the third input — 2026-08-14
+
+Routing knew two things and was missing a third. It knew the task's **tier** —
+how dangerous the files are — and it knew a **promoted policy** learned from
+measured outcomes. It did not know that a screen and a data model are different
+work at the same tier, so both got the same model, and none of it was reachable
+from the app.
+
+The new input is deliberately the weakest of the three:
+
+| Guard | How it holds |
+| --- | --- |
+| The tier cap still binds | **Structural, not a check.** The preference is applied to the pool *after* tier filtering, so a provider the floor excluded is not in the list to be chosen. A test asserts the ordering in the source |
+| A promoted policy is still how a *learned* change takes effect | This module never touches that path. A person choosing a model is an explicit instruction; a system changing its own weights still needs promotion, and conflating them would let a preference launder itself as evidence |
+| An agent that cannot prove its model pin cannot be **aimed at** | `pins_one_model` must be `verified` and not stale. Routing may still *fall back* to such a provider — unchanged — but it will not be pointed at one |
+
+That third guard is what makes the feature meaningful rather than theatre:
+choosing "the strong model for visual work" is worthless if the harness cannot
+confirm which model it loaded. The surface greys those agents and says why.
+
+### Visual work is a suggestion, not a default
+
+Asked to decide, and the answer is **suggestion**, for three reasons in order of
+weight:
+
+- **A default spends money nobody asked to spend.** Silently upgrading every
+  `ui` task changes a project's bill without anyone choosing it, and this
+  project's standing posture is that spend is explicit.
+- **The claim is unmeasured here.** "The capability gap is largest on visual
+  work" is plausible, widely believed, and *not something this repository has
+  measured*. Encoding it as a default would be a declared capability — exactly
+  what the contract exists to refuse.
+- **A suggestion is falsifiable and a default is not.** Offered and declined
+  costs nothing. Applied silently, nobody ever learns whether it helped.
+
+So the setting offers it, states the cost and the absence of evidence in the
+same sentence, and the person decides. A test asserts no default map exists.
+
+## The install opened an eleven-day-old build — 2026-08-14
+
+Diagnosed before it was touched, and it was none of the three obvious causes.
+
+| Suspected | Actual |
+| --- | --- |
+| Versioned install path | **No.** `%LOCALAPPDATA%\Hivemind AI`, same path every time |
+| Several versions installed | **No.** One location, one binary |
+| Stale uninstall entries | **No.** Exactly one, `HKCU` |
+
+**Cause A: nothing stale was installed — nothing new ever was.** The Start menu
+shortcut was correct. The binary behind it was from 1 August; the newest built
+installer was from 12 August and had never been run. Search was faithfully
+opening what was installed.
+
+What made it invisible is that `tauri.conf.json` carried a hardcoded
+`"version": "0.0.0"`. Every build produced an identically-named installer, every
+uninstall entry read `0.0.0` forever, and nothing anywhere could distinguish an
+upgrade from a reinstall — **because nothing anywhere WAS different.**
+
+The fix is a version that changes: a calendar stamp `YY.MMDD.HHmm`, generated at
+bundle-prepare time into `gen/version.conf.json` and merged with
+`tauri build --config`. Each field stays under 65536, which the Windows version
+resource requires — `20260814` would not, which is why the year is two digits
+and the date is packed rather than concatenated. It is written to a *generated*
+overlay because a build must not dirty the working tree. The app shows it in
+settings, so "am I running what I just built" has an answer from inside.
+
+**Cause B: a second shortcut, created by my own test runs.** WSLg publishes
+Linux `.desktop` entries into the Windows Start menu. A `rsync` of the repo into
+a WSL home carried `desktop/src-tauri/target/`, its AppImage bundle produced a
+`.desktop`, and Windows Search indexed a second "Hivemind AI" pointing at
+`wslg.exe`. Deleting the Linux copy removed the `.desktop` but **not** the
+Windows `.lnk`, which now points at a binary that no longer exists.
+
+The lesson is not about packaging:
+
+> **A build tree synced into another OS's home directory becomes that OS's
+> installed software.** `target/` is build output on one platform and a package
+> index on the other.
+
+The same reasoning covers the Linux `.desktop` entry proper: one stable
+`Name`/`Exec` from a stable `productName` and identifier, so a `.deb` upgrade
+replaces rather than adds. `targets: "all"` was left alone deliberately —
+`packaging.test.ts` records that pinning it once broke Linux packaging, and
+narrowing it to Windows and Linux would have silently dropped macOS.
+
 ## Standing rule: the rig measures something other than what you think
 
 **Three instances, and they are the same family as the six instrument failures

@@ -9,7 +9,16 @@
 @custom-variant dark (&:is(.dark *));
 
 /* Hivemind identity, taken from the logo. Navy and charcoal carry the brand;
-   amber and clay only ever carry meaning. No other hues, no gradients. */
+   amber and clay only ever carry meaning. No other hues.
+
+   ONE gradient shape is permitted, added 2026-08-14: a vertical ramp from a
+   meaning colour to a slightly darker mix of ITSELF, on filled primary actions
+   only. Same hue, two stops, top to bottom. The thing being avoided has never
+   been gradients as such -- it is the two-colour multi-hue button that reads as
+   a generic AI product, and a same-hue ramp is what a physical control looks
+   like rather than what a template looks like. `design-tokens.test.ts` holds
+   the line: any gradient must be `to bottom` and both stops must resolve to the
+   same base hue. */
 :root {
   color-scheme: light;
 
@@ -32,6 +41,12 @@
   --navy-wash: #eef2f8;
   --amber-wash: #f9f3e8;
   --clay-wash: #f9edeb;
+
+  /* The lower stop of a primary button's ramp. Mixed from the base rather than
+     hand-picked, so the two can never drift into different hues -- which is the
+     exact failure the single-hue rule exists to prevent. */
+  --navy-deep: color-mix(in oklab, var(--navy) 88%, #000000);
+  --clay-deep: color-mix(in oklab, var(--clay) 88%, #000000);
 
   /* Barely rounded. A 10px panel corner reads as a card on a marketing page;
      an instrument's panels are square enough that the rule is what you see. */
@@ -81,6 +96,8 @@
   --color-surface: var(--surface);
   --color-ink: var(--ink);
   --color-navy: var(--navy);
+  --color-navy-deep: var(--navy-deep);
+  --color-clay-deep: var(--clay-deep);
   --color-rule: var(--rule);
   --color-amber: var(--amber);
   --color-clay: var(--clay);

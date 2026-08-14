@@ -63,6 +63,17 @@ export interface ThreadShipped {
   changedFiles: string[] | null;
   branch: string | null;
   adoptedRef: string | null;
+  /**
+   * How long the run took, measured from the first event in this thread to the
+   * adoption. Derived from two real timestamps, never from a clock that ticks
+   * on screen — a duration that grows while you watch it is a progress bar
+   * pretending to be a measurement.
+   *
+   * Null when the thread does not reach back to a start, which happens on a
+   * trail cut mid-run. Absent rather than zero, because "took no time" is not
+   * what that means.
+   */
+  runDurationMs: number | null;
 }
 
 export type ThreadEntry =
@@ -206,6 +217,9 @@ export function buildRunThread(
   const entries: ThreadEntry[] = [];
   const appliedGuidance = new Set<string>();
   const startedAt = new Map<string, string>();
+  /* The oldest event this thread holds. Two real timestamps, subtracted once at
+     render -- not a clock that counts up on screen. */
+  const threadOpenedAt = eventsNewestFirst.at(-1)?.ts ?? null;
 
   for (const event of eventsNewestFirst) {
     if (event.type !== "human.guidance_consumed") continue;
@@ -282,7 +296,8 @@ export function buildRunThread(
            the older trails in docs/evidence genuinely lack this field. */
         changedFiles: readStringArray(event.data.changed_files),
         branch: readString(event.data.base_branch),
-        adoptedRef: readString(event.data.adopted_ref)
+        adoptedRef: readString(event.data.adopted_ref),
+        runDurationMs: elapsedMs(threadOpenedAt, event.ts)
       });
       continue;
     }
@@ -357,4 +372,13 @@ function readStringArray(value: unknown): string[] | null {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string")
     ? value
     : null;
+}
+
+/** Milliseconds between two recorded timestamps, or null if either is absent. */
+function elapsedMs(from: string | null, to: string): number | null {
+  if (from === null) return null;
+  const started = Date.parse(from);
+  const ended = Date.parse(to);
+  if (!Number.isFinite(started) || !Number.isFinite(ended) || ended < started) return null;
+  return ended - started;
 }

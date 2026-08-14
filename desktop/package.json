@@ -8,7 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "bundle:prepare": "node scripts/prepare-bundle.mjs",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build --bundles nsis",
+    "tauri:build": "tauri build --bundles nsis --config src-tauri/gen/version.conf.json",
     "test": "vitest run",
     "replay:collect": "node tools/collect-replay.mjs",
     "tauri:build:linux": "tauri build --bundles deb,appimage",

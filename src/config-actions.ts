@@ -24,6 +24,7 @@ import {
 } from "./config.js";
 import { initProject } from "./init.js";
 import { ACCOUNT_HOME_VARIABLES } from "./agent-catalogue.js";
+import { parseTaskTypePreferences } from "./routing-preferences.js";
 import { readAccounts, selectedAccount } from "./provider-accounts.js";
 import { writeJsonAtomic } from "./atomic.js";
 
@@ -162,6 +163,7 @@ function publicConfig(config: HivemindConfig): Record<string, unknown> {
     base_branch: config.base_branch ?? null,
     allowed_globs: config.allowed_globs,
     forbidden_globs: config.forbidden_globs,
+    task_type_routing: config.task_type_routing ?? {},
     low_globs: config.low_globs ?? [],
     medium_globs: config.medium_globs ?? [],
     high_globs: config.high_globs ?? [],
@@ -190,7 +192,12 @@ const WRITABLE_KEYS = [
   "test_command",
   "run_ceiling_tokens",
   "session_ceiling_tokens",
-  "max_concurrent_workers"
+  "max_concurrent_workers",
+  /* Which agent handles which KIND of work. Validated by
+     `parseTaskTypePreferences`, which refuses rather than repairs -- an
+     unknown task type or a malformed entry is a mistake worth surfacing, not
+     something to quietly drop. */
+  "task_type_routing"
 ] as const;
 
 type WritableKey = (typeof WRITABLE_KEYS)[number];
@@ -223,6 +230,12 @@ export async function setProjectConfig(
         return { ok: false, reason: `${key} must be a list of glob strings` };
       }
       next[key] = value;
+      continue;
+    }
+    if (key === "task_type_routing") {
+      const parsed = parseTaskTypePreferences(value);
+      if (!parsed.ok) return parsed;
+      next[key] = parsed.value;
       continue;
     }
     if (key === "test_command") {

@@ -2,6 +2,7 @@ import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { checkFormatVersion, formatVersions } from "./format-version.js";
 import { readJsonFile } from "./json.js";
+import { parseTaskTypePreferences } from "./routing-preferences.js";
 import { isAutonomyLevel, type AutonomyLevel } from "./autonomy-level.js";
 import { normalizeRepoPathPattern, validateRepoRelativePathOrGlob } from "./path-pattern.js";
 
@@ -32,6 +33,14 @@ export interface HivemindConfig {
   manager_autonomy?: ManagerAutonomyPolicy;
   execution?: ExecutionConfig;
   verification?: VerificationConfig;
+  /**
+   * Which agent handles which KIND of work, chosen by a person.
+   *
+   * Optional, and absent means absent -- routing behaves exactly as it did
+   * before this existed. Validated by `parseTaskTypePreferences`, which refuses
+   * an unknown task type rather than dropping it.
+   */
+  task_type_routing?: Record<string, { tool: string | null; preference: "cheapest" | "strongest" | null }>;
 }
 
 export interface ExecutionConfig {
@@ -178,7 +187,15 @@ export function normalizeConfig(raw: unknown): HivemindConfig {
     resource_policy: normalizeResourcePolicy(raw.resource_policy),
     ...("manager_autonomy" in raw ? { manager_autonomy: normalizeManagerAutonomyPolicy(raw.manager_autonomy) } : {}),
     execution: normalizeExecutionConfig(raw.execution),
-    ...("verification" in raw ? { verification: normalizeVerificationConfig(raw.verification) } : {})
+    ...("verification" in raw ? { verification: normalizeVerificationConfig(raw.verification) } : {}),
+    /* Normalized through the same validator `config.set` uses, so a config
+       edited by hand cannot carry a shape routing would trip over. Absent stays
+       absent -- an empty object here would be indistinguishable from "somebody
+       chose nothing", and routing reads the two the same way only because
+       neither exists. */
+    ...("task_type_routing" in raw
+      ? { task_type_routing: normalizeTaskTypeRouting(raw.task_type_routing) }
+      : {})
   };
 }
 
@@ -526,4 +543,12 @@ function normalizeForComparison(pathValue: string): string {
 
 function isNodeError(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
+/** Drops anything the routing validator refuses, rather than throwing here. */
+function normalizeTaskTypeRouting(
+  raw: unknown
+): NonNullable<HivemindConfig["task_type_routing"]> {
+  const parsed = parseTaskTypePreferences(raw);
+  return parsed.ok ? parsed.value : {};
 }

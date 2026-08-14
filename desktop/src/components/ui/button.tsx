@@ -20,10 +20,17 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
+        /* The one permitted gradient: a vertical ramp from the meaning colour
+           to a darker mix of ITSELF. Same hue, two stops, top to bottom -- what
+           a physical control looks like, not what a template looks like. The
+           multi-hue two-colour button is the AI-default tell this whole visual
+           language exists to avoid, and a same-hue ramp is not that.
+           Filled primary actions only: outline, ghost, secondary and link stay
+           flat, so the gradient continues to mean "this is the action". */
         default:
-          "bg-primary text-primary-foreground hover:bg-primary/88 disabled:border disabled:border-rule disabled:bg-canvas disabled:text-muted-foreground",
+          "bg-navy bg-gradient-to-b from-navy to-navy-deep text-primary-foreground hover:from-navy-deep hover:to-navy-deep disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground",
         destructive:
-          "bg-destructive text-destructive-foreground hover:bg-destructive/88 disabled:border disabled:border-rule disabled:bg-canvas disabled:text-muted-foreground",
+          "bg-clay bg-gradient-to-b from-clay to-clay-deep text-destructive-foreground hover:from-clay-deep hover:to-clay-deep disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground",
         outline:
           "border border-rule bg-panel text-ink hover:border-navy/45 hover:bg-navy-wash hover:text-navy disabled:opacity-45",
         secondary: "bg-secondary text-secondary-foreground hover:bg-rule/60 disabled:opacity-45",

@@ -24,6 +24,8 @@ function adapter(overrides: Partial<InspectedAdapter> = {}): InspectedAdapter {
     tool: "worker",
     agent_id: "codex-terra",
     model: "gpt-5.6-terra",
+    capabilities_stale: null,
+    account: null,
     routing_tier: "standard",
     problems: [],
     connected_at: "2026-08-12T10:00:00.000Z",

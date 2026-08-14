@@ -1,4 +1,5 @@
 import { AlertTriangle, Check, FolderGit2, Loader, Minus, Plug } from "lucide-react";
+import { getVersion } from "@tauri-apps/api/app";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -222,6 +223,13 @@ export function SettingsDialog({
               )}
             </Section>
 
+            <TaskTypeRouting
+              config={config}
+              disabled={disabled}
+              adapters={view?.adapters ?? []}
+              onChange={change}
+            />
+
             <Section title="Spending limits">
               {config === null ? (
                 <Waiting />
@@ -292,6 +300,8 @@ export function SettingsDialog({
                 ))}
               </div>
             </Section>
+
+            <BuildLine />
           </div>
         </ScrollArea>
       </DialogContent>
@@ -707,4 +717,161 @@ function capabilityMark(status: CapabilityStatus): "ok" | "bad" | "unverified" {
       return unhandled;
     }
   }
+}
+
+/* Which build is running, where a person can find it.
+ *
+ * The Start menu opened an eleven-day-old install and nothing anywhere said so
+ * -- because the version was hardcoded `0.0.0`, so every build looked identical
+ * to Windows, to the uninstall entry, and to the app. The version is a calendar
+ * stamp now (`YY.MMDD.HHmm`), which makes "am I running what I just built" a
+ * question with an answer.
+ */
+function BuildLine(): React.JSX.Element {
+  const [version, setVersion] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void getVersion()
+      .then((value) => {
+        if (!cancelled) setVersion(value);
+      })
+      .catch(() => {
+        /* Running outside the shell, e.g. the replay harness. Nothing to say. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  if (version === null) return <span />;
+  return (
+    <p className="m-0 border-t border-rule pt-3 text-[11px] text-muted-foreground">
+      This build is <span className="font-mono text-ink">{version}</span>. Installing a
+      newer one replaces it; you should never have two.
+    </p>
+  );
+}
+
+/* Which agent handles which KIND of work.
+ *
+ * Routing already knew the task's TIER -- how dangerous the files are -- and a
+ * promoted policy learned from outcomes. It did not know that a screen and a
+ * data model are different work at the same tier, and none of it was reachable
+ * from here.
+ *
+ * Three things this surface does NOT do, each enforced in Core rather than
+ * here: it cannot lift the tier floor, it cannot stand in for a promoted
+ * policy, and it cannot aim work at an agent that does not report which model
+ * it loaded. The last one is why some agents appear greyed with a reason.
+ */
+const WORK_KINDS: Array<{ id: string; label: string; detail: string }> = [
+  { id: "ui", label: "Screens and interfaces", detail: "Layout, components, anything judged by eye" },
+  { id: "architecture", label: "Shape of the system", detail: "How the pieces fit together" },
+  { id: "data_model", label: "Data and schemas", detail: "Records, migrations, storage shapes" },
+  { id: "api", label: "Interfaces between things", detail: "Endpoints and contracts" },
+  { id: "testing", label: "Tests", detail: "Checks over existing behaviour" },
+  { id: "documentation", label: "Documentation", detail: "Prose, not code" },
+  { id: "refactor", label: "Reshaping existing code", detail: "No behaviour change intended" },
+  { id: "security", label: "Security-sensitive work", detail: "Auth, secrets, permissions" }
+];
+
+/* The visual-work suggestion. OFFERED, never applied: a default would spend
+   money nobody asked to spend, and the belief that visual work benefits most
+   from a stronger model is not something this project has measured on your
+   work. Said plainly, so declining it is an informed choice. */
+const VISUAL_SUGGESTION =
+  "Screens are where a stronger model most often pays for itself — layout and spacing are judged by eye, and cheaper models tend to need more revisions. Hivemind will not do this on its own: it costs more per task, and this has not been measured on your project.";
+
+function TaskTypeRouting({
+  config,
+  adapters,
+  disabled,
+  onChange
+}: {
+  config: ProjectConfigView["config"];
+  adapters: InspectedAdapter[];
+  disabled: boolean;
+  onChange: (payload: Record<string, unknown>) => Promise<void>;
+}): React.JSX.Element {
+  if (config === null) {
+    return (
+      <Section title="Which agent handles which kind of work">
+        <Waiting />
+      </Section>
+    );
+  }
+  const current = config.task_type_routing;
+
+  /* An agent may only be AIMED at work if it reports which model it loaded.
+     Anything else makes the choice unconfirmable, which is the same standard
+     the rest of the capability contract uses. */
+  const choosable = adapters.filter((adapter) => {
+    if (!adapter.installed || adapter.tool === null) return false;
+    if (adapter.capabilities_stale !== null) return false;
+    return adapter.capabilities.some(
+      (capability) => capability.id === "pins_one_model" && capability.status === "verified"
+    );
+  });
+
+  const set = (kind: string, preference: string): void => {
+    const next = { ...current };
+    if (preference === "") delete next[kind];
+    else if (preference === "strongest" || preference === "cheapest") {
+      next[kind] = { tool: null, preference };
+    } else {
+      next[kind] = { tool: preference, preference: null };
+    }
+    void onChange({ task_type_routing: next });
+  };
+
+  return (
+    <Section title="Which agent handles which kind of work">
+      <p className="m-0 mb-3 text-[12px] leading-relaxed text-muted-foreground">
+        Work is already routed by how risky the files are. This adds the second
+        question: what KIND of work it is. The risk limit still wins — nothing here
+        can send dangerous work to a cheaper agent.
+      </p>
+
+      {choosable.length === 0 ? (
+        <p className="m-0 mb-3 rounded-md border border-amber/25 border-l-2 border-l-amber bg-amber-wash px-3 py-2 text-[12px] leading-relaxed text-amber">
+          None of your connected agents reports which model it actually loaded, so
+          choosing one for a kind of work would not be something Hivemind could
+          confirm. Connect an agent that does, and these become available.
+        </p>
+      ) : null}
+
+      <div className="grid gap-2">
+        {WORK_KINDS.map((kind) => (
+          <div className="flex items-baseline gap-3" key={kind.id}>
+            <span className="min-w-0 flex-1">
+              <strong className="block text-[13px] font-medium text-ink">{kind.label}</strong>
+              <span className="block text-[11px] text-muted-foreground">{kind.detail}</span>
+              {kind.id === "ui" ? (
+                <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
+                  {VISUAL_SUGGESTION}
+                </span>
+              ) : null}
+            </span>
+            <select
+              className="h-7 shrink-0 rounded-sm border border-rule bg-panel px-2 text-[12px] text-ink disabled:opacity-45"
+              disabled={disabled || choosable.length === 0}
+              value={
+                current[kind.id]?.tool ?? current[kind.id]?.preference ?? ""
+              }
+              onChange={(event) => set(kind.id, event.target.value)}
+            >
+              <option value="">However it is routed today</option>
+              <option value="strongest">The strongest agent available</option>
+              <option value="cheapest">The cheapest agent available</option>
+              {choosable.map((adapter) => (
+                <option key={adapter.role} value={adapter.tool ?? ""}>
+                  {adapter.role}
+                  {adapter.model === null ? "" : ` · ${adapter.model}`}
+                </option>
+              ))}
+            </select>
+          </div>
+        ))}
+      </div>
+    </Section>
+  );
 }

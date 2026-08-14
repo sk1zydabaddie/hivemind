@@ -9,6 +9,11 @@ import {
   type ProviderRoutingTier
 } from "./adapter.js";
 import type { HivemindConfig } from "./config.js";
+import {
+  parseTaskTypePreferences,
+  preferenceFor,
+  providerCanBeChosenDeliberately
+} from "./routing-preferences.js";
 import type { TaskContract } from "./contract.js";
 import { matchesAny, matchesPattern } from "./glob.js";
 import { readPromotedRoutingPolicy } from "./learned-routing.js";
@@ -117,6 +122,24 @@ export async function routeTaskProvider(
 
   const nonPressured = eligible.filter((candidate) => !candidate.pressured);
   const pool = nonPressured.length > 0 ? nonPressured : eligible;
+
+  /* A person's choice for this KIND of work. The weakest of the three routing
+     inputs on purpose: it is applied only after the tier floor has already
+     narrowed the pool, so it can never promote a cheap provider into Critical
+     work -- it can only choose among providers that were already allowed. */
+  const chosen = await applyTaskTypePreference(repoRoot, contract, config, pool);
+  if (chosen !== null) {
+    return {
+      ok: true,
+      value: {
+        task_tier: taskTier,
+        tool: chosen.tool,
+        provider_tier: chosen.providerTier,
+        profile: chosen.profile
+      }
+    };
+  }
+
   const preference = options.preference ?? "default";
   if (preference !== "default") {
     const selected = [...pool].sort((left, right) =>
@@ -407,4 +430,44 @@ function compareStrongest(left: ProviderCandidate, right: ProviderCandidate): nu
 
 function isNodeError(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
+/**
+ * Resolve the operator's per-task-type preference against an already-eligible
+ * pool, or null when there is nothing to apply.
+ *
+ * Takes the pool AFTER tier filtering, which is what makes guard 1 structural
+ * rather than a check somebody has to remember: a provider the tier floor
+ * excluded is not in this list to be chosen.
+ */
+async function applyTaskTypePreference(
+  repoRoot: string,
+  contract: TaskContract,
+  config: HivemindConfig,
+  pool: ProviderCandidate[]
+): Promise<ProviderCandidate | null> {
+  const parsed = parseTaskTypePreferences(
+    config.task_type_routing
+  );
+  if (!parsed.ok) return null;
+  const wanted = preferenceFor(parsed.value, contract.routing_task_type);
+  if (wanted === null) return null;
+
+  if (wanted.tool !== null) {
+    const named = pool.find((candidate) => candidate.tool === wanted.tool);
+    if (named === undefined) return null;
+    /* Guard 3: a provider that cannot prove it honours a model pin is not
+       something to aim work at. Routing may still fall back to it; it will not
+       be chosen deliberately. */
+    const allowed = await providerCanBeChosenDeliberately(repoRoot, named.tool);
+    return allowed.allowed ? named : null;
+  }
+
+  const sorted = [...pool].sort((left, right) =>
+    wanted.preference === "cheapest" ? compareCheapest(left, right) : compareStrongest(left, right)
+  );
+  const best = sorted[0];
+  if (best === undefined) return null;
+  const allowed = await providerCanBeChosenDeliberately(repoRoot, best.tool);
+  return allowed.allowed ? best : null;
 }

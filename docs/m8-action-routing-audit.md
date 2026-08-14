@@ -93,8 +93,17 @@ can widen a gate: two are read-only or key-whitelisted, one wraps the existing
   holds a provider credential. Takes no fields; anything supplied refuses.
 - `config.set` — `setProjectConfig()`. Accepts a fixed key list
   (`low_globs`/`medium_globs`/`high_globs`/`critical_globs`, `test_command`,
-  `run_ceiling_tokens`, `session_ceiling_tokens`, `max_concurrent_workers`) and
-  refuses anything else rather than merging it. Every write is re-validated by
+  `run_ceiling_tokens`, `session_ceiling_tokens`, `max_concurrent_workers`,
+  `task_type_routing`) and refuses anything else rather than merging it.
+  `task_type_routing` chooses which agent handles which KIND of work and is
+  validated by `parseTaskTypePreferences`, which refuses an unknown task type
+  rather than dropping it. It is the weakest of routing's three inputs by
+  construction: it is applied to a candidate pool the tier floor has ALREADY
+  narrowed, so it can never promote a cheap provider into Critical work; it
+  never touches the promoted-policy path, so a preference cannot launder itself
+  as learned evidence; and a provider whose `pins_one_model` is not `verified`
+  (or whose verification went stale when its account changed) cannot be aimed at
+  deliberately, because a model choice nobody can confirm is not a choice. Every write is re-validated by
   the same `validateConfig` the loader uses and written atomically, so a value
   this action cannot express cannot be reached through it. It cannot lower a
   routing floor: the floors are derived from tier, and only the glob lists that

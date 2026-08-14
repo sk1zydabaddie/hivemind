@@ -329,6 +329,11 @@ export interface InspectedAdapter {
   problems: string[];
   connected_at: string | null;
   capabilities: ProbedCapability[];
+  /* Why the recorded capabilities no longer describe what would run, or null.
+     Set when the account behind the harness changed. */
+  capabilities_stale: string | null;
+  /* The account this role runs as, where one has been chosen. */
+  account: { id: string; label: string; harness: string } | null;
 }
 
 export interface ProjectConfigView {
@@ -347,6 +352,9 @@ export interface ProjectConfigView {
     session_ceiling_tokens: number | null;
     max_concurrent_workers: number | null;
     verification_checks: Array<{ id: string; command: string }>;
+    /* Which agent handles which KIND of work. Empty when nobody has chosen --
+       absent means absent, never "the default". */
+    task_type_routing: Record<string, { tool: string | null; preference: "cheapest" | "strongest" | null }>;
   } | null;
   roles: string[];
   adapters: InspectedAdapter[];

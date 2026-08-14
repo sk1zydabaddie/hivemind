@@ -2239,6 +2239,15 @@ function ShippedCard({
             {entry.branch ? ` on ${entry.branch}` : ""} — this is part of your
             project now
           </span>
+          {/* Two real facts, and nothing derived from a clock on screen: how
+              long the run actually took, from its first recorded event to this
+              one. Absent when the thread does not reach back to a start, which
+              is a different thing from a run that took no time. */}
+          {entry.runDurationMs === null ? null : (
+            <span className="mt-1 block font-mono text-[11px] text-panel/60">
+              {formatDuration(entry.runDurationMs)} from first step to shipped
+            </span>
+          )}
         </div>
         <time className="shrink-0 font-mono text-[11px] text-panel/70">
           {formatClock(entry.at)}

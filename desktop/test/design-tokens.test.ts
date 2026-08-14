@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, test } from "vitest";
@@ -229,13 +229,77 @@ describe("palette discipline", () => {
       "#edeff2", // rule-soft
       "#eef2f8", // navy wash
       "#f9f3e8", // amber wash
-      "#f9edeb" // clay wash
+      "#f9edeb", // clay wash
+      /* Pure black, and ONLY as the darkening term of a same-hue ramp. It is
+         never a colour anything is painted; it is how `--navy-deep` is derived
+         from `--navy` so the two stops cannot drift into different hues. */
+      "#000000"
     ]);
     const hexes = new Set(
       (styles.match(/#[0-9a-fA-F]{3,8}\b/gu) ?? []).map((hex) => hex.toLowerCase())
     );
     expect([...hexes].filter((hex) => !allowed.has(hex))).toEqual([]);
-    // Elevation is neutral ink at low alpha, never a hue, and never a gradient.
-    expect(styles).not.toMatch(/linear-gradient|radial-gradient|conic-gradient/u);
+    /* Gradients: one shape, permitted 2026-08-14, and the rule is narrow.
+     *
+     * The blanket ban that used to live here was the wrong instrument. What
+     * this project needs to avoid is the two-colour MULTI-HUE button that reads
+     * as a generic AI product -- not gradients as such. A vertical ramp from a
+     * colour to a darker mix of itself is what a physical control looks like.
+     *
+     * So: no radial or conic anywhere, and every linear ramp must be vertical
+     * and single-hue. The stops are Tailwind `from-`/`to-` utilities in the
+     * markup rather than CSS here, so the stylesheet keeps only the ban on the
+     * shapes that cannot be constrained. */
+    expect(styles).not.toMatch(/radial-gradient|conic-gradient/u);
+    for (const direction of ["to right", "to left", "45deg", "90deg", "to top"]) {
+      expect(styles).not.toContain(direction);
+    }
+
+    /* And the derived stops must be mixes of a palette colour, never a second
+       hand-picked hue -- which is the only way two stops drift apart. */
+    const deepTokens = [...styles.matchAll(/--(\w+)-deep:\s*([^;]+);/gu)];
+    expect(deepTokens.length).toBeGreaterThan(0);
+    for (const [, base, value] of deepTokens) {
+      expect(value).toContain(`var(--${base!})`);
+      expect(value).toMatch(/color-mix\(in oklab/u);
+    }
+  });
+
+  test("every gradient in the markup is vertical and stays on one hue", async () => {
+    const root = path.join(desktopRoot, "src");
+    const files: string[] = [];
+    const walk = async (dir: string): Promise<void> => {
+      for (const entry of await readdir(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) await walk(full);
+        else if (entry.name.endsWith(".tsx")) files.push(full);
+      }
+    };
+    await walk(root);
+
+    /* The failure being prevented is specific: `from-navy to-amber` -- two
+       meaning colours in one control, which is the generic-AI-product tell.
+       Same-hue ramps are fine and are the whole point of allowing this. */
+    const offences: string[] = [];
+    let ramps = 0;
+    for (const file of files) {
+      const source = await readFile(file, "utf8");
+      /* Only vertical ramps exist. Anything else is refused outright. */
+      for (const horizontal of source.match(/bg-gradient-to-(?:r|l|tr|tl|br|bl)/gu) ?? []) {
+        offences.push(`${path.basename(file)}: ${horizontal}`);
+      }
+      for (const match of source.matchAll(
+        /from-([a-z-]+)(?:\/\d+)?\s+(?:hover:)?to-([a-z-]+)(?:\/\d+)?/gu
+      )) {
+        ramps += 1;
+        const base = (name: string): string => name.replace(/-deep$|-wash$/u, "");
+        if (base(match[1]!) !== base(match[2]!)) {
+          offences.push(`${path.basename(file)}: from-${match[1]} to-${match[2]}`);
+        }
+      }
+    }
+    expect(offences, "a gradient left its hue or ran horizontally").toEqual([]);
+    /* Non-vacuous: if the ramps disappear this stops proving anything. */
+    expect(ramps).toBeGreaterThan(0);
   });
 });
