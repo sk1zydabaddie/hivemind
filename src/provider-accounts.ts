@@ -1,7 +1,7 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
 
-import { ACCOUNT_HOME_VARIABLES } from "./agent-catalogue.js";
+import { ACCOUNT_HOME_VARIABLES, harnessForAgentId } from "./agent-catalogue.js";
 import { writeJsonAtomic } from "./atomic.js";
 import { readFile } from "node:fs/promises";
 
@@ -208,7 +208,25 @@ export async function accountEnvironmentForTool(
   tool: string
 ): Promise<Record<string, string>> {
   const file = await readAccounts(repoRoot);
-  return accountEnvironment(selectedAccount(file, tool));
+  /* `tool` is the ROLE, so the harness has to be looked up through the
+     connection record. Passing the role straight in matched no harness and
+     silently applied no account at all -- the bug this indirection exists to
+     prevent, and one the fixtures hid by writing a `tool` no real profile has. */
+  return accountEnvironment(selectedAccount(file, await harnessForRole(repoRoot, tool)));
+}
+
+/** The harness a role is connected to, via its recorded agent. */
+export async function harnessForRole(repoRoot: string, role: string): Promise<string | null> {
+  try {
+    const raw: unknown = JSON.parse(
+      await readFile(path.join(repoRoot, ".hivemind", "adapters", `${role}.connection.json`), "utf8")
+    );
+    if (typeof raw !== "object" || raw === null) return null;
+    const agentId = (raw as { agent_id?: unknown }).agent_id;
+    return harnessForAgentId(typeof agentId === "string" ? agentId : null);
+  } catch {
+    return null;
+  }
 }
 
 /**

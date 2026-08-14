@@ -1153,3 +1153,64 @@ out loud:
 - **The replay's event clock is 28.9s; page-load to shipped is ~34s.** The
   difference is app boot before the first event lands. A recording should start
   when the four tasks appear.
+
+## 9. The contract had no idea where your code goes — 2026-08-14
+
+**A ninth capability, and the first one added because something was *missing*
+rather than because a provider behaved unexpectedly.**
+
+Every capability in the contract was about what an agent may **do**: which flags
+it carries, where it may write, whether it commits, whether it spawns
+sub-agents. None of them asked **where the prompt is sent** — and a prompt
+carries the contents of every file in the task's scope.
+
+`ANTHROPIC_BASE_URL`. Codex's `model_providers[].base_url`. OpenCode's
+`baseURL`. Set any one of them and the harness talks to that host instead of the
+vendor's, ships every file it is working on there, and **all eight existing
+capabilities still read `verified`.** Nothing in the system noticed, and nothing
+in the system could have.
+
+This is not a local-model concern. Anyone who has set one of those variables is
+in this state today and was before local models were raised.
+
+### What can be determined, and what cannot
+
+The obvious design is to read the endpoint back the way `pins_one_model` reads
+the model. **That is not available.** Codex's `turn_context` — the richest
+readback any of these harnesses produces — carries the model, the sandbox, the
+approval policy and the workspace roots, and **no endpoint at all**. Checked in
+the shipped binary rather than assumed.
+
+So `known_endpoint` is determined from configuration, and its evidence class
+says `static` rather than borrowing `readback`'s authority. Three inputs, in
+override order: the profile's argv, the environment the process will be spawned
+with, and the harness's own config file in the home it will actually read —
+which the account mechanism may have changed, so the home is resolved from the
+same variable that selects an account.
+
+### The three states, and why the middle one exists
+
+| Standing | Meaning | Admission |
+| --- | --- | --- |
+| `vendor_default` | No override anywhere | **Verified.** The vendor's documented endpoint |
+| `configured` | An override is set | **Verified, and NAMED.** Somebody chose it; that is not a violation. But the host is recorded on the connection and shown, because a deliberate choice must not hide behind a green tick |
+| `unknown` | Hivemind cannot inspect this harness | **Refuses** |
+
+The middle state is the interesting one. A configured endpoint is a *decision*,
+not a fault — refusing it would make local models and proxies impossible, which
+is not the goal. What was wrong was that the decision was **invisible**.
+
+The refusal is the other half:
+
+> "Hivemind cannot tell you where your code is going" is not a degradation
+> anyone can accept on your behalf.
+
+Same asymmetry as `confined_to_project`: being wrong is unbounded, so unsure
+fails closed. A harness Hivemind does not know how to inspect is refused rather
+than run hopefully — which also means adding a harness now requires saying where
+it sends things, rather than that question being skipped by default.
+
+One implementation note worth keeping: the config search is textual rather than
+a TOML/JSON parse. Three harnesses use three formats, and a parser that fails on
+an unfamiliar dialect would report "no override" for a file that has one. A
+regex errs toward *finding* an override, which is the safe direction here.

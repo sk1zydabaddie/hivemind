@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { initProject } from "../src/init.js";
-import { ACCOUNT_HOME_VARIABLES } from "../src/agent-catalogue.js";
+import { ACCOUNT_HOME_VARIABLES, agentCatalogue } from "../src/agent-catalogue.js";
 import {
   accountEnvironment,
   accountEnvironmentForTool,
@@ -60,19 +60,23 @@ async function fakeHome(repo: string, name: string): Promise<string> {
 test("an account is a directory the harness owns, and selecting one points at it", async () => {
   await withRepo(async (repo) => {
     const work = await fakeHome(repo, "work");
-    const added = await addAccount(repo, { label: "work", harness: "codex", home_dir: work });
+    const added = await addAccount(repo, { label: "work", harness: "codex-cli", home_dir: work });
     assert.equal(added.ok, true);
 
     const file = await readAccounts(repo);
     assert.equal(file.accounts.length, 1);
-    assert.equal(selectedAccount(file, "codex"), null, "an account was selected without anyone choosing");
+    assert.equal(selectedAccount(file, "codex-cli"), null, "an account was selected without anyone choosing");
 
     if (!added.ok) return;
     const selected = await selectAccount(repo, added.value.id);
     assert.equal(selected.ok, true);
 
-    const env = await accountEnvironmentForTool(repo, "codex");
-    assert.deepEqual(env, { CODEX_HOME: path.resolve(work) });
+    /* Resolved by HARNESS here, directly, because no role is connected in this
+       fixture. The role path -- which is what production uses -- has its own
+       test below. */
+    assert.deepEqual(accountEnvironment(selectedAccount(await readAccounts(repo), "codex-cli")), {
+      CODEX_HOME: path.resolve(work)
+    });
   });
 });
 
@@ -82,7 +86,7 @@ test("the environment carries one directory variable and nothing else, ever", as
   const env = accountEnvironment({
     id: "A-1",
     label: "work",
-    harness: "codex",
+    harness: "codex-cli",
     home_dir: "/tmp/home",
     added_at: "2026-08-13T00:00:00.000Z"
   });
@@ -123,8 +127,8 @@ test("no credential-shaped variable can be reached, by allowlist or by name", as
 
   /* And the allowlist is exactly the three measured variables -- not a shape
      that a config file could widen. */
-  assert.deepEqual(Object.keys(ACCOUNT_HOME_VARIABLES).sort(), ["claude", "codex", "opencode"]);
-  assert.equal(accountHomeVariable("codex"), "CODEX_HOME");
+  assert.deepEqual(Object.keys(ACCOUNT_HOME_VARIABLES).sort(), ["claude", "codex-cli", "opencode"]);
+  assert.equal(accountHomeVariable("codex-cli"), "CODEX_HOME");
   assert.equal(accountHomeVariable("claude"), "CLAUDE_CONFIG_DIR");
   assert.equal(accountHomeVariable("opencode"), "OPENCODE_CONFIG_DIR");
   assert.equal(accountHomeVariable("kimi"), null);
@@ -145,13 +149,13 @@ test("what is registered is validated as a directory, and nothing is read inside
   await withRepo(async (repo) => {
     const missing = await addAccount(repo, {
       label: "gone",
-      harness: "codex",
+      harness: "codex-cli",
       home_dir: path.join(repo, "does-not-exist")
     });
     assert.equal(missing.ok, false);
 
     const file = path.join(repo, "README.md");
-    const notDirectory = await addAccount(repo, { label: "file", harness: "codex", home_dir: file });
+    const notDirectory = await addAccount(repo, { label: "file", harness: "codex-cli", home_dir: file });
     assert.equal(notDirectory.ok, false);
 
     const unknown = await addAccount(repo, {
@@ -168,7 +172,7 @@ test("what is registered is validated as a directory, and nothing is read inside
        harness's own message, which is where that failure belongs. */
     const empty = await addAccount(repo, {
       label: "empty",
-      harness: "codex",
+      harness: "codex-cli",
       home_dir: await fakeHome(repo, "empty")
     });
     assert.equal(empty.ok, true);
@@ -182,8 +186,9 @@ test("switching accounts invalidates the capability verification for that harnes
     await mkdir(dir, { recursive: true });
     await writeFile(
       path.join(dir, "worker.profile.json"),
+      /* tool IS the role, as every real profile is written. */
       JSON.stringify({
-        tool: "codex",
+        tool: "worker",
         invoke: ["codex", "exec"],
         prompt_arg: "stdin",
         verified_on: "2026-08-13",
@@ -205,12 +210,12 @@ test("switching accounts invalidates the capability verification for that harnes
 
     const work = await addAccount(repo, {
       label: "work",
-      harness: "codex",
+      harness: "codex-cli",
       home_dir: await fakeHome(repo, "sw-work")
     });
     const personal = await addAccount(repo, {
       label: "personal",
-      harness: "codex",
+      harness: "codex-cli",
       home_dir: await fakeHome(repo, "sw-personal")
     });
     assert.equal(work.ok && personal.ok, true);
@@ -253,7 +258,7 @@ test("the account actions are shaped, and carry no authority", async () => {
   await withRepo(async (repo) => {
     const extra = await executeWorkspaceAction(repo, {
       type: "accounts.inspect",
-      payload: { harness: "codex" }
+      payload: { harness: "codex-cli" }
     });
     assert.equal(extra.ok, false);
 
@@ -278,7 +283,7 @@ test("the account actions are shaped, and carry no authority", async () => {
     assert.equal(inspected.ok, true);
     if (inspected.ok) {
       const value = inspected.value as { switchable: Record<string, string> };
-      assert.equal(value.switchable.codex, "CODEX_HOME");
+      assert.equal(value.switchable["codex-cli"], "CODEX_HOME");
     }
   });
 });
@@ -321,4 +326,67 @@ test("a provider that reports no quota returns nothing, rather than a confident 
   assert.equal(parseProviderQuota("claude-json", '{"type":"result","usage":{}}\n'), null);
   assert.equal(parseProviderQuota("codex-jsonl", "not json at all\n"), null);
   assert.equal(parseProviderQuota("codex-jsonl", '{"rate_limits":{}}\n'), null);
+});
+
+/* The bug the fixtures hid.
+ *
+ * A profile's `tool` is the ROLE -- `worker.profile.json` carries
+ * `tool: "worker"` -- because Core resolves adapters by the name callers send
+ * and callers send the role. Every earlier test here wrote `tool: "codex"`, a
+ * shape no real profile has, so the role-to-harness lookup was never exercised
+ * and the account was silently never applied. `adapter-probe.test.ts` caught it
+ * only because it builds its profile the way the product does.
+ */
+test("an account resolves through the ROLE, the way a real profile is shaped", async () => {
+  await withRepo(async (repo) => {
+    const dir = path.join(repo, ".hivemind", "adapters");
+    await mkdir(dir, { recursive: true });
+
+    /* Exactly what `buildProfileForAgent` writes: tool IS the role. */
+    await writeFile(
+      path.join(dir, "worker.profile.json"),
+      JSON.stringify({
+        tool: "worker",
+        invoke: ["codex", "exec"],
+        prompt_arg: "stdin",
+        verified_on: "2026-08-14",
+        context_window: 200000
+      })
+    );
+    /* And the connection names the catalogue agent, which is the only thing
+       that knows the harness. */
+    await writeFile(
+      path.join(dir, "worker.connection.json"),
+      JSON.stringify({
+        agent_id: "codex-terra",
+        connected_at: "2026-08-14T00:00:00.000Z",
+        capabilities: [{ id: "reports_usage", status: "verified" }],
+        capabilities_stale: null
+      })
+    );
+
+    const home = await fakeHome(repo, "role-resolved");
+    const added = await addAccount(repo, { label: "work", harness: "codex-cli", home_dir: home });
+    assert.equal(added.ok, true, "codex-cli is the catalogue harness name");
+    if (!added.ok) return;
+    await selectAccount(repo, added.value.id);
+
+    /* Resolved from the ROLE, as `runAdapterProcess` does. Before the fix this
+       returned {} and no account was ever applied in production. */
+    const env = await accountEnvironmentForTool(repo, "worker");
+    assert.deepEqual(env, { CODEX_HOME: path.resolve(home) });
+  });
+});
+
+test("the account variables are keyed by the names the catalogue actually uses", () => {
+  /* The other half of the same bug: the map was keyed `codex`, and no catalogue
+     agent has that harness. A key nothing can match is a feature that silently
+     does nothing. */
+  const harnesses = new Set(agentCatalogue.map((agent) => agent.harness));
+  for (const key of Object.keys(ACCOUNT_HOME_VARIABLES)) {
+    assert.ok(
+      harnesses.has(key),
+      `${key} is not a harness any catalogue agent declares, so nothing can ever match it`
+    );
+  }
 });

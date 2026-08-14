@@ -14,6 +14,7 @@ export function SetupScreen({
   onChooseProject,
   onConnectAgent,
   onInitializeProject,
+  onInitializeGit,
   initializing
 }: {
   projectPath: string;
@@ -22,6 +23,10 @@ export function SetupScreen({
   onChooseProject: () => void;
   onConnectAgent: () => void;
   onInitializeProject: () => void;
+  /* Turning an untracked folder into a repository. Separate from setting the
+     project up, because they refuse for different reasons and one can succeed
+     where the other cannot. */
+  onInitializeGit: () => void;
   initializing: boolean;
 }): React.JSX.Element {
   const connecting =
@@ -67,6 +72,16 @@ export function SetupScreen({
                       type="button"
                     >
                       {initializing ? "Setting up…" : "Set up this folder"}
+                    </Button>
+                  ) : null}
+                  {problem.action === "git" ? (
+                    <Button
+                      className="mt-3"
+                      disabled={initializing}
+                      onClick={onInitializeGit}
+                      type="button"
+                    >
+                      {initializing ? "Starting to track it…" : "Start tracking this folder"}
                     </Button>
                   ) : null}
                   {problem.command === null ? null : (
@@ -178,7 +193,7 @@ function SetupStep({
 export function plainConnectionProblem(
   state: string,
   detail: string
-): { title: string; detail: string; command: string | null; action?: "initialize" } | null {
+): { title: string; detail: string; command: string | null; action?: "initialize" | "git" } | null {
   if (state === "live") return null;
   if (/not initialized for Hivemind/iu.test(detail)) {
     return {
@@ -190,11 +205,16 @@ export function plainConnectionProblem(
     };
   }
   if (/not a git repository|git root/iu.test(detail)) {
+    /* This used to explain the requirement and stop, which is a dead end for
+       the most ordinary first-run case there is: somebody who has been editing
+       a folder without git. Explaining a requirement is not the same as
+       offering the step. */
     return {
-      title: "Hivemind works inside a git repository",
+      title: "This folder is not tracked by git yet",
       detail:
-        "It needs git to keep your work separate until you ship it. Choose a folder that is a git repository.",
-      command: null
+        "Hivemind needs git to keep an agent's work separate from your own until you choose to ship it. It can start tracking this folder now — nothing is sent anywhere, and everything already here goes into the first commit.",
+      command: null,
+      action: "git"
     };
   }
   if (/daemon/iu.test(detail)) {

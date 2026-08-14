@@ -22,6 +22,7 @@ import {
 } from "./capability-contract.js";
 import { readAdapterVersion } from "./adapter-version.js";
 import { compareRepoMarks, markRepo } from "./repo-observation.js";
+import { resolveProviderEndpoint } from "./provider-endpoint.js";
 
 /**
  * Verifying an agent instead of believing it.
@@ -581,6 +582,39 @@ export async function probeAdapter(
           attribution.map((entry) => entry.model).join(", "),
           "observation"
         )
+  );
+
+  /* WHERE THE CODE GOES. Determined from configuration rather than readback,
+     because no harness reports its endpoint -- Codex's `turn_context`, the
+     richest readback any of them produces, carries the model, the sandbox, the
+     approval policy and the workspace roots and no endpoint at all. So the
+     evidence class is `static`, and it says so rather than borrowing
+     `readback`'s authority.
+
+     A configured endpoint is NOT a violation: somebody chose it. It is
+     `verified` and NAMED, and the name is what stops a deliberate choice from
+     hiding behind a green tick. Only "cannot look" is unverified, and the
+     contract refuses on that -- "Hivemind cannot tell you where your code is
+     going" is not a degradation anyone can accept on your behalf. */
+  const endpoint = await resolveProviderEndpoint({
+    /* The catalogue agent, not `profile.tool` -- a profile's tool is the ROLE
+       ("worker"), and looking an endpoint surface up by role matches nothing
+       and refuses everything. The probe holds the agent, so here it is exact. */
+    tool: agent.harness,
+    invoke: profile.invoke,
+    environment: process.env
+  });
+  capabilities.push(
+    capability(
+      "known_endpoint",
+      "Sends your code somewhere you know about",
+      true,
+      endpoint.standing === "unknown" ? "unverified" : "verified",
+      endpoint.detail,
+      "a known endpoint",
+      endpoint.host,
+      "static"
+    )
   );
 
   /* Subagents. Hivemind owns concurrency: one worker, one scope. An agent that

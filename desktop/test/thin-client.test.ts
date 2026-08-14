@@ -800,6 +800,63 @@ describe("React workspace boundary", () => {
     expect(core).not.toMatch(/data:\s*\{[\s\S]{0,400}stdout/u);
   });
 
+  test("switching projects carries no project state across", async () => {
+    const app = await readFile(path.join(desktopRoot, "src", "App.tsx"), "utf8");
+    const rust = await readFile(
+      path.resolve(desktopRoot, "src-tauri", "src", "project.rs"),
+      "utf8"
+    );
+
+    /* Recents are SHELL state. Storing them inside a project would make one
+       project the registry of the others, which is the cross-project coupling
+       the isolation work removed. */
+    expect(rust).toMatch(/app_config_dir/u);
+    expect(rust).toMatch(/recent-projects\.json/u);
+
+    /* And they hold paths only. A capability, a connection or a run stored here
+       would be a verification that could travel between projects. */
+    const record = /pub struct RecentProject \{[\s\S]*?\}/u.exec(rust)?.[0] ?? "";
+    expect(record).toMatch(/path: String/u);
+    for (const forbidden of ["capabilit", "connection", "adapter", "token", "spend", "task"]) {
+      expect(record.toLowerCase()).not.toContain(forbidden);
+    }
+
+    /* The daemon survives a switch -- a run in flight on the project you leave
+       keeps running. Asserted at the comment that records the decision, because
+       the behaviour is an ABSENCE (no shutdown hook) and an absence has no
+       other place to be checked. */
+    expect(rust).toMatch(/switching the app cannot kill it/u);
+
+    /* The client's own view IS rebuilt, which is what keeps the two apart. */
+    const hook = await readFile(
+      path.join(desktopRoot, "src", "hooks", "use-workspace.ts"),
+      "utf8"
+    );
+    expect(hook).toMatch(/onSwitchStart[\s\S]{0,320}createBoardProjection\(\)/u);
+    expect(app).toMatch(/recent_projects/u);
+  });
+
+  test("an untracked folder is offered git rather than refused", async () => {
+    const setup = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
+      "utf8"
+    );
+    /* Explaining a requirement is not offering the step. This used to say
+       "choose a folder that is a git repository" and stop. */
+    expect(setup).toMatch(/action: "git"/u);
+    expect(setup.replace(/\s+/gu, " ")).toMatch(/Start tracking this folder/u);
+
+    /* And it refuses rather than guesses when the folder holds a secret: a
+       first commit cannot be un-made without rewriting history. */
+    const rust = await readFile(
+      path.resolve(desktopRoot, "src-tauri", "src", "project.rs"),
+      "utf8"
+    );
+    expect(rust).toMatch(/NEVER_COMMIT/u);
+    expect(rust).toMatch(/\.env/u);
+    expect(rust).toMatch(/if let Some\(reason\) = readiness\.refusal/u);
+  });
+
   test("a passed result never renders without what it stood on, or without its limits", async () => {
     const note = await readFile(
       path.join(desktopRoot, "src", "components", "workspace", "provenance-note.tsx"),

@@ -355,7 +355,85 @@ export function isAdapterRoleName(value: unknown): value is AdapterRoleName {
  * carry. Those names sit two entries away from these in the same binaries.
  */
 export const ACCOUNT_HOME_VARIABLES: Record<string, string> = {
-  codex: "CODEX_HOME",
+  "codex-cli": "CODEX_HOME",
   claude: "CLAUDE_CONFIG_DIR",
   opencode: "OPENCODE_CONFIG_DIR"
+};
+
+/**
+ * The harness a connected role runs on.
+ *
+ * **A profile's `tool` is the ROLE**, not the harness — `worker.profile.json`
+ * carries `tool: "worker"`, because Core resolves adapters by the name callers
+ * send and callers send the role. Anything that needs the harness has to go
+ * through the connection record's `agent_id` and this catalogue.
+ *
+ * That indirection was missed twice on 2026-08-14, in the account mechanism and
+ * again in the endpoint check, and both times the unit tests passed because the
+ * fixtures wrote `tool: "codex"` — a shape no real profile has. The tests were
+ * measuring a repo that could not exist. Caught by `adapter-probe.test.ts`,
+ * which builds its profile the way the product does.
+ */
+export function harnessForAgentId(agentId: string | null): string | null {
+  if (agentId === null) return null;
+  return findCatalogueAgent(agentId)?.harness ?? null;
+}
+
+/**
+ * The endpoint-changing surface of each harness Hivemind knows.
+ *
+ * Measured from shipped artifacts on 2026-08-14, the same standard the account
+ * variables were held to. A harness absent from this table is not assumed
+ * safe — it is `unknown`, and `unknown` refuses.
+ */
+export const ENDPOINT_SURFACE: Record<
+  string,
+  {
+    /** Environment variables that repoint the harness. */
+    variables: string[];
+    /** Argv flags that select a non-vendor provider. */
+    flags: string[];
+    /** Its own config file, relative to the home it runs against. */
+    configFile: string | null;
+    /** Keys in that file that carry a URL. */
+    configKeys: string[];
+    vendorHost: string;
+  }
+> = {
+  claude: {
+    variables: ["ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"],
+    flags: [],
+    configFile: "settings.json",
+    configKeys: ["ANTHROPIC_BASE_URL"],
+    vendorHost: "api.anthropic.com"
+  },
+  "codex-cli": {
+    variables: ["OPENAI_BASE_URL", "CODEX_BASE_URL"],
+    /* `--oss` and `--local-provider` select a local backend outright. */
+    flags: ["--oss", "--local-provider"],
+    configFile: "config.toml",
+    configKeys: ["base_url"],
+    vendorHost: "api.openai.com"
+  },
+  opencode: {
+    variables: ["OPENCODE_BASE_URL", "OPENCODE_API_KEY"],
+    flags: [],
+    configFile: "opencode.json",
+    configKeys: ["baseURL", "base_url"],
+    vendorHost: "the provider configured in OpenCode"
+  }
+};
+
+/**
+ * Where each harness keeps its own configuration by default.
+ *
+ * Not always its name -- `codex-cli` reads `~/.codex`. Here rather than beside
+ * the code that uses it, for the same reason the account variables and the
+ * endpoint surface are: this file is the one allowed to know how to start a
+ * provider, and where it reads its config from is part of that.
+ */
+export const HARNESS_DEFAULT_HOME: Record<string, string> = {
+  "codex-cli": ".codex",
+  claude: ".claude",
+  opencode: ".config/opencode"
 };

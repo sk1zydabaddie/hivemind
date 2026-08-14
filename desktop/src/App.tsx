@@ -8,6 +8,7 @@ import {
   Settings,
   Terminal
 } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 
 import { AgentSetupDialog } from "@/components/agent-setup-dialog";
@@ -50,6 +51,29 @@ export default function App(): React.JSX.Element {
   const [projectOpen, setProjectOpen] = useState(false);
   const [section, setSection] = useState("work");
   const [paletteOpen, setPaletteOpen] = useState(false);
+  /* Which projects have been opened. SHELL state, kept by the Tauri side in the
+     app's own config directory -- never inside a project, because putting it
+     there would make one project the registry of the others, which is the
+     cross-project coupling the isolation work removed. It holds paths and
+     nothing else: no task, no run, no capability. Switching therefore cannot
+     carry a verification across, because there is nothing here that could. */
+  const [recents, setRecents] = useState<{ path: string; opened_at: string }[]>([]);
+  const projectPath = workspace.connection?.project_root ?? "";
+
+  useEffect(() => {
+    void invoke<{ path: string; opened_at: string }[]>("recent_projects")
+      .then(setRecents)
+      .catch(() => {
+        /* Running outside the shell, e.g. the replay harness. The palette
+           simply offers nothing rather than showing an error where a project
+           list belongs. */
+      });
+  }, [projectPath]);
+
+  useEffect(() => {
+    if (projectPath === "") return;
+    void invoke("remember_project", { projectPath }).catch(() => undefined);
+  }, [projectPath]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [agentOpen, setAgentOpen] = useState(false);
 
@@ -229,6 +253,7 @@ export default function App(): React.JSX.Element {
             onChooseProject={() => setProjectOpen(true)}
             onConnectAgent={() => setAgentOpen(true)}
             onInitializeProject={() => void workspace.initializeProject()}
+            onInitializeGit={() => void workspace.initializeGit()}
           />
         )}
 
@@ -317,6 +342,30 @@ export default function App(): React.JSX.Element {
               <FolderGit2 aria-hidden="true" />
               Open a different project
             </CommandItem>
+          </CommandGroup>
+          {/* Switching projects in one action. The daemon is per project and
+              Tauri owns no shutdown hook, so a run in flight on the project you
+              leave keeps running and its state is intact when you return --
+              only this client's view is rebuilt, which is what keeps the two
+              from bleeding into each other. */}
+          <CommandGroup heading="Recent projects">
+            {recents
+              .filter((entry) => entry.path !== projectPath)
+              .map((entry) => (
+                <CommandItem
+                  key={entry.path}
+                  onSelect={() => runCommand(() => void workspace.switchProject(entry.path))}
+                >
+                  <FolderGit2 aria-hidden="true" />
+                  {projectNameFromPath(entry.path)}
+                  <CommandShortcut>{displayProjectPath(entry.path)}</CommandShortcut>
+                </CommandItem>
+              ))}
+            {recents.filter((entry) => entry.path !== projectPath).length === 0 ? (
+              <CommandItem disabled>
+                No other project has been opened yet
+              </CommandItem>
+            ) : null}
             <CommandItem onSelect={() => runCommand(() => setAgentOpen(true))}>
               <Terminal aria-hidden="true" />
               Set up a coding agent

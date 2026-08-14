@@ -120,6 +120,16 @@ can widen a gate: two are read-only or key-whitelisted, one wraps the existing
   every required capability came back verified. The recorded
   `<role>.connection.json` stores what the provider reported, not what was
   requested. A failed probe writes nothing at all.
+  Since 2026-08-14 the probe also determines **where the harness sends your
+  code** (`known_endpoint`). A prompt carries the contents of every file in
+  scope, and a base URL -- `ANTHROPIC_BASE_URL`, Codex's `base_url`, OpenCode's
+  `baseURL` -- redirects all of it while every other capability still reads
+  verified. A configured endpoint is not a violation, because somebody chose
+  it; it is recorded and named. An endpoint that cannot be determined refuses,
+  on the same asymmetry as confinement: being wrong is unbounded. Evidence class
+  is `static`, not `readback`, because no harness reports its endpoint -- Codex's
+  `turn_context` carries the model, sandbox, approval policy and workspace roots
+  and no endpoint at all.
 
 The probe is the point. `validateAdapterProfile` checks fields and
 `findDangerousAdapterArgs` refuses flags at spawn; neither has ever confirmed a

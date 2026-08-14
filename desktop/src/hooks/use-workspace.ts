@@ -33,6 +33,7 @@ interface WorkspaceView {
   actionError: string;
   switchProject: (projectPath: string) => Promise<void>;
   initializeProject: () => Promise<void>;
+  initializeGit: () => Promise<void>;
   initializing: boolean;
   selectTaskOutput: (taskId: string) => void;
   performAction: <T>(action: WorkspaceAction) => Promise<T>;
@@ -249,6 +250,21 @@ export function useWorkspace(): WorkspaceView {
     }
   }, [session, projectPath]);
 
+  /* Start tracking an untracked folder, then re-open it.
+     Two separate steps on purpose: git init can succeed where Hivemind setup
+     would still refuse, and vice versa, so collapsing them would report one
+     failure as the other. The re-open is what turns the new repository into a
+     live connection -- nothing here assumes it worked. */
+  const initializeGit = useCallback(async () => {
+    setInitializing(true);
+    try {
+      await invoke("initialize_git", { projectPath });
+      await session.switchProject(projectPath);
+    } finally {
+      setInitializing(false);
+    }
+  }, [session, projectPath]);
+
   useEffect(() => {
     void session.switchProject(initialPath);
     return () => {
@@ -293,6 +309,7 @@ export function useWorkspace(): WorkspaceView {
     actionError,
     switchProject,
     initializeProject,
+    initializeGit,
     initializing,
     selectTaskOutput: openOutputStream,
     performAction

@@ -1212,3 +1212,288 @@ mod tests {
         }
     }
 }
+
+// ── Recent projects, and why they live in the shell ────────────────────────
+//
+// "Which projects have I opened" is SHELL state, not project state. Putting it
+// inside any one project would make one project the registry of the others,
+// which is precisely the cross-project coupling the isolation work removed. So
+// it lives in the app's own config directory, holds nothing but paths and the
+// time each was last opened, and is read by the shell alone.
+//
+// Nothing about a project's WORK is stored here. No task, no run, no
+// capability, no connection. Switching therefore cannot carry a verification
+// across, because there is nothing here that could carry one.
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct RecentProject {
+    pub path: String,
+    pub opened_at: String,
+}
+
+fn recents_file(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| format!("could not resolve the app config directory: {error}"))?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|error| format!("could not create the app config directory: {error}"))?;
+    Ok(dir.join("recent-projects.json"))
+}
+
+fn read_recents(app: &tauri::AppHandle) -> Vec<RecentProject> {
+    let Ok(file) = recents_file(app) else {
+        return Vec::new();
+    };
+    let Ok(text) = std::fs::read_to_string(&file) else {
+        return Vec::new();
+    };
+    serde_json::from_str::<Vec<RecentProject>>(&text).unwrap_or_default()
+}
+
+#[tauri::command]
+pub async fn recent_projects(app: tauri::AppHandle) -> Result<Vec<RecentProject>, String> {
+    // A path that no longer exists is dropped rather than offered. Opening a
+    // folder that has been moved or deleted is a dead end the shell can see
+    // coming, and offering it would be the same failure as a stale shortcut.
+    Ok(read_recents(&app)
+        .into_iter()
+        .filter(|entry| std::path::Path::new(&entry.path).is_dir())
+        .collect())
+}
+
+#[tauri::command]
+pub async fn remember_project(app: tauri::AppHandle, project_path: String) -> Result<(), String> {
+    let normalized = std::fs::canonicalize(&project_path)
+        .map(|path| path.to_string_lossy().to_string())
+        .unwrap_or(project_path);
+    let mut entries: Vec<RecentProject> = read_recents(&app)
+        .into_iter()
+        .filter(|entry| entry.path != normalized)
+        .collect();
+    entries.insert(
+        0,
+        RecentProject {
+            path: normalized,
+            opened_at: chrono_now(),
+        },
+    );
+    entries.truncate(8);
+    let file = recents_file(&app)?;
+    let text = serde_json::to_string_pretty(&entries)
+        .map_err(|error| format!("could not record the recent project: {error}"))?;
+    std::fs::write(&file, text)
+        .map_err(|error| format!("could not write the recent project list: {error}"))
+}
+
+fn chrono_now() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_secs())
+        .unwrap_or(0);
+    format!("{seconds}")
+}
+
+// ── Git, on a folder that has none ────────────────────────────────────────
+//
+// Everything downstream assumes git: worktrees, base commits, diffs, and
+// adoption's fast-forward. Pointing at a folder that is not a repository is a
+// normal first-run case for someone who has been editing without one, and the
+// front door used to explain the requirement and then stop.
+//
+// This offers the step instead. It refuses rather than guesses when the folder
+// holds something that should not be committed -- there is no "commit
+// everything and hope" path, because the first commit is what every later diff
+// is measured against.
+
+#[derive(serde::Serialize)]
+pub struct GitReadiness {
+    pub is_repo: bool,
+    /// Files that would be committed, so the offer can name them.
+    pub would_commit: Vec<String>,
+    /// Why Hivemind will not initialise this folder, when it will not.
+    pub refusal: Option<String>,
+}
+
+/// Names that mean "this folder holds something a first commit must not take".
+const NEVER_COMMIT: [&str; 6] = [
+    ".env",
+    ".env.local",
+    "id_rsa",
+    "credentials.json",
+    "secrets.json",
+    ".npmrc",
+];
+
+#[tauri::command]
+pub async fn inspect_git_readiness(project_path: String) -> Result<GitReadiness, String> {
+    let root = std::path::Path::new(&project_path);
+    if !root.is_dir() {
+        return Err("that folder does not exist".to_string());
+    }
+    if root.join(".git").exists() {
+        return Ok(GitReadiness {
+            is_repo: true,
+            would_commit: Vec::new(),
+            refusal: None,
+        });
+    }
+
+    let mut would_commit = Vec::new();
+    let mut dangerous = Vec::new();
+    let entries = std::fs::read_dir(root)
+        .map_err(|error| format!("could not read that folder: {error}"))?;
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name == ".git" || name == "node_modules" || name == ".hivemind" {
+            continue;
+        }
+        if NEVER_COMMIT.iter().any(|needle| name == *needle) {
+            dangerous.push(name.clone());
+        }
+        would_commit.push(name);
+    }
+    would_commit.sort();
+
+    // Refuse rather than guess. A .env in the folder is not something to decide
+    // about on somebody's behalf -- and a first commit cannot be un-made
+    // without rewriting history, which is exactly what a person who has never
+    // used git cannot be asked to do.
+    let refusal = if dangerous.is_empty() {
+        None
+    } else {
+        dangerous.sort();
+        Some(format!(
+            "This folder holds {} that should probably never be committed. Hivemind will not decide that for you: add a .gitignore, or set the repository up yourself, and open it again.",
+            dangerous.join(", ")
+        ))
+    };
+
+    Ok(GitReadiness {
+        is_repo: false,
+        would_commit,
+        refusal,
+    })
+}
+
+/// Make a folder into a git repository, with an explicit first commit.
+///
+/// Deliberately NOT a silent `git init && git add -A && git commit`. It refuses
+/// on the same grounds `inspect_git_readiness` refuses, re-checked here rather
+/// than trusted from the caller -- the readiness answer and the action are two
+/// round trips apart, and a file can appear between them.
+#[tauri::command]
+pub async fn initialize_git(project_path: String) -> Result<GitReadiness, String> {
+    let readiness = inspect_git_readiness(project_path.clone()).await?;
+    if readiness.is_repo {
+        return Ok(readiness);
+    }
+    if let Some(reason) = readiness.refusal {
+        return Err(reason);
+    }
+
+    let root = std::path::Path::new(&project_path);
+    let run = |args: &[&str]| -> Result<(), String> {
+        let output = std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .map_err(|error| format!("git could not be started: {error}"))?;
+        if output.status.success() {
+            return Ok(());
+        }
+        Err(format!(
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    };
+
+    run(&["init"])?;
+    run(&["add", "-A"])?;
+    // A message that says what it did and why, because this commit is the base
+    // every later diff is measured against and somebody will read it later
+    // wondering where it came from.
+    run(&[
+        "-c",
+        "user.name=Hivemind",
+        "-c",
+        "user.email=setup@hivemind.local",
+        "commit",
+        "-m",
+        "Start tracking this project\n\nCreated by Hivemind when the folder was opened, so changes can be\nkept separate until you choose to ship them. Everything already in\nthe folder is in this commit.",
+    ])?;
+
+    inspect_git_readiness(project_path).await
+}
+
+#[cfg(test)]
+mod git_readiness_tests {
+    use super::*;
+
+    fn temp_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("hivemind-git-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        dir
+    }
+
+    #[test]
+    fn a_folder_holding_a_secret_is_refused_rather_than_committed() {
+        // The whole point of refusing: a first commit cannot be un-made without
+        // rewriting history, which is exactly what somebody who has never used
+        // git cannot be asked to do.
+        let dir = temp_dir("secret");
+        std::fs::write(dir.join(".env"), "TOKEN=1
+").expect("write");
+        std::fs::write(dir.join("index.js"), "//
+").expect("write");
+
+        let readiness =
+            tauri::async_runtime::block_on(inspect_git_readiness(dir.to_string_lossy().to_string()))
+                .expect("readiness");
+        assert!(!readiness.is_repo);
+        let refusal = readiness.refusal.expect("a secret must produce a refusal");
+        assert!(refusal.contains(".env"), "the refusal must name the file: {refusal}");
+
+        // And the action refuses too, re-checked rather than trusting the
+        // earlier answer -- a file can appear between the two round trips.
+        let attempted =
+            tauri::async_runtime::block_on(initialize_git(dir.to_string_lossy().to_string()));
+        assert!(attempted.is_err(), "initialize_git proceeded past a refusal");
+        assert!(!dir.join(".git").exists(), "a repository was created anyway");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_ordinary_folder_is_offered_with_the_files_it_would_commit_named() {
+        let dir = temp_dir("ordinary");
+        std::fs::write(dir.join("index.js"), "//
+").expect("write");
+        std::fs::write(dir.join("README.md"), "# x
+").expect("write");
+
+        let readiness =
+            tauri::async_runtime::block_on(inspect_git_readiness(dir.to_string_lossy().to_string()))
+                .expect("readiness");
+        assert!(!readiness.is_repo);
+        assert!(readiness.refusal.is_none());
+        // Named, so the offer can say what it is about to take.
+        assert!(readiness.would_commit.contains(&"index.js".to_string()));
+        assert!(readiness.would_commit.contains(&"README.md".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_existing_repository_is_left_alone() {
+        let dir = temp_dir("existing");
+        std::fs::create_dir_all(dir.join(".git")).expect("git dir");
+        let readiness =
+            tauri::async_runtime::block_on(inspect_git_readiness(dir.to_string_lossy().to_string()))
+                .expect("readiness");
+        assert!(readiness.is_repo);
+        assert!(readiness.would_commit.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

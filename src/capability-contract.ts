@@ -140,7 +140,8 @@ export type CapabilityId =
   | "leaves_change_uncommitted"
   | "reports_usage"
   | "reports_model_attribution"
-  | "no_nested_agents";
+  | "no_nested_agents"
+  | "known_endpoint";
 
 const admit = (consequence: string, degrades: DegradedFunction[] = []): Admission => ({
   decision: "admit",
@@ -171,6 +172,53 @@ const refuse = (consequence: string): Admission => ({
  * worse than refusing it.
  */
 export const CAPABILITY_CONTRACT: CapabilityDefinition[] = [
+  {
+    /**
+     * WHERE THE CODE GOES. The contract's blind spot until 2026-08-14.
+     *
+     * Every harness accepts a custom endpoint -- `ANTHROPIC_BASE_URL`, Codex's
+     * `model_providers[].base_url`, OpenCode's `baseURL` -- and every one of
+     * the eight capabilities below still reads `verified` when one is set.
+     * Confinement is about where the agent may WRITE; nothing asked where the
+     * prompt is SENT. A base URL pointed at an arbitrary host ships every
+     * prompt, including the contents of every file in scope, to that host, and
+     * the contract had no way to notice.
+     *
+     * This is not a local-model concern. Anyone who has set that variable is
+     * already in this state today, and was before local models were discussed.
+     *
+     * Read back from what the harness reports it RESOLVED to, never from what
+     * was passed to it -- the same rule as every other row here, and the same
+     * reason: a flag accepted is not a flag applied, and an endpoint we set is
+     * not evidence of an endpoint in use.
+     */
+    id: "known_endpoint",
+    label: "Sends your code somewhere you know about",
+    whyItMatters:
+      "Every prompt carries the files the agent is working on. If an agent is pointed at a different server, your code goes there. Hivemind will not run one that cannot say where it is sending things.",
+    scope: "disposition",
+    admission: {
+      /* Two different truths share this state, and the surface separates them:
+         the vendor's own documented endpoint, and an endpoint the person
+         deliberately configured. Neither is a violation -- a configured
+         endpoint is a choice somebody made -- but the second must be NAMED and
+         recorded on the connection, because "verified" alone would hide a
+         decision that matters. `probeAdapter` records the resolved host either
+         way; the settings surface shows it whenever it is not the vendor's. */
+      verified: admit("It reported the endpoint it is actually sending to."),
+      /* The refusal is the point. A degraded admission here would mean running
+         an agent while telling the person "we do not know where your code is
+         going", and there is no version of that sentence which is an
+         acceptable trade. It is the same shape as `confined_to_project`:
+         being wrong is unbounded, so unsure refuses. */
+      unverified: refuse(
+        "Hivemind cannot tell where this agent sends your code. That is not something it will guess at, so the agent will not run."
+      ),
+      unsupported: refuse(
+        "This agent does not report where it sends your code, so Hivemind cannot tell you where your project is going."
+      )
+    }
+  },
   {
     id: "no_bypass_flags",
     label: "Carries no permission-bypass flags",

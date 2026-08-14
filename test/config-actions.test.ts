@@ -7,6 +7,7 @@ import test from "node:test";
 import { promisify } from "node:util";
 
 import { agentCatalogue } from "../src/agent-catalogue.js";
+import { validateConfig } from "../src/config.js";
 import { initProjectForDesktop, inspectProjectConfig, setProjectConfig } from "../src/config-actions.js";
 import { executeWorkspaceAction } from "../src/workspace-actions.js";
 
@@ -181,4 +182,71 @@ test("the agent catalogue is honest about what has actually been run", () => {
   const claude = agentCatalogue.find((agent) => agent.id === "claude-code")!;
   assert.equal(claude.status, "unverified");
   assert.match(claude.caveat!, /never against a live run/u);
+});
+
+/* Config validation is closed-world, and it was not before.
+ *
+ * `normalizeConfig` rebuilt its result field by field, so an unknown key never
+ * reached anything that could reject it. The validator saw the raw object the
+ * whole time and was simply never asked. That is worse than a permissive
+ * validator because it LOOKS closed: a mistyped key was accepted, dropped, and
+ * the project ran on a default with the file on disk still saying what the
+ * person meant.
+ */
+test("a config field nobody supports is refused, and the field is named", async () => {
+  const problems = validateConfig({
+    version: 1,
+    stack: "typescript-node",
+    repo_root: "/tmp/x",
+    test_command: "npm test",
+    allowed_globs: ["**/*"],
+    forbidden_globs: [],
+    definitely_not_a_setting: true
+  });
+  assert.ok(
+    problems.some((problem: string) => problem.includes("definitely_not_a_setting")),
+    `an unknown field was accepted: ${problems.join("; ")}`
+  );
+
+  /* Named, not merely counted. "unsupported config field" with no field is the
+     message that sends someone hunting the wrong file. */
+  assert.match(problems.join("; "), /unsupported config field: definitely_not_a_setting/u);
+
+  /* And a near-miss of a real key is caught, which is the case that actually
+     happens: a typo silently ran the project on the default. */
+  const typo = validateConfig({
+    version: 1,
+    stack: "typescript-node",
+    repo_root: "/tmp/x",
+    test_commnd: "npm test",
+    allowed_globs: ["**/*"],
+    forbidden_globs: []
+  });
+  assert.match(typo.join("; "), /unsupported config field: test_commnd/u);
+});
+
+test("every field the config type carries is known to the validator", () => {
+  /* Non-vacuous in the other direction: a real config must still pass. If a
+     field is added to the type and not to the known set, this fails at the
+     person who added it rather than later at whoever relies on it. */
+  const problems = validateConfig({
+    version: 1,
+    stack: "typescript-node",
+    repo_root: "/tmp/x",
+    test_command: "npm test",
+    allowed_globs: ["**/*"],
+    forbidden_globs: [],
+    base_branch: "main",
+    low_globs: [],
+    medium_globs: [],
+    high_globs: [],
+    critical_globs: [],
+    resource_policy: {},
+    execution: { max_concurrent_workers: 2 },
+    task_type_routing: { ui: { tool: null, preference: "strongest" } }
+  });
+  assert.deepEqual(
+    problems.filter((problem: string) => problem.startsWith("unsupported config field")),
+    []
+  );
 });

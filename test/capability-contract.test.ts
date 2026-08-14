@@ -94,7 +94,11 @@ test("every capability whose failure is unbounded refuses when unverified", () =
     "no_bypass_flags",
     "non_interactive",
     "confined_to_project",
-    "leaves_change_uncommitted"
+    "leaves_change_uncommitted",
+    /* Where the code GOES. Same side as confinement and for the same reason:
+       being wrong is unbounded. "Hivemind cannot tell you where your code is
+       going" is not a degradation anyone can accept on your behalf. */
+    "known_endpoint"
   ];
   const mayDegrade: CapabilityId[] = [
     "pins_one_model",

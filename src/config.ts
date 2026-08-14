@@ -163,9 +163,54 @@ export function validateConfig(raw: unknown): string[] {
   if ("verification" in raw) {
     validateVerificationConfig(raw.verification, problems);
   }
+  if ("task_type_routing" in raw) {
+    const parsed = parseTaskTypePreferences(raw.task_type_routing);
+    if (!parsed.ok) problems.push(parsed.reason);
+  }
+
+  /* CLOSED-WORLD, and it was not before.
+   *
+   * Every other durable format in this repository rejects unknown fields, and
+   * config silently did not -- not because the validator was permissive, but
+   * because `normalizeConfig` rebuilt the object field by field, so an unknown
+   * key never reached anything that could complain about it. The validator saw
+   * the raw object the whole time and was never asked the question.
+   *
+   * That is worse than a permissive validator, because it LOOKS closed. A
+   * mistyped `test_commnd` was accepted, dropped, and the project ran on the
+   * default -- with no error, and with the file on disk still saying what the
+   * person meant. Naming the key is the point: "unsupported config field" with
+   * no field is the message that sends someone hunting the wrong file. */
+  const unknown = Object.keys(raw).filter((key) => !KNOWN_CONFIG_KEYS.has(key));
+  for (const key of unknown) {
+    problems.push(`unsupported config field: ${key}`);
+  }
 
   return problems;
 }
+
+/* The complete set. A field added to `HivemindConfig` and not added here is
+   refused on the next read, which is the failure mode this file wants: a new
+   field that nobody wired up fails loudly at the person who added it, rather
+   than quietly at whoever relies on it later. */
+const KNOWN_CONFIG_KEYS = new Set([
+  "version",
+  "stack",
+  "repo_root",
+  "base_branch",
+  "test_command",
+  "allowed_globs",
+  "forbidden_globs",
+  "low_globs",
+  "medium_globs",
+  "high_globs",
+  "critical_globs",
+  "resource_policy",
+  "manager_autonomy",
+  "execution",
+  "verification",
+  "task_type_routing"
+]);
 
 export function normalizeConfig(raw: unknown): HivemindConfig {
   if (!isRecord(raw)) {

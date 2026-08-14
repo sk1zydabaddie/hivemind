@@ -744,6 +744,22 @@ looking exactly like a result.
 > from what the run measured.** An optimisation to a test rig is a change to the
 > instrument.
 
+**Fourth instance, 2026-08-14, and again self-inflicted.** A Windows run stalled
+at test 185 for thirty-five minutes with zero failures reported — which reads as
+"slow suite", not as "broken". It was neither: **two `daemon.test.js` processes
+were running at once**, one belonging to a superseded run I had started and
+never stopped, holding five orphaned daemons the current run then collided with.
+
+> **Starting a new run does not stop the old one.** A suite that binds ports,
+> spawns daemons or takes file locks will interfere with its own previous
+> invocation, and the symptom is a hang rather than a failure.
+
+Two things follow. Kill the previous run before starting another — checking for
+leftover processes is one command and the alternative is a thirty-five minute
+silence. And treat *no output for minutes* as a signal in its own right: this
+project has now recorded three hangs and every one of them looked like patience
+being required.
+
 Re-run with the evidence present: **744 pass / 0 fail**.
 
 Corollary, and the reason the hang mattered more than the failures: **a hung
@@ -857,6 +873,142 @@ The same reasoning covers the Linux `.desktop` entry proper: one stable
 replaces rather than adds. `targets: "all"` was left alone deliberately —
 `packaging.test.ts` records that pinning it once broke Linux packaging, and
 narrowing it to Windows and Linux would have silently dropped macOS.
+
+## Project switching, and what already held — 2026-08-14
+
+Asked whether switching tears anything down. **It does not, and the reason is
+recorded in the shell:**
+
+> `project.rs`: *"Dropping Child detaches the daemon. Tauri intentionally owns
+> no shutdown hook so closing or switching the app cannot kill it."*
+
+The daemon is per project and outlives the switch, so a run in flight on the
+project you leave keeps running and its state is intact when you return. What
+*is* torn down is this client's view — streams closed, projection reset,
+inspection cleared — and that is the thing keeping two projects from bleeding
+into each other. Both halves were already right; what was missing was a way to
+move between them.
+
+**Recents are shell state, and that placement is the whole design.** Storing
+them inside a project would make one project the registry of the others, which
+is exactly the cross-project coupling the isolation work removed. They live in
+the app's own config directory and hold **paths and nothing else** — no task, no
+run, no capability, no connection. So switching cannot carry a verification
+across, because there is nothing in the store that could carry one. A test
+asserts the record's fields.
+
+A path that no longer exists is dropped rather than offered: a folder that has
+been moved is a dead end the shell can see coming, and offering it would be the
+same failure as the stale Start-menu shortcut.
+
+### The one part not built, and why
+
+**Attention on a project you are not looking at.** Knowing whether project B
+needs you requires reading B's state, and the honest ways to do that are: ask
+B's daemon if it is already running, or start one. Starting a daemon for every
+recent project to render a dot is a real cost — processes, file locks, and a
+`.hivemind` write — paid on a screen nobody asked to be expensive.
+
+Asking an *already-running* daemon is cheap and honest, and is the shape worth
+building: a project with work in flight has a daemon; a project with nothing
+happening does not, and has nothing to report anyway. Recorded rather than
+guessed at, because the version that shows a badge for every project would have
+to invent one for the projects it cannot cheaply reach — and an invented badge
+on the screen whose entire purpose is "where should I look" is worse than none.
+
+## Git on a folder that has none — 2026-08-14
+
+**Answered before it was built: it explained and then stopped.**
+
+`plainConnectionProblem` returned *"Hivemind works inside a git repository… It
+needs git to keep your work separate until you ship it. Choose a folder that is
+a git repository"* with `command: null` and no action. Accurate, well-worded, and
+a dead end — for the most ordinary first-run case there is: somebody who has
+been editing a folder without git.
+
+> **Explaining a requirement is not the same as offering the step.** This is the
+> front-door failure five walks were spent closing, in its last remaining form.
+
+It offers now, and the offer refuses rather than guesses. Three properties worth
+keeping:
+
+- **The first commit is explicit about what it takes.** The readiness check
+  names the files that would be committed, so the offer can say what it is about
+  to do rather than asking for trust.
+- **A folder holding a secret is refused, not committed.** `.env`, `id_rsa`,
+  `credentials.json` and friends stop it, and the refusal names the file. The
+  reason is not squeamishness: **a first commit cannot be un-made without
+  rewriting history**, which is precisely what somebody who has never used git
+  cannot be asked to do. Guessing here is unrecoverable in a way guessing
+  elsewhere is not.
+- **The refusal is re-checked at the action, not trusted from the readiness
+  call.** They are two round trips apart and a file can appear between them.
+
+Git init and Hivemind setup stay two separate steps, because they refuse for
+different reasons and one can succeed where the other cannot — collapsing them
+would report one failure as the other.
+
+## Two guards fired on the egress capability, and both were right — 2026-08-14
+
+Adding `known_endpoint` tripped two existing tests, and neither was noise.
+
+**`capability-contract.test.ts` refused a capability that had not chosen a
+side.** The test asserts every capability appears in exactly one of two lists —
+*must refuse when unverified* and *may degrade* — so adding one forces the
+decision rather than letting it default. `known_endpoint` goes on the refusing
+side, beside `confined_to_project`, for the identical reason: being wrong is
+unbounded. That test is a small thing that makes a real decision unskippable.
+
+**`provider-knowledge.test.ts` fired for the second time**, and got the same
+answer as the first: move the knowledge, do not widen the allowlist. The
+per-harness endpoint table and the default-home table both went to
+`agent-catalogue.ts` — *which endpoint a harness starts against, and where it
+reads its config, are startup knowledge*, the same argument that put the account
+variables there. `provider-endpoint.ts` now holds the mechanism and names no
+provider at all.
+
+Worth noting that the answer was the same both times without the rule having to
+be restated: the escape hatch exists for a fourth file that genuinely knows
+something the three do not, and neither of these did.
+
+## A fixture that described a repository which cannot exist — 2026-08-14
+
+The most consequential defect of the pass, found by a test I did not write.
+
+**A profile's `tool` is the ROLE.** `worker.profile.json` carries
+`tool: "worker"`, because Core resolves adapters by the name callers send and
+callers send the role. The harness — `codex-cli`, `claude`, `opencode` — is
+reachable only through the connection record's `agent_id` and the catalogue.
+
+Four separate places keyed a harness lookup off `profile.tool`:
+
+| Site | What it silently did |
+| --- | --- |
+| `accountEnvironmentForTool` | Applied **no account, ever**. Account switching worked in tests and did nothing in production |
+| `invalidateVerificationForHarness` | Invalidated **nothing** on a switch, so a stale verification survived exactly the event it exists to catch |
+| `inspectProjectConfig` | Showed **no account** against any role |
+| the new `known_endpoint` probe | Matched no harness, so every provider read `unknown` and **refused** |
+
+Only the last one failed loudly, and only because `adapter-probe.test.ts`
+builds its profile the way `buildProfileForAgent` does. **The three account
+tests passed throughout**, because their fixtures wrote `tool: "codex"` — a
+shape no real profile has.
+
+> **A fixture is a claim about what the system's data looks like.** Three of
+> these tests asserted correct behaviour over a repository that cannot exist,
+> and every one of them was green while the feature did nothing at all.
+
+This is the vacuous-assertion family again, arriving through the *input* rather
+than the assertion: the check could fail, the data could not produce the
+failure. The sixth instrument instance was a judge visible to the judged; this
+is a judge shown a defendant who was never there.
+
+Two guards now hold the line. One asserts an account resolves through the role
+with a profile shaped exactly as `buildProfileForAgent` writes it. The other
+asserts every key in `ACCOUNT_HOME_VARIABLES` is a harness some catalogue agent
+actually declares — **a key nothing can match is a feature that silently does
+nothing**, and that one is cheap, general, and would have caught this on the day
+it was written.
 
 ## Standing rule: the rig measures something other than what you think
 

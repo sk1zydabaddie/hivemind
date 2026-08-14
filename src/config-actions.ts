@@ -25,6 +25,7 @@ import {
 import { initProject } from "./init.js";
 import { ACCOUNT_HOME_VARIABLES } from "./agent-catalogue.js";
 import { parseTaskTypePreferences } from "./routing-preferences.js";
+import { harnessForRole } from "./provider-accounts.js";
 import { readAccounts, selectedAccount } from "./provider-accounts.js";
 import { writeJsonAtomic } from "./atomic.js";
 
@@ -104,7 +105,9 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
     const dangerous = findDangerousAdapterArgs(invoke);
     if (dangerous.length > 0) problems.push(`carries a refused flag: ${dangerous.join(", ")}`);
     const record = await readConnectionRecord(repoRoot, role);
-    const chosen = selectedAccount(accountsFile, typeof profile.tool === "string" ? profile.tool : null);
+    /* By HARNESS, resolved from the connection's recorded agent -- `profile.tool`
+       is the role, and keying an account by it silently showed none. */
+    const chosen = selectedAccount(accountsFile, await harnessForRole(repoRoot, role));
     adapters.push({
       role,
       installed: true,
@@ -451,15 +454,11 @@ export async function invalidateVerificationForHarness(
   reason: string
 ): Promise<void> {
   for (const role of adapterRoleNames) {
-    const profilePath = path.join(repoRoot, ".hivemind", "adapters", `${role}.profile.json`);
-    let tool: string | null = null;
-    try {
-      const raw: unknown = JSON.parse(await readFile(profilePath, "utf8"));
-      tool = isRecord(raw) && typeof raw.tool === "string" ? raw.tool : null;
-    } catch {
-      continue;
-    }
-    if (tool !== harness) continue;
+    /* Resolved through the connection record, NOT the profile's `tool` -- a
+       profile's tool is the ROLE, so comparing it to a harness matched nothing
+       and invalidated nothing. Same indirection the account and endpoint paths
+       needed, missed in all three on the same day. */
+    if ((await harnessForRole(repoRoot, role)) !== harness) continue;
     const record = await readConnectionRecord(repoRoot, role);
     if (record === null) continue;
     await writeJsonAtomic(connectionRecordPath(repoRoot, role), {
