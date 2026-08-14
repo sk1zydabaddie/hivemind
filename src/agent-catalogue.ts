@@ -340,10 +340,18 @@ export const agentCatalogue: CatalogueAgent[] = [
     cost_rank: 10,
     context_window: 256_000,
     timeout_ms: 900_000,
-    /* Documented as the Anthropic Messages wire format, which `claude-json`
-       already reads. Unverified against a live Grok run; if it differs, usage
-       comes back unverified and ceilings degrade rather than the probe
-       refusing. */
+    /* UNVERIFIED-AGAINST-GROK.
+       `streaming-messages-json` is documented as the Anthropic Messages wire
+       format, and `claude-json` parses that format and is verified against it
+       -- on CLAUDE's output. It has never seen Grok's stream. The match is a
+       documentary claim about a format, not a measurement of this provider.
+
+       Fourth instance of the recorded-output pattern, labelled BEFORE the probe
+       rather than discovered during it: a reader is only verified against the
+       output it has actually read. If Grok's stream differs, the parser finds
+       nothing, `reports_usage` returns unverified, and the contract admits with
+       spend ceilings off -- so the failure is bounded and named rather than
+       silent. The label comes off when a run confirms it. */
     usage_parser: "claude-json",
     readback: "none",
     shell_denial: {

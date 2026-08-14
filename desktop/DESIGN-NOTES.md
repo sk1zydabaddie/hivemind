@@ -147,6 +147,7 @@ has failed the first time it met a live run.
 | 1 | `--ignore-user-config` accepted | It silently forced a **read-only sandbox**; a worker that could write nothing reported fine |
 | 2 | A model pin accepted | **Silently ignored for months** while config said otherwise |
 | 3 | `claude-json` parsing a captured `--output-format json` object | Fed a whole **JSONL** document to a single-object parse, found nothing, and refused with *"found no token counts"* — the right refusal for the wrong reason |
+| 4 | `claude-json` reused for **Grok**, on the documented match that `streaming-messages-json` *is* the Anthropic Messages wire format | **Not yet — labelled before the probe rather than discovered during it.** Marked `UNVERIFIED-AGAINST-GROK` in the catalogue |
 
 The third is the cheapest to have prevented and the most embarrassing: the
 parser was correct about the *fields*, and wrong about the *document*. It had
@@ -158,6 +159,21 @@ cover.
 > **The rule: a capability may be developed against recorded output and may
 > never be CLAIMED from it. Every capability must be observed live at least
 > once before it is reported as anything other than `unverified`.**
+
+**The fourth instance is the first one recorded in advance**, and that is the
+only thing that makes it different from the other three. A parser verified
+against Claude's output has been verified against *Claude's output* — the
+documentary claim that Grok emits the same wire format is a statement about a
+format, not a measurement of a provider. Same shape as instance 3, where the
+parser was right about the fields and wrong about the document.
+
+It fails safe by construction: if Grok's stream differs, the parser finds
+nothing, `reports_usage` returns `unverified`, and the contract admits with
+spend ceilings switched off and the person told. Bounded and named rather than
+silent. The label comes off when a live run confirms it, and not before.
+
+> **A reader is verified against the output it has actually read.** A format
+> match is a reason to try, never a reason to claim.
 
 This is why the catalogue's `status` field means "real runs have gone through
 it" and not "the tests pass". It is also why `verified_on` exists on a profile.
@@ -861,6 +877,18 @@ a WSL home carried `desktop/src-tauri/target/`, its AppImage bundle produced a
 `.desktop`, and Windows Search indexed a second "Hivemind AI" pointing at
 `wslg.exe`. Deleting the Linux copy removed the `.desktop` but **not** the
 Windows `.lnk`, which now points at a binary that no longer exists.
+
+**`install:local` is Windows-only on purpose, and the reason is this bug.**
+Installing the `.deb` on a development machine is what put `hivemind-ai 0.0.0`
+into WSL, which owns `/usr/share/applications/Hivemind AI.desktop`, which WSLg
+republishes into the Windows Start menu on every start — the stray shortcut that
+came back at 13:42 after being deleted the day before. A convenience script that
+installed the `.deb` on Linux would have automated the creation of the second
+problem while fixing the first.
+
+So the script refuses on Linux and names the manual path instead. That is a
+deliberate stopping point rather than an unfinished one: on a machine that is
+building the product, installing the product is how the two get confused.
 
 The lesson is not about packaging:
 
