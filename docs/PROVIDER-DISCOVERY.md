@@ -987,6 +987,20 @@ enough that continuing was a decision rather than an execution.**
 
 ### What was measured
 
+> **⚠ Caveat added 2026-08-13, after the fact.** Every corpus task lists
+> `corpus-check.mjs` — the deterministic conformance check — in its
+> `read_only_files`. **The agent could read the check it was about to be scored
+> by.** So these numbers measure *can this model satisfy a printed check*, not
+> *did it understand the contract*. The run is real and the tasks really passed;
+> what the pass is evidence **of** is narrower than this section originally
+> claimed. The same caveat attaches to Luna's 30/30 and to the routing weights
+> promoted on `CC-20260803235418-…`, which may still be right but rest on
+> weaker evidence than recorded. Nothing is withdrawn: a finding can be correct
+> and its evidence still insufficient for the claim it was used to support.
+> Generalised as *a judge visible to the judged measures compliance with the
+> judge* in `desktop/DESIGN-NOTES.md`; the replacement holds the check out of
+> the repository entirely (`docs/BENCHMARK-DESIGN.md`).
+
 Codex `gpt-5.6-luna`, high reasoning effort, the three corpus tasks including
 the dependent one, shell **enabled**:
 
@@ -1024,6 +1038,29 @@ and neither was in the sample the estimate came from.
 > estimated is not conservative — it is wrong in the direction that gets
 > approved.** The preflight was the right thing to run and the wrong thing to
 > extrapolate from.
+
+### The rule caught something prospectively — 2026-08-13
+
+**First time one of these standing rules has fired before the money was spent
+rather than after.** Worth recording, because a rule that only ever explains a
+past mistake is indistinguishable from a good story.
+
+Estimating the raw-Codex arm of the replacement benchmark, the first draft came
+out at 45–83K per prompt — **below the observed 92–188K floor for this exact
+configuration** — on the reasoning that raw Codex has no planner or verification
+calls and should therefore cost less.
+
+That is this rule exactly, in a new costume. Removing Hivemind's overhead does
+not move the dominant cost, which is **high-effort reasoning over the same
+repository**; the overhead was never the large term. The estimate was corrected
+to 250–500K before anything was approved, and the correction is what put the
+staged option on the table at all.
+
+The tell, for next time: **the draft estimate was below the measured floor of
+the same configuration.** That comparison is cheap and mechanical, and it is the
+one to run against any estimate before presenting it. An estimate that comes in
+under something already measured needs a reason, and "it does less work" is not
+one unless the work removed is the expensive part.
 
 ### What finishing would cost
 

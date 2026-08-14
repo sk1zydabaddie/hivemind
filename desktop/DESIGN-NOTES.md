@@ -759,6 +759,48 @@ absence of what never was.** The shot harness now polls for a named string from
 each surface and *throws* if it never appears, so a blank frame fails at capture
 instead of on disk.
 
+### The fifth instance: a judge visible to the judged — 2026-08-13
+
+> **A judge visible to the judged measures compliance with the judge, not the
+> thing it was meant to measure.**
+
+The capability corpus lists `corpus-check.mjs` — the deterministic conformance
+check — in **every task's `read_only_files`**. The agent can read the check it
+is about to be scored by, and write against it.
+
+So what the corpus measured was *can this model satisfy a printed check*, not
+*did it understand the contract*. Those are different questions, and only the
+second is what a tier measurement is for.
+
+**This attaches to results already recorded, and they are cited here with the
+caveat from now on:**
+
+- **Luna's 30/30 across the corpus, and the 3/3 at zero revisions** in the
+  shell-enabled control arm. Both are real runs that really passed. What they
+  are evidence *of* is narrower than recorded.
+- **The routing weights promoted to canon** on
+  `CC-20260803235418-…` — a controlled shadow corpus report. The policy may
+  well still be right; deterministic scoring, sample sizes and confounders were
+  all reviewed. But **its evidence is weaker than the record says**, because
+  the scores it rests on were achievable by reading the scorer.
+
+Nothing is being withdrawn. The distinction that matters, and the one this
+project has had to make before over the Kimi provenance error: *the finding may
+be correct and the evidence still insufficient for the claim it was used to
+support.* Recording the second does not require asserting the first is wrong.
+
+**Why it belongs in this family.** It is the same failure as the vacuous
+assertion and the no-hazard confinement tests, seen from the other side. Those
+were instruments that could not return the answer you did not want. This is an
+instrument the *subject can see*, which collapses to the same thing: once the
+check is readable, passing it stops being correlated with the property it was
+supposed to detect. Both produce a green result that means less than it appears
+to, and both look exactly like evidence.
+
+The replacement holds the check out of the repository entirely — see
+`docs/BENCHMARK-DESIGN.md`. It is the judge's instrument, run against both arms
+afterwards, and neither arm ever sees it.
+
 ### The fourth instance is the most serious of the four
 
 Recorded separately because the first three were instruments that *measured
