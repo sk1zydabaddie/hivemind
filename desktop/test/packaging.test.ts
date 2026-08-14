@@ -50,6 +50,31 @@ describe("desktop packaging", () => {
        has ever been built, only that the config is no longer shaped for two
        platforms out of three. See docs/MACOS-CHECKLIST.md item 5. */
     expect(scripts["tauri:build:mac"]).toMatch(/app|dmg/u);
+
+    /* The version overlay must be generated BEFORE the CLI is invoked, not by
+       the `beforeBuildCommand` hook the CLI runs. `--config` is validated while
+       arguments are parsed, so a hook cannot produce it:
+
+         error: invalid value for '--config': failed to read configuration file
+
+       That is not hypothetical -- it is what every clean checkout did, silently
+       leaving the installed binary reporting the hardcoded 0.0.0 the calendar
+       versioning existed to replace, because `src-tauri/gen/` is gitignored.
+
+       Asserted as an ORDER, not a presence: stamping must appear ahead of
+       `tauri build` in the same script. And it must appear exactly once per
+       build -- stamping in both places lets the clock cross a minute between
+       them, so the build carries one version while `app-version.txt` records
+       another and `install-local.mjs` fails a correct install. */
+    const build = scripts["tauri:build"];
+    expect(build).toContain("bundle:stamp");
+    expect(build.indexOf("bundle:stamp")).toBeLessThan(build.indexOf("tauri build"));
+    expect(scripts["bundle:prepare"]).not.toContain("stamp-version");
+    const prepare = await readFile(
+      path.join(repoRoot, "desktop", "scripts", "prepare-bundle.mjs"),
+      "utf8"
+    );
+    expect(prepare).not.toContain("version.conf.json\",");
     expect(config.bundle?.resources).toMatchObject({
       "../../dist": "core/dist",
       "../../node_modules": "core/node_modules",

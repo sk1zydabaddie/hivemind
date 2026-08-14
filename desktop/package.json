@@ -8,13 +8,14 @@
     "build": "tsc --noEmit && vite build",
     "bundle:prepare": "node scripts/prepare-bundle.mjs",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build --bundles nsis --config src-tauri/gen/version.conf.json",
+    "tauri:build": "npm run bundle:stamp && tauri build --bundles nsis --config src-tauri/gen/version.conf.json",
     "test": "vitest run",
     "replay:collect": "node tools/collect-replay.mjs",
     "tauri:build:linux": "tauri build --bundles deb,appimage",
     "tauri:build:mac": "tauri build --bundles app,dmg",
     "install:local": "node scripts/install-local.mjs",
-    "ship": "npm run tauri:build && npm run install:local"
+    "ship": "npm run tauri:build && npm run install:local",
+    "bundle:stamp": "node scripts/stamp-version.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

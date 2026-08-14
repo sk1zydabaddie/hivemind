@@ -24,38 +24,9 @@ await writeFile(path.join(generatedDir, "shell-build-id.txt"), `${shellBuildId}\
 
 execFileSync(process.execPath, [npmEntry, "run", "build"], { cwd: desktopRoot, stdio: "inherit" });
 
-/* A version that actually changes, and the reason it has to.
- *
- * `tauri.conf.json` carried a hardcoded `0.0.0`. Every build therefore produced
- * an identically-named installer, every uninstall entry read `DisplayVersion
- * 0.0.0` forever, and Windows could not tell an upgrade from a reinstall. The
- * observed symptom was the Start menu opening an eleven-day-old build with
- * nothing anywhere indicating it was stale -- because nothing anywhere WAS
- * different.
- *
- * Calendar version, `YY.MMDD.HHmm`, because this project has no release cadence
- * to hang semver off and a date is the only thing that is honestly monotonic
- * here. Each field stays under 65536, which the Windows version resource
- * requires -- `20260814` would not, which is why the year is two digits and the
- * date is packed rather than concatenated.
- *
- * Written to a generated overlay rather than edited into the checked-in config:
- * a build must not dirty the working tree, and `tauri build --config` merges
- * this over the base.
- */
-const stamp = new Date();
-const pad = (value, width) => String(value).padStart(width, "0");
-const version = [
-  stamp.getFullYear() % 100,
-  `${stamp.getMonth() + 1}${pad(stamp.getDate(), 2)}`,
-  `${pad(stamp.getHours(), 2)}${pad(stamp.getMinutes(), 2)}`
-].join(".");
-await writeFile(
-  path.join(generatedDir, "version.conf.json"),
-  `${JSON.stringify({ version }, null, 2)}\n`,
-  "utf8"
-);
-/* Readable by the app itself, so "which build am I running" is answerable from
-   inside rather than from the uninstall registry. */
-await writeFile(path.join(generatedDir, "app-version.txt"), `${version}\n`, "utf8");
-console.log(`bundle version ${version}`);
+/* The version is NOT stamped here. It is stamped by `stamp-version.mjs`, which
+   the shipping script runs before invoking the Tauri CLI -- because the CLI
+   validates `--config src-tauri/gen/version.conf.json` while parsing its
+   arguments, which is before it ever runs this file as `beforeBuildCommand`.
+   Generating a tool's own arguments from that tool's build hook cannot work.
+   See the header of `stamp-version.mjs` for what that cost. */

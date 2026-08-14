@@ -201,6 +201,7 @@ ceilings degrade rather than the probe refusing.
 | --- | --- | --- |
 | **macOS verification** | **No hardware.** Case verdict, process control, Finder PATH, `.app`/`.dmg` launch, WebKit vs WebKitGTK, temp dirs | ~1 hour on a Mac |
 | **macOS codesigning + notarisation** | **Apple Developer account, $99/yr** | Half a day. Buys distribution, not correctness — an unsigned `.app` runs after a right-click Open |
+| **Windows code signing** | **A certificate — see §3.1.** Deliberately deferred: the beta ships unsigned with a plain note on the download page, so SmartScreen is expected rather than a surprise | An hour once a certificate exists. Tauri supports it in config directly |
 | **Grok Build** | **An X.AI plan or an `XAI_API_KEY`.** Everything else is ready: install from `x.ai/cli/install.sh`, then connect it like any other agent. The argv is prepared and verified clean against both bypass guards | ~15–25K tokens, one probe. It answers one question: does the stream carry an init event naming the resolved model, tools and sandbox |
 | **Kimi Code** | **An account**, plus one open question: are its file tools confined to the workspace | One probe |
 | **Local models / custom endpoints** | **Nothing structural remains.** The egress capability was the prerequisite and is built — all three harnesses already accept a custom base URL, and `known_endpoint` now names a configured one and refuses an undeterminable one. What is left is a profile shape per backend and a decision about what `reports_usage` means when tokens are free | A pass, no account |
@@ -211,6 +212,37 @@ ceilings degrade rather than the probe refusing.
 | **Dogfooding** | Nothing. Deferred since M3; M10.4 removed the serial limitation that justified it | A deliberate demonstration |
 | **Four unreachable actions** | Nothing — no UI. `manual_task.review` / `manual_task.authorize`, `verify.characterize`, `quality.best_of_n` / `quality.draft_refine`. All audited, all working, none reachable | Half a day |
 | **Attention on a project you are not looking at** | A decision. Knowing requires asking that project's daemon; starting one per recent project to render a dot is a real cost, and an invented badge on the screen whose purpose is *where should I look* is worse than none | Small, once the "ask only running daemons" shape is accepted |
+
+### 3.1 Windows code signing — the options, for when there is revenue
+
+Nothing is signed today, on any platform. Verified with
+`Get-AuthenticodeSignature`: both the installer and the installed binary read
+`NotSigned`. **This is a decision, not an oversight** — the beta ships unsigned
+and the download page says so plainly, so a SmartScreen prompt is something the
+reader was told to expect rather than a reason to distrust the download.
+
+What an unsigned Windows download costs: SmartScreen shows the full-screen
+"Windows protected your PC — unrecognised app", with Run hidden behind *More
+info*. Developers click through it without thinking, which is close to the
+entire current audience. It becomes a real problem at consumer scale, and it sits
+awkwardly against the product's own pitch — a tool that refuses to act on what it
+cannot verify, arriving as a binary the OS says it cannot verify.
+
+**Tauri supports signing directly**, confirmed against the installed CLI's
+config schema (`@tauri-apps/cli` 2.11.2): `bundle.windows` accepts
+`certificateThumbprint`, `digestAlgorithm`, `timestampUrl`, `tsp`, and
+`signCommand`. No custom pipeline is needed — a certificate and four config keys.
+
+| Route | Rough cost | The catch |
+| --- | --- | --- |
+| **Azure Trusted Signing** | **~$10/month** | **Requires a verified legal entity that has existed 3+ years.** That, not the price, is the likely disqualifier — and it is a clock nobody can shorten, so it is worth checking the entity's age *before* budgeting for anything else |
+| OV certificate | ~$200–400/yr | Since June 2023 the key must live on FIPS 140-2 Level 2 hardware — a physical token that must be plugged in to sign. Removes "unknown publisher" but **starts at zero SmartScreen reputation**, so early downloaders may still see the prompt |
+| EV certificate | ~$300–600/yr | Same hardware token. The only option granting **immediate** SmartScreen reputation |
+| Self-signed | free | Worthless for this purpose. Satisfies SmartScreen not at all |
+
+Prices are approximate and move; confirm before committing. The ordering
+conclusion does not depend on them: **check the entity-age requirement first**,
+because it decides between a $10/month line item and a $300+/yr one.
 
 ---
 
@@ -292,6 +324,14 @@ next session does not have to rediscover them.
 > work that can. Both directions cost the same, and this project has produced
 > both: two real items that existed only in conversation, and one phantom
 > backlog that was being prioritised against and had never existed.
+
+> **A fix is not done when it is committed. It is done when it has run.** The
+> calendar versioning was written, tested and committed, and could never
+> execute: its config file was generated by the build hook that ran *after* the
+> CLI had already required the file. Three passes of packaging work, all correct
+> on paper, and the reported symptom never changed. **A build hook cannot
+> produce the build's own arguments** — a generated input must exist before the
+> tool that reads it starts.
 
 ---
 
