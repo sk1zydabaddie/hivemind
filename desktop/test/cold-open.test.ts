@@ -250,3 +250,76 @@ describe("a surface that must be completed is bounded", () => {
     expect(harness).toMatch(/opened no dialog/u);
   });
 });
+
+/* Three crashes in one session, one bug.
+ *
+ * `ChecksView.provenance` took down the ship moment, the accounts view's
+ * `roles` took down the Project tab, and `config.task_type_routing` took down
+ * the settings dialog. Every one read a property straight off a value that was
+ * absent because the record predated the field, and every one was found by
+ * replaying a real or older trail rather than by a test.
+ *
+ * A record written before a field existed is a PERMANENT input. Trails are
+ * durable by design and the whole architecture rests on rebuilding state from
+ * events written months ago, so there is no future in which the client only
+ * sees records from its own version.
+ *
+ * The mechanism is the type system: collection-valued fields on daemon
+ * responses are optional, `strict` is on, and `tsc --noEmit` gates the ship
+ * path through `bundle:prepare`. A direct `.length`, `.map()` or `[key]` on one
+ * of them is a build error rather than a crash somebody finds later. */
+describe("a record older than a field is an input, not an accident", () => {
+  const RESPONSE_TYPES = "src/lib/workspace-actions.ts";
+
+  test("collection fields on daemon responses are optional", async () => {
+    const source = await readFile(path.join(desktopRoot, RESPONSE_TYPES), "utf8");
+    const view = source.slice(
+      source.indexOf("export interface ProjectConfigView"),
+      source.indexOf("export interface", source.indexOf("export interface ProjectConfigView") + 10)
+    );
+    /* The three that crashed, plus every sibling of the same shape. If a new
+       collection is added here without a `?`, this fails and the author has to
+       decide deliberately whether absence is really impossible. */
+    for (const field of [
+      "roles",
+      "adapters",
+      "catalogue",
+      "providers",
+      "models",
+      "recommendations",
+      "writable_keys",
+      "task_type_routing",
+      "verification_checks"
+    ]) {
+      expect(view, `${field} must be optional: an older record does not carry it`).toMatch(
+        /* `\\?` so the regex matches a literal question mark. Unescaped, `?`
+           made the preceding character optional and the assertion passed on a
+           field that was not optional at all — a check that cannot fail. */
+        new RegExp(`${field}\\?:`, "u")
+      );
+    }
+  });
+
+  test("there is one path for reading them", async () => {
+    const durable = await readFile(path.join(desktopRoot, "src", "lib", "durable.ts"), "utf8");
+    expect(durable).toMatch(/export function list/u);
+    expect(durable).toMatch(/export function table/u);
+    expect(durable).toMatch(/export function present/u);
+    /* A fresh [] per call would defeat React's referential checks, and a
+       mutable shared default is a bug waiting for somebody to push to it. */
+    expect(durable).toMatch(/Object\.freeze/u);
+  });
+
+  test("and the surfaces that crashed use it", async () => {
+    const app = await readFile(path.join(desktopRoot, "src", "App.tsx"), "utf8");
+    expect(app).toMatch(/list\(configView\.adapters\)/u);
+    const settings = await readFile(
+      path.join(desktopRoot, "src", "components", "settings-dialog.tsx"),
+      "utf8"
+    );
+    expect(settings).toMatch(/list\(view\.adapters\)/u);
+    expect(settings).toMatch(/list\(view\.catalogue\)/u);
+    /* And the one that crashed on an index rather than a call. */
+    expect(settings).toMatch(/config\.task_type_routing \?\? \{\}/u);
+  });
+});

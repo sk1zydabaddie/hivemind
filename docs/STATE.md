@@ -303,6 +303,15 @@ next session does not have to rediscover them.
 > shell-less preflight, a timer-based screenshot harness, a judge visible to the
 > judged, five fixture-only UI passes.
 
+> **An assertion that reads the DOM is not an assertion about what a person
+> can see or press.** Seventh instance, and the first where a whole SUITE
+> lacked the constraint rather than one assertion being vacuous: 211 tests
+> render into an unbounded container, so overflow does not exist there. A
+> cold-open walk asserting on `document.body.innerText` passed on a setup
+> screen half of which was unreachable, and would have indefinitely. The suite
+> still cannot catch this class -- `npm run verify:reachable` is the only thing
+> that can, so it has to be run.
+
 > **A rig that measures something other than what you think is not evidence
 > either.** Four instances — drvfs hiding file-mode failures, 9p inventing
 > daemon timeouts, an rsync exclusion removing a fixture a test needed, and a
@@ -319,6 +328,15 @@ next session does not have to rediscover them.
 > **A fixture is a claim about what the system's data looks like.** Three tests
 > once asserted correct behaviour over a repository that cannot exist, all green
 > while the feature did nothing at all.
+
+> **A record older than a field is a permanent input, not a transitional one.**
+> Three crashes in one session -- the ship moment, the Project tab and the
+> settings dialog -- all reading a property off a value absent because the
+> record predated the field, all found by replaying real data rather than by a
+> test. Trails are durable by design, so the client will always see records
+> older than itself. Mechanised rather than remembered: collection fields on
+> daemon responses are optional, `strict` makes a direct read a build error,
+> and `src/lib/durable.ts` is the one path.
 
 ### About the record
 

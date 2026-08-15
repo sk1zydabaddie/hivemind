@@ -390,25 +390,25 @@ export interface ProjectConfigView {
     run_ceiling_tokens: number | null;
     session_ceiling_tokens: number | null;
     max_concurrent_workers: number | null;
-    verification_checks: Array<{ id: string; command: string }>;
+    verification_checks?: Array<{ id: string; command: string }>;
     /* Which agent handles which KIND of work. Empty when nobody has chosen --
        absent means absent, never "the default". */
-    task_type_routing: Record<string, { tool: string | null; preference: "cheapest" | "strongest" | null }>;
+    task_type_routing?: Record<string, { tool: string | null; preference: "cheapest" | "strongest" | null }>;
   } | null;
-  roles: string[];
-  adapters: InspectedAdapter[];
+  roles?: string[];
+  adapters?: InspectedAdapter[];
   /* The flattened (provider x model) list `adapter.connect` takes. Still the
      connect unit; no longer what the picker shows. */
-  catalogue: CatalogueAgent[];
-  providers: CatalogueProvider[];
-  models: CatalogueModelView[];
-  recommendations: RoleRecommendation[];
+  catalogue?: CatalogueAgent[];
+  providers?: CatalogueProvider[];
+  models?: CatalogueModelView[];
+  recommendations?: RoleRecommendation[];
   limits: {
     max_concurrent_workers_hard_max: number;
     max_concurrent_workers_default: number;
     observed_worker_call_tokens: { low: number; high: number };
   };
-  writable_keys: string[];
+  writable_keys?: string[];
 }
 
 export type WorkspaceAction = {

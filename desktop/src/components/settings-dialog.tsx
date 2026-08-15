@@ -11,6 +11,7 @@ import {
   DialogTitle
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { list } from "@/lib/durable";
 import { plainActionError } from "@/lib/plain-language";
 import { displayProjectPath } from "@/lib/project-session";
 import type {
@@ -360,7 +361,7 @@ function AgentSection({
       ) : (
         <>
           <div className="mt-3 grid gap-px overflow-hidden rounded-md border border-rule bg-rule">
-            {view.adapters.map((adapter) => (
+            {list(view.adapters).map((adapter) => (
               <RoleRow adapter={adapter} key={adapter.role} />
             ))}
           </div>
@@ -369,14 +370,14 @@ function AgentSection({
             Agents Hivemind can run
           </h4>
           <div className="grid gap-2">
-            {view.catalogue.map((agent) => (
+            {list(view.catalogue).map((agent) => (
               <AgentCard
                 agent={agent}
                 busy={connecting !== null}
                 connecting={connecting}
                 disabled={disabled}
                 key={agent.id}
-                roles={view.roles}
+                roles={list(view.roles)}
                 onConnect={(role) => void connect(role, agent)}
               />
             ))}
@@ -437,7 +438,9 @@ function AgentCard({
   onConnect
 }: {
   agent: CatalogueAgent;
-  roles: string[];
+  /* Readonly because it arrives through `list()`, which hands back a shared
+     frozen empty array when the record predates the field. */
+  roles: readonly string[];
   disabled: boolean;
   busy: boolean;
   connecting: string | null;

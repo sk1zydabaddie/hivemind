@@ -3465,3 +3465,91 @@ went away would have produced a test that passes on the bug as well.
 > **A shape ban cannot express a structural rule** — the same lesson the word
 > bans keep teaching, in a different costume.
 
+
+### An assertion that reads the DOM is not an assertion about what a person can see
+
+The seventh instrument instance, and the first where an entire suite lacked the
+constraint rather than one assertion being vacuous.
+
+The cold-open walk drove the real app, clicked real controls, and asserted on
+`document.body.innerText`. That call returns text that is clipped, scrolled out
+of view, or sitting under an `overflow: hidden` with nothing to scroll — exactly
+as readily as text a person can read. So the walk read the entire setup screen,
+reported every step present, and **passed on a screen half of which was
+unreachable**. Not a near miss: it reported success on the broken state, and
+would have gone on doing so indefinitely.
+
+> **Presence in the DOM is not visibility, and visibility is not reachability.**
+> A test that queries markup is answering "did this render", which is a
+> different question from "can somebody get to it".
+
+The general form is worth keeping because it is not about `innerText`
+specifically. `querySelector`, `getByText`, `toBeInTheDocument` and every
+snapshot are the same assertion wearing different clothes: all of them pass on a
+control nobody can press.
+
+**The suite still cannot catch this class, and adding tests to it will not
+change that.** It renders into an unbounded container, so overflow does not
+exist there. That is a property of the environment, not of how many assertions
+are written in it.
+
+`npm run verify:reachable` is the only thing that can. It loads each surface at
+1280x720, 1366x768 and 1440x900, scrolls each control into view and asks whether
+it landed inside the viewport, and it opens the dialogs rather than only
+navigating — a dialog does not exist until it is opened, and an Approve button
+below the fold is this bug on the surface that authorises a change. It needs a
+browser and a dev server, so it cannot live in the suite.
+
+So it has to be run. Before shipping a surface that grew, and after any change
+to a layout that bounds one. The suite going green is not evidence about this
+class and never will be.
+
+### A record older than a field is a permanent input
+
+Three crashes in one session, all the same bug:
+
+| Field | Surface it took down |
+| --- | --- |
+| `ChecksView.provenance` | the ship moment |
+| the accounts view's `roles` | the Project tab |
+| `config.task_type_routing` | the settings dialog |
+
+Each read a property straight off a value that was absent because the record
+predated the field. Each was found by replaying a real or older trail rather
+than by a test. None was a near miss — all three took the whole surface down.
+
+Trails are durable by design and the architecture rests on rebuilding state from
+events written months ago, so **there is no future in which the client only sees
+records from its own version**. Records that predate a field are not a migration
+to finish; they are an input that will always exist.
+
+The types were the bug. `task_type_routing: Record<string, …>` is a claim that
+the field is always present, so TypeScript correctly allowed indexing it. The
+type described the code that writes records today, not the records that exist.
+
+The mechanism is therefore the type system rather than a convention:
+
+> **Every collection-valued field on a daemon response is optional to the
+> client.** Absent is a value it will really see.
+
+`strict` is on and `tsc --noEmit` gates the ship path through `bundle:prepare`,
+so a direct `.length`, `.map()` or `[key]` on one of these is now a build error.
+Verified by reverting one call site and watching the build fail on it, because
+an instrument nobody has seen fail is not an instrument. `src/lib/durable.ts`
+holds the single path — `list`, `table`, `present` — so no caller invents its
+own default.
+
+Scoped to collections deliberately. An absent scalar renders as a blank, which
+is cosmetic; an absent array or object is dereferenced and takes the surface
+down. Covering both would be noise around the part that has actually bitten.
+
+**Same family as the schema-migration convention, one layer out.** Core has 21
+modules declaring `version: 1` and hard-failing on anything else — present,
+inert, and hypothetical, because no format has ever reached version 2. This is
+that problem on the client, except the records are already in the wild, the
+versions already differ, and the failure has already happened three times. The
+difference in posture is deliberate: Core refuses a format it cannot read
+because acting on a misread contract is unbounded, while a surface reading a
+missing field degrades to the empty case, since refusing to draw a settings
+dialog is worse than drawing one with nothing chosen yet.
+

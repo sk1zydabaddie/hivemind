@@ -50,6 +50,7 @@ import {
   projectNameFromPath,
   PROJECT_FAULT
 } from "@/lib/project-session";
+import { list } from "@/lib/durable";
 import { taskPhase } from "@/lib/phases";
 import { REQUIRED_ROLES } from "@/lib/providers";
 import type { ProjectConfigView } from "@/lib/workspace-actions";
@@ -173,7 +174,7 @@ export default function App(): React.JSX.Element {
     live &&
     configView !== null &&
     REQUIRED_ROLES.every((role) =>
-      configView.adapters.some(
+      list(configView.adapters).some(
         (adapter) =>
           adapter.role === role.tool &&
           adapter.connected_at !== null &&
