@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ProvenanceNote } from "@/components/workspace/provenance-note";
-import type { WorkspaceAction } from "@/lib/workspace-actions";
+import { list } from "@/lib/durable";
+import type { ChecksOutput, WorkspaceAction } from "@/lib/workspace-actions";
 
 /* Why the checks failed, in the checks' own words.
  *
@@ -16,21 +17,6 @@ import type { WorkspaceAction } from "@/lib/workspace-actions";
  * a verdict. It is a record, and reading a record is not an action — re-running
  * is `verification.rerun`, a different action behind a different gate.
  */
-
-export interface ChecksOutput {
-  checks_run_id: string;
-  checks: {
-    id: string;
-    command: string;
-    exit_code: number;
-    stdout: string;
-    stderr: string;
-    truncated: boolean;
-  }[];
-  ran_at: string;
-  task_ids: string[];
-  tests: string | null;
-}
 
 export function ChecksOutputPane({
   onAction
@@ -79,25 +65,30 @@ export function ChecksOutputPane({
     );
   }
 
-  const failed = output.checks.filter((check) => check.exit_code !== 0);
+  /* One read through the helper, then plain array work on the result. The
+     direct `output.checks.filter(...)` this replaces would have crashed on any
+     record written before checks were kept -- which is precisely the record
+     the empty state two blocks up exists to describe. */
+  const checks = list(output.checks);
+  const failed = checks.filter((check) => check.exit_code !== 0);
   return (
     <ScrollArea className="min-h-0">
       <div className="grid gap-3 px-4 py-4">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[12px] text-muted-foreground">
           <span className={failed.length === 0 ? "font-medium text-ink" : "font-medium text-clay"}>
             {failed.length === 0
-              ? `All ${output.checks.length} passed`
-              : `${failed.length} of ${output.checks.length} failed`}
+              ? `All ${checks.length} passed`
+              : `${failed.length} of ${checks.length} failed`}
           </span>
           <span aria-hidden="true" className="h-2.5 w-px bg-rule" />
-          <span>{formatWhen(output.ran_at)}</span>
+          <span>{formatWhen(output.ran_at ?? null)}</span>
         </div>
 
         {/* A result never stands alone. What it was standing on renders with
             it, and so does what that does not cover. */}
         <ProvenanceNote onAction={onAction} />
 
-        {output.checks.length === 0 ? (
+        {checks.length === 0 ? (
           <p className="m-0 text-[13px] text-muted-foreground">
             This run recorded no checks at all.
           </p>
@@ -106,7 +97,7 @@ export function ChecksOutputPane({
         {/* Failures first. A person opening this has one question, and making
             them scroll past six passing checks to reach it is the same
             mistake as burying the sentence that needs them. */}
-        {[...output.checks]
+        {[...checks]
           .sort((left, right) => Number(right.exit_code !== 0) - Number(left.exit_code !== 0))
           .map((check, index) => (
             <section
@@ -170,8 +161,8 @@ function Stream({
   );
 }
 
-function formatWhen(value: string): string {
-  const when = new Date(value);
+function formatWhen(value: string | null): string {
+  const when = new Date(value ?? "");
   return Number.isNaN(when.getTime())
     ? "at an unrecorded time"
     : when.toLocaleString(undefined, {

@@ -44,19 +44,55 @@ function everyFile(dir: string): string[] {
  * So the rule is mechanised where it was bypassed rather than restated.
  */
 describe("collections off a daemon answer", () => {
-  test("no call site promises the compiler an array that is always there", () => {
+  /* The first version of this check matched a SPELLING: an inline literal with
+     a required array in it. That is the word-ban failure in type clothing, and
+     it had already missed two of the five instances by the time it was written
+     -- a nested literal, because its pattern stopped at the first `}`, and a
+     named `interface` declared beside the call, because that is not a literal
+     at all. Five instances, three spellings.
+
+     So the rule is structural instead. It does not care what the shape looks
+     like or where the braces are: the type argument to `onAction` must be a
+     NAME, resolved from the module that owns these types. Whether its
+     collections are optional is then the compiler's problem, in the one file
+     where that is already enforced. */
+  test("no component declares the shape of a daemon answer", () => {
     const offenders: string[] = [];
     for (const file of everyFile(path.join(desktopRoot, "src"))) {
       const source = readFileSync(file, "utf8");
-      /* Only inline object literals. A named type (`onAction<AccountsView>`)
-         is declared in workspace-actions.ts, where the optionality rule is
-         already enforced by the compiler. */
-      for (const match of source.matchAll(/onAction<\{([^}]*)\}>/gu)) {
-        for (const field of match[1].split(/[;,\n]/u)) {
-          /* `name: T[]` or `name: readonly T[]` with no `?`. */
-          if (/^\s*[A-Za-z_][A-Za-z0-9_]*\s*:\s*(?:readonly\s+)?[^:]*\[\]\s*$/u.test(field)) {
-            offenders.push(`${path.relative(desktopRoot, file)}: ${field.trim()}`);
-          }
+      for (const match of source.matchAll(/onAction<([^(]*?)>\s*\(/gu)) {
+        const argument = match[1].trim();
+        /* A name, or a union of names, or `Name[]`. Anything with a brace in
+           it is a shape written at the call site. */
+        if (argument.includes("{")) {
+          offenders.push(`${path.relative(desktopRoot, file)}: onAction<${argument}>`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  /* And the names have to come from the module that owns them, or a component
+     could satisfy the rule above by declaring `interface Foo` one line up --
+     which is exactly what checks-output.tsx and provenance-note.tsx both did
+     for the same action, arriving at two contradictory answers. */
+  test("the daemon response types live in one module", () => {
+    const owner = readFileSync(
+      path.join(desktopRoot, "src", "lib", "workspace-actions.ts"),
+      "utf8"
+    );
+    const offenders: string[] = [];
+    for (const file of everyFile(path.join(desktopRoot, "src", "components"))) {
+      const source = readFileSync(file, "utf8");
+      const declared = new Set(
+        [...source.matchAll(/^(?:export )?(?:interface|type) ([A-Za-z0-9_]+)/gmu)].map((m) => m[1])
+      );
+      for (const match of source.matchAll(/onAction<([A-Za-z0-9_]+)/gu)) {
+        const name = match[1];
+        if (declared.has(name)) {
+          offenders.push(`${path.relative(desktopRoot, file)} declares ${name}`);
+        } else if (!new RegExp(`^export interface ${name}\\b`, "mu").test(owner)) {
+          offenders.push(`${path.relative(desktopRoot, file)}: ${name} is not in workspace-actions.ts`);
         }
       }
     }

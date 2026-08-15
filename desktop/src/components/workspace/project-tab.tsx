@@ -36,14 +36,15 @@ import { buildUsagePanel, formatTokens, type UsagePanel } from "@/lib/provider-u
 import { projectTotals, type ProjectTotals } from "@/lib/project-totals";
 import { plainActionError } from "@/lib/plain-language";
 import type {
+  DurableTrailEvent,
+  ProjectConfigView,
   WorkspaceAction,
   WorkspaceCharacterization,
   WorkspaceHistoryRun,
   WorkspaceInspection,
   WorkspaceMemoryProposal,
   WorkspaceRoutingChange,
-  WorkspaceRoutingTaskType,
-  ProjectConfigView
+  WorkspaceRoutingTaskType
 } from "@/lib/workspace-actions";
 
 /* Memory and History were two tabs describing one subject: this project's past.
@@ -53,13 +54,6 @@ import type {
  *
  * Read-only, except for the audited `trail.inspect` read.
  */
-
-interface DurableTrailEvent {
-  ts: string;
-  type: string;
-  task_id: string | null;
-  data: Record<string, unknown>;
-}
 
 export function ProjectTab({
   inspection,
@@ -834,11 +828,11 @@ function TrailDialog({
                     key={`${event.ts}-${index}`}
                   >
                     <time className="font-mono text-[11px] text-muted-foreground">
-                      {formatDateTime(event.ts)}
+                      {formatDateTime(event.ts ?? "")}
                     </time>
                     <div className="min-w-0">
                       <span className="text-[13px] break-words text-ink">
-                        {plainEventName(event.type)}
+                        {plainEventName(event.type ?? "")}
                       </span>
                       <span className="ml-2 font-mono text-[11px] text-muted-foreground">
                         {event.task_id ?? "run"}

@@ -15,8 +15,9 @@ import { list } from "@/lib/durable";
 import { plainActionError } from "@/lib/plain-language";
 import { displayProjectPath } from "@/lib/project-session";
 import type {
-  CapabilityStatus,
+  AdapterConnectResult,
   AutonomyLevel,
+  CapabilityStatus,
   CatalogueAgent,
   InspectedAdapter,
   ProbedCapability,
@@ -333,12 +334,17 @@ function AgentSection({
     setProbe(null);
     onError("");
     try {
-      const result = await onAction<{ probe: { capabilities: ProbedCapability[]; ok: boolean }; config: ProjectConfigView }>({
+      const result = await onAction<AdapterConnectResult>({
         type: "adapter.connect",
         payload: { role, agent_id: agent.id }
       });
-      setProbe({ role, result: result.probe.capabilities, ok: result.probe.ok });
-      onConnected(result.config);
+      /* `result.probe.capabilities` was two unguarded levels, and the inline
+         type that made it compile was invisible to the first version of the
+         call-site check: its pattern stopped at the first `}`, so it never saw
+         past `probe: {`. A rule that matches a spelling misses the spellings
+         it did not think of. */
+      setProbe({ role, result: [...list(result.probe?.capabilities)], ok: result.probe?.ok === true });
+      if (result.config !== undefined) onConnected(result.config);
     } catch (cause) {
       onError(plainActionError(cause));
     } finally {

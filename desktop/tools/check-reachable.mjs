@@ -20,8 +20,18 @@
  * Sizes are the ones people actually have, smallest first: a 1366x768 laptop is
  * the common floor and is where a tall setup screen fails first.
  *
- * Usage: npm run verify:reachable  (needs `npm run dev` and a CDP browser)
+ * It starts what it needs. The dev server and the browser used to be
+ * preconditions a person had to satisfy, which is why this ran only when
+ * somebody remembered -- and it then caught a crash three commits after the
+ * code that caused it landed. Anything already running is used and left alone;
+ * anything missing is started and stopped again. See tools/managed-browser.mjs.
+ *
+ * Usage: npm run verify:reachable   (part of `npm run ship`)
  */
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { ensureHarness } from "./managed-browser.mjs";
 const PORT = process.env.CDP_PORT ?? "9444";
 const BASE = process.env.REPLAY_BASE ?? "http://localhost:1420";
 
@@ -177,6 +187,24 @@ const PROBE = `
   return { controls: controls.length, unreachable, clipped };
 `;
 
+const harness = await ensureHarness({
+  base: BASE,
+  port: PORT,
+  root: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
+});
+
+/* The interesting exit from this script is the failing one -- a surface that
+   never rendered throws before the tidy path at the bottom is reached. Without
+   this, every failed run leaks a dev server and a headless browser, and the
+   NEXT run finds them already listening and reports on stale code. */
+process.on("exit", () => harness.stop());
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, () => {
+    harness.stop();
+    process.exit(130);
+  });
+}
+
 const page = await open();
 await page.send("Page.enable");
 
@@ -254,6 +282,7 @@ for (const viewport of VIEWPORTS) {
 }
 
 await page.close();
+harness.stop();
 if (failures > 0) {
   console.error(`\n${failures} surface/viewport combination(s) cannot be completed.`);
   process.exit(1);

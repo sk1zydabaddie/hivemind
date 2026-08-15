@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 
-import type { WorkspaceAction } from "@/lib/workspace-actions";
+import type {
+  ChecksOutput,
+  VerificationProvenance,
+  WorkspaceAction
+} from "@/lib/workspace-actions";
+
+export type { VerificationProvenance };
 
 /* What a "passed" was standing on, rendered wherever one is claimed.
  *
@@ -20,20 +26,6 @@ import type { WorkspaceAction } from "@/lib/workspace-actions";
  * command and reads an exit code; it never sees inside the check. That has to
  * be visible as a limit, not discovered later by whoever believed the badge.
  */
-
-export interface VerificationProvenance {
-  version: 1;
-  code: { task_id: string; tool: string | null; probe_verified: boolean }[];
-  checks: { id: string; author: "contract" | "project_config" | "fail_safe" }[];
-  scope: "integrated_set" | "single_worktree";
-  artifact_identity: string;
-  adversarial_coverage: "unknown";
-}
-
-interface ChecksView {
-  /** Absent on a run recorded before provenance existed, which is not `null`. */
-  provenance?: VerificationProvenance | null;
-}
 
 /**
  * Whether this is really a provenance, rather than whether a key was present.
@@ -85,7 +77,7 @@ export function ProvenanceNote({
 
   useEffect(() => {
     let cancelled = false;
-    void onAction<ChecksView>({ type: "checks.inspect", payload: {} })
+    void onAction<ChecksOutput>({ type: "checks.inspect", payload: {} })
       .then((value) => {
         if (cancelled) return;
         /* ABSENT and NULL are different values and this only handled one.

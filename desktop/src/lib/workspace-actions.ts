@@ -482,6 +482,109 @@ export interface ProjectFileContent {
   truncated: boolean;
 }
 
+/*
+ * ── Everything below is a daemon answer, and lives here for one reason ───────
+ *
+ * A response type declared inside the component that reads it is a promise to
+ * the compiler written by the same hand as the code that trusts it. `strict`
+ * cannot object, because nothing disagrees. That is how `SharingBar` shipped
+ * `onAction<{ tracked: string[] }>` and took four surfaces down.
+ *
+ * The proof that local declarations drift, rather than an argument that they
+ * might: `checks.inspect` had TWO local types, in two components, that
+ * contradicted each other. `ChecksOutput` in checks-output.tsx declared
+ * `checks` and `task_ids` required and read `output.checks.filter(...)`
+ * directly; `ChecksView` in provenance-note.tsx declared a single optional
+ * field and guarded it. Same action, same daemon, two different claims about
+ * what comes back, and only one of them survived an older record.
+ */
+
+/** What `checks.inspect` returns. */
+export interface ChecksOutput {
+  checks_run_id?: string;
+  checks?: {
+    id: string;
+    command: string;
+    exit_code: number;
+    stdout: string;
+    stderr: string;
+    truncated: boolean;
+  }[];
+  ran_at?: string;
+  task_ids?: string[];
+  tests?: string | null;
+  /** Absent on a run recorded before provenance existed, which is not `null`. */
+  provenance?: VerificationProvenance | null;
+}
+
+/**
+ * What a verification was actually made of.
+ *
+ * Collections are required here on purpose, and it is the one exception. Both
+ * facts this renders — how many tasks ran on a verified provider, and who
+ * authored the checks — read arrays off it, and neither can be produced from a
+ * partial record. Rendering half a provenance would make a weaker claim look
+ * like a stronger one, which is the failure the feature exists to prevent. So
+ * it is not degraded to an empty case; it is checked whole by `isProvenance`
+ * and otherwise said to be absent.
+ */
+export interface VerificationProvenance {
+  version: 1;
+  code: { task_id: string; tool: string | null; probe_verified: boolean }[];
+  checks: { id: string; author: "contract" | "project_config" | "fail_safe" }[];
+  scope: "integrated_set" | "single_worktree";
+  artifact_identity: string;
+  adversarial_coverage: "unknown";
+}
+
+/** One event off the durable trail, as `trail.inspect` returns it. */
+export interface DurableTrailEvent {
+  ts?: string;
+  type?: string;
+  task_id?: string | null;
+  data?: Record<string, unknown>;
+}
+
+/** What `adapter.connect` returns: the probe it ran, and the config after. */
+export interface AdapterConnectResult {
+  probe?: { capabilities?: ProbedCapability[]; ok?: boolean };
+  config?: ProjectConfigView;
+}
+
+/** What `sharing.inspect` returns. */
+export interface SharingInspection {
+  tracked?: readonly string[];
+}
+
+/** What `sharing.untrack` returns: what it staged, not what it committed. */
+export interface SharingUntrackResult {
+  removed?: readonly string[];
+}
+
+/** What `manager.start` returns. */
+export interface StartedSession {
+  session_id?: string;
+}
+
+/** What `plan.prepare` returns. */
+export interface PreparedPlan {
+  status?: "awaiting_ratification" | "ratified_by_policy";
+  autonomy_level?: AutonomyLevel;
+  task_count?: number;
+}
+
+/** What a queue item's action returns, whichever action it is. */
+export interface QueuedWorkResult {
+  task_ids?: string[];
+  session_id?: string;
+}
+
+/** What `change.inspect` returns for one task. */
+export interface TaskDiff {
+  task_id?: string;
+  diff?: string;
+}
+
 export function invokeWorkspaceAction<T>(projectPath: string, action: WorkspaceAction): Promise<T> {
   return invoke<T>("workspace_action", { projectPath, action });
 }

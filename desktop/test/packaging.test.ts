@@ -179,3 +179,55 @@ test("the calendar version is valid semver at every minute of the day", () => {
   expect(broken).toBe("26.815.0924");
   expect(semver.test(broken)).toBe(false);
 });
+
+/**
+ * The guard that only fired when somebody remembered.
+ *
+ * `verify:reachable` found a crash three commits after the code causing it
+ * landed. Not because it was wrong -- it is the only instrument here that can
+ * see a control below the fold -- but because it needed a dev server and a
+ * debuggable browser that `npm run ship` did not provide, so it ran when
+ * somebody thought to run it. That is the same shape as `provider_version`,
+ * written onto every record and compared by nothing: built, correct, silent.
+ *
+ * "Run it manually" is not a mechanism, so these assert the wiring rather than
+ * the intention.
+ */
+describe("the reachability check is part of shipping", () => {
+  test("ship runs it, and runs it before the bundle is built", async () => {
+    const scripts = (
+      JSON.parse(await readFile(path.join(repoRoot, "desktop", "package.json"), "utf8")) as {
+        scripts: Record<string, string>;
+      }
+    ).scripts;
+    expect(scripts.ship).toMatch(/verify:reachable/u);
+    /* Before, not after. A check that runs once the installer already exists
+       is a report, not a gate -- and the ordering is exactly what went wrong
+       with the calendar version, where a build hook was asked to produce the
+       build's own arguments. */
+    expect(scripts.ship.indexOf("verify:reachable")).toBeLessThan(
+      scripts.ship.indexOf("tauri:build")
+    );
+  });
+
+  test("it starts what it needs rather than assuming it", async () => {
+    const source = await readFile(
+      path.join(repoRoot, "desktop", "tools", "check-reachable.mjs"),
+      "utf8"
+    );
+    expect(source).toMatch(/ensureHarness/u);
+    /* And puts back only what it started, including on the failing exit --
+       which is the interesting one, because a surface that never renders
+       throws before any tidy-up at the bottom of the script is reached. */
+    expect(source).toMatch(/process\.on\("exit"/u);
+  });
+
+  test("a browser it cannot find is a failure, never a skip", async () => {
+    /* The tools directory is plain JS on purpose -- it runs under bare node,
+       outside the bundle -- so the boundary carries a declaration file rather
+       than being cast away here. */
+    const { findBrowser } = await import("../tools/managed-browser.mjs");
+    expect(() => findBrowser([], 9444)).toThrow(/failure rather than a skip/u);
+    expect(() => findBrowser(["/definitely/not/here"], 9444)).toThrow(/no Chromium/u);
+  });
+});

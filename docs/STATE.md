@@ -363,22 +363,63 @@ next session does not have to rediscover them.
 > promise to the compiler written by the same hand as the code that trusts it,
 > so `strict` had nothing to object to. Its `catch` looked like cover and was
 > not: an absent field arrives on a promise that RESOLVED. The bar mounts above
-> every surface in `App.tsx`, so one unread field took down four of them, and
-> the thing that found it was `verify:reachable` — three commits after the bar
-> landed, because that harness needs a dev server and is therefore not in
-> `npm run ship`. Mechanised where it was bypassed: `test/durable-shape.test.ts`
-> fails on any inline `onAction<{ … }>` declaring a required array, and was
-> checked against both broken shapes before being trusted.
+> every surface in `App.tsx`, so one unread field took down four of them.
+>
+> The sweep that followed found it was not one instance but **five, in three
+> spellings**: a flat inline literal (`SharingBar`), a nested one
+> (`settings-dialog`, where `result.probe.capabilities` was two unguarded
+> levels), and a named `interface` declared beside the call
+> (`checks-output`, `project-tab`, `provenance-note`). Two were live crashes.
+> The proof that local declarations drift rather than an argument that they
+> might: **`checks.inspect` had two local types, in two components, that
+> contradicted each other** — one declaring its collections required and
+> reading them directly, one declaring a single optional field and guarding it.
+>
+> So the fix is structural, not a pattern that matches a spelling. Components
+> declare no daemon-response types at all; the type argument to `onAction` must
+> be a name owned by `workspace-actions.ts`. The first version of the test
+> matched a spelling and had already missed two of the five — the word-ban
+> failure in type clothing, for the fifth time.
+
+> **Applying a rule to the fields that crashed is not applying the rule.**
+> Measured, not estimated: after the move above, **31 collection fields on the
+> shared daemon-response types are still required**, and making them optional
+> raises **48 compiler errors** — 48 places reading a collection off a daemon
+> answer with no guard. The claim above this, that collection fields on daemon
+> responses are optional, describes the fields that had already bitten. Scoped
+> deliberately rather than folded into the same commit: 48 guarded reads across
+> the Work tab would make a proven fix unreviewable next to a speculative one.
+> Named here with its number so it is falsifiable rather than remembered.
 
 > **Two tests that pick the same temp directory are one test corrupting
-> another.** `cargo test` runs every test in one process in parallel, and the
-> helper keyed its path on `{name}-{process id}` — so the two tests that both
-> chose `"ordinary"` shared a path, and each one deletes that path on the way in
-> and on the way out. About one run in three failed, in two different places
-> with two different messages: a file missing from a listing, and a folder that
-> did not exist. Fixed with a counter rather than a rename, because a rename
-> fixes the collision that happened and leaves the next one to chance. Measured
-> after: 10 clean runs against 2 failures in the 6 before.
+> another** — and "flaky" was the wrong diagnosis, accepted twice. `cargo test`
+> runs every test in one process in parallel, and the helper keyed its path on
+> `{name}-{process id}`, so the two tests that both chose `"ordinary"` shared a
+> path and each deletes it on the way in and on the way out. About one run in
+> three. What made it *look* like flakiness is the thing worth keeping: **it
+> failed in two unrelated places with two unrelated messages** — a file missing
+> from a listing, and a folder that did not exist — and two dissimilar symptoms
+> read as noise where one repeated symptom would have read as a bug. That is
+> backwards. A defect with one cause and several surfaces is more common than
+> genuine nondeterminism, so scattered failures deserve *more* suspicion, not
+> less. Twice I saw a Rust test fail, re-ran it, saw it pass, and recorded it as
+> a flake; the second time I even noted which test, which was the evidence.
+> Fixed with a counter rather than a rename, because a rename fixes the
+> collision that happened and leaves the next one to chance. Measured after: 10
+> clean runs against 2 failures in the 6 before.
+
+> **A guard that runs when somebody remembers is not wired.** `verify:reachable`
+> found the `SharingBar` crash three commits after it landed — not because the
+> instrument was wrong, but because it needed a dev server and a debuggable
+> browser that `npm run ship` did not provide. Same shape as `provider_version`:
+> built, correct, and never called. The browser dependency is real and not
+> removable — measuring overflow needs a viewport, which needs an engine — so it
+> is provided rather than assumed: the check starts a dev server and a headless
+> browser if they are missing, uses anything already running and leaves it
+> alone, and stops only what it started, including on the failing exit. A
+> browser it cannot find is a **failure, not a skip**, because a check that goes
+> green when it could not run is the silent guard one level further down.
+> `npm run ship` now runs it before the bundle is built.
 
 ### About the record
 

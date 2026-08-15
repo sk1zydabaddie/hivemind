@@ -2,7 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { list } from "@/lib/durable";
-import type { WorkspaceAction } from "@/lib/workspace-actions";
+import type {
+  SharingInspection,
+  SharingUntrackResult,
+  WorkspaceAction
+} from "@/lib/workspace-actions";
 
 /**
  * "Your machine's verifications are in the repository."
@@ -40,7 +44,7 @@ export function SharingBar({
      down with it. The `catch` could not help, because the promise RESOLVED. */
   const look = useCallback(async () => {
     try {
-      const result = await onAction<{ tracked?: readonly string[] } | null>({
+      const result = await onAction<SharingInspection | null>({
         type: "sharing.inspect",
         payload: {}
       });
@@ -103,7 +107,7 @@ export function SharingBar({
         onClick={() => {
           setBusy(true);
           setProblem("");
-          void onAction<{ removed?: readonly string[] } | null>({
+          void onAction<SharingUntrackResult | null>({
             type: "sharing.untrack",
             payload: {}
           })

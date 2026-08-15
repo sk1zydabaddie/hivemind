@@ -89,12 +89,16 @@ import { attentionHeadline, summarizeWorkerOutput } from "@/lib/work-presentatio
 import { containsInternalVocabulary } from "@/lib/vocabulary";
 import type {
   AutonomyLevel,
+  PreparedPlan,
+  QueuedWorkResult,
+  SpecReview,
+  StartedSession,
+  TaskDiff,
   WorkspaceAction,
   WorkspaceInspection,
   WorkspacePlanReview,
   WorkspacePlanTask,
-  WorkspaceQueueItem,
-  SpecReview
+  WorkspaceQueueItem
 } from "@/lib/workspace-actions";
 
 interface WorkTabProps {
@@ -321,13 +325,20 @@ export function WorkTab({
 
   const startManager = async (
     message = "Execute the exact ratified plan through the normal checks."
-  ): Promise<{ session_id: string }> =>
-    onAction<{ session_id: string }>({
+  ): Promise<StartedSession> =>
+    onAction<StartedSession>({
       type: "manager.start",
       payload: { message, tool: "manager" }
     });
 
-  const continueSession = async (sessionId: string): Promise<void> => {
+  /* An absent session id is a real answer, not a type to assert away: the
+     manager started and the client has no handle to follow it with. Saying so
+     beats continuing a session called "" and beats a silent return. */
+  const continueSession = async (sessionId: string | undefined): Promise<void> => {
+    if (sessionId === undefined || sessionId === "") {
+      setFeedback("It started, but did not say which session — open the Project tab to see what it did.");
+      return;
+    }
     await onAction({
       type: "manager.continue",
       payload: { session_id: sessionId, tool: "manager", max_steps: 25 }
@@ -345,11 +356,7 @@ export function WorkTab({
       setFeedback("Working out what you asked for…");
       await onAction({ type: "spec.draft", payload: { prompt: message, tool: "planner" } });
     }
-    const prepared = await onAction<{
-      status: "awaiting_ratification" | "ratified_by_policy";
-      autonomy_level: AutonomyLevel;
-      task_count: number;
-    }>({
+    const prepared = await onAction<PreparedPlan>({
       type: "plan.prepare",
       payload: { prompt: message, tool: "planner" }
     });
@@ -493,7 +500,7 @@ export function WorkTab({
     setBusy(true);
     setFeedback("");
     try {
-      const result = await onAction<{ task_ids?: string[]; session_id?: string }>(item.action);
+      const result = await onAction<QueuedWorkResult>(item.action);
       if (item.action.type === "manager.start" && result.session_id) {
         await continueSession(result.session_id);
         setFeedback("Picked up again from the approved plan.");
@@ -539,14 +546,14 @@ export function WorkTab({
       error: ""
     });
     try {
-      const result = await onAction<{ task_id: string; diff: string }>({
+      const result = await onAction<TaskDiff>({
         type: "change.inspect",
         payload: { task_id: task.task_id }
       });
       setTaskDiff((current) =>
         current === null || current.taskId !== task.task_id
           ? current
-          : { ...current, patch: result.diff, loading: false }
+          : { ...current, patch: result.diff ?? null, loading: false }
       );
     } catch (error) {
       setTaskDiff((current) =>
@@ -595,7 +602,7 @@ export function WorkTab({
     try {
       const sections: string[] = [];
       for (const taskId of changeSet.task_ids) {
-        const result = await onAction<{ task_id: string; diff: string }>({
+        const result = await onAction<TaskDiff>({
           type: "change.inspect",
           payload: { task_id: taskId }
         });
@@ -603,8 +610,8 @@ export function WorkTab({
            system files it under. This read `# T-001` until the pass that took
            identifiers off every other surface. */
         const heading =
-          taskTitleOrNull(result.task_id, inspection?.task_titles ?? {}) ?? ANONYMOUS_TASK;
-        sections.push(`# ${heading}\n${result.diff.trimEnd()}`);
+          taskTitleOrNull(result.task_id ?? null, inspection?.task_titles ?? {}) ?? ANONYMOUS_TASK;
+        sections.push(`# ${heading}\n${(result.diff ?? "").trimEnd()}`);
       }
       setChangeSetPatch({
         verificationId: changeSet.verification_id,
