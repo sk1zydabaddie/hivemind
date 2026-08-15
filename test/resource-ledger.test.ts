@@ -862,3 +862,76 @@ async function exists(filePath: string): Promise<boolean> {
     throw error;
   }
 }
+
+/**
+ * `daemon_instance_id` is PROVENANCE, and scoping by it would break the ceiling.
+ *
+ * The field is written onto every reservation and read by nothing — which is
+ * the shape this project just named as its own failure family: a mechanism that
+ * exists, is validated, and is never consulted. It looks unfinished, and the
+ * obvious completion is to filter reservations by it.
+ *
+ * That completion would be a bug, and this test exists to say so before
+ * somebody tidies it up.
+ *
+ * A session legitimately spans daemon restarts. `buildBudgetCapacity` sums by
+ * `session_id`, so a run whose daemon is restarted mid-session — which the
+ * update flow now does deliberately — keeps one ceiling across both instances.
+ * Scoping by instance would drop everything the previous instance spent, and
+ * the ceiling would silently permit a second full budget after every restart.
+ *
+ * The question it looked like it could answer — "are these reservations from a
+ * process that is still alive?" — is answered better by asking the process.
+ * `daemon_work` checks liveness against the pid in `daemon.json`, which works
+ * when the instance id is absent and does not depend on ids matching.
+ *
+ * So it stays as provenance on a durable record: "which instance made this
+ * call" is worth having when reading a trail afterwards. It is deliberately
+ * write-only, which is different from accidentally unread — and this test is
+ * what makes the difference visible.
+ */
+test("the session ceiling is scoped by session, never by daemon instance", async () => {
+  await withTempRepo(async ({ repo }) => {
+    /* One reservation's worth of headroom beyond the first: enough for a second
+       instance to reserve once, not twice. */
+    await setResourcePolicy(repo, {
+      run_ceiling: { tokens: 150_000 },
+      session_ceiling: { tokens: 150_000 }
+    });
+    const sessionId = "shared-across-restarts";
+    const reserve = (instance: string, runId: string) =>
+      reserveMeteredCall(repo, {
+        provider: "codex",
+        session_id: sessionId,
+        run_id: runId,
+        task_id: runId,
+        daemon_instance_id: instance,
+        estimated_input_tokens: 1
+      });
+
+    /* A session that spans a daemon restart, which the update flow now does
+       deliberately: the first instance reserves, then a different instance
+       continues the same session. */
+    const first = await reserve("instance-one", "run-a");
+    assert.equal(first.ok, true);
+
+    const second = await reserve("instance-two", "run-b");
+    assert.equal(
+      second.ok,
+      false,
+      "a reservation from a previous daemon instance must still count against the ceiling"
+    );
+    assert.equal(second.ok === false && second.budget_exceeded, true);
+
+    /* And the earlier instance's reservation is what is holding the budget --
+       scoping capacity by instance would have made it invisible. */
+    const state = await readQuotaLedgerState(repo);
+    assert.equal(state.ok, true);
+    if (!state.ok) return;
+    const active = Object.values(state.value.reservations).filter(
+      (entry) => entry.status === "active"
+    );
+    assert.equal(active.length, 1);
+    assert.equal(active[0]!.daemon_instance_id, "instance-one");
+  });
+});

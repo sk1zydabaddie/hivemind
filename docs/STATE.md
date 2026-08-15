@@ -312,6 +312,15 @@ next session does not have to rediscover them.
 > still cannot catch this class -- `npm run verify:reachable` is the only thing
 > that can, so it has to be run.
 
+> **A mechanism that exists and is never consulted is not a mechanism.** A
+> third family, distinct from the instrument and rig ones: three instances --
+> `provider_version` written and never compared, `daemon_instance_id` recorded
+> and never filtered on, `compareAdapterVersion` built, tested and imported
+> only by its own test. All three pass review looking finished, because the
+> absence is in the call that was never written. Half is detectable --
+> `npm run audit:unreached`; the unread-field half is not, and the guard there
+> is a test asserting the field is deliberately not consulted.
+
 > **A rig that measures something other than what you think is not evidence
 > either.** Four instances — drvfs hiding file-mode failures, 9p inventing
 > daemon timeouts, an rsync exclusion removing a fixture a test needed, and a

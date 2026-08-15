@@ -131,6 +131,19 @@ export interface MeteredCallReservation {
   session_id: string;
   run_id: string;
   task_id: string | null;
+  /* PROVENANCE, deliberately never read.
+     Written on every reservation and consulted by nothing, which is the shape
+     this project named as a failure family -- so the fact that it is on purpose
+     has to be written down where somebody would otherwise tidy it up.
+     Scoping capacity by it would be a BUG: a session legitimately spans daemon
+     restarts, and the update flow now performs one deliberately, so filtering
+     would drop everything the previous instance spent and hand out a second
+     full budget after every restart. The question it looks able to answer --
+     are these reservations from a process still alive -- is answered better by
+     asking the process, which `daemon_work` does against the pid in
+     daemon.json. Kept because "which instance made this call" is worth having
+     when reading a trail afterwards. Guarded by a test: see "the session
+     ceiling is scoped by session, never by daemon instance". */
   daemon_instance_id: string;
   reserved_tokens: number;
   created_at: string;

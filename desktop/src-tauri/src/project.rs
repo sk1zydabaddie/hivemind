@@ -1306,14 +1306,14 @@ mod tests {
     }
 
     #[cfg(windows)]
-    fn terminate_fixture_process(pid: u32) {
+    pub(super) fn terminate_fixture_process(pid: u32) {
         let _ = hidden_command("taskkill")
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .status();
     }
 
     #[cfg(unix)]
-    fn terminate_fixture_process(pid: u32) {
+    pub(super) fn terminate_fixture_process(pid: u32) {
         unsafe {
             libc::kill(pid as i32, libc::SIGKILL);
         }
@@ -1571,12 +1571,53 @@ fn daemon_work(project_root: &Path) -> DaemonStanding {
             detail: "Nothing is running in this project.".to_string(),
         };
     }
-    DaemonStanding {
-        work: DaemonWork::Busy,
-        detail: format!(
-            "This project still has {worktrees} task workspace(s) and {reservations} call(s) in progress."
-        ),
+
+    /* Records of work are only evidence of work while the process that wrote
+       them is alive.
+       A daemon killed mid-call leaves its reservation `active` forever --
+       nothing settles it, because the thing that would settle it is gone. Left
+       at that, the project can never prove itself idle again and both the
+       daemon restart and the build bar are disabled permanently with no way
+       back. That is a quieter failure than restarting into a live run, and it
+       was the one that shipped: this proof did not consult liveness at all.
+       The asymmetry decides the uncertain cases. Only a DEAD daemon releases
+       the guard; alive keeps it, and so does not knowing. */
+    let liveness = match read_daemon_state(project_root) {
+        Ok(Some(state)) => liveness_of(state.pid),
+        /* No daemon is registered for this project, so nothing is running it.
+           The shell finds daemons through this record, so one it cannot see is
+           one it would start a replacement for anyway. */
+        Ok(None) => ProcessLiveness::Dead,
+        Err(_) => ProcessLiveness::Unknown,
+    };
+
+    match liveness {
+        ProcessLiveness::Dead => DaemonStanding {
+            work: DaemonWork::Idle,
+            detail: format!(
+                "Nothing is running. {reservations} call(s) and {worktrees} task workspace(s) were left behind by a background process that is no longer alive."
+            ),
+        },
+        ProcessLiveness::Alive => DaemonStanding {
+            work: DaemonWork::Busy,
+            detail: format!(
+                "This project still has {worktrees} task workspace(s) and {reservations} call(s) in progress."
+            ),
+        },
+        ProcessLiveness::Unknown => DaemonStanding {
+            work: DaemonWork::Unknown,
+            detail: format!(
+                "This project has {worktrees} task workspace(s) and {reservations} call(s) recorded, and Hivemind cannot tell whether the process holding them is still alive."
+            ),
+        },
     }
+}
+
+/* Indirected so the tests can drive liveness without spawning, and so the one
+   place that decides "is it still alive" is the one place that already knows
+   how to ask on each platform. */
+fn liveness_of(pid: Option<u32>) -> ProcessLiveness {
+    process_liveness(pid)
 }
 
 #[tauri::command]
@@ -2093,5 +2134,149 @@ mod git_readiness_tests {
         assert!(readiness.is_repo);
         assert!(readiness.would_commit.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+// ── The idleness proof, against a crash and against a live run ──────────────
+//
+// This proof gates two irreversible-feeling acts: restarting the daemon after
+// an update, and installing a new build over the running one. It has to be
+// right in BOTH directions, and the two failures are not symmetric.
+//
+// Recovering too eagerly restarts into a running job, which is the exact thing
+// the detached daemon exists to prevent. Recovering too reluctantly is quieter
+// and just as bad in practice: a crash leaves `active` reservations behind
+// forever, and a project that can never prove itself idle is one where the
+// build bar and the daemon restart are permanently disabled with no way back.
+#[cfg(test)]
+mod idleness_tests {
+    use super::tests::terminate_fixture_process;
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn project_with_reservation(label: &str, status: &str) -> PathBuf {
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let project = std::env::temp_dir().join(format!(
+            "hivemind-idle-{label}-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir_all(project.join(".hivemind").join("resource")).unwrap();
+        fs::write(
+            project.join(".hivemind").join("resource").join("ledger.json"),
+            format!(
+                r#"{{"version":1,"providers":{{}},"reservations":[{{"reservation_id":"r1","status":"{status}"}}]}}"#
+            ),
+        )
+        .unwrap();
+        project
+    }
+
+    fn record_daemon(project: &Path, pid: u32) {
+        fs::write(
+            project.join(".hivemind").join("daemon.json"),
+            format!(
+                r#"{{"version":1,"pid":{pid},"url":"http://127.0.0.1:7777","repo_root":"{}","started_at":"now"}}"#,
+                project.to_string_lossy().replace(char::from(92), "/")
+            ),
+        )
+        .unwrap();
+    }
+
+    fn spawn_sleeper() -> std::process::Child {
+        if cfg!(windows) {
+            let mut command = hidden_command("powershell");
+            command.args(["-NoProfile", "-Command", "Start-Sleep -Seconds 30"]);
+            command.spawn().unwrap()
+        } else {
+            Command::new("sleep").arg("30").spawn().unwrap()
+        }
+    }
+
+    /* THE DANGEROUS DIRECTION. A daemon that is genuinely running holds
+       reservations that are genuinely live, and nothing may read that as safe
+       to restart into. */
+    #[test]
+    fn a_live_daemons_reservations_still_read_as_busy() {
+        let project = project_with_reservation("live", "active");
+        let child = spawn_sleeper();
+        record_daemon(&project, child.id());
+
+        let standing = daemon_work(&project);
+        assert_eq!(
+            standing.work,
+            DaemonWork::Busy,
+            "a live daemon with an active reservation must never read as idle: {}",
+            standing.detail
+        );
+
+        terminate_fixture_process(child.id());
+        let _ = fs::remove_dir_all(&project);
+    }
+
+    /* THE RECOVERY DIRECTION. A daemon that died mid-call leaves its
+       reservation `active` forever -- nothing settles it, because the thing
+       that would settle it is gone. Reading that as busy means the project can
+       never prove itself idle again. */
+    #[test]
+    fn a_dead_daemons_reservations_do_not_block_forever() {
+        let project = project_with_reservation("dead", "active");
+        let child = spawn_sleeper();
+        let pid = child.id();
+        record_daemon(&project, pid);
+        // Killed mid-reservation, exactly as a crash would leave it.
+        terminate_fixture_process(pid);
+        for _ in 0..50 {
+            if process_liveness(Some(pid)) == ProcessLiveness::Dead {
+                break;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        assert_eq!(process_liveness(Some(pid)), ProcessLiveness::Dead);
+
+        let standing = daemon_work(&project);
+        assert_eq!(
+            standing.work,
+            DaemonWork::Idle,
+            "a dead daemon's leftover reservation must not block forever: {}",
+            standing.detail
+        );
+
+        let _ = fs::remove_dir_all(&project);
+    }
+
+    /* A settled reservation is not work, whoever wrote it. */
+    #[test]
+    fn settled_reservations_are_not_work() {
+        let project = project_with_reservation("settled", "settled");
+        assert_eq!(daemon_work(&project).work, DaemonWork::Idle);
+        let _ = fs::remove_dir_all(&project);
+    }
+
+    /* No daemon record at all: nothing is registered as running this project,
+       so a leftover reservation is an orphan rather than live work. The shell
+       finds daemons through this record, so one it cannot see is one it would
+       start a replacement for anyway. */
+    #[test]
+    fn reservations_with_no_daemon_record_are_orphans() {
+        let project = project_with_reservation("orphan", "active");
+        assert_eq!(daemon_work(&project).work, DaemonWork::Idle);
+        let _ = fs::remove_dir_all(&project);
+    }
+
+    /* Uncertain liveness is NOT idleness. Permission-denied and ambiguous
+       probes have to keep the guard closed, or the fail-safe is decorative. */
+    #[test]
+    fn unknown_liveness_keeps_the_guard_closed() {
+        let project = project_with_reservation("unknown", "active");
+        // Pid 0 is never a real process and `process_liveness` reports Unknown.
+        record_daemon(&project, 0);
+        let standing = daemon_work(&project);
+        assert_ne!(
+            standing.work,
+            DaemonWork::Idle,
+            "uncertain liveness must not be read as idle: {}",
+            standing.detail
+        );
+        let _ = fs::remove_dir_all(&project);
     }
 }

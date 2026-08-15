@@ -3620,3 +3620,72 @@ Detection is automatic; the act is a click. Rebuilding costs minutes of CPU and
 installing replaces the running binary — neither is something to do to somebody
 who did not ask for it.
 
+
+### The mechanism exists and nothing asks it
+
+A third failure family, distinct from the two already named. It is not the
+instrument family — an assertion that can only return one answer — and not the
+rig family — a measurement of something other than what you think. It is:
+
+> **The mechanism exists, is correct, is tested, and nothing consults it.**
+
+Three instances, all found in one week and all of which passed review looking
+finished:
+
+| Instance | What existed | What was missing |
+| --- | --- | --- |
+| `provider_version` | Written onto every connection record | Never compared, so a self-updating harness silently invalidated its own verdict |
+| `daemon_instance_id` | Recorded on every reservation, shape-validated | Never filtered on |
+| `compareAdapterVersion` | Written and unit-tested | Imported by nothing but its own test — the check had never once run |
+
+**Review cannot catch these.** Every one looks right in a diff: the field is
+populated, the function is covered, nothing is absent. The absence is somewhere
+else entirely — in the call that was never written. That is what makes this its
+own family rather than carelessness.
+
+#### Half of it is mechanically detectable
+
+`tools/audit-unreached.mjs`, wired as `npm run audit:unreached`, finds an
+exported function that no production module imports and that is not called
+inside its own file. That is exactly instance 3.
+
+Building it took three passes, and the failures are worth keeping because they
+are the same lesson again:
+
+- **Word matching reported 445 dead exports**, including `invokeAgent`. Any
+  function whose name appears anywhere — a comment, a string — counted as used.
+- **Static imports only reported the whole CLI as dead.** `cli.ts` reaches every
+  subcommand through `await import()`.
+- **A greedy `[^}]*` swallowed whole blocks** into the capture, so it found nine
+  dynamic imports in `cli.ts` and extracted none of the nine names.
+
+Each version looked plausible and returned confident nonsense. The measurement
+that made it usable was checking the output against functions known to be live.
+
+It also distinguishes a genuinely unreached mechanism from a merely over-broad
+`export`: `plainReason` and `createDaemonServer` are both called inside their
+own files, so the function is live and only the export is wider than needed. 18
+unreached against 70 over-exported — collapsing those two would have made the
+result useless.
+
+**It reports rather than fails.** The remaining 18 include entry points reached
+by dispatch, and a check that failed the build on those would be one whose first
+response is to loosen it until it stops — which is how the word bans went wrong
+four times.
+
+#### The other half is not
+
+An unread FIELD — instances 1 and 2 — is not decidable by grep. Property access
+is dynamic: `record[key]`, destructuring, spreads, and `JSON.parse` results read
+through an index signature. A checker would produce both false positives and
+false negatives, and a checker that is wrong in both directions about a safety
+property is worse than none.
+
+The next-best guard, where the field's misuse would be dangerous, is **a test
+that asserts the field is NOT consulted**. `daemon_instance_id` now has one:
+scoping the ceiling by instance would hand out a second full budget after every
+daemon restart, so a test proves the ceiling counts across instances, and the
+declaration says why the obvious tidy-up is a bug. That converts a silent
+write-only field into a stated decision — which is the actual remedy for this
+family, since the problem was never the field but the silence around it.
+
