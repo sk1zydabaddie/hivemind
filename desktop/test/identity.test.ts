@@ -148,3 +148,94 @@ describe("the mark is the real one", () => {
     expect(app).not.toMatch(/const hex = \(cx: number/u);
   });
 });
+
+describe("the build mismatch has an exit", () => {
+  test("it is recognised by code and offers the action", async () => {
+    const { plainConnectionProblem } = await import(
+      "../src/components/workspace/setup-screen"
+    );
+    const { PROJECT_FAULT } = await import("../src/lib/project-session");
+    const problem = plainConnectionProblem(
+      PROJECT_FAULT.daemonBuildMismatch,
+      "daemon build mismatch: state 9f9f…, running 9f9f…, expected a1b2…"
+    );
+    /* Plain language, and no hashes in the sentence a person reads. */
+    expect(problem?.title).toBe("Hivemind was updated");
+    expect(problem?.detail).not.toMatch(/daemon|hash|[0-9a-f]{16}/u);
+    /* And a control that performs the action the message names — the whole
+       defect was an instruction with nothing in the app that did it. */
+    expect(problem?.action).toBe("restart_daemon");
+  });
+
+  test("the check itself is not weakened", async () => {
+    const shell = await readFile(
+      path.join(desktopRoot, "src-tauri", "src", "project.rs"),
+      "utf8"
+    );
+    /* Two runs against a stale build cost ~38K tokens. The comparison stays
+       exact and stays fatal; only the way out is new. */
+    expect(shell).toMatch(
+      /state_build_id != expected_build_id \|\| health_build_id != expected_build_id/u
+    );
+  });
+
+  test("a restart is refused unless idleness is PROVED", async () => {
+    const shell = await readFile(
+      path.join(desktopRoot, "src-tauri", "src", "project.rs"),
+      "utf8"
+    );
+    const restart = shell.slice(shell.indexOf("pub async fn restart_daemon"));
+    expect(restart).toMatch(/standing\.work != DaemonWork::Idle/u);
+    /* Read off disk, not asked of the daemon: the daemon in question is the
+       wrong build, so its own account of itself is the thing under suspicion —
+       and a field added to /health today is absent from every daemon old
+       enough to hit this. */
+    const work = shell.slice(shell.indexOf("fn daemon_work"));
+    expect(work).toMatch(/active_reservations/u);
+    expect(work).toMatch(/task_worktrees/u);
+    /* Unknown is never idle. Guessing here abandons somebody's run, which is
+       the exact thing the detached daemon exists to prevent. */
+    expect(work).toMatch(/DaemonWork::Unknown/u);
+  });
+});
+
+describe("the lanes carry the canvas", () => {
+  test("one rule for the passed gates, however many there are", async () => {
+    const canvas = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "lane-canvas.tsx"),
+      "utf8"
+    );
+    /* Three stacked rules across a full-width canvas is the horizontal noise
+       this was explicitly not to become. The passed gates share one line; a
+       held gate gets its own, because it is the one that stopped something. */
+    expect(canvas).toMatch(/passed\.length === 0 \? null : \(/u);
+    expect(canvas).not.toMatch(/gates\.map\(/u);
+    expect(canvas).toMatch(/held\.map\(/u);
+  });
+
+  test("the canvas draws lanes as columns, from Core's own phase", async () => {
+    const canvas = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "lane-canvas.tsx"),
+      "utf8"
+    );
+    expect(canvas).toMatch(/taskPhase\(task\)/u);
+    expect(canvas).toMatch(/task\.lease_files\.length/u);
+    /* Nothing derived, estimated or timed. */
+    expect(canvas).not.toMatch(/setInterval|Date\.now|Math\.random/u);
+  });
+
+  test("and gives it back when nothing is running", async () => {
+    const work = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"),
+      "utf8"
+    );
+    /* The map is already a full-size picture of the same fact, so the canvas
+       is not drawn over it. */
+    expect(work).toMatch(/stage === "graph" \?/u);
+    const canvas = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "lane-canvas.tsx"),
+      "utf8"
+    );
+    expect(canvas).toMatch(/if \(tasks\.length === 0\) return null;/u);
+  });
+});

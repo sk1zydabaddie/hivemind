@@ -62,6 +62,8 @@ pub const FAULT_NO_PROJECT_SELECTED: &str = "no_project_selected";
 pub const FAULT_NOT_INITIALIZED: &str = "not_initialized_for_hivemind";
 pub const FAULT_DESKTOP_UPDATE_REQUIRED: &str = "desktop_update_required";
 pub const FAULT_DAEMON_UNAVAILABLE: &str = "daemon_unavailable";
+/// The daemon running this project is from a different build than the shell.
+pub const FAULT_DAEMON_BUILD_MISMATCH: &str = "daemon_build_mismatch";
 pub const FAULT_UNKNOWN: &str = "unknown";
 
 impl ProjectFault {
@@ -283,7 +285,8 @@ where
         match health(&state.url) {
             Ok(health_state) => {
                 validate_health_project(&project_root, &health_state.repo_root)?;
-                validate_daemon_build(&state, &health_state, &expected_build_id)?;
+                validate_daemon_build(&state, &health_state, &expected_build_id)
+                    .map_err(|message| ProjectFault::new(FAULT_DAEMON_BUILD_MISMATCH, message))?;
                 return Ok(connection(
                     &project_root,
                     &state.url,
@@ -328,7 +331,8 @@ where
             validate_state_project(&project_root, &state)?;
             if let Ok(health_state) = health(&state.url) {
                 validate_health_project(&project_root, &health_state.repo_root)?;
-                validate_daemon_build(&state, &health_state, &expected_build_id)?;
+                validate_daemon_build(&state, &health_state, &expected_build_id)
+                    .map_err(|message| ProjectFault::new(FAULT_DAEMON_BUILD_MISMATCH, message))?;
                 // Dropping Child detaches the daemon. Tauri intentionally owns no
                 // shutdown hook so closing or switching the app cannot kill it.
                 drop(child);
@@ -1435,6 +1439,254 @@ pub async fn dismiss_hint(app: tauri::AppHandle, hint: String) -> Result<(), Str
         .map_err(|error| format!("could not record the dismissal: {error}"))?;
     std::fs::write(&file, text)
         .map_err(|error| format!("could not write the dismissal list: {error}"))
+}
+
+// ── The build-mismatch exit ────────────────────────────────────────────────
+//
+// The daemon build check is correct and stays exactly as strict: two runs
+// against a stale build cost ~38K tokens, and it exists because of them. What
+// it did not have was a way out. After an update the first screen said
+//
+//     daemon build mismatch: state 9f9f…, running 9f9f…, expected a1b2…;
+//     restart the daemon before using this project
+//
+// -- two 64-character hashes, the word "daemon", and an instruction naming an
+// action no control in the app performs. A correct refusal with no exit is
+// still a dead end, and this one is on the first screen after every update.
+//
+// So: say it plainly, and offer the button.
+//
+// ## Why the daemon outlives the app at all
+//
+// Closing the window must not orphan workers mid-run, which is why Tauri owns
+// no shutdown hook and the daemon is deliberately detached. That reason is
+// entirely about work in flight. **If nothing is running, there is nothing to
+// protect**, and asking a person to make that judgement is asking them to
+// answer a question the machine can answer better.
+//
+// ## How idleness is proved without trusting the old build
+//
+// Not by asking the daemon. The daemon in question is a DIFFERENT BUILD -- the
+// exact thing being refused -- so any answer it gives about its own state is
+// the thing under suspicion, and a field added to `/health` today would be
+// absent from every daemon old enough to hit this.
+//
+// It is read off disk instead, from two records the daemon writes as it works:
+//
+// 1. `.hivemind/resource/ledger.json` -- a reservation with `status: "active"`
+//    is a metered call that has been paid for and not yet settled.
+// 2. `.hivemind/worktrees/` -- a task worktree exists while a task is being
+//    worked in isolation.
+//
+// Both are the pair M10.8's cleanup already asserts on ("zero task worktrees
+// and zero active reservations"), and both are build-independent. Anything
+// unreadable is `Unknown`, never `Idle` -- the whole point is to be sure.
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DaemonWork {
+    /// Provably nothing in flight: safe to stop without orphaning anything.
+    Idle,
+    /// Something is running. Stopping it would abandon work.
+    Busy,
+    /// Could not tell. Treated as busy -- ask rather than guess.
+    Unknown,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DaemonStanding {
+    pub work: DaemonWork,
+    /// One sentence for a person, naming what was found.
+    pub detail: String,
+}
+
+fn active_reservations(project_root: &Path) -> Result<usize, ()> {
+    let ledger = project_root
+        .join(".hivemind")
+        .join("resource")
+        .join("ledger.json");
+    let raw = match fs::read_to_string(&ledger) {
+        Ok(value) => value,
+        // No ledger at all means nothing has ever been metered here.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(_) => return Err(()),
+    };
+    let parsed: serde_json::Value = serde_json::from_str(&raw).map_err(|_| ())?;
+    let Some(reservations) = parsed.get("reservations") else {
+        // A ledger whose shape this does not recognise is not evidence of
+        // idleness. Say so rather than reading zero out of an absent field.
+        return Err(());
+    };
+    let mut active = 0;
+    match reservations {
+        serde_json::Value::Array(entries) => {
+            for entry in entries {
+                if entry.get("status").and_then(|value| value.as_str()) == Some("active") {
+                    active += 1;
+                }
+            }
+        }
+        serde_json::Value::Object(entries) => {
+            for (_, entry) in entries {
+                if entry.get("status").and_then(|value| value.as_str()) == Some("active") {
+                    active += 1;
+                }
+            }
+        }
+        _ => return Err(()),
+    }
+    Ok(active)
+}
+
+fn task_worktrees(project_root: &Path) -> Result<usize, ()> {
+    let dir = project_root.join(".hivemind").join("worktrees");
+    match fs::read_dir(&dir) {
+        Ok(entries) => Ok(entries
+            .flatten()
+            .filter(|entry| entry.path().is_dir())
+            .count()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(0),
+        Err(_) => Err(()),
+    }
+}
+
+fn daemon_work(project_root: &Path) -> DaemonStanding {
+    let (Ok(reservations), Ok(worktrees)) =
+        (active_reservations(project_root), task_worktrees(project_root))
+    else {
+        return DaemonStanding {
+            work: DaemonWork::Unknown,
+            detail: "Hivemind could not read this project's records, so it cannot tell whether anything is still running.".to_string(),
+        };
+    };
+    if reservations == 0 && worktrees == 0 {
+        return DaemonStanding {
+            work: DaemonWork::Idle,
+            detail: "Nothing is running in this project.".to_string(),
+        };
+    }
+    DaemonStanding {
+        work: DaemonWork::Busy,
+        detail: format!(
+            "This project still has {worktrees} task workspace(s) and {reservations} call(s) in progress."
+        ),
+    }
+}
+
+#[tauri::command]
+pub async fn inspect_daemon_work(project_path: String) -> Result<DaemonStanding, String> {
+    let root = canonical_git_root(&project_path).map_err(|fault| fault.message)?;
+    Ok(daemon_work(&root))
+}
+
+#[cfg(windows)]
+fn terminate_process(pid: u32) -> Result<(), String> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
+    unsafe {
+        let handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
+        if handle.is_null() {
+            return Err("could not open the background process to stop it".to_string());
+        }
+        let ok = TerminateProcess(handle, 1);
+        CloseHandle(handle);
+        if ok == 0 {
+            return Err("the background process refused to stop".to_string());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn terminate_process(pid: u32) -> Result<(), String> {
+    // SIGTERM, not SIGKILL: the daemon gets to close its files. The wait below
+    // is what turns "asked it to stop" into "it stopped".
+    let result = unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+    if result == 0 {
+        return Ok(());
+    }
+    match std::io::Error::last_os_error().raw_os_error() {
+        // Already gone is the outcome being asked for.
+        Some(libc::ESRCH) => Ok(()),
+        _ => Err("the background process refused to stop".to_string()),
+    }
+}
+
+#[cfg(not(any(windows, unix)))]
+fn terminate_process(_pid: u32) -> Result<(), String> {
+    Err("stopping a background process is not supported on this platform".to_string())
+}
+
+/// Stop the daemon this project is running and open it again on the matching
+/// build.
+///
+/// Refuses while anything is in flight. That refusal is the reason the daemon
+/// outlives the app in the first place, so this must not be the thing that
+/// undoes it -- a person who wants to stop a busy project stops the work first,
+/// which is a decision with its own surface.
+#[tauri::command]
+pub async fn restart_daemon(
+    app: tauri::AppHandle,
+    project_path: String,
+) -> Result<ProjectConnection, ProjectFault> {
+    let resource_dir = app.path().resource_dir().map_err(|error| {
+        ProjectFault::new(
+            FAULT_UNKNOWN,
+            format!("could not resolve desktop resources: {error}"),
+        )
+    })?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let project_root = canonical_git_root(&project_path)?;
+        let standing = daemon_work(&project_root);
+        if standing.work != DaemonWork::Idle {
+            return Err(ProjectFault::new(
+                FAULT_DAEMON_UNAVAILABLE,
+                format!("{} Stop the run before restarting.", standing.detail),
+            ));
+        }
+
+        if let Some(state) = read_daemon_state(&project_root)? {
+            if let Some(pid) = state.pid {
+                terminate_process(pid).map_err(|message| {
+                    ProjectFault::new(FAULT_DAEMON_UNAVAILABLE, message)
+                })?;
+            }
+            // Wait for it to actually be gone. Starting a second writer while
+            // the first is still up is the exact condition `connect_project_with`
+            // refuses, so racing it here would trade one dead end for another.
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while Instant::now() < deadline {
+                if process_liveness(state.pid) == ProcessLiveness::Dead {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
+            if process_liveness(state.pid) == ProcessLiveness::Alive {
+                return Err(ProjectFault::new(
+                    FAULT_DAEMON_UNAVAILABLE,
+                    "The previous version's background process is still running and did not stop."
+                        .to_string(),
+                ));
+            }
+            // Its rendezvous record names a daemon that no longer exists.
+            let _ = fs::remove_file(project_root.join(".hivemind").join("daemon.json"));
+        }
+
+        connect_project_with(
+            &project_path,
+            &mut |root| start_daemon(root, Some(&resource_dir)),
+            &query_daemon_health,
+            &|root| query_cli_build_identity(root, Some(&resource_dir)),
+            &|root| query_expected_shell_build_identity(root, Some(&resource_dir)),
+            EMBEDDED_SHELL_BUILD_ID,
+            &process_liveness,
+            STARTUP_TIMEOUT,
+        )
+    })
+    .await
+    .map_err(|error| {
+        ProjectFault::new(FAULT_UNKNOWN, format!("daemon restart task failed: {error}"))
+    })?
 }
 
 fn chrono_now() -> String {

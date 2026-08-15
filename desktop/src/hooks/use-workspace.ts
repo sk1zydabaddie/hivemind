@@ -16,6 +16,8 @@ import {
   createProjectStreamGuard,
   actionErrorAfterDurableProgress,
   PROJECT_FAULT,
+  projectFaultFrom,
+  validateProjectConnection,
   type ProjectConnection
 } from "../lib/project-session";
 import {
@@ -37,6 +39,7 @@ interface WorkspaceView {
   switchProject: (projectPath: string) => Promise<void>;
   initializeProject: () => Promise<void>;
   initializeGit: () => Promise<void>;
+  restartDaemon: () => Promise<void>;
   initializing: boolean;
   selectTaskOutput: (taskId: string) => void;
   performAction: <T>(action: WorkspaceAction) => Promise<T>;
@@ -205,6 +208,37 @@ export function useWorkspace(): WorkspaceView {
     [openOutputStream, refreshInspection, render, scheduleInspection]
   );
 
+  /* Set while a recovery is in flight, so a mismatch reported again by the
+     re-open cannot start a second one. */
+  const recoveringRef = useRef(false);
+  const sessionRef = useRef<{ adopt: (connection: ProjectConnection) => void } | null>(null);
+
+  const recoverFromBuildMismatch = useCallback(async (): Promise<void> => {
+    if (recoveringRef.current) return;
+    recoveringRef.current = true;
+    try {
+      const standing = await invoke<{ work: string; detail: string }>(
+        "inspect_daemon_work",
+        { projectPath: connectionRef.current?.project_root ?? projectPath }
+      );
+      /* Only `idle` is provable. `unknown` is deliberately not treated as safe:
+         the reason the daemon outlives the app is to avoid orphaning workers,
+         and a guess in this direction abandons somebody's run. */
+      if (standing.work !== "idle") return;
+      const next = validateProjectConnection(
+        await invoke("restart_daemon", {
+          projectPath: connectionRef.current?.project_root ?? projectPath
+        })
+      );
+      sessionRef.current?.adopt(next);
+    } catch {
+      /* The button in the setup screen is the fallback, and the message
+         already on screen is the one to keep. */
+    } finally {
+      recoveringRef.current = false;
+    }
+  }, [projectPath]);
+
   const session = useMemo(
     () =>
       createProjectSession({
@@ -250,10 +284,22 @@ export function useWorkspace(): WorkspaceView {
           setConnectionCode(fault.code);
           setConnectionDetail(fault.message);
           render();
+          /* A build mismatch after an update is recoverable, and asking a
+             person to press a button about it is asking them a question the
+             machine can answer. The Rust side only restarts when it can PROVE
+             nothing is in flight — reading the resource ledger and the worktree
+             directory off disk — and refuses otherwise, so this cannot orphan a
+             worker. If it refuses, its reason replaces this one and the button
+             is still there. */
+          if (fault.code === PROJECT_FAULT.daemonBuildMismatch) {
+            void recoverFromBuildMismatch();
+          }
         }
       }),
     [closeStreams, connectEventStream, render]
   );
+
+  sessionRef.current = session;
 
   const switchProject = useCallback(
     async (selectedPath: string) => {
@@ -277,6 +323,31 @@ export function useWorkspace(): WorkspaceView {
      would still refuse, and vice versa, so collapsing them would report one
      failure as the other. The re-open is what turns the new repository into a
      live connection -- nothing here assumes it worked. */
+  /**
+   * Stop the previous version's daemon and open the project on the matching one.
+   *
+   * The Rust side refuses unless it can PROVE nothing is in flight, reading the
+   * resource ledger and the worktree directory off disk rather than asking the
+   * old daemon about itself — the old daemon being the thing under suspicion.
+   */
+  const restartDaemon = useCallback(async () => {
+    setInitializing(true);
+    try {
+      const next = validateProjectConnection(
+        await invoke("restart_daemon", { projectPath })
+      );
+      session.adopt(next);
+    } catch (error) {
+      const fault = projectFaultFrom(error);
+      setConnectionState("connection error");
+      setConnectionCode(fault.code);
+      setConnectionDetail(fault.message);
+      render();
+    } finally {
+      setInitializing(false);
+    }
+  }, [projectPath, render, session]);
+
   const initializeGit = useCallback(async () => {
     setInitializing(true);
     try {
@@ -350,6 +421,7 @@ export function useWorkspace(): WorkspaceView {
     switchProject,
     initializeProject,
     initializeGit,
+    restartDaemon,
     initializing,
     selectTaskOutput: openOutputStream,
     performAction

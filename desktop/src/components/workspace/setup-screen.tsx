@@ -47,6 +47,7 @@ export function SetupScreen({
   onChooseProject,
   onInitializeProject,
   onInitializeGit,
+  onRestartDaemon,
   onAction,
   onReload,
   initializing
@@ -66,6 +67,9 @@ export function SetupScreen({
      project up, because they refuse for different reasons and one can succeed
      where the other cannot. */
   onInitializeGit: () => void;
+  /* Stops the previous version's background process and opens the project on
+     the matching one. Refuses while anything is in flight. */
+  onRestartDaemon: () => void;
   onAction: <T>(action: WorkspaceAction) => Promise<T>;
   onReload: () => Promise<void>;
   initializing: boolean;
@@ -125,6 +129,16 @@ export function SetupScreen({
                       type="button"
                     >
                       {initializing ? "Starting to track it…" : "Start tracking this folder"}
+                    </Button>
+                  ) : null}
+                  {problem.action === "restart_daemon" ? (
+                    <Button
+                      className="mt-3"
+                      disabled={initializing}
+                      type="button"
+                      onClick={onRestartDaemon}
+                    >
+                      {initializing ? "Restarting…" : "Restart it"}
                     </Button>
                   ) : null}
                   {problem.action === "choose" ? (
@@ -655,7 +669,7 @@ function SetupStep({
 export function plainConnectionProblem(
   code: string,
   detail: string
-): { title: string; detail: string; action?: "initialize" | "git" | "choose" } | null {
+): { title: string; detail: string; action?: "initialize" | "git" | "choose" | "restart_daemon" } | null {
   if (code === "") return null;
   if (code === PROJECT_FAULT.noProjectSelected) {
     return {
@@ -682,6 +696,19 @@ export function plainConnectionProblem(
       detail:
         "Hivemind needs git to keep an agent's work separate from your own until you choose to ship it. It can start tracking this folder now — nothing is sent anywhere, and everything already here goes into the first commit.",
       action: "git"
+    };
+  }
+  if (code === PROJECT_FAULT.daemonBuildMismatch) {
+    /* This was two 64-character hashes, the word "daemon", and an instruction
+       naming an action no control performed -- on the first screen after every
+       update. The check itself is untouched and stays exactly as strict: two
+       runs against a stale build cost ~38K tokens and are why it exists. What
+       it lacked was an exit. */
+    return {
+      title: "Hivemind was updated",
+      detail:
+        "The background process from the previous version is still running this project. It has to be stopped and started again on the new version — nothing in your project changes, and no work is lost.",
+      action: "restart_daemon"
     };
   }
   if (code === PROJECT_FAULT.daemonUnavailable) {

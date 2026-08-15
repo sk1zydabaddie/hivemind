@@ -60,6 +60,7 @@ import { ProvenanceNote } from "@/components/workspace/provenance-note";
 import { FileTree } from "@/components/workspace/file-tree";
 import { FileViewer } from "@/components/workspace/file-viewer";
 import { Hex, hexTone } from "@/components/workspace/hex";
+import { LaneCanvas } from "@/components/workspace/lane-canvas";
 import { holdingGate, passedGates, type GateRule as GateRuleModel } from "@/lib/gates";
 import { PhaseSpine, phaseRatio } from "@/components/workspace/phase-spine";
 import {
@@ -629,6 +630,12 @@ export function WorkTab({
   const idle =
     tasks.length === 0 && displayedPlan === null && !runActive && attention === null;
 
+  /* What the canvas draws: the tasks of this run, in the order the daemon
+     scheduled them. Capped at six because past that the lanes are narrower than
+     their own titles, and a lane you cannot read is not a picture of anything —
+     the rail below still lists every one of them. */
+  const laneTasks = tasks.slice(0, 6);
+
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden p-3">
       {/* Row 1 is always present so the panels below can never lose their row; it
@@ -719,7 +726,10 @@ export function WorkTab({
             />
             {idle ? (
               <IdleBoard onPick={setComposer} />
-            ) : stage === "graph" ? (
+            ) : /* The map is already a picture of the same fact at full size,
+                   so the lane canvas is not drawn over it — that would be two
+                   drawings of one thing competing for the same column. */
+            stage === "graph" ? (
               <AgentGraph
                 inspection={inspection}
                 projection={projection}
@@ -727,13 +737,26 @@ export function WorkTab({
                 onSelectTask={onSelectTask}
               />
             ) : (
-              <RunThread
-                endRef={activityEndRef}
-                events={projection.recentEvents}
-                plan={displayedPlan}
-                taskTitles={inspection?.task_titles ?? {}}
-                onOpenPlan={() => void openPlanReview()}
-              />
+              /* The lanes take the canvas while work is in flight, and give it
+                 back when it is not. The timeline and the composer stay exactly
+                 where they were; what changes is that during the one moment
+                 this product's claim is strongest, the claim is the thing you
+                 are looking at rather than a 2px tick in the rail. */
+              <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
+                <LaneCanvas
+                  gates={passedGates(projection)}
+                  selectedTaskId={projection.selectedTaskId}
+                  tasks={laneTasks}
+                  onSelectTask={onSelectTask}
+                />
+                <RunThread
+                  endRef={activityEndRef}
+                  events={projection.recentEvents}
+                  plan={displayedPlan}
+                  taskTitles={inspection?.task_titles ?? {}}
+                  onOpenPlan={() => void openPlanReview()}
+                />
+              </div>
             )}
 
             <PromptDock

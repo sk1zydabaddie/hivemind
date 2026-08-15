@@ -57,3 +57,34 @@ config having an `icon` list is not evidence that the mark reached the artifact.
 Windows had previously fallen back to a default with the config looking correct.
 The only thing that settles it is reading the icon back out of the binary that
 was installed.
+
+---
+
+## Update — the lanes on the canvas
+
+`work-midrun.png` was re-captured after the lanes were promoted out of the rail.
+
+At rail width a lane was a 2px tick roughly 20px tall, smaller than the phase
+pips beside it: the signature object was the least visible thing on screen
+during the exact moment the product's claim is strongest, while the centre
+column held three lines of timeline and a large empty region.
+
+The lanes now take the canvas while work is in flight — one column per task,
+tracks running down side by side, four phase stations each. Three agents working
+in parallel is three tracks next to each other, countable at a glance.
+
+The timeline and the composer are unchanged and in the same places. The rail's
+inspector is unchanged. The map is untouched: it is already a full-size picture
+of the same fact, so the canvas is not drawn over it.
+
+**One rule, not three.** At rail width three gate hairlines stacked in a column
+read as quiet. At canvas width they read as a decorative divider stack — the
+horizontal noise this was explicitly not to become. The passed gates now share a
+single rule the lanes descend from, naming all of them:
+
+```
+──── SCOPE 3 file claims approved · WRITE 3 edits approved · NEXT STEP 2 decisions approved ────
+```
+
+A held gate still gets its own, in clay and doubled, because it is the one that
+has stopped something.

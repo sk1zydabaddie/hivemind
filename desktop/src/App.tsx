@@ -358,6 +358,7 @@ export default function App(): React.JSX.Element {
             onChooseProject={() => setProjectOpen(true)}
             onInitializeGit={() => void workspace.initializeGit()}
             onInitializeProject={() => void workspace.initializeProject()}
+            onRestartDaemon={() => void workspace.restartDaemon()}
             onReload={refreshConfig}
           />
         )}
@@ -377,6 +378,7 @@ export default function App(): React.JSX.Element {
             onChooseProject={() => setProjectOpen(true)}
             onInitializeGit={() => void workspace.initializeGit()}
             onInitializeProject={() => void workspace.initializeProject()}
+            onRestartDaemon={() => void workspace.restartDaemon()}
             onReload={refreshConfig}
           />
         </TabsContent>

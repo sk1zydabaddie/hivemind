@@ -23,6 +23,8 @@ export const PROJECT_FAULT = {
   notInitialized: "not_initialized_for_hivemind",
   desktopUpdateRequired: "desktop_update_required",
   daemonUnavailable: "daemon_unavailable",
+  /** New shell, old background process. Recoverable, and now recovered from. */
+  daemonBuildMismatch: "daemon_build_mismatch",
   unknown: "unknown"
 } as const;
 
@@ -80,6 +82,7 @@ export function createProjectSession({
 }: ProjectSessionOptions): {
   switchProject: (projectPath: string) => Promise<OpenResult>;
   initializeProject: (projectPath: string) => Promise<OpenResult>;
+  adopt: (connection: ProjectConnection) => void;
 } {
   let generation = 0;
 
@@ -119,7 +122,15 @@ export function createProjectSession({
 
   return {
     switchProject: (projectPath) => open(projectPath, selectProject),
-    initializeProject: (projectPath) => open(projectPath, initializeProject)
+    initializeProject: (projectPath) => open(projectPath, initializeProject),
+    /* A connection obtained outside `open` — the daemon restart returns one
+       directly. It still advances the generation, so streams opened against
+       the process that was just stopped are ignored rather than reconnected. */
+    adopt(connection: ProjectConnection) {
+      generation += 1;
+      onSwitchStart();
+      onConnected(connection);
+    }
   };
 }
 

@@ -217,3 +217,54 @@ describe("reading a figure", () => {
     expect(formatTokens(3_532_577)).toBe("3.53M");
   });
 });
+
+/* F-2, surfacing honestly — and the check that it is TRANSITIONAL.
+ *
+ * `initProject` writes a three-member worker pool as declarations, so a project
+ * that has never connected anything reports its agents as installed but
+ * unchecked. That is the correct thing to say. What would make it a defect is
+ * if it were permanent: a message telling somebody to reconnect, that still
+ * says the same thing after they have.
+ *
+ * The standing is keyed on `connected_at`, which only `adapter.connect` writes,
+ * and only after a probe has passed. So the transition is exactly the act the
+ * message asks for. */
+describe("the unchecked caveat clears when the agent is connected", () => {
+  test("an unprobed profile says so, and says what to do", () => {
+    const panel = buildUsagePanel(null, projectionWith([]), [
+      adapter({ connected_at: null, capabilities: [] })
+    ]);
+    expect(panel.providers[0]!.caveat).toMatch(/installed before Hivemind could check it/u);
+    expect(panel.providers[0]!.caveat).toMatch(/Reconnect it/u);
+  });
+
+  test("and stops saying so once a probe has recorded one", () => {
+    /* The same adapter, with the connection record `adapter.connect` writes. */
+    const panel = buildUsagePanel(null, projectionWith([["worker", 40_000]]), [adapter()]);
+    expect(panel.providers[0]!.caveat).toBeNull();
+  });
+
+  test("a connected agent that cannot report usage says THAT instead", () => {
+    /* Not the same message: the first is "nobody has checked", this is "we
+       checked and it cannot". Collapsing them would tell somebody to reconnect
+       an agent that reconnecting will not change. */
+    const panel = buildUsagePanel(null, projectionWith([]), [
+      adapter({
+        capabilities: [
+          {
+            id: "reports_usage",
+            label: "Reports what it spent",
+            status: "unverified",
+            evidence: "absent",
+            required: true,
+            requested: null,
+            reported: null,
+            detail: ""
+          }
+        ]
+      })
+    ]);
+    expect(panel.providers[0]!.caveat).toMatch(/does not report what it spends/u);
+    expect(panel.providers[0]!.caveat).not.toMatch(/installed before/u);
+  });
+});
