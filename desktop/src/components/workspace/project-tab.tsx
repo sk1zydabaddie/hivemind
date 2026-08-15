@@ -1,3 +1,4 @@
+import { Hex } from "@/components/workspace/hex";
 import { ChevronRight, Clock3, FileSearch, Lightbulb, ScrollText } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -156,7 +157,10 @@ export function ProjectTab({
               told to remember. Nothing here changes your code.
             </p>
           ) : (
-            <Totals totals={totals} />
+            <>
+              <Comb shipped={totals.tasksShipped} checked={totals.tasksChecked} />
+              <Totals totals={totals} />
+            </>
           )}
         </div>
         <Button
@@ -908,4 +912,58 @@ function formatCompact(value: number): string {
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat().format(value);
+}
+
+/**
+ * One hexagon per task this project has shipped.
+ *
+ * The accumulation surface, and the whole of it: a count of rows in the durable
+ * run history rendered as the product's own shape. `tasksShipped` sums
+ * `merged_tasks` over recorded runs and `tasksChecked` sums `verified_tasks` --
+ * both are Core's numbers, neither is derived here.
+ *
+ * What it deliberately is NOT: a streak, a weekly average, a percentage against
+ * a previous period, or a number that counts up on mount. Every one of those
+ * was on offer in the components surveyed for this pass and every one is
+ * invented. The only thing that makes this feel like accumulation is that it is
+ * genuinely accumulating -- a comb that is one cell longer than last week is
+ * one shipped change longer, and nothing else.
+ *
+ * Filled cells shipped. Outlined cells were verified and not adopted, which is
+ * a real distinction the history already records and which a person can act on:
+ * work that passed its checks and is still waiting on them.
+ */
+function Comb({ shipped, checked }: { shipped: number; checked: number }): React.JSX.Element | null {
+  if (shipped === 0 && checked === 0) return null;
+  /* A cap, because a long-running project would otherwise wrap a thousand
+     hexagons across the header. Said out loud rather than silently truncated:
+     a comb that stops without saying so is a count that lies. */
+  const CAP = 60;
+  const waiting = Math.max(0, checked - shipped);
+  const filled = Math.min(shipped, CAP);
+  const hollow = Math.min(waiting, Math.max(0, CAP - filled));
+  const hidden = shipped + waiting - filled - hollow;
+  return (
+    <div className="mt-3">
+      <div className="comb" role="img" aria-label={`${shipped} tasks shipped in this project`}>
+        {Array.from({ length: filled }, (_, index) => (
+          <Hex fill="fill-navy" key={`s${index}`} size="cell" stroke="stroke-navy" />
+        ))}
+        {Array.from({ length: hollow }, (_, index) => (
+          <Hex key={`w${index}`} size="cell" stroke="stroke-rule" />
+        ))}
+      </div>
+      <p className="mt-2 mb-0 text-[11px] leading-snug text-muted-foreground">
+        <span className="font-medium text-ink">{shipped.toLocaleString()}</span>{" "}
+        {shipped === 1 ? "task" : "tasks"} shipped
+        {waiting > 0 ? (
+          <>
+            {" · "}
+            {waiting.toLocaleString()} checked and not adopted
+          </>
+        ) : null}
+        {hidden > 0 ? <> · {hidden.toLocaleString()} more not drawn</> : null}
+      </p>
+    </div>
+  );
 }

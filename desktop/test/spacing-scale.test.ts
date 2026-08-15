@@ -106,8 +106,10 @@ const ALIGNMENT_EXCEPTIONS: Record<string, string> = {
     "aligns a nested row under the same gutter, one level in",
   "components/workspace/work-tab.tsx: pl-9":
     "aligns a list under the icon column of the header above it",
-  "components/workspace/work-tab.tsx: mt-[5px]":
-    "drops a 6px square mark onto the cap height of the 13px row beside it",
+  /* Retired: the 6px square that needed this became the lane's hexagon, which
+     is taller, sits on a track and aligns on a scale step. An exception that
+     outlives the markup it was granted for is how a registry stops meaning
+     anything, so the test fails on a stale one rather than tolerating it. */
   "components/workspace/project-tab.tsx: ml-[136px]":
     "aligns a run's detail block under the run's own metadata column"
 };

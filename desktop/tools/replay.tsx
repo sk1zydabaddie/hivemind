@@ -267,6 +267,18 @@ class ReplayEventSource {
 (window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__ = {
   transformCallback: (callback: unknown) => callback,
   invoke: async (command: string, payload: Record<string, unknown>) => {
+    /* The shell remembers which projects have been opened, and the app now
+       opens the most recent one rather than defaulting to the process working
+       directory — which for an installed build was its own install folder.
+       The harness models the shell, so it has to model this too: without it
+       the replay opens nothing and every scenario renders the setup screen.
+       Caught by a screenshot run refusing to photograph a surface that did not
+       contain what it came for. */
+    if (command === "recent_projects") {
+      return [{ path: "D:\\Projects\\trimr-replay", opened_at: "0" }];
+    }
+    if (command === "remember_project") return null;
+    if (command === "dismissed_hints") return { "setup.what-this-is": true };
     if (command === "select_project") {
       return {
         project_root: "D:\\Projects\\trimr-replay",

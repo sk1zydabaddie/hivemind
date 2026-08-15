@@ -59,6 +59,8 @@ import { ChecksOutputPane } from "@/components/workspace/checks-output";
 import { ProvenanceNote } from "@/components/workspace/provenance-note";
 import { FileTree } from "@/components/workspace/file-tree";
 import { FileViewer } from "@/components/workspace/file-viewer";
+import { Hex, hexTone } from "@/components/workspace/hex";
+import { holdingGate, passedGates, type GateRule as GateRuleModel } from "@/lib/gates";
 import { PhaseSpine, phaseRatio } from "@/components/workspace/phase-spine";
 import {
   SpecReviewPanel,
@@ -795,6 +797,7 @@ export function WorkTab({
               <PanelCount>{tasks.length}</PanelCount>
             </PanelHeader>
             <TaskBoard
+              gates={passedGates(projection)}
               groups={inspection?.execution_groups ?? []}
               integrationFailure={inspection?.integration_failure ?? null}
               selectedTaskId={projection.selectedTaskId}
@@ -1710,6 +1713,7 @@ function TaskBoard({
   groups,
   taskTitles,
   integrationFailure,
+  gates,
   selectedTaskId,
   onSelectTask
 }: {
@@ -1717,6 +1721,9 @@ function TaskBoard({
   groups: WorkspaceInspection["execution_groups"];
   taskTitles: Record<string, string>;
   integrationFailure: WorkspaceInspection["integration_failure"];
+  /* Derived from durable events by `passedGates`. Passed in rather than
+     computed here, so this stays a presenter with nothing to disagree about. */
+  gates: GateRuleModel[];
   selectedTaskId: string | null;
   onSelectTask: (taskId: string) => void;
 }): React.JSX.Element {
@@ -1753,6 +1760,13 @@ function TaskBoard({
             No tasks in this run yet.
           </p>
         ) : null}
+        {/* One hairline per gate this run's work has been through, drawn ONCE
+            for the board. Per gate — not per task, not per phase, not per
+            group: three tasks that each cleared scope produce one line. The
+            lanes below run down through them. */}
+        {gates.map((gate) => (
+          <GateRule key={gate.id} rule={gate} />
+        ))}
         {lanes.map((lane) => (
           <section key={lane.key}>
             <header className="sticky top-0 z-1 flex h-7 items-center gap-3 border-b border-rule bg-canvas px-3">
@@ -1763,24 +1777,65 @@ function TaskBoard({
                 {lane.tasks.length}
               </span>
             </header>
-            {lane.tasks.map((task) => (
-              <TaskRow
-                key={task.task_id}
-                integrationFailure={
-                  integrationFailure?.task_ids.includes(task.task_id)
-                    ? integrationFailure.reason
-                    : null
-                }
-                selected={task.task_id === selectedTaskId}
-                task={task}
-                taskTitles={taskTitles}
-                onSelect={() => onSelectTask(task.task_id)}
-              />
-            ))}
+            {lane.tasks.map((task) => {
+              const held = holdingGate(task);
+              return (
+                <Fragment key={task.task_id}>
+                  <TaskRow
+                    integrationFailure={
+                      integrationFailure?.task_ids.includes(task.task_id)
+                        ? integrationFailure.reason
+                        : null
+                    }
+                    selected={task.task_id === selectedTaskId}
+                    task={task}
+                    taskTitles={taskTitles}
+                    onSelect={() => onSelectTask(task.task_id)}
+                  />
+                  {/* The only loud rule: a gate that actually stopped this
+                      task, drawn where it stopped it. */}
+                  {held === null ? null : <GateRule rule={held} />}
+                </Fragment>
+              );
+            })}
           </section>
         ))}
       </div>
     </ScrollArea>
+  );
+}
+
+/**
+ * A gate, drawn as a rule the lanes pass through.
+ *
+ * Quiet by construction: a hairline in the rule colour, thinner and lighter
+ * than any lane, with its label at the smallest size the type scale has. It is
+ * meant to be felt at a glance and read only when looked at — which is the
+ * whole point, because a gate that nothing has stopped is not news.
+ *
+ * A held gate is the exception and the only one that competes for attention.
+ */
+function GateRule({ rule }: { rule: GateRuleModel }): React.JSX.Element {
+  return (
+    <div className="gate-rule" data-standing={rule.standing}>
+      {/* One cell, not two: the label and what passed through read as a single
+          phrase, and splitting them into grid columns crushed the detail to a
+          character per line in the rail this actually renders in. */}
+      <span
+        className={`min-w-0 text-[10px] leading-snug break-words ${
+          rule.standing === "held" ? "text-clay" : "text-muted-foreground/80"
+        }`}
+      >
+        <span
+          className={`tracking-label uppercase ${
+            rule.standing === "held" ? "font-semibold" : "font-medium"
+          }`}
+        >
+          {rule.label}
+        </span>{" "}
+        {rule.detail}
+      </span>
+    </div>
   );
 }
 
@@ -1812,20 +1867,33 @@ function TaskRow({
   return (
     <button
       aria-pressed={selected}
-      className={`lift relative flex w-full cursor-pointer items-start gap-2.5 border-b border-rule px-3 py-2.5 pl-2.5 text-left ${
-        selected
-          ? "bg-navy-wash before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-navy"
-          : "bg-panel hover:bg-canvas"
+      /* A LANE, not a list row.
+       *
+       * Parallel work is the whole claim of this product and it was drawn as a
+       * list, which is what every task manager ever built looks like. The track
+       * runs the full height of the row, so consecutive running tasks read as
+       * lines running side by side down the column — which is what is actually
+       * happening — and a finished one visibly steps out of the traffic.
+       *
+       * No border-bottom: the tracks do the separating now, and a horizontal
+       * rule per row is exactly the noise the gate rules must not become. */
+      className={`lane group relative flex w-full cursor-pointer items-start gap-2.5 py-2.5 pr-3 pl-2.5 text-left ${
+        selected ? "bg-navy-wash" : "bg-panel hover:bg-canvas"
       }`}
+      data-standing={phase.standing}
       type="button"
       onClick={onSelect}
     >
-      {/* A square mark, not a dot: the same shape the map uses for a phase, at
-          the size a row can carry. */}
-      <span
-        aria-hidden="true"
-        className={`mt-[5px] size-1.5 shrink-0 rounded-xs ${toneEdge[language.tone]}`}
-      />
+      {/* The lane's track and its head. The hexagon is the product's own shape;
+          this used to be a 6px square, which is what everything else uses. */}
+      <span aria-hidden="true" className="lane-track relative mt-0.5 self-stretch">
+        <Hex
+          checked={phase.standing === "done"}
+          fill={hexTone[phase.standing].fill}
+          size="node"
+          stroke={hexTone[phase.standing].stroke}
+        />
+      </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-3">
           <span className="min-w-0 text-[13px] leading-snug font-medium break-words text-ink">
@@ -2237,11 +2305,16 @@ function ShippedCard({
        moment deserves rather than as another row in a log. */
     <article className="max-w-[720px] overflow-hidden rounded-md border border-navy/30 bg-navy-wash">
       <div className="flex items-center gap-3 bg-navy px-4 py-3 text-panel">
+        {/* The lanes converge here, so the shape that has been running down
+            them arrives at full size with its check drawn. It is the same
+            hexagon as the lane head and the comb cell — the moment reads as
+            the end of the thing you were watching rather than as a new
+            component appearing. */}
         <span
           aria-hidden="true"
-          className="grid size-8 shrink-0 place-items-center rounded-sm bg-panel/15"
+          className="ship-mark grid size-8 shrink-0 place-items-center rounded-sm bg-panel/15"
         >
-          <Check className="size-5" />
+          <Hex checked fill="fill-panel/15" size="node" stroke="stroke-panel" />
         </span>
         <div className="min-w-0 flex-1">
           <strong className="block text-[17px] leading-tight font-semibold tracking-tighter">

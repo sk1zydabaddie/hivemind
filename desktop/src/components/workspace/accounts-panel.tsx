@@ -51,7 +51,21 @@ export function AccountsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load closes over onAction only
   }, [onAction]);
 
-  if (view === null || view.roles.length === 0) return null;
+  /* Shape, not presence. An action that resolves with nothing -- a daemon
+     older than this panel, a replayed trail from before accounts existed --
+     stored `undefined`, which is not `null`, so the null guard passed it
+     straight through and the panel crashed reading `.roles`. The same defect
+     took the ship surface down through `provenance`, found the same way: by
+     replaying a real trail instead of a fixture that always had the field. */
+  if (
+    view === null ||
+    typeof view !== "object" ||
+    !Array.isArray(view.roles) ||
+    !Array.isArray(view.accounts) ||
+    view.roles.length === 0
+  ) {
+    return null;
+  }
 
   const switchable = (harness: string | null): boolean =>
     harness !== null && Object.hasOwn(view.switchable, harness);

@@ -10,6 +10,9 @@ import {
   Terminal
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+
+import markDark from "@/assets/mark-dark.png";
+import markLight from "@/assets/mark.png";
 import { useCallback, useEffect, useState } from "react";
 
 import { SettingsDialog } from "@/components/settings-dialog";
@@ -64,7 +67,16 @@ export default function App(): React.JSX.Element {
   const workspace = useWorkspace();
   const [projectInput, setProjectInput] = useState("");
   const [projectOpen, setProjectOpen] = useState(false);
-  const [section, setSection] = useState("setup");
+  /* `?section=` opens the app on a named surface. The replay harness uses it to
+     photograph one, and it is the same deep-link a notification or a shortcut
+     would need. Anything unrecognised falls through to the ordinary default,
+     so a bad link opens the app rather than a blank tab. */
+  const requestedSection = new URLSearchParams(window.location.search).get("section");
+  const [section, setSection] = useState(
+    requestedSection !== null && ["setup", "work", "agents", "project"].includes(requestedSection)
+      ? requestedSection
+      : "setup"
+  );
   const [paletteOpen, setPaletteOpen] = useState(false);
   /* Which projects have been opened. SHELL state, kept by the Tauri side in the
      app's own config directory -- never inside a project, because putting it
@@ -169,12 +181,18 @@ export default function App(): React.JSX.Element {
       )
     );
 
-  /* Once there is an agent, stop showing the setup step -- but only move
+  /* Leave the setup step when it stops being the thing to do -- but only move
      somebody who is still standing on it. Navigating away deliberately is not
-     something completing a step should undo. */
+     something completing a step should undo.
+
+     A run in flight also ends it. A project with three agents working is not a
+     project waiting to be set up, whatever the adapter records say, and landing
+     on a setup checklist while work is running is the app arguing with what is
+     on screen. Found by a replayed trail at peak concurrency opening on Set up. */
+  const hasWork = (workspace.inspection?.tasks ?? []).length > 0;
   useEffect(() => {
-    if (runnable && section === "setup") setSection("work");
-  }, [runnable, section]);
+    if ((runnable || hasWork) && section === "setup") setSection("work");
+  }, [runnable, hasWork, section]);
   /* A count on the tab, so a run in flight advertises itself from whichever
      view you are in. Core's task states counted -- nothing derived. */
   const agentsWorking = (workspace.inspection?.tasks ?? []).filter((task) =>
@@ -541,56 +559,35 @@ export default function App(): React.JSX.Element {
 /* The product's own mark, reduced: two interlocking hexagons in the two
    identity colours. The four rounded squares this replaced were a generic
    swarm glyph and, literally, four cards in a grid. */
+/* The real mark, not an approximation of it.
+ *
+ * This was a hand-drawn pair of thin hexagon outlines standing in for the
+ * brand. The actual mark is two interlocking hexagonal LINKS with an over/under
+ * crossing and heavy rounded strokes, and the two hexagons are rotated thirty
+ * degrees from each other -- which is exactly what makes them read as linked
+ * rather than stacked. Close enough to describe in a sentence, and far enough
+ * that three traces of it came out looking like a different logo side by side.
+ * So it ships as the asset itself rather than as a drawing of the asset.
+ *
+ * Two files rather than one because the mark is navy AND near-black: on the
+ * dark canvas the near-black half disappears completely. The dark variant is
+ * generated from the same source by mapping each half to the theme's own navy
+ * and ink, so the two cannot drift apart. `picture` does the swap in CSS, so it
+ * follows the OS theme with no JS and no flash of the wrong one.
+ */
 function BrandMark(): React.JSX.Element {
-  const hex = (cx: number, cy: number): string => {
-    const r = 6.1;
-    const w = r * 0.866;
-    return [
-      `M${cx} ${cy - r}`,
-      `L${cx + w} ${cy - r / 2}`,
-      `L${cx + w} ${cy + r / 2}`,
-      `L${cx} ${cy + r}`,
-      `L${cx - w} ${cy + r / 2}`,
-      `L${cx - w} ${cy - r / 2}`,
-      "Z"
-    ].join(" ");
-  };
   return (
-    <svg
-      aria-hidden="true"
-      className="shrink-0"
-      fill="none"
-      height="19"
-      viewBox="0 0 20 20"
-      width="19"
-    >
-      <defs>
-        {/* The one crossing where the navy link passes in front, which is what
-            makes the two read as linked rather than as overlapping. */}
-        <clipPath id="hivemind-link">
-          <rect height="6" width="7" x="10" y="4.5" />
-        </clipPath>
-      </defs>
-      <path
-        d={hex(11.6, 8.2)}
-        stroke="var(--navy)"
-        strokeLinejoin="round"
-        strokeWidth="2.4"
+    <picture className="flex shrink-0 items-center">
+      <source media="(prefers-color-scheme: dark)" srcSet={markDark} />
+      <img
+        alt=""
+        className="block size-[19px] select-none"
+        draggable={false}
+        height={19}
+        src={markLight}
+        width={19}
       />
-      <path
-        d={hex(8.4, 11.8)}
-        stroke="var(--ink)"
-        strokeLinejoin="round"
-        strokeWidth="2.4"
-      />
-      <path
-        clipPath="url(#hivemind-link)"
-        d={hex(11.6, 8.2)}
-        stroke="var(--navy)"
-        strokeLinejoin="round"
-        strokeWidth="2.4"
-      />
-    </svg>
+    </picture>
   );
 }
 

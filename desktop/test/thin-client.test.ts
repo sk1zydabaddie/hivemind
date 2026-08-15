@@ -576,7 +576,14 @@ describe("React workspace boundary", () => {
        overlay while the filled segment underneath survives. */
     expect(projection).toMatch(/message\.source === "live"[\s\S]*recordArtifactMovements/u);
     expect(map).toMatch(/projection\.artifactMovements/u);
-    expect(spine).toMatch(/artifact-marker/u);
+    /* The spine's marker is now `hex-advance`: the four grey rules became four
+       hexagons, so the thing that animates is the hex the change just filled
+       rather than an overlay sliding across a bar. Same binding — it is keyed
+       on the live artifact movement naming that task — and the assertion is on
+       the binding, not on the class name. */
+    expect(spine).toMatch(/hex-advance/u);
+    expect(spine).toMatch(/advanceKey !== null/u);
+    expect(styles).toMatch(/animation:\s*hex-advance/u);
     /* The run's own progress bar is the same rule at run scale: a real track
        whose fill is cleared phases over total phases, with the marker as an
        overlay. Nothing in it is driven by a clock. */

@@ -31,7 +31,27 @@ export interface VerificationProvenance {
 }
 
 interface ChecksView {
-  provenance: VerificationProvenance | null;
+  /** Absent on a run recorded before provenance existed, which is not `null`. */
+  provenance?: VerificationProvenance | null;
+}
+
+/**
+ * Whether this is really a provenance, rather than whether a key was present.
+ *
+ * The two facts this surface renders — how many tasks ran on a verified
+ * provider, and who authored the checks — both read arrays off it. Neither can
+ * be produced from a partial record, and rendering half a provenance would make
+ * a weaker claim look like a stronger one, which is the exact failure the whole
+ * feature exists to prevent.
+ */
+export function isProvenance(value: unknown): value is VerificationProvenance {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    Array.isArray(record.code) &&
+    Array.isArray(record.checks) &&
+    (record.scope === "integrated_set" || record.scope === "single_worktree")
+  );
 }
 
 /** The one-line summary. Short on purpose; the limits are their own sentence. */
@@ -68,8 +88,20 @@ export function ProvenanceNote({
     void onAction<ChecksView>({ type: "checks.inspect", payload: {} })
       .then((value) => {
         if (cancelled) return;
-        if (value.provenance === null) setMissing(true);
-        else setProvenance(value.provenance);
+        /* ABSENT and NULL are different values and this only handled one.
+           A run recorded before provenance existed has no `provenance` key at
+           all, so `=== null` was false, `undefined` was stored as though it
+           were a provenance, and the render crashed reading `.code` off it --
+           taking the whole ship surface down with it. Found by replaying a real
+           trail; every fixture in the suite happened to carry the key.
+
+           A partial provenance is not a provenance either, so this checks the
+           shape rather than the key. Anything that is not one reads as missing,
+           which is the honest answer and the safe direction: this note is
+           advisory, and saying nothing is always better than asserting
+           something about evidence nobody has. */
+        setProvenance(isProvenance(value.provenance) ? value.provenance : null);
+        setMissing(!isProvenance(value.provenance));
       })
       .catch(() => {
         /* No recorded run at all. Nothing to qualify, so nothing renders --

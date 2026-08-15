@@ -1,3 +1,4 @@
+import { Hex, hexTone } from "@/components/workspace/hex";
 import { PHASES, type PhaseStanding, type TaskPhase } from "@/lib/phases";
 
 /* The four-phase gauge, in one file because three surfaces draw it about the
@@ -59,47 +60,45 @@ export function PhaseSpine({
      only while the live record naming it is still the newest one. */
   const advanced = Math.max(0, phase.reached - 1);
   const finished = standing === "done" && phase.reached >= PHASES.length;
+  /* Four hexes and the live phase named, rather than four grey rules with four
+     labels under them. Same component, same data, same four facts — but the
+     rules read as a rendering artefact, and four of anything repeated in a
+     dense column is exactly where a product should be putting its own shape. */
+  const tone = hexTone[standing];
   return (
-    <div className="grid gap-1.5">
-      <div aria-hidden="true" className="flex gap-1">
-        {PHASES.map((name, index) => {
-          const cleared = index < phase.reached || standing === "done";
-          const active = index === current && standing !== "done" && standing !== "stopped";
-          return (
-            <span
-              className={`relative h-[3px] flex-1 overflow-hidden ${
-                cleared ? standingFill[standing] : "bg-rule"
-              }`}
-              key={name}
-            >
-              {active && !cleared ? (
-                <span className={`block h-[3px] w-1/2 ${standingFill[standing]}`} />
-              ) : null}
-              {advanceKey !== null && cleared && index === advanced ? (
-                <span className="artifact-marker absolute inset-0 bg-panel/75" key={advanceKey} />
-              ) : null}
-            </span>
-          );
-        })}
-      </div>
-      {/* The phase names sit under their own segments, so the gauge says what
-          it is measuring instead of needing a legend somewhere else. */}
-      <div aria-hidden="true" className="flex gap-1">
-        {PHASES.map((name, index) => (
+    <div aria-hidden="true" className="flex items-center gap-1">
+      {PHASES.map((name, index) => {
+        const cleared = index < phase.reached || standing === "done";
+        const active = index === current && standing !== "done" && standing !== "stopped";
+        return (
           <span
-            className={`flex-1 text-[10px] leading-none ${
-              index === current && !finished && standing !== "stopped"
-                ? `font-medium ${standingText[standing]}`
-                : index < phase.reached || standing === "done"
-                  ? "text-muted-foreground"
-                  : "text-rule"
-            }`}
-            key={name}
+            className={
+              advanceKey !== null && cleared && index === advanced ? "hex-advance" : undefined
+            }
+            key={advanceKey !== null && index === advanced ? `${name}-${advanceKey}` : name}
           >
-            {name}
+            <Hex
+              checked={finished && index === PHASES.length - 1}
+              fill={cleared ? tone.fill : undefined}
+              size="pip"
+              stroke={cleared || active ? tone.stroke : "stroke-rule"}
+            />
           </span>
-        ))}
-      </div>
+        );
+      })}
+      {/* One name, not four. The other three are inferable from the hexes and
+          were only ever legend for the rules they sat under. */}
+      <span
+        className={`ml-1 text-[10px] leading-none tracking-label uppercase ${
+          finished
+            ? "text-muted-foreground"
+            : standing === "stopped"
+              ? "text-muted-foreground"
+              : `font-semibold ${standingText[standing]}`
+        }`}
+      >
+        {finished ? "Ready" : PHASES[current]}
+      </span>
     </div>
   );
 }

@@ -375,3 +375,165 @@
   box-shadow: none;
   transition-duration: 60ms;
 }
+
+/* ── Lanes, gates and the hexagon ───────────────────────────────────────────
+ *
+ * The identity, in three pieces that are meant to be felt rather than read.
+ *
+ * THE LANE is the signature object. Parallel work is what this product claims
+ * and it was drawn as a list of rows with a rule between them, which is what
+ * every task manager looks like. A lane is a vertical track the full height of
+ * its row; consecutive tasks put their tracks side by side down the column,
+ * which is the picture of the claim.
+ */
+.lane-track {
+  width: 15px;
+}
+
+/* The track itself: behind the hexagon, running the row's full height. */
+.lane-track::before {
+  background: var(--rule);
+  bottom: -10px;
+  content: "";
+  left: 6px;
+  position: absolute;
+  top: -10px;
+  width: 2px;
+  z-index: 0;
+}
+
+.lane[data-standing="working"] .lane-track::before {
+  background: var(--navy);
+}
+.lane[data-standing="attention"] .lane-track::before {
+  background: var(--clay);
+}
+/* A finished lane steps out of the traffic: still there, no longer competing
+   with whatever is running. */
+.lane[data-standing="done"] .lane-track::before {
+  background: color-mix(in oklab, var(--navy) 38%, var(--rule));
+}
+
+/* The first and last lanes do not trail off the ends of the group. */
+.lane:first-of-type .lane-track::before { top: 10px; }
+.lane:last-of-type .lane-track::before { bottom: 10px; }
+
+.lane-track > svg {
+  position: relative;
+  z-index: 1;
+}
+
+/*
+ * THE GATE is the line quality, and restraint is the entire design.
+ *
+ * A rule at every phase boundary would be horizontal noise in an already dense
+ * column, and it would compete with the amber attention edge for the same
+ * glance. So a passed gate is a HAIRLINE -- thinner and lighter than any lane,
+ * subordinate by construction -- and there is one per gate rather than one per
+ * task or per phase. On a healthy run that is one or two lines on screen.
+ *
+ * A held gate is the exception, and the only one allowed to be loud.
+ */
+.gate-rule {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 15px minmax(0, 1fr);
+  padding: 3px 12px 3px 10px;
+}
+
+.gate-rule::before {
+  background: var(--rule);
+  content: "";
+  height: 1px;
+  opacity: 0.85;
+}
+
+.gate-rule[data-standing="held"] {
+  background: var(--clay-wash);
+}
+
+.gate-rule[data-standing="held"]::before {
+  background: var(--clay);
+  height: 2px;
+  opacity: 1;
+}
+
+/*
+ * THE HEXAGON is the motif. The check draws itself on completion -- the one
+ * moment in a run worth marking, and a real state change rather than a timer.
+ */
+.hex-check {
+  stroke-dashoffset: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hex-check {
+    animation: hex-draw 260ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  }
+
+  /* A phase clearing: the hex it just filled flares once. Keyed on the live
+     record naming it, so it fires on the event and never on a re-render. */
+  .hex-advance {
+    animation: hex-advance 420ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  }
+}
+
+@keyframes hex-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes hex-advance {
+  0% { opacity: 0.35; transform: scale(0.82); }
+  55% { opacity: 1; transform: scale(1.14); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* ── The comb ───────────────────────────────────────────────────────────────
+ *
+ * One hexagon per adopted change, from the durable trail and nothing else. It
+ * is a count of rows: no streaks, no averages, no week-over-week. The only
+ * thing that makes it feel like accumulation is that it is genuinely
+ * accumulating.
+ */
+.comb {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+/* Offsetting alternate rows would tile them properly, but a wrapping flex row
+   cannot know which row it is on. The gap does enough at this size, and a
+   half-tiled comb reads worse than an honest grid of them. */
+.comb > * {
+  display: block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hex-check,
+  .hex-advance {
+    animation: none !important;
+  }
+}
+
+/* The ship moment: the lanes' shape arriving.
+ *
+ * One orchestrated moment in the app, on the one event worth marking — the
+ * change becoming part of the project. It fires on `adoption.completed`
+ * arriving, never on a re-render and never on a clock. */
+@media (prefers-reduced-motion: no-preference) {
+  .ship-mark {
+    animation: ship-land 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+
+@keyframes ship-land {
+  0% { opacity: 0; transform: translateY(-6px) scale(0.86); }
+  70% { opacity: 1; transform: translateY(0) scale(1.06); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ship-mark { animation: none !important; }
+}
