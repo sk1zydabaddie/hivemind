@@ -15,6 +15,7 @@ import {
   createProjectSession,
   createProjectStreamGuard,
   actionErrorAfterDurableProgress,
+  PROJECT_FAULT,
   type ProjectConnection
 } from "../lib/project-session";
 import {
@@ -28,6 +29,8 @@ interface WorkspaceView {
   projectPath: string;
   connection: ProjectConnection | null;
   connectionState: string;
+  /** Why, as a code. The interface branches on this, never on the message. */
+  connectionCode: string;
   connectionDetail: string;
   inspection: WorkspaceInspection | null;
   actionError: string;
@@ -40,11 +43,24 @@ interface WorkspaceView {
 }
 
 export function useWorkspace(): WorkspaceView {
-  const initialPath =
-    new URLSearchParams(window.location.search).get("project") ?? ".";
-  const [projectPath, setProjectPath] = useState(initialPath);
+  /* What to open before anybody has chosen anything.
+   *
+   * This used to be `"."`. For an installed app that is the process working
+   * directory, which the Start menu shortcut sets to the INSTALLATION
+   * directory -- so a brand-new install's first act was to try to open
+   * Hivemind itself as a project, fail, and present the failure as though the
+   * person had chosen badly.
+   *
+   * Now: an explicit `?project=` wins (the replay harness and any deep link),
+   * then the most recently opened project, and otherwise NOTHING. A first run
+   * shows a chooser rather than the wreckage of an attempt nobody asked for. */
+  const requestedPath = new URLSearchParams(window.location.search).get("project");
+  const [projectPath, setProjectPath] = useState(requestedPath ?? "");
   const [connection, setConnection] = useState<ProjectConnection | null>(null);
   const [connectionState, setConnectionState] = useState("selecting project");
+  const [connectionCode, setConnectionCode] = useState<string>(
+    PROJECT_FAULT.noProjectSelected
+  );
   const [connectionDetail, setConnectionDetail] = useState("");
   const [inspection, setInspection] = useState<WorkspaceInspection | null>(null);
   const [actionError, setActionError] = useState("");
@@ -205,6 +221,7 @@ export function useWorkspace(): WorkspaceView {
           setActionError("");
           projectionRef.current = createBoardProjection();
           setConnectionState("selecting project");
+          setConnectionCode(PROJECT_FAULT.noProjectSelected);
           setConnectionDetail("");
           render();
         },
@@ -218,15 +235,20 @@ export function useWorkspace(): WorkspaceView {
               : "daemon found"
           );
           setConnectionDetail(nextConnection.project_root);
+          setConnectionCode("");
           connectEventStream(nextConnection);
         },
-        onError: (error) => {
+        /* The code decides; the message is only ever shown. This used to test
+           the message text for "desktop shell build mismatch", which is the
+           same rule being broken one line above where it was broken again. */
+        onError: (fault) => {
           setConnectionState(
-            /desktop shell build mismatch|Desktop update required/iu.test(error.message)
+            fault.code === PROJECT_FAULT.desktopUpdateRequired
               ? "update required"
               : "connection error"
           );
-          setConnectionDetail(error.message);
+          setConnectionCode(fault.code);
+          setConnectionDetail(fault.message);
           render();
         }
       }),
@@ -266,14 +288,31 @@ export function useWorkspace(): WorkspaceView {
   }, [session, projectPath]);
 
   useEffect(() => {
-    void session.switchProject(initialPath);
+    let abandoned = false;
+    const openSomething = async (): Promise<void> => {
+      if (requestedPath !== null && requestedPath.trim() !== "") {
+        await session.switchProject(requestedPath);
+        return;
+      }
+      /* Outside the shell (the replay harness) this rejects, which is the same
+         answer as an empty list: open nothing and show the chooser. */
+      const recents = await invoke<{ path: string }[]>("recent_projects").catch(
+        () => [] as { path: string }[]
+      );
+      if (abandoned) return;
+      const mostRecent = recents[0]?.path;
+      if (mostRecent === undefined || mostRecent.trim() === "") return;
+      await session.switchProject(mostRecent);
+    };
+    void openSomething();
     return () => {
+      abandoned = true;
       closeStreams();
       if (inspectionTimerRef.current !== null) {
         window.clearTimeout(inspectionTimerRef.current);
       }
     };
-  }, [closeStreams, initialPath, session]);
+  }, [closeStreams, requestedPath, session]);
 
   const performAction = useCallback(
     async <T,>(action: WorkspaceAction): Promise<T> => {
@@ -304,6 +343,7 @@ export function useWorkspace(): WorkspaceView {
     projectPath,
     connection,
     connectionState,
+    connectionCode,
     connectionDetail,
     inspection,
     actionError,

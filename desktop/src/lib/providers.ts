@@ -42,8 +42,12 @@ export interface ProviderRole {
 }
 
 /* Core resolves each to `.hivemind/adapters/<tool>.profile.json`, so all three
-   files must exist. Core's init writes all three, ranked last on cost so
-   anything configured here wins over them. */
+   files must exist -- and setting the project up does NOT write them. Core
+   deliberately writes no adapter profile, because one written by setup would be
+   a declaration that no probe has checked, which is the exact thing connecting
+   an agent exists to replace. Connecting each role is what creates its file.
+   The claim that setup wrote them is what sent a new person looking for a step
+   that had never happened. */
 export const REQUIRED_ROLES: ProviderRole[] = [
   { tool: "planner", purpose: "Turns what you type into a plan", requestedByName: true },
   {

@@ -7,6 +7,56 @@ export interface ProjectConnection {
   status: "attached" | "started";
 }
 
+/**
+ * Why opening a project failed, as a code rather than as a sentence.
+ *
+ * These are the shell's codes, assigned in `project.rs` where each failure is
+ * created. Nothing in the interface may branch on `message` -- that is the rule
+ * this exists to enforce, and the fourth violation of it is the reason it now
+ * exists. Reading a message and deciding what to offer put an unreachable
+ * button in front of the most ordinary first-run case there is for as long as
+ * that button had existed.
+ */
+export const PROJECT_FAULT = {
+  notAGitRepository: "not_a_git_repository",
+  noProjectSelected: "no_project_selected",
+  notInitialized: "not_initialized_for_hivemind",
+  desktopUpdateRequired: "desktop_update_required",
+  daemonUnavailable: "daemon_unavailable",
+  unknown: "unknown"
+} as const;
+
+export interface ProjectFault {
+  code: string;
+  /** For a person to read. Never for the interface to decide on. */
+  message: string;
+}
+
+/** An Error that carries a code, for the checks the shell makes on this side. */
+export function faultError(code: string, message: string): Error & { code: string } {
+  return Object.assign(new Error(message), { code });
+}
+
+/**
+ * Whatever a rejected `invoke` produced, as a fault.
+ *
+ * Tauri rejects with the serialized `Err` value, so a typed failure arrives as
+ * a plain `{ code, message }` object rather than as an Error. Anything without
+ * a code is `unknown`, which renders as the generic message and offers no
+ * action — the safe direction, because a wrong button is worse than none.
+ */
+export function projectFaultFrom(value: unknown): ProjectFault {
+  if (typeof value === "object" && value !== null) {
+    const record = value as Record<string, unknown>;
+    const code = typeof record.code === "string" && record.code !== "" ? record.code : null;
+    const message =
+      typeof record.message === "string" ? record.message : String(value);
+    if (code !== null) return { code, message };
+    if (value instanceof Error) return { code: PROJECT_FAULT.unknown, message: value.message };
+  }
+  return { code: PROJECT_FAULT.unknown, message: String(value) };
+}
+
 interface ProjectSessionOptions {
   selectProject: (projectPath: string) => Promise<unknown>;
   /* Sets a folder up and opens it. Same flow as selecting one; only the shell
@@ -14,7 +64,7 @@ interface ProjectSessionOptions {
   initializeProject: (projectPath: string) => Promise<unknown>;
   onSwitchStart: () => void;
   onConnected: (connection: ProjectConnection) => void;
-  onError: (error: Error) => void;
+  onError: (fault: ProjectFault) => void;
 }
 
 type OpenResult =
@@ -41,9 +91,12 @@ export function createProjectSession({
       const currentGeneration = ++generation;
       onSwitchStart();
       if (selectedPath === "") {
-        const error = new Error("Select a project directory.");
-        onError(error);
-        return { ok: false, reason: error.message };
+        const fault: ProjectFault = {
+          code: PROJECT_FAULT.noProjectSelected,
+          message: "No project folder has been chosen."
+        };
+        onError(fault);
+        return { ok: false, reason: fault.message };
       }
 
       let connection: ProjectConnection;
@@ -53,10 +106,9 @@ export function createProjectSession({
         if (currentGeneration !== generation) {
           return { ok: false, stale: true };
         }
-        const normalized =
-          error instanceof Error ? error : new Error(String(error));
-        onError(normalized);
-        return { ok: false, reason: normalized.message };
+        const fault = projectFaultFrom(error);
+        onError(fault);
+        return { ok: false, reason: fault.message };
       }
       if (currentGeneration !== generation) {
         return { ok: false, stale: true };
@@ -118,7 +170,10 @@ export function validateProjectConnection(value: unknown): ProjectConnection {
     throw new Error("The desktop shell returned an incomplete project connection.");
   }
   if (shellBuildId !== expectedShellBuildId) {
-    throw new Error("Desktop update required: the running shell does not match Hivemind Core. Rebuild and restart the app before using project controls.");
+    throw faultError(
+      PROJECT_FAULT.desktopUpdateRequired,
+      "Desktop update required: the running shell does not match Hivemind Core. Rebuild and restart the app before using project controls."
+    );
   }
   if (!/^http:\/\/(?:127\.0\.0\.1|localhost):\d+$/u.test(daemonUrl)) {
     throw new Error("The desktop shell returned a non-loopback daemon URL.");

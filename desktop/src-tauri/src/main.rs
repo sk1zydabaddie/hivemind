@@ -3,13 +3,15 @@
 mod project;
 
 use project::{
-    initialize_git, initialize_project, inspect_git_readiness, recent_projects, remember_project,
-    select_project, workspace_action,
+    dismiss_hint, dismissed_hints, initialize_git, initialize_project, inspect_git_readiness,
+    recent_projects, remember_project, select_project, workspace_action,
 };
 
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            dismiss_hint,
+            dismissed_hints,
             initialize_git,
             initialize_project,
             inspect_git_readiness,

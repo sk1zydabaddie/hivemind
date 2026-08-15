@@ -56,6 +56,25 @@ describe("plain action errors", () => {
     }
   });
 
+  /* The wall at the end of a first run. The folder is set up, the composer
+     invites a sentence, and the first submission fails with
+     "adapter profile not found: .hivemind/adapters/planner.profile.json" -- a
+     filesystem path naming a role the person has never seen, for a file the
+     setup screen told them not to think about. It was the last possible place
+     to stop and it had no sentence at all. */
+  test("the first-run refusal a new person hits has a sentence", async () => {
+    const core = await readFile(
+      path.resolve(import.meta.dirname, "..", "..", "src", "plain-reason.ts"),
+      "utf8"
+    );
+    /* Mapped in Core, where the sentence belongs. The BEHAVIOUR — that it names
+       the step rather than handing back a path — is asserted in Core's own
+       suite, which can import it; this only checks the shell has not gone back
+       to carrying its own copy. */
+    expect(core).toMatch(/adapter profile not found/u);
+    expect(core).toMatch(/Open Set up and connect one/u);
+  });
+
   test("Core owns the mapping, and the daemon actually attaches it", async () => {
     const core = await readFile(
       path.resolve(import.meta.dirname, "..", "..", "src", "plain-reason.ts"),

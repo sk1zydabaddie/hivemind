@@ -11,6 +11,7 @@ import {
   type DecisionCause,
   type DecisionConfig
 } from "../src/decision.js";
+import { plainReason } from "../src/plain-reason.js";
 
 /* Vocabulary this product does not say. The desktop client keeps the same list
  * and refuses to render any Core sentence containing one of these, so a term
@@ -57,6 +58,34 @@ const ALL_CAUSES: DecisionCause[] = [
   "git_behavior_file",
   "dependency_file"
 ];
+
+/* The wall at the end of a first run, and it had no sentence at all.
+ *
+ * A new person sets the folder up, is shown a composer that says "Describe what
+ * you want built", types one, and gets:
+ *
+ *   adapter profile not found: .hivemind/adapters/planner.profile.json
+ *
+ * A filesystem path naming a role they have never seen, for a file the setup
+ * screen told them they need not think about. It was the last possible place to
+ * stop on the cold-open path, and the only one with no plain sentence. */
+test("the refusal a first run actually hits names the step, not a path", () => {
+  const said = plainReason(
+    "adapter profile not found: .hivemind/adapters/planner.profile.json"
+  );
+  assert.notEqual(said, null, "the first-run refusal must have a sentence");
+  assert.ok(
+    !/\.hivemind|profile\.json|planner/u.test(said!),
+    `a path is not an explanation: ${said}`
+  );
+  assert.match(said!, /connect/iu, "it has to say what to do next");
+
+  /* A profile that exists but is refused is a DIFFERENT problem with a
+     different next step, so it must not collapse into the same sentence. */
+  const broken = plainReason("adapter profile must be a JSON object");
+  assert.notEqual(broken, said);
+  assert.notEqual(broken, null);
+});
 
 test("every decision cause has a sentence a person can read", () => {
   for (const cause of ALL_CAUSES) {

@@ -283,7 +283,11 @@ next session does not have to rediscover them.
 > Not its caller. Callers multiply.
 
 > **Control flow never depends on message text.** Codes, never prose. Matching a
-> model's sentence has failed three times.
+> sentence has now failed **four** times — and the fourth was written *after*
+> this rule was recorded here, which is the finding. Recording a rule prevents
+> nothing; only a mechanism does. The cold-open branch now takes a code and
+> cannot see a message, and a test fails if it grows one. See
+> `docs/DESIGN-NOTES.md`, "A recorded rule does not prevent recurrence".
 
 > **Chat steers, buttons authorize.** A note on a diff line cannot approve,
 > ratify or ship anything.

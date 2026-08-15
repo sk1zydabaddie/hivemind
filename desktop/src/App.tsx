@@ -3,15 +3,15 @@ import {
   FolderGit2,
   LayoutList,
   Library,
+  Plug,
   Workflow,
   Search,
   Settings,
   Terminal
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-import { AgentSetupDialog } from "@/components/agent-setup-dialog";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { SetupScreen } from "@/components/workspace/setup-screen";
 import { ProjectTab } from "@/components/workspace/project-tab";
@@ -42,14 +42,29 @@ import {
   TooltipTrigger
 } from "@/components/ui/tooltip";
 import { useWorkspace } from "@/hooks/use-workspace";
-import { displayProjectPath, projectNameFromPath } from "@/lib/project-session";
+import {
+  displayProjectPath,
+  projectNameFromPath,
+  PROJECT_FAULT
+} from "@/lib/project-session";
 import { taskPhase } from "@/lib/phases";
+import { REQUIRED_ROLES } from "@/lib/providers";
+import type { ProjectConfigView } from "@/lib/workspace-actions";
+
+/* Codes that mean "you have not finished setting this up", not "something
+   went wrong". The distinction is the whole difference between a first run
+   that reads as broken and one that reads as unfinished. */
+const SETUP_CODES = new Set<string>([
+  PROJECT_FAULT.noProjectSelected,
+  PROJECT_FAULT.notInitialized,
+  PROJECT_FAULT.notAGitRepository
+]);
 
 export default function App(): React.JSX.Element {
   const workspace = useWorkspace();
   const [projectInput, setProjectInput] = useState("");
   const [projectOpen, setProjectOpen] = useState(false);
-  const [section, setSection] = useState("work");
+  const [section, setSection] = useState("setup");
   const [paletteOpen, setPaletteOpen] = useState(false);
   /* Which projects have been opened. SHELL state, kept by the Tauri side in the
      app's own config directory -- never inside a project, because putting it
@@ -75,7 +90,6 @@ export default function App(): React.JSX.Element {
     void invoke("remember_project", { projectPath }).catch(() => undefined);
   }, [projectPath]);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [agentOpen, setAgentOpen] = useState(false);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -108,9 +122,59 @@ export default function App(): React.JSX.Element {
   );
   const projectName = projectNameFromPath(visibleProjectPath);
   const shellUpdateRequired = workspace.connectionState === "update required";
-  /* Only the daemon answering with real project state counts as ready. Until
+  /* Only the daemon answering with real project state counts as live. Until
      then this is a setup problem, not an empty workspace. */
-  const ready = workspace.inspection !== null;
+  const live = workspace.inspection !== null;
+
+  /* Setup is not finished when the daemon answers. It is finished when there is
+     an agent to run, and there is no agent until somebody connects one --
+     Core deliberately writes no adapter profile, because a profile written by
+     setup is a claim no probe has checked. The screen used to disappear at
+     `live`, which dropped a person into a composer whose first submission
+     failed on a missing file they had been told not to think about. */
+  const [configView, setConfigView] = useState<ProjectConfigView | null>(null);
+  const refreshConfig = useCallback(async (): Promise<void> => {
+    if (!live) {
+      setConfigView(null);
+      return;
+    }
+    try {
+      setConfigView(
+        await workspace.performAction<ProjectConfigView>({
+          type: "config.inspect",
+          payload: {}
+        })
+      );
+    } catch {
+      /* Leave the last answer standing rather than claiming nothing is
+         connected: a failed read is not evidence of an empty project. */
+    }
+    /* Deliberately keyed on `live` and the path rather than on `inspection`,
+       which is replaced by a poll every five seconds. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, projectPath]);
+  useEffect(() => {
+    void refreshConfig();
+  }, [refreshConfig]);
+
+  const runnable =
+    live &&
+    configView !== null &&
+    REQUIRED_ROLES.every((role) =>
+      configView.adapters.some(
+        (adapter) =>
+          adapter.role === role.tool &&
+          adapter.connected_at !== null &&
+          adapter.problems.length === 0
+      )
+    );
+
+  /* Once there is an agent, stop showing the setup step -- but only move
+     somebody who is still standing on it. Navigating away deliberately is not
+     something completing a step should undo. */
+  useEffect(() => {
+    if (runnable && section === "setup") setSection("work");
+  }, [runnable, section]);
   /* A count on the tab, so a run in flight advertises itself from whichever
      view you are in. Core's task states counted -- nothing derived. */
   const agentsWorking = (workspace.inspection?.tasks ?? []).filter((task) =>
@@ -147,8 +211,16 @@ export default function App(): React.JSX.Element {
               under them. It is a view worth navigating to, and the toggle it
               was folded into was a false choice between two drawings of one
               thing -- which is a worse question to ask than this one. */}
-          {ready ? (
+          {live ? (
           <TabsList aria-label="Workspace sections">
+            {/* Stays until there is an agent to run, then leaves. The app is
+                never blocked meanwhile: every other section is reachable. */}
+            {runnable ? null : (
+              <TabsTrigger value="setup">
+                <Plug aria-hidden="true" />
+                Set up
+              </TabsTrigger>
+            )}
             <TabsTrigger value="work">
               <LayoutList aria-hidden="true" />
               Work
@@ -172,7 +244,15 @@ export default function App(): React.JSX.Element {
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <ConnectionReadout
               detail={workspace.connectionDetail}
-              state={workspace.connectionState}
+              /* A project that has not been set up yet is not a fault, and the
+                 chrome saying "Connection error" over a calm explanation of the
+                 next step is how a first run starts out believing something is
+                 broken. Setup-shaped codes read as what they are. */
+              state={
+                SETUP_CODES.has(workspace.connectionCode)
+                  ? "not set up"
+                  : workspace.connectionState
+              }
             />
             <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-rule" />
             <Tooltip>
@@ -244,21 +324,44 @@ export default function App(): React.JSX.Element {
           </section>
         ) : null}
 
-        {ready ? null : (
+        {/* Before the daemon answers there is nothing to navigate to, so the
+            setup screen is the whole window. After it answers the screen
+            becomes one section among the others, so nothing is blocked. */}
+        {live ? null : (
           <SetupScreen
+            connectionCode={workspace.connectionCode}
             connectionDetail={workspace.connectionDetail}
             connectionState={workspace.connectionState}
-            projectPath={visibleProjectPath}
             initializing={workspace.initializing}
+            live={false}
+            projectPath={visibleProjectPath}
+            view={null}
+            onAction={workspace.performAction}
             onChooseProject={() => setProjectOpen(true)}
-            onConnectAgent={() => setAgentOpen(true)}
-            onInitializeProject={() => void workspace.initializeProject()}
             onInitializeGit={() => void workspace.initializeGit()}
+            onInitializeProject={() => void workspace.initializeProject()}
+            onReload={refreshConfig}
           />
         )}
 
-        {ready ? (
+        {live ? (
         <>
+        <TabsContent value="setup">
+          <SetupScreen
+            connectionCode={workspace.connectionCode}
+            connectionDetail={workspace.connectionDetail}
+            connectionState={workspace.connectionState}
+            initializing={workspace.initializing}
+            live
+            projectPath={visibleProjectPath}
+            view={configView}
+            onAction={workspace.performAction}
+            onChooseProject={() => setProjectOpen(true)}
+            onInitializeGit={() => void workspace.initializeGit()}
+            onInitializeProject={() => void workspace.initializeProject()}
+            onReload={refreshConfig}
+          />
+        </TabsContent>
         {/* One component renders both stages, which is what keeps the single
             inspector single: the rail, the attention bar, the ship bar and the
             composer are the same instances either way, so shipping never
@@ -306,12 +409,10 @@ export default function App(): React.JSX.Element {
         }}
         onConnectAgent={() => {
           setSettingsOpen(false);
-          setAgentOpen(true);
+          setSection("setup");
         }}
         onOpenChange={setSettingsOpen}
       />
-
-      <AgentSetupDialog open={agentOpen} onOpenChange={setAgentOpen} />
 
       <CommandDialog
         description="Jump to a section or open a project"
@@ -366,7 +467,7 @@ export default function App(): React.JSX.Element {
                 No other project has been opened yet
               </CommandItem>
             ) : null}
-            <CommandItem onSelect={() => runCommand(() => setAgentOpen(true))}>
+            <CommandItem onSelect={() => runCommand(() => setSection("setup"))}>
               <Terminal aria-hidden="true" />
               Set up a coding agent
             </CommandItem>

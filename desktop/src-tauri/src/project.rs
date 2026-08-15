@@ -29,6 +29,57 @@ pub struct ProjectConnection {
     status: String,
 }
 
+/// Why opening a project failed, as a CODE the shell can branch on.
+///
+/// The shell used to decide what to offer a person by matching the prose of
+/// this error: `/not a git repository|git root/` picked the "start tracking
+/// this folder" button. `canonical_git_root` actually says "selected directory
+/// is not **inside** a git repository", which that pattern does not match, so
+/// the button was unreachable from the day it was written -- the most ordinary
+/// first-run case there is fell through to a generic failure with an internal
+/// sentence as its body.
+///
+/// STANDING RULE, and this is its fourth instance: **control flow never depends
+/// on message text.** The uncomfortable part is that the previous three were
+/// recorded in `docs/STATE.md` BEFORE this one was written. Writing a rule down
+/// does not enforce it. What enforces it is that the message is no longer
+/// reachable from the branch: the shell sees `code`, and `message` is only ever
+/// displayed.
+///
+/// A code is assigned where the failure is CREATED, never inferred from a
+/// string afterwards -- inferring it at the boundary would be the same bug one
+/// layer up. An unclassified failure gets `unknown`, which renders as the
+/// generic message and offers nothing. That is the safe direction: a wrong
+/// button is worse than no button.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct ProjectFault {
+    pub code: &'static str,
+    pub message: String,
+}
+
+pub const FAULT_NOT_A_GIT_REPOSITORY: &str = "not_a_git_repository";
+pub const FAULT_NO_PROJECT_SELECTED: &str = "no_project_selected";
+pub const FAULT_NOT_INITIALIZED: &str = "not_initialized_for_hivemind";
+pub const FAULT_DESKTOP_UPDATE_REQUIRED: &str = "desktop_update_required";
+pub const FAULT_DAEMON_UNAVAILABLE: &str = "daemon_unavailable";
+pub const FAULT_UNKNOWN: &str = "unknown";
+
+impl ProjectFault {
+    fn new(code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+        }
+    }
+}
+
+// Anything that has not been classified is `unknown` rather than guessed at.
+impl From<String> for ProjectFault {
+    fn from(message: String) -> Self {
+        Self::new(FAULT_UNKNOWN, message)
+    }
+}
+
 // No deny_unknown_fields. The shell and Core ship as separate binaries and are
 // routinely at different versions on the same machine, so Core adding one
 // field to daemon.json would otherwise stop the shell attaching to its own
@@ -81,11 +132,13 @@ enum ProcessProbeResult {
 pub async fn select_project(
     app: tauri::AppHandle,
     project_path: String,
-) -> Result<ProjectConnection, String> {
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .map_err(|error| format!("could not resolve desktop resources: {error}"))?;
+) -> Result<ProjectConnection, ProjectFault> {
+    let resource_dir = app.path().resource_dir().map_err(|error| {
+        ProjectFault::new(
+            FAULT_UNKNOWN,
+            format!("could not resolve desktop resources: {error}"),
+        )
+    })?;
     tauri::async_runtime::spawn_blocking(move || {
         connect_project_with(
             &project_path,
@@ -99,7 +152,12 @@ pub async fn select_project(
         )
     })
     .await
-    .map_err(|error| format!("project selection task failed: {error}"))?
+    .map_err(|error| {
+        ProjectFault::new(
+            FAULT_UNKNOWN,
+            format!("project selection task failed: {error}"),
+        )
+    })?
 }
 
 /// Sets a repository up and opens it, without a terminal.
@@ -114,11 +172,13 @@ pub async fn select_project(
 pub async fn initialize_project(
     app: tauri::AppHandle,
     project_path: String,
-) -> Result<ProjectConnection, String> {
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .map_err(|error| format!("could not resolve desktop resources: {error}"))?;
+) -> Result<ProjectConnection, ProjectFault> {
+    let resource_dir = app.path().resource_dir().map_err(|error| {
+        ProjectFault::new(
+            FAULT_UNKNOWN,
+            format!("could not resolve desktop resources: {error}"),
+        )
+    })?;
     tauri::async_runtime::spawn_blocking(move || {
         let project_root = canonical_git_root(&project_path)?;
         run_core_init(&project_root, Some(&resource_dir))?;
@@ -134,7 +194,12 @@ pub async fn initialize_project(
         )
     })
     .await
-    .map_err(|error| format!("project initialization task failed: {error}"))?
+    .map_err(|error| {
+        ProjectFault::new(
+            FAULT_UNKNOWN,
+            format!("project initialization task failed: {error}"),
+        )
+    })?
 }
 
 fn run_core_init(project_root: &Path, resource_dir: Option<&Path>) -> Result<(), String> {
@@ -163,7 +228,10 @@ pub async fn workspace_action(
         .resource_dir()
         .map_err(|error| format!("could not resolve desktop resources: {error}"))?;
     tauri::async_runtime::spawn_blocking(move || {
-        let project_root = canonical_git_root(&project_path)?;
+        // A workspace action is dispatched from a workspace that is already
+        // open, so its failures are shown as action errors rather than routed
+        // to the setup screen. Only the message is needed here.
+        let project_root = canonical_git_root(&project_path).map_err(|fault| fault.message)?;
         let state = read_daemon_state(&project_root)?
             .ok_or_else(|| "selected project's daemon is not running".to_string())?;
         validate_state_project(&project_root, &state)?;
@@ -189,7 +257,7 @@ fn connect_project_with<L, H, B, S, P>(
     embedded_shell_build_id: &str,
     liveness: &P,
     startup_timeout: Duration,
-) -> Result<ProjectConnection, String>
+) -> Result<ProjectConnection, ProjectFault>
 where
     L: FnMut(&Path) -> Result<Option<Child>, String>,
     H: Fn(&str) -> Result<DaemonHealth, String>,
@@ -199,11 +267,15 @@ where
 {
     let project_root = canonical_git_root(project_path)?;
     let expected_shell_build_id = expected_shell_build(&project_root)?;
-    validate_shell_build(embedded_shell_build_id, &expected_shell_build_id)?;
+    validate_shell_build(embedded_shell_build_id, &expected_shell_build_id)
+        .map_err(|message| ProjectFault::new(FAULT_DESKTOP_UPDATE_REQUIRED, message))?;
     let expected_build_id = expected_build(&project_root)?;
     let config_path = project_root.join(".hivemind").join("config.json");
     if !config_path.is_file() {
-        return Err("selected repository is not initialized for Hivemind".to_string());
+        return Err(ProjectFault::new(
+            FAULT_NOT_INITIALIZED,
+            "selected repository is not initialized for Hivemind",
+        ));
     }
 
     if let Some(state) = read_daemon_state(&project_root)? {
@@ -224,8 +296,11 @@ where
             Err(reason) => match liveness(state.pid) {
                 ProcessLiveness::Dead => {}
                 ProcessLiveness::Alive | ProcessLiveness::Unknown => {
-                    return Err(format!(
-                        "selected project's daemon is live or liveness is uncertain, but health failed ({reason}); refusing to start a second writer"
+                    return Err(ProjectFault::new(
+                        FAULT_DAEMON_UNAVAILABLE,
+                        format!(
+                            "selected project's daemon is live or liveness is uncertain, but health failed ({reason}); refusing to start a second writer"
+                        ),
                     ));
                 }
             },
@@ -236,12 +311,15 @@ where
     let deadline = Instant::now() + startup_timeout;
     loop {
         if let Some(process) = child.as_mut() {
-            if let Some(status) = process
-                .try_wait()
-                .map_err(|error| format!("could not inspect started daemon: {error}"))?
-            {
-                return Err(format!(
-                    "started daemon exited before becoming healthy: {status}"
+            if let Some(status) = process.try_wait().map_err(|error| {
+                ProjectFault::new(
+                    FAULT_DAEMON_UNAVAILABLE,
+                    format!("could not inspect started daemon: {error}"),
+                )
+            })? {
+                return Err(ProjectFault::new(
+                    FAULT_DAEMON_UNAVAILABLE,
+                    format!("started daemon exited before becoming healthy: {status}"),
                 ));
             }
         }
@@ -266,30 +344,47 @@ where
         }
         if Instant::now() >= deadline {
             drop(child);
-            return Err(
-                "started daemon did not become healthy before the startup timeout".to_string(),
-            );
+            return Err(ProjectFault::new(
+                FAULT_DAEMON_UNAVAILABLE,
+                "started daemon did not become healthy before the startup timeout",
+            ));
         }
         thread::sleep(Duration::from_millis(100));
     }
 }
 
-fn canonical_git_root(project_path: &str) -> Result<PathBuf, String> {
+fn canonical_git_root(project_path: &str) -> Result<PathBuf, ProjectFault> {
     let trimmed = project_path.trim();
     if trimmed.is_empty() {
-        return Err("select a project directory".to_string());
+        return Err(ProjectFault::new(
+            FAULT_NO_PROJECT_SELECTED,
+            "no project folder has been chosen",
+        ));
     }
     let output = hidden_command("git")
         .args(["-C", trimmed, "rev-parse", "--show-toplevel"])
         .output()
-        .map_err(|error| format!("could not inspect selected project: {error}"))?;
+        .map_err(|error| {
+            ProjectFault::new(
+                FAULT_UNKNOWN,
+                format!("could not inspect selected project: {error}"),
+            )
+        })?;
     if !output.status.success() {
-        return Err("selected directory is not inside a git repository".to_string());
+        return Err(ProjectFault::new(
+            FAULT_NOT_A_GIT_REPOSITORY,
+            "selected directory is not inside a git repository",
+        ));
     }
-    let root = String::from_utf8(output.stdout)
-        .map_err(|_| "git returned a non-UTF-8 repository root".to_string())?;
-    fs::canonicalize(root.trim())
-        .map_err(|error| format!("could not canonicalize selected repository: {error}"))
+    let root = String::from_utf8(output.stdout).map_err(|_| {
+        ProjectFault::new(FAULT_UNKNOWN, "git returned a non-UTF-8 repository root")
+    })?;
+    fs::canonicalize(root.trim()).map_err(|error| {
+        ProjectFault::new(
+            FAULT_UNKNOWN,
+            format!("could not canonicalize selected repository: {error}"),
+        )
+    })
 }
 
 fn read_daemon_state(project_root: &Path) -> Result<Option<DaemonState>, String> {
@@ -847,7 +942,9 @@ mod tests {
             Duration::from_millis(20),
         );
 
-        assert!(result.unwrap_err().contains("desktop shell build mismatch"));
+        let fault = result.unwrap_err();
+        assert_eq!(fault.code, FAULT_DESKTOP_UPDATE_REQUIRED);
+        assert!(fault.message.contains("desktop shell build mismatch"));
         assert_eq!(launch_count.load(Ordering::SeqCst), 0);
         cleanup_fixture(&project);
     }
@@ -983,7 +1080,7 @@ mod tests {
             Duration::from_millis(20),
         );
 
-        assert!(result.unwrap_err().contains("different project"));
+        assert!(result.unwrap_err().message.contains("different project"));
         assert_eq!(launch_count.load(Ordering::SeqCst), 0);
         cleanup_fixture(&project);
         cleanup_fixture(&other);
@@ -1038,7 +1135,7 @@ mod tests {
                 Duration::from_millis(20),
             );
 
-            assert!(result.unwrap_err().contains("daemon build mismatch"));
+            assert!(result.unwrap_err().message.contains("daemon build mismatch"));
             assert_eq!(launch_count.load(Ordering::SeqCst), 0);
             cleanup_fixture(&project);
         }
@@ -1065,9 +1162,9 @@ mod tests {
                 &|_| liveness,
                 Duration::from_millis(20),
             );
-            assert!(result
-                .unwrap_err()
-                .contains("refusing to start a second writer"));
+            let fault = result.unwrap_err();
+            assert_eq!(fault.code, FAULT_DAEMON_UNAVAILABLE);
+            assert!(fault.message.contains("refusing to start a second writer"));
             cleanup_fixture(&project);
         }
     }
@@ -1286,6 +1383,60 @@ pub async fn remember_project(app: tauri::AppHandle, project_path: String) -> Re
         .map_err(|error| format!("could not write the recent project list: {error}"))
 }
 
+// ── What this person has already been shown ───────────────────────────────
+//
+// Shell state, in the app's own config directory, for the same reason
+// `recent-projects.json` lives there: it is about this INSTALLATION and this
+// person, not about any project. Putting a "seen it" flag inside a project
+// would make the first project you opened the authority on what you have read,
+// and re-show the whole thing the moment you switched -- while also writing a
+// preference into a repository that gets committed and shared.
+//
+// Deliberately one flat map of booleans with no schema beyond that. A dismissal
+// authorizes nothing, gates nothing and is read by nothing but presentation, so
+// an unknown key is simply absent and a corrupt file reads as "nothing has been
+// dismissed" -- which shows guidance again rather than hiding it. Failing
+// toward showing is the safe direction for something whose whole purpose is to
+// stop a person being stuck.
+
+fn dismissals_file(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| format!("could not resolve the app config directory: {error}"))?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|error| format!("could not create the app config directory: {error}"))?;
+    Ok(dir.join("dismissed.json"))
+}
+
+#[tauri::command]
+pub async fn dismissed_hints(
+    app: tauri::AppHandle,
+) -> Result<std::collections::BTreeMap<String, bool>, String> {
+    let Ok(file) = dismissals_file(&app) else {
+        return Ok(Default::default());
+    };
+    let Ok(text) = std::fs::read_to_string(&file) else {
+        return Ok(Default::default());
+    };
+    Ok(serde_json::from_str(&text).unwrap_or_default())
+}
+
+#[tauri::command]
+pub async fn dismiss_hint(app: tauri::AppHandle, hint: String) -> Result<(), String> {
+    let key = hint.trim().to_string();
+    if key.is_empty() {
+        return Err("a dismissal needs a name".to_string());
+    }
+    let mut all = dismissed_hints(app.clone()).await?;
+    all.insert(key, true);
+    let file = dismissals_file(&app)?;
+    let text = serde_json::to_string_pretty(&all)
+        .map_err(|error| format!("could not record the dismissal: {error}"))?;
+    std::fs::write(&file, text)
+        .map_err(|error| format!("could not write the dismissal list: {error}"))
+}
+
 fn chrono_now() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let seconds = SystemTime::now()
@@ -1317,6 +1468,10 @@ pub struct GitReadiness {
 }
 
 /// Names that mean "this folder holds something a first commit must not take".
+///
+/// Kept, but no longer the whole check -- see `shape_refusal`. A list of names
+/// can only ever refuse the secrets somebody thought to list, and the case that
+/// actually mattered was not a secret at all.
 const NEVER_COMMIT: [&str; 6] = [
     ".env",
     ".env.local",
@@ -1325,6 +1480,103 @@ const NEVER_COMMIT: [&str; 6] = [
     "secrets.json",
     ".npmrc",
 ];
+
+/// Directories whose contents are installed or generated, never authored.
+const NOT_AUTHORED_DIRS: [&str; 8] = [
+    "node_modules",
+    "vendor",
+    "target",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "bower_components",
+    "Pods",
+];
+
+/// Extensions that mean "this file is built, not written".
+const BINARY_EXTENSIONS: [&str; 16] = [
+    "exe", "dll", "so", "dylib", "msi", "pdb", "bin", "obj", "o", "a", "lib", "class", "jar",
+    "wasm", "node", "pyd",
+];
+
+/// Extensions that mean "somebody wrote this".
+///
+/// Deliberately generous and deliberately not exhaustive: the question it
+/// answers is "does this folder contain authored work at all", and a folder
+/// with even one recognised source file passes. Being wrong in the permissive
+/// direction costs a refusal that should not have happened; being wrong in the
+/// other direction commits somebody's build output forever.
+const SOURCE_EXTENSIONS: [&str; 42] = [
+    "ts", "tsx", "js", "jsx", "mjs", "cjs", "rs", "py", "rb", "go", "java", "kt", "swift", "c",
+    "h", "cc", "cpp", "hpp", "cs", "php", "ex", "exs", "scala", "clj", "hs", "ml", "lua", "sh",
+    "ps1", "sql", "html", "css", "scss", "vue", "svelte", "md", "json", "toml", "yaml", "yml",
+    "txt", "gradle",
+];
+
+/// Whether this folder has the SHAPE of a project somebody means to start
+/// tracking, rather than whether it happens to contain one of six filenames.
+///
+/// The list-based check let the worst case straight through. The desktop used
+/// to open `"."` on launch, which for an installed app is its own installation
+/// directory -- and an install directory holds no `.env`, so `git init && git
+/// add -A && commit` would have taken the executable, the DLLs and a bundled
+/// `node_modules` into a first commit that every later diff is measured
+/// against. A list can only refuse what somebody thought to list.
+///
+/// Three shapes are refused, and each is stated as what it IS rather than as a
+/// rule number, because the person reading it has to decide what to do next.
+fn shape_refusal(root: &Path, entries: &[String]) -> Option<String> {
+    let mut installed_dirs: Vec<&str> = Vec::new();
+    let mut binaries: Vec<&str> = Vec::new();
+    let mut has_source = false;
+
+    for name in entries {
+        let path = root.join(name);
+        if path.is_dir() {
+            if NOT_AUTHORED_DIRS.iter().any(|dir| name == dir) {
+                installed_dirs.push(name);
+            }
+            // A directory is not walked. Depth would make this slow on a large
+            // tree for no gain: the shapes being refused are all visible at the
+            // top level, and a folder whose only source lives three levels down
+            // still reads as a project by its top-level files.
+            continue;
+        }
+        let extension = path
+            .extension()
+            .map(|value| value.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+        if BINARY_EXTENSIONS.iter().any(|needle| extension == *needle) {
+            binaries.push(name);
+        }
+        if SOURCE_EXTENSIONS.iter().any(|needle| extension == *needle) {
+            has_source = true;
+        }
+    }
+
+    if !binaries.is_empty() {
+        binaries.sort_unstable();
+        binaries.truncate(4);
+        return Some(format!(
+            "This folder holds built programs rather than source ({}). That looks like an installed application or a build output directory, not a project to work on. Choose the folder your source code lives in.",
+            binaries.join(", ")
+        ));
+    }
+    if !installed_dirs.is_empty() {
+        installed_dirs.sort_unstable();
+        return Some(format!(
+            "This folder holds installed dependencies ({}) and is not tracked by git, so a first commit would take all of them. Add a .gitignore, or set the repository up yourself, and open it again.",
+            installed_dirs.join(", ")
+        ));
+    }
+    if !has_source {
+        return Some(
+            "This folder has no source files in it, so there is nothing for Hivemind to work on yet. Choose the folder your project lives in."
+                .to_string(),
+        );
+    }
+    None
+}
 
 #[tauri::command]
 pub async fn inspect_git_readiness(project_path: String) -> Result<GitReadiness, String> {
@@ -1342,11 +1594,21 @@ pub async fn inspect_git_readiness(project_path: String) -> Result<GitReadiness,
 
     let mut would_commit = Vec::new();
     let mut dangerous = Vec::new();
+    // Every top-level name, including the ones the display list hides. The
+    // shape check has to see `node_modules` -- it is the whole reason the check
+    // exists, and filtering it out of the list first is what let an install
+    // directory through. `would_commit` is what a person is SHOWN; `present` is
+    // what is actually there.
+    let mut present = Vec::new();
     let entries = std::fs::read_dir(root)
         .map_err(|error| format!("could not read that folder: {error}"))?;
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        if name == ".git" || name == "node_modules" || name == ".hivemind" {
+        if name == ".git" || name == ".hivemind" {
+            continue;
+        }
+        present.push(name.clone());
+        if name == "node_modules" {
             continue;
         }
         if NEVER_COMMIT.iter().any(|needle| name == *needle) {
@@ -1360,14 +1622,17 @@ pub async fn inspect_git_readiness(project_path: String) -> Result<GitReadiness,
     // about on somebody's behalf -- and a first commit cannot be un-made
     // without rewriting history, which is exactly what a person who has never
     // used git cannot be asked to do.
-    let refusal = if dangerous.is_empty() {
-        None
-    } else {
+    //
+    // Named secrets first, because that refusal names the actual file and is
+    // the more useful sentence when both apply.
+    let refusal = if !dangerous.is_empty() {
         dangerous.sort();
         Some(format!(
             "This folder holds {} that should probably never be committed. Hivemind will not decide that for you: add a .gitignore, or set the repository up yourself, and open it again.",
             dangerous.join(", ")
         ))
+    } else {
+        shape_refusal(root, &present)
     };
 
     Ok(GitReadiness {
@@ -1437,6 +1702,81 @@ mod git_readiness_tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("temp dir");
         dir
+    }
+
+    /// The case that was actually live, reproduced exactly.
+    ///
+    /// The desktop opened `"."` on launch, which for an installed app is its
+    /// own installation directory. That folder holds no `.env`, so the
+    /// name-list check passed it and the offer to `git init && git add -A`
+    /// would have committed the executable, the DLLs and a bundled
+    /// `node_modules`. A list refuses what somebody thought to list; this has
+    /// to refuse by shape.
+    #[test]
+    fn an_installed_application_directory_is_refused() {
+        let dir = temp_dir("install-dir");
+        std::fs::write(dir.join("hivemind_desktop.exe"), "MZ").expect("exe");
+        std::fs::write(dir.join("WebView2Loader.dll"), "MZ").expect("dll");
+        std::fs::create_dir_all(dir.join("core").join("node_modules")).expect("bundled deps");
+
+        let readiness = tauri::async_runtime::block_on(inspect_git_readiness(
+            dir.to_string_lossy().to_string(),
+        ))
+        .expect("readiness");
+
+        assert!(!readiness.is_repo);
+        let refusal = readiness.refusal.expect("an install directory is refused");
+        assert!(refusal.contains("built programs"), "{refusal}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_folder_of_installed_dependencies_is_refused() {
+        let dir = temp_dir("deps-only");
+        std::fs::create_dir_all(dir.join("node_modules")).expect("deps");
+        std::fs::write(dir.join("index.js"), "export default 1;\n").expect("source");
+
+        let readiness = tauri::async_runtime::block_on(inspect_git_readiness(
+            dir.to_string_lossy().to_string(),
+        ))
+        .expect("readiness");
+
+        let refusal = readiness.refusal.expect("untracked node_modules is refused");
+        assert!(refusal.contains("installed dependencies"), "{refusal}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_folder_with_no_source_is_refused() {
+        let dir = temp_dir("no-source");
+        std::fs::write(dir.join("holiday.jpg"), "not source").expect("file");
+
+        let readiness = tauri::async_runtime::block_on(inspect_git_readiness(
+            dir.to_string_lossy().to_string(),
+        ))
+        .expect("readiness");
+
+        let refusal = readiness.refusal.expect("a folder with no source is refused");
+        assert!(refusal.contains("no source files"), "{refusal}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The check has to be able to say YES, or it is not a check.
+    #[test]
+    fn an_ordinary_untracked_project_is_offered() {
+        let dir = temp_dir("ordinary");
+        std::fs::write(dir.join("index.ts"), "export const x = 1;\n").expect("source");
+        std::fs::write(dir.join("README.md"), "# a project\n").expect("readme");
+
+        let readiness = tauri::async_runtime::block_on(inspect_git_readiness(
+            dir.to_string_lossy().to_string(),
+        ))
+        .expect("readiness");
+
+        assert!(!readiness.is_repo);
+        assert_eq!(readiness.refusal, None);
+        assert!(readiness.would_commit.contains(&"index.ts".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

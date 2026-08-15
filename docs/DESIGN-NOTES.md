@@ -27,6 +27,45 @@ cannot re-invent the fail-open by treating absence as a wildcard.
 A code is part of the contract between two modules. Changing one should be as
 visible as changing a signature; changing a reason should be invisible.
 
+### A recorded rule does not prevent recurrence
+
+The fourth instance is different from the first three, and the difference is the
+point.
+
+The desktop's setup screen decided what to offer a person by matching the
+connection error's prose. `/not a git repository|git root/` selected the "start
+tracking this folder" button. The shell actually says *"selected directory is
+not **inside** a git repository"*, which that pattern does not match — so the
+button was unreachable from the day it was written, and the commonest first-run
+case there is (somebody who has been editing a folder without git) fell through
+to a generic failure carrying an internal sentence as its body. It failed
+*closed*, which is why it survived: nothing broke, a person was simply stuck.
+
+**That code was written after this rule was recorded.** The first three
+instances are in `docs/STATE.md` under "control flow never depends on message
+text", and the sweep that fixed them fixed *the instances that existed*. It did
+not stop the next one, because a rule in a document is not reachable from a
+keyboard at the moment somebody types `.test(detail)`.
+
+> **Recording a rule prevents nothing. Only a mechanism does.** A rule is how
+> you recognise a violation once you are looking at it; it is not what makes you
+> look.
+
+The mechanism now: the shell's failures cross the boundary as
+`ProjectFault { code, message }`, assigned in `project.rs` where each failure is
+*created* rather than classified afterwards — inferring the code at the boundary
+would be the same bug one layer up. `plainConnectionProblem` takes the code and
+never sees a message it could branch on, and `cold-open.test.ts` fails if that
+function grows a `detail.includes` or a regex test against `detail`.
+
+The same shape applies to the other two rules with no mechanism behind them.
+Both are worth the same treatment when they next recur:
+
+- *An instrument that can only return one answer is not evidence* — six
+  instances, all found by hand.
+- *A word ban cannot express a structural rule* — four instances, and the ban
+  itself is the mechanism that keeps catching the wrong thing.
+
 ### Three copies of a fail-open that could never fire
 
 `lease.ts`, `run.ts` and `integrate.ts` each carried

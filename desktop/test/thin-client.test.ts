@@ -32,11 +32,12 @@ describe("React workspace boundary", () => {
       "src/lib/work-presentation.ts",
       "src/lib/projection.ts",
       "src/lib/project-session.ts",
+      "src/lib/dismissible.ts",
       "src/lib/swarm-model.ts",
       "src/lib/providers.ts",
       "src/lib/work-thread.ts",
       "src/components/settings-dialog.tsx",
-      "src/components/agent-setup-dialog.tsx",
+      "src/lib/dismissible.ts",
       "src/components/workspace/setup-screen.tsx"
     ];
     const source = (
@@ -93,7 +94,10 @@ describe("React workspace boundary", () => {
     const triggers = [...app.matchAll(/<TabsTrigger value="([a-z]+)">/gu)].map(
       (match) => match[1]
     );
-    expect(triggers).toEqual(["work", "agents", "project"]);
+    /* Plus Set up, which is not a fourth place: it is the same three, with the
+       unfinished step kept reachable until there is an agent to run. It removes
+       itself once one is connected -- see `runnable` in App. */
+    expect(triggers).toEqual(["setup", "work", "agents", "project"]);
     for (const collapsed of ["swarm", "memory", "history"]) {
       expect(triggers).not.toContain(collapsed);
     }

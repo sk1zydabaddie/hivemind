@@ -98,6 +98,24 @@ const MAPPINGS: PlainMapping[] = [
     match: /cannot supply authority field/iu,
     plain:
       "That request tried to carry its own approval. Approval comes from the buttons in Hivemind, never from the request itself."
+  },
+  /* The first thing a new person hits, and it used to be raw.
+     "adapter profile not found: .hivemind/adapters/planner.profile.json" is a
+     filesystem path naming a role they have never been shown, for a file the
+     setup screen told them they need not think about. It is the wall at the end
+     of the first run: the folder is set up, the composer invites a sentence,
+     and the first submission fails on the one step nothing asked them to take.
+     Connecting is what writes this file -- deliberately, because a profile
+     written by setup is a claim no probe has checked. */
+  {
+    match: /adapter profile not found/iu,
+    plain:
+      "No coding agent is connected for this project yet, so there is nothing to run the work. Open Set up and connect one — it runs the agent once to record what it can actually do."
+  },
+  {
+    match: /adapter profile (?:must be|contains|enables|does not request)/iu,
+    plain:
+      "This project's connected agent is configured in a way Hivemind will not run. Reconnect it from Set up, which rewrites the profile from a fresh check."
   }
 ];
 
