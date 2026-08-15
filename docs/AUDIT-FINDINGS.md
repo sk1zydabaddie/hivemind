@@ -225,3 +225,78 @@ file.
 
 The cost is real: a clone starts with no history. Captured trails under
 `docs/evidence/` are unaffected, and remain how a run is shared deliberately.
+
+---
+
+## F-4 — A crash left the project permanently unable to prove itself idle
+
+**Found:** 2026-08-15, by being asked to test an assertion rather than repeat it.
+**Status:** fixed in the same pass.
+
+### What was true
+
+The idleness proof gates two acts: restarting the daemon after an update, and
+installing a new build over the running one. It counted `active` reservations in
+`.hivemind/resource/ledger.json` and task worktrees on disk, and returned Busy
+when either was non-zero.
+
+A daemon killed mid-call leaves its reservation `active` **forever** — nothing
+settles it, because the thing that would settle it is gone. So after any crash,
+`daemon_work` returned Busy on every future call, and:
+
+- the daemon restart refused, permanently;
+- the build bar offered nothing, permanently;
+- there was no path back, because both remedies were gated on the thing the
+  crash had broken.
+
+Quieter than restarting into a live run, and just as final.
+
+### How it was found, which is the part worth keeping
+
+I reported that `process_liveness` on `daemon.json`'s pid was what stopped a
+dead daemon's reservations reading as busy. That sentence was confident,
+specific, and wrong: `daemon_work` did not call `process_liveness` at all.
+
+It was not caught by review — I had written that function days earlier and
+described its behaviour incorrectly while looking at it. It was caught because
+the assertion was turned into a test, and the test failed on its first run:
+
+```
+a_dead_daemons_reservations_do_not_block_forever ... FAILED
+  a dead daemon's leftover reservation must not block forever:
+  This project still has 0 task workspace(s) and 1 call(s) in progress.
+```
+
+> **A mechanism you can name and describe correctly may not be wired.** Being
+> able to say what a guard does, and why, and where — none of that is evidence
+> that anything calls it.
+
+This is the unread-field family seen from the other side. There, a field was
+written and never read; here, a function existed and was never called from the
+place everyone assumed it was. Both look complete from every angle except the
+one that matters, and in both cases the missing thing is a call site — which is
+invisible precisely because it is absent.
+
+The practical form: **when someone describes a guarantee, the useful next
+question is not "is that right?" but "what would fail if it were not?"** The
+first invites agreement; the second produces a test.
+
+### Fixed by
+
+`daemon_work` now consults liveness, and the asymmetry decides the uncertain
+cases: only a **dead** daemon releases the guard. Alive keeps it, and so does
+not knowing. A project with no daemon record has nothing registered as running
+it, so its leftovers are orphans.
+
+Five tests, written against the broken behaviour first, two of which failed:
+
+| Case | Expected |
+| --- | --- |
+| Live daemon, active reservation | Busy — the dangerous direction, already correct |
+| Killed daemon, active reservation | Idle — **failed before the fix** |
+| No daemon record, active reservation | Idle — **failed before the fix** |
+| Settled reservations only | Idle |
+| Unknown liveness | Not idle |
+
+The live-daemon case spawns a real process and the crash case kills one
+mid-reservation, because the whole question is what a real dead pid does.

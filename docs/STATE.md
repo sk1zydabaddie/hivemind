@@ -312,6 +312,15 @@ next session does not have to rediscover them.
 > still cannot catch this class -- `npm run verify:reachable` is the only thing
 > that can, so it has to be run.
 
+> **A mechanism you can name and describe correctly may not be wired.** The
+> idleness proof was reported as consulting process liveness; it did not call
+> it at all, and a crash therefore left a project permanently unable to prove
+> itself idle -- with the two remedies both gated on the thing the crash broke.
+> Found by turning the assertion into a test, which failed on its first run.
+> When somebody describes a guarantee, the useful question is not "is that
+> right?" but "what would fail if it were not?" -- the first invites agreement,
+> the second produces a test. See F-4.
+
 > **A mechanism that exists and is never consulted is not a mechanism.** A
 > third family, distinct from the instrument and rig ones: three instances --
 > `provider_version` written and never compared, `daemon_instance_id` recorded
