@@ -30,10 +30,13 @@ const buttonVariants = cva(
            language exists to avoid, and a same-hue ramp is not that.
            Filled primary actions only: outline, ghost, secondary and link stay
            flat, so the gradient continues to mean "this is the action". */
+        /* Raised at rest, pressed in on `active:`. The two shadows are a pair
+           declared together in styles.css -- see the rule there for why a
+           button may look proud of the surface and a panel may not. */
         default:
-          "bg-navy bg-gradient-to-b from-navy to-navy-deep text-primary-foreground shadow-[inset_0_1px_0_0_color-mix(in_oklab,#fff_18%,transparent)] hover:from-navy-deep hover:to-navy-deep active:translate-y-px active:shadow-[inset_0_2px_4px_0_color-mix(in_oklab,#000_28%,transparent)] disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground disabled:shadow-none",
+          "bg-navy bg-gradient-to-b from-navy to-navy-deep text-primary-foreground shadow-[var(--relief)] hover:from-navy-deep hover:to-navy-deep active:translate-y-px active:shadow-[var(--relief-pressed)] disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground disabled:shadow-none",
         destructive:
-          "bg-clay bg-gradient-to-b from-clay to-clay-deep text-destructive-foreground shadow-[inset_0_1px_0_0_color-mix(in_oklab,#fff_18%,transparent)] hover:from-clay-deep hover:to-clay-deep active:translate-y-px active:shadow-[inset_0_2px_4px_0_color-mix(in_oklab,#000_28%,transparent)] disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground disabled:shadow-none",
+          "bg-clay bg-gradient-to-b from-clay to-clay-deep text-destructive-foreground shadow-[var(--relief)] hover:from-clay-deep hover:to-clay-deep active:translate-y-px active:shadow-[var(--relief-pressed)] disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground disabled:shadow-none",
         outline:
           "border border-rule bg-panel text-ink hover:border-navy/45 hover:bg-navy-wash hover:text-navy disabled:opacity-45",
         secondary: "bg-secondary text-secondary-foreground hover:bg-rule/60 disabled:opacity-45",

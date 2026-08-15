@@ -230,9 +230,11 @@ describe("palette discipline", () => {
       "#eef2f8", // navy wash
       "#f9f3e8", // amber wash
       "#f9edeb", // clay wash
-      /* Pure black, and ONLY as the darkening term of a same-hue ramp. It is
-         never a colour anything is painted; it is how `--navy-deep` is derived
-         from `--navy` so the two stops cannot drift into different hues. */
+      /* Pure black, and ONLY as a darkening term -- never a colour anything is
+         painted. Two uses: deriving `--navy-deep` from `--navy` so a ramp's two
+         stops cannot drift into different hues, and the shading half of
+         `--relief`, which is a lighting overlay on whatever fill it sits on
+         rather than a colour of its own. */
       "#000000"
     ]);
     const hexes = new Set(
@@ -288,6 +290,59 @@ describe("palette discipline", () => {
       if (/attention-edge/u.test(source)) users.push(path.basename(file));
     }
     expect(users, "the attention edge appears in more than one surface").toEqual(["work-tab.tsx"]);
+
+    /* RELIEF is not elevation, and the difference is enforced rather than
+       trusted. A raised button claims "this responds to pressure" and redeems
+       the claim the moment it is pressed; a raised panel claims to be above the
+       surface and never demonstrates it. So the two shadows are a PAIR: any
+       rule that takes the raised state must also declare the pressed one, which
+       means nothing can look proud of the canvas here without being pressable. */
+    const reliefUsers: string[] = [];
+    for (const file of files) {
+      if (!file.endsWith(".tsx")) continue;
+      const source = await readFile(file, "utf8");
+      if (!/shadow-\[var\(--relief\)\]/u.test(source)) continue;
+      reliefUsers.push(path.basename(file));
+      expect(source, `${path.basename(file)} takes relief with no pressed state`).toMatch(
+        /active:shadow-\[var\(--relief-pressed\)\]/u
+      );
+      /* And it has to actually move. A shadow swap on its own is a repaint,
+         not a press: what makes it read as a real button is that the label
+         goes down with the surface. */
+      expect(source, `${path.basename(file)} is raised but does not depress`).toMatch(
+        /active:translate-y-px/u
+      );
+    }
+    /* Only the control component may carry it at all. */
+    expect(reliefUsers, "relief belongs to the button and nothing else").toEqual(["button.tsx"]);
+
+    /* The pair is declared once, together, so neither can be taken alone. */
+    const reliefCss = (await readStyles()).replace(/\/\*[\s\S]*?\*\//gu, "");
+    expect(reliefCss).toMatch(/--relief\s*:/u);
+    expect(reliefCss).toMatch(/--relief-pressed\s*:/u);
+    /* Raised at rest means an OUTER shadow; pressed means none. A pressed
+       state that kept a drop shadow would be a button hovering while depressed,
+       which is the tell that the effect is decoration. */
+    /* Split on TOP-LEVEL commas: `color-mix(in oklab, #000000 20%, transparent)`
+       has two of its own, and a naive split turns one shadow layer into three
+       fragments that mention no `inset` at all. */
+    const layers = (value: string): string[] =>
+      value.replace(/color-mix\([^()]*\)/gu, "MIX").split(",");
+    const relief = layers(/--relief:\s*([^;]+);/u.exec(reliefCss)?.[1] ?? "");
+    const pressed = layers(/--relief-pressed:\s*([^;]+);/u.exec(reliefCss)?.[1] ?? "");
+    expect(relief.some((layer) => !layer.includes("inset"))).toBe(true);
+    expect(pressed.every((layer) => layer.includes("inset"))).toBe(true);
+
+    /* Reduced motion shortens the press; it does not flatten the button.
+       Somebody who asked for less movement did not ask for a different
+       interface, so no reduced-motion rule may reset a relief shadow. */
+    const reducedBlocks =
+      reliefCss.match(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\n\}/gu) ?? [];
+    for (const block of reducedBlocks) {
+      expect(block, "reduced motion must not flatten the relief").not.toMatch(
+        /box-shadow|--relief/u
+      );
+    }
 
     /* And `--shadow-panel` stays deleted. Depth is for things that genuinely
        float; a shadow under a panel was decoration pretending to be

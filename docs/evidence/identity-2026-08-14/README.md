@@ -88,3 +88,34 @@ single rule the lanes descend from, naming all of them:
 
 A held gate still gets its own, in clay and doubled, because it is the one that
 has stopped something.
+
+---
+
+## `button-states.png` — the primary control, four states
+
+Captured at 3× from the **shipped button** in the running app, with `:hover` and
+`:active` forced through CDP's `CSS.forcePseudoState`. Not a swatch sheet: a
+demo page proves a stylesheet renders, and what needed proving is that the
+control does.
+
+| State | What it does |
+| --- | --- |
+| rest | Vertical same-hue ramp, light top edge, darker bottom edge, tight drop beneath |
+| hover | Both stops resolve to `--navy-deep`; the relief is unchanged |
+| pressed | Top edge inverts to dark, a faint light edge appears below, the drop collapses, the control moves down 1px |
+| disabled | No fill and no relief — a disabled control drops to the canvas rather than fading, so it never reads as pressable |
+
+The relief is two tokens declared as a pair, `--relief` and `--relief-pressed`,
+and `design-tokens.test.ts` fails any element that takes the raised state
+without also declaring the pressed one and the 1px depression.
+
+**Why a button may be proud of the surface when `--shadow-panel` was deleted.**
+Relief is a claim about *affordance*, not importance, and only an object that
+answers when pressed may make it. A raised button says "this responds to
+pressure" and redeems that the instant you press it. A panel is never pressed
+and never answers, so a shadow under it asserts a hierarchy nothing
+demonstrates — which is why that token went and is not coming back.
+
+Reduced motion shortens the press transition and leaves the static relief alone;
+a person who asked for less movement did not ask for a flatter interface. The
+test asserts no reduced-motion rule touches a relief shadow.

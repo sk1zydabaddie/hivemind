@@ -72,6 +72,49 @@
     0 2px 8px -2px color-mix(in oklab, var(--ink) 12%, transparent);
   --shadow-lift: 0 2px 6px -2px color-mix(in oklab, var(--ink) 14%, transparent);
 
+  /* RELIEF, and the rule that keeps it from becoming elevation.
+   *
+   * A button reads as sitting slightly proud of the surface: a light top edge,
+   * a darker bottom edge, and a tight shadow beneath. On press it inverts --
+   * the top goes dark, a faint light edge appears at the bottom, the drop
+   * collapses and the whole control moves down a pixel.
+   *
+   * ## Why this is allowed when `--shadow-panel` was deleted
+   *
+   * The argument for one really is the argument against the other, so the line
+   * has to be somewhere principled. It is here:
+   *
+   * > **Relief is a claim about AFFORDANCE, not importance, and only an object
+   * > that answers when pressed may make it.**
+   *
+   * A raised button says "this responds to pressure", and it PROVES that the
+   * moment you press it: the light edge swaps to dark, the shadow goes, the
+   * label drops. The claim is redeemed immediately and by the object itself. A
+   * panel is not pressed and never answers, so a shadow under it says "this is
+   * above the surface" and nothing ever demonstrates it -- decoration
+   * pretending to be hierarchy, which is exactly why that token went.
+   *
+   * That is not a matter of taste, so it is not left to taste: `--relief` and
+   * `--relief-pressed` are a PAIR, and `design-tokens.test.ts` fails any rule
+   * that takes the raised state without also declaring the pressed one. A
+   * surface cannot look proud of the canvas here without being pressable,
+   * because the stylesheet will not compile past the test.
+   *
+   * Deliberately small. If somebody can name the effect it is too strong; the
+   * top edge is 20% white on a mid-navy fill, and the drop is a 2px blur at 1px
+   * offset. White and black rather than palette tokens because these are
+   * LIGHTING overlays on whatever fill they sit on, and they have to behave the
+   * same way on navy and on clay.
+   */
+  --relief:
+    inset 0 1px 0 0 color-mix(in oklab, #ffffff 20%, transparent),
+    inset 0 -1px 0 0 color-mix(in oklab, #000000 20%, transparent),
+    0 1px 2px -1px color-mix(in oklab, #000000 38%, transparent);
+
+  --relief-pressed:
+    inset 0 2px 3px -1px color-mix(in oklab, #000000 30%, transparent),
+    inset 0 -1px 0 0 color-mix(in oklab, #ffffff 8%, transparent);
+
   /* Barely rounded. A 10px panel corner reads as a card on a marketing page;
      an instrument's panels are square enough that the rule is what you see. */
   --radius: 5px;
@@ -310,6 +353,12 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+
+  /* Reduced motion applies to the TRANSITION, never to the relief.
+     A raised button is not motion — it is what the control looks like, and a
+     person who has asked for less movement has not asked for a flatter
+     interface. So the press still inverts and still moves a pixel; it simply
+     arrives instantly rather than travelling. Nothing here resets a shadow. */
 
   /* The attention edge is the one effect that carries MEANING rather than
      polish, so reduced motion stops it pulsing without removing it. A person
