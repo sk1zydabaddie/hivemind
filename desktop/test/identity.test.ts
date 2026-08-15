@@ -239,3 +239,60 @@ describe("the lanes carry the canvas", () => {
     expect(canvas).toMatch(/if \(tasks\.length === 0\) return null;/u);
   });
 });
+
+describe("the dev loop closes itself", () => {
+  const SELF = ["src-tauri", "src", "selfbuild.rs"];
+
+  test("staleness is measured from disk, not from a version string", async () => {
+    const source = await readFile(path.join(desktopRoot, ...SELF), "utf8");
+    /* The failure being closed is a build that never happened. A version string
+       only says what the last build CLAIMED, so comparing versions would be
+       silent on exactly the case this exists for. */
+    expect(source).toMatch(/head_commit_seconds/u);
+    expect(source).toMatch(/newest_source/u);
+    expect(source).toMatch(/\.modified\(\)/u);
+  });
+
+  test("it only ever offers to rebuild its own source", async () => {
+    const source = await readFile(path.join(desktopRoot, ...SELF), "utf8");
+    /* By identifier out of tauri.conf.json, not by folder name: offering to
+       rebuild the app from somebody's unrelated project would be absurd, and
+       doing it from a repository that merely looks similar would be worse. */
+    expect(source).toMatch(/ai\.hivemind\.desktop/u);
+    for (const command of ["rebuild_app", "install_built_and_restart"]) {
+      const body = source.slice(source.indexOf(`pub async fn ${command}`));
+      expect(body.slice(0, 900), `${command} must refuse a foreign repository`).toMatch(
+        /if !is_own_source\(&root\)/u
+      );
+    }
+  });
+
+  test("nothing is offered while work is in flight", async () => {
+    const bar = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "build-bar.tsx"),
+      "utf8"
+    );
+    /* The same idleness proof the daemon restart uses, read off disk rather
+       than asked of the daemon. */
+    expect(bar).toMatch(/inspect_daemon_work/u);
+    expect(bar).toMatch(/work\.work !== "idle"/u);
+    expect(bar).toMatch(/Nothing offered while work is running/u);
+  });
+
+  test("the build and the install are separate acts", async () => {
+    const source = await readFile(path.join(desktopRoot, ...SELF), "utf8");
+    /* Windows locks a running executable, which `install-local.mjs` already
+       names as the usual reason an install silently does not take. So the build
+       runs while the app is open and the swap happens on the way out. */
+    expect(source).toMatch(/pub async fn rebuild_app/u);
+    expect(source).toMatch(/pub async fn install_built_and_restart/u);
+    const rebuild = source.slice(
+      source.indexOf("pub async fn rebuild_app"),
+      source.indexOf("pub async fn install_built_and_restart")
+    );
+    expect(rebuild, "rebuilding must not install").not.toMatch(/app\.exit|spawn_swap/u);
+    /* And the daemon is left alone: it outlives app close by design so a run is
+       never orphaned, and it is a different process from the one replaced. */
+    expect(source).toMatch(/daemon is deliberately NOT touched/u);
+  });
+});

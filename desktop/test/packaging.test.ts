@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, test } from "vitest";
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 
@@ -135,4 +135,47 @@ describe("shipping", () => {
   expect(installer).toMatch(/No build to install/u);
   expect(installer).toMatch(/No installer for version/u);
 });
+});
+
+/* The version scheme has to be valid semver at every hour of the day.
+ *
+ * `${pad(hours,2)}${pad(minutes,2)}` produces `0924` before 10am, and a semver
+ * identifier may not carry a leading zero -- so `tauri build` refused the config
+ * outright and no build was possible between midnight and 10am. Every build in
+ * this project's history had happened after 10am, so the scheme was broken for
+ * ten hours of every day with nothing ever running in them. Found by shipping
+ * at 09:24, which is the only way it could have been found. */
+test("the calendar version is valid semver at every minute of the day", () => {
+  const stamp = (hour: number, minute: number, month: number, day: number): string =>
+    [
+      26,
+      `${month}${String(day).padStart(2, "0")}`,
+      hour * 100 + minute
+    ].join(".");
+
+  /* Semver: no leading zeros in a numeric identifier. */
+  const semver = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
+  const seen: string[] = [];
+  for (let hour = 0; hour < 24; hour += 1) {
+    for (const minute of [0, 5, 9, 30, 59]) {
+      const value = stamp(hour, minute, 8, 15);
+      expect(value, `${hour}:${minute} produced ${value}`).toMatch(semver);
+      seen.push(value);
+    }
+  }
+  /* And the day's stamps still increase, which is the only property the scheme
+     actually needs beyond being parseable. */
+  const numbers = seen.map((value) => Number(value.split(".")[2]));
+  for (let index = 1; index < numbers.length; index += 1) {
+    expect(numbers[index]!).toBeGreaterThan(numbers[index - 1]!);
+  }
+  /* Each field stays under the 65536 the Windows version resource imposes. */
+  expect(Math.max(...numbers)).toBeLessThan(65536);
+  expect(Number(stamp(0, 0, 12, 31).split(".")[1])).toBeLessThan(65536);
+
+  /* The instrument has to be able to fail: the shape that shipped must not
+     pass the same check. */
+  const broken = `26.815.${String(9).padStart(2, "0")}${String(24).padStart(2, "0")}`;
+  expect(broken).toBe("26.815.0924");
+  expect(semver.test(broken)).toBe(false);
 });

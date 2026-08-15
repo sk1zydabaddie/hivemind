@@ -63,7 +63,22 @@ const pad = (value, width) => String(value).padStart(width, "0");
 const version = [
   stamp.getFullYear() % 100,
   `${stamp.getMonth() + 1}${pad(stamp.getDate(), 2)}`,
-  `${pad(stamp.getHours(), 2)}${pad(stamp.getMinutes(), 2)}`
+  /* A NUMBER, not a zero-padded string.
+   *
+   * This was `${pad(hours,2)}${pad(minutes,2)}`, which produces `0924` before
+   * 10am -- and a semver identifier may not have a leading zero, so
+   * `tauri build` refused the config outright:
+   *
+   *     failed to parse config: `tauri.conf.json > version` must be a semver string
+   *
+   * Every build in this project's history happened after 10am, so the scheme
+   * was broken for ten hours of every day and nothing had run in them. Found by
+   * shipping at 09:24.
+   *
+   * `hours * 100 + minutes` stays monotonic within the day (5, 924, 2359) and
+   * still fits the 65536 ceiling the Windows version resource imposes. The
+   * month/day field needs no such care because a month is never zero. */
+  stamp.getHours() * 100 + stamp.getMinutes()
 ].join(".");
 
 await mkdir(generatedDir, { recursive: true });

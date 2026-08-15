@@ -16,6 +16,7 @@ import markLight from "@/assets/mark.png";
 import { useCallback, useEffect, useState } from "react";
 
 import { SettingsDialog } from "@/components/settings-dialog";
+import { BuildBar } from "@/components/workspace/build-bar";
 import { SetupScreen } from "@/components/workspace/setup-screen";
 import { ProjectTab } from "@/components/workspace/project-tab";
 import { WorkTab } from "@/components/workspace/work-tab";
@@ -334,6 +335,8 @@ export default function App(): React.JSX.Element {
             </Tooltip>
           </div>
         </header>
+
+        <BuildBar projectPath={projectPath} />
 
         {shellUpdateRequired ? (
           <section

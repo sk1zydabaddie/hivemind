@@ -3553,3 +3553,70 @@ because acting on a misread contract is unbounded, while a surface reading a
 missing field degrades to the empty case, since refusing to draw a settings
 dialog is worse than drawing one with nothing chosen yet.
 
+
+### The version scheme was broken for ten hours of every day
+
+`npm run ship` refused at 09:24:
+
+```
+failed to parse config: `tauri.conf.json > version` must be a semver string
+```
+
+The calendar stamp built its last field as `${pad(hours,2)}${pad(minutes,2)}`,
+which before 10am produces `0924` — and a semver numeric identifier may not
+carry a leading zero. So between midnight and 09:59 the app could not be built
+at all.
+
+Every build in this project's history had happened after 10am. The scheme was
+broken for **ten hours of every day** from the moment it was written, and
+nothing had ever run in them.
+
+> **A bug that only fires inside a window nobody has worked in is invisible
+> until somebody works in it.** It cannot be found by reading, because reading
+> is what produced it; it is found by doing the thing at a different hour.
+
+`hours * 100 + minutes` fixes it: monotonic within the day (5, 924, 2359),
+still under the 65536 the Windows version resource imposes, and no leading zero
+because a number has none. The month/day field never needed the care, since a
+month is never zero.
+
+`packaging.test.ts` now stamps every hour of the day against a semver pattern
+and checks the sequence still increases — and asserts the shape that shipped
+FAILS that pattern, because an instrument nobody has seen fail is not an
+instrument.
+
+### The dev loop closes itself
+
+Three rounds were lost to one sequence: a commit lands, the app is opened, and
+the app is the previous build. `install:local` existed the whole time and
+verifies that it took. It did not help, because **the step that fails is
+remembering to run it**, and a fix whose first requirement is remembering is not
+a fix for that.
+
+So the app answers the question itself. When the open project is Hivemind's own
+source — checked by reading the identifier out of its `tauri.conf.json`, not by
+the folder's name — it compares the modified time of the binary it is running
+against the newest of the repository's `HEAD` commit time and the newest file
+under the directories a build actually reads.
+
+Not versions. A version string only says what the last build *claimed*, and the
+failure being closed is a build that never happened.
+
+Two acts, not one. Windows holds a running executable locked, which
+`install-local.mjs` already names as the usual reason an install silently does
+not take — so the build runs while the app is open, and the swap happens on the
+way out: a detached helper waits for this process to exit, installs, and starts
+the new copy. Presenting that as a single button that quietly ends the session
+would hide the thing actually happening.
+
+Guarded by the same idleness proof as the daemon restart, read off disk rather
+than asked of the daemon. Rebuilding mid-run is harmless and restarting the app
+is not the danger either — the daemon outlives app close by design. The danger
+is restarting into a new build while a run is live and losing track of which
+build produced which result. If anything is in flight, the bar says so and
+offers nothing.
+
+Detection is automatic; the act is a click. Rebuilding costs minutes of CPU and
+installing replaces the running binary — neither is something to do to somebody
+who did not ask for it.
+

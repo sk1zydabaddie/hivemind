@@ -788,6 +788,12 @@ fn same_path(left: &Path, right: &Path) -> bool {
     }
 }
 
+/* The sibling module needs the same window-hiding spawn; exposing this one
+   keeps a second copy of the platform detail from existing. */
+pub fn hidden_command_for_selfbuild(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    hidden_command(program)
+}
+
 fn hidden_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     let mut command = Command::new(program);
     hide_window(&mut command);
