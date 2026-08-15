@@ -799,7 +799,13 @@ function TaskTypeRouting({
       </Section>
     );
   }
-  const current = config.task_type_routing;
+  /* Absent, not empty. Core always sends this now, but a daemon older than the
+     field does not -- and the shell and Core ship as separate binaries that are
+     routinely at different versions on the same machine, which is the reason
+     `daemon.json` already tolerates unknown fields. Indexing it directly threw
+     on the first row and took the whole settings dialog down with it: the third
+     time this session that `undefined` reached code written for `{}`. */
+  const current = config.task_type_routing ?? {};
 
   /* An agent may only be AIMED at work if it reports which model it loaded.
      Anything else makes the choice unconfirmable, which is the same standard

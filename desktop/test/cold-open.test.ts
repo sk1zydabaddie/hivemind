@@ -179,3 +179,74 @@ describe("cold open", () => {
     expect(source).toMatch(/Waiting on step 2/u);
   });
 });
+
+/* Why 211 tests could not catch an unscrollable first-run screen.
+ *
+ * They render into an unbounded container. Overflow does not exist there, so a
+ * control clipped below the fold is indistinguishable from one you can press,
+ * and every assertion about the markup passes either way. Same family as the
+ * instrument failures this project keeps finding: the test cannot see the
+ * constraint that produces the bug, so it can only ever return one answer.
+ *
+ * The real instrument is `tools/check-reachable.mjs`, which loads these
+ * surfaces at 1280x720, 1366x768 and 1440x900 and asks whether every control
+ * can be scrolled into the viewport. What follows is only its structural
+ * companion: it catches the specific shape at review time, in a suite that
+ * runs on every commit, and it exists BECAUSE the harness needs a browser and
+ * the suite does not. */
+describe("a surface that must be completed is bounded", () => {
+  /* Deliberately ONE surface, not a sweep over every `ScrollArea`.
+   *
+   * The first version of this test swept all three and immediately flagged the
+   * task board, which is correct: it is `min-h-0` inside a `Panel`, whose grid
+   * row is already `minmax(0,1fr)`, so it has a height and the harness confirms
+   * it is reachable at every size. A regex over class names cannot see the
+   * parent, so it cannot tell a bounded `min-h-0` from an unbounded one.
+   *
+   * Which is this project's own rule again: **a shape ban cannot express a
+   * structural rule.** Widening the pattern until the false positive went away
+   * would have produced a test that passes on the bug too. So this asserts the
+   * one thing it can actually judge -- the surface that regressed, in the
+   * position it regressed in -- and the general question stays with the
+   * harness, which measures rather than infers. */
+  test("the setup screen's scroll region has a height to scroll within", async () => {
+    const source = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
+      "utf8"
+    );
+    const match = /<ScrollArea\s+className="([^"]*)"/u.exec(source);
+    expect(match, "the setup screen still scrolls its content").not.toBeNull();
+    /* It is a FLEX child in both of its positions -- the whole window before
+       the daemon answers, and its own tab afterwards -- so `min-h-0` alone
+       leaves it sizing to content while the shell's `overflow-hidden` clips the
+       rest with nothing to scroll. That is what made the first-run path
+       impossible to finish once the provider restructure made it tall. */
+    expect(
+      match![1],
+      "min-h-0 alone gives a flex child no height; it needs flex-1 or h-full"
+    ).toMatch(/\b(flex-1|h-full)\b/u);
+  });
+
+  test("the reachability harness exists and is wired to a command", async () => {
+    const scripts = (
+      JSON.parse(await readFile(path.join(desktopRoot, "package.json"), "utf8")) as {
+        scripts: Record<string, string>;
+      }
+    ).scripts;
+    expect(scripts["verify:reachable"]).toBe("node tools/check-reachable.mjs");
+    const harness = await readFile(
+      path.join(desktopRoot, "tools", "check-reachable.mjs"),
+      "utf8"
+    );
+    /* It has to actually have a viewport, which is the entire point. */
+    expect(harness).toMatch(/setDeviceMetricsOverride/u);
+    expect(harness).toMatch(/scrollIntoView/u);
+    /* And it must check the sizes people have, not just the one we develop on. */
+    for (const size of ["1280", "1366", "1440"]) {
+      expect(harness).toContain(size);
+    }
+    /* Dialogs are opened, not just navigated to: an Approve button below the
+       fold is this bug on the surface that authorises a change. */
+    expect(harness).toMatch(/opened no dialog/u);
+  });
+});

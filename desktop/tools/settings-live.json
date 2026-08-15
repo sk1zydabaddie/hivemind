@@ -219,6 +219,165 @@
       "run_ceiling_tokens",
       "session_ceiling_tokens",
       "max_concurrent_workers"
+    ],
+    "providers": [
+      {
+        "id": "codex-cli",
+        "label": "Codex",
+        "subscription": "ChatGPT Plus, Pro or Business",
+        "status": "supported",
+        "caveat": null,
+        "pins_model": true
+      },
+      {
+        "id": "claude",
+        "label": "Claude Code",
+        "subscription": "Claude Pro or Max",
+        "status": "unverified",
+        "caveat": "Its token reporting has only ever been checked against recorded output, never against a live run, and the profile it used to ship with carried a permission-bypass flag this build refuses. Connecting it runs the same probe as any other agent; anything the probe cannot confirm is reported as unverified rather than assumed.",
+        "pins_model": false
+      },
+      {
+        "id": "opencode",
+        "label": "OpenCode",
+        "subscription": "whatever provider you point it at",
+        "status": "unverified",
+        "caveat": "A probe has been through it and it passed: it denies itself a shell and helper agents, it says so before it runs, and its token counts are read from its own output. What it does not report is which model actually answered, so Hivemind cannot send cheaper work to a cheaper model on this one. No whole piece of work has been built and shipped through it yet, which is what would make it proven.",
+        "pins_model": false
+      },
+      {
+        "id": "grok",
+        "label": "Grok Build",
+        "subscription": "an X.AI plan or an XAI_API_KEY",
+        "status": "unverified",
+        "caveat": "Its flags are the best shaped of any agent here -- a real sandbox, a positive tool allowlist, and a switch that turns off helper agents. What is unknown is whether it reports any of that back once it runs, and that cannot be found out without an account. Connecting it runs the same probe as any other agent.",
+        "pins_model": false
+      },
+      {
+        "id": "kimi",
+        "label": "Kimi Code",
+        "subscription": "a Kimi account or a Moonshot API key",
+        "status": "unverified",
+        "caveat": "It can be told to run with a fixed list of tools and no shell, and that list is enforced before a tool runs rather than only suggested to the model. What is unknown is whether its file tools stay inside the folder you point them at -- nothing it reports says so, and that cannot be found out without an account. Connecting it runs the same probe as any other agent.",
+        "pins_model": false
+      }
+    ],
+    "models": [
+      {
+        "agent_id": "codex-luna",
+        "provider_id": "codex-cli",
+        "slug": "gpt-5.6-luna",
+        "label": "GPT-5.6 Luna",
+        "routing_tier": "cheap",
+        "context_window": 272000,
+        "price": {
+          "input_per_m": 0.2,
+          "output_per_m": 1.2,
+          "basis": "api_list",
+          "source": "openai.com — Advancing the price-performance frontier with GPT-5.6",
+          "checked": "2026-08-14"
+        },
+        "price_stale": false,
+        "price_age_days": 0
+      },
+      {
+        "agent_id": "codex-terra",
+        "provider_id": "codex-cli",
+        "slug": "gpt-5.6-terra",
+        "label": "GPT-5.6 Terra",
+        "routing_tier": "standard",
+        "context_window": 272000,
+        "price": {
+          "input_per_m": 2,
+          "output_per_m": 12,
+          "basis": "api_list",
+          "source": "openai.com — Advancing the price-performance frontier with GPT-5.6",
+          "checked": "2026-08-14"
+        },
+        "price_stale": false,
+        "price_age_days": 0
+      },
+      {
+        "agent_id": "claude-code",
+        "provider_id": "claude",
+        "slug": null,
+        "label": "Whatever the harness chooses",
+        "routing_tier": "standard",
+        "context_window": 200000,
+        "price": null,
+        "price_stale": null,
+        "price_age_days": null
+      },
+      {
+        "agent_id": "opencode",
+        "provider_id": "opencode",
+        "slug": null,
+        "label": "Whatever the harness chooses",
+        "routing_tier": "standard",
+        "context_window": 200000,
+        "price": null,
+        "price_stale": null,
+        "price_age_days": null
+      },
+      {
+        "agent_id": "grok-build",
+        "provider_id": "grok",
+        "slug": null,
+        "label": "Whatever the harness chooses",
+        "routing_tier": "standard",
+        "context_window": 256000,
+        "price": null,
+        "price_stale": null,
+        "price_age_days": null
+      },
+      {
+        "agent_id": "kimi-code",
+        "provider_id": "kimi",
+        "slug": null,
+        "label": "Whatever the harness chooses",
+        "routing_tier": "standard",
+        "context_window": 256000,
+        "price": null,
+        "price_stale": null,
+        "price_age_days": null
+      },
+      {
+        "agent_id": "codex-sol",
+        "provider_id": "codex-cli",
+        "slug": "gpt-5.6-sol",
+        "label": "GPT-5.6 Sol",
+        "routing_tier": "strong",
+        "context_window": 272000,
+        "price": {
+          "input_per_m": 5,
+          "output_per_m": 30,
+          "basis": "api_list",
+          "source": "openai.com — Advancing the price-performance frontier with GPT-5.6",
+          "checked": "2026-08-14"
+        },
+        "price_stale": false,
+        "price_age_days": 0
+      }
+    ],
+    "recommendations": [
+      {
+        "role": "planner",
+        "agent_id": "codex-sol",
+        "why": "Planning is where a weaker model costs the most: every task inherits the plan's mistakes, and a bad split is paid for again by each worker under it.",
+        "reviewed": "2026-08-14"
+      },
+      {
+        "role": "manager",
+        "agent_id": "codex-terra",
+        "why": "The manager decides what to do when something unexpected happens. It reasons over a small, well-described situation, which is the shape a mid-tier model handles well.",
+        "reviewed": "2026-08-14"
+      },
+      {
+        "role": "worker",
+        "agent_id": "codex-terra",
+        "why": "Writing the code for one scoped task with the files named in advance. Start with one worker; add a cheaper model for routine work once you have seen a run finish.",
+        "reviewed": "2026-08-14"
+      }
     ]
   },
   "connect": {
@@ -508,5 +667,6 @@
         "max_concurrent_workers"
       ]
     }
-  }
+  },
+  "catalogue_note": "providers/models/recommendations are CATALOGUE data, not run evidence: they are computed from src/agent-catalogue.ts and src/model-prices.ts, which is why they can be refreshed without a paid capture. The adapters, config and probe result above are the real capture and are untouched."
 }

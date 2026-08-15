@@ -83,7 +83,17 @@ export function SetupScreen({
   const problem = connecting ? null : plainConnectionProblem(connectionCode, connectionDetail);
 
   return (
-    <ScrollArea className="min-h-0">
+    /* `min-h-0` alone gives this no HEIGHT, so it grew to fit its content and
+       the app shell's `overflow-hidden` clipped the overflow with nothing to
+       scroll. The provider restructure made this screen tall enough for that to
+       cut the page off mid-way through the role assignment, which made the
+       whole first run impossible to finish.
+       `flex-1` is what bounds it: the setup screen is a flex child both as the
+       whole window (before the daemon answers) and inside its tab (after), and
+       in both cases it must take the space that is left rather than ask for the
+       space it wants. Work and Project already did this with `h-full min-h-0`;
+       this was the one surface that did not. */
+    <ScrollArea className="min-h-0 flex-1">
       <div className="px-6 py-8">
         <div className="max-w-[680px]">
           {connecting ? (

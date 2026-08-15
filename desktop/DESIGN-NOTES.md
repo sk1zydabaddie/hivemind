@@ -3403,3 +3403,65 @@ was removed. `empty` was added the same way and **kept**, so the app now carries
 a verbatim CLI-generated component as standing proof of the contract — if the
 token mapping regresses, it renders unstyled and `test/thin-client.test.ts`
 fails.
+
+### A test with no viewport cannot fail on overflow
+
+The provider restructure made the setup screen tall. Its `ScrollArea` carried
+`min-h-0` and nothing else, which gives a flex child no height at all: it grew
+to its content, and the app shell's `overflow-hidden` clipped the remainder with
+nothing to scroll. Measured after the fact at 1440x900 it hid **416px**, at
+1366x768 **548px**, at 1280x720 **596px** — the page stopped mid-way through the
+role assignment and a new user could not finish setup. First screen after the
+daemon block, and a hard stop.
+
+The desktop suite had 211 tests at the time and not one of them could have
+caught it. They render into an unbounded container, so overflow does not exist
+there: the markup is present, every assertion about it passes, and a control
+clipped below the fold is indistinguishable from one you can press.
+
+> **A test that cannot see the constraint cannot fail on it.** This is the
+> instrument rule again, and the seventh instance: an absent-string assertion, a
+> no-hazard confinement test, a shell-less preflight, a timer-based screenshot
+> harness, a judge visible to the judged, five fixture-only UI passes — and now
+> a whole suite with no viewport.
+
+The verification was worse than absent, it was misleading. The cold-open walk
+asserted on `document.body.innerText`, which returns clipped text exactly as
+readily as visible text. The walk read the entire setup screen, reported every
+step present, and could not have noticed that half of it was unreachable.
+
+**The evidence set was not hiding it by being generous.** The screenshots are
+1416x808 — *smaller* than the 1440x900 they were captured at, so nothing was
+concealed by a taller-than-real viewport. The class was hidden for a duller
+reason: the setup screen was never in the evidence set. All three shots are Work
+and Project, both of which were and are fine.
+
+`tools/check-reachable.mjs` is the instrument that has the constraint. It loads
+each surface at 1280x720, 1366x768 and 1440x900 and asks one question per
+control: scroll it into view, then is it inside the viewport? A control that
+cannot be scrolled to cannot be pressed. It opens the dialogs too, because a
+dialog does not exist until it is opened and an Approve button below the fold is
+this bug on the surface that authorises a change.
+
+It was written before the fix and run against the broken build first, which is
+the only way to know an instrument can fail. Two things fell out of that run
+that reading could not have found:
+
+- the harness was checking the Work tab three times over and reporting it as
+  "setup", because an effect redirected the `?section=` deep link whenever a run
+  existed. An explicit request is not something a default may overrule;
+- the replay's captured settings predated the provider restructure — `providers:
+  0, models: 0` — so the surface it rendered had no provider cards and could not
+  have been tall enough to fail. **A fixture is a claim about what the data
+  looks like, and that one had quietly become false.**
+
+The suite keeps a narrow structural companion for the exact regression, and only
+that. The first version swept every `ScrollArea` and immediately flagged the task
+board, which is `min-h-0` inside a `Panel` whose grid row already bounds it — a
+regex over class names cannot see the parent, so it cannot tell a bounded
+`min-h-0` from an unbounded one. Widening the pattern until that false positive
+went away would have produced a test that passes on the bug as well.
+
+> **A shape ban cannot express a structural rule** — the same lesson the word
+> bans keep teaching, in a different costume.
+

@@ -191,8 +191,15 @@ export default function App(): React.JSX.Element {
      on screen. Found by a replayed trail at peak concurrency opening on Set up. */
   const hasWork = (workspace.inspection?.tasks ?? []).length > 0;
   useEffect(() => {
+    /* An explicit `?section=` is somebody asking for that surface, so it is not
+       something a default may overrule. This quietly redirected the deep link
+       to Work whenever a run existed -- which meant the reachability harness
+       believed it was checking the setup screen and was checking Work three
+       times over. An instrument that never gets the condition cannot fail on
+       it, and that is exactly how the unscrollable setup screen shipped. */
+    if (requestedSection !== null) return;
     if ((runnable || hasWork) && section === "setup") setSection("work");
-  }, [runnable, hasWork, section]);
+  }, [requestedSection, runnable, hasWork, section]);
   /* A count on the tab, so a run in flight advertises itself from whichever
      view you are in. Core's task states counted -- nothing derived. */
   const agentsWorking = (workspace.inspection?.tasks ?? []).filter((task) =>
@@ -365,7 +372,7 @@ export default function App(): React.JSX.Element {
 
         {live ? (
         <>
-        <TabsContent value="setup">
+        <TabsContent className="flex min-h-0 flex-col" value="setup">
           <SetupScreen
             connectionCode={workspace.connectionCode}
             connectionDetail={workspace.connectionDetail}
