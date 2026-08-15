@@ -1996,8 +1996,26 @@ pub async fn initialize_git(project_path: String) -> Result<GitReadiness, String
 mod git_readiness_tests {
     use super::*;
 
+    /// A directory no other test can be holding.
+    ///
+    /// It was keyed on `{name}-{process id}`, and `cargo test` runs every test
+    /// in ONE process in parallel -- so two tests that happened to pick the
+    /// same name got the same path. Both were called `"ordinary"`. Each one
+    /// begins by deleting the directory and ends by deleting it again, so
+    /// whichever started second wiped the other's files out from under it:
+    /// sometimes between the write and the read (a file missing from
+    /// `would_commit`), sometimes before `is_dir` (a flat "that folder does not
+    /// exist"). Two symptoms, one cause, about one run in three.
+    ///
+    /// A counter rather than a rename, because renaming fixes the collision
+    /// that happened and leaves the next one to chance.
     fn temp_dir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("hivemind-git-{name}-{}", std::process::id()));
+        static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let unique = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "hivemind-git-{name}-{}-{unique}",
+            std::process::id()
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("temp dir");
         dir

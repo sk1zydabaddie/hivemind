@@ -1,10 +1,11 @@
-import { ArrowRight, Check, FolderGit2, Loader, Plug, X } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, FolderGit2, Loader, Plug, X } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useDismissed } from "@/lib/dismissible";
 import { displayProjectPath, PROJECT_FAULT } from "@/lib/project-session";
+import { PROVIDER_MARKS } from "@/lib/provider-marks";
 import { REQUIRED_ROLES } from "@/lib/providers";
 import type {
   CatalogueModelView,
@@ -108,7 +109,8 @@ export function SetupScreen({
               </h2>
               <p className="mt-2.5 mb-0 max-w-[520px] text-[13px] leading-relaxed text-muted-foreground">
                 Hivemind builds inside one project folder, using the coding agent
-                you already pay for. Three steps, in order.
+                you already pay for. Three steps, in order — and a fourth once
+                there is an agent to tune.
               </p>
 
               <WhatThisIs />
@@ -271,21 +273,25 @@ function WhatThisIs(): React.JSX.Element | null {
    would do, and the second one read as a disclaimer rather than a price. */
 const TOKENS_PER_CONNECT = 40_000;
 
-/**
- * Provider, then model, then role -- the three things a person is actually
- * choosing between.
+/* Two questions, asked separately.
  *
- * The screen used to ask one question that was secretly three: it offered
- * "Codex — balanced", "Codex — cheaper" and "Codex — strongest" as if they were
- * different agents. They are one provider and three models, labelled with
- * `routing_tier`, which is Hivemind's internal routing vocabulary and no part
- * of the decision being made. That is a leak, not a design.
+ * Step 3 is WHICH PROVIDERS DO I HAVE. It is multi-select, because somebody
+ * with both a ChatGPT and a Claude subscription has both — and the previous
+ * single-select made the mixed-provider arrangement Core has always supported
+ * unreachable from the interface. Selecting is not spending: the checkboxes
+ * choose, and Continue is the act that runs a probe per role.
  *
- * So: a provider is a harness and the subscription that pays for it. A model is
- * a real slug with a real price. A role is what the thing does. Mixed providers
- * across roles work -- Core resolves `planner` and `manager` by name and
- * SEARCHES for workers, and each profile carries its own invoke -- so Sonnet as
- * the worker with Sol as the planner is a supported arrangement, not a hack.
+ * Step 4 is WHICH MODEL FOR WHICH ROLE, and it only exists once something is
+ * connected, because until a probe has run nothing knows whether a model can be
+ * chosen at all.
+ *
+ * The chooser is a LIST, not a wall. Five cards carrying paragraph-long caveats
+ * took half the screen and could not be scanned; each provider is now one row —
+ * logo, name, subscription, status, chevron. The caveats are unchanged and move
+ * behind the chevron: they are the most honest text on this screen and the only
+ * place anybody is told "no whole piece of work has been built and shipped
+ * through it yet". That is worth reading before trusting a provider, and it is
+ * not what you need while picking one out of five.
  */
 function ConnectStep({
   enabled,
@@ -300,8 +306,8 @@ function ConnectStep({
 }): React.JSX.Element {
   const [busy, setBusy] = useState<string | null>(null);
   const [failure, setFailure] = useState("");
-  const [chosenProvider, setChosenProvider] = useState<string | null>(null);
-  const [assigned, setAssigned] = useState<Record<string, string>>({});
+  const [picked, setPicked] = useState<Set<string> | null>(null);
+  const [opened, setOpened] = useState<string | null>(null);
 
   const providers = [...(view?.providers ?? [])].sort(
     (left, right) => providerRank(left.status) - providerRank(right.status)
@@ -310,11 +316,12 @@ function ConnectStep({
   const recommendations = view?.recommendations ?? [];
   const adapters = view?.adapters ?? [];
 
-  const provider =
-    providers.find((entry) => entry.id === chosenProvider) ??
-    providers.find((entry) => entry.status === "supported") ??
-    providers[0];
-  const providerModels = models.filter((model) => model.provider_id === provider?.id);
+  /* Verified providers start ticked, because that is the answer for almost
+     everybody and an empty form is a worse first impression than a sensible
+     one. It is a pre-selection, not a decision: nothing is spent until
+     Continue. */
+  const chosen =
+    picked ?? new Set(providers.filter((entry) => entry.status === "supported").map((e) => e.id));
 
   const connectedRoles = new Set(
     adapters
@@ -324,23 +331,39 @@ function ConnectStep({
   const remaining = REQUIRED_ROLES.filter((role) => !connectedRoles.has(role.tool));
   const done = enabled && remaining.length === 0;
 
-  /* The suggestion, resolved to a model this provider actually offers. It fills
-     the picker; it never presses the button. A recommendation that applied
-     itself would be a default that spends money on somebody's own
-     subscription -- same posture as the visual-task routing preference. */
-  const suggestionFor = (role: string): string | null => {
-    const advice = recommendations.find((entry) => entry.role === role);
-    if (advice === undefined) return null;
-    return providerModels.some((model) => model.agent_id === advice.agent_id)
-      ? advice.agent_id
-      : (providerModels[0]?.agent_id ?? null);
+  const toggle = (id: string): void => {
+    const next = new Set(chosen);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setPicked(next);
   };
-  const chosenFor = (role: string): string | null => assigned[role] ?? suggestionFor(role);
+
+  /* The model each role connects AS. A provider is not enough to probe with --
+     a probe runs one binary with one model pinned -- so the suggestion decides
+     which, and step 4 is where that gets changed afterwards. */
+  const agentFor = (roleTool: string): string | null => {
+    const fromChosen = models.filter((model) => chosen.has(model.provider_id));
+    const advice = recommendations.find((entry) => entry.role === roleTool);
+    if (advice !== undefined && fromChosen.some((m) => m.agent_id === advice.agent_id)) {
+      return advice.agent_id;
+    }
+    return fromChosen[0]?.agent_id ?? null;
+  };
 
   const connectAll = async (): Promise<void> => {
     setFailure("");
+    /* Every role skipped for want of a model is a Continue that appears to do
+       nothing at all -- the same dead end as the build mismatch, arrived at by
+       pressing the button the screen told you to press. Say so instead. */
+    const unaimed = remaining.filter((role) => agentFor(role.tool) === null);
+    if (unaimed.length === remaining.length) {
+      setFailure(
+        "Nothing ticked here can run a model, so there is nothing to check. Tick a provider you actually have."
+      );
+      return;
+    }
     for (const role of remaining) {
-      const agentId = chosenFor(role.tool);
+      const agentId = agentFor(role.tool);
       if (agentId === null) continue;
       setBusy(role.tool);
       try {
@@ -364,14 +387,14 @@ function ConnectStep({
         <StepMark done={done} index={3} />
         <div className="min-w-0 flex-1">
           <strong className="block text-[13px] font-medium text-ink">
-            Connect a provider
+            Which providers do you have?
           </strong>
           <span className="mt-0.5 block text-[12px] leading-relaxed break-words text-muted-foreground">
             {!enabled
               ? "Waiting on step 2 — connecting writes into the project, so the folder has to be set up first."
               : done
-                ? "Every role is connected and checked. You can start building."
-                : "Setting up the folder does NOT do this, on purpose: a profile written by setup would be a claim nobody checked. Connecting runs the agent once and records what it can actually do."}
+                ? "Every role is connected and checked."
+                : "Tick the subscriptions you already pay for. Setting up the folder does NOT connect them: a profile written by setup would be a claim nobody checked."}
           </span>
         </div>
       </div>
@@ -384,73 +407,76 @@ function ConnectStep({
               and open the project again.
             </span>
           ) : (
-            <div className="grid gap-1.5 sm:grid-cols-2">
-              {providers.map((entry) => (
-                <ProviderChoice
-                  key={entry.id}
-                  provider={entry}
-                  selected={entry.id === provider?.id}
-                  onSelect={() => {
-                    setChosenProvider(entry.id);
-                    /* A model id belongs to one provider, so a stale assignment
-                       would silently connect the previous provider's model. */
-                    setAssigned({});
-                  }}
-                />
-              ))}
-            </div>
-          )}
-
-          {provider === undefined ? null : (
-            <div className="grid gap-1.5">
-              {REQUIRED_ROLES.map((role) => (
-                <RoleRow
-                  advice={recommendations.find((entry) => entry.role === role.tool) ?? null}
-                  busy={busy === role.tool}
-                  connected={connectedRoles.has(role.tool)}
-                  key={role.tool}
-                  models={providerModels}
-                  pinsModel={provider.pins_model}
-                  role={role}
-                  value={chosenFor(role.tool)}
-                  onChange={(agentId) =>
-                    setAssigned((current) => ({ ...current, [role.tool]: agentId }))
-                  }
+            <div className="overflow-hidden rounded-sm border border-rule">
+              {providers.map((provider) => (
+                <ProviderRow
+                  expanded={opened === provider.id}
+                  key={provider.id}
+                  picked={chosen.has(provider.id)}
+                  provider={provider}
+                  onExpand={() => setOpened(opened === provider.id ? null : provider.id)}
+                  onToggle={() => toggle(provider.id)}
                 />
               ))}
             </div>
           )}
 
           <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-            <Button disabled={busy !== null} type="button" onClick={() => void connectAll()}>
+            <Button
+              disabled={busy !== null || chosen.size === 0}
+              type="button"
+              onClick={() => void connectAll()}
+            >
               {busy === null ? (
                 <Plug aria-hidden="true" />
               ) : (
                 <Loader aria-hidden="true" className="animate-spin" />
               )}
-              {busy === null ? `Connect ${remaining.length} role${remaining.length === 1 ? "" : "s"}` : `Connecting ${busy}…`}
+              {busy === null ? "Continue" : `Checking ${busy}…`}
             </Button>
-            {/* The cost, once, beside the thing that spends it. */}
             <span className="text-[11px] text-muted-foreground">
-              Runs your agent once per role — about{" "}
+              Runs each agent once to record what it can do — about{" "}
               {(TOKENS_PER_CONNECT * remaining.length).toLocaleString()} tokens on
               your own subscription.
             </span>
           </div>
 
-          {failure === "" ? null : (
-            <p className="m-0 rounded-sm border-l-2 border-clay bg-clay-wash px-2.5 py-1.5 text-[12px] leading-snug break-words text-clay">
-              {failure}
-            </p>
-          )}
         </>
       ) : null}
 
-      {done ? (
-        <p className="m-0 flex items-center gap-1.5 text-[12px] text-navy">
-          <ArrowRight aria-hidden="true" className="size-3.5" />
-          Open Work and describe what you want built.
+      {/* Outside both branches on purpose. Step 4 writes here too, and while
+          this sat inside the `!done` arm a model change that failed set a
+          message nothing rendered -- the surface would simply go quiet. */}
+      {failure === "" ? null : (
+        <p className="m-0 rounded-sm border-l-2 border-clay bg-clay-wash px-2.5 py-1.5 text-[12px] leading-snug break-words text-clay">
+          {failure}
         </p>
+      )}
+
+      {/* Every role that EXISTS, rather than only once they all do. Gating this
+          on `done` made it unreachable from the one real capture there is --
+          which has `worker` connected and the other two not -- and there is no
+          reason to hide the model a connected role runs on while its siblings
+          are still being set up. */}
+      {enabled && connectedRoles.size > 0 ? (
+        <ModelStep
+          adapters={adapters}
+          busy={busy}
+          models={models}
+          recommendations={recommendations}
+          onChange={async (role, agentId) => {
+            setBusy(role);
+            setFailure("");
+            try {
+              await onAction({ type: "adapter.connect", payload: { role, agent_id: agentId } });
+            } catch (cause) {
+              setFailure(cause instanceof Error ? cause.message : String(cause));
+            } finally {
+              setBusy(null);
+            }
+            await onReload();
+          }}
+        />
       ) : null}
     </li>
   );
@@ -462,26 +488,39 @@ function providerRank(status: CatalogueProvider["status"]): number {
   return status === "unverified" ? 1 : 2;
 }
 
-function ProviderChoice({
+/* One row, scannable: tick, mark, name, subscription, status, chevron. */
+function ProviderRow({
   provider,
-  selected,
-  onSelect
+  picked,
+  expanded,
+  onToggle,
+  onExpand
 }: {
   provider: CatalogueProvider;
-  selected: boolean;
-  onSelect: () => void;
+  picked: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  onExpand: () => void;
 }): React.JSX.Element {
   return (
-    <button
-      aria-pressed={selected}
-      className={`cursor-pointer rounded-sm border px-3 py-2 text-left transition-colors ${
-        selected ? "border-navy bg-navy-wash" : "border-rule bg-canvas hover:border-navy/40"
-      }`}
-      type="button"
-      onClick={onSelect}
-    >
-      <div className="flex items-baseline justify-between gap-2">
-        <strong className="text-[12px] font-semibold text-ink">{provider.label}</strong>
+    <div className="border-b border-rule last:border-b-0">
+      <div
+        className={`flex items-center gap-2.5 px-2.5 py-2 ${picked ? "bg-navy-wash" : "bg-panel"}`}
+      >
+        <input
+          aria-label={`Use ${provider.label}`}
+          checked={picked}
+          className="size-3.5 shrink-0 accent-navy"
+          type="checkbox"
+          onChange={onToggle}
+        />
+        <ProviderMark provider={provider.id} />
+        <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink">
+          {provider.label}
+        </span>
+        <span className="hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block">
+          {provider.subscription}
+        </span>
         <span
           className={`shrink-0 text-[11px] font-medium ${
             provider.status === "supported" ? "text-navy" : "text-amber"
@@ -489,126 +528,208 @@ function ProviderChoice({
         >
           {provider.status === "supported" ? "Verified" : "Not verified yet"}
         </span>
+        {provider.caveat === null ? (
+          <span aria-hidden="true" className="size-5 shrink-0" />
+        ) : (
+          <button
+            aria-expanded={expanded}
+            aria-label={`What is unverified about ${provider.label}`}
+            className="grid size-5 shrink-0 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-canvas hover:text-ink"
+            type="button"
+            onClick={onExpand}
+          >
+            <ChevronDown
+              aria-hidden="true"
+              className={`size-3.5 transition-transform ${expanded ? "rotate-180" : ""}`}
+            />
+          </button>
+        )}
       </div>
-      <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
-        {provider.subscription}
-      </span>
-      {/* The capability contract made visible. This is the best thing on the
-          screen and it survives the restructure unchanged: it is a property of
-          the harness, so it belongs to the provider rather than the model. */}
-      {provider.caveat === null ? null : (
-        <span className="mt-1 block text-[11px] leading-snug break-words text-amber">
+      {/* Unchanged text, moved out of the way. It is what to read before
+          trusting a provider, not what to read while picking one. */}
+      {expanded && provider.caveat !== null ? (
+        <p className="m-0 border-t border-rule bg-canvas px-2.5 py-2 text-[11px] leading-relaxed break-words text-muted-foreground">
           {provider.caveat}
-        </span>
-      )}
-    </button>
+        </p>
+      ) : null}
+    </div>
   );
 }
 
-function RoleRow({
-  role,
+/* Real marks where one exists, a monogram where none does — rather than a
+   generic glyph standing in for a brand, or an invented logo. */
+function ProviderMark({ provider }: { provider: string }): React.JSX.Element {
+  const mark = PROVIDER_MARKS[provider];
+  if (mark === undefined) {
+    return (
+      <span
+        aria-hidden="true"
+        className="grid size-4 shrink-0 place-items-center rounded-xs border border-rule text-[9px] font-semibold text-muted-foreground"
+      >
+        {provider.slice(0, 1).toUpperCase()}
+      </span>
+    );
+  }
+  return (
+    <picture className="flex size-4 shrink-0 items-center">
+      {mark.dark === undefined ? null : (
+        <source media="(prefers-color-scheme: dark)" srcSet={mark.dark} />
+      )}
+      <img alt="" className="block size-4" draggable={false} src={mark.light} />
+    </picture>
+  );
+}
+
+/**
+ * Step 4 — which model runs which role.
+ *
+ * ## What "available models" means, per provider
+ *
+ * Three cases, and only two of them exist today:
+ *
+ * 1. **A known list.** The catalogue names the slugs a harness accepts, which
+ *    for Codex is three. This is the only case with something to choose.
+ * 2. **A provider that reports its own models.** Nothing does. The closest is
+ *    Claude Code's per-model usage breakdown, and that reports which models
+ *    RAN during one call — evidence about that run, not a menu. Treating it as
+ *    a menu would be inventing a capability, so this case is left empty until a
+ *    harness genuinely offers one.
+ * 3. **No choice at all**, because the probe could not confirm the harness runs
+ *    the model it was asked for. Then there is nothing to pick and saying so is
+ *    the honest answer — `modelChoiceRefusal` in Core computes that sentence
+ *    from the RECORDED probe, and it is carried here rather than rewritten.
+ *
+ * Changing a model reconnects. The model is baked into the profile's argv at
+ * connect time, so pointing a role at a different one means writing a different
+ * profile — and a profile whose capabilities were measured against a different
+ * model is exactly the declaration the contract refuses. So it costs a probe,
+ * and the button says so.
+ */
+function ModelStep({
+  adapters,
   models,
-  value,
-  advice,
-  connected,
+  recommendations,
   busy,
-  pinsModel,
   onChange
 }: {
-  role: { tool: string; purpose: string };
+  adapters: InspectedAdapter[];
   models: CatalogueModelView[];
-  value: string | null;
-  advice: RoleRecommendation | null;
-  connected: boolean;
-  busy: boolean;
-  pinsModel: boolean;
-  onChange: (agentId: string) => void;
+  recommendations: RoleRecommendation[];
+  busy: string | null;
+  onChange: (role: string, agentId: string) => Promise<void>;
 }): React.JSX.Element {
-  const model = models.find((entry) => entry.agent_id === value) ?? null;
+  /* Connected roles only. A role with no adapter has no provider, so the
+     branch below would have told somebody their provider publishes no models
+     when the truth is that the role has not been connected yet. */
+  const live = REQUIRED_ROLES.map((role) => ({
+    role,
+    connected: adapters.find(
+      (adapter) => adapter.role === role.tool && adapter.connected_at !== null
+    )
+  })).filter((entry) => entry.connected !== undefined);
+
   return (
-    <div className="grid gap-1 rounded-sm border border-rule bg-canvas px-3 py-2">
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <code className="font-mono text-[12px] text-ink">{role.tool}</code>
-        <span className="min-w-0 flex-1 text-[11px] break-words text-muted-foreground">
-          {role.purpose}
-        </span>
-        {connected ? (
-          <span className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-navy">
-            <Check aria-hidden="true" className="size-3" />
-            Connected
+    <div className="grid gap-2.5 border-t border-rule pt-3">
+      <div className="flex items-center gap-3">
+        <StepMark done={false} index={4} />
+        <div className="min-w-0 flex-1">
+          <strong className="block text-[13px] font-medium text-ink">
+            Which model runs which role
+          </strong>
+          <span className="mt-0.5 block text-[12px] leading-relaxed break-words text-muted-foreground">
+            Changing one runs that agent again to check what it can do — about{" "}
+            {TOKENS_PER_CONNECT.toLocaleString()} tokens. The risk limit still
+            wins: nothing here sends dangerous work to a cheaper model.
           </span>
-        ) : busy ? (
-          <span className="flex shrink-0 items-center gap-1 text-[11px] text-navy">
-            <Loader aria-hidden="true" className="size-3 animate-spin" />
-            Running the check…
-          </span>
-        ) : null}
+        </div>
       </div>
 
-      {connected ? null : (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {/* A provider Hivemind cannot pin has no model to choose. Saying so is
-              the honest rendering of an unverified `pins_one_model`: it still
-              runs, it just runs on whatever it picks. */}
-          {!pinsModel || models.length === 0 ? (
-            <span className="text-[11px] text-muted-foreground">
-              This provider does not let Hivemind name a model, so work runs on
-              whatever it chooses.
-            </span>
-          ) : (
-            models.map((entry) => {
-              const suggested = advice?.agent_id === entry.agent_id;
-              const active = entry.agent_id === value;
-              return (
-                <button
-                  aria-pressed={active}
-                  className={`cursor-pointer rounded-sm border px-2 py-1 text-left transition-colors ${
-                    active ? "border-navy bg-navy-wash" : "border-rule bg-panel hover:border-navy/40"
-                  }`}
-                  key={entry.agent_id}
-                  type="button"
-                  onClick={() => onChange(entry.agent_id)}
-                >
-                  <span className="flex items-baseline gap-1.5">
-                    <code className="font-mono text-[11px] text-ink">{entry.slug}</code>
-                    {suggested ? (
-                      <span className="text-[10px] font-medium tracking-label text-navy uppercase">
-                        Suggested
+      {live.map(({ role, connected }) => {
+        const provider = models.find((m) => m.agent_id === connected?.agent_id)?.provider_id;
+        /* Only models from the provider this role is already connected to.
+           Offering another provider's model here would be a silent switch of
+           subscription as well as model. */
+        const choosable = models.filter(
+          (model) => model.provider_id === provider && model.slug !== null
+        );
+        const advice = recommendations.find((entry) => entry.role === role.tool);
+        return (
+          <div className="grid gap-1 rounded-sm border border-rule bg-canvas px-3 py-2" key={role.tool}>
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <code className="font-mono text-[12px] text-ink">{role.tool}</code>
+              <span className="min-w-0 flex-1 text-[11px] break-words text-muted-foreground">
+                {role.purpose}
+              </span>
+              {busy === role.tool ? (
+                <span className="flex shrink-0 items-center gap-1 text-[11px] text-navy">
+                  <Loader aria-hidden="true" className="size-3 animate-spin" />
+                  Running the check…
+                </span>
+              ) : null}
+            </div>
+
+            {/* Case 3: the probe could not confirm a pin, so there is nothing to
+                choose. Core's sentence, not a second version of it. */}
+            {connected?.model_choice_refusal != null ? (
+              <span className="block text-[11px] leading-relaxed break-words text-amber">
+                {connected.model_choice_refusal}
+              </span>
+            ) : choosable.length === 0 ? (
+              <span className="block text-[11px] leading-relaxed text-muted-foreground">
+                This provider does not publish a list of models Hivemind can pin,
+                so work runs on whatever it chooses.
+              </span>
+            ) : (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {choosable.map((model) => {
+                  const active = model.agent_id === connected?.agent_id;
+                  return (
+                    <button
+                      aria-pressed={active}
+                      className={`cursor-pointer rounded-sm border px-2 py-1 text-left transition-colors ${
+                        active ? "border-navy bg-navy-wash" : "border-rule bg-panel hover:border-navy/40"
+                      }`}
+                      disabled={busy !== null}
+                      key={model.agent_id}
+                      type="button"
+                      onClick={() => {
+                        if (!active) void onChange(role.tool, model.agent_id);
+                      }}
+                    >
+                      <span className="flex items-baseline gap-1.5">
+                        <code className="font-mono text-[11px] text-ink">{model.slug}</code>
+                        {advice?.agent_id === model.agent_id ? (
+                          <span className="text-[10px] font-medium tracking-label text-navy uppercase">
+                            Suggested
+                          </span>
+                        ) : null}
                       </span>
-                    ) : null}
-                  </span>
-                </button>
-              );
-            })
-          )}
-        </div>
-      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
-      {/* The price, with where it came from and when it was checked. Never the
-          bare number: these are API list prices, and somebody inside a ChatGPT
-          subscription is not billed them at all. */}
-      {model?.price == null ? null : (
-        <span className="block text-[11px] leading-snug text-muted-foreground">
-          ${model.price.input_per_m.toFixed(2)} in / ${model.price.output_per_m.toFixed(2)} out
-          per million ·{" "}
-          <span className="text-ink">API list price — not what you pay on a subscription</span> ·{" "}
-          {model.price.source.split("—")[0]?.trim()}, checked{" "}
-          {formatChecked(model.price.checked)}
-          {model.price_stale === true ? (
-            <span className="text-amber">
-              {" "}
-              · {model.price_age_days} days old, check it before relying on it
-            </span>
-          ) : null}
-        </span>
-      )}
-
-      {advice === null || connected ? null : (
-        <span className="block text-[11px] leading-snug text-muted-foreground">
-          <span className="text-ink">Suggested:</span> {advice.why}
-        </span>
-      )}
+            {/* The price, with where it came from and when it was checked. */}
+            <ModelPrice model={models.find((m) => m.agent_id === connected?.agent_id) ?? null} />
+          </div>
+        );
+      })}
     </div>
+  );
+}
+
+function ModelPrice({ model }: { model: CatalogueModelView | null }): React.JSX.Element | null {
+  if (model?.price == null) return null;
+  return (
+    <span className="block text-[11px] leading-snug text-muted-foreground">
+      ${model.price.input_per_m.toFixed(2)} in / ${model.price.output_per_m.toFixed(2)} out per
+      million · <span className="text-ink">API list price — not what you pay on a subscription</span>{" "}
+      · {model.price.source.split("—")[0]?.trim()}, checked {formatChecked(model.price.checked)}
+      {model.price_stale === true ? (
+        <span className="text-amber"> · {model.price_age_days} days old, check it before relying on it</span>
+      ) : null}
+    </span>
   );
 }
 

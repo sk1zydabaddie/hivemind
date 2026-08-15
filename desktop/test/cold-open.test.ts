@@ -144,9 +144,13 @@ describe("cold open", () => {
     for (const leaked of ["balanced", "cheaper", "strongest"]) {
       expect(rendered).not.toMatch(new RegExp(`—\\s*${leaked}`, "iu"));
     }
-    expect(rendered).toMatch(/Connect a provider/u);
+    /* The step asks which providers you HAVE. Multi-select, because somebody
+       with two subscriptions has two -- single-select made the mixed-provider
+       arrangement Core supports unreachable from the interface. */
+    expect(rendered).toMatch(/Which providers do you have/u);
+    expect(rendered).toMatch(/type="checkbox"/u);
     /* A real slug, and a price that says what kind of price it is. */
-    expect(rendered).toMatch(/entry\.slug/u);
+    expect(rendered).toMatch(/model\.slug/u);
     expect(rendered).toMatch(/not what you pay on a subscription/u);
     /* Provenance beside the number, and visible staleness. */
     expect(rendered).toMatch(/price\.source/u);
@@ -165,7 +169,7 @@ describe("cold open", () => {
     expect(source).toMatch(/Suggested/u);
     /* Nothing dispatches a connect except the handler behind the button. */
     const dispatches = [...source.matchAll(/type:\s*"adapter\.connect"/gu)];
-    expect(dispatches.length).toBe(1);
+    expect(dispatches.length).toBe(2);
     expect(source).toMatch(/const connectAll = async/u);
   });
 

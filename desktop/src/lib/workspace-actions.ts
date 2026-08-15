@@ -373,6 +373,10 @@ export interface InspectedAdapter {
   capabilities_stale: string | null;
   /* The account this role runs as, where one has been chosen. */
   account: { id: string; label: string; harness: string } | null;
+  /* Why this role cannot be aimed at a chosen model, or null when it can.
+     Computed by Core: the client cannot import it, and a second copy of a
+     capability-contract rule is how two surfaces come to disagree. */
+  model_choice_refusal?: string | null;
 }
 
 export interface ProjectConfigView {

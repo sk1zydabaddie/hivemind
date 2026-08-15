@@ -356,6 +356,30 @@ next session does not have to rediscover them.
 > daemon responses are optional, `strict` makes a direct read a build error,
 > and `src/lib/durable.ts` is the one path.
 
+> **A rule enforced by a type is only enforced where the type is used.** Fourth
+> instance of the durable-record class, and the first to get past the mechanism
+> built to stop it. `SharingBar` did not use a shared response type; it declared
+> its own at the call site — `onAction<{ tracked: string[] }>` — which is a
+> promise to the compiler written by the same hand as the code that trusts it,
+> so `strict` had nothing to object to. Its `catch` looked like cover and was
+> not: an absent field arrives on a promise that RESOLVED. The bar mounts above
+> every surface in `App.tsx`, so one unread field took down four of them, and
+> the thing that found it was `verify:reachable` — three commits after the bar
+> landed, because that harness needs a dev server and is therefore not in
+> `npm run ship`. Mechanised where it was bypassed: `test/durable-shape.test.ts`
+> fails on any inline `onAction<{ … }>` declaring a required array, and was
+> checked against both broken shapes before being trusted.
+
+> **Two tests that pick the same temp directory are one test corrupting
+> another.** `cargo test` runs every test in one process in parallel, and the
+> helper keyed its path on `{name}-{process id}` — so the two tests that both
+> chose `"ordinary"` shared a path, and each one deletes that path on the way in
+> and on the way out. About one run in three failed, in two different places
+> with two different messages: a file missing from a listing, and a folder that
+> did not exist. Fixed with a counter rather than a rename, because a rename
+> fixes the collision that happened and leaves the next one to chance. Measured
+> after: 10 clean runs against 2 failures in the 6 before.
+
 ### About the record
 
 > **Anything worth tracking gets written to a file in the pass that creates

@@ -4,3 +4,9 @@ declare module "*.png" {
   const src: string;
   export default src;
 }
+
+/* Vite serves an imported SVG as a URL string too. */
+declare module "*.svg" {
+  const src: string;
+  export default src;
+}

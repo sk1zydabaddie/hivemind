@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { list } from "@/lib/durable";
 import type { WorkspaceAction } from "@/lib/workspace-actions";
 
 /**
@@ -26,18 +27,24 @@ export function SharingBar({
 }: {
   onAction: <T>(action: WorkspaceAction) => Promise<T>;
 }): React.JSX.Element | null {
-  const [tracked, setTracked] = useState<string[]>([]);
+  const [tracked, setTracked] = useState<readonly string[]>([]);
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState<string[] | null>(null);
+  const [done, setDone] = useState<readonly string[] | null>(null);
   const [problem, setProblem] = useState("");
 
+  /* `tracked` is optional and read through `list`, and the answer itself may be
+     absent. Typing it as `{ tracked: string[] }` was the durable-record class
+     again, one layer further out: not an old record this time but a caller that
+     answers the action differently -- the replay harness has no git, returns
+     nothing at all, and `result.tracked.length` took the whole setup surface
+     down with it. The `catch` could not help, because the promise RESOLVED. */
   const look = useCallback(async () => {
     try {
-      const result = await onAction<{ tracked: string[] }>({
+      const result = await onAction<{ tracked?: readonly string[] } | null>({
         type: "sharing.inspect",
         payload: {}
       });
-      setTracked(result.tracked);
+      setTracked(list(result?.tracked));
     } catch {
       /* Not a repository, or no git. Nothing is tracked, so nothing travels. */
       setTracked([]);
@@ -96,8 +103,11 @@ export function SharingBar({
         onClick={() => {
           setBusy(true);
           setProblem("");
-          void onAction<{ removed: string[] }>({ type: "sharing.untrack", payload: {} })
-            .then((result) => setDone(result.removed))
+          void onAction<{ removed?: readonly string[] } | null>({
+            type: "sharing.untrack",
+            payload: {}
+          })
+            .then((result) => setDone(list(result?.removed)))
             .catch((cause: unknown) =>
               setProblem(cause instanceof Error ? cause.message : String(cause))
             )

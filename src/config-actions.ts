@@ -30,7 +30,7 @@ import { parseTaskTypePreferences } from "./routing-preferences.js";
 import { harnessForRole } from "./provider-accounts.js";
 import { readAccounts, selectedAccount } from "./provider-accounts.js";
 import { priceAgeDays, priceForModel, priceIsStale } from "./model-prices.js";
-import { ROLE_RECOMMENDATIONS } from "./role-recommendations.js";
+import { ROLE_RECOMMENDATIONS, modelChoiceRefusal } from "./role-recommendations.js";
 import {
   currentMachine,
   machineStanding,
@@ -72,6 +72,16 @@ export interface InspectedAdapter {
   capabilities_stale: string | null;
   /** The account this role runs as, where one has been chosen. */
   account: { id: string; label: string; harness: string } | null;
+  /**
+   * Why this role cannot be aimed at a chosen model, or null when it can.
+   *
+   * Computed by `modelChoiceRefusal` in Core rather than by the surface. The
+   * client cannot import Core, so without carrying the sentence here every
+   * surface would write its own version of a rule the capability contract
+   * already owns — and the function that computes it sat on the unreached list
+   * for exactly that reason.
+   */
+  model_choice_refusal: string | null;
 }
 
 /**
@@ -143,7 +153,10 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
         connected_at: null,
       capabilities_stale: null,
       account: null,
-        capabilities: []
+        capabilities: [],
+        /* "Nothing installed" and "nothing choosable" are different sentences,
+           and Core owns both. */
+        model_choice_refusal: modelChoiceRefusal({ capabilities: [], connected_at: null })
       });
       continue;
     }
@@ -188,7 +201,13 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
       account:
         chosen === null
           ? null
-          : { id: chosen.id, label: chosen.label, harness: chosen.harness }
+          : { id: chosen.id, label: chosen.label, harness: chosen.harness },
+      /* Whether this role may be pointed at a model, and the sentence for when
+         it may not — from the recorded probe, never from the catalogue. */
+      model_choice_refusal: modelChoiceRefusal({
+        capabilities: record?.capabilities ?? [],
+        connected_at: record?.connected_at ?? null
+      })
     });
   }
 
