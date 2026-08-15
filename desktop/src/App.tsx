@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { BuildBar } from "@/components/workspace/build-bar";
 import { SetupScreen } from "@/components/workspace/setup-screen";
+import { SharingBar } from "@/components/workspace/sharing-bar";
 import { ProjectTab } from "@/components/workspace/project-tab";
 import { WorkTab } from "@/components/workspace/work-tab";
 import { Button } from "@/components/ui/button";
@@ -337,6 +338,7 @@ export default function App(): React.JSX.Element {
         </header>
 
         <BuildBar projectPath={projectPath} />
+        {live ? <SharingBar onAction={workspace.performAction} /> : null}
 
         {shellUpdateRequired ? (
           <section

@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { trackedMachineFiles, untrackMachineFiles } from "./project-sharing.js";
 import { generateBestOfN } from "./best-of-n.js";
 import { adoptVerifiedSet, reviewVerifiedSetAdoption } from "./adoption.js";
 import { isAutonomyLevel } from "./autonomy-level.js";
@@ -86,7 +87,12 @@ export const workspaceActionTypes = [
      a single allowlisted variable -- see src/provider-accounts.ts. */
   "accounts.inspect",
   "accounts.add",
-  "accounts.select"
+  "accounts.select",
+  /* What of this project's machine evidence is still tracked by git, and
+     stopping it. A read and a narrow index-only write; neither can reach a
+     gate, and the untrack stages a removal rather than committing one. */
+  "sharing.inspect",
+  "sharing.untrack"
 ] as const;
 
 export type WorkspaceActionType = (typeof workspaceActionTypes)[number];
@@ -225,6 +231,21 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
       return { ok: false, reason: "checks.inspect takes no fields; Core serves the most recent run" };
     }
     return latestCheckOutput(repoRoot);
+  }
+  if (raw.type === "sharing.inspect") {
+    if (Object.keys(payload).length > 0) {
+      return { ok: false, reason: "sharing.inspect takes no fields" };
+    }
+    return { ok: true, value: { tracked: await trackedMachineFiles(repoRoot) } };
+  }
+  if (raw.type === "sharing.untrack") {
+    if (Object.keys(payload).length > 0) {
+      return { ok: false, reason: "sharing.untrack takes no fields" };
+    }
+    const result = await untrackMachineFiles(repoRoot);
+    /* Staged, not committed. The commit is the person's to make, and the files
+       stay on disk because they are live state this project is using. */
+    return result.ok ? { ok: true, value: { removed: result.removed } } : result;
   }
   if (raw.type === "accounts.inspect") {
     if (Object.keys(payload).length > 0) {

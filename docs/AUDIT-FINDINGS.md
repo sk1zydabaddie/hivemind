@@ -149,3 +149,79 @@ real, routing uses it, and only one member of it could ever carry a probe.
 
 Existing `worker.profile.json` files keep working: the search reads whatever is
 there, and nothing needed migrating.
+
+---
+
+## F-3 — Hivemind committed its own machine evidence by default
+
+**Found:** 2026-08-15, answering a question about multi-machine use.
+**Status:** fixed in the same pass.
+
+### What was true
+
+`initProject` never wrote a `.gitignore` rule, and `initialize_git` — the
+button Hivemind offers somebody whose folder is not yet a repository — runs
+`git init && git add -A && commit`. So Hivemind's own first-run path committed:
+
+```
+.hivemind/adapters/manager.profile.json
+.hivemind/adapters/planner.profile.json
+.hivemind/adapters/worker-cheap.profile.json
+.hivemind/adapters/worker-standard.profile.json
+.hivemind/adapters/worker.profile.json
+.hivemind/config.json
+.hivemind/log/events.jsonl
+```
+
+and, once anybody connected an agent, `*.connection.json` alongside them.
+
+### Why that is a contract failure and not untidiness
+
+A connection record proves capabilities were measured on ONE binary, at ONE
+version, under ONE account, on ONE machine. It carried none of those facts
+except the version, and **the version was never compared** —
+`compareAdapterVersion` existed, was unit-tested, and was imported by nothing
+but its own test.
+
+So a clone inherited the verdict. Not only as a label: `routing-preferences.ts`
+reads the record to decide whether a provider may be **deliberately aimed at a
+model**, so A's recorded `verified` granted B a routing privilege on evidence
+B's machine never produced.
+
+> **That is the capability contract accepting a declaration again** — the same
+> shape as a wrapper passing every check by inheriting another harness's
+> evidence, except the declaration is made by somebody else's computer instead
+> of by a config file.
+
+The account-switch invalidation could not catch it either: it fires on switch,
+and a record arriving by clone was never switched, so it read as valid.
+
+### Fixed by
+
+- `.hivemind/.gitignore`, written by `init` **before** anything machine-specific
+  exists, so no window remains in which `git add -A` could capture it. An
+  ALLOWLIST — `config.json` and `canon/` are shared, everything else is not —
+  because the first draft was a denylist and was already missing seven of the
+  fifteen directories Core writes.
+- `machine: { host, platform, account_home }` on the connection record, and a
+  read-time check that reports a foreign record as stale rather than valid.
+  Gitignore stops it travelling; this stops the class, including the
+  same-machine case.
+- `compareAdapterVersion` wired into the run path, so a self-updating binary
+  invalidates its own verdict.
+- `sharing.inspect` / `sharing.untrack`, because an ignore rule does nothing to
+  a file git already has — a repository that already committed records keeps
+  sharing them until somebody runs `git rm --cached`.
+
+### The decision inside the fix
+
+`log/events.jsonl` is **not shared**, and that is a judgement rather than a
+default. The founding rule is that the trail must rebuild state; a trail merged
+from two machines rebuilds a state that never existed — two runs that never
+coexisted, interleaved by commit order, with leases and reservations from both.
+That is worse than no history because it looks like history. It is also
+append-only and shared-write, the worst possible shape for a version-controlled
+file.
+
+The cost is real: a clone starts with no history. Captured trails under
+`docs/evidence/` are unaffected, and remain how a run is shared deliberately.

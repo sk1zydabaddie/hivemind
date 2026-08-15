@@ -17,6 +17,7 @@ import {
   defaultAdapterProfile,
   defaultTierGlobs
 } from "./project-defaults.js";
+import { writeIgnoreRules } from "./project-sharing.js";
 import { findGitRoot } from "./repo.js";
 
 const hivemindDirs = ["tasks", "log", "patches", "worktrees", "adapters", "canon"] as const;
@@ -44,6 +45,10 @@ export async function initProject(cwd: string): Promise<number> {
       return 1;
     }
     await ensureRequiredAdapterProfiles(hivemindRoot);
+    /* Converge an already-initialised project onto the rules as well, so a
+       project set up before the split stops sharing its machine evidence the
+       next time init runs. */
+    await writeIgnoreRules(repoRoot);
     console.log("already initialized");
     return 0;
   }
@@ -57,6 +62,9 @@ export async function initProject(cwd: string): Promise<number> {
   await mkdir(hivemindRoot, { recursive: true });
   await Promise.all(hivemindDirs.map((dir) => mkdir(path.join(hivemindRoot, dir), { recursive: true })));
   await writeFile(path.join(hivemindRoot, "log", "events.jsonl"), "", { flag: "a" });
+  /* Before anything machine-specific is written, so no window exists in which
+     a `git add -A` could capture it. */
+  await writeIgnoreRules(repoRoot);
 
   const config: HivemindConfig = {
     version: 1,

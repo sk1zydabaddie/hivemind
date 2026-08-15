@@ -458,7 +458,9 @@ export type WorkspaceAction = {
        boundary: an account is a directory the harness itself owns. */
     | "accounts.inspect"
     | "accounts.add"
-    | "accounts.select";
+    | "accounts.select"
+  | "sharing.inspect"
+  | "sharing.untrack";
   payload: Record<string, unknown>;
 };
 

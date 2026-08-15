@@ -1,3 +1,4 @@
+import { versionStanding } from "./verification-standing.js";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
@@ -204,6 +205,28 @@ export async function invokeAgent(
   if (!profileResult.ok) {
     return profileResult;
   }
+
+  /* Is the binary about to run still the one that was checked?
+   *
+   * `compareAdapterVersion` was built for exactly this and had NO CALLER --
+   * written, unit-tested, and imported by nothing but its own test, so the
+   * check it implements had never once run. That is an instrument instance in a
+   * new shape: not one that can only return a single answer, but one that is
+   * never asked. See docs/STATE.md.
+   *
+   * It matters on one machine, not only across two: these harnesses update
+   * themselves, `claude doctor` reports auto-updates enabled, and a binary that
+   * updates itself silently invalidates its own verdict.
+   *
+   * Here rather than on the settings read, because it costs a subprocess and
+   * the settings surface polls. An adapter run takes minutes; one `--version`
+   * against it is free by comparison.
+   *
+   * ADVISORY, never blocking. A version that moved is a reason to re-check, not
+   * a reason to refuse work somebody asked for -- the same posture the contract
+   * takes for an unverifiable pin. It marks the record and lets the surfaces
+   * that read it say so. */
+  await noteVersionDrift(repoRoot, tool, profileResult.profile);
 
   const dangerousArgs = findDangerousAdapterArgs(profileResult.profile.invoke);
   if (dangerousArgs.length > 0 && options.allowDangerousAdapter !== true) {
@@ -1311,4 +1334,45 @@ function findRateLimits(value: unknown, depth: number): Record<string, unknown> 
 function quotaNumberField(record: Record<string, unknown>, key: string): number | null {
   const value = record[key];
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Record that the harness version moved since it was verified.
+ *
+ * Marks the connection record and nothing else. It does not refuse, does not
+ * retry and does not re-probe: re-probing costs a real provider call, and
+ * spending somebody's tokens because a version string changed is a decision
+ * they should make. Every surface that reads `capabilities_stale` already says
+ * what it means and offers the reconnect.
+ *
+ * Failure here is silent by design. This is a check ABOUT the run, not part of
+ * it, and a run that dies because a `--version` call failed would be a worse
+ * outcome than one that proceeds on a verdict that is a version out of date.
+ */
+async function noteVersionDrift(
+  repoRoot: string,
+  tool: string,
+  profile: AdapterProfile
+): Promise<void> {
+  try {
+    const recordPath = path.join(repoRoot, ".hivemind", "adapters", `${tool}.connection.json`);
+    const raw: unknown = await readJsonFile(recordPath);
+    if (typeof raw !== "object" || raw === null) return;
+    const record = raw as { provider_version?: unknown; capabilities_stale?: unknown };
+    /* Already marked: nothing to add, and overwriting an account-switch reason
+       with a version one would lose the more specific of the two. */
+    if (typeof record.capabilities_stale === "string") return;
+    const recorded =
+      typeof record.provider_version === "string" ? record.provider_version : null;
+    const standing = await versionStanding(profile, recorded, repoRoot);
+    if (standing.stale === null) return;
+    await writeFileAtomic(
+      recordPath,
+      `${JSON.stringify({ ...record, capabilities_stale: standing.stale }, null, 2)}
+`
+    );
+  } catch {
+    /* A missing or unreadable record is the "never connected" case, which the
+       surfaces already report. */
+  }
 }

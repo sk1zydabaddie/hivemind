@@ -10,6 +10,8 @@ import { agentCatalogue, catalogueModels, catalogueProviders, findCatalogueAgent
 import { describePrice, priceForModel, priceIsStale } from "../src/model-prices.js";
 import { ROLE_RECOMMENDATIONS, modelChoiceAllowed, modelChoiceRefusal, recommendationFor } from "../src/role-recommendations.js";
 import { validateConfig } from "../src/config.js";
+import { isMachineSpecific, trackedMachineFiles, untrackMachineFiles } from "../src/project-sharing.js";
+import { currentMachine, machineStanding } from "../src/verification-standing.js";
 import { buildProfileForAgent, initProjectForDesktop, inspectProjectConfig, setProjectConfig } from "../src/config-actions.js";
 import { executeWorkspaceAction } from "../src/workspace-actions.js";
 
@@ -357,6 +359,103 @@ test("connecting a worker adds to the pool instead of replacing it", async () =>
     const codex = findCatalogueAgent("codex-terra")!;
     assert.equal(buildProfileForAgent(codex, "worker")!.tool, "worker-codex-terra");
     assert.equal(buildProfileForAgent(codex, "planner")!.tool, "planner");
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+/* ── Machine evidence must not travel, and must not be inherited ─────────── */
+
+test("init splits project facts from machine evidence, before git can take them", async () => {
+  const repo = await repoWithProject();
+  try {
+    await initProjectForDesktop(repo);
+    /* Hivemind's own first-run button for an untracked folder. It runs
+       `git add -A`, so before the split it committed five adapter profiles and
+       the trail on the person's behalf. */
+    await run("git", ["add", "-A"], { cwd: repo });
+    await run("git", ["commit", "-m", "Start tracking this project"], { cwd: repo });
+    const tracked = (await run("git", ["ls-files", "--", ".hivemind"], { cwd: repo })).stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== "")
+      .sort();
+
+    /* Project facts, and nothing else. */
+    assert.deepEqual(tracked, [".hivemind/.gitignore", ".hivemind/config.json"]);
+    for (const shared of tracked) {
+      assert.equal(isMachineSpecific(shared), false, `${shared} is machine evidence`);
+    }
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("a project that already shares them is detected and can stop", async () => {
+  const repo = await repoWithProject();
+  try {
+    await initProjectForDesktop(repo);
+    /* A repository from before the split: the evidence is already in the index
+       and an ignore rule does nothing to a file git already has. */
+    await writeFile(
+      path.join(repo, ".hivemind", "adapters", "planner.connection.json"),
+      '{"agent_id":"codex-sol"}\n',
+      "utf8"
+    );
+    await run("git", ["add", "-A", "-f", ".hivemind"], { cwd: repo });
+    await run("git", ["commit", "-m", "legacy"], { cwd: repo });
+
+    const before = await trackedMachineFiles(repo);
+    assert.ok(before.includes(".hivemind/adapters/planner.connection.json"));
+
+    const fixed = await untrackMachineFiles(repo);
+    assert.equal(fixed.ok, true);
+    assert.deepEqual(await trackedMachineFiles(repo), []);
+    /* Staged, not deleted: these are live state this project is using now, and
+       a verification somebody paid for. */
+    const stillThere = await readFile(
+      path.join(repo, ".hivemind", "adapters", "planner.connection.json"),
+      "utf8"
+    );
+    assert.match(stillThere, /codex-sol/u);
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("a verdict from another machine reads as unverified, not as valid", async () => {
+  const here = currentMachine(null);
+  /* The record that used to be inherited silently. */
+  assert.equal(machineStanding({ ...here, host: "someone-elses-laptop" }, here).stale !== null, true);
+  assert.match(machineStanding({ ...here, host: "otherbox" }, here).stale!, /otherbox/u);
+  /* A different OS is the case that also leaves the argv unable to spawn. */
+  assert.match(
+    machineStanding({ ...here, platform: here.platform === "win32" ? "linux" : "win32" }, here)
+      .stale!,
+    /Reconnect it to check it here/u
+  );
+  /* A different account home changes what the harness can do. */
+  assert.notEqual(machineStanding({ ...here, account_home: "/somewhere/else" }, here).stale, null);
+  /* Checked here: nothing to say. */
+  assert.equal(machineStanding(here, here).stale, null);
+  /* A record older than the field cannot be confirmed, and says so rather than
+     being treated as either valid or foreign. */
+  assert.match(machineStanding(undefined, here).stale!, /before Hivemind recorded which machine/u);
+});
+
+test("connecting records where the probe ran", async () => {
+  const repo = await repoWithProject();
+  try {
+    await initProjectForDesktop(repo);
+    const agent = findCatalogueAgent("codex-terra")!;
+    const profile = buildProfileForAgent(agent, "planner")!;
+    /* The argv is generated on the machine that connects -- `codexInvoke`
+       branches on `process.platform` -- so what is recorded alongside it has to
+       name that machine too, or the pair cannot be checked later. */
+    assert.ok(profile.invoke.length > 0);
+    const machine = currentMachine(null);
+    assert.equal(typeof machine.host, "string");
+    assert.equal(machine.platform, process.platform);
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

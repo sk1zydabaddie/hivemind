@@ -31,6 +31,11 @@ import { harnessForRole } from "./provider-accounts.js";
 import { readAccounts, selectedAccount } from "./provider-accounts.js";
 import { priceAgeDays, priceForModel, priceIsStale } from "./model-prices.js";
 import { ROLE_RECOMMENDATIONS } from "./role-recommendations.js";
+import {
+  currentMachine,
+  machineStanding,
+  type MachineIdentity
+} from "./verification-standing.js";
 import { writeJsonAtomic } from "./atomic.js";
 
 type ActionResult = { ok: true; value: unknown } | { ok: false; reason: string };
@@ -163,7 +168,23 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
       problems,
       connected_at: record?.connected_at ?? null,
       capabilities: record?.capabilities ?? [],
-      capabilities_stale: record?.capabilities_stale ?? null,
+      /* A stale marker already on the record wins -- an account switch is a
+         fact somebody caused. Otherwise ask whether this verdict was even made
+         here: a record that arrived by clone was never "switched", so it read
+         as a valid connection and granted its capabilities to a machine that
+         had measured nothing. This is the cheap half of the check; the version
+         comparison costs a subprocess and runs where an adapter is used. */
+      capabilities_stale:
+        record?.capabilities_stale ??
+        (record === null
+          ? null
+          : machineStanding(
+              record.machine,
+              currentMachine(
+                selectedAccount(accountsFile, await harnessForRole(repoRoot, name))?.home_dir ??
+                  null
+              )
+            ).stale),
       account:
         chosen === null
           ? null
@@ -386,6 +407,14 @@ interface ConnectionRecord {
      asked to reconnect, rather than being quietly run against capabilities
      nobody checked on the binary that is actually there. */
   provider_version: string | null;
+  /* WHERE the probe ran.
+     Without this nothing could distinguish "verified here" from "verified
+     somewhere", so no check could be written even if somebody wanted one --
+     and a record arriving by clone read as a valid connection rather than as
+     an unverified one. Optional because records written before it exists are a
+     permanent input, and `machineStanding` reports their absence rather than
+     pretending they match. */
+  machine?: MachineIdentity;
   capabilities: AdapterProbeResult["capabilities"];
 }
 
@@ -551,6 +580,11 @@ export async function connectAdapter(
     effective_tokens: probe.effective_tokens,
     readback_source: probe.readback_source,
     provider_version: probe.provider_version,
+    /* Where this probe actually ran, so a later read can tell whether the
+       verdict was made here or somewhere else. */
+    machine: currentMachine(
+      selectedAccount(await readAccounts(repoRoot), agent.harness)?.home_dir ?? null
+    ),
     capabilities: probe.capabilities,
     /* A fresh probe is a fresh verification, so whatever made the previous one
        stale is answered by having run this one. */
