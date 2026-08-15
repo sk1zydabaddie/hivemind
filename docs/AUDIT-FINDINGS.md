@@ -72,3 +72,80 @@ That rule has since earned a second instance in the opposite direction: a 9p
 mount later *manufactured* three daemon timeouts and then hung outright. One
 mount hides failures, the other invents them, and both arrive looking like
 results. Written up in full in `desktop/DESIGN-NOTES.md`.
+
+---
+
+## F-2 — Two thirds of the worker pool could never be verified through the app
+
+**Found:** 2026-08-14, while restructuring provider/model/role selection.
+**Status:** fixed in the same pass.
+
+### What was true
+
+Tier routing is not one decision, it is a *search*. `planner` and `manager` are
+resolved by name — `plan.prepare` asks for "planner" — but `worker` is never
+asked for by name. `routeTaskProvider` reads **every** `*.profile.json` in
+`.hivemind/adapters` and picks among the ones admitting the worker role: tier
+floor first, then task-type preference, then quota pressure.
+
+`initProject` writes a three-member pool so that search has somewhere to land:
+
+| File | Model | Tier |
+| --- | --- | --- |
+| `worker.profile.json` | `gpt-5.6-sol` | strong |
+| `worker-standard.profile.json` | `gpt-5.6-terra` | standard |
+| `worker-cheap.profile.json` | `gpt-5.6-luna` | cheap |
+
+That part works, and it is why Medium work routes to standard and Low to cheap
+on a project nobody has configured.
+
+**`adapter.connect` wrote `${role}.profile.json`.** For a worker that is
+`worker.profile.json` — always, whichever model was chosen. So:
+
+- connecting a worker could only ever verify **one** of the three;
+- the other two remained **declarations nobody had probed**, and routing went on
+  selecting them for every Medium and Low task;
+- connecting a *second* worker overwrote the first rather than joining the pool,
+  so a verified pool could never have more than one member.
+
+`config.inspect` compounded it: it enumerated the three role *names* and read
+`<role>.profile.json`, so it reported one worker row. Two thirds of what routing
+would actually pick from was invisible to every surface that reports what is
+connected — including the setup screen's own "all roles connected" check.
+
+### Why it is a finding and not a UI gap
+
+Nothing was broken. Every test passed, routing routed, and the tier floor did
+exactly what it was built to do. What could not happen was a person reaching
+the feature: **every measurement behind tier routing came from profiles written
+by hand**, with names like `codex-luna.profile.json` that no amount of clicking
+could produce. This repository's own `.hivemind/adapters` still holds them.
+
+> **A feature reachable only by editing files is not a feature the product has.
+> It is a feature the product's authors have.**
+
+The corpus evidence, the promoted routing policy `M-37f4a2a0`, the 1.57×
+concurrency result — all of it exercised a pool that a user could not assemble.
+That does not make the measurements wrong. It makes them measurements of a
+configuration no user had.
+
+### The correction to the first version of this finding
+
+The first draft said the app "could only ever produce a worker pool of one".
+That was wrong, and checking it is what produced the accurate version: a pool of
+three exists from `initProject`. The defect is narrower and worse — the pool is
+real, routing uses it, and only one member of it could ever carry a probe.
+
+### Fixed by
+
+- worker profiles are named for the (provider, model) they run —
+  `worker-codex-terra.profile.json` — so several coexist and each is
+  independently connectable and independently verified;
+- `config.inspect` enumerates profiles rather than role names, so every pool
+  member is reported with its own connection record;
+- connecting a worker retires an **unprobed** default pinning the same model, so
+  a verified profile never sits in the pool beside an unverified duplicate of
+  itself. A profile with a connection record is never removed by a side effect.
+
+Existing `worker.profile.json` files keep working: the search reads whatever is
+there, and nothing needed migrating.

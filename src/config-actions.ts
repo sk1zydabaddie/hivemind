@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -8,6 +8,8 @@ import {
 } from "./adapter.js";
 import {
   adapterRoleNames,
+  catalogueModels,
+  catalogueProviders,
   findCatalogueAgent,
   agentCatalogue,
   type AdapterRoleName,
@@ -27,6 +29,8 @@ import { ACCOUNT_HOME_VARIABLES } from "./agent-catalogue.js";
 import { parseTaskTypePreferences } from "./routing-preferences.js";
 import { harnessForRole } from "./provider-accounts.js";
 import { readAccounts, selectedAccount } from "./provider-accounts.js";
+import { priceAgeDays, priceForModel, priceIsStale } from "./model-prices.js";
+import { ROLE_RECOMMENDATIONS } from "./role-recommendations.js";
 import { writeJsonAtomic } from "./atomic.js";
 
 type ActionResult = { ok: true; value: unknown } | { ok: false; reason: string };
@@ -70,14 +74,55 @@ export interface InspectedAdapter {
  * unless something tells it; this is that. No secret is involved, because
  * Hivemind never holds a provider credential.
  */
+/**
+ * Every adapter profile this project has, and which role each fills.
+ *
+ * `planner` and `manager` are one file each, named for the role, because Core
+ * asks for them by name. `worker` is a POOL: routing searches the directory, so
+ * there can be several and the tier floor picks among them. Enumerating only
+ * the three role names -- which is what this used to do -- made a pool of more
+ * than one invisible to every surface that reports what is connected.
+ *
+ * A role with no file on disk still gets one row, marked not installed, so the
+ * setup screen can say what is missing rather than showing a shorter list.
+ */
+async function adapterProfileNames(
+  repoRoot: string
+): Promise<{ role: AdapterRoleName; name: string }[]> {
+  const found: { role: AdapterRoleName; name: string }[] = [];
+  for (const role of adapterRoleNames) {
+    if (role !== "worker") {
+      found.push({ role, name: role });
+      continue;
+    }
+    let entries: string[] = [];
+    try {
+      entries = await readdir(path.join(repoRoot, ".hivemind", "adapters"));
+    } catch {
+      /* No directory is the same answer as no pool members. */
+    }
+    const workers = entries
+      .filter((entry) => entry.endsWith(".profile.json"))
+      .map((entry) => entry.slice(0, -".profile.json".length))
+      .filter((entry) => entry === "worker" || entry.startsWith("worker-"))
+      .sort((left, right) => left.localeCompare(right));
+    if (workers.length === 0) {
+      found.push({ role, name: "worker" });
+      continue;
+    }
+    for (const name of workers) found.push({ role, name });
+  }
+  return found;
+}
+
 export async function inspectProjectConfig(repoRoot: string): Promise<ActionResult> {
   const accountsFile = await readAccounts(repoRoot);
   const loaded = await loadConfig(repoRoot);
   const config = loaded.ok ? loaded.config : null;
   const adapters: InspectedAdapter[] = [];
 
-  for (const role of adapterRoleNames) {
-    const file = path.join(repoRoot, ".hivemind", "adapters", `${role}.profile.json`);
+  for (const { role, name } of await adapterProfileNames(repoRoot)) {
+    const file = path.join(repoRoot, ".hivemind", "adapters", `${name}.profile.json`);
     let raw: unknown;
     try {
       raw = JSON.parse(await readFile(file, "utf8"));
@@ -97,17 +142,17 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
       });
       continue;
     }
-    const problems = validateAdapterProfile(raw, role);
+    const problems = validateAdapterProfile(raw, name);
     const profile = isRecord(raw) ? raw : {};
     const invoke = Array.isArray(profile.invoke)
       ? profile.invoke.filter((entry): entry is string => typeof entry === "string")
       : [];
     const dangerous = findDangerousAdapterArgs(invoke);
     if (dangerous.length > 0) problems.push(`carries a refused flag: ${dangerous.join(", ")}`);
-    const record = await readConnectionRecord(repoRoot, role);
+    const record = await readConnectionRecord(repoRoot, name);
     /* By HARNESS, resolved from the connection's recorded agent -- `profile.tool`
        is the role, and keying an account by it silently showed none. */
-    const chosen = selectedAccount(accountsFile, await harnessForRole(repoRoot, role));
+    const chosen = selectedAccount(accountsFile, await harnessForRole(repoRoot, name));
     adapters.push({
       role,
       installed: true,
@@ -135,6 +180,26 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
       /* The roles Core resolves by name, so the client stops hardcoding them. */
       roles: [...adapterRoleNames],
       adapters,
+      /* What a person actually chooses, in the three independent parts they
+         are actually choosing between. `catalogue` below is the flattened
+         (provider x model) list the connect action still takes, kept because
+         it IS the connect unit -- but it is no longer what the picker shows. */
+      providers: catalogueProviders(),
+      models: catalogueModels().map((model) => {
+        const price = priceForModel(model.slug);
+        return {
+          ...model,
+          price,
+          /* Provenance travels with the number, and staleness is computed
+             rather than assumed: a price that has quietly aged past the
+             threshold says so instead of continuing to look authoritative.
+             OpenAI cut Luna's input price 80% on 30 July 2026, a fortnight
+             before this was written. */
+          price_stale: price === null ? null : priceIsStale(price, new Date()),
+          price_age_days: price === null ? null : priceAgeDays(price, new Date())
+        };
+      }),
+      recommendations: ROLE_RECOMMENDATIONS,
       catalogue: agentCatalogue.map((agent) => ({
         id: agent.id,
         label: agent.label,
@@ -324,28 +389,106 @@ interface ConnectionRecord {
   capabilities: AdapterProbeResult["capabilities"];
 }
 
-function connectionRecordPath(repoRoot: string, role: AdapterRoleName): string {
-  return path.join(repoRoot, ".hivemind", "adapters", `${role}.connection.json`);
+/* Keyed by the PROFILE name, not the role: a worker pool has several profiles
+   and each was probed separately, so each carries its own verification. */
+/**
+ * Drop the unprobed default that this connection just replaced.
+ *
+ * `initProject` writes a three-member worker pool -- `worker` (strong),
+ * `worker-standard`, `worker-cheap` -- so the tier floor has somewhere to land
+ * on a project nobody has configured. They are DECLARATIONS: no probe has run
+ * them, so nothing knows whether their flags take effect.
+ *
+ * Connecting a worker for the same model would otherwise leave two profiles
+ * pinning it: one verified, one not, both in the pool, and routing free to pick
+ * the unverified one. That is strictly worse than before the connection --
+ * somebody paid for a probe and the thing it verified might not be what runs.
+ *
+ * So the default is retired, and ONLY when all three hold: it pins the same
+ * model, it is not the profile just written, and it has never been probed. A
+ * profile with a connection record is somebody's verified choice and is never
+ * removed by a side effect of connecting something else.
+ */
+async function retireSupersededDefaultWorker(
+  repoRoot: string,
+  agent: CatalogueAgent,
+  keep: string
+): Promise<void> {
+  if (agent.model === null) return;
+  const dir = path.join(repoRoot, ".hivemind", "adapters");
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.endsWith(".profile.json")) continue;
+    const name = entry.slice(0, -".profile.json".length);
+    if (name !== "worker" && !name.startsWith("worker-")) continue;
+    if (name === keep) continue;
+    if ((await readConnectionRecord(repoRoot, name)) !== null) continue;
+    let raw: unknown;
+    try {
+      raw = JSON.parse(await readFile(path.join(dir, entry), "utf8"));
+    } catch {
+      continue;
+    }
+    const invoke = isRecord(raw) && Array.isArray(raw.invoke)
+      ? raw.invoke.filter((value): value is string => typeof value === "string")
+      : [];
+    if (modelFromInvoke(invoke) !== agent.model) continue;
+    await rm(path.join(dir, entry), { force: true });
+  }
+}
+
+function connectionRecordPath(repoRoot: string, profileName: string): string {
+  return path.join(repoRoot, ".hivemind", "adapters", `${profileName}.connection.json`);
 }
 
 async function readConnectionRecord(
   repoRoot: string,
-  role: AdapterRoleName
+  profileName: string
 ): Promise<ConnectionRecord | null> {
   try {
-    const parsed = JSON.parse(await readFile(connectionRecordPath(repoRoot, role), "utf8"));
+    const parsed = JSON.parse(await readFile(connectionRecordPath(repoRoot, profileName), "utf8"));
     return isRecord(parsed) ? (parsed as unknown as ConnectionRecord) : null;
   } catch {
     return null;
   }
 }
 
+/**
+ * The file a role's profile lives in.
+ *
+ * `planner` and `manager` are resolved BY NAME -- `plan.prepare` asks for
+ * "planner" -- so their files must be named for the role and there can only be
+ * one of each. `worker` is different: routing never asks for it by name, it
+ * SEARCHES `.hivemind/adapters` and picks among everything admitting the worker
+ * role. That search is what the tier floor and the task-type preference act on.
+ *
+ * Naming a worker profile `worker.profile.json` therefore capped the pool at
+ * one member, and a pool of one leaves the tier floor nothing to choose
+ * between. Every measurement behind tier routing came from hand-written files
+ * with names like `codex-luna.profile.json` -- names no amount of clicking
+ * could produce. See docs/AUDIT-FINDINGS.md F-2.
+ *
+ * So a worker profile is named for the (provider, model) it runs, and several
+ * can coexist. Existing `worker.profile.json` files keep working untouched:
+ * the search reads whatever is there.
+ */
+export function profileNameFor(role: AdapterRoleName, agentId: string): string {
+  return role === "worker" ? `worker-${agentId}` : role;
+}
+
 export function buildProfileForAgent(agent: CatalogueAgent, role: AdapterRoleName): AdapterProfile | null {
   if (agent.invoke === null || agent.usage_parser === null) return null;
   return {
-    /* Core resolves an adapter by the tool name the caller sends, and the
-       callers send the role. The profile's tool must therefore BE the role. */
-    tool: role,
+    /* Core resolves an adapter by the tool name the caller sends. Orchestrators
+       are asked for by role, so their tool IS the role; workers are searched
+       for, so theirs names the pool member. `validateAdapterProfile` checks
+       this against the filename, and the quota ledger is keyed by it. */
+    tool: profileNameFor(role, agent.id),
     invoke: [...agent.invoke],
     prompt_arg: "stdin",
     verified_on: new Date().toISOString().slice(0, 10),
@@ -383,7 +526,9 @@ export async function connectAdapter(
   const profile = buildProfileForAgent(agent, role);
   if (profile === null) return { ok: false, reason: `${agent.label} has no usable profile shape` };
 
-  const problems = validateAdapterProfile(profile, role);
+  /* Checked against the profile's own name, which for a worker is the pool
+     member rather than the role. */
+  const problems = validateAdapterProfile(profile, profile.tool);
   if (problems.length > 0) return { ok: false, reason: problems.join("; ") };
 
   const probe = await probeAdapter(repoRoot, agent, profile, options);
@@ -398,7 +543,8 @@ export async function connectAdapter(
 
   const dir = path.join(repoRoot, ".hivemind", "adapters");
   await mkdir(dir, { recursive: true });
-  await writeJsonAtomic(path.join(dir, `${role}.profile.json`), profile);
+  await writeJsonAtomic(path.join(dir, `${profile.tool}.profile.json`), profile);
+  if (role === "worker") await retireSupersededDefaultWorker(repoRoot, agent, profile.tool);
   const record: ConnectionRecord = {
     agent_id: agent.id,
     connected_at: new Date().toISOString(),
@@ -453,15 +599,20 @@ export async function invalidateVerificationForHarness(
   harness: string,
   reason: string
 ): Promise<void> {
-  for (const role of adapterRoleNames) {
+  /* Every profile, not every role: a worker pool holds several and each was
+     probed under whichever account was selected at the time, so each one's
+     verification goes stale independently. Iterating roles would have
+     invalidated one member of the pool and left the rest asserting a
+     verification nobody re-ran. */
+  for (const { name } of await adapterProfileNames(repoRoot)) {
     /* Resolved through the connection record, NOT the profile's `tool` -- a
        profile's tool is the ROLE, so comparing it to a harness matched nothing
        and invalidated nothing. Same indirection the account and endpoint paths
        needed, missed in all three on the same day. */
-    if ((await harnessForRole(repoRoot, role)) !== harness) continue;
-    const record = await readConnectionRecord(repoRoot, role);
+    if ((await harnessForRole(repoRoot, name)) !== harness) continue;
+    const record = await readConnectionRecord(repoRoot, name);
     if (record === null) continue;
-    await writeJsonAtomic(connectionRecordPath(repoRoot, role), {
+    await writeJsonAtomic(connectionRecordPath(repoRoot, name), {
       ...record,
       capabilities_stale: reason
     });

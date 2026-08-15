@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 
-import { agentCatalogue } from "../src/agent-catalogue.js";
+import { agentCatalogue, catalogueModels, catalogueProviders, findCatalogueAgent } from "../src/agent-catalogue.js";
+import { describePrice, priceForModel, priceIsStale } from "../src/model-prices.js";
+import { ROLE_RECOMMENDATIONS, modelChoiceAllowed, modelChoiceRefusal, recommendationFor } from "../src/role-recommendations.js";
 import { validateConfig } from "../src/config.js";
-import { initProjectForDesktop, inspectProjectConfig, setProjectConfig } from "../src/config-actions.js";
+import { buildProfileForAgent, initProjectForDesktop, inspectProjectConfig, setProjectConfig } from "../src/config-actions.js";
 import { executeWorkspaceAction } from "../src/workspace-actions.js";
 
 const run = promisify(execFile);
@@ -59,10 +61,16 @@ test("profiles init wrote are reported as installed but never as verified", asyn
           adapters: Array<{ role: string; installed: boolean; connected_at: string | null; capabilities: unknown[] }>;
         })
       : null;
+    /* Three roles, but FIVE profiles: `initProject` writes a three-member
+       worker pool so the tier floor has somewhere to land -- `worker` (strong),
+       `worker-standard` and `worker-cheap`. Reporting one row per role hid two
+       thirds of what routing would actually pick from. */
     assert.deepEqual(
       view!.adapters.map((entry) => entry.role),
-      ["planner", "manager", "worker"]
+      ["planner", "manager", "worker", "worker", "worker"]
     );
+    const pool = view!.adapters.filter((entry) => entry.role === "worker");
+    assert.equal(pool.length, 3, "the default worker pool is what makes tier routing reachable");
     for (const adapter of view!.adapters) {
       assert.equal(adapter.installed, true);
       assert.equal(adapter.connected_at, null, `${adapter.role} was never probed, so it cannot claim a check`);
@@ -249,4 +257,107 @@ test("every field the config type carries is known to the validator", () => {
     problems.filter((problem: string) => problem.startsWith("unsupported config field")),
     []
   );
+});
+
+/* ── Provider / model / role, and the floors that survive the split ───────── */
+
+test("a provider is a harness, not a harness-and-model pair", () => {
+  const providers = catalogueProviders();
+  const codex = providers.find((entry) => entry.id === "codex-cli");
+  assert.ok(codex, "codex is a provider");
+  /* Three catalogue entries collapse to one row. The picker used to show
+     "Codex — balanced / cheaper / strongest": three rows that are one provider,
+     labelled with `routing_tier`, which is Hivemind's internal routing
+     vocabulary and no part of what a person is choosing. */
+  assert.equal(providers.filter((entry) => entry.id === "codex-cli").length, 1);
+  assert.equal(codex!.label, "Codex");
+  assert.ok(!/balanced|cheaper|strongest/iu.test(providers.map((p) => p.label).join(" ")));
+
+  /* And the caveats survive the split -- they are properties of the harness. */
+  const claude = providers.find((entry) => entry.id === "claude");
+  assert.ok(claude!.caveat && claude!.caveat.length > 40, "the honest part is kept");
+});
+
+test("a model carries its real slug, and a provider that pins none says so", () => {
+  const models = catalogueModels("codex-cli");
+  assert.deepEqual(
+    models.map((model) => model.slug),
+    ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"],
+    "cheapest first, by real slug"
+  );
+  for (const model of models) {
+    assert.ok(!/balanced|cheaper|strongest/iu.test(model.label), model.label);
+  }
+  /* Claude Code pins nothing, which is a finding rather than an omission. */
+  const claude = catalogueModels("claude");
+  assert.equal(claude.every((model) => model.slug === null), true);
+});
+
+test("every priced model has provenance, and staleness is computed not assumed", () => {
+  for (const model of catalogueModels()) {
+    const price = priceForModel(model.slug);
+    if (price === null) continue;
+    assert.ok(price.source.length > 10, `${model.slug} must say where the number came from`);
+    assert.match(price.checked, /^\d{4}-\d{2}-\d{2}$/u);
+    /* API list price, never presented as what a subscription user pays. */
+    assert.equal(price.basis, "api_list");
+    assert.match(describePrice(price), /not what you pay on a subscription/u);
+    /* Fresh on the day it was checked, stale long after -- the point is that
+       it goes visibly stale rather than silently rotting. OpenAI cut Luna's
+       input price 80% on 30 July 2026, a fortnight before this was written. */
+    assert.equal(priceIsStale(price, new Date(`${price.checked}T12:00:00Z`)), false);
+    assert.equal(priceIsStale(price, new Date("2027-01-01T00:00:00Z")), true);
+  }
+});
+
+test("aiming at a model is gated on the RECORDED probe, never the catalogue", () => {
+  /* The whole point of the capability contract: the catalogue says what a
+     profile ASKS for, and only the connection record says what came back.
+     Deciding this from the catalogue would make pins_one_model a declaration
+     again. */
+  const verified = { capabilities: [{ id: "pins_one_model", status: "verified" }], connected_at: "now" };
+  const unverified = { capabilities: [{ id: "pins_one_model", status: "unverified" }], connected_at: "now" };
+  const neverProbed = { capabilities: [], connected_at: null };
+
+  assert.equal(modelChoiceAllowed(verified as never), true);
+  assert.equal(modelChoiceAllowed(unverified as never), false);
+  assert.equal(modelChoiceAllowed(neverProbed as never), false);
+
+  assert.equal(modelChoiceRefusal(verified as never), null);
+  assert.match(modelChoiceRefusal(unverified as never)!, /did not report which model/u);
+  assert.match(modelChoiceRefusal(neverProbed as never)!, /Connect this first/u);
+});
+
+test("a recommendation is advice with a reason, and suggests one worker", () => {
+  for (const role of ["planner", "manager", "worker"] as const) {
+    const advice = recommendationFor(role);
+    assert.ok(advice, `${role} has a suggestion`);
+    assert.ok(advice!.why.length > 40, "a reason a person can disagree with");
+    assert.match(advice!.reviewed, /^\d{4}-\d{2}-\d{2}$/u);
+    assert.ok(findCatalogueAgent(advice!.agent_id), "it names a real agent");
+  }
+  /* One worker on a first run: each connection runs the agent once for real, so
+     suggesting a three-model pool up front turns a first run into five probes
+     before a line of code is written. */
+  assert.equal(ROLE_RECOMMENDATIONS.filter((entry) => entry.role === "worker").length, 1);
+});
+
+test("connecting a worker adds to the pool instead of replacing it", async () => {
+  const repo = await repoWithProject();
+  try {
+    await initProjectForDesktop(repo);
+    const before = await readdir(path.join(repo, ".hivemind", "adapters"));
+    const workers = before.filter((entry) => /^worker.*\.profile\.json$/u.test(entry));
+    /* init writes a three-member pool so the tier floor has somewhere to land.
+       `adapter.connect` used to write `worker.profile.json` for every worker
+       connection, so exactly one of the three could ever be verified and the
+       other two kept routing work on profiles nobody probed. */
+    assert.equal(workers.length, 3, "the default pool");
+
+    const codex = findCatalogueAgent("codex-terra")!;
+    assert.equal(buildProfileForAgent(codex, "worker")!.tool, "worker-codex-terra");
+    assert.equal(buildProfileForAgent(codex, "planner")!.tool, "planner");
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
 });

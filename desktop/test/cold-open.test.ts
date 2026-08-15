@@ -101,8 +101,14 @@ describe("cold open", () => {
       path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
       "utf8"
     );
-    expect(source).toMatch(/TOKENS_PER_CONNECT \* REQUIRED_ROLES\.length/u);
-    expect(source).toMatch(/Nothing\s*\n?\s*is spent until you click|Nothing is spent until you click/u);
+    expect(source).toMatch(/TOKENS_PER_CONNECT \* remaining\.length/u);
+    /* Beside the button that spends it, and nowhere else. The boxed warning
+       that used to sit above the roles repeated the same figure and added
+       "Nothing is spent until you click" -- two claims where one would do, and
+       the second read as a disclaimer rather than a price. */
+    expect(source).not.toMatch(/This costs money/u);
+    expect(source).not.toMatch(/Nothing is spent until you click/u);
+    expect(source).toMatch(/on\s*\n?\s*your own subscription|on your own subscription/u);
   });
 
   /* Found by walking the rebuilt screen, not by reading it. `connectable` means
@@ -114,10 +120,53 @@ describe("cold open", () => {
       path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
       "utf8"
     );
-    expect(source).toMatch(/agent\.status === "supported"/u);
+    expect(source).toMatch(/provider\.status === "supported"/u);
     expect(source).toMatch(/Not verified yet/u);
-    /* And the reason is shown rather than found by clicking. */
-    expect(source).toMatch(/agent\.caveat/u);
+    /* And the reason is shown rather than found by clicking. The per-provider
+       caveats are the capability contract made visible and are the best thing
+       on this screen; they survive every restructure. */
+    expect(source).toMatch(/provider\.caveat/u);
+  });
+
+  /* The screen asked one question that was secretly three: "Codex — balanced /
+     cheaper / strongest" is one provider and three models, labelled with
+     `routing_tier`, which is Hivemind's internal routing vocabulary. */
+  test("the picker shows providers and models, never the routing tier", async () => {
+    const source = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
+      "utf8"
+    );
+    const rendered = source.replace(/\/\*[\s\S]*?\*\//gu, "");
+    /* The leak was the LABEL form -- "Codex — balanced" -- not the words. Prose
+       about routing ordinary work to a cheaper model is the product explaining
+       itself correctly, and banning the word would catch that instead. A word
+       ban cannot express a structural rule; this targets the structure. */
+    for (const leaked of ["balanced", "cheaper", "strongest"]) {
+      expect(rendered).not.toMatch(new RegExp(`—\\s*${leaked}`, "iu"));
+    }
+    expect(rendered).toMatch(/Connect a provider/u);
+    /* A real slug, and a price that says what kind of price it is. */
+    expect(rendered).toMatch(/entry\.slug/u);
+    expect(rendered).toMatch(/not what you pay on a subscription/u);
+    /* Provenance beside the number, and visible staleness. */
+    expect(rendered).toMatch(/price\.source/u);
+    expect(rendered).toMatch(/price\.checked/u);
+    expect(rendered).toMatch(/price_stale/u);
+  });
+
+  /* A suggestion fills the picker; the person still presses the button. A
+     recommendation that applied itself would be a default that spends money on
+     somebody's own subscription. */
+  test("a recommendation is a suggestion, never a default that spends", async () => {
+    const source = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
+      "utf8"
+    );
+    expect(source).toMatch(/Suggested/u);
+    /* Nothing dispatches a connect except the handler behind the button. */
+    const dispatches = [...source.matchAll(/type:\s*"adapter\.connect"/gu)];
+    expect(dispatches.length).toBe(1);
+    expect(source).toMatch(/const connectAll = async/u);
   });
 
   /* A disabled control that does not say what it is waiting for is

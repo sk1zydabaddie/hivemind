@@ -393,6 +393,180 @@ export function findCatalogueAgent(id: string): CatalogueAgent | null {
   return agentCatalogue.find((agent) => agent.id === id) ?? null;
 }
 
+/* ── Providers and models, which is what a person actually chooses ──────────
+ *
+ * A catalogue entry is one (PROVIDER x MODEL) pair, because that pair is the
+ * unit `adapter.connect` probes and writes a profile for. That is correct as a
+ * connect unit and wrong as a question to ask somebody. It produced a picker
+ * offering "Codex — balanced", "Codex — cheaper" and "Codex — strongest": three
+ * rows that are one provider, labelled with `routing_tier`, which is Hivemind's
+ * internal routing vocabulary and no part of what the person is deciding.
+ *
+ * So the catalogue is projected two ways. Neither is new data:
+ *
+ * - a PROVIDER is a harness and the subscription that pays for it. Its status
+ *   and caveat are properties of the harness -- what its probe can and cannot
+ *   confirm -- so they belong here and are the honest part of the screen.
+ * - a MODEL is a slug the harness accepts, with a real price.
+ *
+ * A provider whose entries all carry `model: null` HAS no models to offer, and
+ * that is a finding rather than an omission: Hivemind cannot pin a model on it,
+ * so nobody can aim it at one deliberately. The surface says so.
+ */
+
+export interface CatalogueProvider {
+  /** The harness id. Stable, and what a profile's invoke actually runs. */
+  id: string;
+  label: string;
+  subscription: string;
+  /** The best status any of its models reaches. */
+  status: AgentStatus;
+  /** Why it is not `supported`, verbatim from the entry that carries it. */
+  caveat: string | null;
+  /** Whether Hivemind can name a model for this harness at all. */
+  pins_model: boolean;
+}
+
+export interface CatalogueModel {
+  /** The connect unit. `adapter.connect` still takes this. */
+  agent_id: string;
+  provider_id: string;
+  /** The value passed to the harness, or null when it pins nothing. */
+  slug: string | null;
+  /** What to call it on screen: the model, not the tier. */
+  label: string;
+  routing_tier: CatalogueAgent["routing_tier"];
+  context_window: number;
+}
+
+/**
+ * Which model to suggest for each role, and why.
+ *
+ * The table lives HERE, in the one file allowed to know a provider by name,
+ * for the same reason the endpoint surface does: naming `codex-sol` is
+ * provider knowledge, and `provider-knowledge.test.ts` fails a fourth place
+ * rather than letting one accumulate through review. `role-recommendations.ts`
+ * holds the mechanism and names nobody.
+ *
+ * These are advice, not defaults. Nothing here selects anything: the surface
+ * pre-fills a picker and a person still presses the button, because connecting
+ * runs the agent once for real on their own subscription. `routeTaskProvider`
+ * never reads this.
+ *
+ * Dated because model rankings move faster than releases, and a considered
+ * default presented as current when it is a quarter old is the same failure as
+ * a stale price.
+ */
+export interface RoleRecommendation {
+  role: AdapterRoleName;
+  agent_id: string;
+  /** One sentence a person can disagree with, not just a conclusion. */
+  why: string;
+  reviewed: string;
+}
+
+export const ROLE_RECOMMENDATIONS: RoleRecommendation[] = [
+  {
+    role: "planner",
+    agent_id: "codex-sol",
+    why: "Planning is where a weaker model costs the most: every task inherits the plan's mistakes, and a bad split is paid for again by each worker under it.",
+    reviewed: "2026-08-14"
+  },
+  {
+    role: "manager",
+    agent_id: "codex-terra",
+    why: "The manager decides what to do when something unexpected happens. It reasons over a small, well-described situation, which is the shape a mid-tier model handles well.",
+    reviewed: "2026-08-14"
+  },
+  /* ONE worker, deliberately. Tier routing only does something with a pool of
+     more than one, so there is a real argument for suggesting three up front.
+     It loses to what that costs: each connection runs the agent once, so a
+     three-model pool turns a first run into five probes before a line of code
+     is written. Build the pool once somebody has seen a run finish. */
+  {
+    role: "worker",
+    agent_id: "codex-terra",
+    why: "Writing the code for one scoped task with the files named in advance. Start with one worker; add a cheaper model for routine work once you have seen a run finish.",
+    reviewed: "2026-08-14"
+  }
+];
+
+/** Human labels for a harness. The entry labels name the pair, not the tool. */
+const PROVIDER_LABELS: Record<string, string> = {
+  /* The harness id is `codex-cli`, not `codex` -- the same distinction that
+     made `profile.tool` look like a harness when it was a role. */
+  "codex-cli": "Codex",
+  claude: "Claude Code",
+  opencode: "OpenCode",
+  grok: "Grok Build",
+  kimi: "Kimi Code"
+};
+
+/** Model labels, where a slug is too terse to read. */
+const MODEL_LABELS: Record<string, string> = {
+  "gpt-5.6-sol": "GPT-5.6 Sol",
+  "gpt-5.6-terra": "GPT-5.6 Terra",
+  "gpt-5.6-luna": "GPT-5.6 Luna"
+};
+
+function bestStatus(left: AgentStatus, right: AgentStatus): AgentStatus {
+  const rank = (status: AgentStatus): number =>
+    status === "supported" ? 0 : status === "unverified" ? 1 : 2;
+  return rank(left) <= rank(right) ? left : right;
+}
+
+/** One row per harness, in the order the catalogue lists them. */
+export function catalogueProviders(): CatalogueProvider[] {
+  const byId = new Map<string, CatalogueProvider>();
+  for (const agent of agentCatalogue) {
+    const existing = byId.get(agent.harness);
+    if (existing === undefined) {
+      byId.set(agent.harness, {
+        id: agent.harness,
+        label: PROVIDER_LABELS[agent.harness] ?? agent.label,
+        subscription: agent.subscription,
+        status: agent.status,
+        caveat: agent.caveat,
+        pins_model: agent.model !== null
+      });
+      continue;
+    }
+    existing.status = bestStatus(existing.status, agent.status);
+    existing.pins_model = existing.pins_model || agent.model !== null;
+    /* Keep the caveat belonging to the status that survived, so a provider
+       does not end up explaining why it is unverified while reporting that it
+       is supported. */
+    if (existing.status === agent.status && existing.caveat === null) {
+      existing.caveat = agent.caveat;
+    }
+  }
+  return [...byId.values()];
+}
+
+/** Every (provider, model) the catalogue holds, cheapest tier first. */
+export function catalogueModels(providerId?: string): CatalogueModel[] {
+  const tierOrder: Record<CatalogueAgent["routing_tier"], number> = {
+    local: 0,
+    cheap: 1,
+    standard: 2,
+    strong: 3
+  };
+  return agentCatalogue
+    .filter((agent) => providerId === undefined || agent.harness === providerId)
+    .map((agent) => ({
+      agent_id: agent.id,
+      provider_id: agent.harness,
+      slug: agent.model,
+      label:
+        agent.model === null
+          ? "Whatever the harness chooses"
+          : (MODEL_LABELS[agent.model] ?? agent.model),
+      routing_tier: agent.routing_tier,
+      context_window: agent.context_window
+    }))
+    .sort((left, right) => tierOrder[left.routing_tier] - tierOrder[right.routing_tier]);
+}
+
 /**
  * The three names Core resolves by hand. `plan.prepare` sends `planner` and
  * `manager.start` sends `manager`; `worker` is never asked for by name but has

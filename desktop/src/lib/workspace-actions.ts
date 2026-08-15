@@ -319,6 +319,45 @@ export interface CatalogueAgent {
   connectable: boolean;
 }
 
+/** A harness and the subscription that pays for it. Not a harness-and-model. */
+export interface CatalogueProvider {
+  id: string;
+  label: string;
+  subscription: string;
+  status: 'supported' | 'unverified' | 'unsupported';
+  caveat: string | null;
+  pins_model: boolean;
+}
+
+export interface ModelPrice {
+  input_per_m: number;
+  output_per_m: number;
+  basis: 'api_list' | 'subscription';
+  /** Where the number came from, rendered beside it. */
+  source: string;
+  /** ISO date it was last checked against that source. */
+  checked: string;
+}
+
+export interface CatalogueModelView {
+  agent_id: string;
+  provider_id: string;
+  slug: string | null;
+  label: string;
+  routing_tier: string;
+  context_window: number;
+  price: ModelPrice | null;
+  price_stale: boolean | null;
+  price_age_days: number | null;
+}
+
+export interface RoleRecommendation {
+  role: string;
+  agent_id: string;
+  why: string;
+  reviewed: string;
+}
+
 export interface InspectedAdapter {
   role: string;
   installed: boolean;
@@ -358,7 +397,12 @@ export interface ProjectConfigView {
   } | null;
   roles: string[];
   adapters: InspectedAdapter[];
+  /* The flattened (provider x model) list `adapter.connect` takes. Still the
+     connect unit; no longer what the picker shows. */
   catalogue: CatalogueAgent[];
+  providers: CatalogueProvider[];
+  models: CatalogueModelView[];
+  recommendations: RoleRecommendation[];
   limits: {
     max_concurrent_workers_hard_max: number;
     max_concurrent_workers_default: number;
