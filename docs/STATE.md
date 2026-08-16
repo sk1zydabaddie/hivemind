@@ -349,6 +349,54 @@ evidence stopped being complete. It reports and does not refuse: compaction is
 how a long run survives its window, and failing on it would refuse work for
 something the harness did correctly.
 
+### Intermittent adherence: the rule survives, the compliance lapses
+
+A distinct failure mode from the one above, found in the same experiment, and
+**worse than the erasure it replaced.**
+
+The expected danger was that compaction would summarise the contract away, so a
+long task would stop being governed by instructions nobody could still see.
+That is not what happens. What happens is:
+
+- the rule survives the boundary **verbatim** — the model reproduced an
+  arbitrary rule id and an arbitrary token character-exact after 172,547 tokens
+  were discarded;
+- and the step immediately after one boundary **did not follow it** — the
+  required line was simply absent;
+- and then it **recovered**, emitting the two it had skipped at the next step.
+
+So the model demonstrably still had the rule and demonstrably did not apply it,
+in adjacent steps of one run.
+
+**Why this is worse than erasure.** Erasure fails loudly and uniformly: no
+contract, no compliance, obvious from the first output. This produces work that
+is *mostly compliant with specific gaps* — which is the exact shape that
+survives a spot check. Sample three steps of a fifty-step run and the odds are
+you sample three compliant ones, conclude the contract held, and ship the two
+that did not. A uniform failure is caught by any sample; a 4%-of-steps failure
+is caught by none of the samples anybody actually takes.
+
+**The half we cannot close.** The stream reports how much was dropped and never
+what. `cumulative_dropped_tokens: 172,547` is a quantity; there is no list, no
+diff of the summary against the original, and no way to ask which constraint
+went. A gate can therefore know a run is **less-evidenced** without knowing
+**which constraint** is the one it can no longer stand behind. That is not a
+gap in our instrumentation — the information is not on the wire.
+
+**What this means for the product, stated as the ceiling it is:**
+
+> **A compacted run's contract integrity is unverified.** Not violated, not
+> intact — unverified. That is what the detector reports, and it is the
+> strongest true thing that can be said about it.
+
+Everything downstream still holds, and holds for the reason recorded above: the
+gates do not depend on what a worker was told. The diff is captured, Core runs
+the checks, scope is enforced against the contract file rather than against the
+worker's memory of it, and the tier cap binds routing. A worker that skipped an
+instruction produces work that fails those checks or passes them. What is lost
+is the ability to say *the worker followed its contract* — a claim that was
+never load-bearing, and now cannot be made at all for a compacted run.
+
 ---
 
 ## 3. What is not built, and what blocks each
@@ -485,6 +533,26 @@ next session does not have to rediscover them.
 > absence is in the call that was never written. Half is detectable --
 > `npm run audit:unreached`; the unread-field half is not, and the guard there
 > is a test asserting the field is deliberately not consulted.
+
+> **`subtype: "success"` has meant three different things, and will mean a
+> fourth.** It is the harness's word for "the process reached the end", not for
+> "the work was done" — so it is never on its own evidence that anything
+> happened. Each shape needed a different mechanism to catch it, which is the
+> argument for keeping them side by side: the next one is recognisable by what
+> it does NOT match.
+
+| What happened | `subtype` | `is_error` | exit | `terminal_reason` | What catches it |
+| --- | --- | --- | --- | --- | --- |
+| **Hook blocked the prompt** — the model never saw the contract | `success` | `false` | 0 | `completed` | **Nothing generic.** `claudeHookInterference` reading `hook_started`/`hook_response` events. Every other field says the run was fine. |
+| **Rapid-refill breaker** — 3 compactions in 3 turns, gave up mid-task | `success` | `true` | 1 | `rapid_refill_breaker` | The existing non-zero exit path. `is_error` also true, so two independent signals. |
+| **Genuine completion, degraded** — 3 compactions, finished, contract carried as a summary | `success` | `false` | 0 | `completed` | **Nothing, by design.** Indistinguishable from a clean run on every status field. `claudeContextCompacted` reads `compact_boundary` events, and reports rather than refuses. |
+
+> Read the first and third rows together: they are **identical** across
+> `subtype`, `is_error`, exit code and `terminal_reason`. One is a contract
+> that never ran; the other is a contract that ran and finished. The only thing
+> separating them is an event type elsewhere in the stream — which is why both
+> detectors read events rather than status, and why a fourth shape should be
+> assumed to be invisible to status too until something proves otherwise.
 
 > **A rig that measures something other than what you think is not evidence
 > either.** Four instances — drvfs hiding file-mode failures, 9p inventing
