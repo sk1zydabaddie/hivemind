@@ -405,7 +405,7 @@ never load-bearing, and now cannot be made at all for a compacted run.
 | --- | --- | --- |
 | **macOS verification** | **No hardware.** Case verdict, process control, Finder PATH, `.app`/`.dmg` launch, WebKit vs WebKitGTK, temp dirs | ~1 hour on a Mac |
 | **macOS codesigning + notarisation** | **Apple Developer account, $99/yr** | Half a day. Buys distribution, not correctness — an unsigned `.app` runs after a right-click Open |
-| **Windows code signing** | **A certificate — see §3.1.** Deliberately deferred: the beta ships unsigned with a plain note on the download page, so SmartScreen is expected rather than a surprise | An hour once a certificate exists. Tauri supports it in config directly |
+| **Windows code signing** | **A certificate — see §3.2.** Deliberately deferred: the beta ships unsigned with a plain note on the download page, so SmartScreen is expected rather than a surprise | An hour once a certificate exists. Tauri supports it in config directly |
 | **Grok Build** | **An X.AI plan or an `XAI_API_KEY`.** Everything else is ready: install from `x.ai/cli/install.sh`, then connect it like any other agent. The argv is prepared and verified clean against both bypass guards | ~15–25K tokens, one probe. It answers one question: does the stream carry an init event naming the resolved model, tools and sandbox |
 | **Kimi Code** | **An account**, plus one open question: are its file tools confined to the workspace | One probe |
 | **Local models / custom endpoints** | **Nothing structural remains.** The egress capability was the prerequisite and is built — all three harnesses already accept a custom base URL, and `known_endpoint` now names a configured one and refuses an undeterminable one. What is left is a profile shape per backend and a decision about what `reports_usage` means when tokens are free | A pass, no account |
@@ -417,7 +417,57 @@ never load-bearing, and now cannot be made at all for a compacted run.
 | **Four unreachable actions** | Nothing — no UI. `manual_task.review` / `manual_task.authorize`, `verify.characterize`, `quality.best_of_n` / `quality.draft_refine`. All audited, all working, none reachable | Half a day |
 | **Attention on a project you are not looking at** | A decision. Knowing requires asking that project's daemon; starting one per recent project to render a dot is a real cost, and an invented badge on the screen whose purpose is *where should I look* is worse than none | Small, once the "ask only running daemons" shape is accepted |
 
-### 3.1 Windows code signing — the options, for when there is revenue
+### 3.1 MCP — three separate questions, three different answers
+
+Grouped under one acronym and constantly conflated. They are not one decision.
+
+**a) Per-role MCP for workers — available on one harness of three.** Each role is
+a separate process with its own argv, so the planner can carry `--mcp-config`
+while the worker carries `--strict-mcp-config` and nothing. That is only true
+where the harness has the flags:
+
+| Harness | Per-role split possible? |
+| --- | --- |
+| Claude Code | **Yes.** `--mcp-config` and `--strict-mcp-config` are independent |
+| Codex | **No.** Measured: `-c mcp_servers={}` does nothing — `codex doctor` reports 4 servers either way. MCP comes from `~/.codex/config.toml` and cannot be subtracted from argv |
+| OpenCode | **By file, not argv.** Servers come from `opencode.json`, which Hivemind now writes at connect — controllable, but the weaker class |
+
+**b) Hivemind as an MCP client — yes, and the line already exists.** GitHub and
+Linear tools would live in the Tauri/Core process behind the audited dispatcher,
+where `workspace_action` already sits. A worker's tools are its argv, which
+Hivemind constructs, so no worker can name a tool that is not in it — the
+enforcement is structural and already built. The case to watch is the planner:
+it is still a harness process, so giving *it* MCP means giving a model tools.
+The rule that survives: **an MCP tool may read, never authorise.** If a GitHub
+action can merge, a gate has been made reachable without a click.
+
+**c) Hivemind as an MCP server — queued, and the earlier reason for declining
+it was bad.**
+
+The refusal stands for a *writing* server, and for the Orca-CLI reason: an
+external agent that can call `approve_plan` has pressed a button, which
+collapses *chat steers, buttons authorise*.
+
+A **read-only** server — inspect status, read the trail — carries none of that,
+and it was declined on the grounds that opening it would mean defending the
+boundary weekly. **That reasoning is wrong and it is the one place in this
+project where a line was avoided rather than drawn.** The boundary is the
+product. Every other hard call here — the terminal, the editor, the preview,
+the agent-facing CLI — was made by naming exactly where the line falls and why,
+and a decision to avoid the question is a worse artefact than either answer.
+
+It is also enforceable structurally rather than by argument, which was the
+thing missed: **a read-only MCP module that imports no mutation primitive
+cannot expose one.** That is the same shape as memory review exporting exactly
+one function — the capability is absent from the module rather than forbidden
+by a rule somebody has to keep applying. A test that the module's import graph
+touches no dispatcher and no writer makes the boundary a build failure instead
+of a weekly conversation.
+
+Queued, not built. When it is picked up, the design question is the import
+graph, not the feature list.
+
+### 3.2 Windows code signing — the options, for when there is revenue
 
 Nothing is signed today, on any platform. Verified with
 `Get-AuthenticodeSignature`: both the installer and the installed binary read
@@ -546,6 +596,14 @@ next session does not have to rediscover them.
 | **Hook blocked the prompt** — the model never saw the contract | `success` | `false` | 0 | `completed` | **Nothing generic.** `claudeHookInterference` reading `hook_started`/`hook_response` events. Every other field says the run was fine. |
 | **Rapid-refill breaker** — 3 compactions in 3 turns, gave up mid-task | `success` | `true` | 1 | `rapid_refill_breaker` | The existing non-zero exit path. `is_error` also true, so two independent signals. |
 | **Genuine completion, degraded** — 3 compactions, finished, contract carried as a summary | `success` | `false` | 0 | `completed` | **Nothing, by design.** Indistinguishable from a clean run on every status field. `claudeContextCompacted` reads `compact_boundary` events, and reports rather than refuses. |
+| **A cancelled test file** — the runner timed a whole file out | n/a | n/a | **1** | n/a | The **exit code alone**. The aggregate line reads `# fail 0` with `# cancelled 1`, so anything summarising by failures reports green. Our own suite, not a harness. |
+
+> The fourth row is the same shape arriving from a different direction, and it
+> is ours rather than a vendor's: `node --test` counts a timed-out file as
+> *cancelled*, not *failed*, so `# fail 0` is literally true and completely
+> misleading. The exit code is the only field that tells the truth. Anything
+> that greps a summary line — a CI badge, a status comment, a person scanning
+> output — reads a suite that lost 53 tests as a suite that passed.
 
 > Read the first and third rows together: they are **identical** across
 > `subtype`, `is_error`, exit code and `terminal_reason`. One is a contract
@@ -597,6 +655,42 @@ next session does not have to rediscover them.
 > measuring the thing it was pointed at.** Both directions are now asserted —
 > without the flag the runner is still going when cut off, with it the hang
 > becomes a failure.
+
+> **A test that spawns the thing it tests must control the environment it hands
+> over, or it measures its own parent.** A new shape, and not the
+> "only-returns-one-answer" family: this instrument was *contaminated by the
+> environment it was launched from*. The proof that a hanging test gets
+> cancelled spawned `node --test` as a child, and `node --test` exports
+> `NODE_TEST_CONTEXT=child-v8` into every file it runs. The child inherited it,
+> switched into child-reporter mode, returned in 78ms instead of hanging — and
+> the proof concluded the guard was unnecessary. It was measuring the runner it
+> was running inside, not the runner it was pointed at.
+>
+> The general form is worth more than the instance: **inherited environment is
+> an input to the measurement, so a test that hands one over has to decide what
+> it contains rather than accept whatever it was started with.** The fix is one
+> line — strip the variable before spawning — and the tell is any proof whose
+> subject is the same kind of process as its parent: a test runner testing a
+> test runner, a daemon test starting a daemon, a build script invoking a build.
+> Adjacent to the spawn-environment rule already in the client, arrived at from
+> the opposite end: there the danger was a worker inheriting the developer's
+> shell, here it is a test inheriting its own runner.
+
+> **A guard that fails honest work does not get fixed, it gets removed.** Sized
+> the `--test-timeout` ceiling at 300s against the slowest individual TEST
+> (~67s) — a 4× margin, and wrong, because `--test-timeout` bounds the FILE-level
+> subtest too. `manager.test.ts` takes 199s alone, crossed 300s under the
+> contention of a full parallel run, and the guard cancelled **53 passing
+> tests** on its first outing.
+>
+> This is the word-ban failure in a new material, and the mechanism is identical:
+> an instrument that cries wolf is loosened by whoever it blocks until it stops
+> crying, and at that point it has stopped guarding. The word bans were relaxed
+> four times that way. The specific error is worth naming because it is easy to
+> repeat: **a ceiling must be sized against the largest unit it actually bounds,
+> not the smallest unit it was imagined for.** Raised to 30 minutes — 9× the
+> slowest file's solo run, beyond any contention, and still converting an
+> indefinite hang into a failure.
 
 > **A mitigation scoped to one component is wrong when the exposure is
 > shared.** Two instances, and the second is what made it a rule rather than a
