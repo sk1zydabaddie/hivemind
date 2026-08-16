@@ -371,6 +371,23 @@ pub async fn install_built_and_restart(
 }
 
 #[cfg(windows)]
+/// Strip Windows' `\?\` verbatim prefix.
+///
+/// `std::fs::canonicalize` returns verbatim paths, and **cmd.exe cannot execute
+/// one**. The batch helper therefore ran its whole sequence -- waited for the
+/// app, restarted it -- while silently skipping the single line that mattered,
+/// because the installer path began `\?\`. The log read
+/// `helper started | app exited | restarted` with no `installer returned`
+/// between them, which is what named it.
+///
+/// `project.rs` already records this trap for node CLI paths
+/// (`node_cli_paths_drop_windows_verbatim_prefixes`). Same trap, different
+/// consumer.
+fn plain_path(path: &Path) -> String {
+    let text = path.to_string_lossy().to_string();
+    text.strip_prefix(r#"\\?\"#).map(str::to_string).unwrap_or(text)
+}
+
 fn spawn_swap(pid: u32, installer: &Path, exe: &Path) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     /* The app cannot replace its own running executable, so a detached helper
@@ -407,29 +424,60 @@ fn spawn_swap(pid: u32, installer: &Path, exe: &Path) -> Result<(), String> {
        is executed by the WMI provider service, so what it makes is a child of
        THAT service rather than of this app -- outside this app's job object,
        where a directly-spawned child is killed the moment the app exits. */
-    let script_path = log.with_file_name("update-swap.ps1");
+    let script_path = log.with_file_name("update-swap.cmd");
+    /* A batch file run by cmd.exe, not a PowerShell script.
+       
+       The observation that decided this: the app spawned
+       `powershell -NoProfile -ExecutionPolicy Bypass -File <path>` and got exit
+       code 0 with no output and no effect, while the IDENTICAL command run by
+       hand executed the whole script. Same executable, same arguments, same
+       file -- only the parent process differed. Rather than form a fourth
+       hypothesis about why PowerShell behaves differently under this parent,
+       the outer layer stopped being PowerShell.
+       
+       `cmd.exe` is resolved from `%SystemRoot%` rather than from PATH, because
+       a GUI-launched process does not necessarily have System32 on it -- the
+       same trap `adapter-command.ts` already records for finding the agent. */
     let script_body = format!(
-        "Add-Content -LiteralPath '{log}' -Value 'helper started'
-try {{ Wait-Process -Id {pid} -Timeout 90 -ErrorAction Stop }} catch {{ Add-Content -LiteralPath '{log}' -Value 'app already gone' }}
-Add-Content -LiteralPath '{log}' -Value 'installing'
-$p = Start-Process -Wait -PassThru -FilePath '{installer}' -ArgumentList '/S'
-Add-Content -LiteralPath '{log}' -Value ('installer exit: ' + $p.ExitCode)
-Start-Process -FilePath '{exe}'
-Add-Content -LiteralPath '{log}' -Value 'restarted'
-",
+        "@echo off\r\necho helper started>>\"{log}\"\r\n:wait\r\ntasklist /FI \"PID eq {pid}\" 2>nul | find \"{pid}\" >nul\r\nif not errorlevel 1 (timeout /t 1 /nobreak >nul & goto wait)\r\necho app exited>>\"{log}\"\r\n\"{installer}\" /S\r\necho installer returned %errorlevel%>>\"{log}\"\r\nstart \"\" \"{exe}\"\r\necho restarted>>\"{log}\"\r\n",
         log = log.display(),
         pid = pid,
-        installer = installer.display(),
-        exe = exe.display()
+        installer = plain_path(installer),
+        exe = plain_path(exe)
     );
     std::fs::write(&script_path, script_body)
         .map_err(|error| format!("could not write the installer helper: {error}"))?;
 
-    let script = format!(
-        "$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{{ CommandLine = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{script_path}\"' }};          if ($r.ReturnValue -ne 0) {{ Add-Content -LiteralPath '{log}' -Value ('wmi refused: ' + $r.ReturnValue) }}",
-        script_path = script_path.display(),
-        log = log.display()
-    );
+    /* SPAWN IT. This line was missing: an edit removed the spawn block while
+       leaving the script-building above and the proof-of-life wait below, so
+       the code composed a command, started nothing, and then waited for a log
+       that nothing would ever write. Every hypothesis about job objects,
+       transcript hosts and quoting was chasing a process that was never
+       created -- and the symptom was identical to all of them, because a
+       process that does not exist and a process that dies instantly leave the
+       same evidence: nothing.
+
+       Instrumented rather than detached blind. stdout and stderr go to FILES,
+       which survive the child however it ends, and the exit code is recorded.
+       A spawn that fails now says why instead of presenting as silence -- and
+       that instrumentation is what produced the sentence "it exited with exit
+       code: 0, it printed nothing", which is what identified the quoting rather
+       than the job object as the culprit. */
+    let out_path = log.with_file_name("update-spawn.out");
+    let err_path = log.with_file_name("update-spawn.err");
+    const DETACHED: u32 = 0x0000_0008;
+    const NEW_GROUP: u32 = 0x0000_0200;
+    let cmd_exe = std::path::Path::new(&std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string()))
+        .join("System32")
+        .join("cmd.exe");
+    let mut child = Command::new(&cmd_exe)
+        /* One argument that is a path. No script text crosses a quoting layer. */
+        .args(["/c", script_path.to_string_lossy().as_ref()])
+        .stdout(std::fs::File::create(&out_path).map_err(|e| format!("stdout: {e}"))?)
+        .stderr(std::fs::File::create(&err_path).map_err(|e| format!("stderr: {e}"))?)
+        .creation_flags(DETACHED | NEW_GROUP)
+        .spawn()
+        .map_err(|error| format!("Windows would not start the installer helper: {error}"))?;
 
     /* Proof of life before the app is allowed to close. Without this the
        caller cannot tell a helper that is running from one that was killed on
@@ -440,10 +488,23 @@ Add-Content -LiteralPath '{log}' -Value 'restarted'
         }
         std::thread::sleep(std::time::Duration::from_millis(200));
     }
-    Err(
-        "The installer helper was started but never ran -- Windows stopped it with this app. Nothing was installed and Hivemind has stayed open."
-            .to_string(),
-    )
+    /* It did not announce itself. Say what the process actually did rather
+       than guessing -- the exit code and its own stderr are on disk. */
+    let status = match child.try_wait() {
+        Ok(Some(code)) => format!("it exited with {code}"),
+        Ok(None) => "it is still running but wrote nothing".to_string(),
+        Err(error) => format!("its state could not be read ({error})"),
+    };
+    let stderr = std::fs::read_to_string(&err_path).unwrap_or_default();
+    let stderr = stderr.trim();
+    Err(format!(
+        "The installer helper did not start. {status}.{}",
+        if stderr.is_empty() {
+            " It printed nothing.".to_string()
+        } else {
+            format!(" It said: {}", &stderr[..stderr.len().min(300)])
+        }
+    ))
 }
 
 /// Where the swap transcribes itself, beside the binary it is replacing.
