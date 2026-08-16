@@ -634,11 +634,34 @@ next session does not have to rediscover them.
 > | Queue `kind` (`plan_review`, …) | Core → client, and now the notification allowlist | consistent, checked by hand |
 > | Trail event `type` names | Core → the client projection | consistent, 13 of 13 |
 >
-> **Only the boundary with no test was broken.** The other three are verified
-> once, by hand, on one day — which is a snapshot rather than a guarantee, and
-> the notification allowlist is the sharpest of them: if Core renames a queue
-> kind, the allowlist silently stops matching and notifications go quiet, which
-> is the exact silence that feature exists to remove.
+> **Only the boundary with no test was broken** — and the hand audit that found
+> the other three "consistent" was itself a snapshot. Writing the tests found a
+> live break the eyeball pass had missed: **Core has emitted `adoption_failed`
+> and `adoption_indeterminate` since adoption was built, and the client's union
+> carried neither.** A run that did not ship, and a run whose outcome cannot be
+> determined — *"we cannot tell whether this landed"* — could therefore never
+> raise a notification, which are the two clearest "a person must decide" states
+> the product has. Widening the union then made TypeScript surface a third
+> incomplete map in the Work tab, which had been silently short by two.
+>
+> All four seams are now tested, each parsing **one seam and its two named
+> sides**, and each proven to bite by injecting a real mismatch:
+>
+> | Seam | Injected | Caught as |
+> | --- | --- | --- |
+> | action ids | a client action Core rejects | `['ship.itnow']` |
+> | queue kinds | dropping one from the client union | `['adoption_indeterminate']` |
+> | notification allowlist | renaming a kind it waits for | `['run_halted']` |
+> | trail event names | a projection branch Core never writes | `['adoption.finished']` |
+>
+> Deliberately **not** generalised into one scan over every string crossing a
+> boundary. That becomes the greedy regex that reported nine matches and none of
+> the nine names. Each test parses each side from its own declaration, and both
+> mistakes made while writing them were the same class in miniature: matching
+> `=== "…"` but not `switch/case` found 3 of ~40 event names and reported a
+> clean seam it had barely looked at, and a pattern that allowed a trailing dot
+> read the prefix `"quality."` as an event name. **A scan that cannot tell a
+> name from a prefix of one is measuring its own pattern.**
 >
 > **3. The `catch` swallowed it.** The build bar hides on failure, which is
 > right for "running outside the shell" and catastrophic for "this command does

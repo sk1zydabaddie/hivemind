@@ -3309,7 +3309,14 @@ const QUEUE_FALLBACK: Record<WorkspaceQueueItem["kind"], string> = {
   memory_review: "There is something here for you to review outside the app.",
   quality_review: "A second attempt is ready for you to compare.",
   plan_amendment: "A change to the plan is queued for review.",
-  adoption_ready: "The checks passed. This is ready to go to your branch."
+  adoption_ready: "The checks passed. This is ready to go to your branch.",
+  /* Surfaced by widening the union to match Core: this exhaustive map was
+     silently short by two, and TypeScript said so the moment the type was made
+     honest. Both are ship outcomes, and the second is the worst state the
+     product has — nobody knows whether the change landed. */
+  adoption_failed: "This did not ship. Your branch is unchanged.",
+  adoption_indeterminate:
+    "Hivemind cannot tell whether this reached your branch. Check it by hand before running anything else."
 };
 
 function plainPrimaryDetail(detail: string, kind: WorkspaceQueueItem["kind"]): string {

@@ -16,7 +16,14 @@ export interface WorkspaceQueueItem {
     | "memory_review"
     | "quality_review"
     | "plan_amendment"
-    | "adoption_ready";
+    | "adoption_ready"
+    /* A ship that failed, and a ship nobody can confirm either way. Core has
+       emitted both since adoption was built; the client's union omitted them,
+       so neither could be notified about -- and "we cannot tell whether this
+       landed" is the single most important thing this product can say. Found by
+       the seam test, not by review. */
+    | "adoption_failed"
+    | "adoption_indeterminate";
   title: string;
   detail: string;
   created_at: string;

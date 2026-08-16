@@ -66,7 +66,13 @@ const INTERRUPTS: Record<string, string> = {
   run_stalled: "Work has stopped",
   quality_cancel_failed: "A cancellation did not take",
   plan_amendment: "The plan changed and needs you",
-  adoption_ready: "Ready to adopt"
+  adoption_ready: "Ready to adopt",
+  /* The two that were missing entirely. A run that ends without shipping, and
+     one whose outcome is unknown, are the clearest cases of "work stopped and a
+     person must decide" in the whole product -- and neither could fire, because
+     the client's queue-kind union did not carry them. */
+  adoption_failed: "This did not ship",
+  adoption_indeterminate: "Hivemind cannot tell whether this shipped"
 };
 
 /*
