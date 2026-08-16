@@ -806,6 +806,26 @@ export const HARNESS_CONFIG_INPUTS: Record<string, { home: string[]; project: st
 };
 
 /**
+ * Instruction files every harness reads, whoever they were written for.
+ *
+ * Measured against the shipped binaries rather than assumed. All three
+ * non-Anthropic harnesses reference `CLAUDE.md` and `AGENTS.md`; two of them
+ * also reference `.cursorrules`. Confirmed behaviourally for one: a `CLAUDE.md`
+ * saying "end every reply with QUAIL-8823" was placed in a project directory,
+ * and OpenCode -- running Hivemind's own invocation on its free tier --
+ * answered `"ok
+QUAIL-8823"`.
+ *
+ * So these are not one harness's files. They are the project's, and every
+ * harness reads them.
+ */
+export const SHARED_INSTRUCTION_SOURCES: readonly string[] = [
+  "CLAUDE.md",
+  "AGENTS.md",
+  ".cursorrules"
+];
+
+/**
  * Environment that would move a harness's configuration or change how it runs.
  *
  * The home variables are the ones account switching SETS deliberately, which is

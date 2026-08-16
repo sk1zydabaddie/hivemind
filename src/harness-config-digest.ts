@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { HARNESS_CONFIG_INPUTS, HARNESS_DEFAULT_HOME } from "./agent-catalogue.js";
+import {
+  HARNESS_CONFIG_INPUTS,
+  HARNESS_DEFAULT_HOME,
+  SHARED_INSTRUCTION_SOURCES
+} from "./agent-catalogue.js";
 
 /**
  * A fingerprint of everything the harness reads that Hivemind does not write.
@@ -42,6 +46,26 @@ import { HARNESS_CONFIG_INPUTS, HARNESS_DEFAULT_HOME } from "./agent-catalogue.j
  * unreadable and also asks for a re-probe, because not being able to look is
  * the one state that is never evidence of anything.
  *
+ * ## Scoped to the PROJECT, not to one harness -- the correction
+ *
+ * This first hashed each harness's own files and nothing else, which was a
+ * mitigation scoped to one component against an exposure that is shared. The
+ * measurement that broke it: every harness reads every other harness's
+ * instruction files. `CLAUDE.md` is not Claude Code's file, it is the
+ * project's, and OpenCode obeys it.
+ *
+ * So the digest is now the union, computed once and stored on every record:
+ * the shared instruction sources, plus every known harness's own config. A
+ * change to any of them marks every harness's verdict stale.
+ *
+ * That over-stales on purpose. Editing `~/.codex/config.toml` will ask you to
+ * reconnect an unrelated harness, and the alternative is a verdict that has
+ * quietly stopped holding. The remedy for over-staling is one probe; the
+ * remedy for under-staling is finding out later. Same asymmetry the contract
+ * uses everywhere else, and it is also the honest position: Grok already reads
+ * another harness's config directory, and nothing tells us which harness will
+ * read which file two versions from now.
+ *
  * ## What it cannot see, and that limit is permanent
  *
  * Server-delivered feature flags. Claude Code caches 502 of them in
@@ -74,31 +98,35 @@ async function contribution(full: string): Promise<string> {
  */
 export async function harnessConfigDigest(
   repoRoot: string,
-  /* Null when the role's harness cannot be resolved -- an adapter with no
-     connection record yet. There is nothing to fingerprint and nothing to
-     compare it against, which is not the same as a match. */
-  harness: string | null,
-  accountHome: string | null
-): Promise<string | null> {
-  if (harness === null) return null;
-  const inputs = HARNESS_CONFIG_INPUTS[harness];
-  if (inputs === undefined) return null;
-
-  const home =
-    accountHome ??
-    (HARNESS_DEFAULT_HOME[harness] === undefined
-      ? null
-      : path.join(homeDirectory(), HARNESS_DEFAULT_HOME[harness]));
-
+  /* Which home each harness will run against, when an account has been chosen
+     for it. A function rather than a map so this module stays clear of the
+     account machinery -- it needs the answer, not the mechanism. */
+  homeFor: (harness: string) => string | null = () => null
+): Promise<string> {
   const parts: string[] = [];
-  for (const relative of inputs.project) {
-    parts.push(`project:${relative}=${await contribution(path.join(repoRoot, relative))}`);
+
+  /* The project's own instruction files, read ONCE rather than once per
+     harness -- they are the same files, and every harness reads them. */
+  for (const relative of SHARED_INSTRUCTION_SOURCES) {
+    parts.push(`shared:${relative}=${await contribution(path.join(repoRoot, relative))}`);
   }
-  if (home !== null) {
+
+  for (const [harness, inputs] of Object.entries(HARNESS_CONFIG_INPUTS)) {
+    for (const relative of inputs.project) {
+      parts.push(
+        `${harness}:project:${relative}=${await contribution(path.join(repoRoot, relative))}`
+      );
+    }
+    const defaultHome = HARNESS_DEFAULT_HOME[harness];
+    const home =
+      homeFor(harness) ??
+      (defaultHome === undefined ? null : path.join(homeDirectory(), defaultHome));
+    if (home === null) continue;
     for (const relative of inputs.home) {
-      parts.push(`home:${relative}=${await contribution(path.join(home, relative))}`);
+      parts.push(`${harness}:home:${relative}=${await contribution(path.join(home, relative))}`);
     }
   }
+
   /* Sorted, so the digest depends on what the files say and not on the order
      this happened to read them in. */
   parts.sort();
@@ -113,11 +141,14 @@ export async function harnessConfigDigest(
  * pretending the configuration matches. Saying nothing there would be the
  * stronger claim and the false one.
  */
-export function configStanding(recorded: string | null | undefined, current: string | null): string | null {
+export function configStanding(
+  recorded: string | null | undefined,
+  current: string | null
+): string | null {
   if (recorded === null || recorded === undefined) return null;
   if (current === null) return null;
   if (recorded === current) return null;
-  return "the settings this agent reads have changed since it was checked — hooks, instruction files or its own config. Reconnect to re-measure what it can do.";
+  return "the instruction files and harness settings this project runs against have changed since this agent was checked. Any harness reads any of them, so the change may not be to this one's own config. Reconnect to re-measure what it can do.";
 }
 
 function homeDirectory(): string {

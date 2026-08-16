@@ -327,3 +327,42 @@ describe("a record older than a field is an input, not an accident", () => {
     expect(settings).toMatch(/config\.task_type_routing \?\? \{\}/u);
   });
 });
+
+/* The self-selection sentence.
+ *
+ * Editor, terminal and preview are the three most visible features of every
+ * comparable tool, and Hivemind refuses all three. Somebody who wants an IDE
+ * will find this unfinished no matter what gets built, because the thing they
+ * want is the thing the architecture exists to prevent. Saying so on the first
+ * screen is cheaper for them and for us than letting them discover it. */
+describe("positioning, before the first click", () => {
+  test("the first screen says what this deliberately is not", async () => {
+    const source = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
+      "utf8"
+    );
+    const rendered = source.replace(/\/\*[\s\S]*?\*\//gu, "");
+    expect(rendered).toMatch(/no editor, no terminal and no preview/iu);
+    /* And it gives the reason rather than only the refusal, because "we do not
+       have that" reads as unfinished where "that would defeat the check" reads
+       as a decision. */
+    expect(rendered).toMatch(/way around the check/iu);
+    /* And it names who should use something else. A refusal without an
+       alternative is a dead end, which is the shape this project keeps
+       recording. */
+    expect(rendered).toMatch(/you want an IDE/iu);
+  });
+
+  /* Not dismissible, unlike every other notice on this screen. A dismissible
+     notice is for something understood and no longer needed; this is the
+     sentence that decides whether somebody should be here at all. */
+  test("it cannot be dismissed", async () => {
+    const source = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
+      "utf8"
+    );
+    const block = source.slice(source.indexOf("function NotAnEditor"));
+    const body = block.slice(0, block.indexOf("function WhatThisIs"));
+    expect(body).not.toMatch(/useDismissed/u);
+  });
+});

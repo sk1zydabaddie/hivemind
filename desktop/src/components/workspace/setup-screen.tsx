@@ -113,6 +113,8 @@ export function SetupScreen({
                 there is an agent to tune.
               </p>
 
+              <NotAnEditor />
+
               <WhatThisIs />
 
               {problem === null ? null : (
@@ -241,6 +243,41 @@ export function SetupScreen({
  *
  * Everything else Hivemind has to say about plans, approval and phases is said
  * where those things appear, which is where explanation actually gets read. */
+/**
+ * The self-selection sentence, and why it is not dismissible.
+ *
+ * Editor, terminal and preview are the three most visible features of every
+ * comparable tool — Orca ships a Monaco editor, infinite terminal splits and a
+ * Chromium window per worktree; Cursor, Windsurf, Zed and BridgeSpace all ship
+ * the same three. Hivemind refuses all three on purpose, and no amount of
+ * building changes that, because the thing those users want is the thing this
+ * architecture exists to prevent.
+ *
+ * So somebody who wants an IDE will find this unfinished. That is a positioning
+ * problem rather than a backlog item, and the only honest fix is to say it
+ * before they invest an afternoon discovering it.
+ *
+ * NOT `useDismissed`, unlike everything else on this screen. A dismissible
+ * notice is for something a person has understood and no longer needs; this is
+ * the sentence that decides whether they should be here at all, and it costs
+ * three lines. It is also deliberately not a boxed warning — this project has
+ * already learned that a boxed repeat of a fact reads as a disclaimer rather
+ * than as information.
+ */
+function NotAnEditor(): React.JSX.Element {
+  return (
+    <p className="mt-3 mb-0 max-w-[520px] text-[13px] leading-relaxed text-muted-foreground">
+      <span className="font-medium text-ink">
+        There is no editor, no terminal and no preview here, deliberately.
+      </span>{" "}
+      Hivemind checks what an agent did before it can reach your branch, and each
+      of those three would be a way around the check. If you want to write the
+      code yourself, you want an IDE — that is a better tool for it, and this is
+      not trying to be one.
+    </p>
+  );
+}
+
 function WhatThisIs(): React.JSX.Element | null {
   const { dismissed, known, dismiss } = useDismissed("setup.what-this-is");
   if (!known || dismissed) return null;

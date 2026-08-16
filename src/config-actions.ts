@@ -195,10 +195,8 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
           ? null
           : configStanding(
               record.config_digest,
-              await harnessConfigDigest(
-                repoRoot,
-                await harnessForRole(repoRoot, name),
-                selectedAccount(accountsFile, await harnessForRole(repoRoot, name))?.home_dir ?? null
+              await harnessConfigDigest(repoRoot, (harness) =>
+                selectedAccount(accountsFile, harness)?.home_dir ?? null
               )
             )) ??
         (record === null
@@ -482,6 +480,7 @@ async function retireSupersededDefaultWorker(
   keep: string
 ): Promise<void> {
   if (agent.model === null) return;
+  const accountsFileForDigest = await readAccounts(repoRoot);
   const dir = path.join(repoRoot, ".hivemind", "adapters");
   let entries: string[];
   try {
@@ -614,6 +613,7 @@ export async function connectAdapter(
     } as ActionResult;
   }
 
+  const accountsFileForDigest = await readAccounts(repoRoot);
   const dir = path.join(repoRoot, ".hivemind", "adapters");
   await mkdir(dir, { recursive: true });
   await writeJsonAtomic(path.join(dir, `${profile.tool}.profile.json`), profile);
@@ -631,10 +631,11 @@ export async function connectAdapter(
     ),
     /* Taken from the same files `provider-endpoint.ts` already opened during
        this probe, so the timing hole closes for one extra read. */
-    config_digest: await harnessConfigDigest(
-      repoRoot,
-      agent.harness,
-      selectedAccount(await readAccounts(repoRoot), agent.harness)?.home_dir ?? null
+    /* The whole project's inherited surface, not this harness's corner of it.
+       Every harness reads every other harness's instruction files -- measured
+       -- so a verdict scoped to one binary was scoped to the wrong thing. */
+    config_digest: await harnessConfigDigest(repoRoot, (harness) =>
+      selectedAccount(accountsFileForDigest, harness)?.home_dir ?? null
     ),
     capabilities: probe.capabilities,
     /* A fresh probe is a fresh verification, so whatever made the previous one

@@ -1765,6 +1765,72 @@ instead of serving the finished projection over an unfinished thread.
 A finished run is the easy state to render. The states that have been wrong five
 times are the ones in the middle.
 
+## The positioning sentence, verbatim, for hivemind.build
+
+The setup screen now carries this permanently — not dismissible, not boxed:
+
+> **There is no editor, no terminal and no preview here, deliberately.**
+> Hivemind checks what an agent did before it can reach your branch, and each of
+> those three would be a way around the check. If you want to write the code
+> yourself, you want an IDE — that is a better tool for it, and this is not
+> trying to be one.
+
+**The site is not in this repository**, so this cannot be applied here. Lifted
+verbatim it fits a landing page above the fold; the wording is deliberate in
+three ways and all three should survive an edit:
+
+1. **The refusal comes first**, because a person scanning for "does it have an
+   editor" gets their answer in six words.
+2. **The reason is attached**, because "we do not have that" reads as unfinished
+   where "that would defeat the check" reads as a decision.
+3. **It names the alternative.** A refusal with no way forward is the dead-end
+   shape this project keeps recording; sending somebody to an IDE is the honest
+   ending and costs nothing.
+
+Why it earns permanent space: editor, terminal and preview are the three most
+visible features of every comparable tool — Orca ships a Monaco editor, infinite
+terminal splits and a Chromium window per worktree, and Cursor, Windsurf, Zed
+and BridgeSpace all ship the same three. Somebody who wants those will find
+Hivemind unfinished however much gets built, because what they want is what the
+architecture exists to prevent. Better they self-select in six words than after
+an afternoon.
+
+## Live bug: the Grok invocation in the catalogue cannot work
+
+**Not a design note — a defect sitting in `src/agent-catalogue.ts` right now.**
+Recorded here rather than fixed silently, because the fix needs the account
+nobody has bought and this is the shape that would otherwise be discovered by
+the first paid probe.
+
+`grokInvoke()` builds:
+
+```
+["--single", "--model", model, "--tools", …]
+```
+
+`--single` **takes the prompt as its value**. Measured against `grok 1.0.4`:
+
+```
+$ grok --single --model grok-code-fast-1 -p "say ok"
+error: a value is required for '--single <PROMPT>' but none was supplied
+```
+
+So the argv either consumes `--model` as the prompt or fails to parse. The
+correct form puts the prompt there:
+
+```
+grok --single "<prompt>" --model … --tools … --no-subagents --sandbox workspace
+```
+
+which does reach the auth wall and emits a `system/init` event before refusing.
+
+Two reasons it survived review. The profile was written from documentation
+rather than from the binary, and `prompt_arg: "stdin"` reads plausibly beside a
+flag whose name sounds like a mode rather than a parameter. Both are the same
+error — **a flag's name is not its arity**, and only the binary can say which.
+
+Free to have found; it would have cost the first paid Grok probe otherwise.
+
 ## Harness notes: two things that look like defects and are not
 
 Both cost real diagnosis time once. Written down so the next person skips it.

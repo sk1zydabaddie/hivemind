@@ -19,6 +19,7 @@ import { SettingsDialog } from "@/components/settings-dialog";
 import { BuildBar } from "@/components/workspace/build-bar";
 import { SetupScreen } from "@/components/workspace/setup-screen";
 import { SharingBar } from "@/components/workspace/sharing-bar";
+import { useAttention } from "@/hooks/use-attention";
 import { ProjectTab } from "@/components/workspace/project-tab";
 import { WorkTab } from "@/components/workspace/work-tab";
 import { Button } from "@/components/ui/button";
@@ -203,6 +204,13 @@ export default function App(): React.JSX.Element {
     if (requestedSection !== null) return;
     if ((runnable || hasWork) && section === "setup") setSection("work");
   }, [requestedSection, runnable, hasWork, section]);
+  /* An OS notification when something stops and needs deciding, and a click
+     that lands on it. Work is where every queue item is actioned, so that is
+     where the click goes. */
+  useAttention(workspace.inspection, () => {
+    setSection("work");
+  });
+
   /* A count on the tab, so a run in flight advertises itself from whichever
      view you are in. Core's task states counted -- nothing derived. */
   const agentsWorking = (workspace.inspection?.tasks ?? []).filter((task) =>

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Hivemind grants the webview exactly one plugin permission: sending a notification when something needs a human. Nothing else here is a plugin, because every other action goes through the audited dispatcher as a custom command, which needs no ACL entry.",
+  "windows": ["main"],
+  "permissions": ["notification:default"]
+}
