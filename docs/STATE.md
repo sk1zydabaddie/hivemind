@@ -524,6 +524,28 @@ next session does not have to rediscover them.
 > **A provider's documented surface is a LOWER BOUND on its actual surface.**
 > Two undocumented capabilities have been found by looking: `--ephemeral` and
 > `--disable shell_tool`.
+>
+> **And it is a lower bound on the CONSTRAINTS too, not only the capabilities.**
+> Third instance, and the first where the undocumented part was a refusal rather
+> than a feature: Tauri's updater plugin rejects any `http://` endpoint and
+> **panics on startup** —
+>
+> ```
+> PluginInitialization("updater", "... endpoint must use a secure protocol like `https`")
+> ```
+>
+> — which no page consulted while configuring it mentioned. Found by launching
+> the build. The config was written, reviewed, committed and tested green; the
+> app then would not start, and nothing before that moment could have said so,
+> because the constraint is enforced at plugin init rather than by the schema.
+> `gen/schemas/desktop-schema.json` does not carry the updater's keys at all, so
+> even the generated schema had nothing to check against.
+>
+> The general form is worth more than the instance: **reading the docs tells you
+> what a thing can do; only running it tells you what it refuses.** A capability
+> you did not know about is a missed opportunity. A refusal you did not know
+> about is a build that does not start — and this project's whole posture is
+> that the second kind is discovered by running, which is exactly how it was.
 
 > **Verify the DISTRIBUTION before you verify the capabilities.** A verdict was
 > once reached against the wrong package entirely.
@@ -575,32 +597,59 @@ next session does not have to rediscover them.
 > right?" but "what would fail if it were not?" -- the first invites agreement,
 > the second produces a test. See F-4.
 
-> **Two Tauri commands the client called did not exist, and both failures were
-> silent.** Fourth and fifth instances of the unreached-mechanism family, found
-> by *walking* the update sequence rather than by reading anything.
-> `inspect_daemon_work` and `restart_daemon` were written, correct, tested — and
-> never listed in `generate_handler!`.
+> **A string-matched boundary where both sides are internally consistent and
+> disagree with each other.** A NEW shape in the unreached family — not a field
+> never read, not a function never called, but a seam that no compiler owns.
+> `inspect_daemon_work` and `restart_daemon` were written, correct, and never
+> listed in `generate_handler!`.
 >
 > | Command | What it powers | How it failed |
 > | --- | --- | --- |
 > | `inspect_daemon_work` | the build bar's idleness gate | the call threw, the bar caught it and hid itself, so **the build bar had never once appeared** and its gate had never run |
 > | `restart_daemon` | "Restart it" after a build mismatch | `Command restart_daemon not found`, reachable only in the exact state an update leaves behind |
 >
-> **The tell was in the build output for weeks:** `warning: function
-> restart_daemon is never used`. A dead-code warning on a `#[tauri::command]`
-> means it is not registered, because registration is the only thing that uses
-> it — and that warning sat in every `cargo build` alongside two others.
+> The consequence is why it earns its own entry rather than a line: **no update
+> prompt was ever seen, and the recovery button existed without being
+> reachable.** Four sessions of friction, from two missing identifiers.
 >
-> This is the seam `npm run audit:unreached` cannot see: it reads Core's
-> TypeScript exports, and these names cross React-to-Rust as **string literals**,
-> where no compiler on either side can check them. Closed by
-> `test/command-surface.test.ts`, which parses `invoke("…")` on one side and
-> `generate_handler![…]` on the other and fails on any name in the first that is
-> missing from the second. Proven to bite: removing one registration fails two
-> assertions by name. The scan mismeasured on its first run too — `[^>]*` for the
-> generic stopped inside `invoke<Record<string, boolean>>`, reporting a live
-> command as uncalled — which is the instrument being checked before it was
-> trusted.
+> Three things make it worth keeping.
+>
+> **1. The signal was in every build for weeks.** `warning: function
+> restart_daemon is never used`. A dead-code warning on a `#[tauri::command]`
+> means unregistered, because registration is the only use. It sat in every
+> `cargo build` output alongside two others, and every one of those builds was
+> read for errors rather than warnings. **A warning nobody reads is an
+> instrument nobody consults** — the same failure as an unrun check, arriving as
+> noise instead of silence.
+>
+> **2. `audit:unreached` structurally cannot see it.** That tool reads Core's
+> TypeScript exports; these names cross React-to-Rust as string literals, where
+> neither compiler checks. So the question is which other boundaries have that
+> shape. **Audited, rather than left as a worry:**
+>
+> | Boundary | Crosses | State |
+> | --- | --- | --- |
+> | Tauri command names | React → Rust | **was broken** (2 of 15 missing) — now enforced by `command-surface.test.ts` |
+> | Action ids (`adapter.connect`, …) | client → Rust → daemon → Core | consistent: all 42 the client can send are accepted; 3 Core accepts are unsent, which is the known unreachable-actions item |
+> | Queue `kind` (`plan_review`, …) | Core → client, and now the notification allowlist | consistent, checked by hand |
+> | Trail event `type` names | Core → the client projection | consistent, 13 of 13 |
+>
+> **Only the boundary with no test was broken.** The other three are verified
+> once, by hand, on one day — which is a snapshot rather than a guarantee, and
+> the notification allowlist is the sharpest of them: if Core renames a queue
+> kind, the allowlist silently stops matching and notifications go quiet, which
+> is the exact silence that feature exists to remove.
+>
+> **3. The `catch` swallowed it.** The build bar hides on failure, which is
+> right for "running outside the shell" and catastrophic for "this command does
+> not exist". Same lesson as the absent-collections class: **a catch that
+> returns a default is a decision to be silent**, and it must be made against
+> the failures it will actually see rather than the one it was written for.
+>
+> Closed by `test/command-surface.test.ts`, proven to bite — removing one
+> registration fails two assertions by name. Its own first run mismeasured
+> (`[^>]*` stopped inside `invoke<Record<string, boolean>>` and reported a live
+> command as uncalled), so the instrument was checked before it was trusted.
 
 > **A mechanism that exists and is never consulted is not a mechanism.** A
 > third family, distinct from the instrument and rig ones: three instances --
