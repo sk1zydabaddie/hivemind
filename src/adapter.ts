@@ -88,6 +88,17 @@ export interface InvokeAgentResult {
   providerReportedTokens: number | null;
   accountingSource: "provider_reported" | "self_measured";
   cancelled?: boolean;
+  /**
+   * The conversation was summarised mid-run, oldest-first, and the contract is
+   * the oldest thing in it.
+   *
+   * Reported rather than refused: compaction is how a long run survives its
+   * context window, so failing on it would refuse work for something the
+   * harness did right. But it means "the worker followed its contract" is no
+   * longer supported by this run's evidence, which is a fact a gate is entitled
+   * to before it decides anything.
+   */
+  contextCompacted?: boolean;
 }
 
 export interface InvokeAgentFailure {
@@ -276,6 +287,7 @@ export async function invokeAgent(
       providerReportedTokens: quota.provider_reported_tokens,
       accountingSource: quota.accounting_source,
       cancelled: processResult.value.cancelled === true,
+      contextCompacted: claudeContextCompacted(processResult.value.stdout),
       /* Exit code zero is not the same as "the contract ran". A hook that
          blocked the prompt exits 0 and reports `subtype: "success"`, so this
          asks the second question before accepting the first answer. */
@@ -957,6 +969,51 @@ export function claudeHookInterference(stdout: string): string | null {
   }
   if (ran === 0) return null;
   return `a lifecycle hook ran during this invocation (${String(ran)} hook events) despite --safe-mode. A hook is a shell command that can rewrite or block the contract before the model reads it, so what this run was asked to do is not what Hivemind sent. Re-run without the hook, or remove it from the settings that configure it.`;
+}
+
+/**
+ * Whether the conversation was compacted while the contract was in it.
+ *
+ * The structural danger, stated plainly: **the contract is the first user
+ * message, and compaction summarises oldest-first.** A long task therefore
+ * erodes its own instructions before it erodes anything else, and every gate
+ * downstream still assumes the contract was read in full. Nothing about that is
+ * a malfunction — compaction is how a long run survives a context window at
+ * all — which is exactly why it needs to be visible rather than prevented.
+ *
+ * Determined for free rather than by a paid long run. The shipped 2.1.233
+ * bundle carries `compact_boundary` as a `system` subtype in the same event
+ * enum as `assistant`, `user` and `progress`, serialised with `session_id`,
+ * `uuid` and a `compact_metadata` block. So the harness announces it, on the
+ * stream already being parsed, with no flag required.
+ *
+ * NOT a failure, and deliberately not wired to one. A run that compacted is a
+ * run that was too long for its window; refusing it would refuse the work
+ * somebody asked for, for something the harness did correctly. What it is, is a
+ * fact that has to travel: after a compaction, "the worker followed its
+ * contract" is no longer a claim this evidence supports.
+ *
+ * What remains unmeasured is whether the contract text specifically survives —
+ * that needs a deliberately long paid run. The posture does not depend on the
+ * answer: either way a compacted run is one whose contract integrity is
+ * unverified, and unverified is the thing this project reports rather than
+ * assumes.
+ */
+export function claudeContextCompacted(stdout: string): boolean {
+  for (const line of stdout.split(/\r?\n/u)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    let record: unknown;
+    try {
+      record = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (isRecord(record) && record.type === "system" && record.subtype === "compact_boundary") {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function adapterRunLogPath(repoRoot: string, label: string): string {
