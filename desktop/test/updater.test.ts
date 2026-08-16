@@ -23,6 +23,7 @@ describe("the updater", () => {
 
     const main = await readFile(path.join(desktopRoot, "src-tauri", "src", "main.rs"), "utf8");
     expect(main).toMatch(/tauri_plugin_updater::Builder::new\(\)\.build\(\)/u);
+    expect(main).toMatch(/newer_version/u);
 
     const capability = JSON.parse(
       await readFile(path.join(desktopRoot, "src-tauri", "capabilities", "default.json"), "utf8")
@@ -82,7 +83,7 @@ describe("the updater", () => {
    * asking a daemon that may have crashed.
    */
   test("install is gated on the on-disk idleness proof, in Rust", async () => {
-    const updater = await readFile(path.join(desktopRoot, "src-tauri", "src", "updater.rs"), "utf8");
+    const updater = await readFile(path.join(desktopRoot, "src-tauri", "src", "newer_version.rs"), "utf8");
     expect(updater).toMatch(/daemon_work/u);
     /* Anything other than Idle refuses — Unknown included, because a daemon
        that cannot answer must not read as one with nothing running. */
@@ -102,11 +103,14 @@ describe("the updater", () => {
      is a distinct variant precisely so the surface cannot render it as
      up-to-date. */
   test("every outcome is a named state, and unreachable is not up to date", async () => {
-    const updater = await readFile(path.join(desktopRoot, "src-tauri", "src", "updater.rs"), "utf8");
-    for (const variant of ["UpToDate", "Available", "Unreachable"]) {
+    const updater = await readFile(path.join(desktopRoot, "src-tauri", "src", "newer_version.rs"), "utf8");
+    /* Where a newer version could come from, and what happened when it was
+       taken. `None` and `Unknown` are separate variants on purpose: checked and
+       current is not the same fact as could not check. */
+    for (const variant of ["None", "Release", "Source", "Unknown"]) {
       expect(updater).toMatch(new RegExp(`${variant}\\s*[{,]`, "u"));
     }
-    for (const variant of ["Installing", "WorkInFlight", "NothingOffered", "Failed"]) {
+    for (const variant of ["Restarting", "WorkInFlight", "Failed"]) {
       expect(updater).toMatch(new RegExp(`${variant}\\s*[{,]`, "u"));
     }
 
@@ -121,24 +125,23 @@ describe("the updater", () => {
       [...bar.matchAll(/return null;/gu)].length,
       "the bar may only be silent when it has nothing to say"
     ).toBe(2);
-    expect(bar).toMatch(/state === "up_to_date" && outcome === null/u);
+    expect(bar).toMatch(/source === "none" && outcome === null/u);
     expect(bar, "an unreachable check must say it is not confirmation").toMatch(
       /not<\/em> confirmation|not.{0,12}confirmation/iu
     );
   });
 
-  /* Both bars stay. They answer different questions, and the build bar is the
-     honest fallback when the endpoint cannot be reached at all. */
-  test("the build bar is kept alongside it", async () => {
-    const buildBar = await readFile(
-      path.join(desktopRoot, "src", "components", "workspace", "build-bar.tsx"),
-      "utf8"
-    );
-    expect(buildBar).toMatch(/inspect_build_staleness/u);
-
+  /* ONE surface answers "is a newer version available". The build bar was a
+     second answer to the same question, and a person was left to work out which
+     mechanism had produced which sentence — while a third box explained that a
+     background process from the previous version was still running. Both routes
+     now come through `newer_version`, which picks the source; the daemon
+     restart is a consequence of updating and happens without being asked. */
+  test("exactly one surface answers the question", async () => {
     const app = await readFile(path.join(desktopRoot, "src", "App.tsx"), "utf8");
     expect(app).toMatch(/<UpdateBar/u);
-    expect(app).toMatch(/BuildBar|build-bar/u);
+    expect(app, "a second bar answering the same question is what this replaced")
+      .not.toMatch(/<BuildBar/u);
   });
 
   /* A release step nobody can run is a release step that does not exist. */

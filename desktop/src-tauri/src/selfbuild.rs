@@ -133,7 +133,54 @@ fn running_binary() -> Option<PathBuf> {
     std::env::current_exe().ok()
 }
 
-#[tauri::command]
+/// The same answer as `inspect_build_staleness`, callable from another module.
+///
+/// Split out so `newer_version` can ask one question of two sources without
+/// going back through the command layer -- a command calling a command would
+/// put the decision in the client again, which is the shape being removed.
+///
+/// ASYNC, and that is not cosmetic. The first version called `block_on` here,
+/// which blocks a worker of the very runtime the caller is running on: the
+/// command never returned, the bar span forever, and the app looked hung rather
+/// than wrong. Found by driving the real build, not by review -- a deadlock has
+/// no error to read.
+pub async fn source_standing(
+    app: &tauri::AppHandle,
+    project_path: &str,
+) -> Result<BuildStanding, String> {
+    inspect_build_staleness(app.clone(), project_path.to_string()).await
+}
+
+/// Build this checkout and install it, as one step.
+///
+/// Two commands with two buttons was two chances to stop halfway, and the
+/// halfway state -- built but not installed -- is one nobody can act on. This
+/// is deliberately one call that ends with the app exiting into its
+/// replacement.
+pub async fn build_and_install(
+    app: tauri::AppHandle,
+    project_path: String,
+) -> Result<String, String> {
+    rebuild_app(project_path.clone()).await?;
+    let version = std::fs::read_to_string(
+        std::fs::canonicalize(&project_path)
+            .map_err(|error| format!("could not read that folder: {error}"))?
+            .join("desktop")
+            .join("src-tauri")
+            .join("gen")
+            .join("app-version.txt"),
+    )
+    .map_err(|_| "the build produced no version file".to_string())?
+    .trim()
+    .to_string();
+    install_built_and_restart(app, project_path).await?;
+    Ok(version)
+}
+
+/* No longer a #[tauri::command]. It is reached only through
+   `newer_version::take_newer_version`, which holds the idleness gate --
+   exposing it to the webview as well would be a second door to the same
+   room, and the gate is only on one of them. */
 pub async fn inspect_build_staleness(
     app: tauri::AppHandle,
     project_path: String,
@@ -224,7 +271,10 @@ pub async fn inspect_build_staleness(
 /// commands and separate decisions: this one is safe to run while the app is
 /// open and takes the minutes, and `install_built_and_restart` does the swap at
 /// the one moment it can, which is on the way out.
-#[tauri::command]
+/* No longer a #[tauri::command]. It is reached only through
+   `newer_version::take_newer_version`, which holds the idleness gate --
+   exposing it to the webview as well would be a second door to the same
+   room, and the gate is only on one of them. */
 pub async fn rebuild_app(project_path: String) -> Result<String, String> {
     let root = std::fs::canonicalize(&project_path)
         .map_err(|error| format!("could not read that folder: {error}"))?;
@@ -269,7 +319,10 @@ pub async fn rebuild_app(project_path: String) -> Result<String, String> {
 /// The daemon is deliberately NOT touched. It survives app close by design so a
 /// run is not orphaned, and it is a separate process from the one being
 /// replaced. The caller checks idleness before offering this at all.
-#[tauri::command]
+/* No longer a #[tauri::command]. It is reached only through
+   `newer_version::take_newer_version`, which holds the idleness gate --
+   exposing it to the webview as well would be a second door to the same
+   room, and the gate is only on one of them. */
 pub async fn install_built_and_restart(
     app: tauri::AppHandle,
     project_path: String,
@@ -302,7 +355,16 @@ pub async fn install_built_and_restart(
     }
 
     let exe = running_binary().ok_or_else(|| "could not resolve this program".to_string())?;
+    /* Written BEFORE the swap and read on the next launch. If the app comes
+       back on a version that is not this one, the update did not take and the
+       person is told -- rather than reopening on the old build with nothing to
+       read, which is precisely the failure that made this whole feature
+       necessary. */
+    /* Marker AFTER proof of life. Written before, a helper that never started
+       would report on the next launch as "the update did not take", which is a
+       true sentence about the wrong failure -- nothing was ever attempted. */
     spawn_swap(std::process::id(), &installer, &exe)?;
+    let _ = std::fs::write(swap_marker_path(), &version);
     // The helper is waiting for this process to go.
     app.exit(0);
     Ok(())
@@ -311,25 +373,91 @@ pub async fn install_built_and_restart(
 #[cfg(windows)]
 fn spawn_swap(pid: u32, installer: &Path, exe: &Path) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
-    /* Wait for the app to exit, install silently, start the new copy. Detached
-       so it outlives the process that asked for it -- which is the entire point,
-       since that process is the one being replaced. */
-    let script = format!(
-        "$ErrorActionPreference='SilentlyContinue'; \
-         try {{ Wait-Process -Id {pid} -Timeout 60 }} catch {{}}; \
-         Start-Process -Wait -FilePath '{installer}' -ArgumentList '/S'; \
-         Start-Process -FilePath '{exe}'",
+    /* The app cannot replace its own running executable, so a detached helper
+       waits for it to exit and then installs. Two things went wrong here and
+       both were invisible:
+       
+       1. A Tauri app runs inside a Windows JOB OBJECT, and a child inherits
+          membership. When the parent exits the job closes and takes the child
+          with it -- so the helper was killed microseconds after being spawned,
+          every time. CREATE_BREAKAWAY_FROM_JOB escapes that, when the job
+          permits it.
+       2. The app called `exit(0)` immediately after `spawn()`, which returns as
+          soon as CreateProcess succeeds rather than when the child has run
+          anything. So even a surviving helper was racing the shutdown.
+
+       The failure mode of both was identical and perfectly silent: the build
+       succeeded, the installer existed, the app closed, the version never moved
+       and nothing was written anywhere. So the helper now ANNOUNCES ITSELF, and
+       this function refuses to return until it has -- which means the caller
+       can keep the app open and say so rather than closing on a broken update. */
+    let log = swap_log_path();
+    let _ = std::fs::remove_file(&log);
+
+    /* The helper is a FILE, not a command line, and that is the whole point.
+       The previous version nested three levels of quoting -- Rust format into
+       PowerShell `-Command`, into a WMI `CommandLine` argument, into a second
+       PowerShell `-Command` -- and died on its own escaping before it could
+       write a single line. Every attempt to fix the escaping produced another
+       silent variant of the same failure. A script on disk has no nesting at
+       all: `powershell -File <path>` takes one argument and that argument is a
+       path.
+
+       WMI creates the process, and that is the other half. `Win32_Process.Create`
+       is executed by the WMI provider service, so what it makes is a child of
+       THAT service rather than of this app -- outside this app's job object,
+       where a directly-spawned child is killed the moment the app exits. */
+    let script_path = log.with_file_name("update-swap.ps1");
+    let script_body = format!(
+        "Add-Content -LiteralPath '{log}' -Value 'helper started'
+try {{ Wait-Process -Id {pid} -Timeout 90 -ErrorAction Stop }} catch {{ Add-Content -LiteralPath '{log}' -Value 'app already gone' }}
+Add-Content -LiteralPath '{log}' -Value 'installing'
+$p = Start-Process -Wait -PassThru -FilePath '{installer}' -ArgumentList '/S'
+Add-Content -LiteralPath '{log}' -Value ('installer exit: ' + $p.ExitCode)
+Start-Process -FilePath '{exe}'
+Add-Content -LiteralPath '{log}' -Value 'restarted'
+",
+        log = log.display(),
         pid = pid,
         installer = installer.display(),
         exe = exe.display()
     );
-    Command::new("powershell.exe")
-        .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
-        // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-        .creation_flags(0x0000_0008 | 0x0000_0200)
-        .spawn()
-        .map_err(|error| format!("could not start the installer: {error}"))?;
-    Ok(())
+    std::fs::write(&script_path, script_body)
+        .map_err(|error| format!("could not write the installer helper: {error}"))?;
+
+    let script = format!(
+        "$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{{ CommandLine = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{script_path}\"' }};          if ($r.ReturnValue -ne 0) {{ Add-Content -LiteralPath '{log}' -Value ('wmi refused: ' + $r.ReturnValue) }}",
+        script_path = script_path.display(),
+        log = log.display()
+    );
+
+    /* Proof of life before the app is allowed to close. Without this the
+       caller cannot tell a helper that is running from one that was killed on
+       creation, and both end with the app gone and the version unchanged. */
+    for _ in 0..40 {
+        if log.exists() {
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    Err(
+        "The installer helper was started but never ran -- Windows stopped it with this app. Nothing was installed and Hivemind has stayed open."
+            .to_string(),
+    )
+}
+
+/// Where the swap transcribes itself, beside the binary it is replacing.
+pub fn swap_log_path() -> std::path::PathBuf {
+    running_binary()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("update-swap.log")))
+        .unwrap_or_else(|| std::path::PathBuf::from("update-swap.log"))
+}
+
+/// What the last swap attempt was for, written before the app exits.
+pub fn swap_marker_path() -> std::path::PathBuf {
+    running_binary()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("update-attempted.txt")))
+        .unwrap_or_else(|| std::path::PathBuf::from("update-attempted.txt"))
 }
 
 #[cfg(not(windows))]

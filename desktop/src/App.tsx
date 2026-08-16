@@ -16,7 +16,6 @@ import markLight from "@/assets/mark.png";
 import { useCallback, useEffect, useState } from "react";
 
 import { SettingsDialog } from "@/components/settings-dialog";
-import { BuildBar } from "@/components/workspace/build-bar";
 import { SetupScreen } from "@/components/workspace/setup-screen";
 import { SharingBar } from "@/components/workspace/sharing-bar";
 import { UpdateBar } from "@/components/workspace/update-bar";
@@ -90,7 +89,14 @@ export default function App(): React.JSX.Element {
      nothing else: no task, no run, no capability. Switching therefore cannot
      carry a verification across, because there is nothing here that could. */
   const [recents, setRecents] = useState<{ path: string; opened_at: string }[]>([]);
+  /* The CONNECTED root, for everything that needs a live project. */
   const projectPath = workspace.connection?.project_root ?? "";
+  /* And the SELECTED one, which survives a failed connection. The update bar
+     needs this: a daemon left over from the previous build fails the
+     connection, which emptied `projectPath`, which removed the source route --
+     so the one thing that would have fixed the stale daemon was hidden by the
+     stale daemon. The chain only shows up when the whole path is walked. */
+  const selectedPath = workspace.projectPath;
 
   useEffect(() => {
     void invoke<{ path: string; opened_at: string }[]>("recent_projects")
@@ -346,12 +352,16 @@ export default function App(): React.JSX.Element {
           </div>
         </header>
 
-        <BuildBar projectPath={projectPath} />
+        {/* The build bar was a second answer to the one question the update bar
+            asks. "Your checkout is ahead" and "a release is available" are both
+            "a newer version exists", and a person should never have to know
+            which mechanism produced the answer -- `newer_version` picks the
+            source and `UpdateBar` renders one line. */}
         {/* Above the sharing bar: a stale build is the thing that makes every
             other message on screen untrustworthy. Not gated on `live` -- an
             update matters whether or not a project is open, and the endpoint
             being unreachable is exactly the state that must not be silent. */}
-        <UpdateBar projectPath={projectPath} />
+        <UpdateBar projectPath={selectedPath} />
         {live ? <SharingBar onAction={workspace.performAction} /> : null}
 
         {shellUpdateRequired ? (

@@ -2,10 +2,9 @@
 
 mod project;
 mod selfbuild;
-mod updater;
+mod newer_version;
 
-use selfbuild::{inspect_build_staleness, install_built_and_restart, rebuild_app};
-use updater::{check_for_update, install_update};
+use newer_version::{newer_version, take_newer_version};
 use project::{
     dismiss_hint, dismissed_hints, initialize_git, initialize_project, inspect_daemon_work,
     inspect_git_readiness, recent_projects, remember_project, restart_daemon, select_project,
@@ -33,11 +32,8 @@ fn main() {
            renders what it is told. */
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            check_for_update,
-            install_update,
-            inspect_build_staleness,
-            install_built_and_restart,
-            rebuild_app,
+            newer_version,
+            take_newer_version,
             dismiss_hint,
             dismissed_hints,
             initialize_git,

@@ -348,6 +348,35 @@ export function useWorkspace(): WorkspaceView {
     }
   }, [projectPath, render, session]);
 
+  /* A daemon left over from the previous build is a CONSEQUENCE of updating,
+     never a decision. It used to be a box on the first screen explaining that
+     "the background process from the previous version is still running" -- to
+     somebody who had not asked for a background process and could not act on
+     one. If the project is provably idle the restart happens without asking;
+     the button remains only for the case where it could not.
+
+     Guarded against looping: one automatic attempt per project per mount. A
+     restart that fails leaves the explanation and the button, which is the
+     honest end of the automatic path rather than a retry storm. */
+  const autoRestarted = useRef<string | null>(null);
+  useEffect(() => {
+    if (connectionCode !== PROJECT_FAULT.daemonBuildMismatch) return;
+    if (projectPath === "" || autoRestarted.current === projectPath) return;
+    autoRestarted.current = projectPath;
+    void (async () => {
+      try {
+        const standing = await invoke<{ work: string }>("inspect_daemon_work", { projectPath });
+        /* Anything but idle is left alone and left visible -- restarting into a
+           run in flight is the one thing this must never do. */
+        if (standing.work !== "idle") return;
+      } catch {
+        /* Cannot tell, so do not act. The button stays. */
+        return;
+      }
+      await restartDaemon();
+    })();
+  }, [connectionCode, projectPath, restartDaemon]);
+
   const initializeGit = useCallback(async () => {
     setInitializing(true);
     try {
@@ -360,8 +389,17 @@ export function useWorkspace(): WorkspaceView {
 
   useEffect(() => {
     let abandoned = false;
+    /* `setProjectPath` before connecting, on BOTH launch routes.
+       `session.switchProject` opens the project; the hook's wrapper is what
+       records WHICH project was selected, and the launch path called the
+       session directly -- so on a failed connection the app knew it had a
+       connection error and no longer knew what it had tried to open. That
+       emptied the path the update bar needs, and the commonest failure here is
+       a daemon left by the previous build: the stale build hid the one control
+       that replaces it. */
     const openSomething = async (): Promise<void> => {
       if (requestedPath !== null && requestedPath.trim() !== "") {
+        setProjectPath(requestedPath);
         await session.switchProject(requestedPath);
         return;
       }
@@ -373,6 +411,7 @@ export function useWorkspace(): WorkspaceView {
       if (abandoned) return;
       const mostRecent = recents[0]?.path;
       if (mostRecent === undefined || mostRecent.trim() === "") return;
+      setProjectPath(mostRecent);
       await session.switchProject(mostRecent);
     };
     void openSomething();

@@ -267,16 +267,26 @@ describe("the dev loop closes itself", () => {
     }
   });
 
-  test("nothing is offered while work is in flight", async () => {
-    const bar = await readFile(
-      path.join(desktopRoot, "src", "components", "workspace", "build-bar.tsx"),
+  /* The gate moved, and moved to the right side. It used to live in the build
+     bar — a gate in React, which anything calling the command walks around, and
+     which hid the whole bar when its call failed. It is now in
+     `take_newer_version`, which both routes go through. */
+  test("nothing is replaced while work is in flight", async () => {
+    const source = await readFile(
+      path.join(desktopRoot, "src-tauri", "src", "newer_version.rs"),
       "utf8"
     );
-    /* The same idleness proof the daemon restart uses, read off disk rather
-       than asked of the daemon. */
-    expect(bar).toMatch(/inspect_daemon_work/u);
-    expect(bar).toMatch(/work\.work !== "idle"/u);
-    expect(bar).toMatch(/Nothing offered while work is running/u);
+    const take = source.slice(source.indexOf("pub async fn take_newer_version"));
+    /* The same idleness proof, read off disk rather than asked of the daemon —
+       a daemon that has crashed cannot answer, and cannot-answer must never
+       read as nothing-running. */
+    expect(take).toMatch(/daemon_work/u);
+    expect(take).toMatch(/matches!\(standing\.work, DaemonWork::Idle\)/u);
+    expect(take).toMatch(/WorkInFlight/u);
+    /* And it gates BEFORE choosing a route, so neither the release nor the
+       source path can slip past it. */
+    expect(take.indexOf("WorkInFlight")).toBeLessThan(take.indexOf("download_and_install"));
+    expect(take.indexOf("WorkInFlight")).toBeLessThan(take.indexOf("build_and_install"));
   });
 
   test("the build and the install are separate acts", async () => {
