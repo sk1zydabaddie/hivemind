@@ -17,7 +17,7 @@ test("an ordinary run reports nothing", () => {
   ].join("\n");
 
   assert.equal(claudeHookInterference(stdout), null);
-  assert.equal(claudeContextCompacted(stdout), false);
+  assert.equal(claudeContextCompacted(stdout), null);
 });
 
 /* The case that read as a completed run. A `UserPromptSubmit` hook returning
@@ -102,10 +102,33 @@ test("a compacted conversation is visible on the stream", () => {
     line({ type: "result", subtype: "success", result: "done" })
   ].join("\n");
 
-  assert.equal(claudeContextCompacted(stdout), true);
+  assert.deepEqual(claudeContextCompacted(stdout), { boundaries: 1, droppedTokens: 0 });
   /* Not a hook finding. The two are different facts and must not be conflated:
      one says somebody interposed, the other says the run outgrew its window. */
   assert.equal(claudeHookInterference(stdout), null);
+});
+
+/* The measured run, replayed. Three boundaries, ~75k -> ~18k each, and a
+   cumulative figure that is the RUN total rather than the sum of the deltas --
+   summing them would report 341,952 tokens dropped from a run that dropped
+   172,547, which is the kind of number somebody would later act on. */
+test("the run total is the cumulative figure, not the sum of the boundaries", () => {
+  const stdout = [
+    line({ type: "system", subtype: "compact_boundary", compact_metadata: { trigger: "auto", pre_tokens: 73678, post_tokens: 17966, cumulative_dropped_tokens: 55712 } }),
+    line({ type: "system", subtype: "compact_boundary", compact_metadata: { trigger: "auto", pre_tokens: 75824, post_tokens: 18032, cumulative_dropped_tokens: 113504 } }),
+    line({ type: "system", subtype: "compact_boundary", compact_metadata: { trigger: "auto", pre_tokens: 79010, post_tokens: 19967, cumulative_dropped_tokens: 172547 } }),
+    line({ type: "result", subtype: "success", is_error: false, terminal_reason: "completed" })
+  ].join("\n");
+
+  assert.deepEqual(claudeContextCompacted(stdout), { boundaries: 3, droppedTokens: 172547 });
+});
+
+/* A boundary with no metadata still counts as a boundary. The compaction is the
+   finding; the number is the detail, and losing the finding because the detail
+   was absent is the durable-record class again. */
+test("a boundary without metadata is still a boundary", () => {
+  const stdout = line({ type: "system", subtype: "compact_boundary" });
+  assert.deepEqual(claudeContextCompacted(stdout), { boundaries: 1, droppedTokens: 0 });
 });
 
 /* Neither check may throw on a stream that is not what it expected. A worker's
@@ -113,6 +136,6 @@ test("a compacted conversation is visible on the stream", () => {
 test("malformed output produces no finding rather than an exception", () => {
   for (const stdout of ["", "not json at all", '{"type":"result"', "{}\n{broken", "\n\n\n"]) {
     assert.equal(claudeHookInterference(stdout), null);
-    assert.equal(claudeContextCompacted(stdout), false);
+    assert.equal(claudeContextCompacted(stdout), null);
   }
 });

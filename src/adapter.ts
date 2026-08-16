@@ -98,7 +98,7 @@ export interface InvokeAgentResult {
    * longer supported by this run's evidence, which is a fact a gate is entitled
    * to before it decides anything.
    */
-  contextCompacted?: boolean;
+  contextCompacted?: ContextCompaction | null;
 }
 
 export interface InvokeAgentFailure {
@@ -993,13 +993,53 @@ export function claudeHookInterference(stdout: string): string | null {
  * fact that has to travel: after a compaction, "the worker followed its
  * contract" is no longer a claim this evidence supports.
  *
- * What remains unmeasured is whether the contract text specifically survives —
- * that needs a deliberately long paid run. The posture does not depend on the
- * answer: either way a compacted run is one whose contract integrity is
- * unverified, and unverified is the thing this project reports rather than
- * assumes.
+ * ## Measured, at a cost of $4.12
+ *
+ * A worker was given a two-line contract carrying an arbitrary rule id and an
+ * arbitrary token, then told to read 393 KB of source. Three auto-compactions
+ * fired, each dropping the conversation from ~75k tokens to ~18k and preserving
+ * only 2-3 messages verbatim; `cumulative_dropped_tokens` reached **172,547**.
+ * The run then completed cleanly -- `terminal_reason: "completed"`, exit 0 --
+ * and answered:
+ *
+ * ```
+ * FINAL-RULE-ID: QN-4471      <- exact
+ * FINAL-TOKEN:   ZEBRA-7714   <- exact
+ * FINAL-COUNT:   3            <- correct
+ * FINAL-SOURCE:  SUMMARY      <- the model's own report
+ * ```
+ *
+ * So the contract's CONTENT survived and its TEXT did not. The operative
+ * instruction was carried into the summary faithfully enough to reproduce two
+ * arbitrary strings character-exact after 172k tokens were discarded -- which
+ * makes a long run degraded-but-honest rather than silently ungoverned, and
+ * those are different products.
+ *
+ * Three things keep that from being reassuring:
+ *
+ * 1. **One observation, on a two-line contract.** A real contract carries
+ *    scope, forbidden paths, acceptance criteria and a tier. Summarisation is
+ *    lossy, and nothing establishes that every constraint of a long one
+ *    survives the way a short rule did.
+ * 2. **Adherence lapsed across a boundary even where the rule survived.** In
+ *    the eight-file run the step immediately after the second compaction
+ *    omitted the line the contract required, then emitted two of them later.
+ * 3. **The stream says how much was dropped, never what.** 172,547 tokens is a
+ *    quantity, not a list, and there is no way to ask which constraint went.
+ *
+ * Hence: reported, and reported WITH THE NUMBER, so a gate can weigh how much
+ * of a run happened after the evidence stopped being complete.
  */
-export function claudeContextCompacted(stdout: string): boolean {
+export interface ContextCompaction {
+  /** How many times the conversation was summarised mid-run. */
+  boundaries: number;
+  /** Total tokens discarded, as the harness itself reports them. */
+  droppedTokens: number;
+}
+
+export function claudeContextCompacted(stdout: string): ContextCompaction | null {
+  let boundaries = 0;
+  let droppedTokens = 0;
   for (const line of stdout.split(/\r?\n/u)) {
     const trimmed = line.trim();
     if (!trimmed.startsWith("{")) continue;
@@ -1009,11 +1049,18 @@ export function claudeContextCompacted(stdout: string): boolean {
     } catch {
       continue;
     }
-    if (isRecord(record) && record.type === "system" && record.subtype === "compact_boundary") {
-      return true;
+    if (!isRecord(record)) continue;
+    if (record.type !== "system" || record.subtype !== "compact_boundary") continue;
+    boundaries += 1;
+    /* Cumulative, so the last boundary carries the run total rather than the
+       sum of the deltas. Read through a shape check because this is a durable
+       stream: a field that is absent is a real value it will see. */
+    const meta = record.compact_metadata;
+    if (isRecord(meta) && typeof meta.cumulative_dropped_tokens === "number") {
+      droppedTokens = Math.max(droppedTokens, meta.cumulative_dropped_tokens);
     }
   }
-  return false;
+  return boundaries === 0 ? null : { boundaries, droppedTokens };
 }
 
 export function adapterRunLogPath(repoRoot: string, label: string): string {

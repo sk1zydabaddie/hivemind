@@ -109,6 +109,50 @@ outcomes rather than configured by hand. One policy has been promoted:
 
 **Read §2 before citing this one.**
 
+### The contract stayed honest about a mechanism that did not exist
+
+The clearest evidence in this project that the capability contract does what it
+was built for, and it was found by looking for the opposite.
+
+`agent-catalogue.ts` stated that OpenCode's shell denial "lives in the project's
+own `opencode.json`, which `project.init` writes". **Nothing wrote it.** The
+filename appeared exactly twice in the repository: in that sentence, and in an
+unrelated table of which file to inspect for an endpoint override. Measured in
+Hivemind's own repository:
+
+```
+opencode agent list  ->  * : allow,  bash : (no rule),  task : (no rule)
+```
+
+A wildcard allow, and no rule for the shell at all.
+
+The instinct on finding a missing mechanism is that the verdict resting on it
+was wrong — that OpenCode had been reporting a shell denial nobody enforced.
+**It had not.** `readOpenCodePermissions` reads the table `opencode agent list`
+RESOLVES, not the file it was supposed to come from and not the profile that
+claims it. With no rule present it returns `sandbox: null` and
+`subagents: "available"`, the capability comes back `unverified`, and an
+unverified confinement is refused rather than admitted.
+
+So the failure was real and its blast radius was zero. OpenCode could never
+have been connected, which is a bug — but nothing was ever granted a privilege
+on evidence that did not exist.
+
+This is the whole design working, and it is worth naming because it is cheap to
+get backwards:
+
+> **The contract measures the resolved state, so a mechanism that is missing
+> reads as a capability that is absent — never as one that is present.**
+
+Both halves matter. Reading the file would have found `opencode.json` missing
+and could have said so; reading the *profile* would have found a declaration
+that the shell was denied and believed it. Reading what the harness resolved is
+the only one of the three that is right when the mechanism is gone.
+
+The fix was therefore to write the mechanism (`harness-project-config.ts`,
+at connect rather than at init), not to downgrade the capability. The
+capability was already telling the truth.
+
 ---
 
 ## 2. What is claimed but thin
@@ -236,6 +280,74 @@ asserting a declaration, which is the failure the contract exists to prevent.
 Measured 15 Aug 2026 against Claude Code 2.1.233. Codex and OpenCode were not
 checked for an equivalent channel; absence of evidence there is not evidence of
 absence, and that gap is stated rather than assumed away.
+
+### Our contract is a minority of what the model reads, and stays that way
+
+**Not closable by us.** After all six hardening fixes, `codex debug prompt-input`
+— which renders the exact model-visible input list, free — still shows
+**27,931 characters of instruction ahead of our contract**, in four blocks:
+
+| Block | Size | What it is |
+| --- | --- | --- |
+| `<skills_instructions>` | 9,384 ch | how to use skills |
+| a developer message | 2,502 ch | *"You are `/root`, the primary agent in a team of agents…"* |
+| `<multi_agent_mode>` | 474 ch | delegation posture |
+| `<recommended_plugins>` | 16,973 ch | plugins available but not installed |
+
+The second is the one to sit with. Hivemind's entire architecture is that
+Hivemind orchestrates and the harness is one worker under contract; the harness
+tells the model the opposite, in the prompt, before our text arrives.
+
+The hardening did not move this number by one character, and that is the
+finding rather than a shortfall: `approval_policy`, `notify` and the sandbox are
+execution channels, and this is an instruction channel. They are different
+surfaces and closing one says nothing about the other.
+
+**`project_doc_max_bytes=0` is available and deliberately not taken.** It is the
+only lever measured to move the figure — 27,931 → 20,899, by dropping
+`AGENTS.md`. It is not applied because it is a capability trade wearing the
+clothes of a security fix: the same setting that removes 7,032 characters of
+foreign instruction also removes what a worker knows about the repository it is
+working in.
+
+The reason that trade is refused is worth stating as a rule, because it is the
+same reason the whole design survives this finding:
+
+> **Repo substrate is untrusted context by design, and the contract's share of
+> the prompt was never the guarantee. The gates are.**
+
+Nothing is admitted because a worker was well-instructed. Work is admitted
+because the diff was captured, the checks were run by Core, the scope was
+enforced against the contract, and the tier cap bound the routing — none of
+which depend on what fraction of the prompt Hivemind wrote. A design that
+needed a majority of the context window to be trustworthy would already have
+failed, because no harness offers one.
+
+### Compaction preserves the contract's content, not its text
+
+Measured at a cost of $4.12, against Claude Code 2.1.233. Three auto-compactions
+fired during one worker run, each cutting the conversation from ~75k tokens to
+~18k and preserving 2–3 messages verbatim; `cumulative_dropped_tokens` reached
+**172,547**. The run then completed cleanly and reproduced an arbitrary rule id
+and an arbitrary token character-exact — while reporting, when asked, that it
+was working from `SUMMARY` rather than the original text.
+
+So a long run is **degraded-but-honest rather than silently ungoverned**, which
+was the question worth paying to answer. Three limits stand:
+
+1. **One observation, on a two-line contract.** A real contract carries scope,
+   forbidden paths, acceptance criteria and a tier. Nothing establishes that
+   every constraint of a long one survives the way a short rule did.
+2. **Adherence lapsed across a boundary even where the rule survived** — the
+   step after one compaction omitted the line the contract required.
+3. **The stream reports how much was dropped, never what.** 172,547 is a
+   quantity, not a list.
+
+`claudeContextCompacted` records the boundary count and the dropped-token total
+onto the run result so a gate can weigh how much of a run happened after the
+evidence stopped being complete. It reports and does not refuse: compaction is
+how a long run survives its window, and failing on it would refuse work for
+something the harness did correctly.
 
 ---
 
