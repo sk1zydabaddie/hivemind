@@ -16,6 +16,8 @@ import {
   type CatalogueAgent
 } from "./agent-catalogue.js";
 import { probeAdapter, type AdapterProbeResult, type ProbeOptions } from "./adapter-probe.js";
+import { configStanding, harnessConfigDigest } from "./harness-config-digest.js";
+import { ensureHarnessProjectConfig } from "./harness-project-config.js";
 import {
   DEFAULT_MAX_CONCURRENT_WORKERS,
   HARD_MAX_CONCURRENT_WORKERS,
@@ -189,6 +191,16 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
          comparison costs a subprocess and runs where an adapter is used. */
       capabilities_stale:
         record?.capabilities_stale ??
+        (record === null
+          ? null
+          : configStanding(
+              record.config_digest,
+              await harnessConfigDigest(
+                repoRoot,
+                await harnessForRole(repoRoot, name),
+                selectedAccount(accountsFile, await harnessForRole(repoRoot, name))?.home_dir ?? null
+              )
+            )) ??
         (record === null
           ? null
           : machineStanding(
@@ -426,6 +438,13 @@ interface ConnectionRecord {
      asked to reconnect, rather than being quietly run against capabilities
      nobody checked on the binary that is actually there. */
   provider_version: string | null;
+  /* A fingerprint of the settings this harness reads and Hivemind does not
+     write -- hooks, instruction files, its own config. `provider_version`
+     catches a binary that changed; this catches the ground changing underneath
+     an unchanged binary, which is the commoner case and the one nothing could
+     see. Optional: records written before it exists report "not recorded"
+     rather than claiming a match. */
+  config_digest?: string | null;
   /* WHERE the probe ran.
      Without this nothing could distinguish "verified here" from "verified
      somewhere", so no check could be written even if somebody wanted one --
@@ -579,6 +598,12 @@ export async function connectAdapter(
   const problems = validateAdapterProfile(profile, profile.tool);
   if (problems.length > 0) return { ok: false, reason: problems.join("; ") };
 
+  /* Before the probe, because the probe reads the resolved table this creates.
+     OpenCode's denial lives in a project file rather than in the argv, and
+     nothing had ever written it -- so in every project Hivemind set up, the
+     resolved table was a wildcard allow with no rule for the shell. */
+  const projectConfig = await ensureHarnessProjectConfig(repoRoot, agent.harness);
+
   const probe = await probeAdapter(repoRoot, agent, profile, options);
   if (!probe.ok) {
     return {
@@ -604,6 +629,13 @@ export async function connectAdapter(
     machine: currentMachine(
       selectedAccount(await readAccounts(repoRoot), agent.harness)?.home_dir ?? null
     ),
+    /* Taken from the same files `provider-endpoint.ts` already opened during
+       this probe, so the timing hole closes for one extra read. */
+    config_digest: await harnessConfigDigest(
+      repoRoot,
+      agent.harness,
+      selectedAccount(await readAccounts(repoRoot), agent.harness)?.home_dir ?? null
+    ),
     capabilities: probe.capabilities,
     /* A fresh probe is a fresh verification, so whatever made the previous one
        stale is answered by having run this one. */
@@ -612,7 +644,12 @@ export async function connectAdapter(
   await writeJsonAtomic(connectionRecordPath(repoRoot, role), record);
 
   const inspected = await inspectProjectConfig(repoRoot);
-  return inspected.ok ? { ok: true, value: { probe, config: inspected.value } } : inspected;
+  /* The write travels with the result. Putting a file into somebody's project
+     is a side effect of connecting, and a side effect nobody is told about is
+     how `.hivemind/` ended up in a git history. */
+  return inspected.ok
+    ? { ok: true, value: { probe, config: inspected.value, project_config: projectConfig } }
+    : inspected;
 }
 
 function modelFromInvoke(invoke: string[]): string | null {

@@ -13,6 +13,7 @@ import { assembleAgentPrompt, buildAgentPromptFromContract } from "./prompt-cach
 import type { FailureCode } from "./failure-code.js";
 import { ACCOUNT_HOME_VARIABLES } from "./agent-catalogue.js";
 import { accountEnvironmentForTool, isCredentialVariable } from "./provider-accounts.js";
+import { spawnEnvironment } from "./spawn-environment.js";
 import {
   adapterOutputIndicatesThrottle,
   bindMeteredCallProcess,
@@ -275,9 +276,12 @@ export async function invokeAgent(
       providerReportedTokens: quota.provider_reported_tokens,
       accountingSource: quota.accounting_source,
       cancelled: processResult.value.cancelled === true,
+      /* Exit code zero is not the same as "the contract ran". A hook that
+         blocked the prompt exits 0 and reports `subtype: "success"`, so this
+         asks the second question before accepting the first answer. */
       failureReason:
         processResult.value.exitCode === 0
-          ? null
+          ? claudeHookInterference(processResult.value.stdout)
           : formatAdapterProcessFailure(profileResult.profile.tool, processResult.value, "worker")
     }
   };
@@ -513,11 +517,17 @@ export async function runAdapterProcess(
        credential-shaped variable would reach a provider process, and the whole
        promise is that Hivemind never carries one. */
     const accountEnv = resolvedAccountEnv;
+    /* Chosen, not inherited. `CLAUDE_CONFIG_DIR` alone relocates a harness's
+       whole configuration directory -- credentials included -- so a variable
+       left in somebody's shell could point a worker at a config that was never
+       probed and never hashed. Always applied, even when no account is chosen:
+       the refusal is about the environment this process happens to have, and
+       that is there either way. */
     const child = spawn(command, args, {
       cwd,
       windowsHide: true,
       detached,
-      ...(Object.keys(accountEnv).length === 0 ? {} : { env: { ...process.env, ...accountEnv } })
+      env: spawnEnvironment(process.env, accountEnv)
     });
     const processIdentity: DurableProcessIdentity | null = child.pid === undefined
       ? null
@@ -888,6 +898,65 @@ export function resolveAdapterUsageParser(profile: AdapterProfile): AdapterUsage
   return invokesClaude && outputFormatIndex >= 0 && invocation[outputFormatIndex + 1] === "json"
     ? "claude-json"
     : undefined;
+}
+
+/**
+ * Whether something between Hivemind and the model changed the run.
+ *
+ * A blocked contract currently reads as a completed one. Measured on Claude
+ * Code 2.1.233: a `UserPromptSubmit` hook returning `{"decision":"block"}`
+ * stops the prompt before the model ever sees it, and the run reports
+ *
+ * ```
+ * {"type":"result","subtype":"success","is_error":false,"total_cost_usd":0,…}
+ * ```
+ *
+ * `success`, `is_error: false`. Every gate downstream would treat that as a
+ * worker that ran and produced nothing, which is a very different fact from a
+ * worker whose instructions were replaced before it started.
+ *
+ * ## Why this reads an event and not a sentence
+ *
+ * The obvious check is the result text -- it says "UserPromptSubmit operation
+ * blocked by hook". That is prose from a harness that can reword it in any
+ * release, and matching a harness's wording is the mistake this project has
+ * recorded four times. The structural fact is simpler and stronger: **a hook
+ * event exists at all.**
+ *
+ * Every invocation carries `--safe-mode`, so no hook should run. If one does,
+ * the prevention failed, and it does not matter whether that hook blocked the
+ * prompt, rewrote it, or only logged something -- the run happened under
+ * conditions nobody verified. So the presence of `hook_started` or
+ * `hook_response` is the finding, and both the injecting and the blocking case
+ * produce them.
+ *
+ * Measured three ways before being trusted, on this exact argv:
+ *
+ * | run | hook events | result |
+ * | --- | --- | --- |
+ * | no hooks configured | 0 | `"ok"` |
+ * | injecting hook, no defence | 2 | `"ZEBRA-7714"` |
+ * | injecting hook + `--safe-mode` | 0 | `"ok"` |
+ *
+ * The first row is the one that matters for an instrument: an assertion that
+ * fires on a clean run would be refused into oblivion within a day.
+ */
+export function claudeHookInterference(stdout: string): string | null {
+  let ran = 0;
+  for (const line of stdout.split(/\r?\n/u)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    let record: unknown;
+    try {
+      record = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (!isRecord(record)) continue;
+    if (record.subtype === "hook_started" || record.subtype === "hook_response") ran += 1;
+  }
+  if (ran === 0) return null;
+  return `a lifecycle hook ran during this invocation (${String(ran)} hook events) despite --safe-mode. A hook is a shell command that can rewrite or block the contract before the model reads it, so what this run was asked to do is not what Hivemind sent. Re-run without the hook, or remove it from the settings that configure it.`;
 }
 
 export function adapterRunLogPath(repoRoot: string, label: string): string {

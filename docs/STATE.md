@@ -193,6 +193,50 @@ labelled before the probe rather than discovered during it.
 It fails safe: if the stream differs, usage returns unverified and spend
 ceilings degrade rather than the probe refusing.
 
+### The capability contract measures a moment, not a state
+
+**This one is permanent and not closable by us.** Every other item in this
+section is thin because the work has not been done. This is thin because the
+work cannot be done from here.
+
+Claude Code caches **502 server-delivered feature flags** in `~/.claude.json`
+under `cachedGrowthBookFeatures`, alongside `cachedExperimentFeatures`,
+`cachedExperimentData`, `modelAccessCache`, `orgModelDefaultCache` and
+`autoCompactWindowsCache`, each with its own refresh timestamp. The vendor can
+change what the binary does without changing the binary and without touching
+anything a person configured.
+
+The proof is not the flag list, which could be dismissed as dormant. It is that
+**two identical invocations, minutes apart, reported eight MCP servers and then
+zero** — with a flag named `tengu_claudeai_mcp_connectors` sitting in that
+cache. The set of tools available to a worker changed between two runs of the
+same command, on the same binary, with no configuration difference.
+
+What this defeats, specifically:
+
+| Guard | Why it cannot see this |
+| --- | --- |
+| `provider_version` | The version did not change. |
+| `config_digest` | No configuration file changed. |
+| the probe itself | It measured a moment that was true when it ran. |
+
+Hashing the flag cache is not a fix and would be worse than nothing: it
+fingerprints a value the vendor rotates on its own schedule, so it would mark
+every record stale for reasons no person caused, and the first response to an
+instrument that cries wolf is to loosen it until it stops — which is how the
+word bans went wrong four times.
+
+So the honest statement of what a `verified` capability means is now narrower
+than it reads: **it is evidence about a run that happened, not a guarantee
+about a run that will happen.** Everything the contract does downstream —
+admission, tier routing, spend ceilings — rests on that narrower claim. Nothing
+in Hivemind can widen it, and a future version claiming otherwise would be
+asserting a declaration, which is the failure the contract exists to prevent.
+
+Measured 15 Aug 2026 against Claude Code 2.1.233. Codex and OpenCode were not
+checked for an equivalent channel; absence of evidence there is not evidence of
+absence, and that gap is stated rather than assumed away.
+
 ---
 
 ## 3. What is not built, and what blocks each

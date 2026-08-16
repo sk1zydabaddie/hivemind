@@ -74,6 +74,28 @@ function codexInvoke(model: string): string[] {
     "workspace-write",
     "--config",
     'model_reasoning_effort="high"',
+    /* Stated rather than inherited. `~/.codex/config.toml` on the machine this
+       was measured on carries `approval_policy = "never"`, and `codex doctor`
+       confirms it resolves -- so the policy a Hivemind worker ran under was
+       whatever the person happened to have set. `never` is also the only
+       workable value for a non-interactive `exec` run, since there is nobody to
+       answer a prompt; what changes here is that it is Hivemind's choice and
+       cannot move underneath us. Verified overridable:
+       `codex doctor -c approval_policy='"on-request"'` reports `OnRequest`. */
+    "--config",
+    'approval_policy="never"',
+    /* `notify` is a program path in user config that Codex runs on turn events.
+       On this machine it holds two, chained -- one of them written by OpenAI's
+       own installer rather than by a person -- so a worker with no shell caused
+       two external programs to execute per turn.
+
+       HONESTLY LABELLED: the override parses and is accepted, and its effect
+       was NOT observed, because confirming it needs a real paid turn. That is
+       the same "flag accepted without being applied" shape this project has
+       shipped twice, so it is written down rather than assumed. The probe does
+       not read `notify` back and nothing here claims it does. */
+    "--config",
+    "notify=[]",
     "--ephemeral",
     "--json",
     "-"
@@ -112,6 +134,45 @@ function claudeInvoke(model = "sonnet"): string[] {
     "--output-format",
     "stream-json",
     "--verbose",
+    /* Hooks are user-supplied SHELL COMMANDS run at lifecycle points, and they
+       run in a worker that has no shell. Measured on 2.1.233 against this exact
+       argv: `init` reported `tools: ["Edit","Glob","Grep","Read","Write"]` and
+       two hooks nevertheless executed `node` and wrote files to disk. A
+       `UserPromptSubmit` hook also receives the full prompt and a path to the
+       transcript, and can replace what the model reads -- we sent "say only:
+       ok" and the model answered "ZEBRA-7714".
+
+       `--safe-mode` disables hooks, CLAUDE.md, skills, plugins, MCP servers and
+       custom agents while leaving auth, model selection, built-in tools and
+       permissions working. Tested: with the injecting hook still on disk it
+       answers "ok". `--bare` also disables hooks and is the documented choice
+       for scripted callers, but it never reads OAuth and demands an
+       ANTHROPIC_API_KEY -- which would break the rule that Hivemind holds no
+       provider credential. So: safe-mode.
+
+       WHAT THIS COSTS, because it is a real cost and not a free win: somebody
+       whose workflow depends on a hook, a CLAUDE.md, a skill or an MCP server
+       does not get it inside a Hivemind worker. That is a deliberate trade of
+       capability for a contract that means what it says, and the connection
+       reports it rather than leaving it to be discovered. */
+    "--safe-mode",
+    /* Detection behind the prevention, on the same argument as
+       `--disallowedTools` sitting behind `--tools`. This emits `hook_started`
+       and `hook_response` into the stream already being parsed, so a hook that
+       runs despite safe-mode is visible rather than silent. Measured: zero
+       events on a clean run, two with a hook and no defence, zero with a hook
+       and safe-mode. */
+    "--include-hook-events",
+    /* Sessions are written to disk and resumable unless this is passed, which
+       leaves state behind between invocations that are supposed to be
+       one-shot. */
+    "--no-session-persistence",
+    /* Only MCP servers Hivemind passes, which is none. Without it the user's
+       globally-configured servers are advertised to the model -- eight of them
+       on the machine this was measured on. `--tools` still refuses to EXECUTE
+       them (tested, including against a settings rule explicitly allowing
+       one), so this removes an advertisement rather than a breach. */
+    "--strict-mcp-config",
     /* The tools a worker needs to produce a diff, and nothing else. */
     "--tools",
     "Read,Write,Edit,Glob,Grep",
@@ -132,9 +193,18 @@ function claudeInvoke(model = "sonnet"): string[] {
  * OpenCode with no shell and no helper agents.
  *
  * The denial is not on the command line -- OpenCode takes it from the project's
- * own `opencode.json`, which `project.init` writes. That is why this agent's
- * readback reads the resolved table rather than the run: the rule lives in
- * config, so config is where it has to be confirmed.
+ * own `opencode.json`, which `adapter.connect` writes when the project has none
+ * (`harness-project-config.ts`). That is why this agent's readback reads the
+ * resolved table rather than the run: the rule lives in config, so config is
+ * where it has to be confirmed.
+ *
+ * This comment used to say `project.init` wrote that file. Nothing wrote it.
+ * Measured in Hivemind's own repository, `opencode agent list` resolved
+ * `* -> allow` with no rule for `bash` at all, so the shell was permitted on
+ * every project Hivemind had ever set up. The contract did not lie -- the
+ * readback reads the resolved table, found no denial and returned the
+ * capability unverified, which refuses -- but OpenCode could never have passed
+ * it. A comment describing a mechanism is not a mechanism.
  *
  * `--format json` streams events; every `step_finish` carries its own token
  * block, which is where the usage reader looks. Deliberately NOT `--auto`,
@@ -142,7 +212,12 @@ function claudeInvoke(model = "sonnet"): string[] {
  * denied there is nothing left that needs blanket approval.
  */
 function openCodeInvoke(model = "opencode/deepseek-v4-flash-free"): string[] {
-  const args = ["run", "--format", "json", "--model", model];
+  /* `--pure` is OpenCode's own word for "run without external plugins". The
+     user-level config directory on the machine this was measured on carries its
+     own `node_modules` tree beside `opencode.jsonc`, so plugins are not a
+     hypothetical: they are npm packages a person installed, loaded into a run
+     Hivemind is supposed to have bounded. */
+  const args = ["run", "--pure", "--format", "json", "--model", model];
   return process.platform === "win32"
     ? ["cmd.exe", "/d", "/s", "/c", "opencode.cmd", ...args]
     : ["opencode", ...args];
@@ -286,7 +361,7 @@ export const agentCatalogue: CatalogueAgent[] = [
     subscription: "Claude Pro or Max",
     status: "unverified",
     caveat:
-      "Its token reporting has only ever been checked against recorded output, never against a live run, and the profile it used to ship with carried a permission-bypass flag this build refuses. Connecting it runs the same probe as any other agent; anything the probe cannot confirm is reported as unverified rather than assumed.",
+      "Hivemind runs this one in safe mode, which means your hooks, your CLAUDE.md, your skills, your plugins and your MCP servers are switched off inside a Hivemind worker. That is a real loss if you rely on them, and it is deliberate: a hook is a shell command, it runs even though this worker has no shell, and one that edits the prompt can replace the instructions before the model reads them — measured, not assumed. Its token reporting has only ever been checked against recorded output, never against a live run, and the profile it used to ship with carried a permission-bypass flag this build refuses. Connecting it runs the same probe as any other agent; anything the probe cannot confirm is reported as unverified rather than assumed.",
     model: null,
     routing_tier: "standard",
     cost_rank: 10,
@@ -670,6 +745,90 @@ export const ENDPOINT_SURFACE: Record<
     vendorHost: "the provider configured in OpenCode"
   }
 };
+
+/**
+ * The project file a harness needs before its denial is a denial.
+ *
+ * Here rather than beside the code that writes it, for the reason this file
+ * holds `ACCOUNT_HOME_VARIABLES` and `ENDPOINT_SURFACE`: which file a harness
+ * reads its rules from is startup knowledge, and this is the file allowed to
+ * know how to start a provider.
+ *
+ * One entry, and that is the point. Codex and Claude Code take their denial on
+ * the command line where Hivemind holds it; a rule in a file somebody else can
+ * edit is weaker, so a harness earns an entry here only when it offers nothing
+ * stronger.
+ */
+export const HARNESS_PROJECT_CONFIG: Record<
+  string,
+  { file: string; contents: unknown; because: string }
+> = {
+  opencode: {
+    file: "opencode.json",
+    contents: {
+      $schema: "https://opencode.ai/config.json",
+      /* Verified against opencode 1.18.15 rather than taken from the schema:
+         written into an empty directory, `opencode agent list` then resolves
+         `bash -> deny` and `task -> deny` on the primary agent, which is what
+         `readOpenCodePermissions` reads. Before the write, the same command
+         resolves `* -> allow` and no rule for either. */
+      permission: { bash: "deny", task: "deny" }
+    },
+    because:
+      "OpenCode takes its shell denial from the project's config rather than from the command line, so Hivemind writes one. Without it the resolved table is a wildcard allow and the shell is permitted."
+  }
+};
+
+/**
+ * The files each harness reads that a person can change and Hivemind cannot.
+ *
+ * Fingerprinted at connect so a change afterwards is visible. `AGENTS.md` is
+ * not a settings file and belongs here anyway: it is injected verbatim into the
+ * model-visible prompt, which makes it configuration in every sense that
+ * matters to a contract.
+ */
+export const HARNESS_CONFIG_INPUTS: Record<string, { home: string[]; project: string[] }> = {
+  claude: {
+    /* `settings.local.json` is the one easiest to miss: on the machine this was
+       measured on it already carried a `hooks` block with four empty arrays --
+       the scaffolding present, waiting. */
+    home: ["settings.json", "settings.local.json", "CLAUDE.md"],
+    project: [".claude/settings.json", ".claude/settings.local.json", "CLAUDE.md"]
+  },
+  "codex-cli": {
+    home: ["config.toml", "AGENTS.md"],
+    project: ["AGENTS.md"]
+  },
+  opencode: {
+    home: ["opencode.json", "opencode.jsonc"],
+    project: ["opencode.json", "opencode.jsonc"]
+  }
+};
+
+/**
+ * Environment that would move a harness's configuration or change how it runs.
+ *
+ * The home variables are the ones account switching SETS deliberately, which is
+ * exactly why an INHERITED one has to go: the account a role runs as is a
+ * decision recorded in the project, not a leftover in somebody's shell.
+ *
+ * The rest were observed in a shell that happened to be inside a Claude Code
+ * session, which is what starting an app from a terminal looks like.
+ */
+export const REFUSED_ENVIRONMENT: readonly string[] = [
+  ...Object.values(ACCOUNT_HOME_VARIABLES),
+  "CLAUDECODE",
+  "CLAUDE_PID",
+  "CLAUDE_EFFORT",
+  "CLAUDE_CODE_ENTRYPOINT",
+  "CLAUDE_CODE_EXECPATH",
+  "CLAUDE_CODE_SESSION_ID",
+  "CLAUDE_CODE_CHILD_SESSION",
+  "CLAUDE_CODE_SAFE_MODE",
+  "CLAUDE_CODE_SIMPLE",
+  /* Moves `~/.config/opencode`, where the user config and its plugin tree live. */
+  "XDG_CONFIG_HOME"
+];
 
 /**
  * Where each harness keeps its own configuration by default.

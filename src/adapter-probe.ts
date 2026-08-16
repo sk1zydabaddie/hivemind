@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import {
+  claudeHookInterference,
   findDangerousAdapterArgs,
   findRefusedAdapterModes,
   parseAdapterProviderUsage,
@@ -694,11 +695,19 @@ export async function probeAdapter(
      `required && failed`, which admitted an agent whose confinement came back
      `unverified` -- exactly the gap this migration closes. */
   const verdict = decideAdmission(toFindings(capabilities));
+  /* A probe that ran under a hook measured something other than the profile.
+     Refused rather than recorded: every capability below was observed in a run
+     whose instructions may have been rewritten before the model read them, so
+     the whole result is evidence about the hook, not about the agent. */
+  const interference = claudeHookInterference(observation.stdout);
   return {
     agent_id: agent.id,
     tool: profile.tool,
-    ok: verdict.admitted,
-    refusal: verdict.admitted
+    ok: verdict.admitted && interference === null,
+    refusal:
+      interference !== null
+        ? `this agent could not be connected: ${interference}`
+        : verdict.admitted
       ? null
       : `this agent could not be connected: ${verdict.refusals.map((entry) => entry.consequence).join(" ")}`,
     degraded: verdict.degraded,
