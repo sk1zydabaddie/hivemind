@@ -149,7 +149,21 @@ describe("React workspace boundary", () => {
     for (const token of ["--ink: #1f2328", "--navy: #1b3a6b", "--amber: #b88936", "--clay: #b65b4f"]) {
       expect(styles).toContain(token);
     }
-    expect(styles).not.toMatch(/--field-ivory|--meridian|linear-gradient|backdrop-filter/u);
+    /* Dead tokens from the pre-Tailwind stylesheet, checked against DECLARATIONS
+       rather than prose. This matched the word `backdrop-filter` inside a
+       comment explaining why that property is the one cross-platform way to
+       frost a floating surface -- catching the sentence that justified the rule,
+       which is the word-ban failure this project has now recorded five times.
+       Comments are stripped, and the ban keeps only what is genuinely dead.
+
+       `backdrop-filter` itself left this list deliberately. A blunt ban here
+       would contradict the glass material, which is governed precisely in
+       `design-tokens.test.ts`: a declared token pair, an allowlist of the four
+       surfaces that actually float, and a ceiling that keeps it quieter than
+       the amber attention edge. Two rules disagreeing about the same property
+       is how they drift. */
+    const declarations = styles.replace(/\/\*[\s\S]*?\*\//gu, "");
+    expect(declarations).not.toMatch(/--field-ivory|--meridian|linear-gradient/u);
 
     /* The legacy stylesheet existed only to serve the three tabs that have now
        been folded into Work and Project. Every surface is utility-only, so the

@@ -414,3 +414,93 @@ describe("palette discipline", () => {
     expect(ramps).toBeGreaterThan(0);
   });
 });
+
+/* Glass is relief's rule one axis over.
+ *
+ * Relief asks "is this pressable?" and is redeemed by the press. Glass asks "is
+ * this ABOVE the app?" and is redeemed by what shows through it — which is only
+ * true for something that genuinely floats over content still sitting there.
+ * The substrate does not float; it IS the app, and frosting it would be the
+ * panel-shadow mistake in a new material.
+ *
+ * So the same three-part enforcement: a declared pair, an allowlist of files
+ * that may take it, and a ceiling that keeps it below the attention edge. */
+/* The same walk the attention-edge test does, hoisted so the glass rules can
+   use it too. */
+async function sourceFiles(): Promise<string[]> {
+  const root = path.join(desktopRoot, "src");
+  const found: string[] = [];
+  const walk = async (dir: string): Promise<void> => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.name.endsWith(".tsx") || entry.name.endsWith(".css")) found.push(full);
+    }
+  };
+  await walk(root);
+  return found;
+}
+
+describe("glass belongs to what floats", () => {
+  /* The four surfaces that genuinely float over live content. Everything else
+     -- panels, the rail, window chrome, the canvas -- is substrate. */
+  const MAY_FLOAT = ["command.tsx", "dialog.tsx", "dropdown-menu.tsx"];
+
+  test("only floating surfaces take it, and never alone", async () => {
+    const files = await sourceFiles();
+    const users: string[] = [];
+    for (const file of files) {
+      if (!file.endsWith(".tsx")) continue;
+      const source = await readFile(file, "utf8");
+      if (!/\[backdrop-filter:var\(--glass\)\]/u.test(source)) continue;
+      users.push(path.basename(file));
+      /* The blur alone reads as a smudge. What makes it a PANE is the bright
+         edge catching light at the boundary, so the two are a pair exactly as
+         relief and relief-pressed are. */
+      expect(source, `${path.basename(file)} takes glass with no edge`).toMatch(
+        /shadow-\[var\(--glass-edge\)\]/u
+      );
+      /* And it must be translucent. Glass over an opaque fill blurs nothing --
+         the effect would be inert, which is the shape this project keeps
+         recording: configured, correct, and doing nothing. */
+      expect(source, `${path.basename(file)} frosts an opaque surface`).toMatch(
+        /bg-[a-z-]+\/\d{2}/u
+      );
+    }
+    expect(
+      [...new Set(users)].sort(),
+      "glass belongs to what floats above the app, and nothing else"
+    ).toEqual(MAY_FLOAT);
+  });
+
+  test("the pair is declared once, together", async () => {
+    const css = (await readStyles()).replace(/\/\*[\s\S]*?\*\//gu, "");
+    expect(css).toMatch(/--glass\s*:/u);
+    expect(css).toMatch(/--glass-edge\s*:/u);
+  });
+
+  /* The constraint that decides the ceiling is not taste. The amber attention
+     edge is the only thing on screen that means "a person must act", so a
+     material that competes with it is a bug however good it looks. */
+  test("it stays quieter than the thing that means act now", async () => {
+    const css = (await readStyles()).replace(/\/\*[\s\S]*?\*\//gu, "");
+    const blur = /--glass:[^;]*blur\((\d+)px\)/u.exec(css);
+    expect(blur, "glass must declare its blur radius").not.toBeNull();
+    expect(Number(blur![1]), "a heavy blur turns a pane into a spotlight").toBeLessThanOrEqual(16);
+
+    const edge = /--glass-edge:[^;]*#ffffff\s+(\d+)%/u.exec(css);
+    expect(edge, "the edge must be a white mix").not.toBeNull();
+    expect(Number(edge![1]), "the edge must stay a hint, not a highlight").toBeLessThanOrEqual(8);
+  });
+
+  /* Dense monospaced figures are where translucency costs most and buys least,
+     so the surfaces that carry diffs, trails and token counts stay opaque. */
+  test("nothing dense and monospaced sits on glass", async () => {
+    for (const name of ["diff-view.tsx", "checks-output.tsx", "project-tab.tsx", "work-tab.tsx"]) {
+      const found = (await sourceFiles()).find((file) => path.basename(file) === name);
+      if (found === undefined) continue;
+      expect(await readFile(found, "utf8"), `${name} carries dense figures and must stay opaque`)
+        .not.toMatch(/\[backdrop-filter:var\(--glass\)\]/u);
+    }
+  });
+});

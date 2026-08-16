@@ -554,6 +554,50 @@ next session does not have to rediscover them.
 > detectors read events rather than status, and why a fourth shape should be
 > assumed to be invisible to status too until something proves otherwise.
 
+> **A suite that can hang has three outcomes, and only two are evidence.**
+> Eighth instrument instance, and the first in the test runner itself rather
+> than in an assertion. `daemon.test.ts` awaited `child.once("exit")` with no
+> ceiling; on 2026-08-15 a run sat in it for **233 minutes**, printing nothing,
+> and was indistinguishable from a slow suite. **Silence read as progress.**
+> Worse than a failure twice over: a hang never returns a verdict at all, and
+> the daemon it could not stop stays alive — and a surviving daemon from a
+> superseded run is already on record as the rig failure that breaks the *next*
+> run. So the bug reproduces itself.
+>
+> Closed with a ceiling at both levels: `--test-timeout` on the runner, and a
+> bounded, escalating `stopDaemon` — SIGTERM, then SIGKILL, then a thrown
+> error, because a daemon that survives both is a finding and not something for
+> the cleanup path to swallow. The sibling `once("exit")` in `readLine` was
+> checked and left alone; it has carried a 5s timeout since it was written.
+>
+> **The ceiling was sized wrong first, and the mistake is the useful part.** It
+> was set to 300s against the slowest individual TEST (~67s), which looked like
+> a 4× margin. `--test-timeout` also bounds the FILE-level subtest, and
+> `manager.test.ts` takes 199s alone — so under the contention of a full
+> parallel run it crossed 300s and the guard cancelled 53 passing tests. Caught
+> on the first full run after the change, by the guard reporting a file nobody
+> had complained about. **A guard that fails honest work is removed by whoever
+> it blocks**, and then the hang comes back — so a ceiling has to be sized
+> against the largest unit it actually bounds, not the smallest one it was
+> imagined for. Raised to 30 minutes: 9× the slowest file's solo run, beyond any
+> contention, and still turns an indefinite hang into a failure.
+>
+> Verified end to end: a timed-out file reports `cancelled 1` with `fail 0`, and
+> `npm test` exits **1**. The aggregate line alone would have read as green.
+>
+> **Two things the proof itself taught**, and both are the same lesson about
+> instruments. A fixture using a bare `new Promise(() => {})` does not
+> reproduce this — node drains the event loop and cancels it unaided, so the
+> proof would pass with or without the guard and demonstrate nothing; the real
+> hang had a live child holding the loop open, so the fixture must too. And a
+> test that spawns `node --test` inherits `NODE_TEST_CONTEXT=child-v8` from its
+> own runner, which switches the child into child-reporter mode: the nested run
+> returned in 78ms instead of hanging, and the proof reported that the guard
+> was unnecessary. **An instrument that inherits its parent's context is not
+> measuring the thing it was pointed at.** Both directions are now asserted —
+> without the flag the runner is still going when cut off, with it the hang
+> becomes a failure.
+
 > **A mitigation scoped to one component is wrong when the exposure is
 > shared.** Two instances, and the second is what made it a rule rather than a
 > bug.

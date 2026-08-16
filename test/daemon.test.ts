@@ -555,14 +555,53 @@ function boundaryLength(buffer: string, index: number): number {
   return buffer.startsWith("\r\n\r\n", index) ? 4 : 2;
 }
 
+/**
+ * Stop the daemon, and never wait forever for it to agree.
+ *
+ * This awaited `once("exit")` with no ceiling. Measured on 2026-08-15: a run of
+ * this file sat for **233 minutes** in exactly that await, holding a live
+ * daemon, until it was killed by hand. Two things made it worse than a failure:
+ *
+ * - **A hang looks like progress.** `node --test` printed nothing, so the
+ *   suite was indistinguishable from a slow one. Silence read as success --
+ *   the instrument family this project keeps recording, this time in the test
+ *   runner rather than in an assertion.
+ * - **It leaves the hazard behind.** The daemon it could not stop stays alive,
+ *   and a surviving daemon from a superseded run is already on record as a rig
+ *   failure that breaks the NEXT run.
+ *
+ * So the wait is bounded and it escalates. `SIGTERM` first, because a daemon
+ * that shuts down cleanly should be allowed to; `SIGKILL` after, because a test
+ * helper's job is to end the process rather than to negotiate with it; and a
+ * thrown error last, because a daemon that survives both is a real finding and
+ * must not be swallowed by the cleanup that noticed it.
+ *
+ * The sibling `once("exit")` in `readLine` was checked and left alone -- it has
+ * carried a 5s timeout since it was written.
+ */
 async function stopDaemon(daemon: DaemonProcess): Promise<void> {
   if (daemon.child.exitCode !== null) {
     return;
   }
-  await new Promise<void>((resolve) => {
-    daemon.child.once("exit", () => resolve());
-    daemon.child.kill();
-  });
+
+  const exitedWithin = async (ms: number): Promise<boolean> =>
+    await new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), ms);
+      daemon.child.once("exit", () => {
+        clearTimeout(timer);
+        resolve(true);
+      });
+    });
+
+  daemon.child.kill();
+  if (await exitedWithin(5000)) return;
+
+  daemon.child.kill("SIGKILL");
+  if (await exitedWithin(5000)) return;
+
+  throw new Error(
+    `the daemon (pid ${String(daemon.child.pid)}) survived SIGTERM and SIGKILL. It is still running and will break the next run.`
+  );
 }
 
 function readLine(child: ChildProcessWithoutNullStreams): Promise<string> {

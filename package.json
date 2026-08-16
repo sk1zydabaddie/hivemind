@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test \"dist/**/*.test.js\"",
+    "test": "npm run build && node --test --test-timeout=1800000 \"dist/**/*.test.js\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "adapters:local": "node -e \"import(\\\"./dist/src/local-adapters.js\\\").then(m=>m.writeLocalAdapterProfiles(process.cwd())).then(w=>console.log(\\\"wrote\\\",w.join(\\\", \\\")))\"",
     "audit:unreached": "node tools/audit-unreached.mjs"
