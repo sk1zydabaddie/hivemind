@@ -1,0 +1,9 @@
+
+
+# The updater's published artifacts and any signing key. The private key
+# lives outside the repository on purpose -- deleting the checkout must not
+# delete the only thing that can update installed copies.
+updates/
+*.key
+*.key.pub
+*.sig

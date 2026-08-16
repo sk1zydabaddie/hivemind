@@ -1,0 +1,212 @@
+import { execFileSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, test } from "vitest";
+
+const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = path.resolve(desktopRoot, "..");
+
+/**
+ * The updater, wired end to end — because every part of it fails silently.
+ *
+ * A missing public key, an endpoint that is never reached, an unsigned
+ * installer: none of those announce themselves, and all three present as "no
+ * updates available". That is the exact silence that put a four-hour-old build
+ * in front of a person four sessions running, each time with the fix already
+ * written.
+ */
+describe("the updater", () => {
+  test("the plugin is a dependency, registered, and permitted", async () => {
+    const cargo = await readFile(path.join(desktopRoot, "src-tauri", "Cargo.toml"), "utf8");
+    expect(cargo).toMatch(/tauri-plugin-updater/u);
+
+    const main = await readFile(path.join(desktopRoot, "src-tauri", "src", "main.rs"), "utf8");
+    expect(main).toMatch(/tauri_plugin_updater::Builder::new\(\)\.build\(\)/u);
+
+    const capability = JSON.parse(
+      await readFile(path.join(desktopRoot, "src-tauri", "capabilities", "default.json"), "utf8")
+    ) as { permissions: string[] };
+    expect(capability.permissions).toContain("updater:default");
+  });
+
+  /* A build with no public key cannot verify anything, so the plugin refuses
+     every update — and reports that as nothing to install. */
+  test("a public key is configured, and it is a real one", async () => {
+    const conf = JSON.parse(
+      await readFile(path.join(desktopRoot, "src-tauri", "tauri.conf.json"), "utf8")
+    ) as { plugins?: { updater?: { pubkey?: string; endpoints?: string[] } } };
+
+    const pubkey = conf.plugins?.updater?.pubkey ?? "";
+    expect(pubkey.length, "no public key means no update can ever be verified").toBeGreaterThan(80);
+    expect(Buffer.from(pubkey, "base64").toString("utf8")).toMatch(/minisign public key/iu);
+
+    expect(
+      conf.plugins?.updater?.endpoints ?? [],
+      "an updater with no endpoint checks nothing"
+    ).not.toHaveLength(0);
+  });
+
+  /**
+   * The risk that is worse than it sounds.
+   *
+   * The public key is compiled into every installed copy, so a LOST private key
+   * cannot be replaced — a new one signs nothing those copies will accept, and
+   * they would each have to be re-installed by hand. It lives outside the
+   * repository so deleting the checkout cannot delete it.
+   *
+   * This asserts the other half: it never gets committed. A signing key in git
+   * history is not removed by deleting the file.
+   */
+  test("no signing key is in the repository, and none can be added", async () => {
+    const ignore = await readFile(path.join(desktopRoot, ".gitignore"), "utf8");
+    expect(ignore).toMatch(/\*\.key/u);
+
+    const tracked = execFileSync("git", ["ls-files"], { cwd: repoRoot, encoding: "utf8" });
+    const keys = tracked.split(/\r?\n/u).filter((file) => /\.key$|\.key\.pub$|\.sig$/u.test(file));
+    expect(keys, "a signing key is committed; git history keeps it after deletion").toEqual([]);
+  });
+
+  test("published updates are not committed", async () => {
+    const ignore = await readFile(path.join(desktopRoot, ".gitignore"), "utf8");
+    expect(ignore).toMatch(/updates\//u);
+  });
+
+  /**
+   * The gate lives in Rust, not in the bar.
+   *
+   * `install_update` replaces the running binary. A gate evaluated in React is
+   * one that anything able to call the plugin walks around, and the standing
+   * rule is that the client holds no gate logic. So the refusal is computed
+   * where the reservations can actually be read — from disk, rather than by
+   * asking a daemon that may have crashed.
+   */
+  test("install is gated on the on-disk idleness proof, in Rust", async () => {
+    const updater = await readFile(path.join(desktopRoot, "src-tauri", "src", "updater.rs"), "utf8");
+    expect(updater).toMatch(/daemon_work/u);
+    /* Anything other than Idle refuses — Unknown included, because a daemon
+       that cannot answer must not read as one with nothing running. */
+    expect(updater).toMatch(/matches!\(standing\.work, DaemonWork::Idle\)/u);
+    expect(updater).toMatch(/WorkInFlight/u);
+
+    /* And check is NOT gated: a busy project must still be able to discover
+       that an update exists, or the silence is rebuilt at a different level. */
+    const check = updater.slice(
+      updater.indexOf("pub async fn check_for_update"),
+      updater.indexOf("pub async fn install_update")
+    );
+    expect(check).not.toMatch(/daemon_work/u);
+  });
+
+  /* An unreachable endpoint is a REPORTED state, not an absence of news, and it
+     is a distinct variant precisely so the surface cannot render it as
+     up-to-date. */
+  test("every outcome is a named state, and unreachable is not up to date", async () => {
+    const updater = await readFile(path.join(desktopRoot, "src-tauri", "src", "updater.rs"), "utf8");
+    for (const variant of ["UpToDate", "Available", "Unreachable"]) {
+      expect(updater).toMatch(new RegExp(`${variant}\\s*[{,]`, "u"));
+    }
+    for (const variant of ["Installing", "WorkInFlight", "NothingOffered", "Failed"]) {
+      expect(updater).toMatch(new RegExp(`${variant}\\s*[{,]`, "u"));
+    }
+
+    const bar = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "update-bar.tsx"),
+      "utf8"
+    );
+    /* The bar hides for exactly two reasons: it has not answered yet, and it
+       answered "nothing to offer". Any third early return would be the silence
+       being rebuilt. */
+    expect(
+      [...bar.matchAll(/return null;/gu)].length,
+      "the bar may only be silent when it has nothing to say"
+    ).toBe(2);
+    expect(bar).toMatch(/state === "up_to_date" && outcome === null/u);
+    expect(bar, "an unreachable check must say it is not confirmation").toMatch(
+      /not<\/em> confirmation|not.{0,12}confirmation/iu
+    );
+  });
+
+  /* Both bars stay. They answer different questions, and the build bar is the
+     honest fallback when the endpoint cannot be reached at all. */
+  test("the build bar is kept alongside it", async () => {
+    const buildBar = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "build-bar.tsx"),
+      "utf8"
+    );
+    expect(buildBar).toMatch(/inspect_build_staleness/u);
+
+    const app = await readFile(path.join(desktopRoot, "src", "App.tsx"), "utf8");
+    expect(app).toMatch(/<UpdateBar/u);
+    expect(app).toMatch(/BuildBar|build-bar/u);
+  });
+
+  /* A release step nobody can run is a release step that does not exist. */
+  test("publishing and serving are scripts, not instructions", async () => {
+    const scripts = (
+      JSON.parse(await readFile(path.join(desktopRoot, "package.json"), "utf8")) as {
+        scripts: Record<string, string>;
+      }
+    ).scripts;
+    expect(scripts["release:local"]).toBeDefined();
+    expect(scripts["updater:serve"]).toBeDefined();
+
+    const release = await readFile(path.join(desktopRoot, "scripts", "release-local.mjs"), "utf8");
+    /* It signs. An unsigned installer is rejected by the plugin, which presents
+       as "no update available" — silence again. */
+    expect(release).toMatch(/"sign"/u);
+    expect(release).toMatch(/signature/u);
+    /* And it refuses loudly when the key is missing, rather than publishing
+       something nothing will accept. */
+    expect(release).toMatch(/No signing key/u);
+  });
+});
+
+/**
+ * The insecure endpoint must never ship.
+ *
+ * The plugin refuses `http://` outright — the app panicked on startup with
+ * "The configured updater endpoint must use a secure protocol like `https`",
+ * which is a good refusal and was found by launching the build rather than by
+ * reading the docs. The escape (`dangerousInsecureTransportProtocol`) exists
+ * for exactly this local case, and it is quarantined in an overlay that only
+ * `tauri:build:localupdate` applies.
+ *
+ * Worth being precise about what the flag does and does not cost: the Ed25519
+ * signature is verified whatever the transport, so an http endpoint weakens the
+ * channel, not the code-integrity guarantee. It still must not ship, and the
+ * committed config is what ships.
+ */
+describe("the shipped configuration", () => {
+  test("the committed endpoint is https and carries no dangerous flag", async () => {
+    const conf = JSON.parse(
+      await readFile(path.join(desktopRoot, "src-tauri", "tauri.conf.json"), "utf8")
+    ) as {
+      plugins?: { updater?: { endpoints?: string[]; dangerousInsecureTransportProtocol?: boolean } };
+    };
+    const updater = conf.plugins?.updater ?? {};
+    for (const endpoint of updater.endpoints ?? []) {
+      expect(endpoint, "a shipped endpoint must be https").toMatch(/^https:\/\//u);
+    }
+    expect(
+      updater.dangerousInsecureTransportProtocol,
+      "the insecure transport flag must never be in the committed config"
+    ).toBeUndefined();
+  });
+
+  test("the local overlay exists, is separate, and is applied by its own script", async () => {
+    const overlay = JSON.parse(
+      await readFile(path.join(desktopRoot, "src-tauri", "updater-dev.conf.json"), "utf8")
+    ) as { plugins: { updater: { dangerousInsecureTransportProtocol: boolean } } };
+    expect(overlay.plugins.updater.dangerousInsecureTransportProtocol).toBe(true);
+
+    const scripts = (
+      JSON.parse(await readFile(path.join(desktopRoot, "package.json"), "utf8")) as {
+        scripts: Record<string, string>;
+      }
+    ).scripts;
+    expect(scripts["tauri:build:localupdate"]).toMatch(/updater-dev\.conf\.json/u);
+    /* And the normal build must NOT apply it. */
+    expect(scripts["tauri:build"]).not.toMatch(/updater-dev/u);
+  });
+});

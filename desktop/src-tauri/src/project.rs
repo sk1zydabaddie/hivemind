@@ -357,7 +357,7 @@ where
     }
 }
 
-fn canonical_git_root(project_path: &str) -> Result<PathBuf, ProjectFault> {
+pub(crate) fn canonical_git_root(project_path: &str) -> Result<PathBuf, ProjectFault> {
     let trimmed = project_path.trim();
     if trimmed.is_empty() {
         return Err(ProjectFault::new(
@@ -1556,7 +1556,7 @@ fn task_worktrees(project_root: &Path) -> Result<usize, ()> {
     }
 }
 
-fn daemon_work(project_root: &Path) -> DaemonStanding {
+pub(crate) fn daemon_work(project_root: &Path) -> DaemonStanding {
     let (Ok(reservations), Ok(worktrees)) =
         (active_reservations(project_root), task_worktrees(project_root))
     else {

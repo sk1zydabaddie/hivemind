@@ -575,6 +575,33 @@ next session does not have to rediscover them.
 > right?" but "what would fail if it were not?" -- the first invites agreement,
 > the second produces a test. See F-4.
 
+> **Two Tauri commands the client called did not exist, and both failures were
+> silent.** Fourth and fifth instances of the unreached-mechanism family, found
+> by *walking* the update sequence rather than by reading anything.
+> `inspect_daemon_work` and `restart_daemon` were written, correct, tested — and
+> never listed in `generate_handler!`.
+>
+> | Command | What it powers | How it failed |
+> | --- | --- | --- |
+> | `inspect_daemon_work` | the build bar's idleness gate | the call threw, the bar caught it and hid itself, so **the build bar had never once appeared** and its gate had never run |
+> | `restart_daemon` | "Restart it" after a build mismatch | `Command restart_daemon not found`, reachable only in the exact state an update leaves behind |
+>
+> **The tell was in the build output for weeks:** `warning: function
+> restart_daemon is never used`. A dead-code warning on a `#[tauri::command]`
+> means it is not registered, because registration is the only thing that uses
+> it — and that warning sat in every `cargo build` alongside two others.
+>
+> This is the seam `npm run audit:unreached` cannot see: it reads Core's
+> TypeScript exports, and these names cross React-to-Rust as **string literals**,
+> where no compiler on either side can check them. Closed by
+> `test/command-surface.test.ts`, which parses `invoke("…")` on one side and
+> `generate_handler![…]` on the other and fails on any name in the first that is
+> missing from the second. Proven to bite: removing one registration fails two
+> assertions by name. The scan mismeasured on its first run too — `[^>]*` for the
+> generic stopped inside `invoke<Record<string, boolean>>`, reporting a live
+> command as uncalled — which is the instrument being checked before it was
+> trusted.
+
 > **A mechanism that exists and is never consulted is not a mechanism.** A
 > third family, distinct from the instrument and rig ones: three instances --
 > `provider_version` written and never compared, `daemon_instance_id` recorded

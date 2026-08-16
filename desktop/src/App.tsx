@@ -19,6 +19,7 @@ import { SettingsDialog } from "@/components/settings-dialog";
 import { BuildBar } from "@/components/workspace/build-bar";
 import { SetupScreen } from "@/components/workspace/setup-screen";
 import { SharingBar } from "@/components/workspace/sharing-bar";
+import { UpdateBar } from "@/components/workspace/update-bar";
 import { useAttention } from "@/hooks/use-attention";
 import { ProjectTab } from "@/components/workspace/project-tab";
 import { WorkTab } from "@/components/workspace/work-tab";
@@ -346,6 +347,11 @@ export default function App(): React.JSX.Element {
         </header>
 
         <BuildBar projectPath={projectPath} />
+        {/* Above the sharing bar: a stale build is the thing that makes every
+            other message on screen untrustworthy. Not gated on `live` -- an
+            update matters whether or not a project is open, and the endpoint
+            being unreachable is exactly the state that must not be silent. */}
+        <UpdateBar projectPath={projectPath} />
         {live ? <SharingBar onAction={workspace.performAction} /> : null}
 
         {shellUpdateRequired ? (
