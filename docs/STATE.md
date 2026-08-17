@@ -103,10 +103,10 @@ result records the delta, not the request.
 | Harness | State |
 | --- | --- |
 | Codex | **Supported.** Real runs have gone through it end to end |
-| Claude Code | **Verified 7/7** by probe. Reports more than expected — including a per-model usage breakdown Codex cannot produce |
-| OpenCode | **Probed and verified.** Shell denial confirmed from the run itself, not from the flag |
-| Grok Build | Prepared, never run — see §3 |
-| Kimi Code | Refused as measured, with the reason recorded |
+| Claude Code | **Live probe passed all 9 capabilities** on 2.1.233; 17,985 effective tokens and a per-model usage breakdown |
+| OpenCode | **Live probe passed every required boundary except model-pin readback** on 1.18.15; the configured free model spent 12,025 effective tokens |
+| Grok Build | **Live probe ran but refused safely** on 1.0.4; usage/model attribution and the write canary worked, but the resolved sandbox and endpoint could not be proved |
+| Kimi Code | First-party CLI 0.36.1 installed; no account/provider is configured and Hivemind still has no measured usage reader, so it is honestly non-connectable |
 
 The contract has **nine** capabilities. The ninth, `known_endpoint`, asks where
 the harness sends your code — a prompt carries every file in scope, and a base

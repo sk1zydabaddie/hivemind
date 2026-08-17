@@ -101,7 +101,8 @@ describe("cold open", () => {
       path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
       "utf8"
     );
-    expect(source).toMatch(/TOKENS_PER_CONNECT \* remaining\.length/u);
+    expect(source).toMatch(/TOKENS_PER_CONNECT \* plannedConnections\.length/u);
+    expect(source).toMatch(/Runs every selected provider at least once/u);
     /* Beside the button that spends it, and nowhere else. The boxed warning
        that used to sit above the roles repeated the same figure and added
        "Nothing is spent until you click" -- two claims where one would do, and
@@ -120,8 +121,10 @@ describe("cold open", () => {
       path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
       "utf8"
     );
-    expect(source).toMatch(/provider\.status === "supported"/u);
-    expect(source).toMatch(/Not verified yet/u);
+    expect(source).toMatch(/provider\.checked_here/u);
+    expect(source).toMatch(/Proven end to end/u);
+    expect(source).toMatch(/Ready to check/u);
+    expect(source).toMatch(/Cannot connect yet/u);
     /* And the reason is shown rather than found by clicking. The per-provider
        caveats are the capability contract made visible and are the best thing
        on this screen; they survive every restructure. */

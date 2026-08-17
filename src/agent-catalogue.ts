@@ -33,6 +33,10 @@ export interface CatalogueAgent {
   context_window: number;
   timeout_ms: number;
   usage_parser: "codex-jsonl" | "codex-text" | "claude-json" | "opencode-json" | null;
+  /** Whether the task prompt is written to stdin or appended to argv. */
+  prompt_arg: "stdin" | "arg";
+  /** Whether the desktop may offer a probe that can presently be admitted. */
+  connectable: boolean;
   /**
    * How this harness is kept out of a shell, which is now the PRIMARY
    * confinement mechanism rather than a fallback.
@@ -224,14 +228,13 @@ function openCodeInvoke(model = "opencode/deepseek-v4-flash-free"): string[] {
 }
 
 /**
- * Grok Build, prepared but never run.
+ * Grok Build, exercised against 1.0.4 on 2026-08-17.
  *
- * Every flag below is doc-derived and, where noted in
- * `docs/PROVIDER-DISCOVERY.md`, confirmed present in the shipped binary. None
- * of it has been *exercised*, because the binary checks authentication before
- * it validates flags -- `grok --sandbox bogus -p "x"` answers "Not signed in"
- * rather than naming the valid profiles -- so every readback question needs an
- * account and nothing more can be learned for free.
+ * The live probe wrote its canary, exited in five seconds, reported 10,063
+ * tokens attributed only to `grok-4.5-build`, and left the branch unchanged.
+ * It still refused: neither output format reports the resolved sandbox, and
+ * the endpoint configuration surface is not yet implemented in Core. Those
+ * are required claims, so passing the flags is not enough.
  *
  * The posture matches the other three: deny the shell by ALLOWLIST rather than
  * by denylist, pin the model, refuse sub-agents, and read a documented wire
@@ -260,9 +263,8 @@ function openCodeInvoke(model = "opencode/deepseek-v4-flash-free"): string[] {
  * are Claude-compatibility aliases it also ships; `findDangerousAdapterArgs`
  * already refuses both by name, and no invocation here may carry them.
  */
-function grokInvoke(model = "grok-code-fast-1"): string[] {
+function grokInvoke(model = "grok-4.5"): string[] {
   const args = [
-    "--single",
     "--model",
     model,
     /* The shell is absent rather than denied: a positive allowlist of the
@@ -275,7 +277,10 @@ function grokInvoke(model = "grok-code-fast-1"): string[] {
     "--sandbox",
     "workspace",
     "--output-format",
-    "streaming-messages-json"
+    "streaming-messages-json",
+    /* `--single` takes the prompt as its value. It must be the final template
+       argument so Adapter appends the prompt immediately after it. */
+    "--single"
   ];
   return process.platform === "win32"
     ? ["cmd.exe", "/d", "/s", "/c", "grok.cmd", ...args]
@@ -296,6 +301,8 @@ export const agentCatalogue: CatalogueAgent[] = [
     context_window: 272_000,
     timeout_ms: 900_000,
     usage_parser: "codex-jsonl",
+    prompt_arg: "stdin",
+    connectable: true,
     shell_denial: {
       mechanism: "sandbox",
       confirmed_by: "runtime-readback",
@@ -318,6 +325,8 @@ export const agentCatalogue: CatalogueAgent[] = [
     context_window: 272_000,
     timeout_ms: 900_000,
     usage_parser: "codex-jsonl",
+    prompt_arg: "stdin",
+    connectable: true,
     shell_denial: {
       mechanism: "sandbox",
       confirmed_by: "runtime-readback",
@@ -340,6 +349,8 @@ export const agentCatalogue: CatalogueAgent[] = [
     context_window: 272_000,
     timeout_ms: 900_000,
     usage_parser: "codex-jsonl",
+    prompt_arg: "stdin",
+    connectable: true,
     shell_denial: {
       mechanism: "sandbox",
       confirmed_by: "runtime-readback",
@@ -350,7 +361,7 @@ export const agentCatalogue: CatalogueAgent[] = [
     invoke: codexInvoke("gpt-5.6-sol")
   },
   {
-    /* Fixture-tested and live-unverified. The checked-in profile was removed
+    /* Probe-verified but not end-to-end proven. The checked-in profile was removed
        for carrying bypassPermissions, which is a refusal this build enforces at
        preflight -- so any profile written for it has to earn its flags again
        from scratch. Offered, but it cannot be connected until a probe passes,
@@ -361,13 +372,15 @@ export const agentCatalogue: CatalogueAgent[] = [
     subscription: "Claude Pro or Max",
     status: "unverified",
     caveat:
-      "Hivemind runs this one in safe mode, which means your hooks, your CLAUDE.md, your skills, your plugins and your MCP servers are switched off inside a Hivemind worker. That is a real loss if you rely on them, and it is deliberate: a hook is a shell command, it runs even though this worker has no shell, and one that edits the prompt can replace the instructions before the model reads them — measured, not assumed. Its token reporting has only ever been checked against recorded output, never against a live run, and the profile it used to ship with carried a permission-bypass flag this build refuses. Connecting it runs the same probe as any other agent; anything the probe cannot confirm is reported as unverified rather than assumed.",
+      "A live Claude Code 2.1.233 probe verified all nine capability checks, including its model, file-only tool set, endpoint, per-model token reporting, no helper agents, and an unchanged branch. Hivemind still labels it unverified because no whole piece of work has been built, checked, and shipped through this harness. Safe mode also switches off your hooks, CLAUDE.md, skills, plugins, and MCP servers inside a Hivemind worker; that loss is deliberate because hooks are shell commands and can replace a prompt before the model reads it.",
     model: null,
     routing_tier: "standard",
     cost_rank: 10,
     context_window: 200_000,
     timeout_ms: 900_000,
     usage_parser: "claude-json",
+    prompt_arg: "stdin",
+    connectable: true,
     readback: "claude-init",
     shell_denial: {
       mechanism: "tool-allowlist",
@@ -381,7 +394,7 @@ export const agentCatalogue: CatalogueAgent[] = [
     id: "opencode",
     label: "OpenCode",
     harness: "opencode",
-    subscription: "whatever provider you point it at",
+    subscription: "OpenCode's free model or a connected provider",
     status: "unverified",
     caveat:
       "A probe has been through it and it passed: it denies itself a shell and helper agents, it says so before it runs, and its token counts are read from its own output. What it does not report is which model actually answered, so Hivemind cannot send cheaper work to a cheaper model on this one. No whole piece of work has been built and shipped through it yet, which is what would make it proven.",
@@ -391,6 +404,8 @@ export const agentCatalogue: CatalogueAgent[] = [
     context_window: 200_000,
     timeout_ms: 900_000,
     usage_parser: "opencode-json",
+    prompt_arg: "stdin",
+    connectable: true,
     readback: "opencode-permissions",
     shell_denial: {
       mechanism: "config-deny",
@@ -409,11 +424,11 @@ export const agentCatalogue: CatalogueAgent[] = [
     subscription: "an X.AI plan or an XAI_API_KEY",
     status: "unverified",
     caveat:
-      "Its flags are the best shaped of any agent here -- a real sandbox, a positive tool allowlist, and a switch that turns off helper agents. What is unknown is whether it reports any of that back once it runs, and that cannot be found out without an account. Connecting it runs the same probe as any other agent.",
+      "A real Grok 1.0.4 probe wrote inside the project, reported 10,063 tokens attributed only to grok-4.5-build, and left the branch unchanged. It still cannot connect: neither machine-readable stream reports the sandbox that actually took effect, and Hivemind does not yet inspect Grok's endpoint configuration. Both are required boundaries, so accepting the flags on trust would be a false verification.",
     model: null,
     routing_tier: "standard",
     cost_rank: 10,
-    context_window: 256_000,
+    context_window: 500_000,
     timeout_ms: 900_000,
     /* UNVERIFIED-AGAINST-GROK.
        `streaming-messages-json` is documented as the Anthropic Messages wire
@@ -428,6 +443,11 @@ export const agentCatalogue: CatalogueAgent[] = [
        spend ceilings off -- so the failure is bounded and named rather than
        silent. The label comes off when a run confirms it. */
     usage_parser: "claude-json",
+    prompt_arg: "arg",
+    /* A real run proved this probe must refuse until the sandbox and endpoint
+       surfaces have disposition-strength evidence. Do not sell that known
+       paid failure as a ready connection. */
+    connectable: false,
     readback: "none",
     shell_denial: {
       mechanism: "tool-allowlist",
@@ -435,8 +455,8 @@ export const agentCatalogue: CatalogueAgent[] = [
       detail:
         "`--tools` allows exactly the built-in tools named and `--no-subagents` turns off helper agents. Nothing is known about whether either is reported back, because reading its version is free and running it is not.",
     },
-    /* Prepared 2026-08-14, never run. Connecting it runs the same probe as any
-       other agent -- there is no Grok-specific path to write. */
+    /* Kept probeable so the missing readbacks can be re-tested when the CLI or
+       Core changes. A failed probe records nothing in the project. */
     invoke: grokInvoke()
   },
   {
@@ -446,13 +466,15 @@ export const agentCatalogue: CatalogueAgent[] = [
     subscription: "a Kimi account or a Moonshot API key",
     status: "unverified",
     caveat:
-      "It can be told to run with a fixed list of tools and no shell, and that list is enforced before a tool runs rather than only suggested to the model. What is unknown is whether its file tools stay inside the folder you point them at -- nothing it reports says so, and that cannot be found out without an account. Connecting it runs the same probe as any other agent.",
+      "The current first-party CLI can enforce a fixed list of file tools with no shell or sub-agents, and it can emit structured output. Hivemind has not yet measured a real Kimi stream, written a usage reader for it, or confirmed that its file tools stay inside the project. It cannot offer a connection yet because an account-backed run must answer those questions before Hivemind has a complete invocation to probe.",
     model: null,
     routing_tier: "standard",
     cost_rank: 10,
     context_window: 256_000,
     timeout_ms: 900_000,
     usage_parser: null,
+    prompt_arg: "arg",
+    connectable: false,
     readback: "none",
     shell_denial: {
       mechanism: "tool-allowlist",
@@ -500,6 +522,8 @@ export interface CatalogueProvider {
   caveat: string | null;
   /** Whether Hivemind can name a model for this harness at all. */
   pins_model: boolean;
+  /** Whether at least one catalogue entry has a complete, probeable argv. */
+  connectable: boolean;
 }
 
 export interface CatalogueModel {
@@ -602,12 +626,14 @@ export function catalogueProviders(): CatalogueProvider[] {
         subscription: agent.subscription,
         status: agent.status,
         caveat: agent.caveat,
-        pins_model: agent.model !== null
+        pins_model: agent.model !== null,
+        connectable: agent.connectable
       });
       continue;
     }
     existing.status = bestStatus(existing.status, agent.status);
     existing.pins_model = existing.pins_model || agent.model !== null;
+    existing.connectable = existing.connectable || agent.connectable;
     /* Keep the caveat belonging to the status that survived, so a provider
        does not end up explaining why it is unverified while reporting that it
        is supported. */

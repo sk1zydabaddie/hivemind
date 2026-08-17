@@ -362,19 +362,7 @@ describe("React workspace boundary", () => {
       path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"),
       "utf8"
     );
-    const { PROVIDERS, REQUIRED_ROLES } = (await import("../src/lib/providers")) as typeof import("../src/lib/providers");
-
-    // No provider picker implying integrations that do not exist: anything not
-    // supported carries a specific reason and offers no profile to install.
-    expect(PROVIDERS.filter((provider) => provider.status === "supported")).toHaveLength(1);
-    for (const provider of PROVIDERS) {
-      if (provider.status === "supported") {
-        expect(provider.profile).not.toBeNull();
-        continue;
-      }
-      expect(provider.profile).toBeNull();
-      expect(provider.caveat ?? "").not.toBe("");
-    }
+    const { REQUIRED_ROLES } = (await import("../src/lib/providers")) as typeof import("../src/lib/providers");
 
     // Core resolves an adapter profile by the tool name the client sends, so
     // every name the Work tab sends must have a setup instruction -- and every
@@ -389,8 +377,9 @@ describe("React workspace boundary", () => {
     expect(REQUIRED_ROLES.filter((role) => !role.requestedByName).map((role) => role.tool))
       .toEqual(["worker"]);
 
-    // The catalogue is data, not a hard-coded shape in the UI.
-    expect(providers).toMatch(/export const PROVIDERS/u);
+    // The catalogue is Core data, not a second hard-coded shape in the UI.
+    expect(providers).not.toMatch(/export const PROVIDERS/u);
+    expect(providers).not.toMatch(/ProviderOption|ProviderCapability/u);
   });
 
   /**
@@ -421,8 +410,8 @@ describe("React workspace boundary", () => {
        measured and refused. A REFUSED verdict was published for one agent and
        withdrawn, because it had been measured against the wrong distribution —
        see the provenance rule in DESIGN-NOTES. */
-    expect(catalogue).toMatch(/never against a live run/u);
-    expect(catalogue).toMatch(/cannot be found out without an account/u);
+    expect(catalogue).toMatch(/live Claude Code 2\.1\.233 probe verified all nine/u);
+    expect(catalogue).toMatch(/neither machine-readable stream reports the sandbox/u);
 
     /* Hivemind is an ADE: the agent is a harness plus the subscription that
        pays for it, and Hivemind never asks for a key of its own. */

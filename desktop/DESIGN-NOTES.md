@@ -1795,12 +1795,12 @@ Hivemind unfinished however much gets built, because what they want is what the
 architecture exists to prevent. Better they self-select in six words than after
 an afternoon.
 
-## Live bug: the Grok invocation in the catalogue cannot work
+## Fixed bug: the Grok invocation must pass the prompt to `--single`
 
-**Not a design note — a defect sitting in `src/agent-catalogue.ts` right now.**
-Recorded here rather than fixed silently, because the fix needs the account
-nobody has bought and this is the shape that would otherwise be discovered by
-the first paid probe.
+The catalogue now records prompt transport per harness. Grok uses an argv
+prompt and leaves `--single` as the final template argument; the generic
+adapter appends the prompt immediately after it. The other connected harnesses
+continue to use stdin.
 
 `grokInvoke()` builds:
 
@@ -1819,7 +1819,7 @@ So the argv either consumes `--model` as the prompt or fails to parse. The
 correct form puts the prompt there:
 
 ```
-grok --single "<prompt>" --model … --tools … --no-subagents --sandbox workspace
+grok --model … --tools … --no-subagents --sandbox workspace --single "<prompt>"
 ```
 
 which does reach the auth wall and emits a `system/init` event before refusing.
@@ -1829,7 +1829,14 @@ rather than from the binary, and `prompt_arg: "stdin"` reads plausibly beside a
 flag whose name sounds like a mode rather than a parameter. Both are the same
 error — **a flag's name is not its arity**, and only the binary can say which.
 
-Free to have found; it would have cost the first paid Grok probe otherwise.
+The regression test asserts both the prompt transport and the final position of
+`--single`, so a catalogue refactor cannot silently restore the broken shape.
+
+The live probe then established the next boundary rather than erasing it. Both
+machine-readable formats report usage and model attribution, but neither says
+which sandbox took effect. Writing the in-project canary proves the worker is
+not silently read-only; it does not prove where else it could write. The
+required confinement claim therefore still refuses.
 
 ## Harness notes: two things that look like defects and are not
 
@@ -2169,9 +2176,8 @@ rank descending, so it picks the strongest of those too.
 A new user's first run is the worst-case configuration, and nothing in the
 product tells them. The fix is one change in `initProject`: write ordinary
 default globs so that documentation is low, source and tests are medium, and
-build/CI/auth paths are high or critical. `COST_DEFAULT_GLOBS` in
-`desktop/src/lib/providers.ts` is the set the setup dialog hands to people today
-and is a reasonable starting shape.
+build/CI/auth paths are high or critical. Those defaults now live with Core in
+`src/project-defaults.ts`; the desktop has no second copy to drift.
 
 ### Invariant change: planning no longer requires a ratified spec
 
@@ -2803,9 +2809,9 @@ forced a read-only sandbox, and separately silently pinned an old model. So:
 | Carries no bypass flags | already enforced; keep refusing at preflight |
 
 Connection should fail with the specific missing capability, not a generic error,
-and nothing should be written when the probe fails. The desktop already renders
-this list — `CAPABILITIES` in `providers.ts` — so a probe result maps onto it
-directly.
+and nothing should be written when the probe fails. Core returns those typed
+capabilities through `config.inspect`; the desktop carries no provider-specific
+capability catalogue of its own.
 
 **Role names.** The client hardcodes `planner` and `manager`. Either Core should
 report the roles it expects in `config.inspect`, or config should carry a
@@ -3574,6 +3580,31 @@ inline threshold to zero; allowing `data:` would loosen a security boundary for
 cosmetic content. Mutation-testing the instrument by restoring the old inline
 threshold made it fail on all five provider marks with both zero natural size
 and explicit CSP violations.
+
+### Provider identity, project checks, and compact relief
+
+Three visual ideas sit beside each other in the provider row and must not be
+collapsed into one treatment:
+
+- the provider mark is identity. It keeps the provider's own colour or
+  monochrome artwork and takes no app gradient, tint, shadow, or invented tile;
+- the status text is evidence. Product-wide “proven end to end” and a current
+  project's “checked here” are different facts and are now rendered as such;
+- the checkbox is an action. It uses the same-hue navy ramp and the shared
+  raised/pressed token pair, enlarged from 16px to 18px so its rim, base and
+  contact shadow survive native-scale rendering.
+
+The completed step mark remains flat because it reports state rather than
+answering a press. “Choose another” remains an outline action, so it stays flat
+under the standing gradient rule. Adding relief to either would make decoration
+claim an interaction or make every action compete with the filled primary.
+
+The provider selection is genuinely plural now. Continue builds a deterministic
+plan that gives every selected, connectable provider at least one real worker
+probe and fills every empty role; a regression test proves a second selection
+cannot disappear behind the first. Kimi is visible but disabled because there
+is no complete usage reader/invocation yet. Its absence is named instead of
+turning a click into a guaranteed paid failure.
 
 So it has to be run. Before shipping a surface that grew, and after any change
 to a layout that bounds one. The suite going green is not evidence about this

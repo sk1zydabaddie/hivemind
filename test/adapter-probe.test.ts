@@ -256,12 +256,11 @@ test("a passed probe writes the profile and the capabilities it proved", async (
 test("an agent with no working invocation refuses with its real reason", async () => {
   const repo = await scratch();
   try {
-    /* Attemptable but unproven: it can be given a fixed tool list with no
-       shell, and nothing it reports says whether its file tools stay inside the
-       folder. No profile can be built while its usage reader is unwritten. */
+    /* Locally inspectable but not yet probeable: its tool policy can omit the
+       shell, but no account-backed stream or usage reader exists here. */
     const kimi = await connectAdapter(repo, "worker", "kimi-code");
     assert.equal(kimi.ok, false);
-    assert.match(kimi.reason, /no argv|stay inside the folder|could not be connected/u);
+    assert.match(kimi.reason, /no complete invocation|stay inside the project|could not be connected/u);
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

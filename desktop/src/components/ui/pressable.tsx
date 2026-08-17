@@ -45,7 +45,7 @@ import { cn } from "@/lib/utils";
  * movement that separates a press from a repaint, so it is not optional.
  */
 const PRESSABLE =
-  /* At 16px, the general button relief compresses into a single dark edge.
+  /* At compact control size, the general button relief compresses into a single dark edge.
      These are the SAME paired tokens and the SAME press, with crisper compact
      values: a two-pixel base and contact shadow survive native-scale rendering
      while the outer blur stays below the attention edge's visual weight. */
@@ -63,7 +63,7 @@ export function Checkbox({
     <CheckboxPrimitive.Root
       data-slot="checkbox"
       className={cn(
-        "grid size-4 shrink-0 place-items-center rounded-sm border border-rule bg-panel text-transparent outline-none",
+        "grid size-[18px] shrink-0 place-items-center rounded-[3px] border border-rule bg-panel text-transparent outline-none",
         PRESSABLE,
         CHECKED_FILL,
         "data-[state=checked]:border-navy-deep",
@@ -75,7 +75,7 @@ export function Checkbox({
         className="grid place-items-center text-current"
         data-slot="checkbox-indicator"
       >
-        <CheckIcon aria-hidden="true" className="size-3 stroke-[3]" />
+        <CheckIcon aria-hidden="true" className="size-[13px] stroke-[3]" />
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   );
@@ -91,7 +91,7 @@ export function RadioGroupItem({
     <RadioGroupPrimitive.Item
       data-slot="radio"
       className={cn(
-        "grid size-4 shrink-0 place-items-center rounded-full border border-rule bg-panel outline-none",
+        "grid size-[18px] shrink-0 place-items-center rounded-full border border-rule bg-panel outline-none",
         PRESSABLE,
         CHECKED_FILL,
         "data-[state=checked]:border-navy-deep",

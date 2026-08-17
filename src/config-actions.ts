@@ -221,6 +221,24 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
     });
   }
 
+  /* A catalogue status is product-wide evidence (for example, Codex has gone
+     through a complete Hivemind run). A connection record is different: it is
+     proof that THIS project, account, machine and harness configuration passed
+     the capability probe. Keep both facts instead of translating one into the
+     other in React. */
+  const checkedHarnesses = new Set(
+    adapters
+      .filter(
+        (adapter) =>
+          adapter.agent_id !== null &&
+          adapter.connected_at !== null &&
+          adapter.capabilities_stale === null &&
+          adapter.problems.length === 0
+      )
+      .map((adapter) => findCatalogueAgent(adapter.agent_id!)?.harness)
+      .filter((harness): harness is string => harness !== undefined)
+  );
+
   return {
     ok: true,
     value: {
@@ -234,7 +252,10 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
          are actually choosing between. `catalogue` below is the flattened
          (provider x model) list the connect action still takes, kept because
          it IS the connect unit -- but it is no longer what the picker shows. */
-      providers: catalogueProviders(),
+      providers: catalogueProviders().map((provider) => ({
+        ...provider,
+        checked_here: checkedHarnesses.has(provider.id)
+      })),
       models: catalogueModels().map((model) => {
         const price = priceForModel(model.slug);
         return {
@@ -260,7 +281,7 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
         model: agent.model,
         routing_tier: agent.routing_tier,
         context_window: agent.context_window,
-        connectable: agent.invoke !== null
+        connectable: agent.connectable
       })),
       limits: {
         max_concurrent_workers_hard_max: HARD_MAX_CONCURRENT_WORKERS,
@@ -556,7 +577,7 @@ export function buildProfileForAgent(agent: CatalogueAgent, role: AdapterRoleNam
        this against the filename, and the quota ledger is keyed by it. */
     tool: profileNameFor(role, agent.id),
     invoke: [...agent.invoke],
-    prompt_arg: "stdin",
+    prompt_arg: agent.prompt_arg,
     verified_on: new Date().toISOString().slice(0, 10),
     context_window: agent.context_window,
     timeout_ms: agent.timeout_ms,

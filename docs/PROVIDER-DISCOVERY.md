@@ -1215,19 +1215,20 @@ a TOML/JSON parse. Three harnesses use three formats, and a parser that fails on
 an unfamiliar dialect would report "no override" for a file that has one. A
 regex errs toward *finding* an override, which is the safe direction here.
 
-## 10. Grok Build — prepared, not run — 2026-08-14
+## 10. Grok Build — live probe refused on two required boundaries — 2026-08-17
 
-**Nothing was spent.** The invocation exists so the probe is one command when
-credentials arrive; no paid call has been made and none can be made by accident,
-because Grok is not installed on this machine.
+The first-party npm package `@xai-official/grok` 1.0.4 is installed on this
+machine. `grok inspect`, `grok models`, and the full help surface were read
+without a model call, then device authorization completed and one real
+Hivemind connection probe ran.
 
 ### What is needed
 
 | | |
 | --- | --- |
 | **Account** | An **X.AI plan** (the consumer subscription that includes Grok Build) **or** an `XAI_API_KEY` |
-| **Install** | `curl -fsSL https://x.ai/cli/install.sh \| sh` — the command xAI's own docs and the `xai-org/grok-build` README both give. Distribution-provenance rule satisfied |
-| **Then** | Connect it in Settings like any other agent. There is no Grok-specific path to write |
+| **Install** | Complete: first-party `@xai-official/grok` 1.0.4, the npm alternative named by xAI's enterprise documentation |
+| **Result** | The probe ran and refused; no adapter or connection record was written |
 
 Either credential works. The API key is the cheaper way to answer the one
 question below if a plan is not wanted, though a plan is the shape the product
@@ -1236,12 +1237,12 @@ assumes elsewhere.
 ### The prepared invocation
 
 ```
-grok --single
-     --model grok-code-fast-1
+grok --model grok-4.5
      --tools read,write,edit,glob,grep
      --no-subagents
      --sandbox workspace
      --output-format streaming-messages-json
+     --single "<prompt>"
 ```
 
 Windows takes the `cmd.exe /d /s /c grok.cmd` prefix, like the other two `.cmd`
@@ -1251,6 +1252,11 @@ carry `--dangerously-skip-permissions` or `--permission-mode bypassPermissions`
 — the two Claude-compatibility aliases Grok also ships.
 
 Four deliberate choices:
+
+- **`grok-4.5`, not `grok-code-fast-1`.** xAI retired the old code slug on
+  2026-05-15, and the installed CLI now lists `grok-4.5` as an available
+  current model. The old invocation still resolved through a redirect, which
+  would have made the model-pin check report the wrong thing.
 
 - **`--tools` as a positive allowlist**, so the shell is *absent* rather than
   denied. Same shape as Claude Code, which is the posture that verified there.
@@ -1273,24 +1279,39 @@ Four deliberate choices:
   `reports_usage` returns unverified, and the contract **admits with spend
   ceilings off and the person told** rather than refusing.
 
-### The one question the first probe settles
+### What the real probe settled
 
-**Does the stream carry an init event naming the resolved model, tools and
-sandbox?**
+The Hivemind probe used the exact catalogue invocation and finished in 4.8s:
 
-- **If yes**, every capability can verify by readback and Grok becomes a
-  fully-verified provider — likely the best-instrumented of the four, given the
-  flags.
-- **If no**, the shell denial cannot be verified by readback, and
-  `confined_to_project` refuses on unverified. Grok would then need a
-  behavioural canary the way OpenCode did, which is a design change rather than
-  a config change. A second probe against `streaming-json` would settle whether
-  the ACP stream carries one before that design work is started — a config
-  change, and cheap.
+- It wrote the requested file inside the disposable project.
+- Its Anthropic-compatible stream reported **10,063 effective tokens** and
+  attributed the call only to `grok-4.5-build`.
+- It exited without prompting and left the branch unchanged.
+- It did **not** report the resolved sandbox, so a successfully written canary
+  cannot prove where else it could have written. The required confinement claim
+  stayed unverified and refused.
+- Core has no Grok entry in its endpoint-configuration surface. The CLI permits
+  custom model `base_url` values, so the endpoint cannot be assumed from the
+  vendor default. That required claim also stayed unverified and refused.
 
-Estimated cost, on the same basis as the Claude Code and OpenCode probes that
-came in accurate: **~15–25K tokens, one call.** The estimate is deliberately not
-extrapolated from a cheaper configuration.
+A second, smaller call against `streaming-json` produced an
+`available_commands` record, incremental output, usage, and an end record. It
+still did not report the resolved sandbox. This rules out switching formats as
+the missing fix. The call used 4,825 effective tokens.
+
+No paid Kimi call was made. The installed 0.36.1 CLI has no configured provider
+or account, so only its local doctor/configuration and documented tool-policy
+surface were verified.
+
+### Installed-screen evidence
+
+`npm run ship` built, installed, and verified desktop build **26.817.1422**.
+`docs/evidence/provider-setup-26.817.1422.png` is the running installed app at a
+1440x900 client area (the capture includes the one-pixel Windows frame and title
+bar). It shows all five provider marks loaded, native-scale checkbox relief,
+the filled Continue ramp, and Grok/Kimi disabled as “Cannot connect yet.” The
+production reachability/resource check also passed every surface at 1280x720,
+1366x768, and 1440x900 with no image or CSP error.
 
 Everything below is doc-derived and unexercised until then. The binary checks
 authentication *before* it validates flags, so no more can be learned for free.

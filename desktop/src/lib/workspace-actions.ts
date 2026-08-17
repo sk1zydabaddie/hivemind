@@ -334,6 +334,9 @@ export interface CatalogueProvider {
   status: 'supported' | 'unverified' | 'unsupported';
   caveat: string | null;
   pins_model: boolean;
+  connectable: boolean;
+  /** A current capability record exists for this project and machine. */
+  checked_here: boolean;
 }
 
 export interface ModelPrice {

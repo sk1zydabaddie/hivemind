@@ -311,13 +311,77 @@ function WhatThisIs(): React.JSX.Element | null {
    would do, and the second one read as a disclaimer rather than a price. */
 const TOKENS_PER_CONNECT = 40_000;
 
+export interface PlannedProviderConnection {
+  role: string;
+  agentId: string;
+  providerId: string;
+}
+
+/**
+ * Turn the two independent choices on this screen into the exact probes the
+ * dispatcher will run. Kept pure so a regression cannot make the second
+ * selected provider vanish behind the first while the source still says
+ * "multi-select".
+ */
+export function planProviderConnections(input: {
+  chosen: Set<string>;
+  providers: CatalogueProvider[];
+  models: CatalogueModelView[];
+  recommendations: RoleRecommendation[];
+  remainingRoles: string[];
+}): PlannedProviderConnection[] {
+  const runnableProviders = new Set(
+    input.providers.filter((provider) => provider.connectable).map((provider) => provider.id)
+  );
+  const agentForRole = (role: string): string | null => {
+    const fromChosen = input.models.filter(
+      (model) => input.chosen.has(model.provider_id) && runnableProviders.has(model.provider_id)
+    );
+    const advice = input.recommendations.find((entry) => entry.role === role);
+    if (advice !== undefined && fromChosen.some((model) => model.agent_id === advice.agent_id)) {
+      return advice.agent_id;
+    }
+    return fromChosen[0]?.agent_id ?? null;
+  };
+  const agentForProvider = (providerId: string): string | null =>
+    input.models.find((model) => model.provider_id === providerId)?.agent_id ?? null;
+
+  const roleConnections = input.remainingRoles.flatMap((role) => {
+    const agentId = agentForRole(role);
+    const model = input.models.find((entry) => entry.agent_id === agentId);
+    return agentId === null || model === undefined
+      ? []
+      : [{ role, agentId, providerId: model.provider_id }];
+  });
+  const covered = new Set(roleConnections.map((entry) => entry.providerId));
+  const providerConnections = input.providers.flatMap((provider) => {
+    if (
+      !input.chosen.has(provider.id) ||
+      provider.checked_here ||
+      covered.has(provider.id) ||
+      !provider.connectable
+    ) {
+      return [];
+    }
+    const agentId = agentForProvider(provider.id);
+    return agentId === null ? [] : [{ role: "worker", agentId, providerId: provider.id }];
+  });
+  const unique = new Map<string, PlannedProviderConnection>();
+  for (const entry of [...providerConnections, ...roleConnections]) {
+    unique.set(`${entry.role}:${entry.agentId}`, entry);
+  }
+  return [...unique.values()];
+}
+
 /* Two questions, asked separately.
  *
  * Step 3 is WHICH PROVIDERS DO I HAVE. It is multi-select, because somebody
  * with both a ChatGPT and a Claude subscription has both — and the previous
  * single-select made the mixed-provider arrangement Core has always supported
  * unreachable from the interface. Selecting is not spending: the checkboxes
- * choose, and Continue is the act that runs a probe per role.
+ * choose, and Continue builds a plan that covers every selected provider plus
+ * every still-empty role. A selected provider must never disappear merely
+ * because another provider happened to be first in the catalogue.
  *
  * Step 4 is WHICH MODEL FOR WHICH ROLE, and it only exists once something is
  * connected, because until a probe has run nothing knows whether a model can be
@@ -376,41 +440,42 @@ function ConnectStep({
     setPicked(next);
   };
 
-  /* The model each role connects AS. A provider is not enough to probe with --
-     a probe runs one binary with one model pinned -- so the suggestion decides
-     which, and step 4 is where that gets changed afterwards. */
-  const agentFor = (roleTool: string): string | null => {
-    const fromChosen = models.filter((model) => chosen.has(model.provider_id));
-    const advice = recommendations.find((entry) => entry.role === roleTool);
-    if (advice !== undefined && fromChosen.some((m) => m.agent_id === advice.agent_id)) {
-      return advice.agent_id;
-    }
-    return fromChosen[0]?.agent_id ?? null;
-  };
+  /* One probe per selected provider, then whatever additional role profiles
+     Core still needs. Worker is a pool, so a provider not used by the planner
+     or manager can be checked as another real worker without inventing a
+     provider-only record that runtime routing would never consume. */
+  const connectionPlan = (): PlannedProviderConnection[] =>
+    planProviderConnections({
+      chosen,
+      providers,
+      models,
+      recommendations,
+      remainingRoles: remaining.map((role) => role.tool)
+    });
+
+  const plannedConnections = connectionPlan();
 
   const connectAll = async (): Promise<void> => {
     setFailure("");
-    /* Every role skipped for want of a model is a Continue that appears to do
-       nothing at all -- the same dead end as the build mismatch, arrived at by
-       pressing the button the screen told you to press. Say so instead. */
-    const unaimed = remaining.filter((role) => agentFor(role.tool) === null);
-    if (unaimed.length === remaining.length) {
+    /* A Continue with no runnable provider is a dead end reached by pressing
+       the button the screen told you to press. Say so instead. */
+    const plan = connectionPlan();
+    if (plan.length === 0) {
       setFailure(
         "Nothing ticked here can run a model, so there is nothing to check. Tick a provider you actually have."
       );
       return;
     }
-    for (const role of remaining) {
-      const agentId = agentFor(role.tool);
-      if (agentId === null) continue;
-      setBusy(role.tool);
+    for (const connection of plan) {
+      const providerLabel = providers.find((entry) => entry.id === connection.providerId)?.label;
+      setBusy(providerLabel ?? connection.role);
       try {
         await onAction({
           type: "adapter.connect",
-          payload: { role: role.tool, agent_id: agentId }
+          payload: { role: connection.role, agent_id: connection.agentId }
         });
       } catch (cause) {
-        setFailure(`${role.tool}: ${cause instanceof Error ? cause.message : String(cause)}`);
+        setFailure(`${providerLabel ?? connection.role}: ${cause instanceof Error ? cause.message : String(cause)}`);
         break;
       } finally {
         setBusy(null);
@@ -461,7 +526,7 @@ function ConnectStep({
 
           <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
             <Button
-              disabled={busy !== null || chosen.size === 0}
+              disabled={busy !== null || plannedConnections.length === 0}
               type="button"
               onClick={() => void connectAll()}
             >
@@ -473,8 +538,8 @@ function ConnectStep({
               {busy === null ? "Continue" : `Checking ${busy}…`}
             </Button>
             <span className="text-[11px] text-muted-foreground">
-              Runs each agent once to record what it can do — about{" "}
-              {(TOKENS_PER_CONNECT * remaining.length).toLocaleString()} tokens on
+              Runs every selected provider at least once and fills the empty roles — about{" "}
+              {(TOKENS_PER_CONNECT * plannedConnections.length).toLocaleString()} tokens on
               your own subscription.
             </span>
           </div>
@@ -552,6 +617,7 @@ function ProviderRow({
         <Checkbox
           aria-label={`Use ${provider.label}`}
           checked={picked}
+          disabled={!provider.connectable}
           onCheckedChange={onToggle}
         />
         <ProviderMark provider={provider.id} />
@@ -563,10 +629,20 @@ function ProviderRow({
         </span>
         <span
           className={`shrink-0 text-[11px] font-medium ${
-            provider.status === "supported" ? "text-navy" : "text-amber"
+            provider.checked_here || provider.status === "supported"
+              ? "text-navy"
+              : provider.connectable
+                ? "text-amber"
+                : "text-muted-foreground"
           }`}
         >
-          {provider.status === "supported" ? "Verified" : "Not verified yet"}
+          {provider.checked_here
+            ? "Checked here"
+            : provider.status === "supported"
+              ? "Proven end to end"
+              : provider.connectable
+                ? "Ready to check"
+                : "Cannot connect yet"}
         </span>
         {provider.caveat === null ? (
           <span aria-hidden="true" className="size-5 shrink-0" />

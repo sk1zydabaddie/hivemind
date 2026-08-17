@@ -12,7 +12,7 @@ import { ROLE_RECOMMENDATIONS, modelChoiceAllowed, modelChoiceRefusal, recommend
 import { validateConfig } from "../src/config.js";
 import { isMachineSpecific, trackedMachineFiles, untrackMachineFiles } from "../src/project-sharing.js";
 import { currentMachine, machineStanding } from "../src/verification-standing.js";
-import { buildProfileForAgent, initProjectForDesktop, inspectProjectConfig, setProjectConfig } from "../src/config-actions.js";
+import { buildProfileForAgent, connectAdapter, initProjectForDesktop, inspectProjectConfig, setProjectConfig } from "../src/config-actions.js";
 import { executeWorkspaceAction } from "../src/workspace-actions.js";
 
 const run = promisify(execFile);
@@ -191,7 +191,7 @@ test("the agent catalogue is honest about what has actually been run", () => {
   // an agent whose usage reporting is unproven cannot claim support.
   const claude = agentCatalogue.find((agent) => agent.id === "claude-code")!;
   assert.equal(claude.status, "unverified");
-  assert.match(claude.caveat!, /never against a live run/u);
+  assert.match(claude.caveat!, /live Claude Code 2\.1\.233 probe verified all nine/u);
 });
 
 /* Config validation is closed-world, and it was not before.
@@ -278,6 +278,58 @@ test("a provider is a harness, not a harness-and-model pair", () => {
   /* And the caveats survive the split -- they are properties of the harness. */
   const claude = providers.find((entry) => entry.id === "claude");
   assert.ok(claude!.caveat && claude!.caveat.length > 40, "the honest part is kept");
+});
+
+test("provider rows distinguish product evidence from a current project check", async () => {
+  const repo = await repoWithProject();
+  try {
+    await initProjectForDesktop(repo);
+    const connected = await connectAdapter(repo, "worker", "codex-terra", {
+      runner: async () => ({
+        ok: true,
+        reason: null,
+        stdout:
+          '{"type":"thread.started","thread_id":"abc"}\n{"type":"turn.completed","usage":{"input_tokens":1000,"output_tokens":20}}',
+        stderr: "",
+        exitCode: 0,
+        timedOut: false,
+        wallTimeMs: 100,
+        effectiveTokens: 1020,
+        wroteNonceFile: true
+      }),
+      readback: async () => ({
+        source: "test rollout",
+        model: "gpt-5.6-terra",
+        sandbox: "workspace-write",
+        approvalPolicy: "never",
+        workspaceRoots: [repo],
+        subagents: "v2"
+      })
+    });
+    assert.equal(connected.ok, true);
+
+    const inspected = await inspectProjectConfig(repo);
+    const providers = inspected.ok
+      ? (inspected.value as { providers: Array<{ id: string; checked_here: boolean; connectable: boolean }> }).providers
+      : [];
+    assert.equal(providers.find((provider) => provider.id === "codex-cli")?.checked_here, true);
+    assert.equal(providers.find((provider) => provider.id === "claude")?.checked_here, false);
+    assert.equal(providers.find((provider) => provider.id === "grok")?.connectable, false);
+    assert.equal(providers.find((provider) => provider.id === "kimi")?.connectable, false);
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("Grok receives its prompt as the value of the final --single flag", () => {
+  const grok = findCatalogueAgent("grok-build");
+  assert.ok(grok);
+  const profile = buildProfileForAgent(grok, "worker");
+  assert.ok(profile);
+  assert.equal(profile.prompt_arg, "arg");
+  assert.equal(profile.invoke.at(-1), "--single");
+  assert.equal(profile.invoke.includes("grok-code-fast-1"), false);
+  assert.equal(profile.invoke.includes("grok-4.5"), true);
 });
 
 test("a model carries its real slug, and a provider that pins none says so", () => {
