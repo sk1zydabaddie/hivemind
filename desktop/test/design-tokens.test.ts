@@ -186,20 +186,53 @@ describe("radius contract", () => {
     "radius-3xl": "6px"
   };
 
+  /* Evaluates `calc(var(--radius) * N)` the way the engine will, so the scale
+     can be DERIVED from one number and still be checked as numbers. Resolving
+     the var chain leaves a `calc()` string, and a test that compared strings
+     would pass on any multiplier at all -- which is most of the value here. */
+  const computed = (styles: string, token: string): number => {
+    const value = resolve(styles, token);
+    const direct = /^(\d+(?:\.\d+)?)px$/u.exec(value.trim());
+    if (direct !== null) return Number(direct[1]);
+    const scaled = /calc\(\s*(\d+(?:\.\d+)?)px\s*\*\s*(\d+(?:\.\d+)?)\s*\)/u.exec(value);
+    expect(scaled, `${token} is neither a length nor a scale of one: ${value}`).not.toBeNull();
+    return Number(scaled![1]) * Number(scaled![2]);
+  };
+
   test("the six steps are the whole scale, and it stays barely rounded", async () => {
     const styles = await readStyles();
     const theme = themeBlock(styles);
 
     for (const [token, expected] of Object.entries(radii)) {
       expect(theme, `--${token} is missing from @theme inline`).toContain(`--${token}:`);
-      expect(resolve(styles, `--${token}`), `--${token} drifted off the scale`).toBe(expected);
+      expect(computed(styles, `--${token}`), `--${token} drifted off the scale`).toBe(
+        Number(expected.replace("px", ""))
+      );
     }
 
     /* Nothing above 6px, because a panel corner larger than that reads as a
-       card on a marketing page rather than as an instrument's edge. */
+       card on a marketing page rather than as an instrument's edge.
+       This is a claim about the SHIPPED default. The experimental theme panel
+       moves `--radius` at runtime on purpose and is temporary; what must not
+       drift is the value in the stylesheet. */
     for (const declared of theme.match(/--radius[a-z0-9-]*:\s*[^;]+/gu) ?? []) {
-      const px = /(\d+)px/u.exec(resolve(styles, declared.split(":")[0]!.trim()));
-      if (px !== null) expect(Number(px[1]), `${declared} is above 6px`).toBeLessThanOrEqual(6);
+      const token = declared.split(":")[0]!.trim();
+      expect(computed(styles, token), `${token} is above 6px`).toBeLessThanOrEqual(6);
+    }
+  });
+
+  /* The scale is SINGLE-SOURCED. Seven hand-written lengths are seven chances
+     to disagree, and the theme panel could only move one of them -- a slider
+     that rounded buttons and left panels square would be a control that half
+     works, which is worse than one that does not. */
+  test("every step derives from --radius, so one number moves the scale", async () => {
+    const styles = await readStyles();
+    const theme = themeBlock(styles);
+    for (const token of Object.keys(radii)) {
+      const declared = new RegExp(`--${token}:\\s*([^;]+);`, "u").exec(theme)?.[1] ?? "";
+      expect(declared, `--${token} is a literal and cannot follow --radius`).toMatch(
+        /var\(--radius\)/u
+      );
     }
   });
 });
@@ -338,8 +371,14 @@ describe("palette discipline", () => {
         .toBeGreaterThan(0);
       for (const variant of raised) {
         const which = /^"(bg-[a-z-]+)/u.exec(variant)?.[1] ?? variant.slice(0, 24);
+        /* `group-active:` as well as `active:`. A switch THUMB is raised and
+           depresses, but the pointer lands on the track, so `active:` on the
+           thumb never fires -- the press has to be read from the parent. That
+           is a real second form rather than a loophole: the requirement is
+           still that this exact element shows the pressed state when the
+           control is pressed. */
         expect(variant, `${which} takes relief with no pressed state`).toMatch(
-          /active:shadow-\[var\(--relief-pressed\)\]/u
+          /(?:active|group-active):shadow-\[var\(--relief-pressed\)\]/u
         );
         /* It has to MOVE. The distance is a value and may be turned up -- it
            went from 1px to 2px when the relief was strengthened -- so this
@@ -347,12 +386,63 @@ describe("palette discipline", () => {
            exact utility. What is not negotiable is that something moves: a
            shadow swap with a stationary label is a repaint, not a press. */
         expect(variant, `${which} is raised but does not depress`).toMatch(
-          /active:translate-y-(?:px|\[[1-9]\d*px\])/u
+          /(?:active|group-active):translate-y-(?:px|\[[1-9]\d*px\])/u
         );
       }
     }
-    /* Only the control component may carry it at all. */
-    expect(reliefUsers, "relief belongs to the button and nothing else").toEqual(["button.tsx"]);
+    /**
+     * Who may claim relief — extended, and this is an APPLICATION of the rule
+     * rather than a relaxation of it.
+     *
+     * The rule was never "only buttons". It is that relief claims affordance and
+     * only an object that answers when pressed may make the claim. A checkbox
+     * answers when pressed; so does a radio and a switch. Each takes a press and
+     * returns a state change caused by that press, which is the same redemption
+     * a button offers and the one a panel can never offer. `--shadow-panel`
+     * stays deleted for exactly the reason it always was.
+     *
+     * The list stays closed, because "controls that answer" is a judgement and
+     * an open rule would be no rule. Adding a file here is a deliberate edit
+     * that has to survive review.
+     */
+    expect(
+      [...reliefUsers].sort(),
+      "relief belongs to controls that answer when pressed, and to nothing else"
+    ).toEqual(["button.tsx", "pressable.tsx"]);
+
+    /**
+     * The converse half, for controls that are FLAT at rest and depress anyway.
+     *
+     * Tabs are the case: a tab answers when pressed, so it may show the press,
+     * but it does not sit proud of the toolbar — claiming relief at rest would be
+     * the panel-shadow mistake with a hover state. So it takes the pressed
+     * shadow and no raised one.
+     *
+     * Without this rule that combination is invisible to the suite: the checks
+     * above only look at files containing `--relief`, so a control could take
+     * `--relief-pressed` alone and never be examined. The requirement that
+     * survives is the one that matters — **it has to move.** A shadow swap with a
+     * stationary label is a repaint, not a press, whatever the resting state was.
+     */
+    for (const file of files) {
+      if (!file.endsWith(".tsx")) continue;
+      /* Comments out FIRST. The doc comment in `pressable.tsx` explains this
+         very rule, and the first draft of this scan matched the prose and
+         reported the explanation as a control that depresses without moving.
+         Third time in one session -- so it is a helper, not a habit. */
+      const source = (await readFile(file, "utf8"))
+        .replace(/\/\*[\s\S]*?\*\//gu, "")
+        .replace(/^[ 	]*\/\/.*$/gmu, "");
+      const pressedOnly = (source.match(/"[^"]*--relief-pressed[^"]*"/gu) ?? []).filter(
+        (variant) => !variant.includes("var(--relief)")
+      );
+      for (const variant of pressedOnly) {
+        expect(
+          variant,
+          `${path.basename(file)} depresses without moving: ${variant.slice(0, 70)}`
+        ).toMatch(/(?:active|group-active):translate-y-(?:px|\[[1-9]\d*px\])/u);
+      }
+    }
 
     /* The pair is declared once, together, so neither can be taken alone. */
     const reliefCss = (await readStyles()).replace(/\/\*[\s\S]*?\*\//gu, "");

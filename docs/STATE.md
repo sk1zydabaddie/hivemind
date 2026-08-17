@@ -699,6 +699,75 @@ next session does not have to rediscover them.
 >   it. A retry now re-runs *only* the swap, because the build already happened
 >   and was never what failed.
 
+> **`0>>` redirects STDIN, so the log line that would have named the next failure
+> silently went somewhere else.** A NEW shape, and the one worth carrying out of
+> this project: **the instrument was destroyed by the value it was reporting.**
+>
+> The line was
+>
+> ```bat
+> echo [%TIME%] installer returned %errorlevel%>>"%LOG%"
+> ```
+>
+> With a successful install, `%errorlevel%` expands to `0` and cmd reads
+> `echo ... 0>>"%LOG%"` — where **`0>>` is a redirect of file handle 0, standard
+> input**. The log is created empty, and the text goes to the process's real
+> stdout. Every single-digit code is parsed the same way, and single digits are
+> what installers actually return. Verified all four shapes: bare
+> `%errorlevel%>>` loses the line, a space before the redirect keeps it, and only
+> a value captured into a variable survives the `echo` to be tested afterwards.
+>
+> Two things make this worse than an ordinary quoting bug:
+>
+> 1. **It failed only on the values that mattered.** A code of `10` or a word
+>    would have printed fine. `0` through `9` — success, and every ordinary
+>    failure — vanished.
+> 2. **It was found on a walk that SUCCEEDED.** Three consecutive real swaps
+>    worked, one click each, and the log read `installing / restarted` with
+>    `installer returned` missing between them. That gap is the identical shape to
+>    the `\\?\` bug, and `installer returned` is *the line that identified the
+>    `\\?\` bug*. The instrument that had solved the previous failure had been
+>    quietly disabled, and only a green run showed it.
+>
+> The general rule: **a diagnostic is code, and it needs its own evidence.** Every
+> other assertion in this project asks whether the app does the right thing;
+> nothing was asking whether the thing that reports on the app still works. A log
+> line is trusted precisely when it is silent, which is the worst possible
+> property for something unverified. `test/swap-helper.test.ts` now asserts the
+> shape of the reporting, not only the shape of the work.
+>
+> And the corollary for interpolating a value adjacent to an operator: **the value
+> can change how the line PARSES, not just what it says.** Anywhere a number lands
+> immediately before `>>`, `>`, `<`, or `|` in a shell, the number is a candidate
+> operand. Keep whitespace, or keep the value in a variable, or both.
+
+> **A rule that reads source matches the prose explaining the rule. Four times in
+> one session.** This was already recorded as the project's most-repeated trap and
+> it kept happening anyway, which is the finding: it had been written down as a
+> thing to be careful about, and care does not scale.
+>
+> | Assertion | What it matched instead |
+> | --- | --- |
+> | no `backdrop-filter` anywhere | the comment in `styles.css` explaining why the blur was removed |
+> | the `:gaveup` block installs nothing | the comment saying it must not install |
+> | never `attempted != running` | the doc comment recording that it used to say exactly that |
+> | never `fonts.check` | the note explaining that `fonts.check` cannot be trusted |
+>
+> Every one of them is the same sentence: **the best documentation of a ban
+> contains the banned string, so a naive search finds the explanation first.** And
+> the failures are asymmetric in the worst direction — three of these four broke a
+> *passing* build loudly, which is the lucky case, but a ban written as
+> `expect(source).toMatch(...)` instead would have been satisfied by its own
+> comment forever and asserted nothing.
+>
+> The fix is not vigilance, it is a function. Every file that asserts on source
+> now strips comments first, through a named helper whose docstring says why —
+> `withoutComments`, `codeOf`, and the inline `.replace(/\/\*[\s\S]*?\*\//gu, "")`
+> in the token tests. **When a trap recurs after being documented, the
+> documentation was the wrong instrument.** A rule that depends on remembering it
+> is a rule that will be forgotten; a rule that lives in a helper is one you have
+> to actively avoid.
+
 > **Applied, measurable, and doing nothing — the visual case.** The glass
 > depths report exactly what they should: reading the live elements gives
 > `saturate(1.8) blur(18px)` on the dialog, `blur(11px)` on panel headers,

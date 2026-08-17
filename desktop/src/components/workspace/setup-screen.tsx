@@ -2,6 +2,7 @@ import { ArrowRight, Check, ChevronDown, FolderGit2, Loader, Plug, X } from "luc
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/pressable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useDismissed } from "@/lib/dismissible";
 import { displayProjectPath, PROJECT_FAULT } from "@/lib/project-session";
@@ -544,12 +545,14 @@ function ProviderRow({
       <div
         className={`flex items-center gap-2.5 px-2.5 py-2 ${picked ? "bg-navy-wash" : "bg-panel"}`}
       >
-        <input
+        {/* A real control rather than a native input: a native checkbox is
+            drawn by the platform and cannot carry relief, so the one control
+            on this screen that most obviously answers when pressed was the one
+            that could not show it. */}
+        <Checkbox
           aria-label={`Use ${provider.label}`}
           checked={picked}
-          className="size-3.5 shrink-0 accent-navy"
-          type="checkbox"
-          onChange={onToggle}
+          onCheckedChange={onToggle}
         />
         <ProviderMark provider={provider.id} />
         <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink">
@@ -593,26 +596,42 @@ function ProviderRow({
   );
 }
 
-/* Real marks where one exists, a monogram where none does — rather than a
-   generic glyph standing in for a brand, or an invented logo. */
+/**
+ * Real marks where one exists, a monogram where none does — rather than a
+ * generic glyph standing in for a brand, or an invented logo.
+ *
+ * SIZED TO THE TEXT, in `em` rather than pixels. A 16px mark beside 12px text is
+ * a mark that outranks its own label, and a fixed pixel size stops being right
+ * the moment the type scale or the family changes — which the experimental theme
+ * panel does live. `1.15em` tracks the label it belongs to, whatever that label
+ * turns out to be.
+ */
 function ProviderMark({ provider }: { provider: string }): React.JSX.Element {
   const mark = PROVIDER_MARKS[provider];
   if (mark === undefined) {
     return (
       <span
         aria-hidden="true"
-        className="grid size-4 shrink-0 place-items-center rounded-xs border border-rule text-[9px] font-semibold text-muted-foreground"
+        className="grid size-[1.15em] shrink-0 place-items-center rounded-xs border border-rule text-[0.62em] font-semibold text-muted-foreground"
       >
         {provider.slice(0, 1).toUpperCase()}
       </span>
     );
   }
   return (
-    <picture className="flex size-4 shrink-0 items-center">
+    <picture className="flex size-[1.15em] shrink-0 items-center">
       {mark.dark === undefined ? null : (
         <source media="(prefers-color-scheme: dark)" srcSet={mark.dark} />
       )}
-      <img alt="" className="block size-4" draggable={false} src={mark.light} />
+      {/* `rounded-[0.2em]` because three of the five marks are full-bleed tiles
+          with their own background; a square tile against a rounded row reads as
+          a sticker rather than as a logo. */}
+      <img
+        alt=""
+        className="block size-[1.15em] rounded-[0.2em]"
+        draggable={false}
+        src={mark.light}
+      />
     </picture>
   );
 }
@@ -723,7 +742,7 @@ function ModelStep({
                   return (
                     <button
                       aria-pressed={active}
-                      className={`cursor-pointer rounded-sm border px-2 py-1 text-left transition-colors ${
+                      className={`cursor-pointer rounded-sm border px-2 py-1 text-left transition-[color,background-color,border-color,box-shadow,translate] duration-[120ms] ease-[var(--spring)] active:translate-y-[2px] active:shadow-[var(--relief-pressed)] ${
                         active ? "border-navy bg-navy-wash" : "border-rule bg-panel hover:border-navy/40"
                       }`}
                       disabled={busy !== null}

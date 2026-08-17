@@ -148,7 +148,12 @@ describe("cold open", () => {
        with two subscriptions has two -- single-select made the mixed-provider
        arrangement Core supports unreachable from the interface. */
     expect(rendered).toMatch(/Which providers do you have/u);
-    expect(rendered).toMatch(/type="checkbox"/u);
+    /* Was `type="checkbox"`. The native input was replaced by a real control
+       so it could carry relief -- a platform-drawn checkbox cannot -- and this
+       assertion is about MULTI-SELECT rather than about which element provides
+       it. Asserting the component keeps the claim and follows the change. */
+    expect(rendered).toMatch(/<Checkbox/u);
+    expect(rendered).toMatch(/onCheckedChange/u);
     /* A real slug, and a price that says what kind of price it is. */
     expect(rendered).toMatch(/model\.slug/u);
     expect(rendered).toMatch(/not what you pay on a subscription/u);
