@@ -140,7 +140,14 @@ export function UpdateBar({ projectPath }: { projectPath: string }): React.JSX.E
   /* One button, and its label says how long it will take, because the two
      routes differ by minutes and a person deserves to know which they are
      getting before they press it. */
-  const takes = answer.source === "source" ? "Build and restart" : "Update and restart";
+  const takes =
+    answer.source === "did_not_take"
+      ? /* Not "Try again", which reads as re-running the whole thing. The build
+           is already done and on disk; only the install is repeated. */
+        "Install it again"
+      : answer.source === "source"
+        ? "Build and restart"
+        : "Update and restart";
 
   return (
     <section
@@ -171,6 +178,15 @@ export function UpdateBar({ projectPath }: { projectPath: string }): React.JSX.E
           <>
             Hivemind tried to update to {answer.attempted} and is still running{" "}
             {answer.running}. The installer said: {answer.detail}
+            {/* The report was the whole of this state, and a report you cannot
+                act on is a dead end with a good error message in it. What
+                failed was the swap, not the build, so the retry re-runs only
+                the swap — seconds, not minutes. With no project open there is
+                no installer to re-run, so say what would change that instead
+                of offering a button that repeats the same answer. */}
+            {projectPath === "" ? (
+              <> Open your Hivemind project to try the install again.</>
+            ) : null}
           </>
         ) : answer.source === "release" ? (
           <>You are running {answer.running}. This takes a few seconds.</>
@@ -195,18 +211,29 @@ export function UpdateBar({ projectPath }: { projectPath: string }): React.JSX.E
         )}
       </span>
 
-      {(answer.source === "release" || answer.source === "source") &&
+      {(answer.source === "release" ||
+        answer.source === "source" ||
+        /* A failed swap is retryable, and this is the case that was missing.
+            It needs the project, because the installer to re-run lives in its
+            build output. */
+        (answer.source === "did_not_take" && projectPath !== "")) &&
       outcome?.state !== "restarting" ? (
         <Button disabled={busy} size="sm" type="button" onClick={() => void take()}>
           {busy ? (
             <Loader aria-hidden="true" className="animate-spin" />
+          ) : answer.source === "did_not_take" ? (
+            <RefreshCw aria-hidden="true" />
           ) : (
             <ArrowDownToLine aria-hidden="true" />
           )}
           {/* A multi-minute build behind a label that says "Working…" is
               indistinguishable from a hang, which is the same silence in a
               smaller place. Say which of the two things is happening. */}
-          {busy ? (answer.source === "source" ? "Building…" : "Installing…") : takes}
+          {busy
+            ? answer.source === "source"
+              ? "Building…"
+              : "Installing…"
+            : takes}
         </Button>
       ) : null}
 

@@ -642,6 +642,63 @@ next session does not have to rediscover them.
 > records this for node CLI paths (`node_cli_paths_drop_windows_verbatim_prefixes`);
 > same trap, different consumer, and it will have a fourth consumer.
 
+> **A path proven end to end failed again, in a new way, and the walk could not
+> have caught it.** Second failure of the same feature. The first walk went
+> `helper started → app exited → installing → installer exit 0 → restarted` on
+> the real artifact, one click, no terminal. The next real run wrote **one line**
+> — `helper started` — and the helper was found **still alive and blocked hours
+> later**, parked on `Terminate batch job (Y/N)?` with three of those prompts in
+> its captured stdout and `^C^C^C` in its stderr.
+>
+> The instrumentation earned itself twice over: the log, the captured streams and
+> the pid were all on disk, so the *state* was readable rather than reconstructed.
+> Three defects, all of which had to be true at once:
+>
+> | Defect | Why the walk missed it |
+> | --- | --- |
+> | `timeout /t 1 /nobreak` **never waits here** — it refuses whenever stdin is redirected or absent (errorlevel 125), and the helper has neither a console nor stdin. The "one second poll" was a hot loop spawning `tasklist` as fast as Windows could start one, for twenty minutes. | A hot loop and a polite poll both reach the install. Speed is not correctness, so a passing walk says nothing about it. |
+> | **The wait was unbounded.** `tasklist /FI "PID eq N"` also asks the wrong question: a gone pid is a *proxy* for "the binary can be replaced", wrong in both directions — Windows reuses pids, and a process can be gone while its file is still held. | The app always exited promptly in the walk, so the deadline was never approached and the proxy never diverged from the truth. |
+> | **Nothing could answer a question.** stdin was inherited from a windowless GUI app, so any prompt blocked forever. | No prompt appeared during the walk. A branch that never executes cannot be observed. |
+>
+> **What sent the three interrupts is still unidentified**, and four probes failed
+> to reproduce it: a Ctrl+C to the parent's console group, a `CTRL_BREAK` to the
+> helper's own group, the parent exiting mid-wait, and the console-less `timeout`.
+> All four survived. Recorded as open rather than guessed at — and the design no
+> longer depends on the answer, which is the substantive change. An interrupt can
+> now only *end* the helper, never *park* it: stdin is null so a prompt is fatal,
+> the wait has a deadline, and any incomplete run is reported on next launch with
+> a retry attached.
+>
+> The wait now tests the actual precondition — open the target binary for append
+> and write nothing, which fails while anything holds it and cannot alter the
+> file. Proven three ways before being relied on: it waits while locked, proceeds
+> within a second of release, and gives up rather than waiting forever.
+>
+> **The lesson is about what a walk is evidence FOR.** "It worked end to end" is a
+> claim about one traversal under one set of conditions, and the conditions are
+> the part nobody writes down. Both failures of this feature were in the *shape*
+> of the wait rather than in whether the wait ran, and shape is exactly what a
+> traversal cannot see. So the walk stays — it is still the only thing that proves
+> the composed path — but it is now paired with assertions about the shape, in
+> `test/swap-helper.test.ts`. **A walk proves a path exists; only an assertion
+> proves a path cannot bend.**
+>
+> Two further things this turned up:
+>
+> - **`attempted != running` reported success as failure.** The marker records
+>   what was *attempted*, so any build arriving by another route — installed by
+>   hand, or a release landing while a source attempt was outstanding — left the
+>   app insisting an update had not taken while running something newer than the
+>   version it was complaining about. Now a numeric compare, `running >=
+>   attempted`. Lexicographic would have been its own bug: the build number is
+>   minutes-since-midnight, so `944` vs `1013` crosses that boundary every day
+>   after 16:53.
+> - **The honest report was a dead end.** `DidNotTake` said what happened and
+>   offered no button — the same correct-but-unreachable shape as the rest of this
+>   section, one level up: the information existed and no path led anywhere from
+>   it. A retry now re-runs *only* the swap, because the build already happened
+>   and was never what failed.
+
 > **Applied, measurable, and doing nothing — the visual case.** The glass
 > depths report exactly what they should: reading the live elements gives
 > `saturate(1.8) blur(18px)` on the dialog, `blur(11px)` on panel headers,

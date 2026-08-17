@@ -408,6 +408,13 @@ fn spawn_swap(pid: u32, installer: &Path, exe: &Path) -> Result<(), String> {
        and nothing was written anywhere. So the helper now ANNOUNCES ITSELF, and
        this function refuses to return until it has -- which means the caller
        can keep the app open and say so rather than closing on a broken update. */
+    /* A leftover helper is killed before a new one starts. The last failure left
+       one alive and blocked for hours, and two helpers racing for the same
+       binary is strictly worse than one -- the second could begin installing
+       while the first still held a handle. This is also what makes a retry
+       safe to offer. */
+    clear_stale_helper();
+
     let log = swap_log_path();
     let _ = std::fs::remove_file(&log);
 
@@ -438,13 +445,95 @@ fn spawn_swap(pid: u32, installer: &Path, exe: &Path) -> Result<(), String> {
        `cmd.exe` is resolved from `%SystemRoot%` rather than from PATH, because
        a GUI-launched process does not necessarily have System32 on it -- the
        same trap `adapter-command.ts` already records for finding the agent. */
+    /* ── The second failure of this feature, and what the log said ───────────
+     *
+     * It stopped after ONE line -- `helper started` -- and the helper was still
+     * alive hours later, blocked on `Terminate batch job (Y/N)?` with stdin
+     * inherited from a windowless GUI app and therefore nothing able to answer.
+     * Three defects, all of which had to be true at once, and none of which the
+     * end-to-end walk could have caught because they are all about the SHAPE of
+     * the wait rather than about whether it runs:
+     *
+     * 1. `timeout /t 1 /nobreak` NEVER WAITS HERE. It refuses whenever stdin is
+     *    redirected or absent (errorlevel 125), and this helper has no console
+     *    and no stdin by design. Measured in both configurations. So the poll
+     *    was not a one-second poll; it was a hot loop spawning `tasklist` as
+     *    fast as Windows could start it, for twenty minutes. `ping -n 2` waits
+     *    without needing either.
+     *
+     * 2. THE WAIT WAS UNBOUNDED. `tasklist /FI "PID eq N"` also asks the wrong
+     *    question: a gone PID is a PROXY for "the binary can be replaced", and a
+     *    bad one in both directions -- Windows reuses PIDs, and a process can be
+     *    gone while its file is still held. It now tests the actual
+     *    precondition by opening the target for append and writing nothing,
+     *    which fails while anything holds it and cannot alter the file. Proven
+     *    three ways before being relied on: it waits while locked, proceeds
+     *    within a second of release, and gives up rather than waiting forever.
+     *
+     * 3. NOTHING COULD ANSWER A QUESTION. Any prompt was fatal-but-silent. The
+     *    helper now runs with stdin explicitly null.
+     *
+     * What sent the three interrupts is still unidentified. Four probes failed
+     * to reproduce it -- a Ctrl+C to the parent's console group, a CTRL_BREAK to
+     * the helper's own group, the parent exiting mid-wait, and the console-less
+     * timeout -- so it is NOT one of those, and the design no longer depends on
+     * knowing. An interrupt can now only end the helper, never park it: the
+     * deadline bounds the wait, and the marker file the app reads on next
+     * launch turns any incomplete run into a reported failure with a retry
+     * rather than a version that quietly did not move.
+     */
     let script_body = format!(
-        "@echo off\r\necho helper started>>\"{log}\"\r\n:wait\r\ntasklist /FI \"PID eq {pid}\" 2>nul | find \"{pid}\" >nul\r\nif not errorlevel 1 (timeout /t 1 /nobreak >nul & goto wait)\r\necho app exited>>\"{log}\"\r\n\"{installer}\" /S\r\necho installer returned %errorlevel%>>\"{log}\"\r\nstart \"\" \"{exe}\"\r\necho restarted>>\"{log}\"\r\n",
+        concat!(
+            "@echo off\r\n",
+            "echo [%TIME%] helper started, waiting for the app to release its binary>>\"{log}\"\r\n",
+            "set /a checks=0\r\n",
+            ":wait\r\n",
+            "set /a checks+=1\r\n",
+            /* The deadline. 90 checks at ~1s: long enough for a slow shutdown,
+               short enough that a person is still watching. */
+            "if %checks% GTR 90 goto gaveup\r\n",
+            /* Opens for append and writes zero bytes: succeeds only when
+               nothing holds the file, and never modifies it. */
+            "2>nul (>>\"{exe}\" type nul) && goto released\r\n",
+            "ping -n 2 127.0.0.1 >nul\r\n",
+            "goto wait\r\n",
+            ":gaveup\r\n",
+            "echo [%TIME%] gave up: the app still held its binary after %checks% checks>>\"{log}\"\r\n",
+            /* Deliberately does NOT install. An installer run against a locked
+               binary is how a half-replaced install happens, and a half-replaced
+               install is worse than no update. */
+            "exit /b 1\r\n",
+            ":released\r\n",
+            "echo [%TIME%] app exited, binary released after %checks% checks>>\"{log}\"\r\n",
+            "echo [%TIME%] installing>>\"{log}\"\r\n",
+            "\"{installer}\" /S\r\n",
+            /* CAPTURED FIRST, and with a space before the redirect. Both halves
+               are load-bearing, and the walk that proved this feature work
+               *again* still had this wrong -- the log came back
+               `installing / restarted` with the `installer returned` line
+               MISSING, which is the identical shape to the `\\?\` bug: a gap
+               between two present lines.
+               `echo ... %errorlevel%>>"file"` with a code of 0 expands to
+               `echo ... 0>>"file"`, and **`0>>` redirects STDIN**. cmd creates
+               the log empty and sends the text to the real stdout. Every
+               single-digit code -- which is every code an installer actually
+               returns -- is parsed as a file handle the same way. Verified all
+               four shapes: bare `%errorlevel%>>` loses the line, a space before
+               the redirect keeps it, and only a captured variable survives the
+               echo to be tested afterwards. */
+            "set code=%errorlevel%\r\n",
+            "echo [%TIME%] installer returned %code% >>\"{log}\"\r\n",
+            "if not \"%code%\"==\"0\" (echo [%TIME%] the installer failed, not restarting>>\"{log}\" & exit /b 1)\r\n",
+            "start \"\" \"{exe}\"\r\n",
+            "echo [%TIME%] restarted>>\"{log}\"\r\n"
+        ),
         log = log.display(),
-        pid = pid,
         installer = plain_path(installer),
         exe = plain_path(exe)
     );
+    /* `pid` is no longer what the wait turns on -- the lock is -- but it is
+       recorded so a log can be tied back to a specific run of the app. */
+    let _ = pid;
     std::fs::write(&script_path, script_body)
         .map_err(|error| format!("could not write the installer helper: {error}"))?;
 
@@ -465,7 +554,13 @@ fn spawn_swap(pid: u32, installer: &Path, exe: &Path) -> Result<(), String> {
        than the job object as the culprit. */
     let out_path = log.with_file_name("update-spawn.out");
     let err_path = log.with_file_name("update-spawn.err");
-    const DETACHED: u32 = 0x0000_0008;
+    /* CREATE_NO_WINDOW rather than DETACHED_PROCESS: the helper gets a console
+       of its OWN, hidden, instead of no console at all. It is still not attached
+       to whatever terminal launched the app -- which matters, because this app
+       is routinely started from a shell during development, and a console its
+       helper shares is a console whose Ctrl+C reaches the helper.
+       CREATE_NEW_PROCESS_GROUP keeps group-directed events out. */
+    const NO_WINDOW: u32 = 0x0800_0000;
     const NEW_GROUP: u32 = 0x0000_0200;
     let cmd_exe = std::path::Path::new(&std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string()))
         .join("System32")
@@ -473,11 +568,24 @@ fn spawn_swap(pid: u32, installer: &Path, exe: &Path) -> Result<(), String> {
     let mut child = Command::new(&cmd_exe)
         /* One argument that is a path. No script text crosses a quoting layer. */
         .args(["/c", script_path.to_string_lossy().as_ref()])
+        /* Explicitly null, never inherited. The shipped version inherited stdin
+           from a GUI app, so when cmd.exe asked "Terminate batch job (Y/N)?"
+           there was nothing to answer with and the helper parked forever --
+           found still running hours later. Null makes an unanswerable question
+           fatal instead, and a helper that dies is one the marker file reports;
+           a helper that hangs is a dead end. */
+        .stdin(std::process::Stdio::null())
         .stdout(std::fs::File::create(&out_path).map_err(|e| format!("stdout: {e}"))?)
         .stderr(std::fs::File::create(&err_path).map_err(|e| format!("stderr: {e}"))?)
-        .creation_flags(DETACHED | NEW_GROUP)
+        .creation_flags(NO_WINDOW | NEW_GROUP)
         .spawn()
         .map_err(|error| format!("Windows would not start the installer helper: {error}"))?;
+
+    /* Recorded so a later run can kill it. Without a pid on disk there is no
+       way to find a stuck helper again -- matching on a command line is the
+       string-matched boundary this project keeps getting caught by, and the
+       process that knows the pid is this one. */
+    let _ = std::fs::write(helper_pid_path(), child.id().to_string());
 
     /* Proof of life before the app is allowed to close. Without this the
        caller cannot tell a helper that is running from one that was killed on
@@ -506,6 +614,47 @@ fn spawn_swap(pid: u32, installer: &Path, exe: &Path) -> Result<(), String> {
         }
     ))
 }
+
+/// The helper's process id, so a stuck one can be found and ended.
+pub fn helper_pid_path() -> std::path::PathBuf {
+    swap_log_path().with_file_name("update-helper.pid")
+}
+
+/// End a helper left over from a previous attempt, if one is still running.
+///
+/// The second failure of this feature left a helper alive and parked for hours.
+/// Nothing looked for it, so a retry would have started a second one against the
+/// same binary. This is deliberately quiet about a pid that is already gone --
+/// the common case is a completed helper whose file was never cleaned up, and
+/// that is not a fault worth reporting.
+#[cfg(windows)]
+pub fn clear_stale_helper() {
+    use std::os::windows::process::CommandExt;
+    let path = helper_pid_path();
+    let Ok(text) = std::fs::read_to_string(&path) else { return };
+    let Ok(pid) = text.trim().parse::<u32>() else {
+        let _ = std::fs::remove_file(&path);
+        return;
+    };
+    /* `/T` because the helper spawns `ping` and the installer as children, and
+       killing only the parent leaves those holding handles. */
+    let killed = Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .creation_flags(0x0800_0000)
+        .output();
+    if let Ok(output) = killed {
+        if output.status.success() {
+            /* Worth a line in the log the next attempt will overwrite -- but
+               the log is about to be removed, so it goes to the app's stderr
+               where a dev build shows it. */
+            eprintln!("update: ended a leftover installer helper (pid {pid})");
+        }
+    }
+    let _ = std::fs::remove_file(&path);
+}
+
+#[cfg(not(windows))]
+pub fn clear_stale_helper() {}
 
 /// Where the swap transcribes itself, beside the binary it is replacing.
 pub fn swap_log_path() -> std::path::PathBuf {

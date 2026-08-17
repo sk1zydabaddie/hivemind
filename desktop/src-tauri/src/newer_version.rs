@@ -42,7 +42,9 @@ use serde::Serialize;
 use tauri_plugin_updater::UpdaterExt;
 
 use crate::project::{canonical_git_root, daemon_work, DaemonWork};
-use crate::selfbuild::{build_and_install, source_standing, swap_log_path, swap_marker_path};
+use crate::selfbuild::{
+    build_and_install, install_built_and_restart, source_standing, swap_log_path, swap_marker_path,
+};
 
 /// Where a newer version would come from, or why there is none.
 #[derive(Debug, Serialize)]
@@ -87,6 +89,39 @@ fn running(app: &tauri::AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
+/// Calendar versions as comparable numbers: `26.817.944` -> `(26, 817, 944)`.
+///
+/// A missing or malformed part sorts lowest rather than erroring, because a
+/// version this cannot parse must not be able to claim it is newer than one it
+/// can.
+fn version_parts(version: &str) -> (u32, u32, u32) {
+    let mut parts = version.split('.').map(|part| {
+        part.chars()
+            .take_while(char::is_ascii_digit)
+            .collect::<String>()
+            .parse::<u32>()
+            .unwrap_or(0)
+    });
+    (
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+    )
+}
+
+/// Did the attempt land? True when the running version is the attempted one **or
+/// newer**.
+///
+/// The first version of this asked `attempted != running`, which reports a
+/// SUCCESS as a failure in one real case: a build installed by hand, or a later
+/// version arriving by another route, leaves an older marker behind and the app
+/// then insists an update did not take while running something newer than the
+/// one it is complaining about. The marker records what was attempted, not a
+/// version the app must be pinned to.
+fn attempt_landed(attempted: &str, running: &str) -> bool {
+    version_parts(running) >= version_parts(attempted)
+}
+
 /**
  * Ask both sources and return the best answer.
  *
@@ -100,7 +135,7 @@ pub async fn newer_version(app: tauri::AppHandle, project_path: String) -> Newer
     /* First, before anything else: did the last attempt actually land? */
     if let Ok(attempted) = std::fs::read_to_string(swap_marker_path()) {
         let attempted = attempted.trim().to_string();
-        if !attempted.is_empty() && attempted != running {
+        if !attempted.is_empty() && !attempt_landed(&attempted, &running) {
             let tail = std::fs::read_to_string(swap_log_path())
                 .map(|log| {
                     log.lines()
@@ -218,6 +253,31 @@ pub async fn take_newer_version(
         }
     }
 
+    /* A RETRY, before either route.
+     *
+     * An attempt that did not take leaves a marker and, for the source route, an
+     * installer that is still on disk. What failed was the swap -- the helper --
+     * not the build, so rebuilding would spend minutes redoing the one part that
+     * worked. This re-runs just the swap.
+     *
+     * This is the half that was missing: the surface reported the failure
+     * honestly and then offered nothing, which is a dead end wearing a good
+     * error message. A report a person cannot act on is only marginally better
+     * than the silence it replaced. */
+    if !project_path.is_empty() {
+        if let Ok(attempted) = std::fs::read_to_string(swap_marker_path()) {
+            let attempted = attempted.trim().to_string();
+            if !attempted.is_empty() && !attempt_landed(&attempted, &running(&app)) {
+                return match install_built_and_restart(app.clone(), project_path.clone()).await {
+                    Ok(()) => Ok(UpdateOutcome::Restarting { version: attempted }),
+                    Err(detail) => Ok(UpdateOutcome::Failed {
+                        detail: format!("the update could not be retried: {detail}"),
+                    }),
+                };
+            }
+        }
+    }
+
     /* A release, if one is offered. */
     if let Ok(updater) = app.updater() {
         if let Ok(Some(update)) = updater.check().await {
@@ -241,5 +301,61 @@ pub async fn take_newer_version(
     match build_and_install(app.clone(), project_path).await {
         Ok(version) => Ok(UpdateOutcome::Restarting { version }),
         Err(detail) => Ok(UpdateOutcome::Failed { detail }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{attempt_landed, version_parts};
+
+    /* The marker records what was ATTEMPTED. Asking whether it equals the
+       running version turns two successes into reported failures, and this app
+       hits both: a build installed by hand while an older marker is still on
+       disk, and a version arriving by the release route while a source attempt
+       is outstanding. */
+    #[test]
+    fn an_attempt_landed_when_the_running_version_is_the_one_attempted() {
+        assert!(attempt_landed("26.817.944", "26.817.944"));
+    }
+
+    #[test]
+    fn an_attempt_landed_when_the_running_version_is_newer_still() {
+        assert!(attempt_landed("26.817.944", "26.817.1013"));
+        assert!(attempt_landed("26.817.944", "26.818.100"));
+        assert!(attempt_landed("26.817.944", "27.101.1"));
+    }
+
+    #[test]
+    fn an_attempt_did_not_land_when_the_running_version_is_older() {
+        assert!(!attempt_landed("26.817.944", "26.816.1540"));
+        assert!(!attempt_landed("26.817.944", "26.817.943"));
+        assert!(!attempt_landed("27.101.1", "26.818.100"));
+    }
+
+    /* Numeric, not lexicographic. `944` vs `1013` is the case a string compare
+       gets backwards, and the build number is minutes-since-midnight so it
+       crosses that boundary every day after 16:53. */
+    #[test]
+    fn the_comparison_is_numeric_rather_than_lexicographic() {
+        assert!(version_parts("26.817.1013") > version_parts("26.817.944"));
+        assert!("26.817.1013" < "26.817.944", "a string compare disagrees, which is the point");
+    }
+
+    /* A version this cannot read must not be able to claim it is newer -- the
+       safe direction is to report a failure that did not happen rather than to
+       hide one that did. */
+    #[test]
+    fn an_unreadable_version_sorts_lowest() {
+        assert_eq!(version_parts("nonsense"), (0, 0, 0));
+        assert_eq!(version_parts(""), (0, 0, 0));
+        assert!(!attempt_landed("26.817.944", "nonsense"));
+    }
+
+    /* Suffixes are tolerated: the replay harness reports `-replay`, and a
+       pre-release tag on a real build must not read as version zero. */
+    #[test]
+    fn a_suffix_does_not_destroy_the_number() {
+        assert_eq!(version_parts("26.816.1540-replay"), (26, 816, 1540));
+        assert!(attempt_landed("26.816.1540", "26.816.1540-replay"));
     }
 }
