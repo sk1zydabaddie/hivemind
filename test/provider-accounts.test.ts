@@ -18,6 +18,7 @@ import {
   selectedAccount
 } from "../src/provider-accounts.js";
 import { parseProviderQuota } from "../src/adapter.js";
+import { connectAdapter } from "../src/config-actions.js";
 import { executeWorkspaceAction } from "../src/workspace-actions.js";
 import { withTemplateRepo } from "./support/fixture-repo.js";
 
@@ -77,6 +78,44 @@ test("an account is a directory the harness owns, and selecting one points at it
     assert.deepEqual(accountEnvironment(selectedAccount(await readAccounts(repo), "codex-cli")), {
       CODEX_HOME: path.resolve(work)
     });
+  });
+});
+
+test("the first connection probe runs under the selected account before a record exists", async () => {
+  await withRepo(async (repo) => {
+    const home = await fakeHome(repo, "first-connect");
+    const added = await addAccount(repo, { label: "first connect", harness: "codex-cli", home_dir: home });
+    assert.equal(added.ok, true);
+    if (!added.ok) return;
+    assert.equal((await selectAccount(repo, added.value.id)).ok, true);
+
+    let observed: Record<string, string> | undefined;
+    const connected = await connectAdapter(repo, "worker", "codex-terra", {
+      runner: async ({ accountEnv }) => {
+        observed = accountEnv;
+        return {
+          ok: true,
+          reason: null,
+          stdout: '{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":2}}',
+          stderr: "",
+          exitCode: 0,
+          timedOut: false,
+          wallTimeMs: 10,
+          effectiveTokens: 12,
+          wroteNonceFile: true
+        };
+      },
+      readback: async () => ({
+        source: "fixture",
+        model: "gpt-5.6-terra",
+        sandbox: "workspace-write",
+        approvalPolicy: "never",
+        workspaceRoots: [repo],
+        subagents: "none"
+      })
+    });
+    assert.equal(connected.ok, true);
+    assert.deepEqual(observed, { CODEX_HOME: path.resolve(home) });
   });
 });
 

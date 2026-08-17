@@ -160,7 +160,7 @@ test("the dispatcher refuses stray fields on the read-only settings actions", as
 test("the agent catalogue is honest about what has actually been run", () => {
   const supported = agentCatalogue.filter((agent) => agent.status === "supported");
   assert.ok(supported.length > 0);
-  assert.deepEqual([...new Set(supported.map((agent) => agent.harness))], ["codex-cli"]);
+  assert.deepEqual([...new Set(supported.map((agent) => agent.harness))], ["codex-cli", "grok"]);
   for (const agent of agentCatalogue) {
     if (agent.status === "supported") {
       assert.equal(agent.caveat, null);
@@ -315,7 +315,7 @@ test("provider rows distinguish product evidence from a current project check", 
     assert.equal(providers.find((provider) => provider.id === "codex-cli")?.checked_here, true);
     assert.equal(providers.find((provider) => provider.id === "claude")?.checked_here, false);
     assert.equal(providers.find((provider) => provider.id === "grok")?.connectable, true);
-    assert.equal(providers.find((provider) => provider.id === "kimi")?.connectable, false);
+    assert.equal(providers.find((provider) => provider.id === "kimi")?.connectable, true);
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

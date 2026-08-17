@@ -8,8 +8,46 @@ Discovery pass, 2026-08-12, updated the same day after the free installs.
 > Kimi's verdict moved from *refused as documented* to **refused as measured**,
 > which is a stronger claim and a worse finding: see below.
 
-> **2026-08-17 follow-up; this supersedes the older Grok/Kimi commands and
-> blockers retained later in this investigation log.** Grok Build 1.0.4 lists
+> **2026-08-17 final follow-up; this supersedes the earlier same-day Grok/Kimi
+> disposition below.** The explicitly approved paid Grok 4.6 retry completed
+> in 4.5s and passed all nine capability checks. It reported Grok 4.6,
+> workspace-write confinement, the exact file-only tool surface, no nested
+> agents, the signed-in `cli-chat-proxy.grok.com` endpoint, an unchanged
+> branch, 15,112 real tokens, and attribution only to `grok-4.6-build`. Grok is
+> now supported.
+>
+> Kimi 0.36.1 only auto-loads account-level `mcp.json`; the documented
+> per-launch MCP flag is not accepted by this released binary. Hivemind now
+> writes that file only when absent and requires it to contain exactly one
+> Hivemind server. Any different or additional server refuses before provider
+> spawn. Kimi's unsafe built-in Read/Write/Edit/Grep/Glob tools are denied and
+> replaced with five deterministic operations rooted at cwd. Absolute paths,
+> traversal, symlink escapes, `.git`, and authoritative `.hivemind` state are
+> refused. The real Kimi runtime snapshot showed exactly those five tools, and
+> a no-paid OpenAI-compatible fixture passed all nine capabilities, including
+> a canary write, 36 provider-reported tokens, exact model readback, no nested
+> agents, unchanged branch, and the configured local endpoint. A hosted run is
+> still required for production evidence. Kimi may use separately billed
+> OpenAI- or Anthropic-compatible APIs, but ChatGPT and Claude Code consumer
+> subscriptions do not provide those API credentials.
+>
+> A worker-pool persistence bug was exposed by the successful Grok probe:
+> connect wrote `worker.connection.json` while inspection looked for the exact
+> `worker-<agent>.connection.json`. The record is now stored beside the exact
+> profile, and the selected account home is passed into the first probe before
+> that record exists. Endpoint inspection uses that same resolved environment.
+>
+> Desktop build **26.817.1609** was built, installed, verified against the
+> on-disk binary, and inspected in the running app at 1440x900. Grok appears as
+> “Checked here,” Kimi as “Ready to check,” and Kimi's expanded caveat states
+> the bounded-server and hosted-provider distinction. Evidence:
+> `docs/evidence/provider-grok-kimi-installed-26.817.1609.jpg` and
+> `docs/evidence/provider-kimi-boundary-installed-26.817.1609.jpg`.
+> Production reachability passed every control on all eight surfaces at
+> 1280x720, 1366x768 and 1440x900.
+>
+> **Earlier 2026-08-17 follow-up; retained as investigation history and
+> superseded above.** Grok Build 1.0.4 lists
 > `grok-4.6` as its default and current model. Hivemind now uses Grok's native
 > file-tool names, native session stream, unique session id, durable model /
 > sandbox / usage readback, and `inspect --json` resolved configuration layers.

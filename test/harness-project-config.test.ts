@@ -68,8 +68,8 @@ test("Kimi gets a launch-specific file-only agent profile", async () => {
   const outcome = await ensureHarnessProjectConfig(root, "kimi");
   assert.equal(outcome.written, ".hivemind/kimi-agent.md");
   const profile = await readFile(path.join(root, ".hivemind", "kimi-agent.md"), "utf8");
-  assert.match(profile, /tools:\s+[\s\S]*- Read[\s\S]*- Write[\s\S]*- Edit[\s\S]*- Grep[\s\S]*- Glob/u);
-  assert.match(profile, /disallowedTools:\s+[\s\S]*- Bash[\s\S]*- Agent[\s\S]*- AgentSwarm/u);
+  assert.match(profile, /tools:\s+[\s\S]*mcp__hivemind_files__read_file[\s\S]*mcp__hivemind_files__write_file/u);
+  assert.match(profile, /disallowedTools:\s+[\s\S]*- Bash[\s\S]*- Agent[\s\S]*- AgentSwarm[\s\S]*- Read[\s\S]*- Write/u);
   assert.match(profile, /subagents: \[\]/u);
 });
 

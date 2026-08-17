@@ -92,7 +92,7 @@ ext4 (`~`, not `/mnt/d`), `npm ci`, `npm test`. Two traps, both hit before:
 - **Copy `docs/evidence`.** Excluding it removes a fixture the suite reads, and
   the failure that produces looks like a real one.
 
-### Three harnesses pass the capability contract
+### Four harnesses pass the capability contract; Kimi passes locally
 
 `docs/PROVIDER-DISCOVERY.md`
 
@@ -105,18 +105,21 @@ result records the delta, not the request.
 | Codex | **Supported.** Real runs have gone through it end to end |
 | Claude Code | **Live probe passed all 9 capabilities** on 2.1.233; 17,985 effective tokens and a per-model usage breakdown |
 | OpenCode | **Live probe passed every required boundary except model-pin readback** on 1.18.15; the configured free model spent 12,025 effective tokens |
-| Grok Build | **Grok 4.6 is prepared but not verified** on 1.0.4; native tool names, durable model/workspace-sandbox/usage readback, and resolved endpoint layers are implemented, but the corrected live 4.6 probe reached the service and did not complete before cancellation |
-| Kimi Code | **CLI integration proved locally without a paid account** on 0.36.1: exact file-only tools, a real write, model and provider usage persisted. Production remains non-connectable because absolute file paths can leave cwd, so no project confinement exists |
+| Grok Build | **Supported.** A completed paid Grok 4.6 probe on 1.0.4 passed all nine capabilities in 4.5s, including workspace confinement, exact model and tool readback, known endpoint, unchanged branch, 15,112 real tokens, and per-model attribution |
+| Kimi Code | **All nine capabilities pass against a no-paid local OpenAI-compatible provider** on 0.36.1. Hivemind replaces Kimi's escaping built-in file tools with five deterministic project-bounded MCP operations and refuses any additional account MCP server. A hosted-provider run remains unmeasured |
 
 The contract has **nine** capabilities. The ninth, `known_endpoint`, asks where
 the harness sends your code — a prompt carries every file in scope, and a base
 URL redirects all of it while the other eight still read verified.
 
-Installed build **26.817.1516** displays those current Grok and Kimi caveats on
-the real setup screen in
-`docs/evidence/provider-grok-4.6-installed-26.817.1516.jpg` and
-`docs/evidence/provider-kimi-local-proof-installed-26.817.1516.jpg`. Both the
-installer's on-disk version check and the running window report 26.817.1516.
+Installed build **26.817.1609** shows the newer disposition at 1440x900 in the
+running app. `docs/evidence/provider-grok-kimi-installed-26.817.1609.jpg` shows
+Grok as “Checked here,” Kimi as “Ready to check,” and the selected Grok 4.6
+worker. `docs/evidence/provider-kimi-boundary-installed-26.817.1609.jpg` expands
+Kimi's exact bounded-tool and hosted-provider caveat. The installer verified
+26.817.1609 against the binary on disk, the window reports 26.817.1609, and
+production reachability passed all eight surfaces at 1280x720, 1366x768 and
+1440x900 with every control reachable.
 
 ### Concurrency proven causally, not sampled
 
@@ -450,9 +453,9 @@ never load-bearing, and now cannot be made at all for a compacted run.
 | **macOS verification** | **No hardware.** Case verdict, process control, Finder PATH, `.app`/`.dmg` launch, WebKit vs WebKitGTK, temp dirs | ~1 hour on a Mac |
 | **macOS codesigning + notarisation** | **Apple Developer account, $99/yr** | Half a day. Buys distribution, not correctness — an unsigned `.app` runs after a right-click Open |
 | **Windows code signing** | **A certificate — see §3.2.** Deliberately deferred: the beta ships unsigned with a plain note on the download page, so SmartScreen is expected rather than a surprise | An hour once a certificate exists. Tauri supports it in config directly |
-| **Grok Build** | **One completed bounded 4.6 probe.** The subscription and first-party CLI are present; the corrected invocation reached the service but stalled before completion | A paid retry, only with explicit approval |
-| **Kimi Code** | **A real confinement mechanism outside the CLI.** The no-paid local provider fixture proved invocation, exact tools, write behavior, model and usage readback; it also confirmed absolute paths can leave cwd. Hosted Moonshot authentication/quota behavior remains unmeasured | Engineering first; no subscription purchase would close the confinement gap |
-| **Local models / custom endpoints** | **Nothing structural remains.** The egress capability was the prerequisite and is built — all three harnesses already accept a custom base URL, and `known_endpoint` now names a configured one and refuses an undeterminable one. What is left is a profile shape per backend and a decision about what `reports_usage` means when tokens are free | A pass, no account |
+| **Grok Build** | **No capability blocker remains.** The completed paid 4.6 probe passed all nine checks. A whole real task through the harness would add product-level dogfood evidence, not close an admission gap | One deliberate task when useful |
+| **Kimi Code** | **Hosted-provider evidence only.** The bounded replacement tools and all nine capability checks pass locally. A real Moonshot or separately billed OpenAI/Anthropic-compatible API credential is still required to measure hosted authentication and quota behavior; ChatGPT and Claude consumer subscriptions cannot authenticate Kimi's provider layer | One small hosted probe when credentials are available |
+| **Local models / custom endpoints** | **Nothing structural remains.** The egress capability was the prerequisite and is built — the catalogue records each harness's endpoint-changing surface, and `known_endpoint` now names a configured one and refuses an undeterminable one. Kimi's alternate-provider endpoint was exercised locally. What is left is a profile shape per backend and a decision about what `reports_usage` means when tokens are free | A pass, no account |
 | **WebKitGTK GUI walk** | Nothing — buildable now | **1–2 days.** The largest remaining piece; it is what would let a click-level walk run anywhere but Windows |
 | **Linux `.desktop` launch PATH** | Nothing. **Half done**: the failure explains itself and the escape hatch resolves, both tested. What remains needs a machine with a desktop environment to confirm a display manager hands the app a minimal PATH | 20 minutes on a Linux desktop |
 | **Schema migration beyond two formats** | Nothing — a decision. **21 modules declare `version: 1` and hard-fail on `!== 1`, and no format is ever version 2.** The convention is present and inert; only task contracts and `daemon.json` have real migration | A pass per format, or a decision to leave them |

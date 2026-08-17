@@ -29,7 +29,7 @@ import {
 import { initProject } from "./init.js";
 import { ACCOUNT_HOME_VARIABLES } from "./agent-catalogue.js";
 import { parseTaskTypePreferences } from "./routing-preferences.js";
-import { harnessForRole } from "./provider-accounts.js";
+import { accountEnvironment, harnessForRole } from "./provider-accounts.js";
 import { readAccounts, selectedAccount } from "./provider-accounts.js";
 import { priceAgeDays, priceForModel, priceIsStale } from "./model-prices.js";
 import { ROLE_RECOMMENDATIONS, modelChoiceRefusal } from "./role-recommendations.js";
@@ -624,7 +624,16 @@ export async function connectAdapter(
      resolved table was a wildcard allow with no rule for the shell. */
   const projectConfig = await ensureHarnessProjectConfig(repoRoot, agent.harness);
 
-  const probe = await probeAdapter(repoRoot, agent, profile, options);
+  /* A first connection has no connection record, so adapter spawn cannot yet
+     derive the harness from the role. Pass the selected home explicitly for
+     the probe; after success the record makes ordinary role-based lookup
+     authoritative. Without this, the UI could select one account and verify a
+     different default login. */
+  const accountsForProbe = await readAccounts(repoRoot);
+  const probe = await probeAdapter(repoRoot, agent, profile, {
+    ...options,
+    accountEnv: accountEnvironment(selectedAccount(accountsForProbe, agent.harness))
+  });
   if (!probe.ok) {
     return {
       ok: false,
@@ -663,7 +672,11 @@ export async function connectAdapter(
        stale is answered by having run this one. */
     capabilities_stale: null
   };
-  await writeJsonAtomic(connectionRecordPath(repoRoot, role), record);
+  /* A worker is a pool member, not the generic role. Store its evidence next
+     to the exact profile it proves; otherwise inspection and subsequent
+     account lookup search for `worker-<agent>.connection.json` while connect
+     silently writes `worker.connection.json`, making a passed probe invisible. */
+  await writeJsonAtomic(connectionRecordPath(repoRoot, profile.tool), record);
 
   const inspected = await inspectProjectConfig(repoRoot);
   /* The write travels with the result. Putting a file into somebody's project

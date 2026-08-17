@@ -24,6 +24,7 @@ import {
 import { readAdapterVersion } from "./adapter-version.js";
 import { compareRepoMarks, markRepo } from "./repo-observation.js";
 import { resolveProviderEndpoint } from "./provider-endpoint.js";
+import { spawnEnvironment } from "./spawn-environment.js";
 
 /**
  * Verifying an agent instead of believing it.
@@ -101,6 +102,7 @@ export interface ProbeRunner {
     profile: AdapterProfile;
     prompt: string;
     nonceFile: string;
+    accountEnv?: Record<string, string>;
   }): Promise<ProbeObservation>;
 }
 
@@ -132,7 +134,9 @@ export interface ProbeReadback {
 
 const execFileAsync = promisify(execFile);
 
-const PROBE_DIR = path.join(".hivemind", "probe");
+/* Disposable and deliberately outside authoritative `.hivemind` state so a
+   confined worker never needs permission to write the source of truth. */
+const PROBE_DIR = ".hivemind-probe";
 
 /**
  * The probe drops `--ephemeral` from the profile's own argv, and nothing else.
@@ -257,10 +261,11 @@ async function findFileContaining(dir: string, needle: string, depth = 0): Promi
 }
 
 /** The default runner: one real call through the profile's own argv. */
-export const liveProbeRunner: ProbeRunner = async ({ repoRoot, profile, prompt, nonceFile }) => {
+export const liveProbeRunner: ProbeRunner = async ({ repoRoot, profile, prompt, nonceFile, accountEnv }) => {
   const started = Date.now();
   const result = await runAdapterProcess(repoRoot, profile, repoRoot, prompt, {
-    usageSessionId: `probe-${profile.tool}`
+    usageSessionId: `probe-${profile.tool}`,
+    accountEnv
   });
   const wrote = await nonceFileWritten(repoRoot, nonceFile);
   if (!result.ok) {
@@ -305,6 +310,10 @@ export interface ProbeOptions {
   runner?: ProbeRunner;
   readback?: (stdout: string) => Promise<ProbeReadback | null>;
   nonce?: string;
+  /** The selected harness home for the connection being proved. A first
+      connection has no connection record yet, so it cannot be derived from
+      the role until after this probe succeeds. */
+  accountEnv?: Record<string, string>;
 }
 
 export async function probeAdapter(
@@ -376,7 +385,7 @@ export async function probeAdapter(
   const runner = options.runner ?? liveProbeRunner;
   let observation: ProbeObservation;
   try {
-    observation = await runner({ repoRoot, profile: probeProfile(profile), prompt, nonceFile });
+    observation = await runner({ repoRoot, profile: probeProfile(profile), prompt, nonceFile, accountEnv: options.accountEnv });
   } finally {
     /* The probe leaves nothing behind in the person's project. */
   }
@@ -440,13 +449,16 @@ export async function probeAdapter(
      sandbox, because a read-only run reports success and writes nothing. */
   const wantedSandbox = requestedSandbox(profile.invoke);
   capabilities.push(
-    observation.wroteNonceFile && readback?.sandbox === "workspace-write"
+    observation.wroteNonceFile &&
+      (readback?.sandbox === "workspace-write" || readback?.sandbox === "hivemind-bounded-files")
       ? capability(
           "confined_to_project",
           "Can write in this project, and only here",
           true,
           "verified",
-          `It reported a ${readback.sandbox} sandbox rooted at this project, and the file it was asked to write is on disk.`,
+          readback.sandbox === "hivemind-bounded-files"
+            ? "It reported exactly Hivemind's project-bounded file tools with the built-ins denied, and the canary write through that server is on disk."
+            : `It reported a ${readback.sandbox} sandbox rooted at this project, and the file it was asked to write is on disk.`,
           wantedSandbox,
           readback.sandbox,
           "readback"
@@ -607,7 +619,11 @@ export async function probeAdapter(
        and refuses everything. The probe holds the agent, so here it is exact. */
     tool: agent.harness,
     invoke: profile.invoke,
-    environment: process.env,
+    /* The same selected account home and scrubbed environment the provider
+       actually received. Looking at `process.env` here verified the default
+       Kimi endpoint while the run itself used an alternate provider from a
+       different account home. */
+    environment: spawnEnvironment(process.env, options.accountEnv ?? {}),
     repoRoot
   });
   capabilities.push(
@@ -883,21 +899,27 @@ export async function readKimiSession(stdout: string, repoRoot?: string): Promis
         .filter((name): name is string => typeof name === "string")
         .sort()
     : [];
-  const expected = ["Edit", "Glob", "Grep", "Read", "Write"];
+  const expected = [
+    "mcp__hivemind_files__list_files",
+    "mcp__hivemind_files__read_file",
+    "mcp__hivemind_files__replace_in_file",
+    "mcp__hivemind_files__search_files",
+    "mcp__hivemind_files__write_file"
+  ];
   const denied = Array.isArray(profile.disallowedTools)
     ? profile.disallowedTools.filter((entry): entry is string => typeof entry === "string")
     : [];
   const subagents = Array.isArray(profile.subagents) ? profile.subagents : null;
   const exact = active.length === expected.length && active.every((tool, index) => tool === expected[index]) &&
     snapshot.length === expected.length && snapshot.every((tool, index) => tool === expected[index]) &&
-    ["Bash", "Agent", "AgentSwarm"].every((tool) => denied.includes(tool)) && subagents?.length === 0;
+    ["Bash", "Agent", "AgentSwarm", "Read", "Write", "Edit", "Grep", "Glob"].every((tool) => denied.includes(tool)) && subagents?.length === 0;
   const cwd = typeof state.cwd === "string" ? state.cwd : null;
   const rootedHere = cwd !== null && (repoRoot === undefined || path.resolve(cwd) === path.resolve(repoRoot));
   return {
     source: "Kimi wire profile.bind + llm.tools_snapshot",
     model: typeof profile.modelAlias === "string" ? profile.modelAlias : null,
-    sandbox: null,
-    approvalPolicy: exact && rootedHere ? "file-only launch profile; no workspace confinement" : null,
+    sandbox: exact && rootedHere ? "hivemind-bounded-files" : null,
+    approvalPolicy: exact && rootedHere ? "exact bounded MCP tools; built-ins denied" : null,
     workspaceRoots: cwd === null ? [] : [cwd],
     subagents: exact ? "none" : null,
     version: jsonLineRecords(stdout).find((record) => record.type === "system.version" && typeof record.version === "string")?.version as string | undefined

@@ -443,16 +443,16 @@ export const agentCatalogue: CatalogueAgent[] = [
     label: "Grok Build",
     harness: "grok",
     subscription: "an X.AI plan or an XAI_API_KEY",
-    status: "unverified",
-    caveat:
-      "Grok 1.0.4 now exposes its resolved model and workspace sandbox in the durable session record, and its native stream reports the loaded tools and usage. It remains unverified because a bounded Grok 4.6 re-probe is still required before promotion: the first 4.6 attempt exposed stale tool names, and the corrected attempt reached the service but did not complete before it was cancelled.",
+    status: "supported",
+    caveat: null,
     model: "grok-4.6",
     routing_tier: "standard",
     cost_rank: 10,
     context_window: 500_000,
     timeout_ms: 900_000,
-    /* Native stream plus durable-session parser. It remains unverified against
-       a COMPLETED 4.6 turn; absence of a usage record fails the probe closed. */
+    /* Native stream plus durable-session parser. A completed paid 4.6 probe on
+       2026-08-17 verified all nine capabilities and reported 15,112 tokens;
+       absence of a usage record still fails the probe closed. */
     usage_parser: "grok-json",
     prompt_arg: "arg",
     connectable: true,
@@ -474,7 +474,7 @@ export const agentCatalogue: CatalogueAgent[] = [
     subscription: "a Kimi account or a Moonshot API key",
     status: "unverified",
     caveat:
-      "Kimi 0.36.1 passed a no-cost local provider fixture: it exposed exactly five file tools, wrote the canary, and persisted the resolved model, tool set, working directory, permission mode, and usage. It cannot connect yet because those file tools accept absolute paths outside the working directory, so the CLI does not provide the project confinement Hivemind requires. Moonshot login, hosted-model behavior, and quota reporting also remain unmeasured while new accounts are unavailable.",
+      "Kimi 0.36.1 now receives only Hivemind's project-bounded file server: its unsafe built-in file tools, shell, and helper agents are denied, and any other account-level MCP server causes a pre-launch refusal. It remains unverified until a hosted provider run confirms the exact runtime tool snapshot and real quota reporting; consumer Codex or Claude subscriptions cannot supply that provider credential.",
     model: "kimi-code/kimi-for-coding",
     routing_tier: "standard",
     cost_rank: 10,
@@ -482,13 +482,13 @@ export const agentCatalogue: CatalogueAgent[] = [
     timeout_ms: 900_000,
     usage_parser: "kimi-wire",
     prompt_arg: "arg",
-    connectable: false,
+    connectable: true,
     readback: "kimi-session",
     shell_denial: {
       mechanism: "tool-allowlist",
       confirmed_by: "runtime-readback",
       detail:
-        "A launch-specific agent file positively allows Read, Write, Edit, Grep and Glob and denies Bash, Agent and AgentSwarm. The session's `profile.bind` and `llm.tools_snapshot` records report the exact effective sets, and the runtime enforces those sets again before execution.",
+        "A launch-specific agent file allows only Hivemind's five project-bounded MCP file tools and denies Kimi's built-in file tools, shell, and helper agents. The session's profile and tool snapshot must report that exact set, while adapter startup refuses any additional account-level MCP server.",
     },
     invoke: kimiInvoke()
   }
@@ -836,22 +836,27 @@ export const HARNESS_PROJECT_CONFIG: Record<
 name: hivemind-worker
 description: File-only worker governed by Hivemind
 tools:
+  - mcp__hivemind_files__read_file
+  - mcp__hivemind_files__write_file
+  - mcp__hivemind_files__replace_in_file
+  - mcp__hivemind_files__list_files
+  - mcp__hivemind_files__search_files
+disallowedTools:
+  - Bash
+  - Agent
+  - AgentSwarm
   - Read
   - Write
   - Edit
   - Grep
   - Glob
-disallowedTools:
-  - Bash
-  - Agent
-  - AgentSwarm
 subagents: []
 ---
 
 \${base_prompt}
 `,
     because:
-      "Kimi takes its launch-specific tool and sub-agent boundary from an agent file. Hivemind writes the bounded profile inside its own project state before probing it."
+      "Kimi takes its launch-specific tool and sub-agent boundary from an agent file. Hivemind writes a profile that exposes only its project-bounded MCP file server and explicitly denies Kimi's built-in file, shell, and helper-agent tools."
   }
 };
 
@@ -878,6 +883,13 @@ export const HARNESS_CONFIG_INPUTS: Record<string, { home: string[]; project: st
   opencode: {
     home: ["opencode.json", "opencode.jsonc"],
     project: ["opencode.json", "opencode.jsonc"]
+  },
+  kimi: {
+    /* `mcp.json` is executable configuration: changing it can start another
+       command before the model answers. The project agent file is the second
+       half of the same boundary and must stale the verdict if edited. */
+    home: ["config.toml", "mcp.json"],
+    project: [".hivemind/kimi-agent.md"]
   }
 };
 

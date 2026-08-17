@@ -40,7 +40,14 @@ test("Grok readback requires the exact file tools, empty integrations, and works
   assert.equal((await readGrokSession(stdout, "D:/repo", async () => false))?.sandbox, null);
 });
 
-test("Kimi readback binds the profile but does not mistake cwd for confinement", async () => {
+test("Kimi readback verifies only the exact Hivemind-bounded tool snapshot", async () => {
+  const bounded = [
+    "mcp__hivemind_files__read_file",
+    "mcp__hivemind_files__write_file",
+    "mcp__hivemind_files__replace_in_file",
+    "mcp__hivemind_files__list_files",
+    "mcp__hivemind_files__search_files"
+  ];
   const stdout = [
     JSON.stringify({ type: "system.version", version: "0.36.1" }),
     JSON.stringify({
@@ -48,19 +55,22 @@ test("Kimi readback binds the profile but does not mistake cwd for confinement",
       state: { cwd: "D:/repo" },
       profile: {
         modelAlias: "kimi-code/kimi-for-coding",
-        activeToolNames: ["Read", "Write", "Edit", "Grep", "Glob"],
-        disallowedTools: ["Bash", "Agent", "AgentSwarm"],
+        activeToolNames: bounded,
+        disallowedTools: ["Bash", "Agent", "AgentSwarm", "Read", "Write", "Edit", "Grep", "Glob"],
         subagents: []
       },
-      tools: { tools: ["Edit", "Glob", "Grep", "Read", "Write"].map((name) => ({ name })) }
+      tools: { tools: bounded.map((name) => ({ name })) }
     })
   ].join("\n");
   const readback = await readKimiSession(stdout);
   assert.equal(readback?.model, "kimi-code/kimi-for-coding");
-  assert.equal(readback?.sandbox, null);
-  assert.match(readback?.approvalPolicy ?? "", /no workspace confinement/u);
+  assert.equal(readback?.sandbox, "hivemind-bounded-files");
+  assert.match(readback?.approvalPolicy ?? "", /exact bounded MCP tools/u);
   assert.equal(readback?.subagents, "none");
   assert.equal(readback?.version, "0.36.1");
+
+  const unsafe = stdout.replace("mcp__hivemind_files__read_file", "Read");
+  assert.equal((await readKimiSession(unsafe))?.sandbox, null);
 });
 
 async function scratch(): Promise<string> {
@@ -326,12 +336,31 @@ test("the probe leaves nothing behind in the project", async () => {
   try {
     await connectAdapter(repo, "worker", "codex-terra", {
       runner: async ({ repoRoot, nonceFile }) => {
-        await writeFile(path.join(repoRoot, ".hivemind", "probe", nonceFile), nonceFile.replace(/\.txt$/u, ""), "utf8");
+        await writeFile(path.join(repoRoot, ".hivemind-probe", nonceFile), nonceFile.replace(/\.txt$/u, ""), "utf8");
         return observation();
       },
       readback: readback()
     });
-    await assert.rejects(readFile(path.join(repo, ".hivemind", "probe"), "utf8"));
+    await assert.rejects(readFile(path.join(repo, ".hivemind-probe"), "utf8"));
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("a worker connection record is attached to the exact pool member", async () => {
+  const repo = await scratch();
+  try {
+    const result = await connectAdapter(repo, "worker", "codex-terra", {
+      runner: async ({ repoRoot, nonceFile }) => {
+        await writeFile(path.join(repoRoot, ".hivemind-probe", nonceFile), nonceFile.replace(/\.txt$/u, ""), "utf8");
+        return observation();
+      },
+      readback: readback()
+    });
+    assert.equal(result.ok, true);
+    const exact = await readFile(path.join(repo, ".hivemind", "adapters", "worker-codex-terra.connection.json"), "utf8");
+    assert.match(exact, /"agent_id": "codex-terra"/u);
+    await assert.rejects(readFile(path.join(repo, ".hivemind", "adapters", "worker.connection.json"), "utf8"));
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { explainMissingAdapterProgram, resolveAdapterInvocation } from "./adapter-command.js";
 import { writeFileAtomic } from "./atomic.js";
 import { loadAndValidateContract, TaskContract } from "./contract.js";
@@ -490,6 +491,10 @@ export async function runAdapterProcess(
   const resolvedAccountEnv = safeAccountEnvironment(
     options.accountEnv ?? (await accountEnvironmentForTool(repoRoot, profile.tool))
   );
+  if (profile.usage_parser === "kimi-wire") {
+    const boundary = await ensureBoundedFilesAccountConfig(resolvedAccountEnv);
+    if (!boundary.ok) return boundary;
+  }
   const usageSessionId = options.usageSessionId ?? `standalone-${randomUUID()}`;
   const reservationResult = await reserveMeteredCall(repoRoot, {
     provider: profile.tool,
@@ -730,6 +735,64 @@ function buildUnmeteredQuotaRequest(
     accounting_source: reportedTokens === null ? "self_measured" : "provider_reported",
     provider_usage_status: capture.status
   };
+}
+
+/**
+ * Kimi 0.36.1 auto-loads only its account-level `mcp.json`; its documented
+ * per-launch MCP flag is not accepted by the released binary. That makes this
+ * file part of the executable boundary, not cosmetic configuration. We create
+ * it only when absent and otherwise require byte-for-meaning equality. An
+ * existing or additional server is refused rather than merged because merely
+ * starting an ambient MCP command would execute code outside Hivemind's scope.
+ */
+export async function ensureBoundedFilesAccountConfig(
+  accountEnv: Record<string, string>
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const home = accountEnv.KIMI_CODE_HOME ?? path.join(homedir(), ".kimi-code");
+  const file = path.join(home, "mcp.json");
+  const cliPath = fileURLToPath(new URL("./cli.js", import.meta.url));
+  const wanted = {
+    mcpServers: {
+      hivemind_files: {
+        command: process.execPath,
+        args: [cliPath, "files-mcp"]
+      }
+    }
+  };
+  let existing: unknown;
+  try {
+    existing = JSON.parse(await readFile(file, "utf8"));
+  } catch (error: unknown) {
+    const code = isRecord(error) && typeof error.code === "string" ? error.code : null;
+    if (code !== "ENOENT") {
+      return { ok: false, reason: `Kimi tool boundary refused: ${file} is unreadable or invalid JSON; Hivemind will not overwrite it.` };
+    }
+    try {
+      await writeFileAtomic(file, `${JSON.stringify(wanted, null, 2)}\n`);
+      return { ok: true };
+    } catch (writeError: unknown) {
+      return { ok: false, reason: `Kimi tool boundary could not be written: ${formatErrorDetail(writeError, "unknown write failure")}` };
+    }
+  }
+  if (!isExactBoundedFilesConfig(existing, process.execPath, cliPath)) {
+    return {
+      ok: false,
+      reason: `Kimi tool boundary refused: ${file} contains a different or additional MCP server. Use a dedicated Kimi account home containing only Hivemind's bounded file server.`
+    };
+  }
+  return { ok: true };
+}
+
+function isExactBoundedFilesConfig(value: unknown, command: string, cliPath: string): boolean {
+  if (!isRecord(value) || Object.keys(value).length !== 1 || !isRecord(value.mcpServers)) return false;
+  if (Object.keys(value.mcpServers).length !== 1 || !isRecord(value.mcpServers.hivemind_files)) return false;
+  const server = value.mcpServers.hivemind_files;
+  return Object.keys(server).length === 2 &&
+    server.command === command &&
+    Array.isArray(server.args) &&
+    server.args.length === 2 &&
+    server.args[0] === cliPath &&
+    server.args[1] === "files-mcp";
 }
 
 /**
