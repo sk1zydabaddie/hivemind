@@ -42,11 +42,18 @@
   --amber-wash: #f9f3e8;
   --clay-wash: #f9edeb;
 
-  /* The lower stop of a primary button's ramp. Mixed from the base rather than
-     hand-picked, so the two can never drift into different hues -- which is the
-     exact failure the single-hue rule exists to prevent. */
-  --navy-deep: color-mix(in oklab, var(--navy) 88%, #000000);
-  --clay-deep: color-mix(in oklab, var(--clay) 88%, #000000);
+  /* The ramp a physical control has, with RANGE. These were 88% -- a 12%
+     darkening, which measured as a gradient and read as a flat rectangle that
+     changed colour. A ramp you cannot see is not a ramp.
+     Two stops now, in both directions from the meaning colour: `-lift` is the
+     top catching light, `-deep` is the bottom in its own shade. Still one hue,
+     still vertical, still a mix of the palette colour with white or black
+     rather than a second hand-picked hue -- which is the only rule that ever
+     mattered here, and it is untouched. */
+  --navy-lift: color-mix(in oklab, var(--navy) 80%, #ffffff);
+  --navy-deep: color-mix(in oklab, var(--navy) 68%, #000000);
+  --clay-lift: color-mix(in oklab, var(--clay) 80%, #ffffff);
+  --clay-deep: color-mix(in oklab, var(--clay) 68%, #000000);
 
   /* MOTION.
      Spring curves rather than linear easing, because a panel that decelerates
@@ -100,65 +107,97 @@
    * surface cannot look proud of the canvas here without being pressable,
    * because the stylesheet will not compile past the test.
    *
-   * Deliberately small. If somebody can name the effect it is too strong; the
-   * top edge is 20% white on a mid-navy fill, and the drop is a 2px blur at 1px
-   * offset. White and black rather than palette tokens because these are
-   * LIGHTING overlays on whatever fill they sit on, and they have to behave the
-   * same way on navy and on clay.
+   * ## Turned up, 2026-08-17
+   *
+   * This used to say "deliberately small -- if somebody can name the effect it
+   * is too strong". That was the wrong ceiling. It produced a 20% white rim and
+   * a 2px shadow, which measured as relief and read as a rectangle that changed
+   * colour: the effect was not too strong to name, it was too weak to see.
+   * Restraint is a virtue for decoration and a defect for an affordance. A
+   * control has one job before it is pressed -- to look pressable -- and it
+   * either does that or it does not.
+   *
+   * So the raised state is built as four separate physical claims rather than
+   * one soft shadow, because that is what makes an edge read as an edge:
+   *
+   *   1. a LIT TOP RIM (38% white) -- the light source is above
+   *   2. a DARK BASE (48% black) -- the bottom face is in its own shadow
+   *   3. a CONTAINING HAIRLINE -- so the fill ends somewhere definite
+   *   4. TWO drop shadows -- a tight contact shadow and a wider ambient one,
+   *      which is the pair that reads as "sitting above" rather than "blurred"
+   *
+   * And the press inverts every one of them at once. That simultaneity is the
+   * point: the rim flips dark, the base flips light, both outer shadows vanish
+   * entirely, an inner shadow appears at the top as though the face has gone
+   * below the surface, and the label travels 2px down with it. A press that
+   * changes one property is a state change; a press that changes all of them is
+   * a movement.
+   *
+   * White and black rather than palette tokens because these are LIGHTING
+   * overlays on whatever fill they sit on -- they must behave the same on navy
+   * and on clay, and a palette-tinted shadow would not.
    */
   --relief:
-    inset 0 1px 0 0 color-mix(in oklab, #ffffff 20%, transparent),
-    inset 0 -1px 0 0 color-mix(in oklab, #000000 20%, transparent),
-    0 1px 2px -1px color-mix(in oklab, #000000 38%, transparent);
+    inset 0 1px 0 0 color-mix(in oklab, #ffffff 38%, transparent),
+    inset 0 -1px 0 0 color-mix(in oklab, #000000 48%, transparent),
+    inset 0 0 0 1px color-mix(in oklab, #000000 20%, transparent),
+    0 1px 0 0 color-mix(in oklab, #000000 24%, transparent),
+    0 2px 3px -1px color-mix(in oklab, #000000 32%, transparent),
+    0 6px 12px -5px color-mix(in oklab, #000000 34%, transparent);
 
+  /* Every layer inset: the outer shadows do not soften, they GO. A pressed
+     button that kept a drop shadow would be hovering while depressed, which is
+     the tell that the effect is decoration -- `design-tokens.test.ts` asserts
+     exactly this and it is why the assertion exists. */
   --relief-pressed:
-    inset 0 2px 3px -1px color-mix(in oklab, #000000 30%, transparent),
-    inset 0 -1px 0 0 color-mix(in oklab, #ffffff 8%, transparent);
+    inset 0 2px 5px -1px color-mix(in oklab, #000000 48%, transparent),
+    inset 0 1px 0 0 color-mix(in oklab, #000000 42%, transparent),
+    inset 0 -1px 0 0 color-mix(in oklab, #ffffff 22%, transparent),
+    inset 0 0 0 1px color-mix(in oklab, #000000 22%, transparent);
 
-  /* ── Glass: three distances, not one blur ─────────────────────────────────
+  /* ── Depth: three distances, and no blur at all ────────────────────
    *
-   * The first version allowed glass on four floating things and nothing else.
-   * Four dialogs is not a theme; it is an effect that happens to appear when a
-   * menu opens. **Volumetric** means the surfaces read as sitting at different
-   * distances from the viewer, and a single blur radius cannot say that -- what
-   * says it is blur, saturation and edge brightness all scaling together, so
-   * that a dialog reads as nearer than a panel and a panel reads as nearer than
-   * the rail.
+   * This was `backdrop-filter` on nine surfaces. It was measured and removed,
+   * and the reason is worth keeping because it is a property of the PALETTE
+   * rather than of the values chosen.
    *
-   * Three depths, and a surface picks the one that matches where it actually
-   * sits:
+   * **Frosted glass needs a backdrop with structure.** A blur does not add
+   * anything; it redistributes what is already behind the surface. This app is
+   * white panels on a `#f5f6f8` canvas -- behind any given surface is another
+   * surface almost exactly the same colour, so there is nothing for a blur to
+   * reveal and no radius that changes that. Turning it up produces a stronger
+   * smudge of one flat tone, which is still one flat tone. The effect was
+   * edges and fills wearing the name of a blur.
    *
-   *   --glass-near   dialogs, the command palette, menus. Closest, most blur.
-   *   --glass-mid    panels, cards, the setup steps. The body of the app.
-   *   --glass-far    the toolbar and the rail. Furthest back, barely there.
+   * And it was not free. Subtracting a frame with the filters forced to `none`
+   * changed 4.73% of the window, all of it glyph edges -- including on mono
+   * file paths carrying no glass. A backdrop filter promotes compositing
+   * layers, and a promoted layer loses subpixel antialiasing WINDOW-WIDE. So
+   * the cost was softer text everywhere, in exchange for an effect that needed
+   * 6x magnification to see. See STATE.md §4.
    *
-   * Each depth is a PAIR with its edge, for the reason relief is a pair: the
-   * blur alone reads as a smudge, and what makes it a pane is the top edge
-   * catching light at the boundary. The edge brightens with proximity, which is
-   * the other half of reading as depth rather than as filtering.
+   * WHAT REMAINS is the part that was doing the visible work anyway: a
+   * translucent fill and a lit top edge, at three ordered distances.
    *
-   * WHY backdrop-filter AND NOT ACRYLIC/MICA. Those are Windows compositor
-   * materials with no WebKitGTK equivalent, so adopting them would split the
-   * identity per platform -- the same reason the bundle config must not be
-   * shaped for one. This is one declaration that produces one look everywhere.
+   *   near   dialogs, the command palette, menus, tooltips. Brightest edge.
+   *   mid    panels, cards, the setup steps. The body of the app.
+   *   far    the toolbar and the rail. Furthest back, barely there.
+   *
+   * The edge is now the whole depth marker, so it is what identifies a
+   * surface's tier -- `design-tokens.test.ts` reads these three tokens to
+   * decide which depth a surface is at, and fails if any surface reintroduces
+   * a `backdrop-filter`.
    *
    * THE CEILING IS NOT TASTE. The amber attention edge is the only thing on
-   * screen that means "a person must act", so it must remain the loudest thing
-   * on it. If glass ever competes, the glass gets quieter -- never the amber.
-   * That is why even `--glass-near` tops out at 18px over a fill that stays
-   * 86% opaque: enough to read as a pane, not enough to read as a spotlight.
+   * screen that means "a person must act", so it stays the loudest thing on
+   * it. A 9% white rim is a hint at a boundary, not a highlight.
    *
    * AND NEVER BEHIND DENSE MONOSPACE. Token counts, the spend meter, diff
    * gutters, live check output and the plan review's conformance commands stay
    * flat and fully opaque. Translucency costs most exactly where small
-   * monospaced figures are read, and a number that is hard to read is worse
-   * than a surface that is plain. `design-tokens.test.ts` names those files and
-   * fails if any of them takes glass.
+   * monospaced figures are read. That rule survives the blur's removal because
+   * it was never about the blur.
    */
-  --glass-near: saturate(180%) blur(18px);
-  --glass-mid: saturate(140%) blur(11px);
-  --glass-far: saturate(120%) blur(7px);
-
   --glass-edge-near: inset 0 1px 0 0 color-mix(in oklab, #ffffff 9%, transparent);
   --glass-edge: inset 0 1px 0 0 color-mix(in oklab, #ffffff 5%, transparent);
   --glass-edge-far: inset 0 1px 0 0 color-mix(in oklab, #ffffff 3%, transparent);
@@ -212,11 +251,13 @@
   --color-ink: var(--ink);
   --color-navy: var(--navy);
   --color-navy-deep: var(--navy-deep);
+  --color-navy-lift: var(--navy-lift);
   --ease-spring: var(--spring);
   --ease-spring-firm: var(--spring-firm);
   --shadow-float: var(--shadow-float);
   --shadow-lift: var(--shadow-lift);
   --color-clay-deep: var(--clay-deep);
+  --color-clay-lift: var(--clay-lift);
   --color-rule: var(--rule);
   --color-amber: var(--amber);
   --color-clay: var(--clay);

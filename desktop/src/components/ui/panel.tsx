@@ -45,7 +45,7 @@ export function PanelHeader({
     <header
       data-slot="panel-header"
       className={cn(
-        "flex h-9 shrink-0 items-center gap-3 border-b border-rule bg-canvas/80 [backdrop-filter:var(--glass-mid)] shadow-[var(--glass-edge)] px-3",
+        "flex h-9 shrink-0 items-center gap-3 border-b border-rule bg-canvas/82 shadow-[var(--glass-edge)] px-3",
         className
       )}
       {...props}

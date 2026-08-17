@@ -41,13 +41,12 @@ function DialogOverlay({
            a panel sits ON the canvas and a shadow under it was decoration
            pretending to be hierarchy. A dialog is above the app, and the depth
            says which layer owns the next click. */
-        /* Light, deliberately. A 35% scrim and an 86% glass fill multiply out
-           to about 9% of what is behind surviving -- and a blur over a surface
-           that has been flattened to one grey returns the same grey, so the
-           near depth was measurably applied and visually inert. The curtain and
-           the material were doing the same job, and the material does it
-           better: what says "the app behind is not live" is that it is out of
-           focus, not that it has been dimmed. */
+        /* Light, deliberately -- and this one survived the blur's removal on
+           its own merits. A 35% scrim under an 86% fill left about 9% of what
+           is behind surviving, which is to say the app went dark under the
+           dialog. At 18% you can see the run still going behind the plan you
+           are approving, which is true and worth seeing: a plan review is a
+           decision about work already in flight, not a modal detour. */
         "fixed inset-0 z-50 bg-ink/18 duration-[180ms] ease-[var(--spring)] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
         className
       )}
@@ -70,7 +69,7 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-xl border border-rule bg-background/86 [backdrop-filter:var(--glass-near)] shadow-[var(--glass-edge-near)] p-5 duration-[240ms] ease-[var(--spring)] outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
+          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-xl border border-rule bg-background/86 shadow-[var(--glass-edge-near)] p-5 duration-[240ms] ease-[var(--spring)] outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
           className
         )}
         {...props}

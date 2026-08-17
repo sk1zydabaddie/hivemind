@@ -258,12 +258,35 @@ describe("palette discipline", () => {
     }
 
     /* And the derived stops must be mixes of a palette colour, never a second
-       hand-picked hue -- which is the only way two stops drift apart. */
-    const deepTokens = [...styles.matchAll(/--(\w+)-deep:\s*([^;]+);/gu)];
-    expect(deepTokens.length).toBeGreaterThan(0);
-    for (const [, base, value] of deepTokens) {
-      expect(value).toContain(`var(--${base!})`);
+       hand-picked hue -- which is the only way two stops drift apart.
+       BOTH ends of a ramp: `-lift` mixes toward white, `-deep` toward black.
+       These were 88% mixes and are now 80/68, because a 12% darkening measured
+       as a gradient and read as a flat rectangle. The RANGE is a value and may
+       be turned up; the single hue is the rule and may not. */
+    /* A ramp stop is a bare `color-mix`. Anchoring on that excludes
+       `--shadow-lift`, which ends in the same word and is a box-shadow -- the
+       first draft of this matched it and the baseline failed, which is the
+       cheapest possible moment to learn that a pattern is too greedy. */
+    const stops = [...styles.matchAll(/--(\w+)-(?:lift|deep):\s*(color-mix\([^;]+);/gu)];
+    expect(stops.length, "no ramp stops are declared").toBeGreaterThan(0);
+    for (const [whole, base, value] of stops) {
+      expect(value, `${whole!} must be derived from its base`).toContain(`var(--${base!})`);
       expect(value).toMatch(/color-mix\(in oklab/u);
+      /* The half the name check cannot do. `from-navy-lift to-navy-deep` passes
+         any assertion about utility NAMES however the tokens are defined -- so a
+         stop mixed with clay instead of white would produce a two-hue ramp that
+         reads exactly like the generic-AI button this rule exists to prevent,
+         and nothing would notice. Mutation testing found this hole by doing it.
+         The only permitted second term is pure white or pure black, because a
+         lighting mix is not a colour choice. */
+      const terms = value.match(/#[0-9a-fA-F]{3,8}/gu) ?? [];
+      expect(terms.length, `${whole!} mixes with no literal`).toBeGreaterThan(0);
+      for (const term of terms) {
+        expect(
+          term.toLowerCase(),
+          `${whole!} mixes its base with ${term} -- a ramp stop may only be lightened or darkened`
+        ).toMatch(/^#(?:fff(?:fff)?|000(?:000)?)$/u);
+      }
     }
   });
 
@@ -303,15 +326,30 @@ describe("palette discipline", () => {
       const source = await readFile(file, "utf8");
       if (!/shadow-\[var\(--relief\)\]/u.test(source)) continue;
       reliefUsers.push(path.basename(file));
-      expect(source, `${path.basename(file)} takes relief with no pressed state`).toMatch(
-        /active:shadow-\[var\(--relief-pressed\)\]/u
-      );
-      /* And it has to actually move. A shadow swap on its own is a repaint,
-         not a press: what makes it read as a real button is that the label
-         goes down with the surface. */
-      expect(source, `${path.basename(file)} is raised but does not depress`).toMatch(
-        /active:translate-y-px/u
-      );
+
+      /* PER VARIANT, not per file. This used to assert against the whole
+         source, and mutation testing showed why that was worthless: deleting
+         the press from ONE of the two filled variants left the file still
+         matching on the other one, and the suite went green on a button that no
+         longer answered. Every class string that raises itself is checked on
+         its own terms. */
+      const raised = (source.match(/"[^"]*shadow-\[var\(--relief\)\][^"]*"/gu) ?? []);
+      expect(raised.length, `${path.basename(file)} raises nothing this test can read`)
+        .toBeGreaterThan(0);
+      for (const variant of raised) {
+        const which = /^"(bg-[a-z-]+)/u.exec(variant)?.[1] ?? variant.slice(0, 24);
+        expect(variant, `${which} takes relief with no pressed state`).toMatch(
+          /active:shadow-\[var\(--relief-pressed\)\]/u
+        );
+        /* It has to MOVE. The distance is a value and may be turned up -- it
+           went from 1px to 2px when the relief was strengthened -- so this
+           asserts a downward translate of at least a pixel rather than one
+           exact utility. What is not negotiable is that something moves: a
+           shadow swap with a stationary label is a repaint, not a press. */
+        expect(variant, `${which} is raised but does not depress`).toMatch(
+          /active:translate-y-(?:px|\[[1-9]\d*px\])/u
+        );
+      }
     }
     /* Only the control component may carry it at all. */
     expect(reliefUsers, "relief belongs to the button and nothing else").toEqual(["button.tsx"]);
@@ -403,7 +441,11 @@ describe("palette discipline", () => {
         /from-([a-z-]+)(?:\/\d+)?\s+(?:hover:)?to-([a-z-]+)(?:\/\d+)?/gu
       )) {
         ramps += 1;
-        const base = (name: string): string => name.replace(/-deep$|-wash$/u, "");
+        /* `-lift` joined `-deep` when the ramp was widened: the top stop is now
+           a mix toward white and the bottom a mix toward black, both of the
+           SAME palette colour. Stripping both keeps the real rule -- one hue
+           per ramp -- while allowing the range to be as wide as it needs. */
+        const base = (name: string): string => name.replace(/-lift$|-deep$|-wash$/u, "");
         if (base(match[1]!) !== base(match[2]!)) {
           offences.push(`${path.basename(file)}: from-${match[1]} to-${match[2]}`);
         }
@@ -415,22 +457,26 @@ describe("palette discipline", () => {
   });
 });
 
-/* Glass is relief's rule one axis over — with the allowlist inverted.
+/* Depth, after the blur was measured and removed.
  *
- * Relief asks "is this pressable?" and is redeemed by the press. Glass asked
- * "is this ABOVE the app?", and the first version of these rules answered it
- * with an allowlist of three floating components. That was too tight to be a
- * theme: four dialogs is an effect you notice, not a material the app is made
- * of. So it now runs everywhere by default and the enforcement is a DENYLIST.
+ * The history matters because the rule survived two reversals and is narrower
+ * than it looks. Version one allowed `backdrop-filter` on three floating
+ * components and nothing else -- too tight to be a theme. Version two inverted
+ * that to a denylist and put three ordered blurs on nine surfaces. Then the
+ * frames were subtracted, and the blur turned out to change 4.73% of the window,
+ * all of it glyph edges, because a backdrop filter promotes compositing layers
+ * and a promoted layer loses subpixel antialiasing WINDOW-WIDE -- including on
+ * the mono figures the denylist was written to protect.
  *
- * What replaced "does it float" is "does it read as DISTANCE" — three ordered
- * depths, each with its own edge, near blurring more and catching more light
- * than far. That ordering is what separates layered depth from one blur filter
- * pasted around, so the ordering is what gets asserted.
+ * So the blur is gone and **its absence is now the thing being enforced**. What
+ * remains is what was doing the visible work all along: a translucent fill and a
+ * lit top edge, at three ordered distances. Frosted glass needs a backdrop with
+ * structure, and white panels on a #f5f6f8 canvas have none -- that is a fact
+ * about the palette, so no value would have fixed it.
  *
- * The boundary that does not move: not behind dense monospaced figures. And the
- * ceiling still holds it under the amber attention edge — where they compete,
- * the glass gets quieter, never the amber. */
+ * The two rules that outlived both reversals: nothing dense and monospaced sits
+ * on a translucent fill, and nothing here gets louder than the amber attention
+ * edge. */
 /* The same walk the attention-edge test does, hoisted so the glass rules can
    use it too. */
 async function sourceFiles(): Promise<string[]> {
@@ -447,13 +493,12 @@ async function sourceFiles(): Promise<string[]> {
   return found;
 }
 
-describe("glass reads as depth, and never sits behind dense figures", () => {
+describe("depth is fills and edges, and never a blur", () => {
   /* Where small monospaced figures are read. Translucency costs most exactly
      here and buys least: a token count that is hard to read is worse than a
-     surface that is plain. This is the one boundary the theme does not cross,
-     and it is a DENYLIST because the theme is now everywhere by default --
-     the inverse of the first version, which allowed four floating things and
-     was an effect rather than a theme. */
+     surface that is plain. Kept after the blur's removal because it was never
+     about the blur -- a pale fill over a busy backdrop hurts a 11px figure
+     whatever the filter says. */
   const DENSE_MONO = [
     "diff-view.tsx",
     "checks-output.tsx",
@@ -461,116 +506,117 @@ describe("glass reads as depth, and never sits behind dense figures", () => {
     "spec-review.tsx"
   ];
 
-  const DEPTHS = [
-    ["--glass-near", "--glass-edge-near"],
-    ["--glass-mid", "--glass-edge"],
-    ["--glass-far", "--glass-edge-far"]
-  ] as const;
+  /* The edge IS the depth marker now, so these three names are the whole
+     vocabulary: a surface's tier is whichever one it takes. */
+  const DEPTHS = ["--glass-edge-near", "--glass-edge", "--glass-edge-far"] as const;
 
-  test("three depths are declared, each with its own edge", async () => {
+  test("three edges are declared, one per distance", async () => {
     const css = (await readStyles()).replace(/\/\*[\s\S]*?\*\//gu, "");
-    for (const [depth, edge] of DEPTHS) {
-      expect(css, `${depth} must be declared`).toContain(`${depth}:`);
+    for (const edge of DEPTHS) {
       expect(css, `${edge} must be declared`).toContain(`${edge}:`);
     }
   });
 
-  /* Volumetric means the depths are ORDERED. If near and far blur by the same
-     amount they are one material applied twice, which is the thing this
-     replaced. */
-  test("the depths are ordered, so they read as distance", async () => {
+  /* The blur is gone and must stay gone. This is the assertion that would have
+     caught it going back in, and it is the whole point of the rewrite: a
+     property that costs subpixel antialiasing across the window is not a thing
+     to reintroduce quietly on one surface. */
+  test("no surface reintroduces a backdrop filter", async () => {
+    const offenders: string[] = [];
+    for (const file of await sourceFiles()) {
+      /* Comments out first. `styles.css` explains at length WHY the blur was
+         removed, and banning the bare string flags the prose that documents the
+         rule -- this project's most-repeated trap, and it caught this very
+         assertion on its first run. What must not exist is a declaration. */
+      const source = (await readFile(file, "utf8"))
+        .replace(/\/\*[\s\S]*?\*\//gu, "")
+        .replace(/^\s*\/\/.*$/gmu, "");
+      if (/backdrop-filter|backdrop-blur/u.test(source)) offenders.push(path.basename(file));
+    }
+    expect(
+      offenders,
+      "a backdrop filter promotes compositing layers and costs subpixel AA window-wide"
+    ).toEqual([]);
+  });
+
+  /* Ordered, because that is what makes three tokens a distance rather than
+     three arbitrary values. The edge brightens as a surface comes forward. */
+  test("the edges are ordered, so they read as distance", async () => {
     const css = (await readStyles()).replace(/\/\*[\s\S]*?\*\//gu, "");
-    /* Read the declaration by slicing to its semicolon rather than building a
-       regex per token name -- one escaping mistake in a constructed pattern
-       silently matches nothing, and a token rule that quietly passes is the
-       shape this file exists to prevent. */
     const declared = (name: string): string => {
       const at = css.indexOf(`${name}:`);
       expect(at, `${name} is not declared`).toBeGreaterThan(-1);
       return css.slice(at, css.indexOf(";", at));
     };
-    const blur = (name: string): number =>
-      Number(/blur\((\d+)px\)/u.exec(declared(name))?.[1] ?? 0);
-    const near = blur("--glass-near");
-    const mid = blur("--glass-mid");
-    const far = blur("--glass-far");
+    const brightness = (name: string): number =>
+      Number(/#ffffff\s+(\d+)%/u.exec(declared(name))?.[1] ?? 0);
+
+    const near = brightness("--glass-edge-near");
+    const mid = brightness("--glass-edge");
+    const far = brightness("--glass-edge-far");
     expect(near).toBeGreaterThan(mid);
     expect(mid).toBeGreaterThan(far);
     expect(far).toBeGreaterThan(0);
 
-    const edge = (name: string): number =>
-      Number(/#ffffff\s+(\d+)%/u.exec(declared(name))?.[1] ?? 0);
-    /* The edge brightens with proximity -- that is the other half of reading as
-       depth rather than as filtering. */
-    expect(edge("--glass-edge-near")).toBeGreaterThan(edge("--glass-edge"));
-    expect(edge("--glass-edge")).toBeGreaterThan(edge("--glass-edge-far"));
+    /* The ceiling, unchanged in intent: the amber attention edge is the only
+       thing on screen that means "a person must act", so a white rim on a pane
+       stays a hint at a boundary rather than a highlight. */
+    expect(near, "the edge must stay a hint, not a highlight").toBeLessThanOrEqual(12);
   });
 
-  test("every surface that takes a depth takes its edge, and is translucent", async () => {
+  test("every surface at a depth is translucent, or the edge lights nothing", async () => {
     const files = await sourceFiles();
     let users = 0;
     const perDepth = new Map<string, number>();
     for (const file of files) {
       if (!file.endsWith(".tsx")) continue;
       const source = await readFile(file, "utf8");
-      for (const [depth, edge] of DEPTHS) {
-        const taken = source.split(`[backdrop-filter:var(${depth})]`).length - 1;
+      for (const edge of DEPTHS) {
+        /* Only count a real shadow utility, so the token appearing in a comment
+           does not register as a user -- prose about a rule matching the rule
+           is this project's most-repeated trap. */
+        const taken = (source.match(/shadow-\[[^\]]*\]/gu) ?? []).filter((utility) =>
+          utility.includes(`var(${edge})`)
+        ).length;
         if (taken === 0) continue;
         users += taken;
-        perDepth.set(depth, (perDepth.get(depth) ?? 0) + taken);
-        /* The edge may share its utility with a drop shadow -- a tooltip is
-           both lit at its top edge and raised above the page, and Tailwind
-           merges two `shadow-` classes down to the last one, so writing them
-           separately would silently delete the float. Hence: the edge must be
-           referenced by SOME shadow utility, not be one on its own. */
-        const shadows = source.match(/shadow-\[[^\]]*\]/gu) ?? [];
-        expect(
-          shadows.some((utility) => utility.includes(`var(${edge})`)),
-          `${path.basename(file)} takes ${depth} without ${edge}`
-        ).toBe(true);
-        /* Glass over an opaque fill blurs nothing -- the effect would be inert,
-           which is the configured-and-doing-nothing shape recorded repeatedly
-           in this project. */
-        expect(source, `${path.basename(file)} frosts an opaque surface`).toMatch(
+        perDepth.set(edge, (perDepth.get(edge) ?? 0) + taken);
+        /* An edge on an opaque fill is a hairline pretending to be a pane. The
+           translucency is what the edge is the boundary OF, so without it the
+           token is decoration -- the configured-and-doing-nothing shape. */
+        expect(source, `${path.basename(file)} lights the edge of an opaque surface`).toMatch(
           /bg-[a-z-]+\/\d{2}/u
         );
       }
     }
-    /* A theme, not an effect -- and this is a RATCHET, not a sanity check. A
-       slack floor (it was 6, with 9 in place) let three surfaces be stripped
-       back to opaque without a word, which is precisely how a material decays
-       into a dialog trick one refactor at a time. Raising it costs a
-       deliberate edit here, which is the point: shrinking the theme should be
-       a decision somebody makes, not a side effect. */
-    expect(users, "glass is meant to be the app's material, not a dialog trick")
+    /* A ratchet, not a sanity check. A slack floor let three surfaces be
+       stripped back to opaque without a word, which is how a material decays
+       into a dialog trick one refactor at a time. */
+    expect(users, "depth is meant to be the app's material, not a dialog trick")
       .toBeGreaterThanOrEqual(9);
-    /* And all three depths stay in use. A depth that is declared and applied
-       nowhere is the configured-and-doing-nothing shape this project keeps
-       rediscovering. */
-    for (const [depth] of DEPTHS) {
-      expect(perDepth.get(depth) ?? 0, `${depth} is declared but nothing takes it`)
+    for (const edge of DEPTHS) {
+      expect(perDepth.get(edge) ?? 0, `${edge} is declared but nothing takes it`)
         .toBeGreaterThan(0);
     }
   });
 
-  test("nothing dense and monospaced sits on glass", async () => {
+  test("nothing dense and monospaced sits on a translucent surface", async () => {
     const files = await sourceFiles();
     for (const name of DENSE_MONO) {
       const found = files.find((file) => path.basename(file) === name);
       if (found === undefined) continue;
       const source = await readFile(found, "utf8");
-      for (const [depth] of DEPTHS) {
+      for (const edge of DEPTHS) {
         expect(source, `${name} carries dense figures and must stay opaque`).not.toContain(
-          `[backdrop-filter:var(${depth})]`
+          `var(${edge})`
         );
       }
 
-      /* Taking no depth is only half of it, and it is the half that does not
-         matter. The plan review's file lists are mono, and they sit inside a
-         dialog that IS near glass -- so what actually keeps them legible is
-         their own OPAQUE fill, painted over whatever the ancestor is doing.
-         A translucent fill here would let the dialog's blur through onto the
-         figures, and no rule about this file's own classes would notice. */
+      /* The half that actually matters. The plan review's file lists are mono
+         and sit inside a dialog that is itself translucent -- what keeps them
+         legible is their OWN opaque fill, painted over whatever the ancestor is
+         doing. A translucent fill here would put the figures on the dialog's
+         surface, and no rule about this file's own depth tokens would notice. */
       const fills = source.match(/\bbg-(?:panel|canvas|surface)(?:\/\d+)?\b/gu) ?? [];
       expect(fills.length, `${name} paints no fill of its own to sit on`).toBeGreaterThan(0);
       expect(
@@ -578,15 +624,5 @@ describe("glass reads as depth, and never sits behind dense figures", () => {
         `${name} carries dense figures on a translucent fill`
       ).toEqual([]);
     }
-  });
-
-  /* The amber attention edge is the only thing on screen that means "a person
-     must act". If glass competes, the glass gets quieter -- never the amber. */
-  test("it stays quieter than the thing that means act now", async () => {
-    const css = (await readStyles()).replace(/\/\*[\s\S]*?\*\//gu, "");
-    const near = Number(/--glass-near:[^;]*blur\((\d+)px\)/u.exec(css)?.[1] ?? 0);
-    expect(near, "a heavy blur turns a pane into a spotlight").toBeLessThanOrEqual(20);
-    const edge = Number(/--glass-edge-near:[^;]*#ffffff\s+(\d+)%/u.exec(css)?.[1] ?? 0);
-    expect(edge, "the edge must stay a hint, not a highlight").toBeLessThanOrEqual(12);
   });
 });

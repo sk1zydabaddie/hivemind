@@ -702,6 +702,28 @@ next session does not have to rediscover them.
 > Measured in headless Edge. WebView2 is the same engine on the same platform
 > so it should hold, but it is inferred there rather than observed, and it is
 > the kind of inference this section exists to distrust.
+>
+> **Decided 2026-08-17: the filters are removed.** Fills and edge highlights
+> stay, at three ordered distances; the lowered dialog scrim stays, because
+> seeing the run continue behind the plan you are approving is true and useful.
+> Subpixel antialiasing returns everywhere.
+>
+> The reason is worth stating as a rule rather than as a preference, because it
+> generalises past this app: **frosted glass needs a backdrop with structure.**
+> A blur adds nothing — it redistributes what is already behind the surface. On
+> white panels over a `#f5f6f8` canvas, what is behind a surface is another
+> surface of almost exactly the same colour, so there is nothing to
+> redistribute. That makes it **a palette constraint, not a strength one**: no
+> radius would have fixed it, and turning it up produces a heavier smudge of one
+> flat tone, which is still one flat tone. What shipped under the name of a blur
+> was edges and fills.
+>
+> The enforcement inverted a second time to match, and now asserts the ABSENCE:
+> `depth is fills and edges, and never a blur` fails any surface that
+> reintroduces a `backdrop-filter`. It caught its own first draft, which flagged
+> `styles.css` because the prose explaining the ban contains the banned string —
+> this project's most-repeated trap, hit again by the assertion written to
+> record it.
 
 > **The rig that checks the rigs needs checking too — and its failure mode is
 > the worst-shaped one available.** Eight new glass rules were verified by

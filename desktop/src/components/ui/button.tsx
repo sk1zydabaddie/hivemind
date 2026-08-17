@@ -23,20 +23,29 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        /* The one permitted gradient: a vertical ramp from the meaning colour
-           to a darker mix of ITSELF. Same hue, two stops, top to bottom -- what
-           a physical control looks like, not what a template looks like. The
+        /* The one permitted gradient, and now with enough range to be seen as
+           one: `-lift` at the top, `-deep` at the bottom, both mixes of the
+           same meaning colour. Same hue, two stops, top to bottom -- what a
+           physical control looks like, not what a template looks like. The
            multi-hue two-colour button is the AI-default tell this whole visual
-           language exists to avoid, and a same-hue ramp is not that.
-           Filled primary actions only: outline, ghost, secondary and link stay
-           flat, so the gradient continues to mean "this is the action". */
+           language exists to avoid, and widening a single-hue ramp does not
+           move it any closer to that.
+           Filled actions only: outline, ghost, secondary and link stay flat, so
+           the ramp continues to mean "this is the action". Both filled variants
+           are reached by every dialog and setup-screen action, because those
+           use the implicit default rather than a variant of their own.
+           Three states, three distinct fills: at rest the ramp runs lift ->
+           deep, hover darkens the top stop so the ramp compresses as though
+           already yielding, and active flattens to `deep` outright -- a pressed
+           face is out of the light, so a lit ramp on it would contradict the
+           shadow. */
         /* Raised at rest, pressed in on `active:`. The two shadows are a pair
            declared together in styles.css -- see the rule there for why a
            button may look proud of the surface and a panel may not. */
         default:
-          "bg-navy bg-gradient-to-b from-navy to-navy-deep text-primary-foreground shadow-[var(--relief)] hover:from-navy-deep hover:to-navy-deep active:translate-y-px active:shadow-[var(--relief-pressed)] disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground disabled:shadow-none",
+          "bg-navy bg-gradient-to-b from-navy-lift to-navy-deep text-primary-foreground shadow-[var(--relief)] hover:from-navy hover:to-navy-deep active:translate-y-[2px] active:from-navy-deep active:to-navy-deep active:shadow-[var(--relief-pressed)] disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground disabled:shadow-none",
         destructive:
-          "bg-clay bg-gradient-to-b from-clay to-clay-deep text-destructive-foreground shadow-[var(--relief)] hover:from-clay-deep hover:to-clay-deep active:translate-y-px active:shadow-[var(--relief-pressed)] disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground disabled:shadow-none",
+          "bg-clay bg-gradient-to-b from-clay-lift to-clay-deep text-destructive-foreground shadow-[var(--relief)] hover:from-clay hover:to-clay-deep active:translate-y-[2px] active:from-clay-deep active:to-clay-deep active:shadow-[var(--relief-pressed)] disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground disabled:shadow-none",
         outline:
           "border border-rule bg-panel text-ink hover:border-navy/45 hover:bg-navy-wash hover:text-navy disabled:opacity-45",
         secondary: "bg-secondary text-secondary-foreground hover:bg-rule/60 disabled:opacity-45",
