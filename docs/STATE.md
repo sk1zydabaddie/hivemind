@@ -550,6 +550,73 @@ next session does not have to rediscover them.
 > **Verify the DISTRIBUTION before you verify the capabilities.** A verdict was
 > once reached against the wrong package entirely.
 
+### About design rules that turned out to be imprecise
+
+> **A rule can be right about the symptom and wrong about the cause, and the
+> difference only shows up when you try to extend it.**
+>
+> `--shadow-panel` was deleted for being "decoration pretending to be
+> hierarchy", and the rule that followed was *only an object that answers when
+> pressed may claim relief*. Both held for months. Then elevation stacking was
+> asked for, and the two collided: layered card heights are exactly what that
+> rule forbids.
+>
+> The resolution is that **relief and elevation are different claims with
+> different redemptions**, and the original diagnosis had conflated them:
+>
+> | Claim | Says | Redeemed by |
+> | --- | --- | --- |
+> | Relief | this responds to pressure | the press, in 60ms, by the object itself |
+> | Elevation | this is above that | occlusion — it covers the thing below, or is separated from a plane its siblings share |
+>
+> A panel can truthfully be above another panel without ever being pressable, so
+> elevation does not need the press to be honest. What was actually wrong with
+> `--shadow-panel` was not that panels had depth — it was that **every panel had
+> the same shadow, so it asserted a hierarchy without expressing one.** A claim
+> that applies to everything distinguishes nothing.
+>
+> That reframing is what makes the rule enforceable rather than prohibitive: the
+> discipline is not *who may have a shadow* but *a level must correspond to
+> something true, and two things at different levels must not share one*. Three
+> levels, closed membership per level, asserted in `elevation.test.ts`.
+>
+> **The audit that came with it.** Four shadow tokens existed —
+> `--shadow-float`, `--shadow-lift`, `--shadow-raised`, `--shadow-overlay` — and
+> **three had no consumers anywhere in the app.** Four overlapping names, no
+> assignment rules, nobody obliged to justify picking one. That is how the same
+> mistake was available to be made twice, and it is the unreached shape again in
+> a place nobody thought to audit: a design token is code.
+>
+> **One place where the new rule and an older decision pulled opposite ways, and
+> the older one won.** The level list included the active tab. But selection had
+> already been moved to a filled pill specifically so relief and selection would
+> stop sharing a device — and a selected tab *covers nothing*, so there is no
+> occlusion to redeem an "above". Tabs are chrome: cut into the toolbar rather
+> than sitting on it. So chrome takes no level, selection stays fill, and
+> `elevation.test.ts` asserts the exclusion rather than leaving the next reader to
+> wonder why tabs are missing from the list. **Selection alone earns no level.**
+>
+> **Two constraints, both measured rather than eyeballed** — because the palette
+> already caused one effect to be built and removed for exactly this reason:
+>
+> - The amber attention edge peaks at **14.7/255 over 11px**, measured by
+>   rendering it and sampling outward. `raised` (4.3/4) and `floating` (10.3/10)
+>   share a screen with it and stay under it on both axes. **The first `floating`
+>   candidate measured 16.3/13 and was rejected for exceeding it** — the ceiling
+>   did its work before anything shipped, which is the only time a ceiling is
+>   worth having. `overlay` (25.3/36) is louder and is the one level that
+>   *occludes* the edge rather than competing with it.
+> - Soft means soft. A deliberately-too-heavy shadow measured 59/57 and reads as
+>   a grey smudge on `#f5f6f8` — the same fact about a near-white canvas that
+>   killed the blur. Nothing on the scale exceeds 26.
+>
+> And the timing question, answered by measurement before building rather than by
+> judgement: **the scale is radius-invariant.** At 0px and 20px corners, peak and
+> reach move by at most 0.3/255 along an edge; a large radius softens the *corner*
+> (overlay 7 → 5) and never the ordering. So it did not need to wait for a radius
+> to be chosen — and building it first makes that choice better, because judging a
+> corner radius in a flat app is judging it against something that will not ship.
+
 ### About gates and privilege
 
 > **When you loosen a gate, audit what GRANTS the thing it guarded.** The gate

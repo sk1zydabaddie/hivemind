@@ -70,14 +70,88 @@
   --motion: 180ms;
   --motion-panel: 240ms;
 
-  /* DEPTH, for things that genuinely float and nothing else.
-     `--shadow-panel` was deleted deliberately: a panel sits ON the canvas and a
-     shadow under it was decoration pretending to be hierarchy. A dialog is
-     different -- it is above the app, and the depth says which layer owns the
-     next click. */
-  --shadow-float: 0 12px 32px -8px color-mix(in oklab, var(--ink) 22%, transparent),
-    0 2px 8px -2px color-mix(in oklab, var(--ink) 12%, transparent);
-  --shadow-lift: 0 2px 6px -2px color-mix(in oklab, var(--ink) 14%, transparent);
+  /* ── ELEVATION: three levels, and each one is a claim that can be false ────
+   *
+   * ## What `--shadow-panel` actually got wrong
+   *
+   * It was deleted for being "decoration pretending to be hierarchy", and that
+   * was right about the symptom and imprecise about the cause. Panels are not
+   * forbidden from having depth. What was wrong is that EVERY panel had the SAME
+   * shadow, so the shadow asserted a hierarchy without expressing one -- and a
+   * claim that applies to everything distinguishes nothing.
+   *
+   * Relief and elevation are different claims, and it is worth being exact about
+   * how each is redeemed, because that is what keeps them honest:
+   *
+   *   RELIEF says "this responds to pressure". Redeemed by the press, in 60ms,
+   *     by the object itself. Only a control that answers may claim it.
+   *   ELEVATION says "this is above that". Redeemed by OCCLUSION -- the higher
+   *     thing covers the lower one, or is separated from a plane its siblings
+   *     share. It needs no press, because "above" is a fact about layering
+   *     rather than about interaction.
+   *
+   * So the discipline is not "who may have a shadow" but: **a level must
+   * correspond to something true, and things at different levels must not share
+   * a level.** Three levels, assigned by test in `design-tokens.test.ts`, which
+   * fails if a level appears outside its allowed set. Not a utility to sprinkle.
+   *
+   *   --elevation-raised    a discrete card brought forward from siblings it
+   *                         shares a surface with: the selected task, the
+   *                         inspected agent.
+   *   --elevation-floating  above surrounding content: the attention card over
+   *                         the stream, the ship card over the run, a
+   *                         plan-ready banner.
+   *   --elevation-overlay   genuinely above the app: dialogs, the command
+   *                         palette, menus, tooltips.
+   *   (ground)              the canvas and the surfaces work happens on. No
+   *                         shadow at all, and most of the app lives here.
+   *
+   * ## Chrome is not a card, so the active tab is NOT here
+   *
+   * Tabs are cut into the toolbar rather than sitting on it, and selection is
+   * already expressed by a filled pill -- deliberately, because relief and
+   * selection had to stop sharing a device. Giving the active tab elevation
+   * would hand selection two devices again and would claim an "above" that no
+   * occlusion demonstrates. Selection is fill; elevation is layering.
+   *
+   * ## The numbers are measured, not chosen
+   *
+   * Two constraints, both checked by rendering and sampling pixels rather than
+   * by looking -- `elevation-measure.mjs`, reported as peak darkening out of 255
+   * and reach in pixels before it drops below 1/255:
+   *
+   *   1. CALMER THAN THE AMBER EDGE. The attention edge peaks at 14.7 over 11px.
+   *      `raised` (4.3/4) and `floating` (10.3/10) coexist with it on screen and
+   *      stay under it on both axes. The first `floating` candidate measured
+   *      16.3/13 and was rejected for exceeding it -- the ceiling did its job
+   *      before anything shipped. `overlay` (25.3/36) is louder, and is the one
+   *      level that OCCLUDES the amber edge rather than competing with it.
+   *   2. SOFT MEANS SOFT. A near-white canvas has nothing behind a surface, so a
+   *      heavy shadow reads as a grey smudge -- the same fact that killed the
+   *      blur. A deliberately-too-heavy control measured 59/57 and looks exactly
+   *      like that. Nothing here exceeds 26.
+   *
+   * And the scale is RADIUS-INVARIANT, which was checked rather than assumed
+   * before it was built: measured at 0px and 20px corners, peak and reach move
+   * by at most 0.3/255 along an edge. A large radius softens the CORNER
+   * (overlay 7 -> 5) and never the ordering, so a radius chosen later cannot
+   * invalidate these values.
+   *
+   * Replaces four tokens -- `--shadow-panel`, `--shadow-float`, `--shadow-lift`,
+   * `--shadow-overlay` -- of which THREE had no consumers at all. Four
+   * overlapping names with no assignment rules is how the original mistake got
+   * made twice. */
+  --elevation-raised:
+    0 1px 2px -1px color-mix(in oklab, var(--ink) 10%, transparent),
+    0 2px 6px -3px color-mix(in oklab, var(--ink) 8%, transparent);
+
+  --elevation-floating:
+    0 1px 3px -1px color-mix(in oklab, var(--ink) 9%, transparent),
+    0 5px 12px -6px color-mix(in oklab, var(--ink) 10%, transparent);
+
+  --elevation-overlay:
+    0 3px 7px -3px color-mix(in oklab, var(--ink) 12%, transparent),
+    0 14px 32px -12px color-mix(in oklab, var(--ink) 16%, transparent);
 
   /* RELIEF, and the rule that keeps it from becoming elevation.
    *
@@ -254,8 +328,9 @@
   --color-navy-lift: var(--navy-lift);
   --ease-spring: var(--spring);
   --ease-spring-firm: var(--spring-firm);
-  --shadow-float: var(--shadow-float);
-  --shadow-lift: var(--shadow-lift);
+  --shadow-elevation-raised: var(--elevation-raised);
+  --shadow-elevation-floating: var(--elevation-floating);
+  --shadow-elevation-overlay: var(--elevation-overlay);
   --color-clay-deep: var(--clay-deep);
   --color-clay-lift: var(--clay-lift);
   --color-rule: var(--rule);
@@ -320,8 +395,10 @@
      A panel is separated by its 1px rule and by the canvas behind it -- there
      is deliberately no `shadow-panel`, so nothing in the layout can reach for
      elevation instead of drawing an edge. */
-  --shadow-raised: 0 1px 2px rgb(31 35 40 / 0.06), 0 6px 16px rgb(31 35 40 / 0.08);
-  --shadow-overlay: 0 24px 64px rgb(31 35 40 / 0.18), 0 2px 8px rgb(31 35 40 / 0.08);
+  /* The two shadows that were here are gone: `--shadow-raised` had one consumer
+     and `--shadow-overlay` had none, and both overlapped the elevation scale
+     that now owns this entirely. See the ELEVATION block above -- a level means
+     something, and four unassigned names meant nothing. */
 
   /* The two type roles the instrument keeps repeating: a micro section label,
      and a tabular figure. Declared once so they cannot drift per surface. */
@@ -511,7 +588,11 @@
 
 .lift:hover {
   transform: translateY(-1px);
-  box-shadow: var(--shadow-lift);
+  /* The raised level: hovering a clickable card genuinely brings it forward
+     from the siblings it shares a surface with, which is exactly what that
+     level means. It used the deleted `--shadow-lift`, whose value was 9/5 --
+     darker than `raised` and tighter, which is the smudge direction. */
+  box-shadow: var(--elevation-raised);
 }
 
 /* A press should feel like the surface gave way, which means it must go DOWN

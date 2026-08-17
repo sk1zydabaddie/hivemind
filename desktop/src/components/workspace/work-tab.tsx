@@ -1076,7 +1076,7 @@ function ShipBar({
           confused with a status strip. */}
       <section
         aria-label="Ready to ship"
-        className="mb-3 rounded-lg border border-navy/25 border-l-2 border-l-navy bg-navy-wash"
+        className="mb-3 rounded-lg border border-navy/25 border-l-2 border-l-navy bg-navy-wash shadow-[var(--elevation-floating)]"
       >
         <div className="flex items-center gap-3 px-4 py-3">
           <span
@@ -1169,9 +1169,13 @@ function AttentionBar({
   onOpenOther: (item: WorkspaceQueueItem) => void;
 }): React.JSX.Element {
   const failing = /failed|stopped|blocked|rejected/iu.test(`${item.kind} ${item.title}`);
+  /* Floating: this card sits over the run's stream, which is exactly the claim
+     the level makes. It stays UNDER the amber attention edge -- measured 10.3
+     against the edge's 14.7 -- because if the thing that needs a person has to
+     compete with the shadow of the card carrying it, the shadow loses. */
   const skin = failing
-    ? "border-clay/25 border-l-clay bg-clay-wash"
-    : "border-amber/25 border-l-amber bg-amber-wash";
+    ? "border-clay/25 border-l-clay bg-clay-wash shadow-[var(--elevation-floating)]"
+    : "border-amber/25 border-l-amber bg-amber-wash shadow-[var(--elevation-floating)]";
   const mark = failing ? "text-clay" : "text-amber";
   const named = attentionHeadline(item, taskTitles);
   return (
@@ -1351,7 +1355,7 @@ function PlanWaitingBar({
   return (
     <section
       aria-label="Plan ready for review"
-      className="mb-3 flex items-center gap-3 rounded-lg border border-rule border-l-2 border-l-navy bg-panel/82 shadow-[var(--glass-edge)] px-4 py-3"
+      className="mb-3 flex items-center gap-3 rounded-lg border border-rule border-l-2 border-l-navy bg-panel/82 shadow-[var(--elevation-floating),var(--glass-edge)] px-4 py-3"
     >
       <span
         aria-hidden="true"
@@ -1908,7 +1912,13 @@ function TaskRow({
        * No border-bottom: the tracks do the separating now, and a horizontal
        * rule per row is exactly the noise the gate rules must not become. */
       className={`lane group relative flex w-full cursor-pointer items-start gap-2.5 py-2.5 pr-3 pl-2.5 text-left ${
-        selected ? "bg-navy-wash" : "bg-panel hover:bg-canvas"
+        selected
+          ? /* Raised: the selected task comes forward from the rows it shares a
+               surface with. The lowest level there is -- 4.3 out of 255 over
+               4px -- because a list whose selection lifts hard is a list that
+               flinches every time the selection moves. */
+            "bg-navy-wash shadow-[var(--elevation-raised)]"
+          : "bg-panel hover:bg-canvas"
       }`}
       data-standing={phase.standing}
       type="button"
@@ -2333,7 +2343,7 @@ function ShippedCard({
        Everything in it is a durable fact from `adoption.completed` -- the task
        count, the branch, the commit, the files -- rendered at the size the
        moment deserves rather than as another row in a log. */
-    <article className="max-w-[720px] overflow-hidden rounded-md border border-navy/30 bg-navy-wash">
+    <article className="max-w-[720px] overflow-hidden rounded-md border border-navy/30 bg-navy-wash shadow-[var(--elevation-floating)]">
       <div className="flex items-center gap-3 bg-navy px-4 py-3 text-panel">
         {/* The lanes converge here, so the shape that has been running down
             them arrives at full size with its check drawn. It is the same
