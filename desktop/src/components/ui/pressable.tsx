@@ -45,7 +45,11 @@ import { cn } from "@/lib/utils";
  * movement that separates a press from a repaint, so it is not optional.
  */
 const PRESSABLE =
-  "cursor-pointer shadow-[var(--relief)] transition-[background-color,box-shadow,translate] duration-[120ms] ease-[var(--spring)] active:translate-y-[2px] active:shadow-[var(--relief-pressed)] active:duration-[60ms] disabled:cursor-default disabled:shadow-none disabled:opacity-45";
+  /* At 16px, the general button relief compresses into a single dark edge.
+     These are the SAME paired tokens and the SAME press, with crisper compact
+     values: a two-pixel base and contact shadow survive native-scale rendering
+     while the outer blur stays below the attention edge's visual weight. */
+  "cursor-pointer [--relief:inset_0_1px_0_#ffffffb8,inset_0_-2px_0_#000000a3,inset_0_0_0_1px_#00000045,0_2px_0_#0000005c,0_4px_6px_-3px_#00000073] [--relief-pressed:inset_0_2px_3px_#00000080,inset_0_1px_0_#0000006b,inset_0_-1px_0_#ffffff5c,inset_0_0_0_1px_#00000052] shadow-[var(--relief)] transition-[background-color,box-shadow,translate] duration-[120ms] ease-[var(--spring)] active:translate-y-[2px] active:shadow-[var(--relief-pressed)] active:duration-[60ms] disabled:cursor-default disabled:shadow-none disabled:opacity-45";
 
 /** Checked fills use the same single-hue ramp as a filled button. */
 const CHECKED_FILL =
@@ -148,7 +152,7 @@ export function Switch({
              point of it being a pair.
              `group-active:` rather than `active:`: the pointer lands on the
              track, so `active:` on the thumb never fires. */
-          "shadow-[var(--relief)] translate-x-[2px] transition-[translate,box-shadow] duration-[120ms] ease-[var(--spring)] group-active:shadow-[var(--relief-pressed)] group-active:translate-y-[2px]"
+          "[--relief:inset_0_1px_0_#ffffffb8,inset_0_-2px_0_#000000a3,inset_0_0_0_1px_#00000045,0_2px_0_#0000005c,0_4px_6px_-3px_#00000073] [--relief-pressed:inset_0_2px_3px_#00000080,inset_0_1px_0_#0000006b,inset_0_-1px_0_#ffffff5c,inset_0_0_0_1px_#00000052] shadow-[var(--relief)] translate-x-[2px] transition-[translate,box-shadow] duration-[120ms] ease-[var(--spring)] group-active:shadow-[var(--relief-pressed)] group-active:translate-y-[2px]"
         )}
         data-slot="switch-thumb"
       />

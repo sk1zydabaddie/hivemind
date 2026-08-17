@@ -39,6 +39,7 @@
  */
 
 use serde::Serialize;
+use tauri::ipc::Channel;
 use tauri_plugin_updater::UpdaterExt;
 
 use crate::project::{canonical_git_root, daemon_work, DaemonWork};
@@ -83,6 +84,28 @@ pub enum UpdateOutcome {
     WorkInFlight { detail: String },
     /// Tried and failed, with the reason.
     Failed { detail: String },
+}
+
+/// Observable work, never an estimate.
+///
+/// A release exposes byte counts, so it may report a percentage when the
+/// server supplies a total. A source build exposes ordered tool output but no
+/// defensible total, so it reports only the stage named by that output. React
+/// displays this stream; it does not infer or gate any of it.
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UpdateProgress {
+    Stage { label: String },
+    Download {
+        downloaded_bytes: u64,
+        total_bytes: Option<u64>,
+    },
+}
+
+pub(crate) fn report_progress(progress: &Channel<UpdateProgress>, update: UpdateProgress) {
+    /* The app may close while the final message is in flight. Losing a display
+       update must not turn a completed, verified install into a failed one. */
+    let _ = progress.send(update);
 }
 
 fn running(app: &tauri::AppHandle) -> String {
@@ -160,8 +183,7 @@ pub async fn newer_version(app: tauri::AppHandle, project_path: String) -> Newer
     }
 
     /* The release, first, because it is the route that works for anybody. */
-    let mut remote_detail = String::new();
-    match app.updater() {
+    let remote_detail = match app.updater() {
         Ok(updater) => match updater.check().await {
             Ok(Some(update)) => {
                 return NewerVersion::Release {
@@ -169,11 +191,11 @@ pub async fn newer_version(app: tauri::AppHandle, project_path: String) -> Newer
                     offered: update.version.clone(),
                 }
             }
-            Ok(None) => remote_detail = "no newer release is published".to_string(),
-            Err(error) => remote_detail = format!("the release endpoint could not be reached ({error})"),
+            Ok(None) => "no newer release is published".to_string(),
+            Err(error) => format!("the release endpoint could not be reached ({error})"),
         },
-        Err(error) => remote_detail = format!("this build has no updater configured ({error})"),
-    }
+        Err(error) => format!("this build has no updater configured ({error})"),
+    };
 
     /* Then this machine's own source. `answered` records that a source was
        actually consulted and said "not newer" -- distinct from never having
@@ -231,6 +253,7 @@ pub async fn newer_version(app: tauri::AppHandle, project_path: String) -> Newer
 pub async fn take_newer_version(
     app: tauri::AppHandle,
     project_path: String,
+    on_progress: Channel<UpdateProgress>,
 ) -> Result<UpdateOutcome, String> {
     if !project_path.is_empty() {
         match canonical_git_root(&project_path) {
@@ -268,6 +291,12 @@ pub async fn take_newer_version(
         if let Ok(attempted) = std::fs::read_to_string(swap_marker_path()) {
             let attempted = attempted.trim().to_string();
             if !attempted.is_empty() && !attempt_landed(&attempted, &running(&app)) {
+                report_progress(
+                    &on_progress,
+                    UpdateProgress::Stage {
+                        label: "Installing the finished build".to_string(),
+                    },
+                );
                 return match install_built_and_restart(app.clone(), project_path.clone()).await {
                     Ok(()) => Ok(UpdateOutcome::Restarting { version: attempted }),
                     Err(detail) => Ok(UpdateOutcome::Failed {
@@ -282,7 +311,38 @@ pub async fn take_newer_version(
     if let Ok(updater) = app.updater() {
         if let Ok(Some(update)) = updater.check().await {
             let version = update.version.clone();
-            return match update.download_and_install(|_, _| {}, || {}).await {
+            report_progress(
+                &on_progress,
+                UpdateProgress::Stage {
+                    label: "Downloading the release".to_string(),
+                },
+            );
+            let download_progress = on_progress.clone();
+            let install_progress = on_progress.clone();
+            let mut downloaded_bytes = 0_u64;
+            return match update
+                .download_and_install(
+                    move |chunk_bytes, total_bytes| {
+                        downloaded_bytes = downloaded_bytes.saturating_add(chunk_bytes as u64);
+                        report_progress(
+                            &download_progress,
+                            UpdateProgress::Download {
+                                downloaded_bytes,
+                                total_bytes,
+                            },
+                        );
+                    },
+                    move || {
+                        report_progress(
+                            &install_progress,
+                            UpdateProgress::Stage {
+                                label: "Installing the release".to_string(),
+                            },
+                        );
+                    },
+                )
+                .await
+            {
                 Ok(()) => Ok(UpdateOutcome::Restarting { version }),
                 Err(error) => Ok(UpdateOutcome::Failed {
                     detail: format!("the release could not be installed: {error}"),
@@ -298,7 +358,7 @@ pub async fn take_newer_version(
             detail: "There is no newer version to take: no release is published and no project is open to build from.".to_string(),
         });
     }
-    match build_and_install(app.clone(), project_path).await {
+    match build_and_install(app.clone(), project_path, on_progress).await {
         Ok(version) => Ok(UpdateOutcome::Restarting { version }),
         Err(detail) => Ok(UpdateOutcome::Failed { detail }),
     }

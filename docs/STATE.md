@@ -36,6 +36,40 @@ Confirmed again by clicking, not only by dispatching:
 the WebView2 debugger — real clicks, real `Control+Enter`, **no action
 dispatched directly** — and reaches a shipped commit whose tests pass.
 
+### Installed UI proof now includes production-only resources and update liveness
+
+`docs/evidence/ui-installed-2026-08-17/`
+
+The provider marks exposed a new source-versus-screen split: Vite's production
+build inlined each small SVG as a `data:` URL, while the Tauri CSP permits only
+`self`. Dev rendered them; the installed WebView blocked them. The CSP was not
+widened for cosmetic content. Production now emits imported assets beside the
+bundle, and `verify:reachable` builds the replay for production, serves it under
+the exact committed Tauri CSP, checks decoded image dimensions, and fails on
+browser exceptions, console errors, log errors, or failed resources.
+
+That guard was mutation-tested: restoring the old 4 KiB inline threshold made
+all five provider images fail with zero natural size and CSP violations. With
+same-origin assets restored, all eight surfaces pass at 1280x720, 1366x768 and
+1440x900. `npm run ship` then built, installed, and verified 26.817.1309.
+
+The installed app was driven through its real source-update route with the
+machine's reduced-motion preference unchanged. Captures at 8 and 25 seconds
+changed from `Preparing the source build` to `Compiling the desktop shell` and
+had different hashes; the static spinner was no longer the only report. The
+streamed build completed, installed, reopened, and both disk and screen read
+26.817.1314. Source builds report factual stage plus elapsed time, not a made-up
+percentage. Release downloads derive percentage only from the updater's real
+byte callbacks; no release was manufactured merely to create visual evidence.
+After the final cleanup and verification pass, `npm run ship` installed and
+verified 26.817.1321; the final installed screenshot carries that version on
+screen.
+
+The same installed setup capture shows the compact checkbox relief readable at
+native scale and the outline `Choose another` control still flat. The latter is
+intentional: it answers when pressed, but the outline treatment does not claim
+physical relief, and this pass did not change it.
+
 ### Two platforms green, with counts
 
 | Platform | Filesystem | Result |

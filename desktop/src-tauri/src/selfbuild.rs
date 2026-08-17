@@ -36,9 +36,15 @@
 //! to somebody who did not ask. The detection is automatic; the act is a click.
 
 use serde::Serialize;
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::ipc::Channel;
+
+use crate::newer_version::{report_progress, UpdateProgress};
 
 /// This application's own identifier, as declared in `tauri.conf.json`.
 const IDENTIFIER: &str = "ai.hivemind.desktop";
@@ -160,8 +166,9 @@ pub async fn source_standing(
 pub async fn build_and_install(
     app: tauri::AppHandle,
     project_path: String,
+    progress: Channel<UpdateProgress>,
 ) -> Result<String, String> {
-    rebuild_app(project_path.clone()).await?;
+    rebuild_app(project_path.clone(), progress.clone()).await?;
     let version = std::fs::read_to_string(
         std::fs::canonicalize(&project_path)
             .map_err(|error| format!("could not read that folder: {error}"))?
@@ -173,6 +180,12 @@ pub async fn build_and_install(
     .map_err(|_| "the build produced no version file".to_string())?
     .trim()
     .to_string();
+    report_progress(
+        &progress,
+        UpdateProgress::Stage {
+            label: "Installing the new build".to_string(),
+        },
+    );
     install_built_and_restart(app, project_path).await?;
     Ok(version)
 }
@@ -275,7 +288,10 @@ pub async fn inspect_build_staleness(
    `newer_version::take_newer_version`, which holds the idleness gate --
    exposing it to the webview as well would be a second door to the same
    room, and the gate is only on one of them. */
-pub async fn rebuild_app(project_path: String) -> Result<String, String> {
+pub async fn rebuild_app(
+    project_path: String,
+    progress: Channel<UpdateProgress>,
+) -> Result<String, String> {
     let root = std::fs::canonicalize(&project_path)
         .map_err(|error| format!("could not read that folder: {error}"))?;
     if !is_own_source(&root) {
@@ -283,14 +299,49 @@ pub async fn rebuild_app(project_path: String) -> Result<String, String> {
     }
     let desktop = root.join("desktop");
     tauri::async_runtime::spawn_blocking(move || {
-        let output = npm_command()
+        report_progress(
+            &progress,
+            UpdateProgress::Stage {
+                label: "Preparing the source build".to_string(),
+            },
+        );
+        let mut child = npm_command()
             .args(["run", "tauri:build"])
             .current_dir(&desktop)
-            .output()
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
             .map_err(|error| format!("could not start the build: {error}"))?;
-        if output.status.success() {
-            return Ok(String::from_utf8_lossy(&output.stdout)
-                .lines()
+
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "the build produced no output stream".to_string())?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| "the build produced no error stream".to_string())?;
+        let current_stage = Arc::new(Mutex::new(0_u8));
+        let stdout_reader = read_build_stream(
+            stdout,
+            progress.clone(),
+            Arc::clone(&current_stage),
+        );
+        let stderr_reader = read_build_stream(stderr, progress, current_stage);
+        let status = child
+            .wait()
+            .map_err(|error| format!("could not wait for the build: {error}"))?;
+        let stdout = stdout_reader
+            .join()
+            .map_err(|_| "the build output reader stopped unexpectedly".to_string())??;
+        let stderr = stderr_reader
+            .join()
+            .map_err(|_| "the build error reader stopped unexpectedly".to_string())??;
+
+        if status.success() {
+            return Ok(stdout
+                .iter()
+                .map(String::as_str)
                 .rev()
                 .take(6)
                 .collect::<Vec<_>>()
@@ -298,8 +349,8 @@ pub async fn rebuild_app(project_path: String) -> Result<String, String> {
         }
         // The tail is what says why. The head of a Tauri build is pages of
         // progress nobody needs.
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let tail: Vec<&str> = stderr.lines().rev().take(12).collect();
+        let failure_lines = if stderr.is_empty() { &stdout } else { &stderr };
+        let tail: Vec<&str> = failure_lines.iter().rev().take(12).map(String::as_str).collect();
         Err(format!(
             "The build failed. {}",
             tail.into_iter().rev().collect::<Vec<_>>().join(" ")
@@ -307,6 +358,64 @@ pub async fn rebuild_app(project_path: String) -> Result<String, String> {
     })
     .await
     .map_err(|error| format!("build task failed: {error}"))?
+}
+
+/// Read both build pipes concurrently. `.output()` buffered them until the
+/// process exited, which made honest stages impossible and can deadlock a noisy
+/// child when one pipe fills. Lines are retained only for the existing result
+/// tail; progress is emitted when a line proves that a new stage began.
+fn read_build_stream<R: Read + Send + 'static>(
+    stream: R,
+    progress: Channel<UpdateProgress>,
+    current_stage: Arc<Mutex<u8>>,
+) -> thread::JoinHandle<Result<Vec<String>, String>> {
+    thread::spawn(move || {
+        let mut lines = Vec::new();
+        for line in BufReader::new(stream).lines() {
+            let line = line.map_err(|error| format!("could not read build output: {error}"))?;
+            if let Some((rank, stage)) = build_stage(&line) {
+                let changed = current_stage
+                    .lock()
+                    .map(|mut current| {
+                        /* stdout and stderr are consumed concurrently. Rank
+                           prevents a late line from an earlier pipe making the
+                           UI claim the build moved backwards. */
+                        if rank <= *current {
+                            false
+                        } else {
+                            *current = rank;
+                            true
+                        }
+                    })
+                    .unwrap_or(false);
+                if changed {
+                    report_progress(
+                        &progress,
+                        UpdateProgress::Stage {
+                            label: stage.to_string(),
+                        },
+                    );
+                }
+            }
+            lines.push(line);
+        }
+        Ok(lines)
+    })
+}
+
+fn build_stage(line: &str) -> Option<(u8, &'static str)> {
+    let line = line.to_ascii_lowercase();
+    if line.contains("vite") && line.contains("building for production") {
+        Some((1, "Building the interface"))
+    } else if line.contains("compiling ") || line.contains("cargo build") {
+        Some((2, "Compiling the desktop shell"))
+    } else if line.contains("bundling ") || line.contains("bundle/nsis") {
+        Some((3, "Packaging the installer"))
+    } else if line.contains("finished 1 bundle") {
+        Some((4, "Finishing the build"))
+    } else {
+        None
+    }
 }
 
 /// Install what was just built, then start the new copy — after this one exits.
@@ -695,5 +804,27 @@ fn npm_command() -> Command {
     #[cfg(not(windows))]
     {
         Command::new("npm")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_stage;
+
+    #[test]
+    fn build_stages_come_only_from_parseable_tool_output() {
+        assert_eq!(
+            build_stage("vite v6.4.3 building for production..."),
+            Some((1, "Building the interface"))
+        );
+        assert_eq!(
+            build_stage("   Compiling hivemind-desktop v0.1.0"),
+            Some((2, "Compiling the desktop shell"))
+        );
+        assert_eq!(
+            build_stage("    Bundling Hivemind_26.817_x64-setup.exe"),
+            Some((3, "Packaging the installer"))
+        );
+        assert_eq!(build_stage("transforming..."), None);
     }
 }

@@ -410,6 +410,13 @@ describe("palette discipline", () => {
       "relief belongs to controls that answer when pressed, and to nothing else"
     ).toEqual(["button.tsx", "pressable.tsx"]);
 
+    /* A 16px control cannot borrow a large button's soft scale and remain
+       legible at native size. Compact controls override the same paired tokens
+       with a crisp two-pixel base; the press contract above still applies. */
+    const pressables = await readFile(path.join(root, "components", "ui", "pressable.tsx"), "utf8");
+    expect(pressables).toMatch(/\[--relief:[^\]]*inset_0_-2px/u);
+    expect(pressables).toMatch(/\[--relief-pressed:/u);
+
     /**
      * The converse half, for controls that are FLAT at rest and depress anyway.
      *
@@ -502,6 +509,13 @@ describe("palette discipline", () => {
     const reduced = styles.slice(styles.indexOf("@media (prefers-reduced-motion: reduce)"));
     expect(reduced).toMatch(/\.attention-edge/u);
     expect(reduced).toMatch(/animation: none/u);
+
+    /* The former universal animation reset also stopped functional indicators
+       without providing another signal. Transitions may collapse globally;
+       animations must opt into their reduced presentation by name. */
+    const universal = /\*,\s*\n\s*\*::before,\s*\n\s*\*::after\s*\{([^}]+)\}/u.exec(reduced)?.[1] ?? "";
+    expect(universal).not.toMatch(/animation-duration|animation-iteration-count/u);
+    expect(reduced).toMatch(/\.animate-spin\s*\{\s*animation:\s*none/u);
   });
 
   test("every gradient in the markup is vertical and stays on one hue", async () => {

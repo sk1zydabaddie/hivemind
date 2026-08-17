@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { ArrowDownToLine, Loader, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -47,10 +47,37 @@ type UpdateOutcome =
   | { state: "work_in_flight"; detail: string }
   | { state: "failed"; detail: string };
 
+type UpdateProgress =
+  | { kind: "stage"; label: string }
+  | { kind: "download"; downloaded_bytes: number; total_bytes: number | null };
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(0, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function progressText(progress: UpdateProgress | null, source: NewerVersion["source"]): string {
+  if (progress?.kind === "stage") return progress.label;
+  if (progress?.kind === "download") {
+    if (progress.total_bytes !== null && progress.total_bytes > 0) {
+      const percent = Math.min(
+        100,
+        Math.floor((progress.downloaded_bytes / progress.total_bytes) * 100)
+      );
+      return `${percent}% downloaded (${formatBytes(progress.downloaded_bytes)} of ${formatBytes(progress.total_bytes)})`;
+    }
+    return `${formatBytes(progress.downloaded_bytes)} downloaded`;
+  }
+  return source === "source" ? "Preparing the source build" : "Preparing the update";
+}
+
 export function UpdateBar({ projectPath }: { projectPath: string }): React.JSX.Element | null {
   const [answer, setAnswer] = useState<NewerVersion | null>(null);
   const [outcome, setOutcome] = useState<UpdateOutcome | null>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<UpdateProgress | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const look = useCallback(async () => {
     try {
@@ -69,6 +96,17 @@ export function UpdateBar({ projectPath }: { projectPath: string }): React.JSX.E
   useEffect(() => {
     void look();
   }, [look]);
+
+  /* Reduced motion can legitimately stop the glyph. It must never stop the
+     REPORT. Elapsed time is discrete liveness, not animation: two captures
+     three seconds apart differ even when Windows asks for no motion. */
+  useEffect(() => {
+    if (startedAt === null || !busy) return undefined;
+    const tick = (): void => setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    tick();
+    const timer = window.setInterval(tick, 1_000);
+    return () => window.clearInterval(timer);
+  }, [busy, startedAt]);
 
   if (answer === null) return null;
 
@@ -101,8 +139,15 @@ export function UpdateBar({ projectPath }: { projectPath: string }): React.JSX.E
   const take = async (): Promise<void> => {
     setBusy(true);
     setOutcome(null);
+    setProgress(null);
+    setElapsedSeconds(0);
+    setStartedAt(Date.now());
+    const onProgress = new Channel<UpdateProgress>();
+    onProgress.onmessage = setProgress;
     try {
-      setOutcome(await invoke<UpdateOutcome>("take_newer_version", { projectPath }));
+      setOutcome(
+        await invoke<UpdateOutcome>("take_newer_version", { projectPath, onProgress })
+      );
     } catch (cause) {
       setOutcome({
         state: "failed",
@@ -110,6 +155,7 @@ export function UpdateBar({ projectPath }: { projectPath: string }): React.JSX.E
       });
     } finally {
       setBusy(false);
+      setStartedAt(null);
     }
   };
 
@@ -160,11 +206,13 @@ export function UpdateBar({ projectPath }: { projectPath: string }): React.JSX.E
 
       <span className="min-w-0 flex-1 break-words text-muted-foreground">
         {busy && outcome === null ? (
-          answer.source === "source" ? (
-            <>Building from your source. This takes a few minutes and Hivemind will restart itself.</>
-          ) : (
-            <>Downloading and installing. Hivemind will restart itself.</>
-          )
+          <>
+            <span data-update-progress="true">{progressText(progress, answer.source)}</span>
+            {` · ${elapsedSeconds}s elapsed. `}
+            {answer.source === "source"
+              ? "This build can report its current step, but not a truthful percentage. Hivemind will restart itself."
+              : "Hivemind will restart itself."}
+          </>
         ) : outcome?.state === "work_in_flight" ? (
           <>
             Not updated — {outcome.detail} Hivemind never replaces itself while

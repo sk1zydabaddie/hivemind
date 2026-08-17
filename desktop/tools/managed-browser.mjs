@@ -25,7 +25,8 @@
  *   further down.
  */
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -106,11 +107,55 @@ export function findBrowser(candidates, port) {
  * `stop()` only stops what this started. Anything it found already running is
  * left exactly as it was.
  */
-export async function ensureHarness({ base, port, root, candidates }) {
+export async function ensureHarness({ base, port, root, candidates, staticRoot, csp }) {
   const started = [];
   let profile = null;
 
-  if (!(await responds(base))) {
+  if (staticRoot !== undefined) {
+    const baseUrl = new URL(base);
+    const mime = new Map([
+      [".css", "text/css; charset=utf-8"],
+      [".html", "text/html; charset=utf-8"],
+      [".js", "text/javascript; charset=utf-8"],
+      [".json", "application/json; charset=utf-8"],
+      [".png", "image/png"],
+      [".svg", "image/svg+xml"],
+      [".woff2", "font/woff2"]
+    ]);
+    const server = createServer((request, response) => {
+      try {
+        const pathname = decodeURIComponent(new URL(request.url ?? "/", base).pathname);
+        if (pathname === "/favicon.ico") {
+          response.writeHead(204, { "Content-Security-Policy": csp }).end();
+          return;
+        }
+        const relative = pathname === "/" ? "replay.html" : pathname.slice(1);
+        const fixture = relative.startsWith("tools/") && relative.endsWith(".json");
+        const target = path.resolve(fixture ? root : staticRoot, relative);
+        const rootPrefix = `${path.resolve(fixture ? root : staticRoot)}${path.sep}`;
+        if (!target.startsWith(rootPrefix)) {
+          response.writeHead(403).end("forbidden");
+          return;
+        }
+        const body = readFileSync(target);
+        const type = mime.get(path.extname(target).toLowerCase()) ?? "application/octet-stream";
+        response.writeHead(200, {
+          "Content-Security-Policy": csp,
+          "Content-Type": type,
+          "Cache-Control": "no-store"
+        });
+        response.end(body);
+      } catch {
+        response.writeHead(404).end("not found");
+      }
+    });
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(Number(baseUrl.port), baseUrl.hostname, resolve);
+    });
+    started.push(() => server.close());
+    console.log("  started the production replay under the Tauri CSP");
+  } else if (!(await responds(base))) {
     const dev = spawn(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "dev"], {
       cwd: root,
       stdio: "ignore",

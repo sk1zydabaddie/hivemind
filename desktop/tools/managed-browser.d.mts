@@ -8,6 +8,9 @@ export declare function ensureHarness(options: {
   base: string;
   port: string | number;
   root: string;
+  /** Serve a production build under the exact application CSP. */
+  staticRoot?: string;
+  csp?: string;
   /** Injected by tests; production reads the per-platform list. */
   candidates?: string[];
 }): Promise<{ stop: () => void }>;

@@ -256,3 +256,51 @@ describe("the volume of the answer matches the news", () => {
     expect(bar).toMatch(/answer\.source === "unknown"[\s\S]{0,200}bg-clay-wash|bg-clay-wash/u);
   });
 });
+
+describe("update progress reports only facts the shell has", () => {
+  test("release downloads report real byte progress through the audited command", async () => {
+    const shell = await readFile(
+      path.join(desktopRoot, "src-tauri", "src", "newer_version.rs"),
+      "utf8"
+    );
+    expect(shell).toMatch(/on_progress:\s*Channel<UpdateProgress>/u);
+    expect(shell).toMatch(/downloaded_bytes\s*=\s*downloaded_bytes\.saturating_add/u);
+    expect(shell).toMatch(/total_bytes/u);
+    const download = shell.slice(
+      shell.indexOf(".download_and_install("),
+      shell.indexOf("/* Otherwise this machine's source")
+    );
+    expect(download, "the updater callbacks must not buffer progress into silence").toMatch(
+      /UpdateProgress::Download/u
+    );
+    expect(download).not.toMatch(/\|_, _\| \{\}/u);
+  });
+
+  test("source builds stream proven stages and never invent a percentage", async () => {
+    const source = await readFile(
+      path.join(desktopRoot, "src-tauri", "src", "selfbuild.rs"),
+      "utf8"
+    );
+    const build = source.slice(
+      source.indexOf("pub async fn rebuild_app"),
+      source.indexOf("/// Install what was just built")
+    );
+    const buildCode = build.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/gu, "");
+    expect(build).toMatch(/stdout\(Stdio::piped\(\)\)/u);
+    expect(build).toMatch(/read_build_stream/u);
+    expect(build).toMatch(/build_stage/u);
+    expect(buildCode, "buffering until completion cannot report a current stage").not.toMatch(
+      /\.output\(\)/u
+    );
+
+    const bar = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "update-bar.tsx"),
+      "utf8"
+    );
+    expect(bar).toMatch(/new Channel<UpdateProgress>/u);
+    expect(bar).toMatch(/elapsedSeconds/u);
+    expect(bar).toMatch(/setInterval\(tick, 1_000\)/u);
+    expect(bar).toMatch(/downloaded_bytes \/ progress\.total_bytes/u);
+    expect(bar).toMatch(/not a truthful percentage/u);
+  });
+});

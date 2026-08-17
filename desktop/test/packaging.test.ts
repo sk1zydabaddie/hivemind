@@ -187,7 +187,10 @@ test("the calendar version is valid semver at every minute of the day", () => {
  * landed. Not because it was wrong -- it is the only instrument here that can
  * see a control below the fold -- but because it needed a dev server and a
  * debuggable browser that `npm run ship` did not provide, so it ran when
- * somebody thought to run it. That is the same shape as `provider_version`,
+ * somebody thought to run it. It now builds the replay for production and
+ * applies the committed Tauri CSP, because the dev server cannot reproduce a
+ * resource the production transform inlines and the installed WebView blocks.
+ * That is the same shape as `provider_version`,
  * written onto every record and compared by nothing: built, correct, silent.
  *
  * "Run it manually" is not a mechanism, so these assert the wiring rather than
@@ -220,6 +223,26 @@ describe("the reachability check is part of shipping", () => {
        which is the interesting one, because a surface that never renders
        throws before any tidy-up at the bottom of the script is reached. */
     expect(source).toMatch(/process\.on\("exit"/u);
+  });
+
+  test("it proves production images load under the shipped CSP", async () => {
+    const check = await readFile(
+      path.join(repoRoot, "desktop", "tools", "check-reachable.mjs"),
+      "utf8"
+    );
+    const vite = await readFile(path.join(repoRoot, "desktop", "vite.config.ts"), "utf8");
+    expect(vite, "small imported assets must stay on the CSP-approved app origin").toMatch(
+      /assetsInlineLimit:\s*0/u
+    );
+    expect(check, "markup presence cannot prove that an image decoded").toMatch(/naturalWidth/u);
+    expect(check, "the replay must use Vite's production asset transform").toMatch(/await build\(/u);
+    expect(check, "the production replay must use the committed Tauri policy").toMatch(
+      /Content-Security-Policy|tauri\.conf\.json/u
+    );
+    expect(check, "blocked resources and browser errors must fail the run").toMatch(
+      /Network\.loadingFailed/u
+    );
+    expect(check).toMatch(/Runtime\.consoleAPICalled|Log\.entryAdded/u);
   });
 
   test("a browser it cannot find is a failure, never a skip", async () => {

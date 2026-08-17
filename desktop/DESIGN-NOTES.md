@@ -3559,16 +3559,41 @@ change that.** It renders into an unbounded container, so overflow does not
 exist there. That is a property of the environment, not of how many assertions
 are written in it.
 
-`npm run verify:reachable` is the only thing that can. It loads each surface at
-1280x720, 1366x768 and 1440x900, scrolls each control into view and asks whether
-it landed inside the viewport, and it opens the dialogs rather than only
-navigating — a dialog does not exist until it is opened, and an Approve button
-below the fold is this bug on the surface that authorises a change. It needs a
-browser and a dev server, so it cannot live in the suite.
+`npm run verify:reachable` is the only thing that can. It builds the replay with
+Vite's production transform, serves that output under the exact committed Tauri
+CSP, loads each surface at 1280x720, 1366x768 and 1440x900, scrolls each control
+into view and asks whether it landed inside the viewport, and opens the dialogs
+rather than only navigating — a dialog does not exist until it is opened, and
+an Approve button below the fold is this bug on the surface that authorises a
+change. It also checks decoded image dimensions and browser resource/console
+errors. That second half is load-bearing: a dev server loaded provider SVGs that
+the production build inlined as `data:` URLs and the installed CSP blocked.
+
+The CSP stayed narrow. Imported assets are emitted on `self` by setting Vite's
+inline threshold to zero; allowing `data:` would loosen a security boundary for
+cosmetic content. Mutation-testing the instrument by restoring the old inline
+threshold made it fail on all five provider marks with both zero natural size
+and explicit CSP violations.
 
 So it has to be run. Before shipping a surface that grew, and after any change
 to a layout that bounds one. The suite going green is not evidence about this
 class and never will be.
+
+### Reduced motion must change the report, not erase it
+
+The universal reduced-motion rule used to collapse every animation to one
+0.01ms iteration. That is valid for decorative entry and exit effects and was
+over-applied to functional spinners: a still glyph became the entire report of
+a multi-minute build. The global rule now collapses transitions and named
+decorative effects; functional indicators choose their reduced presentation.
+
+For source updates, the spinner may remain still. The adjacent report changes
+on factual build output and ticks elapsed seconds, so two captures three seconds
+apart differ without motion. Source output has ordered stages but no defensible
+total, so it never gets a percentage. Release downloads do expose downloaded
+and total bytes through the updater callbacks, so only that route may render a
+real percentage. React displays those shell facts and owns no gate or update
+decision.
 
 ### A record older than a field is a permanent input
 

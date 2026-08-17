@@ -523,9 +523,23 @@
   *::before,
   *::after {
     scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  /* The old universal animation reset was too broad: it silently converted a
+     functional spinner into a static glyph. Entry/exit effects are decorative,
+     so they may collapse globally; named functional indicators must choose an
+     accessible reduced-motion presentation of their own. The update spinner
+     is deliberately still here for no-preference users, while its adjacent
+     stage and elapsed time carry liveness when motion is reduced. */
+  .animate-in,
+  .animate-out {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  }
+
+  .animate-spin {
+    animation: none !important;
   }
 
   /* Reduced motion applies to the TRANSITION, never to the relief.

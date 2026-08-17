@@ -20,20 +20,23 @@
  * Sizes are the ones people actually have, smallest first: a 1366x768 laptop is
  * the common floor and is where a tall setup screen fails first.
  *
- * It starts what it needs. The dev server and the browser used to be
- * preconditions a person had to satisfy, which is why this ran only when
- * somebody remembered -- and it then caught a crash three commits after the
- * code that caused it landed. Anything already running is used and left alone;
- * anything missing is started and stopped again. See tools/managed-browser.mjs.
+ * It starts what it needs. The app is built for production, served under the
+ * committed Tauri CSP, and opened in a managed browser. This matters because a
+ * dev server can load an asset that the installed bundle later inlines and the
+ * WebView blocks. See tools/managed-browser.mjs.
  *
  * Usage: npm run verify:reachable   (part of `npm run ship`)
  */
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { build } from "vite";
 
 import { ensureHarness } from "./managed-browser.mjs";
 const PORT = process.env.CDP_PORT ?? "9444";
-const BASE = process.env.REPLAY_BASE ?? "http://localhost:1420";
+const BASE = process.env.REPLAY_BASE ?? "http://127.0.0.1:1430";
+const DESKTOP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 /** The surfaces a person MUST be able to finish. */
 const SURFACES = [
@@ -91,8 +94,9 @@ const VIEWPORTS = [
 async function open() {
   const targets = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
   const usable = targets.filter((t) => t.type === "page" && t.webSocketDebuggerUrl);
+  const expectedOrigin = new URL(BASE).origin;
   const target =
-    usable.find((t) => (t.url ?? "").includes("localhost:1420")) ??
+    usable.find((t) => (t.url ?? "").startsWith(expectedOrigin)) ??
     usable.find((t) => (t.url ?? "") === "about:blank") ??
     usable[0];
   if (!target) throw new Error("no debuggable page; start a browser with --remote-debugging-port");
@@ -103,9 +107,14 @@ async function open() {
   });
   let id = 0;
   const pending = new Map();
+  const events = [];
   ws.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
-    if (!message.id || !pending.has(message.id)) return;
+    if (!message.id) {
+      events.push(message);
+      return;
+    }
+    if (!pending.has(message.id)) return;
     const { resolve, reject } = pending.get(message.id);
     pending.delete(message.id);
     if (message.error) reject(new Error(JSON.stringify(message.error)));
@@ -128,7 +137,12 @@ async function open() {
     }
     return result.result.value;
   };
-  return { send, evaluate, close: () => ws.close() };
+  return {
+    send,
+    evaluate,
+    drainEvents: () => events.splice(0, events.length),
+    close: () => ws.close()
+  };
 }
 
 const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -184,29 +198,80 @@ const PROBE = `
       hidden: el.scrollHeight - el.clientHeight
     });
   }
-  return { controls: controls.length, unreachable, clipped };
+  /* A present <img> is not a loaded image. The production CSP bug left every
+     provider mark in the DOM with a real box and zero natural size, so neither
+     a markup assertion nor the reachability geometry could see it. */
+  const brokenImages = [...document.images]
+    .filter((image) => image.offsetParent !== null)
+    .filter((image) => !image.complete || image.naturalWidth === 0 || image.naturalHeight === 0)
+    .map((image) => image.currentSrc || image.src || "(empty source)");
+  return { controls: controls.length, unreachable, clipped, brokenImages };
 `;
 
-const harness = await ensureHarness({
+/* Build the replay through the SAME production transform that Tauri bundles.
+   The dev server serves imported SVGs as same-origin source files, so it could
+   never reproduce Vite inlining them as data URLs. A temporary production
+   entry gives the real assets and chunks without shipping replay.html. */
+const productionRoot = mkdtempSync(path.join(tmpdir(), "hivemind-reachable-dist-"));
+let harness = null;
+let cleaned = false;
+const cleanup = () => {
+  if (cleaned) return;
+  cleaned = true;
+  harness?.stop();
+  rmSync(productionRoot, { recursive: true, force: true });
+};
+/* Register before the build: a transform error is still a failing exit, and a
+   guard must not leak its temporary production tree while reporting one. */
+process.on("exit", cleanup);
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, () => {
+    cleanup();
+    process.exit(130);
+  });
+}
+await build({
+  root: DESKTOP_ROOT,
+  logLevel: "error",
+  build: {
+    outDir: productionRoot,
+    emptyOutDir: true,
+    /* replay.tsx uses top-level await. The application modules and asset
+       handling still take the production path; only this harness entry keeps
+       its existing modern-browser syntax. */
+    target: "esnext",
+    rollupOptions: {
+      input: { replay: path.join(DESKTOP_ROOT, "replay.html") }
+    }
+  }
+});
+const tauriConfig = JSON.parse(
+  readFileSync(path.join(DESKTOP_ROOT, "src-tauri", "tauri.conf.json"), "utf8")
+);
+const csp = tauriConfig.app?.security?.csp;
+if (typeof csp !== "string" || csp.trim() === "") {
+  throw new Error("the committed Tauri CSP is missing, so production resources cannot be checked");
+}
+
+harness = await ensureHarness({
   base: BASE,
   port: PORT,
-  root: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
+  root: DESKTOP_ROOT,
+  staticRoot: productionRoot,
+  csp
 });
 
 /* The interesting exit from this script is the failing one -- a surface that
    never rendered throws before the tidy path at the bottom is reached. Without
-   this, every failed run leaks a dev server and a headless browser, and the
-   NEXT run finds them already listening and reports on stale code. */
-process.on("exit", () => harness.stop());
-for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.on(signal, () => {
-    harness.stop();
-    process.exit(130);
-  });
-}
+   this, every failed run leaks a server and a headless browser, and the next
+   run can report against stale state. Cleanup is registered above before the
+   production build, because that build can fail too. */
 
 const page = await open();
 await page.send("Page.enable");
+await page.send("Runtime.enable");
+await page.send("Log.enable");
+await page.send("Network.enable");
 
 let failures = 0;
 for (const viewport of VIEWPORTS) {
@@ -216,6 +281,7 @@ for (const viewport of VIEWPORTS) {
     mobile: false
   });
   for (const surface of SURFACES) {
+    page.drainEvents();
     await page.send("Page.navigate", { url: surface.url });
     let ready = false;
     for (let attempt = 0; attempt < 60 && !ready; attempt += 1) {
@@ -263,8 +329,32 @@ for (const viewport of VIEWPORTS) {
     }
 
     const found = await page.evaluate(PROBE);
+    const browserIssues = page.drainEvents().flatMap((event) => {
+      if (event.method === "Runtime.exceptionThrown") {
+        return [event.params?.exceptionDetails?.exception?.description ?? "uncaught browser exception"];
+      }
+      if (event.method === "Runtime.consoleAPICalled" && event.params?.type === "error") {
+        return [(event.params.args ?? []).map((arg) => arg.value ?? arg.description ?? "").join(" ")];
+      }
+      if (event.method === "Log.entryAdded" && event.params?.entry?.level === "error") {
+        return [event.params.entry.text ?? "browser log error"];
+      }
+      if (
+        event.method === "Network.loadingFailed" &&
+        event.params?.canceled !== true &&
+        event.params?.errorText !== "net::ERR_ABORTED"
+      ) {
+        return [`resource failed: ${event.params?.errorText ?? "unknown network error"}`];
+      }
+      return [];
+    });
     const label = `${viewport.width}x${viewport.height}  ${surface.name}`;
-    if (found.unreachable.length === 0 && found.clipped.length === 0) {
+    if (
+      found.unreachable.length === 0 &&
+      found.clipped.length === 0 &&
+      found.brokenImages.length === 0 &&
+      browserIssues.length === 0
+    ) {
       console.log(`  ok   ${label}  (${found.controls} controls)`);
       continue;
     }
@@ -278,11 +368,17 @@ for (const viewport of VIEWPORTS) {
     for (const entry of found.clipped) {
       console.log(`         clipped: <${entry.tag} class="${entry.cls}"> hides ${entry.hidden}px`);
     }
+    for (const source of found.brokenImages) {
+      console.log(`         image did not load: ${source}`);
+    }
+    for (const issue of browserIssues) {
+      console.log(`         browser error: ${issue}`);
+    }
   }
 }
 
 await page.close();
-harness.stop();
+cleanup();
 if (failures > 0) {
   console.error(`\n${failures} surface/viewport combination(s) cannot be completed.`);
   process.exit(1);
