@@ -1,5 +1,7 @@
+import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 
 import {
   ACCOUNT_HOME_VARIABLES,
@@ -94,6 +96,7 @@ export async function resolveProviderEndpoint(input: {
   tool: string;
   invoke: string[];
   environment: NodeJS.ProcessEnv;
+  repoRoot?: string;
 }): Promise<EndpointFinding> {
   const surface = ENDPOINT_SURFACE[input.tool.toLowerCase()];
   if (surface === undefined) {
@@ -104,6 +107,7 @@ export async function resolveProviderEndpoint(input: {
       detail: `Hivemind does not know how to check where ${input.tool} sends your code, so it will not run it.`
     };
   }
+  if (surface.inspection === "resolved-layers") return resolveLayeredEndpoint(input, surface.vendorHost);
 
   /* 1. argv, which Hivemind holds and can read exactly. */
   const flag = surface.flags.find((entry) => input.invoke.includes(entry));
@@ -164,6 +168,93 @@ export async function resolveProviderEndpoint(input: {
   };
 }
 
+const execFileAsync = promisify(execFile);
+
+async function resolveLayeredEndpoint(input: {
+  tool: string;
+  environment: NodeJS.ProcessEnv;
+  repoRoot?: string;
+}, vendorHost: string): Promise<EndpointFinding> {
+  let inspect: unknown;
+  try {
+    const argv = process.platform === "win32"
+      ? ["cmd.exe", ["/d", "/s", "/c", `${input.tool}.cmd`, "inspect", "--json"]] as const
+      : [input.tool, ["inspect", "--json"]] as const;
+    const result = await execFileAsync(argv[0], argv[1], {
+      cwd: input.repoRoot,
+      env: input.environment,
+      windowsHide: true,
+      timeout: 60_000,
+      maxBuffer: 8 * 1024 * 1024
+    });
+    inspect = JSON.parse(result.stdout);
+  } catch {
+    return {
+      standing: "unknown",
+      host: null,
+      source: null,
+      detail: `Hivemind could not read ${input.tool}'s resolved configuration layers, so it cannot tell where your code would be sent.`
+    };
+  }
+  if (!isRecord(inspect) || !isRecord(inspect.configSources) || !Array.isArray(inspect.configSources.layers)) {
+    return {
+      standing: "unknown",
+      host: null,
+      source: null,
+      detail: `${input.tool} inspect did not report its resolved configuration layers, so Hivemind will not guess at the endpoint.`
+    };
+  }
+  if (isRecord(inspect.externalCompat) && inspect.externalCompat.remoteSettingsLoaded === true) {
+    return {
+      standing: "unknown",
+      host: null,
+      source: null,
+      detail: `${input.tool} loaded remote settings that Hivemind cannot inspect for an endpoint override, so it will not send project code.`
+    };
+  }
+  for (const layer of inspect.configSources.layers) {
+    if (!isRecord(layer) || typeof layer.path !== "string") {
+      return {
+        standing: "unknown",
+        host: null,
+        source: null,
+        detail: `${input.tool} reported a configuration layer without a readable path, so Hivemind cannot prove the endpoint.`
+      };
+    }
+    const configured = await findConfiguredUrl(layer.path, ["base_url"]);
+    if (configured === "unreadable") {
+      return {
+        standing: "unknown",
+        host: null,
+        source: null,
+        detail: `Hivemind could not read ${input.tool}'s resolved configuration layer ${layer.path}, so it cannot prove the endpoint.`
+      };
+    }
+    if (configured !== null) {
+      return {
+        standing: "configured",
+        host: hostOf(configured),
+        source: "harness_config",
+        detail: `${input.tool}'s resolved configuration points at ${hostOf(configured)}. Your code goes there.`
+      };
+    }
+  }
+  if (typeof input.environment.XAI_API_KEY === "string" && input.environment.XAI_API_KEY.trim() !== "") {
+    return {
+      standing: "vendor_default",
+      host: "api.x.ai",
+      source: "vendor_default",
+      detail: `${input.tool} is using xAI API-key authentication, so it sends your code to api.x.ai.`
+    };
+  }
+  return {
+    standing: "vendor_default",
+    host: vendorHost,
+    source: "vendor_default",
+    detail: `${input.tool}'s resolved layers contain no endpoint override, so the signed-in CLI sends your code to ${vendorHost}.`
+  };
+}
+
 /* The home the harness reads its config from -- which the account mechanism
    may have changed. Resolved from the same variable that selects an account, so
    the two cannot disagree. */
@@ -213,6 +304,10 @@ async function findConfiguredUrl(
 
 function isMissing(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** The host part, for showing a person. Falls back to the whole value. */

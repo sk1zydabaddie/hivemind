@@ -389,6 +389,10 @@ export async function probeAdapter(
         ? readClaudeInit
         : agent.readback === "opencode-permissions"
           ? async (out: string) => readOpenCodePermissions(out, repoRoot)
+          : agent.readback === "grok-session"
+            ? async (out: string) => readGrokSession(out, repoRoot)
+            : agent.readback === "kimi-session"
+              ? async (out: string) => readKimiSession(out, repoRoot)
           : async () => null);
   const readback = observation.stdout === "" ? null : await readbackFn(observation.stdout);
 
@@ -603,7 +607,8 @@ export async function probeAdapter(
        and refuses everything. The probe holds the agent, so here it is exact. */
     tool: agent.harness,
     invoke: profile.invoke,
-    environment: process.env
+    environment: process.env,
+    repoRoot
   });
   capabilities.push(
     capability(
@@ -797,6 +802,120 @@ export async function readClaudeInit(stdout: string): Promise<ProbeReadback | nu
     };
   }
   return null;
+}
+
+const GROK_FILE_TOOLS = ["grep", "list_dir", "read_file", "search_replace", "write"];
+const GROK_EMPTY_INTEGRATION_TOOLS = ["search_tool", "use_tool"];
+
+/** Grok's durable summary is its resolved model/sandbox readback. */
+export async function readGrokSession(
+  stdout: string,
+  repoRoot: string,
+  integrationsProbe: (repoRoot: string, grokHome?: string) => Promise<boolean> = grokIntegrationsEmpty
+): Promise<ProbeReadback | null> {
+  const records = jsonLineRecords(stdout);
+  const session = [...records].reverse().find((record) => record.type === "hivemind.grok.session");
+  const commands = [...records].reverse().find((record) => record.type === "available_commands");
+  if (session === undefined || commands === undefined || !isRecord(session.summary)) return null;
+  const summary = session.summary;
+  const info = isRecord(summary.info) ? summary.info : null;
+  const cwd = info !== null && typeof info.cwd === "string" ? info.cwd : null;
+  const tools = Array.isArray(commands.tools)
+    ? commands.tools.filter((entry): entry is string => typeof entry === "string").sort()
+    : [];
+  const expected = [...GROK_FILE_TOOLS, ...GROK_EMPTY_INTEGRATION_TOOLS].sort();
+  const exactTools = tools.length === expected.length && tools.every((tool, index) => tool === expected[index]);
+  const grokHome = typeof summary.grok_home === "string" ? summary.grok_home : undefined;
+  const integrationsEmpty = await integrationsProbe(repoRoot, grokHome);
+  const rootedHere = cwd !== null && path.resolve(cwd) === path.resolve(repoRoot);
+  const sandbox = summary.sandbox_profile === "workspace" && exactTools && integrationsEmpty && rootedHere
+    ? "workspace-write"
+    : null;
+  return {
+    source: "Grok session summary + available_commands",
+    model: typeof summary.current_model_id === "string" ? summary.current_model_id : null,
+    sandbox,
+    approvalPolicy: "dontAsk with explicit file-tool allows",
+    workspaceRoots: cwd === null ? [] : [cwd],
+    subagents: sandbox === "workspace-write" ? "none" : null
+  };
+}
+
+async function grokIntegrationsEmpty(repoRoot: string, grokHome?: string): Promise<boolean> {
+  try {
+    const argv = process.platform === "win32"
+      ? ["cmd.exe", ["/d", "/s", "/c", "grok.cmd", "inspect", "--json"]] as const
+      : ["grok", ["inspect", "--json"]] as const;
+    const result = await execFileAsync(argv[0], argv[1], {
+      cwd: repoRoot,
+      env: grokHome === undefined ? process.env : { ...process.env, GROK_HOME: grokHome },
+      windowsHide: true,
+      timeout: 60_000,
+      maxBuffer: 8 * 1024 * 1024
+    });
+    const inspect: unknown = JSON.parse(result.stdout);
+    if (!isRecord(inspect)) return false;
+    const none = (value: unknown): boolean => Array.isArray(value) && value.length === 0;
+    return none(inspect.mcpServers) && none(inspect.plugins) && none(inspect.hooks);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Kimi reports the exact bound profile and tool snapshot in wire.jsonl.
+ * Its file tools nevertheless accept absolute paths outside cwd, so this
+ * readback can prove the shell/sub-agent denial but must not call cwd a
+ * workspace sandbox.
+ */
+export async function readKimiSession(stdout: string, repoRoot?: string): Promise<ProbeReadback | null> {
+  const session = jsonLineRecords(stdout).reverse().find((record) => record.type === "hivemind.kimi.session");
+  if (session === undefined || !isRecord(session.state) || !isRecord(session.profile) || !isRecord(session.tools)) return null;
+  const profile = session.profile;
+  const state = session.state;
+  const active = Array.isArray(profile.activeToolNames)
+    ? profile.activeToolNames.filter((entry): entry is string => typeof entry === "string").sort()
+    : [];
+  const snapshot = Array.isArray(session.tools.tools)
+    ? session.tools.tools
+        .filter(isRecord)
+        .map((tool) => tool.name)
+        .filter((name): name is string => typeof name === "string")
+        .sort()
+    : [];
+  const expected = ["Edit", "Glob", "Grep", "Read", "Write"];
+  const denied = Array.isArray(profile.disallowedTools)
+    ? profile.disallowedTools.filter((entry): entry is string => typeof entry === "string")
+    : [];
+  const subagents = Array.isArray(profile.subagents) ? profile.subagents : null;
+  const exact = active.length === expected.length && active.every((tool, index) => tool === expected[index]) &&
+    snapshot.length === expected.length && snapshot.every((tool, index) => tool === expected[index]) &&
+    ["Bash", "Agent", "AgentSwarm"].every((tool) => denied.includes(tool)) && subagents?.length === 0;
+  const cwd = typeof state.cwd === "string" ? state.cwd : null;
+  const rootedHere = cwd !== null && (repoRoot === undefined || path.resolve(cwd) === path.resolve(repoRoot));
+  return {
+    source: "Kimi wire profile.bind + llm.tools_snapshot",
+    model: typeof profile.modelAlias === "string" ? profile.modelAlias : null,
+    sandbox: null,
+    approvalPolicy: exact && rootedHere ? "file-only launch profile; no workspace confinement" : null,
+    workspaceRoots: cwd === null ? [] : [cwd],
+    subagents: exact ? "none" : null,
+    version: jsonLineRecords(stdout).find((record) => record.type === "system.version" && typeof record.version === "string")?.version as string | undefined
+  };
+}
+
+function jsonLineRecords(stdout: string): Record<string, unknown>[] {
+  const records: Record<string, unknown>[] = [];
+  for (const line of stdout.split(/\r?\n/u)) {
+    if (!line.trim().startsWith("{")) continue;
+    try {
+      const record: unknown = JSON.parse(line);
+      if (isRecord(record)) records.push(record);
+    } catch {
+      // An unrecognised line is not evidence and is ignored.
+    }
+  }
+  return records;
 }
 
 /**
@@ -998,6 +1117,30 @@ export function readModelAttribution(
   parser: string | undefined,
   stdout: string
 ): ModelAttribution[] | null {
+  if (parser === "grok-json") {
+    for (const record of jsonLineRecords(stdout).reverse()) {
+      if (record.type !== "hivemind.grok.session" || !isRecord(record.usage) || !isRecord(record.usage.modelUsage)) continue;
+      const models: ModelAttribution[] = [];
+      for (const [model, value] of Object.entries(record.usage.modelUsage)) {
+        if (!isRecord(value)) continue;
+        const total = typeof value.totalTokens === "number" ? value.totalTokens : 0;
+        models.push({ model, tokens: total });
+      }
+      return models.length === 0 ? null : models;
+    }
+    return null;
+  }
+  if (parser === "kimi-wire") {
+    for (const record of jsonLineRecords(stdout).reverse()) {
+      if (record.type !== "hivemind.kimi.session" || !Array.isArray(record.requests) || !isRecord(record.usage)) continue;
+      const models = new Set(
+        record.requests.filter(isRecord).map((request) => request.model).filter((model): model is string => typeof model === "string")
+      );
+      const total = typeof record.usage.total_tokens === "number" ? record.usage.total_tokens : 0;
+      return models.size === 1 ? [{ model: [...models][0]!, tokens: total }] : null;
+    }
+    return null;
+  }
   if (parser !== "claude-json") return null;
   for (const line of stdout.split(/\r?\n/u)) {
     const text = line.trim();

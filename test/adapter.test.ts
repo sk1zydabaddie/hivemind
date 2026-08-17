@@ -167,7 +167,7 @@ test("validateAdapterProfile rejects unknown provider usage parsers", () => {
       },
       "fake"
     ),
-    ["usage_parser must be one of codex-jsonl, codex-text, claude-json, opencode-json when provided"]
+    ["usage_parser must be one of codex-jsonl, codex-text, claude-json, opencode-json, grok-json, kimi-wire when provided"]
   );
 });
 
@@ -246,6 +246,31 @@ test("adapter usage parsers normalize Codex text, Codex JSONL, and Claude JSON i
       reasoning_tokens: null,
       total_tokens: 190
     }
+  );
+});
+
+test("Grok and Kimi persisted-session usage is normalized without self-measured guesses", () => {
+  assert.deepEqual(
+    parseAdapterProviderUsage(
+      "grok-json",
+      JSON.stringify({
+        type: "hivemind.grok.session",
+        usage: { inputTokens: 900, cachedReadTokens: 200, outputTokens: 100, reasoningTokens: 40, totalTokens: 1000 }
+      }),
+      ""
+    ),
+    { input_tokens: 900, cached_input_tokens: 200, output_tokens: 100, reasoning_tokens: 40, total_tokens: 1000 }
+  );
+  assert.deepEqual(
+    parseAdapterProviderUsage(
+      "kimi-wire",
+      JSON.stringify({
+        type: "hivemind.kimi.session",
+        usage: { input_tokens: 280, cached_input_tokens: 20, output_tokens: 30, total_tokens: 330 }
+      }),
+      ""
+    ),
+    { input_tokens: 280, cached_input_tokens: 20, output_tokens: 30, reasoning_tokens: null, total_tokens: 330 }
   );
 });
 

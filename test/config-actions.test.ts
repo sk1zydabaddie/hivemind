@@ -314,7 +314,7 @@ test("provider rows distinguish product evidence from a current project check", 
       : [];
     assert.equal(providers.find((provider) => provider.id === "codex-cli")?.checked_here, true);
     assert.equal(providers.find((provider) => provider.id === "claude")?.checked_here, false);
-    assert.equal(providers.find((provider) => provider.id === "grok")?.connectable, false);
+    assert.equal(providers.find((provider) => provider.id === "grok")?.connectable, true);
     assert.equal(providers.find((provider) => provider.id === "kimi")?.connectable, false);
   } finally {
     await rm(repo, { recursive: true, force: true });
@@ -329,7 +329,7 @@ test("Grok receives its prompt as the value of the final --single flag", () => {
   assert.equal(profile.prompt_arg, "arg");
   assert.equal(profile.invoke.at(-1), "--single");
   assert.equal(profile.invoke.includes("grok-code-fast-1"), false);
-  assert.equal(profile.invoke.includes("grok-4.5"), true);
+  assert.equal(profile.invoke.includes("grok-4.6"), true);
 });
 
 test("a model carries its real slug, and a provider that pins none says so", () => {

@@ -55,12 +55,22 @@ test("an existing config is never rewritten", async () => {
    is for harnesses that offer nothing stronger -- not for every harness. */
 test("a harness that denies on the command line is left alone", async () => {
   const root = await scratch();
-  for (const harness of ["codex-cli", "claude", "grok", "kimi", "not-a-harness"]) {
+  for (const harness of ["codex-cli", "claude", "grok", "not-a-harness"]) {
     const outcome = await ensureHarnessProjectConfig(root, harness);
     assert.equal(outcome.written, null, `${harness} should need no project file`);
     assert.equal(outcome.keptExisting, null);
   }
-  assert.deepEqual(Object.keys(HARNESS_PROJECT_CONFIG), ["opencode"]);
+  assert.deepEqual(Object.keys(HARNESS_PROJECT_CONFIG), ["opencode", "kimi"]);
+});
+
+test("Kimi gets a launch-specific file-only agent profile", async () => {
+  const root = await scratch();
+  const outcome = await ensureHarnessProjectConfig(root, "kimi");
+  assert.equal(outcome.written, ".hivemind/kimi-agent.md");
+  const profile = await readFile(path.join(root, ".hivemind", "kimi-agent.md"), "utf8");
+  assert.match(profile, /tools:\s+[\s\S]*- Read[\s\S]*- Write[\s\S]*- Edit[\s\S]*- Grep[\s\S]*- Glob/u);
+  assert.match(profile, /disallowedTools:\s+[\s\S]*- Bash[\s\S]*- Agent[\s\S]*- AgentSwarm/u);
+  assert.match(profile, /subagents: \[\]/u);
 });
 
 /* The write is a side effect on somebody's source tree, so it has to be

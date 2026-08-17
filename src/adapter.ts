@@ -1,7 +1,8 @@
 import { versionStanding } from "./verification-standing.js";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { stat } from "node:fs/promises";
+import { homedir } from "node:os";
+import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { explainMissingAdapterProgram, resolveAdapterInvocation } from "./adapter-command.js";
 import { writeFileAtomic } from "./atomic.js";
@@ -32,7 +33,7 @@ import {
 
 export type PromptArgMode = "stdin" | "arg";
 export type ProviderRoutingTier = "local" | "cheap" | "standard" | "strong";
-export type AdapterUsageParser = "codex-jsonl" | "codex-text" | "claude-json" | "opencode-json";
+export type AdapterUsageParser = "codex-jsonl" | "codex-text" | "claude-json" | "opencode-json" | "grok-json" | "kimi-wire";
 
 /**
  * What a profile may be *selected* for.
@@ -381,7 +382,7 @@ export function validateAdapterProfile(raw: unknown, expectedTool?: string): str
     problems.push("cost_rank must be a positive integer when provided");
   }
   if ("usage_parser" in raw && !isAdapterUsageParser(raw.usage_parser)) {
-    problems.push("usage_parser must be one of codex-jsonl, codex-text, claude-json, opencode-json when provided");
+    problems.push("usage_parser must be one of codex-jsonl, codex-text, claude-json, opencode-json, grok-json, kimi-wire when provided");
   }
   if ("roles" in raw) {
     // An empty list would mean "selectable for nothing", which is a profile
@@ -505,7 +506,9 @@ export async function runAdapterProcess(
     /* HIVEMIND_<AGENT>_PATH, applied here rather than at profile load, so the
        profile on disk stays the platform-correct thing the probe verified and
        the override stays a property of where the app was started from. */
-    const [command, ...baseArgs] = resolveAdapterInvocation(profile.invoke);
+    const providerSessionId = randomUUID();
+    const [command, ...templateArgs] = resolveAdapterInvocation(profile.invoke);
+    const baseArgs = templateArgs.map((arg) => arg === "{session_id}" ? providerSessionId : arg);
     const args = profile.prompt_arg === "arg" ? [...baseArgs, prompt] : baseArgs;
     // `detached` on POSIX calls setsid(), so the worker leads its own process
     // group and `kill(-pgid)` reaches the agent CLI's own children. Without it
@@ -640,7 +643,14 @@ export async function runAdapterProcess(
       void (async () => {
         const identityRecorded = await processStart;
         const capturedStderr = Buffer.concat(stderr).toString("utf8");
-        const capturedStdout = Buffer.concat(stdout).toString("utf8");
+        const rawStdout = Buffer.concat(stdout).toString("utf8");
+        const capturedStdout = await enrichPersistedProviderOutput(
+          resolveAdapterUsageParser(profile),
+          rawStdout,
+          providerSessionId,
+          cwd,
+          accountEnv
+        );
         const exitCode = cancelled ? 130 : timedOut ? 124 : code ?? 1;
         const normalized = normalizeAdapterResult(resolveAdapterUsageParser(profile), capturedStdout, capturedStderr, exitCode);
         const quotaRequest = buildUnmeteredQuotaRequest(prompt, normalized.modelOutput, normalized.providerUsageCapture);
@@ -720,6 +730,147 @@ function buildUnmeteredQuotaRequest(
     accounting_source: reportedTokens === null ? "self_measured" : "provider_reported",
     provider_usage_status: capture.status
   };
+}
+
+/**
+ * Some harnesses keep the strongest run facts in their durable session trail
+ * rather than duplicating them on stdout. The invocation carries a unique
+ * session id where the harness permits one; Kimi prints its generated id in a
+ * structural resume record. We copy only the bounded readback fields into the
+ * adapter stream so the existing parser/probe path can assess the run that
+ * just closed without guessing which session was newest.
+ */
+async function enrichPersistedProviderOutput(
+  parser: AdapterUsageParser | undefined,
+  stdout: string,
+  requestedSessionId: string,
+  cwd: string,
+  accountEnv: Record<string, string>
+): Promise<string> {
+  if (parser === "grok-json") {
+    const home = accountEnv.GROK_HOME ?? path.join(homedir(), ".grok");
+    const sessionDir = await findDirectoryNamed(path.join(home, "sessions"), requestedSessionId);
+    if (sessionDir === null) return stdout;
+    const summary = await readJsonRecord(path.join(sessionDir, "summary.json"));
+    const usage = await lastNestedRecord(path.join(sessionDir, "updates.jsonl"), "turn_completed", "usage");
+    if (summary === null) return stdout;
+    return appendJsonLine(stdout, {
+      type: "hivemind.grok.session",
+      session_id: requestedSessionId,
+      cwd,
+      summary,
+      ...(usage === null ? {} : { usage })
+    });
+  }
+
+  if (parser === "kimi-wire") {
+    const sessionId = kimiSessionId(stdout);
+    if (sessionId === null) return stdout;
+    const home = accountEnv.KIMI_CODE_HOME ?? path.join(homedir(), ".kimi-code");
+    const sessionDir = await findDirectoryNamed(path.join(home, "sessions"), sessionId);
+    if (sessionDir === null) return stdout;
+    const state = await readJsonRecord(path.join(sessionDir, "state.json"));
+    const wirePath = path.join(sessionDir, "agents", "main", "wire.jsonl");
+    const records = await readJsonLinesFile(wirePath);
+    const profile = records.find((record) => record.type === "profile.bind") ?? null;
+    const tools = records.find((record) => record.type === "llm.tools_snapshot") ?? null;
+    const requests = records.filter((record) => record.type === "llm.request");
+    const usageRecords = records.filter((record) => record.type === "usage.record" && isRecord(record.usage));
+    if (state === null || profile === null || tools === null || requests.length === 0) return stdout;
+    const usage = sumKimiUsage(usageRecords);
+    return appendJsonLine(stdout, {
+      type: "hivemind.kimi.session",
+      session_id: sessionId,
+      state,
+      profile,
+      tools,
+      requests,
+      ...(usage === null ? {} : { usage })
+    });
+  }
+  return stdout;
+}
+
+function appendJsonLine(stdout: string, record: Record<string, unknown>): string {
+  return `${stdout}${stdout.endsWith("\n") || stdout === "" ? "" : "\n"}${JSON.stringify(record)}\n`;
+}
+
+function kimiSessionId(stdout: string): string | null {
+  for (const record of parseJsonLines(stdout)) {
+    if (record.type === "session.resume_hint" && typeof record.session_id === "string") return record.session_id;
+  }
+  return null;
+}
+
+async function findDirectoryNamed(root: string, name: string, depth = 0): Promise<string | null> {
+  if (depth > 8) return null;
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const full = path.join(root, entry.name);
+    if (entry.name === name) return full;
+    const found = await findDirectoryNamed(full, name, depth + 1);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
+async function readJsonRecord(file: string): Promise<Record<string, unknown> | null> {
+  try {
+    const value: unknown = JSON.parse(await readFile(file, "utf8"));
+    return isRecord(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+async function readJsonLinesFile(file: string): Promise<Record<string, unknown>[]> {
+  try {
+    return parseJsonLines(await readFile(file, "utf8"));
+  } catch {
+    return [];
+  }
+}
+
+async function lastNestedRecord(
+  file: string,
+  sessionUpdate: string,
+  key: string
+): Promise<Record<string, unknown> | null> {
+  const records = await readJsonLinesFile(file);
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    const record = records[index]!;
+    const params = isRecord(record.params) ? record.params : null;
+    const update = params !== null && isRecord(params.update) ? params.update : null;
+    const nested = update !== null && update.sessionUpdate === sessionUpdate && isRecord(update[key]) ? update[key] : null;
+    if (nested !== null) return nested;
+  }
+  return null;
+}
+
+function sumKimiUsage(records: Record<string, unknown>[]): Record<string, number> | null {
+  let input = 0;
+  let cached = 0;
+  let output = 0;
+  let found = false;
+  for (const record of records) {
+    const usage = isRecord(record.usage) ? record.usage : null;
+    if (usage === null) continue;
+    const other = tokenField(usage, "inputOther") ?? 0;
+    const cacheRead = tokenField(usage, "inputCacheRead") ?? 0;
+    const cacheCreation = tokenField(usage, "inputCacheCreation") ?? 0;
+    const out = tokenField(usage, "output") ?? 0;
+    input += other;
+    cached += cacheRead + cacheCreation;
+    output += out;
+    found = true;
+  }
+  return found ? { input_tokens: input, cached_input_tokens: cached, output_tokens: output, total_tokens: input + cached + output } : null;
 }
 
 function collectRefusedModeValues(value: unknown, location: string, refused: Set<string>): void {
@@ -828,6 +979,42 @@ export function parseAdapterProviderUsage(
           output_tokens: output,
           total_tokens: total
         });
+  }
+
+  if (parser === "grok-json") {
+    for (const record of parseJsonLines(stdout).reverse()) {
+      const usage = record.type === "hivemind.grok.session" && isRecord(record.usage)
+        ? record.usage
+        : record.type === "end" && isRecord(record.usage)
+          ? record.usage
+          : null;
+      if (usage === null) continue;
+      const input = tokenField(usage, "inputTokens") ?? tokenField(usage, "input_tokens");
+      const cached = tokenField(usage, "cachedReadTokens") ?? tokenField(usage, "cached_input_tokens");
+      const output = tokenField(usage, "outputTokens") ?? tokenField(usage, "output_tokens");
+      const reasoning = tokenField(usage, "reasoningTokens") ?? tokenField(usage, "reasoning_tokens");
+      const total = tokenField(usage, "totalTokens") ?? tokenField(usage, "total_tokens") ?? sumKnown(input, output);
+      if (total !== null) {
+        return reportedUsage({ input_tokens: input, cached_input_tokens: cached, output_tokens: output, reasoning_tokens: reasoning, total_tokens: total });
+      }
+    }
+    return null;
+  }
+
+  if (parser === "kimi-wire") {
+    for (const record of parseJsonLines(stdout).reverse()) {
+      if (record.type !== "hivemind.kimi.session" || !isRecord(record.usage)) continue;
+      const usage = record.usage;
+      const total = tokenField(usage, "total_tokens");
+      if (total === null) return null;
+      return reportedUsage({
+        input_tokens: tokenField(usage, "input_tokens"),
+        cached_input_tokens: tokenField(usage, "cached_input_tokens"),
+        output_tokens: tokenField(usage, "output_tokens"),
+        total_tokens: total
+      });
+    }
+    return null;
   }
 
   if (parser === "claude-json") {
@@ -1293,6 +1480,26 @@ function extractModelOutput(parser: AdapterUsageParser, stdout: string): string 
     return latest;
   }
 
+  if (parser === "grok-json") {
+    let latest = "";
+    for (const record of parseJsonLines(stdout)) {
+      if (record.type === "assistant" && typeof record.content === "string") latest = record.content;
+      const update = isRecord(record.update) ? record.update : null;
+      if (update !== null && update.sessionUpdate === "agent_message_chunk" && isRecord(update.content) && typeof update.content.text === "string") {
+        latest += update.content.text;
+      }
+    }
+    return latest;
+  }
+
+  if (parser === "kimi-wire") {
+    let latest = "";
+    for (const record of parseJsonLines(stdout)) {
+      if (record.role === "assistant" && typeof record.content === "string") latest = record.content;
+    }
+    return latest;
+  }
+
   if (parser === "claude-json") {
     const parsed = parseJsonObject(stdout);
     return parsed !== null && typeof parsed.result === "string" ? parsed.result : "";
@@ -1413,7 +1620,9 @@ function isAdapterUsageParser(value: unknown): value is AdapterUsageParser {
     value === "codex-jsonl" ||
     value === "codex-text" ||
     value === "claude-json" ||
-    value === "opencode-json"
+    value === "opencode-json" ||
+    value === "grok-json" ||
+    value === "kimi-wire"
   );
 }
 

@@ -105,12 +105,18 @@ result records the delta, not the request.
 | Codex | **Supported.** Real runs have gone through it end to end |
 | Claude Code | **Live probe passed all 9 capabilities** on 2.1.233; 17,985 effective tokens and a per-model usage breakdown |
 | OpenCode | **Live probe passed every required boundary except model-pin readback** on 1.18.15; the configured free model spent 12,025 effective tokens |
-| Grok Build | **Live probe ran but refused safely** on 1.0.4; usage/model attribution and the write canary worked, but the resolved sandbox and endpoint could not be proved |
-| Kimi Code | First-party CLI 0.36.1 installed; no account/provider is configured and Hivemind still has no measured usage reader, so it is honestly non-connectable |
+| Grok Build | **Grok 4.6 is prepared but not verified** on 1.0.4; native tool names, durable model/workspace-sandbox/usage readback, and resolved endpoint layers are implemented, but the corrected live 4.6 probe reached the service and did not complete before cancellation |
+| Kimi Code | **CLI integration proved locally without a paid account** on 0.36.1: exact file-only tools, a real write, model and provider usage persisted. Production remains non-connectable because absolute file paths can leave cwd, so no project confinement exists |
 
 The contract has **nine** capabilities. The ninth, `known_endpoint`, asks where
 the harness sends your code — a prompt carries every file in scope, and a base
 URL redirects all of it while the other eight still read verified.
+
+Installed build **26.817.1516** displays those current Grok and Kimi caveats on
+the real setup screen in
+`docs/evidence/provider-grok-4.6-installed-26.817.1516.jpg` and
+`docs/evidence/provider-kimi-local-proof-installed-26.817.1516.jpg`. Both the
+installer's on-disk version check and the running window report 26.817.1516.
 
 ### Concurrency proven causally, not sampled
 
@@ -261,15 +267,19 @@ not been made. The honest launch sentence is *"Codex certified; Claude Code and
 OpenCode probed and verified; Grok probed but not certified; Kimi refused, here
 is the reason."*
 
-### The Grok usage reader is borrowed, not measured
+### Grok 4.6 has native readback, but not a completed probe
 
-`claude-json` is reused for Grok on the documented match that
-`streaming-messages-json` **is** the Anthropic Messages wire format. It has
-never seen Grok's stream. Marked `UNVERIFIED-AGAINST-GROK` in the catalogue —
-labelled before the probe rather than discovered during it.
+The borrowed `claude-json` path is gone. Grok's native stream supplies the
+effective command list, and Hivemind joins it by a unique session id to the
+CLI's durable summary and updates, which report resolved model, workspace
+sandbox, cwd and completed-turn usage. `grok inspect --json` supplies the
+resolved configuration layers plus MCP/plugin/hook state; a layer that is
+remote, missing or unreadable refuses the endpoint claim.
 
-It fails safe: if the stream differs, usage returns unverified and spend
-ceilings degrade rather than the probe refusing.
+This is implemented and fixture-tested, not promoted. A corrected bounded 4.6
+attempt reached the service but did not finish before cancellation, so there is
+no completed 4.6 usage record and no successful connection record. The earlier
+4.5 probe is retained as evidence about 4.5 only.
 
 ### The capability contract measures a moment, not a state
 
@@ -440,8 +450,8 @@ never load-bearing, and now cannot be made at all for a compacted run.
 | **macOS verification** | **No hardware.** Case verdict, process control, Finder PATH, `.app`/`.dmg` launch, WebKit vs WebKitGTK, temp dirs | ~1 hour on a Mac |
 | **macOS codesigning + notarisation** | **Apple Developer account, $99/yr** | Half a day. Buys distribution, not correctness — an unsigned `.app` runs after a right-click Open |
 | **Windows code signing** | **A certificate — see §3.2.** Deliberately deferred: the beta ships unsigned with a plain note on the download page, so SmartScreen is expected rather than a surprise | An hour once a certificate exists. Tauri supports it in config directly |
-| **Grok Build** | **An X.AI plan or an `XAI_API_KEY`.** Everything else is ready: install from `x.ai/cli/install.sh`, then connect it like any other agent. The argv is prepared and verified clean against both bypass guards | ~15–25K tokens, one probe. It answers one question: does the stream carry an init event naming the resolved model, tools and sandbox |
-| **Kimi Code** | **An account**, plus one open question: are its file tools confined to the workspace | One probe |
+| **Grok Build** | **One completed bounded 4.6 probe.** The subscription and first-party CLI are present; the corrected invocation reached the service but stalled before completion | A paid retry, only with explicit approval |
+| **Kimi Code** | **A real confinement mechanism outside the CLI.** The no-paid local provider fixture proved invocation, exact tools, write behavior, model and usage readback; it also confirmed absolute paths can leave cwd. Hosted Moonshot authentication/quota behavior remains unmeasured | Engineering first; no subscription purchase would close the confinement gap |
 | **Local models / custom endpoints** | **Nothing structural remains.** The egress capability was the prerequisite and is built — all three harnesses already accept a custom base URL, and `known_endpoint` now names a configured one and refuses an undeterminable one. What is left is a profile shape per backend and a decision about what `reports_usage` means when tokens are free | A pass, no account |
 | **WebKitGTK GUI walk** | Nothing — buildable now | **1–2 days.** The largest remaining piece; it is what would let a click-level walk run anywhere but Windows |
 | **Linux `.desktop` launch PATH** | Nothing. **Half done**: the failure explains itself and the escape hatch resolves, both tested. What remains needs a machine with a desktop environment to confirm a display manager hands the app a minimal PATH | 20 minutes on a Linux desktop |

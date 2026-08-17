@@ -8,6 +8,33 @@ Discovery pass, 2026-08-12, updated the same day after the free installs.
 > Kimi's verdict moved from *refused as documented* to **refused as measured**,
 > which is a stronger claim and a worse finding: see below.
 
+> **2026-08-17 follow-up; this supersedes the older Grok/Kimi commands and
+> blockers retained later in this investigation log.** Grok Build 1.0.4 lists
+> `grok-4.6` as its default and current model. Hivemind now uses Grok's native
+> file-tool names, native session stream, unique session id, durable model /
+> sandbox / usage readback, and `inspect --json` resolved configuration layers.
+> The first 4.6 attempt exposed the stale Claude-style tool names; a corrected
+> bounded attempt reached the service but did not complete before cancellation,
+> so Grok remains unverified rather than inheriting the old 4.5 result.
+>
+> Kimi Code 0.36.1 was exercised without Moonshot credentials against a local
+> OpenAI-compatible fixture. The real CLI bound exactly Read, Write, Edit, Grep
+> and Glob, excluded Bash / Agent / AgentSwarm, wrote a canary, and persisted
+> the selected model and provider-token usage. This closes the adapter, stream,
+> tool-profile and metering questions without a paid call. It also confirmed
+> the remaining blocker: Kimi's file tools accept absolute paths outside cwd.
+> A working directory is therefore not a confinement boundary, so production
+> connection stays disabled until Hivemind can prove an external project
+> sandbox. Moonshot authentication, hosted-model behavior and quota reporting
+> also remain unmeasured while new accounts are unavailable.
+>
+> Installed build **26.817.1516** shows those exact dispositions in the real
+> setup screen: `docs/evidence/provider-grok-4.6-installed-26.817.1516.jpg` and
+> `docs/evidence/provider-kimi-local-proof-installed-26.817.1516.jpg`. The build
+> was installed and its on-disk version verified; the screen itself also reads
+> 26.817.1516. Production reachability/resource verification passed all eight
+> surfaces at 1280x720, 1366x768 and 1440x900.
+
 ## HEADLINE: a pinned model is not the only model you pay for
 
 **Observed, not inferred.** A Claude Code probe pinned to `sonnet` returned this

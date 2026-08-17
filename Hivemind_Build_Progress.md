@@ -416,6 +416,37 @@ The written M0-M7 implementation plan is closed, the M8 Workspace UI milestone i
 - **M7.4 prompt tuning:** consolidation proposal P3 showed a minor loose-causality inference; future tuning may sharpen causal attribution without changing the passed behavioral result.
 - **Axiom cleanup tooling:** Axiom MCP remains disabled after three false blocks and zero true positives across M7; approved deletions are performed by the human until its confirmation handling is reliable.
 
+## 2026-08-17 provider follow-up — Grok 4.6 and no-paid Kimi proof
+
+- **Grok:** the catalogue now pins the installed CLI's current `grok-4.6`
+  model and uses its native file-tool names. Each run has a unique session id;
+  Core reads the durable session summary/updates for resolved model, workspace
+  sandbox, cwd and provider usage, and reads every resolved endpoint layer plus
+  MCP/plugin/hook state through `inspect --json`. The stale Claude-style tool
+  names were removed. A corrected paid 4.6 attempt reached the service but did
+  not complete before cancellation, so this is probeable and fail-closed, not
+  promoted or certified. No final 4.6 usage record was emitted.
+- **Kimi:** the real 0.36.1 CLI passed a localhost-only OpenAI-compatible
+  fixture without Moonshot credentials or a paid call. It bound exactly Read,
+  Write, Edit, Grep and Glob, excluded Bash/Agent/AgentSwarm, performed the
+  canary write, and persisted the resolved model, tools and provider-token
+  usage. This proves the adapter mechanics without pretending to prove hosted
+  service behavior. Kimi remains non-connectable because its documented file
+  tools accept absolute paths outside cwd, so the CLI itself supplies no
+  project confinement.
+- **Cleanup:** the old Grok parser/flag narrative and stale model assertion were
+  replaced; provider-specific endpoint defaults remain centralized in the
+  catalogue; Kimi's working directory is explicitly not promoted to a sandbox.
+- **Validation before commit:** targeted provider regressions passed 93/93;
+  Core passed 809 with 2 Windows platform skips and 0 failures; Desktop passed
+  295/295; Rust passed 31/31. `verify:reachable` passed eight production-CSP
+  surfaces at 1280x720, 1366x768 and 1440x900. `npm run ship` built, installed
+  and verified **26.817.1516**, and the running installed setup screen displayed
+  the same build number with the current Grok and Kimi dispositions expanded.
+- **Paid calls:** two explicitly approved Grok 4.6 attempts were made. Neither
+  completed, so the provider emitted no final usage total. No Kimi paid or
+  hosted call was made.
+
 ## Update Rules
 
 - Update this file after each committed Hivemind subtask.

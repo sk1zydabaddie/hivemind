@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { HARNESS_PROJECT_CONFIG } from "./agent-catalogue.js";
@@ -91,6 +91,11 @@ export async function ensureHarnessProjectConfig(
        the write below, where the connect can refuse with the real reason. */
   }
 
-  await writeFile(full, `${JSON.stringify(wanted.contents, null, 2)}\n`, "utf8");
+  const contents =
+    typeof wanted.contents === "string"
+      ? wanted.contents.endsWith("\n") ? wanted.contents : `${wanted.contents}\n`
+      : `${JSON.stringify(wanted.contents, null, 2)}\n`;
+  await mkdir(path.dirname(full), { recursive: true });
+  await writeFile(full, contents, "utf8");
   return { written: wanted.file, keptExisting: null, because: wanted.because };
 }

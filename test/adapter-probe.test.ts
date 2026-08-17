@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { probeAdapter, probeInvocation, requestedModel, type ProbeObservation } from "../src/adapter-probe.js";
+import { probeAdapter, probeInvocation, readGrokSession, readKimiSession, requestedModel, type ProbeObservation } from "../src/adapter-probe.js";
 import { findCatalogueAgent } from "../src/agent-catalogue.js";
 import { buildProfileForAgent, connectAdapter } from "../src/config-actions.js";
 import type { AdapterProfile } from "../src/adapter.js";
@@ -21,6 +21,47 @@ import type { AdapterProfile } from "../src/adapter.js";
 const agent = findCatalogueAgent("codex-terra")!;
 
 const execFileAsync = promisify(execFile);
+
+test("Grok readback requires the exact file tools, empty integrations, and workspace sandbox", async () => {
+  const stdout = [
+    JSON.stringify({ type: "available_commands", tools: ["read_file", "search_replace", "list_dir", "grep", "search_tool", "use_tool", "write"] }),
+    JSON.stringify({
+      type: "hivemind.grok.session",
+      summary: { info: { cwd: "D:/repo" }, current_model_id: "grok-4.6", sandbox_profile: "workspace" }
+    })
+  ].join("\n");
+  const readback = await readGrokSession(stdout, "D:/repo", async () => true);
+  assert.equal(readback?.model, "grok-4.6");
+  assert.equal(readback?.sandbox, "workspace-write");
+  assert.equal(readback?.subagents, "none");
+
+  const terminal = stdout.replace('"write"]', '"write","run_terminal_command"]');
+  assert.equal((await readGrokSession(terminal, "D:/repo", async () => true))?.sandbox, null);
+  assert.equal((await readGrokSession(stdout, "D:/repo", async () => false))?.sandbox, null);
+});
+
+test("Kimi readback binds the profile but does not mistake cwd for confinement", async () => {
+  const stdout = [
+    JSON.stringify({ type: "system.version", version: "0.36.1" }),
+    JSON.stringify({
+      type: "hivemind.kimi.session",
+      state: { cwd: "D:/repo" },
+      profile: {
+        modelAlias: "kimi-code/kimi-for-coding",
+        activeToolNames: ["Read", "Write", "Edit", "Grep", "Glob"],
+        disallowedTools: ["Bash", "Agent", "AgentSwarm"],
+        subagents: []
+      },
+      tools: { tools: ["Edit", "Glob", "Grep", "Read", "Write"].map((name) => ({ name })) }
+    })
+  ].join("\n");
+  const readback = await readKimiSession(stdout);
+  assert.equal(readback?.model, "kimi-code/kimi-for-coding");
+  assert.equal(readback?.sandbox, null);
+  assert.match(readback?.approvalPolicy ?? "", /no workspace confinement/u);
+  assert.equal(readback?.subagents, "none");
+  assert.equal(readback?.version, "0.36.1");
+});
 
 async function scratch(): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), "hivemind-probe-test-"));
@@ -252,15 +293,17 @@ test("a passed probe writes the profile and the capabilities it proved", async (
   }
 });
 
-/* An agent nobody has made work cannot be connected by asking nicely. */
-test("an agent with no working invocation refuses with its real reason", async () => {
+/* A complete profile is not a claim that the hosted account exists. */
+test("Kimi remains fail-closed when its account-backed run cannot start", async () => {
   const repo = await scratch();
   try {
-    /* Locally inspectable but not yet probeable: its tool policy can omit the
-       shell, but no account-backed stream or usage reader exists here. */
-    const kimi = await connectAdapter(repo, "worker", "kimi-code");
+    const kimi = await connectAdapter(repo, "worker", "kimi-code", {
+      runner: async () => observation({ ok: false, reason: "no Kimi provider is configured", exitCode: 1, wroteNonceFile: false }),
+      readback: async () => null
+    });
     assert.equal(kimi.ok, false);
-    assert.match(kimi.reason, /no complete invocation|stay inside the project|could not be connected/u);
+    assert.match(kimi.reason, /could not be connected|no Kimi provider/u);
+    assert.equal(await readFile(path.join(repo, ".hivemind", "kimi-agent.md"), "utf8").then(() => true), true);
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

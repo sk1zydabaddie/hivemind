@@ -411,7 +411,8 @@ describe("React workspace boundary", () => {
        withdrawn, because it had been measured against the wrong distribution —
        see the provenance rule in DESIGN-NOTES. */
     expect(catalogue).toMatch(/live Claude Code 2\.1\.233 probe verified all nine/u);
-    expect(catalogue).toMatch(/neither machine-readable stream reports the sandbox/u);
+    expect(catalogue).toMatch(/corrected attempt reached the service but did not complete/u);
+    expect(catalogue).toMatch(/file tools accept absolute paths outside the working directory/u);
 
     /* Hivemind is an ADE: the agent is a harness plus the subscription that
        pays for it, and Hivemind never asks for a key of its own. */

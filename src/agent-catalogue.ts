@@ -32,7 +32,7 @@ export interface CatalogueAgent {
   cost_rank: number;
   context_window: number;
   timeout_ms: number;
-  usage_parser: "codex-jsonl" | "codex-text" | "claude-json" | "opencode-json" | null;
+  usage_parser: "codex-jsonl" | "codex-text" | "claude-json" | "opencode-json" | "grok-json" | "kimi-wire" | null;
   /** Whether the task prompt is written to stdin or appended to argv. */
   prompt_arg: "stdin" | "arg";
   /** Whether the desktop may offer a probe that can presently be admitted. */
@@ -62,7 +62,7 @@ export interface CatalogueAgent {
    * can compare a request against, and every capability that needs a readback
    * comes back `unverified` rather than `verified`.
    */
-  readback: "codex-rollout" | "claude-init" | "opencode-permissions" | "none";
+  readback: "codex-rollout" | "claude-init" | "opencode-permissions" | "grok-session" | "kimi-session" | "none";
   /** Argv template. `{cwd}` is replaced with the project root at connect time. */
   invoke: string[] | null;
 }
@@ -230,54 +230,60 @@ function openCodeInvoke(model = "opencode/deepseek-v4-flash-free"): string[] {
 /**
  * Grok Build, exercised against 1.0.4 on 2026-08-17.
  *
- * The live probe wrote its canary, exited in five seconds, reported 10,063
- * tokens attributed only to `grok-4.5-build`, and left the branch unchanged.
- * It still refused: neither output format reports the resolved sandbox, and
- * the endpoint configuration surface is not yet implemented in Core. Those
- * are required claims, so passing the flags is not enough.
+ * A 4.5 probe wrote its canary and persisted 10,063 tokens. Version 1.0.4 now
+ * exposes the resolved model, workspace sandbox and working directory in its
+ * durable session summary; `inspect --json` exposes every loaded config layer
+ * plus MCP, plugin and hook state. Those are read after the run rather than
+ * inferred from the flags.
  *
  * The posture matches the other three: deny the shell by ALLOWLIST rather than
  * by denylist, pin the model, refuse sub-agents, and read a documented wire
  * format rather than a bespoke one.
  *
- * OUTPUT FORMAT: `streaming-messages-json`, not `streaming-json`, and the trade
- * is worth stating. `streaming-json` is the agent's own ACP session updates and
- * is where an init event would appear if one exists -- the readback question.
- * `streaming-messages-json` is documented as **NDJSON in the Anthropic Messages
- * API wire format**, which means its usage block has a shape this project
- * already parses and has verified against that exact format.
- *
- * Usage decided it. An agent with an invocation and no usage reader refuses on
- * a capability nothing could ever satisfy, so a "prepared" probe with no parser
- * would never pass -- `config-actions.test.ts` says so and is right. Reusing
- * `claude-json` for a format the vendor documents AS that wire format is not a
- * guess; inventing a parser for an unmeasured shape would be.
- *
- * It fails in the safe direction either way: if Grok's stream differs, the
- * parser finds nothing, `reports_usage` comes back unverified, and the contract
- * ADMITS with spend ceilings switched off and the person told -- rather than
- * refusing. The readback question then needs a second probe against
- * `streaming-json`, which is a config change and not a design one.
+ * The native `streaming-json` stream supplies its effective command list while
+ * the durable updates file supplies completed-turn usage. Hivemind joins the
+ * two by an explicit per-run session id. A corrected Grok 4.6 attempt reached
+ * the service but did not finish, so 4.6 is still probeable rather than
+ * promoted; the old 4.5 result is not silently transferred to the new model.
  *
  * `--dangerously-skip-permissions` and `--permission-mode bypassPermissions`
  * are Claude-compatibility aliases it also ships; `findDangerousAdapterArgs`
  * already refuses both by name, and no invocation here may carry them.
  */
-function grokInvoke(model = "grok-4.5"): string[] {
+function grokInvoke(model = "grok-4.6"): string[] {
   const args = [
     "--model",
     model,
     /* The shell is absent rather than denied: a positive allowlist of the
        built-in tools, which is the same shape as Claude Code's. */
     "--tools",
-    "read,write,edit,glob,grep",
+    "read_file,write,search_replace,list_dir,grep",
+    "--deny",
+    "Bash",
     "--no-subagents",
+    "--no-memory",
+    "--no-plan",
+    "--disable-web-search",
+    "--permission-mode",
+    "dontAsk",
+    "--allow",
+    "Read",
+    "--allow",
+    "Write",
+    "--allow",
+    "Edit",
+    "--allow",
+    "Grep",
+    "--allow",
+    "Glob",
     /* An OS-level profile, not a promise. `workspace` is the narrowest profile
        that still permits the writes a worker must make. */
     "--sandbox",
     "workspace",
     "--output-format",
-    "streaming-messages-json",
+    "streaming-json",
+    "--session-id",
+    "{session_id}",
     /* `--single` takes the prompt as its value. It must be the final template
        argument so Adapter appends the prompt immediately after it. */
     "--single"
@@ -285,6 +291,21 @@ function grokInvoke(model = "grok-4.5"): string[] {
   return process.platform === "win32"
     ? ["cmd.exe", "/d", "/s", "/c", "grok.cmd", ...args]
     : ["grok", ...args];
+}
+
+function kimiInvoke(model = "kimi-code/kimi-for-coding"): string[] {
+  const args = [
+    "--model",
+    model,
+    "--output-format",
+    "stream-json",
+    "--agent-file",
+    ".hivemind/kimi-agent.md",
+    "--prompt"
+  ];
+  return process.platform === "win32"
+    ? ["cmd.exe", "/d", "/s", "/c", "kimi.cmd", ...args]
+    : ["kimi", ...args];
 }
 
 export const agentCatalogue: CatalogueAgent[] = [
@@ -424,36 +445,23 @@ export const agentCatalogue: CatalogueAgent[] = [
     subscription: "an X.AI plan or an XAI_API_KEY",
     status: "unverified",
     caveat:
-      "A real Grok 1.0.4 probe wrote inside the project, reported 10,063 tokens attributed only to grok-4.5-build, and left the branch unchanged. It still cannot connect: neither machine-readable stream reports the sandbox that actually took effect, and Hivemind does not yet inspect Grok's endpoint configuration. Both are required boundaries, so accepting the flags on trust would be a false verification.",
-    model: null,
+      "Grok 1.0.4 now exposes its resolved model and workspace sandbox in the durable session record, and its native stream reports the loaded tools and usage. It remains unverified because a bounded Grok 4.6 re-probe is still required before promotion: the first 4.6 attempt exposed stale tool names, and the corrected attempt reached the service but did not complete before it was cancelled.",
+    model: "grok-4.6",
     routing_tier: "standard",
     cost_rank: 10,
     context_window: 500_000,
     timeout_ms: 900_000,
-    /* UNVERIFIED-AGAINST-GROK.
-       `streaming-messages-json` is documented as the Anthropic Messages wire
-       format, and `claude-json` parses that format and is verified against it
-       -- on CLAUDE's output. It has never seen Grok's stream. The match is a
-       documentary claim about a format, not a measurement of this provider.
-
-       Fourth instance of the recorded-output pattern, labelled BEFORE the probe
-       rather than discovered during it: a reader is only verified against the
-       output it has actually read. If Grok's stream differs, the parser finds
-       nothing, `reports_usage` returns unverified, and the contract admits with
-       spend ceilings off -- so the failure is bounded and named rather than
-       silent. The label comes off when a run confirms it. */
-    usage_parser: "claude-json",
+    /* Native stream plus durable-session parser. It remains unverified against
+       a COMPLETED 4.6 turn; absence of a usage record fails the probe closed. */
+    usage_parser: "grok-json",
     prompt_arg: "arg",
-    /* A real run proved this probe must refuse until the sandbox and endpoint
-       surfaces have disposition-strength evidence. Do not sell that known
-       paid failure as a ready connection. */
-    connectable: false,
-    readback: "none",
+    connectable: true,
+    readback: "grok-session",
     shell_denial: {
       mechanism: "tool-allowlist",
-      confirmed_by: "unconfirmed",
+      confirmed_by: "runtime-readback",
       detail:
-        "`--tools` allows exactly the built-in tools named and `--no-subagents` turns off helper agents. Nothing is known about whether either is reported back, because reading its version is free and running it is not.",
+        "The native stream reports the resolved tool list. Hivemind requires the five file tools, the two inert MCP dispatchers only when `grok inspect` reports no MCP servers, and no terminal or agent-spawn tool; the session summary separately reports the resolved workspace sandbox.",
     },
     /* Kept probeable so the missing readbacks can be re-tested when the CLI or
        Core changes. A failed probe records nothing in the project. */
@@ -466,23 +474,23 @@ export const agentCatalogue: CatalogueAgent[] = [
     subscription: "a Kimi account or a Moonshot API key",
     status: "unverified",
     caveat:
-      "The current first-party CLI can enforce a fixed list of file tools with no shell or sub-agents, and it can emit structured output. Hivemind has not yet measured a real Kimi stream, written a usage reader for it, or confirmed that its file tools stay inside the project. It cannot offer a connection yet because an account-backed run must answer those questions before Hivemind has a complete invocation to probe.",
-    model: null,
+      "Kimi 0.36.1 passed a no-cost local provider fixture: it exposed exactly five file tools, wrote the canary, and persisted the resolved model, tool set, working directory, permission mode, and usage. It cannot connect yet because those file tools accept absolute paths outside the working directory, so the CLI does not provide the project confinement Hivemind requires. Moonshot login, hosted-model behavior, and quota reporting also remain unmeasured while new accounts are unavailable.",
+    model: "kimi-code/kimi-for-coding",
     routing_tier: "standard",
     cost_rank: 10,
     context_window: 256_000,
     timeout_ms: 900_000,
-    usage_parser: null,
+    usage_parser: "kimi-wire",
     prompt_arg: "arg",
     connectable: false,
-    readback: "none",
+    readback: "kimi-session",
     shell_denial: {
       mechanism: "tool-allowlist",
-      confirmed_by: "unconfirmed",
+      confirmed_by: "runtime-readback",
       detail:
-        "`[tools] enabled` in its own settings is a positive allowlist that its documentation says is enforced again before a tool executes, not merely shown to the model. Naming the file tools and omitting the shell also omits the two tools that start helper agents. Nothing reports back that it took effect.",
+        "A launch-specific agent file positively allows Read, Write, Edit, Grep and Glob and denies Bash, Agent and AgentSwarm. The session's `profile.bind` and `llm.tools_snapshot` records report the exact effective sets, and the runtime enforces those sets again before execution.",
     },
-    invoke: null
+    invoke: kimiInvoke()
   }
 ];
 
@@ -705,7 +713,9 @@ export function isAdapterRoleName(value: unknown): value is AdapterRoleName {
 export const ACCOUNT_HOME_VARIABLES: Record<string, string> = {
   "codex-cli": "CODEX_HOME",
   claude: "CLAUDE_CONFIG_DIR",
-  opencode: "OPENCODE_CONFIG_DIR"
+  opencode: "OPENCODE_CONFIG_DIR",
+  grok: "GROK_HOME",
+  kimi: "KIMI_CODE_HOME"
 };
 
 /**
@@ -745,6 +755,8 @@ export const ENDPOINT_SURFACE: Record<
     configFile: string | null;
     /** Keys in that file that carry a URL. */
     configKeys: string[];
+    /** Ask the harness which layered config files it actually resolved. */
+    inspection?: "resolved-layers";
     vendorHost: string;
   }
 > = {
@@ -769,6 +781,21 @@ export const ENDPOINT_SURFACE: Record<
     configFile: "opencode.json",
     configKeys: ["baseURL", "base_url"],
     vendorHost: "the provider configured in OpenCode"
+  },
+  grok: {
+    variables: ["XAI_API_KEY"],
+    flags: [],
+    configFile: null,
+    configKeys: ["base_url"],
+    inspection: "resolved-layers",
+    vendorHost: "cli-chat-proxy.grok.com"
+  },
+  kimi: {
+    variables: ["KIMI_MODEL_BASE_URL"],
+    flags: [],
+    configFile: "config.toml",
+    configKeys: ["base_url"],
+    vendorHost: "api.kimi.com"
   }
 };
 
@@ -802,6 +829,29 @@ export const HARNESS_PROJECT_CONFIG: Record<
     },
     because:
       "OpenCode takes its shell denial from the project's config rather than from the command line, so Hivemind writes one. Without it the resolved table is a wildcard allow and the shell is permitted."
+  },
+  kimi: {
+    file: ".hivemind/kimi-agent.md",
+    contents: `---
+name: hivemind-worker
+description: File-only worker governed by Hivemind
+tools:
+  - Read
+  - Write
+  - Edit
+  - Grep
+  - Glob
+disallowedTools:
+  - Bash
+  - Agent
+  - AgentSwarm
+subagents: []
+---
+
+\${base_prompt}
+`,
+    because:
+      "Kimi takes its launch-specific tool and sub-agent boundary from an agent file. Hivemind writes the bounded profile inside its own project state before probing it."
   }
 };
 
@@ -887,5 +937,7 @@ export const REFUSED_ENVIRONMENT: readonly string[] = [
 export const HARNESS_DEFAULT_HOME: Record<string, string> = {
   "codex-cli": ".codex",
   claude: ".claude",
-  opencode: ".config/opencode"
+  opencode: ".config/opencode",
+  grok: ".grok",
+  kimi: ".kimi-code"
 };
