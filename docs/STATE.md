@@ -675,6 +675,66 @@ next session does not have to rediscover them.
 > visual only the second one matters.** Computed-style assertions prove the
 > first and read like proof of the second. What separated them was a crop with
 > a known tint behind it.
+>
+> **And then the diff answered a question nobody asked.** Capturing the same
+> frame with the depths forced to `none` showed **4.7% of the window changing —
+> all of it glyph edges, in panels carrying no glass at all.** At 6x the same
+> text was pixel-identical, which was the rig lying by re-rasterising: a clipped
+> capture at `scale: 6` redraws the text at 6x, where antialiasing differences
+> cannot exist. At **1x — the scale a person sees** — 17.5% of the pixels in one
+> mono file path differ, worst channel delta 58.
+>
+> Magnified without redrawing, the cause is unmistakable. Glass off: orange and
+> blue fringing on every stem — **subpixel antialiasing**. Glass on: neutral
+> grey. A backdrop filter promotes compositing layers, and promoted layers lose
+> subpixel AA **across the window**, not on the frosted surface.
+>
+> This matters because it moves the boundary into a different coordinate
+> system. The rule was "no glass behind dense monospaced figures", enforced as a
+> denylist of files, and by that rule the file lists are clean — they sit on
+> opaque fills and take no depth. They render differently anyway. **A
+> file-scoped denylist cannot express a window-scoped effect**, so the
+> enforcement is honest about placement and silent about the thing that
+> actually reaches the figures. Whether softer-but-neutral beats
+> sharper-but-fringed is a taste call and is the user's; that it is a call at
+> all was invisible until the frames were subtracted.
+>
+> Measured in headless Edge. WebView2 is the same engine on the same platform
+> so it should hold, but it is inferred there rather than observed, and it is
+> the kind of inference this section exists to distrust.
+
+> **The rig that checks the rigs needs checking too — and its failure mode is
+> the worst-shaped one available.** Eight new glass rules were verified by
+> mutation: break the thing on purpose, confirm the test fails, put it back.
+> The harness parsed vitest's stdout for `Tests N failed` and reported all six
+> of the first batch as SILENT — every rule apparently vacuous. They were all
+> fine. The regex matched nothing, so `failed` was `0` for every run,
+> **including the unmutated baseline**, which is the tell that was there to be
+> read and nearly was not.
+>
+> What makes this worse than an ordinary broken instrument is the symmetry. A
+> mutation rig has two directions to be wrong in, and they are not equally
+> visible:
+>
+> | Rig says | Truth | What happens |
+> | --- | --- | --- |
+> | SILENT | rule bites | wasted effort rewriting good rules — annoying, self-correcting |
+> | BITES | rule is vacuous | **eight rules certified as proven, permanently** |
+>
+> This run drew the harmless one. A regex that matched something unconditional
+> instead of nothing would have drawn the other, printed BITES eight times, and
+> the enforcement would have been recorded as mutation-proven while asserting
+> nothing at all — a lie with a method section attached. The instrument that
+> certifies other instruments is exactly where a single-answer failure does the
+> most damage, because it launders itself into the record.
+>
+> **Use the signal the tool is contractually obliged to produce, not the text
+> it happens to print.** A test runner's exit code is its interface; its
+> console output is a rendering that changes with reporters, versions, colour
+> settings and locale. Switching to `returncode` made all eight bite on the
+> first try. And a mutation harness must run the **unmutated baseline** and
+> assert it passes — a baseline that "fails" or "passes" identically to every
+> mutation is the same one-answer instrument, one level up. Eighth instance.
 
 > **A string-matched boundary where both sides are internally consistent and
 > disagree with each other.** A NEW shape in the unreached family — not a field
