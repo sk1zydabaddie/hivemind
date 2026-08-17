@@ -6,6 +6,27 @@ import { describe, expect, test } from "vitest";
 const desktopRoot = path.resolve(import.meta.dirname, "..");
 
 describe("React workspace boundary", () => {
+  test("project selection offers the native folder browser and manual path entry", async () => {
+    const app = await readFile(path.join(desktopRoot, "src", "App.tsx"), "utf8");
+    const shell = await readFile(
+      path.join(desktopRoot, "src-tauri", "src", "main.rs"),
+      "utf8"
+    );
+    const project = await readFile(
+      path.join(desktopRoot, "src-tauri", "src", "project.rs"),
+      "utf8"
+    );
+
+    expect(app).toMatch(/invoke<string \| null>\("choose_project_folder"/u);
+    expect(app).toContain("Browse folders");
+    expect(app).toContain("Or enter the project folder");
+    expect(app).toMatch(/onSubmit=\{submitProject\}/u);
+    expect(shell).toMatch(/plugin\(tauri_plugin_dialog::init\(\)\)/u);
+    expect(shell).toMatch(/choose_project_folder/u);
+    expect(project).toMatch(/blocking_pick_folder\(\)/u);
+    expect(project).toMatch(/picker\.set_directory\(initial\)/u);
+  });
+
   test("uses project-bound streams and the audited Tauri action bridge", async () => {
     const hook = await readFile(
       path.join(desktopRoot, "src", "hooks", "use-workspace.ts"),

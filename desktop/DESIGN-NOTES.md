@@ -3599,6 +3599,13 @@ answering a press. “Choose another” remains an outline action, so it stays f
 under the standing gradient rule. Adding relief to either would make decoration
 claim an interaction or make every action compete with the filled primary.
 
+The outline action now opens a chooser with both ways people actually locate a
+project: a native folder browser first, and a manual full-path field beneath it.
+The native route belongs to the shell, not React. Its custom command returns a
+path and grants no dialog-plugin permission to the webview; the existing
+project-selection command remains the only path that validates and opens the
+folder. Browsing is presentation, not a second project authority.
+
 The provider selection is genuinely plural now. Continue builds a deterministic
 plan that gives every selected, connectable provider at least one real worker
 probe and fills every empty role; a regression test proves a second selection

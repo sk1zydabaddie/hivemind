@@ -6,15 +6,14 @@ mod newer_version;
 
 use newer_version::{newer_version, take_newer_version};
 use project::{
-    dismiss_hint, dismissed_hints, initialize_git, initialize_project, inspect_daemon_work,
-    inspect_git_readiness, recent_projects, remember_project, restart_daemon, select_project,
-    workspace_action,
+    choose_project_folder, dismiss_hint, dismissed_hints, initialize_git, initialize_project,
+    inspect_daemon_work, inspect_git_readiness, recent_projects, remember_project, restart_daemon,
+    select_project, workspace_action,
 };
 
 fn main() {
     tauri::Builder::default()
-        /* Notifications are the one plugin this app takes, and it takes it for
-           one reason: a run is minutes to hours, so a supervisor who has to
+        /* Notifications exist for one reason: a run is minutes to hours, so a supervisor who has to
            keep the window open is not being supervised by the tool.
 
            A plugin, unlike the custom commands above, needs an ACL permission
@@ -25,6 +24,12 @@ fn main() {
            the permission, so the wiring fails a test rather than failing
            silently on somebody's machine. */
         .plugin(tauri_plugin_notification::init())
+        /* The webview cannot call the dialog plugin directly. One narrow custom
+           command below opens a native folder picker and returns only the path
+           the person chose; project validation and switching still go through
+           `select_project`. This keeps browsing in the OS and authority in the
+           existing shell boundary. */
+        .plugin(tauri_plugin_dialog::init())
         /* The updater. Its JS API is deliberately NOT used: install is a gate
            -- it refuses to replace the running binary while agents are mid-run
            -- and a gate evaluated in React is a gate anything calling the
@@ -34,6 +39,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             newer_version,
             take_newer_version,
+            choose_project_folder,
             dismiss_hint,
             dismissed_hints,
             initialize_git,

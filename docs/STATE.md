@@ -70,6 +70,16 @@ native scale and the outline `Choose another` control still flat. The latter is
 intentional: it answers when pressed, but the outline treatment does not claim
 physical relief, and this pass did not change it.
 
+`Choose another` no longer leads to a path field alone. Installed build
+**26.817.1635** opens a Hivemind chooser with two explicit routes: the native OS
+folder browser and the existing manual full-path field. The dialog plugin is
+not granted to the webview; one narrow Tauri command returns only the selected
+local path, and the existing project-selection boundary still validates and
+opens it. Selecting the already-open repository through Windows' folder picker
+returned to the live setup screen. Evidence:
+`docs/evidence/project-chooser-installed-26.817.1635.jpg` and
+`docs/evidence/native-folder-picker-installed-26.817.1635.jpg`.
+
 ### Two platforms green, with counts
 
 | Platform | Filesystem | Result |

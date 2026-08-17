@@ -71,6 +71,8 @@ export default function App(): React.JSX.Element {
   const workspace = useWorkspace();
   const [projectInput, setProjectInput] = useState("");
   const [projectOpen, setProjectOpen] = useState(false);
+  const [projectPickerBusy, setProjectPickerBusy] = useState(false);
+  const [projectPickerError, setProjectPickerError] = useState("");
   /* `?section=` opens the app on a named surface. The replay harness uses it to
      photograph one, and it is the same deep-link a notification or a shortcut
      would need. Anything unrecognised falls through to the ordinary default,
@@ -138,6 +140,25 @@ export default function App(): React.JSX.Element {
     await workspace.switchProject(projectInput);
     setProjectInput("");
     setProjectOpen(false);
+  };
+
+  const browseForProject = async (): Promise<void> => {
+    setProjectPickerBusy(true);
+    setProjectPickerError("");
+    try {
+      const selected = await invoke<string | null>("choose_project_folder", {
+        initialPath: visibleProjectPath
+      });
+      if (selected === null) return;
+      setProjectInput(selected);
+      await workspace.switchProject(selected);
+      setProjectInput("");
+      setProjectOpen(false);
+    } catch (cause) {
+      setProjectPickerError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setProjectPickerBusy(false);
+    }
   };
 
   const visibleProjectPath = displayProjectPath(
@@ -561,8 +582,30 @@ export default function App(): React.JSX.Element {
             </DialogDescription>
           </DialogHeader>
           <form className="grid gap-3.5" onSubmit={submitProject}>
+            <div className="grid gap-2">
+              <Button
+                disabled={projectPickerBusy}
+                type="button"
+                variant="outline"
+                onClick={() => void browseForProject()}
+              >
+                <FolderGit2 aria-hidden="true" />
+                {projectPickerBusy ? "Opening folders…" : "Browse folders"}
+              </Button>
+              <p className="m-0 text-[12px] leading-relaxed text-muted-foreground">
+                Choose with your computer's folder browser, or enter the full path below.
+              </p>
+            </div>
+            {projectPickerError === "" ? null : (
+              <p
+                className="m-0 rounded-md border border-clay/25 border-l-2 border-l-clay bg-clay-wash px-3 py-2 text-[12px] break-words text-clay"
+                role="status"
+              >
+                {projectPickerError}
+              </p>
+            )}
             <label className="grid gap-1.5 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
-              Project folder
+              Or enter the project folder
               <input
                 autoComplete="off"
                 autoFocus

@@ -7,6 +7,7 @@ use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::Manager;
+use tauri_plugin_dialog::DialogExt;
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 const HEALTH_TIMEOUT: Duration = Duration::from_millis(750);
@@ -27,6 +28,34 @@ pub struct ProjectConnection {
     shell_build_id: String,
     expected_shell_build_id: String,
     status: String,
+}
+
+#[tauri::command]
+pub async fn choose_project_folder(
+    app: tauri::AppHandle,
+    initial_path: String,
+) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut picker = app
+            .dialog()
+            .file()
+            .set_title("Choose a project folder");
+        let initial = PathBuf::from(initial_path.trim());
+        if initial.is_dir() {
+            picker = picker.set_directory(initial);
+        }
+        picker
+            .blocking_pick_folder()
+            .map(|selected| {
+                selected
+                    .into_path()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .map_err(|error| format!("the selected folder is not a local path: {error}"))
+            })
+            .transpose()
+    })
+    .await
+    .map_err(|error| format!("the folder picker stopped unexpectedly: {error}"))?
 }
 
 /// Why opening a project failed, as a CODE the shell can branch on.
