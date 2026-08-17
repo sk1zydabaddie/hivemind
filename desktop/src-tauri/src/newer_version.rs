@@ -56,8 +56,13 @@ pub enum NewerVersion {
         attempted: String,
         detail: String,
     },
-    /// Nothing newer anywhere that could be reached.
-    None { running: String, checked: String },
+    /// Nothing newer. `caveat` is set when one of the two sources could not be
+    /// consulted but the other answered "current" -- the honest middle, which
+    /// is neither news nor a fault and must not be dressed as either.
+    None {
+        running: String,
+        caveat: Option<String>,
+    },
     /// A published release is newer.
     Release { running: String, offered: String },
     /// The open project is Hivemind's source and is ahead of this binary.
@@ -135,7 +140,10 @@ pub async fn newer_version(app: tauri::AppHandle, project_path: String) -> Newer
         Err(error) => remote_detail = format!("this build has no updater configured ({error})"),
     }
 
-    /* Then this machine's own source. */
+    /* Then this machine's own source. `answered` records that a source was
+       actually consulted and said "not newer" -- distinct from never having
+       been able to look, which is the whole point below. */
+    let mut source_answered = false;
     if !project_path.is_empty() {
         match source_standing(&app, &project_path).await {
             Ok(standing) if standing.is_own_source && standing.stale => {
@@ -144,28 +152,36 @@ pub async fn newer_version(app: tauri::AppHandle, project_path: String) -> Newer
                     detail: standing.detail,
                 }
             }
-            Ok(_) => {}
-            Err(error) => {
-                return NewerVersion::Unknown {
-                    running,
-                    detail: format!("{remote_detail}, and the source could not be read ({error})"),
-                }
-            }
+            Ok(standing) => source_answered = standing.is_own_source,
+            Err(_) => source_answered = false,
         }
     }
 
-    /* Nothing newer. If the remote could not be REACHED that is not the same
-       as being current, and the distinction is kept rather than flattened. */
-    if remote_detail.starts_with("no newer release") {
-        NewerVersion::None {
+    /* THREE STATES, THREE TREATMENTS, and the middle one is the common case.
+
+       A machine with no release published sat permanently on a clay-toned
+       "could not check for updates" -- a standing alarm about a non-problem,
+       and a standing alarm is ignored within a week. But flattening it into
+       "up to date" would be the opposite lie, because the remote genuinely was
+       not reached.
+
+       So the middle is its own answer: nothing newer, with the caveat attached
+       rather than announced. Only when NEITHER source could answer is this
+       actually broken. */
+    let remote_answered = remote_detail.starts_with("no newer release");
+    match (remote_answered, source_answered) {
+        (true, _) => NewerVersion::None {
             running,
-            checked: remote_detail,
-        }
-    } else {
-        NewerVersion::Unknown {
+            caveat: Option::None,
+        },
+        (false, true) => NewerVersion::None {
+            running,
+            caveat: Some(remote_detail),
+        },
+        (false, false) => NewerVersion::Unknown {
             running,
             detail: remote_detail,
-        }
+        },
     }
 }
 

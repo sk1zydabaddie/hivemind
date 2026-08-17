@@ -213,3 +213,46 @@ describe("the shipped configuration", () => {
     expect(scripts["tauri:build"]).not.toMatch(/updater-dev/u);
   });
 });
+
+/**
+ * Three states, three treatments — and the middle one is where most machines
+ * live.
+ *
+ * A clay-toned "could not check for updates", standing permanently on a machine
+ * where no release is published, is an alarm about a non-problem. Alarms about
+ * non-problems are ignored within a week, and the real one is ignored with
+ * them. Flattening it to "up to date" would be the opposite lie, because the
+ * remote genuinely was not reached. So it is its own answer, rendered quietly.
+ */
+describe("the volume of the answer matches the news", () => {
+  test("Rust distinguishes nothing-newer from could-not-look", async () => {
+    const source = await readFile(
+      path.join(desktopRoot, "src-tauri", "src", "newer_version.rs"),
+      "utf8"
+    );
+    /* `None` carries an optional caveat; `Unknown` is reserved for the case
+       where NEITHER source answered. */
+    expect(source).toMatch(/caveat: Option<String>/u);
+    expect(source).toMatch(/source_answered/u);
+    expect(source).toMatch(/\(false, true\) => NewerVersion::None/u);
+    expect(source).toMatch(/\(false, false\) => NewerVersion::Unknown/u);
+  });
+
+  test("the bar renders three distinct volumes", async () => {
+    const bar = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "update-bar.tsx"),
+      "utf8"
+    );
+    /* Silent when both agree. */
+    expect(bar).toMatch(/answer\.caveat === null && outcome === null\) return null/u);
+    /* Nearly silent otherwise: no tint, no border, no button, and the caveat on
+       the element rather than in the sentence. */
+    const quiet = bar.slice(bar.indexOf("The near-silence"), bar.indexOf("const take ="));
+    expect(quiet).toMatch(/text-muted-foreground/u);
+    expect(quiet).toMatch(/title=\{answer\.caveat/u);
+    expect(quiet, "the quiet state must not carry a tint").not.toMatch(/bg-clay-wash|bg-navy-wash|bg-amber-wash/u);
+    expect(quiet, "the quiet state must not offer a button").not.toMatch(/<Button/u);
+    /* And the loud one still exists for a genuine fault. */
+    expect(bar).toMatch(/answer\.source === "unknown"[\s\S]{0,200}bg-clay-wash|bg-clay-wash/u);
+  });
+});

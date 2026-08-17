@@ -37,7 +37,7 @@ import { Button } from "@/components/ui/button";
 
 type NewerVersion =
   | { source: "did_not_take"; running: string; attempted: string; detail: string }
-  | { source: "none"; running: string; checked: string }
+  | { source: "none"; running: string; caveat: string | null }
   | { source: "release"; running: string; offered: string }
   | { source: "source"; running: string; detail: string }
   | { source: "unknown"; running: string; detail: string };
@@ -71,8 +71,32 @@ export function UpdateBar({ projectPath }: { projectPath: string }): React.JSX.E
   }, [look]);
 
   if (answer === null) return null;
-  /* The one true silence: it checked, and this is the newest there is. */
-  if (answer.source === "none" && outcome === null) return null;
+
+  /* THREE STATES, THREE TREATMENTS.
+
+     1. Something newer exists -> prominent and actionable, below.
+     2. Nothing newer found -> silent, or NEARLY silent when one source could
+        not be consulted. A caveat is worth having available and is not worth
+        a coloured bar; a standing alarm about a non-problem is ignored within
+        a week, and then the real one is ignored with it.
+     3. Neither source could answer -> visible, because that is a fault.
+
+     The one true silence: both agree there is nothing newer. */
+  if (answer.source === "none" && answer.caveat === null && outcome === null) return null;
+
+  /* The near-silence: a single muted line, no tint, no border, no button. The
+     caveat is on the element rather than in the sentence, so it is available
+     to anybody who wonders and invisible to everybody who does not. */
+  if (answer.source === "none" && outcome === null) {
+    return (
+      <p
+        className="m-0 shrink-0 truncate px-4 py-1 text-[11px] text-muted-foreground/70"
+        title={answer.caveat ?? undefined}
+      >
+        Nothing newer found. You are running {answer.running}.
+      </p>
+    );
+  }
 
   const take = async (): Promise<void> => {
     setBusy(true);
@@ -157,7 +181,7 @@ export function UpdateBar({ projectPath }: { projectPath: string }): React.JSX.E
           </>
         ) : (
           <>
-            {answer.source === "unknown" ? answer.detail : answer.checked}. You are running{" "}
+            {answer.source === "unknown" ? answer.detail : ""}. You are running{" "}
             {answer.running || "an unknown version"}, and this is <em>not</em> confirmation
             that it is current.
             {/* A dead end names its exit. With no project open there is no

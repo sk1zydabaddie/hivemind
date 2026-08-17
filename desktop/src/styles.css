@@ -115,38 +115,53 @@
     inset 0 2px 3px -1px color-mix(in oklab, #000000 30%, transparent),
     inset 0 -1px 0 0 color-mix(in oklab, #ffffff 8%, transparent);
 
-  /* ── Glass: the same rule as relief, one axis over ────────────────────────
+  /* ── Glass: three distances, not one blur ─────────────────────────────────
    *
-   * Relief asks "is this pressable?". Glass asks "is this ABOVE the app?" --
-   * and the honest answer is available for exactly four things: a dialog, the
-   * command palette, a dropdown menu, a notification toast. Each of those
-   * genuinely floats over content that is still there underneath, so blurring
-   * what is behind them describes something true. A panel does not float; it
-   * IS the app. Frosting the substrate would be the panel-shadow mistake in a
-   * new material: a claim of depth that nothing underneath ever redeems.
+   * The first version allowed glass on four floating things and nothing else.
+   * Four dialogs is not a theme; it is an effect that happens to appear when a
+   * menu opens. **Volumetric** means the surfaces read as sitting at different
+   * distances from the viewer, and a single blur radius cannot say that -- what
+   * says it is blur, saturation and edge brightness all scaling together, so
+   * that a dialog reads as nearer than a panel and a panel reads as nearer than
+   * the rail.
    *
-   * `--glass` and `--glass-edge` are a PAIR for the same reason as relief. The
-   * backdrop filter alone reads as a smudge; what makes it read as a pane is
-   * the bright top edge catching light at the boundary. `design-tokens.test.ts`
-   * fails any rule that takes one without the other, and fails any file outside
-   * the floating set that takes either.
+   * Three depths, and a surface picks the one that matches where it actually
+   * sits:
    *
-   * WHY THIS AND NOT ACRYLIC/MICA. Those are Windows compositor materials with
-   * no equivalent on WebKitGTK, so adopting them would split the identity
-   * across platforms -- the same reason the bundle config must not be shaped
-   * for one platform. `backdrop-filter` is supported by both WebView2 and
-   * WebKitGTK, so one declaration produces one look everywhere.
+   *   --glass-near   dialogs, the command palette, menus. Closest, most blur.
+   *   --glass-mid    panels, cards, the setup steps. The body of the app.
+   *   --glass-far    the toolbar and the rail. Furthest back, barely there.
    *
-   * DELIBERATELY WEAK. 10px of blur and a 4% white edge, over a fill that is
-   * still 88% opaque. The constraint that decides the ceiling is not taste: the
-   * amber attention edge must remain the loudest thing on screen, because it is
-   * the only thing that means "a person must act". A material that competes
-   * with it is a bug however good it looks. Translucency also costs most where
-   * legibility matters most, which is why nothing dense and monospaced sits on
-   * it -- diffs, trails and token figures stay on opaque panel.
+   * Each depth is a PAIR with its edge, for the reason relief is a pair: the
+   * blur alone reads as a smudge, and what makes it a pane is the top edge
+   * catching light at the boundary. The edge brightens with proximity, which is
+   * the other half of reading as depth rather than as filtering.
+   *
+   * WHY backdrop-filter AND NOT ACRYLIC/MICA. Those are Windows compositor
+   * materials with no WebKitGTK equivalent, so adopting them would split the
+   * identity per platform -- the same reason the bundle config must not be
+   * shaped for one. This is one declaration that produces one look everywhere.
+   *
+   * THE CEILING IS NOT TASTE. The amber attention edge is the only thing on
+   * screen that means "a person must act", so it must remain the loudest thing
+   * on it. If glass ever competes, the glass gets quieter -- never the amber.
+   * That is why even `--glass-near` tops out at 18px over a fill that stays
+   * 86% opaque: enough to read as a pane, not enough to read as a spotlight.
+   *
+   * AND NEVER BEHIND DENSE MONOSPACE. Token counts, the spend meter, diff
+   * gutters, live check output and the plan review's conformance commands stay
+   * flat and fully opaque. Translucency costs most exactly where small
+   * monospaced figures are read, and a number that is hard to read is worse
+   * than a surface that is plain. `design-tokens.test.ts` names those files and
+   * fails if any of them takes glass.
    */
-  --glass: saturate(180%) blur(10px);
-  --glass-edge: inset 0 1px 0 0 color-mix(in oklab, #ffffff 4%, transparent);
+  --glass-near: saturate(180%) blur(18px);
+  --glass-mid: saturate(140%) blur(11px);
+  --glass-far: saturate(120%) blur(7px);
+
+  --glass-edge-near: inset 0 1px 0 0 color-mix(in oklab, #ffffff 9%, transparent);
+  --glass-edge: inset 0 1px 0 0 color-mix(in oklab, #ffffff 5%, transparent);
+  --glass-edge-far: inset 0 1px 0 0 color-mix(in oklab, #ffffff 3%, transparent);
 
   /* Barely rounded. A 10px panel corner reads as a card on a marketing page;
      an instrument's panels are square enough that the rule is what you see. */

@@ -419,7 +419,7 @@ function ConnectStep({
   };
 
   return (
-    <li className="grid gap-3 bg-panel px-4 py-3">
+    <li className="grid gap-3 bg-panel/85 [backdrop-filter:var(--glass-mid)] shadow-[var(--glass-edge)] px-4 py-3">
       <div className="flex items-center gap-3">
         <StepMark done={done} index={3} />
         <div className="min-w-0 flex-1">

@@ -822,7 +822,7 @@ export function WorkTab({
           }`}
         >
           <Panel>
-            <PanelHeader className="bg-panel">
+            <PanelHeader className="bg-panel/80">
               <PanelLabel className="text-ink">Current work</PanelLabel>
               <PanelCount>{tasks.length}</PanelCount>
             </PanelHeader>
@@ -1351,7 +1351,7 @@ function PlanWaitingBar({
   return (
     <section
       aria-label="Plan ready for review"
-      className="mb-3 flex items-center gap-3 rounded-lg border border-rule border-l-2 border-l-navy bg-panel px-4 py-3"
+      className="mb-3 flex items-center gap-3 rounded-lg border border-rule border-l-2 border-l-navy bg-panel/85 [backdrop-filter:var(--glass-mid)] shadow-[var(--glass-edge)] px-4 py-3"
     >
       <span
         aria-hidden="true"

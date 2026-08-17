@@ -597,6 +597,85 @@ next session does not have to rediscover them.
 > right?" but "what would fail if it were not?" -- the first invites agreement,
 > the second produces a test. See F-4.
 
+> **A process that does not exist and a process that dies instantly leave
+> identical evidence — nothing — and no amount of thinking separates them.**
+> The absence-of-a-call shape one layer out from the Tauri command registration:
+> there a command was never *registered*, here a process was never *started*.
+>
+> The update swap did nothing. Over **eleven build-install-walk cycles and about
+> three hours** I formed and tested three hypotheses — a Windows job object
+> killing the child, `Start-Transcript` needing a console host, my own `\\` line
+> continuations emitting literal backslashes — and each was plausible, each fit
+> the evidence, and each was about a process that had never been created. An
+> earlier edit had removed the `spawn` block while leaving the script-building
+> above it and the proof-of-life wait below, so the code composed a command,
+> started nothing, and waited for a log nothing would ever write.
+>
+> The instrumentation that ended it took one pass: redirect the child's stdout
+> and stderr to FILES that survive it, and record the exit code. It printed
+>
+> ```
+> The installer helper did not start. it exited with exit code: 0.
+> It printed nothing.
+> ```
+>
+> and the missing spawn was visible immediately. **When the evidence is absence,
+> instrument before theorising — the first observation is cheaper than the second
+> hypothesis.** Absence is the one kind of evidence that constrains nothing: it
+> is equally consistent with never-ran, ran-and-died, ran-and-was-killed, and
+> ran-and-wrote-elsewhere, so every hypothesis fits and none can be eliminated by
+> thought. That is precisely when reasoning feels most productive and is least
+> useful.
+>
+> Two further failures followed, each named by the *next* observation rather than
+> the next theory: nested quoting (`-Command` meant the script had to survive
+> three parsers and lost at one, exiting 0 having done nothing), and PowerShell
+> itself behaving differently under this parent than by hand — answered by
+> replacing it with a `.cmd` run by `cmd.exe` resolved from `%SystemRoot%`
+> rather than PATH.
+>
+> **And the `\\?\` verbatim prefix, third instance.** `std::fs::canonicalize`
+> returns verbatim paths and **cmd.exe cannot execute one**. The batch ran its
+> whole sequence — `helper started / app exited / restarted` — while silently
+> skipping the single line that mattered. What named it was the *missing*
+> `installer returned` line between two present ones. `project.rs` already
+> records this for node CLI paths (`node_cli_paths_drop_windows_verbatim_prefixes`);
+> same trap, different consumer, and it will have a fourth consumer.
+
+> **Applied, measurable, and doing nothing — the visual case.** The glass
+> depths report exactly what they should: reading the live elements gives
+> `saturate(1.8) blur(18px)` on the dialog, `blur(11px)` on panel headers,
+> `blur(7px)` on the toolbar, each over a translucent fill, none inert by any
+> test. Cropping the boundaries at 4x showed the material contributing almost
+> nothing a person could see.
+>
+> Two independent reasons, both arithmetic rather than aesthetic:
+>
+> - **The scrim and the material were doing the same job, and the scrim won.**
+>   A `bg-ink/35` overlay under an `86%` dialog fill leaves about 9% of what is
+>   behind surviving — and a blur over a surface already flattened to one grey
+>   returns that same grey. Dropping the scrim to `18%` is what made the run
+>   visible behind the plan being reviewed. **The change that made depth read
+>   was removing a competing effect, not strengthening the intended one.**
+> - **Nothing passes under the substrate surfaces.** Panel headers are sticky
+>   over lists whose scroll containers stop at the header's edge, so content is
+>   clipped rather than sliding beneath. A backdrop filter with an empty
+>   backdrop is a no-op that no assertion will catch, because every property is
+>   set correctly.
+>
+> The tempting fix — restructure the scroll containers so content runs under
+> the headers — is **layout in service of an effect**, and is refused. What is
+> kept is honest: the depths are ordered and enforced, they read where
+> something genuinely floats over live content, and on the substrate they carry
+> translucency and an edge highlight rather than blur. A glass theme in a
+> near-white palette is mostly a claim about edges.
+>
+> The general form, and why this sits with the instruments: **"the property is
+> set" and "the property does something" are different facts, and for anything
+> visual only the second one matters.** Computed-style assertions prove the
+> first and read like proof of the second. What separated them was a crop with
+> a known tint behind it.
+
 > **A string-matched boundary where both sides are internally consistent and
 > disagree with each other.** A NEW shape in the unreached family — not a field
 > never read, not a function never called, but a seam that no compiler owns.

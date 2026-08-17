@@ -235,7 +235,7 @@ export default function App(): React.JSX.Element {
       >
         {/* Chrome, not a widget tray. White, ruled off from the canvas below,
             44px tall, and every control on it is the same height. */}
-        <header className="flex h-11 shrink-0 items-stretch gap-4 border-b border-rule bg-panel pr-2.5 pl-3">
+        <header className="flex h-11 shrink-0 items-stretch gap-4 border-b border-rule bg-panel/82 [backdrop-filter:var(--glass-far)] shadow-[var(--glass-edge-far)] pr-2.5 pl-3">
           <div className="flex shrink-0 items-center gap-2">
             <BrandMark />
             <span className="text-[13px] leading-none font-semibold tracking-tight text-ink">

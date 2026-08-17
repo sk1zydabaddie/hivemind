@@ -18,7 +18,11 @@ export function TooltipContent({
         data-slot="tooltip-content"
         sideOffset={sideOffset}
         className={cn(
-          "z-90 max-w-[320px] rounded-sm bg-ink px-2 py-1.5 text-[12px] leading-snug text-panel shadow-raised",
+          /* Nearest depth: a tooltip is the one thing that is unambiguously
+             above everything. Inverted, so the fill stays high (92%) -- light
+             text on a dark chip loses more to translucency than dark on light,
+             and a tooltip that is hard to read has failed at its only job. */
+          "z-90 max-w-[320px] rounded-sm bg-ink/92 [backdrop-filter:var(--glass-near)] px-2 py-1.5 text-[12px] leading-snug text-panel shadow-[var(--shadow-raised),var(--glass-edge-near)]",
           "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0",
           className
         )}
