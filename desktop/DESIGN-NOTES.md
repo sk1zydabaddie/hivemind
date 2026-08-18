@@ -3606,6 +3606,23 @@ path and grants no dialog-plugin permission to the webview; the existing
 project-selection command remains the only path that validates and opens the
 folder. Browsing is presentation, not a second project authority.
 
+An untracked folder is not automatically safe to turn into a repository. The
+shell already inspected the proposed first commit and refused dependency trees,
+build output and likely secrets; the screen did not call that command, so it
+offered an action the shell was guaranteed to reject. The rejection was then
+dropped by an unobserved promise. Readiness is now requested before the action
+is offered. React renders the shell's structured answer and owns no git gate:
+safe folders get the raised “Start tracking” action, unsafe folders get the
+plain-language refusal and “Choose another folder,” and a late action failure
+is visible as “Nothing changed” with its reason. The later “Set it up” step is
+also disabled while git is unresolved; it is not a second route around the
+same prerequisite.
+
+The update bar follows the same rule. A recheck sets “Checking…” before the
+round trip and, when the answer is identical, leaves “Checked again just now;
+the result did not change.” A fast request or an unchanged failure can no
+longer make a real click look inert.
+
 The provider selection is genuinely plural now. Continue builds a deterministic
 plan that gives every selected, connectable provider at least one real worker
 probe and fills every empty role; a regression test proves a second selection

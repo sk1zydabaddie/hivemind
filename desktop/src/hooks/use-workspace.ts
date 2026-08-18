@@ -18,6 +18,7 @@ import {
   PROJECT_FAULT,
   projectFaultFrom,
   validateProjectConnection,
+  type GitReadiness,
   type ProjectConnection
 } from "../lib/project-session";
 import {
@@ -36,6 +37,7 @@ interface WorkspaceView {
   connectionDetail: string;
   inspection: WorkspaceInspection | null;
   actionError: string;
+  gitReadiness: GitReadiness | null;
   switchProject: (projectPath: string) => Promise<void>;
   initializeProject: () => Promise<void>;
   initializeGit: () => Promise<void>;
@@ -67,6 +69,7 @@ export function useWorkspace(): WorkspaceView {
   const [connectionDetail, setConnectionDetail] = useState("");
   const [inspection, setInspection] = useState<WorkspaceInspection | null>(null);
   const [actionError, setActionError] = useState("");
+  const [gitReadiness, setGitReadiness] = useState<GitReadiness | null>(null);
   const [initializing, setInitializing] = useState(false);
   const [revision, setRevision] = useState(0);
   const projectionRef = useRef(createBoardProjection());
@@ -253,6 +256,7 @@ export function useWorkspace(): WorkspaceView {
           setConnection(null);
           setInspection(null);
           setActionError("");
+          setGitReadiness(null);
           projectionRef.current = createBoardProjection();
           setConnectionState("selecting project");
           setConnectionCode(PROJECT_FAULT.noProjectSelected);
@@ -379,13 +383,41 @@ export function useWorkspace(): WorkspaceView {
 
   const initializeGit = useCallback(async () => {
     setInitializing(true);
+    setActionError("");
     try {
       await invoke("initialize_git", { projectPath });
       await session.switchProject(projectPath);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
     } finally {
       setInitializing(false);
     }
   }, [session, projectPath]);
+
+  /* The shell owns this decision. React only asks for and renders its answer.
+     Without this call, the setup screen offered an action that the shell was
+     guaranteed to refuse for folders containing dependencies, build output,
+     or likely secrets -- and the rejection then disappeared. */
+  useEffect(() => {
+    if (connectionCode !== PROJECT_FAULT.notAGitRepository || projectPath === "") {
+      setGitReadiness(null);
+      return undefined;
+    }
+    let abandoned = false;
+    setGitReadiness(null);
+    void invoke<GitReadiness>("inspect_git_readiness", { projectPath })
+      .then((readiness) => {
+        if (!abandoned) setGitReadiness(readiness);
+      })
+      .catch((error) => {
+        if (!abandoned) {
+          setActionError(error instanceof Error ? error.message : String(error));
+        }
+      });
+    return () => {
+      abandoned = true;
+    };
+  }, [connectionCode, projectPath]);
 
   useEffect(() => {
     let abandoned = false;
@@ -457,6 +489,7 @@ export function useWorkspace(): WorkspaceView {
     connectionDetail,
     inspection,
     actionError,
+    gitReadiness,
     switchProject,
     initializeProject,
     initializeGit,

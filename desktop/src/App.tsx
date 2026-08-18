@@ -408,6 +408,8 @@ export default function App(): React.JSX.Element {
             connectionCode={workspace.connectionCode}
             connectionDetail={workspace.connectionDetail}
             connectionState={workspace.connectionState}
+            actionError={workspace.actionError}
+            gitReadiness={workspace.gitReadiness}
             initializing={workspace.initializing}
             live={false}
             projectPath={visibleProjectPath}
@@ -428,6 +430,8 @@ export default function App(): React.JSX.Element {
             connectionCode={workspace.connectionCode}
             connectionDetail={workspace.connectionDetail}
             connectionState={workspace.connectionState}
+            actionError={workspace.actionError}
+            gitReadiness={workspace.gitReadiness}
             initializing={workspace.initializing}
             live
             projectPath={visibleProjectPath}

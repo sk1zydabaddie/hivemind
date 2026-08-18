@@ -7,6 +7,13 @@ export interface ProjectConnection {
   status: "attached" | "started";
 }
 
+/** The shell's read-only answer about whether it is safe to create a first commit. */
+export interface GitReadiness {
+  is_repo: boolean;
+  would_commit: string[];
+  refusal: string | null;
+}
+
 /**
  * Why opening a project failed, as a code rather than as a sentence.
  *

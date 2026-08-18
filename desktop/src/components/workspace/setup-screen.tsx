@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/pressable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useDismissed } from "@/lib/dismissible";
-import { displayProjectPath, PROJECT_FAULT } from "@/lib/project-session";
+import { displayProjectPath, PROJECT_FAULT, type GitReadiness } from "@/lib/project-session";
 import { PROVIDER_MARKS } from "@/lib/provider-marks";
 import { REQUIRED_ROLES } from "@/lib/providers";
 import type {
@@ -44,6 +44,8 @@ export function SetupScreen({
   connectionCode,
   connectionDetail,
   connectionState,
+  actionError,
+  gitReadiness,
   live,
   view,
   onChooseProject,
@@ -59,6 +61,8 @@ export function SetupScreen({
   connectionCode: string;
   connectionDetail: string;
   connectionState: string;
+  actionError: string;
+  gitReadiness: GitReadiness | null;
   /** True once the daemon is answering: the project is set up and live. */
   live: boolean;
   /** The project's own configuration, or null until it has been read. */
@@ -83,6 +87,9 @@ export function SetupScreen({
   const visiblePath = displayProjectPath(projectPath);
   const chosen = visiblePath !== "" && visiblePath !== ".";
   const problem = connecting ? null : plainConnectionProblem(connectionCode, connectionDetail);
+  const checkingGit = problem?.action === "git" && gitReadiness === null && actionError === "";
+  const gitRefusal = problem?.action === "git" ? gitReadiness?.refusal ?? null : null;
+  const gitBlocksSetup = problem?.action === "git";
 
   return (
     /* `min-h-0` alone gives this no HEIGHT, so it grew to fit its content and
@@ -124,8 +131,19 @@ export function SetupScreen({
                     {problem.title}
                   </strong>
                   <p className="mt-1 mb-0 text-[12px] leading-relaxed text-muted-foreground">
-                    {problem.detail}
+                    {problem.action === "git"
+                      ? checkingGit
+                        ? "Hivemind is checking what the first commit would contain."
+                        : actionError !== ""
+                          ? "Hivemind could not confirm that a first commit would be safe."
+                          : gitRefusal ?? problem.detail
+                      : problem.detail}
                   </p>
+                  {actionError === "" ? null : (
+                    <p className="mt-2 mb-0 text-[12px] font-medium text-clay" role="alert">
+                      Nothing changed. {actionError}
+                    </p>
+                  )}
                   {problem.action === "initialize" ? (
                     <Button
                       className="mt-3"
@@ -136,7 +154,7 @@ export function SetupScreen({
                       {initializing ? "Setting up…" : "Set up this folder"}
                     </Button>
                   ) : null}
-                  {problem.action === "git" ? (
+                  {problem.action === "git" && gitReadiness !== null && gitRefusal === null ? (
                     <Button
                       className="mt-3"
                       disabled={initializing}
@@ -144,6 +162,17 @@ export function SetupScreen({
                       type="button"
                     >
                       {initializing ? "Starting to track it…" : "Start tracking this folder"}
+                    </Button>
+                  ) : null}
+                  {checkingGit ? (
+                    <p className="mt-3 mb-0 text-[12px] font-medium text-muted-foreground" role="status">
+                      Checking folder…
+                    </p>
+                  ) : null}
+                  {problem.action === "git" && gitRefusal !== null ? (
+                    <Button className="mt-3" onClick={onChooseProject} type="button" variant="outline">
+                      <FolderGit2 aria-hidden="true" />
+                      Choose another folder
                     </Button>
                   ) : null}
                   {problem.action === "restart_daemon" ? (
@@ -204,19 +233,27 @@ export function SetupScreen({
                   action={
                     live ? null : (
                       <Button
-                        disabled={!chosen || initializing}
+                        disabled={!chosen || initializing || gitBlocksSetup}
                         size="sm"
                         type="button"
                         variant="outline"
                         onClick={onInitializeProject}
                       >
-                        {initializing ? "Setting up…" : "Set it up"}
+                        {initializing
+                          ? "Setting up…"
+                          : gitBlocksSetup
+                            ? "Waiting on git"
+                            : "Set it up"}
                       </Button>
                     )
                   }
                   detail={
                     live
                       ? "Done. Hivemind's settings and cost tiers are in this project, so ordinary work runs on a cheaper model than the one reserved for risky files."
+                      : gitBlocksSetup
+                        ? checkingGit
+                          ? "Waiting while Hivemind checks whether this folder can be tracked safely."
+                          : "Resolve the git issue above before setting up Hivemind."
                       : chosen
                         ? "Creates .hivemind in the project: settings, cost tiers, and the history every run is rebuilt from. Nothing is sent anywhere."
                         : "Choose a folder first — this writes into the folder you pick."

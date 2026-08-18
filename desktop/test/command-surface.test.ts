@@ -90,16 +90,15 @@ describe("the React-to-Rust command surface", () => {
     ).toEqual([]);
   });
 
-  /* The other direction is a weaker finding and still worth seeing: a command
-     nobody calls is either dead or reached some way this scan cannot see. Not
-     asserted empty -- `inspect_git_readiness` is legitimately reached through a
-     path this does not model -- but the count is pinned so a new one is a
-     decision rather than an accident. */
+  /* The other direction caught the exact failure behind the inert-looking git
+     button: the readiness command existed and was tested, but no screen asked
+     it whether the action would be refused. Every custom command now has a
+     production caller. */
   test("registered commands with no caller are counted, not ignored", async () => {
     const asked = await invoked();
     const have = await registered();
     const uncalled = [...have].filter((name) => !asked.has(name)).sort();
-    expect(uncalled.length, `uncalled commands: ${uncalled.join(", ")}`).toBeLessThanOrEqual(1);
+    expect(uncalled, `uncalled commands: ${uncalled.join(", ")}`).toEqual([]);
   });
 
   /* The two that were missing, named so a regression is unambiguous rather than
@@ -108,5 +107,6 @@ describe("the React-to-Rust command surface", () => {
     const have = await registered();
     expect(have.has("inspect_daemon_work"), "the build bar's idleness gate").toBe(true);
     expect(have.has("restart_daemon"), "the recovery offered after a build mismatch").toBe(true);
+    expect(have.has("inspect_git_readiness"), "the first-commit safety check").toBe(true);
   });
 });

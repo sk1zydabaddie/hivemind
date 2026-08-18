@@ -80,6 +80,35 @@ returned to the live setup screen. Evidence:
 `docs/evidence/project-chooser-installed-26.817.1635.jpg` and
 `docs/evidence/native-folder-picker-installed-26.817.1635.jpg`.
 
+The next installed walk exposed a connected failure in that path. Selecting an
+untracked project containing `node_modules` and build output showed “Start
+tracking this folder,” although the shell's existing first-commit inspection
+would always refuse it. The inspection command was registered and covered in
+Rust, but had no production caller; the rejected initialization promise then
+returned the button to its original state without displaying the reason. The
+setup screen now asks for the shell-owned readiness result before offering the
+action, displays refusals without requiring a click, and reports any late
+failure as “Nothing changed.” The later setup step is disabled while git is
+unresolved, so it cannot become a second guaranteed failure. The command-surface guard now requires zero
+registered custom commands without a React caller instead of allowing this one
+as an unexplained exception.
+
+The update check had the same visible symptom by a different route: it ran, but
+an identical answer changed no rendered state. A manual recheck now says
+“Checking…” during the request and leaves a timestamp-relative acknowledgement
+when the result is unchanged. No updater decision moved into React.
+
+Installed build **26.817.1710** was opened at 1440×900 against the originally
+reported `D:\Projects\Skybound Flight Simulator` folder. The running app names
+`node_modules` as the reason it will not create the first commit, replaces both
+guaranteed-failure actions with “Choose another folder” and a disabled “Waiting
+on git,” and changes the update control from “Checking…” to “Checked again just
+now; the result did not change.” The build number is visible in each update-bar
+capture. Evidence:
+`docs/evidence/git-readiness-installed-26.817.1710.png`,
+`docs/evidence/update-recheck-checking-installed-26.817.1710.png`, and
+`docs/evidence/update-recheck-result-installed-26.817.1710.png`.
+
 ### Two platforms green, with counts
 
 | Platform | Filesystem | Result |

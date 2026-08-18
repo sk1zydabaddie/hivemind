@@ -48,6 +48,20 @@ describe("cold open", () => {
     expect(problem?.title).toMatch(/not tracked by git/iu);
   });
 
+  test("the shell's first-commit refusal is visible and suppresses the action", async () => {
+    const hook = await readFile(path.join(desktopRoot, "src", "hooks", "use-workspace.ts"), "utf8");
+    const screen = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
+      "utf8"
+    );
+    expect(hook).toMatch(/invoke<GitReadiness>\("inspect_git_readiness"/u);
+    expect(screen).toMatch(/gitReadiness !== null && gitRefusal === null/u);
+    expect(screen).toMatch(/gitRefusal \?\? problem\.detail/u);
+    expect(screen).toMatch(/Nothing changed\. \{actionError\}/u);
+    expect(screen).toMatch(/disabled=\{!chosen \|\| initializing \|\| gitBlocksSetup\}/u);
+    expect(screen).toMatch(/Waiting on git/u);
+  });
+
   test("each failure a person can act on offers its action", () => {
     expect(plainConnectionProblem(PROJECT_FAULT.noProjectSelected, "")?.action).toBe("choose");
     expect(plainConnectionProblem(PROJECT_FAULT.notInitialized, "")?.action).toBe("initialize");

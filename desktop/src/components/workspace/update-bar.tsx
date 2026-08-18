@@ -78,8 +78,14 @@ export function UpdateBar({ projectPath }: { projectPath: string }): React.JSX.E
   const [progress, setProgress] = useState<UpdateProgress | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [checking, setChecking] = useState(false);
+  const [checkedAgain, setCheckedAgain] = useState(false);
 
-  const look = useCallback(async () => {
+  const look = useCallback(async (showActivity = false) => {
+    if (showActivity) {
+      setChecking(true);
+      setCheckedAgain(false);
+    }
     try {
       setAnswer(await invoke<NewerVersion>("newer_version", { projectPath }));
     } catch (cause) {
@@ -90,6 +96,11 @@ export function UpdateBar({ projectPath }: { projectPath: string }): React.JSX.E
         running: "",
         detail: cause instanceof Error ? cause.message : String(cause)
       });
+    } finally {
+      if (showActivity) {
+        setChecking(false);
+        setCheckedAgain(true);
+      }
     }
   }, [projectPath]);
 
@@ -255,6 +266,7 @@ export function UpdateBar({ projectPath }: { projectPath: string }): React.JSX.E
             {projectPath === "" ? (
               <> Open your Hivemind project and it can build a newer version from your own source.</>
             ) : null}
+            {checkedAgain ? <> Checked again just now; the result did not change.</> : null}
           </>
         )}
       </span>
@@ -286,9 +298,9 @@ export function UpdateBar({ projectPath }: { projectPath: string }): React.JSX.E
       ) : null}
 
       {answer.source === "unknown" && !busy ? (
-        <Button size="sm" type="button" variant="outline" onClick={() => void look()}>
-          <RefreshCw aria-hidden="true" />
-          Try again
+        <Button disabled={checking} size="sm" type="button" variant="outline" onClick={() => void look(true)}>
+          {checking ? <Loader aria-hidden="true" /> : <RefreshCw aria-hidden="true" />}
+          {checking ? "Checking…" : "Check again"}
         </Button>
       ) : null}
     </section>

@@ -304,3 +304,16 @@ describe("update progress reports only facts the shell has", () => {
     expect(bar).toMatch(/not a truthful percentage/u);
   });
 });
+
+describe("a repeated update check always answers the click", () => {
+  test("the button reports checking and confirms an unchanged answer", async () => {
+    const bar = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "update-bar.tsx"),
+      "utf8"
+    );
+    expect(bar).toMatch(/setChecking\(true\)/u);
+    expect(bar).toMatch(/Checking…/u);
+    expect(bar).toMatch(/Checked again just now; the result did not change/u);
+    expect(bar).toMatch(/onClick=\{\(\) => void look\(true\)\}/u);
+  });
+});
