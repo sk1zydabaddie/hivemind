@@ -1095,13 +1095,14 @@ function ShipBar({
                 <span className="font-mono text-ink">{changeSet.task_ids.length}</span>
                 <span>{changeSet.task_ids.length === 1 ? "task" : "tasks"} ·</span>
                 <CollapsibleTrigger asChild>
-                  <button
-                    className="font-medium text-navy underline decoration-navy/30 underline-offset-2 hover:decoration-navy"
+                  <Button
+                    size="inline"
                     type="button"
+                    variant="link"
                   >
                     <span className="font-mono">{files.length}</span>{" "}
                     {files.length === 1 ? "file" : "files"}
-                  </button>
+                  </Button>
                 </CollapsibleTrigger>
                 <span>
                   · into <span className="font-mono text-ink">{changeSet.base_branch}</span>
@@ -1205,12 +1206,13 @@ function AttentionBar({
               </span>
               {rest.length > 0 ? (
                 <CollapsibleTrigger asChild>
-                  <button
-                    className="text-[12px] text-muted-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:text-ink"
+                  <Button
+                    size="inline"
                     type="button"
+                    variant="link"
                   >
                     {rest.length} more after this
-                  </button>
+                  </Button>
                 </CollapsibleTrigger>
               ) : null}
               {planWaiting ? (
@@ -1716,9 +1718,11 @@ function IdleBoard({ onPick }: { onPick: (value: string) => void }): React.JSX.E
         <ul className="m-0 mt-2 grid list-none overflow-hidden rounded-md border border-rule p-0">
           {EXAMPLE_ASKS.map((ask, index) => (
             <li className="border-b border-rule last:border-b-0" key={ask}>
-              <button
-                className="group flex w-full cursor-pointer items-center gap-3 bg-panel px-3 py-2.5 text-left transition-colors hover:bg-navy-wash"
+              <Button
+                className="group"
+                size="row"
                 type="button"
+                variant="secondary"
                 onClick={() => onPick(ask)}
               >
                 <span className="font-mono text-[11px] text-muted-foreground group-hover:text-navy">
@@ -1731,7 +1735,7 @@ function IdleBoard({ onPick }: { onPick: (value: string) => void }): React.JSX.E
                   aria-hidden="true"
                   className="size-3.5 shrink-0 text-navy opacity-0 transition-opacity group-hover:opacity-100"
                 />
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
@@ -2094,9 +2098,10 @@ function InspectorPane({
 
         <Collapsible open={filesOpen} onOpenChange={setFilesOpen}>
           <CollapsibleTrigger asChild>
-            <button
-              className="flex h-9 w-full cursor-pointer items-center gap-2 border-t border-rule bg-canvas px-3 text-left hover:bg-navy-wash"
+            <Button
+              size="row-sm"
               type="button"
+              variant="secondary"
             >
               <FileCode2 aria-hidden="true" className="size-3.5 text-muted-foreground" />
               <span className="text-[11px] font-medium tracking-label text-muted-foreground uppercase">
@@ -2109,7 +2114,7 @@ function InspectorPane({
                 aria-hidden="true"
                 className={`size-3.5 text-muted-foreground transition-transform ${filesOpen ? "rotate-90" : ""}`}
               />
-            </button>
+            </Button>
           </CollapsibleTrigger>
           <CollapsibleContent>
             {files.length === 0 ? (
@@ -2125,13 +2130,14 @@ function InspectorPane({
                         did to that file. It opens a READ of the submitted
                         patch -- there is no path from here to the file on
                         disk, and none to changing it. */}
-                    <button
-                      className="w-full cursor-pointer px-3 py-0.5 text-left font-mono text-[12px] break-all text-muted-foreground hover:text-navy"
+                    <Button
+                      size="file"
                       type="button"
+                      variant="link"
                       onClick={() => onOpenFile(file)}
                     >
                       {file}
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -2394,13 +2400,14 @@ function ShippedCard({
             <span>This project's record of the change does not list the files.</span>
           ) : (
             <CollapsibleTrigger asChild>
-              <button
-                className="font-medium text-navy underline decoration-navy/30 underline-offset-2 hover:decoration-navy"
+              <Button
+                size="inline"
                 type="button"
+                variant="link"
               >
                 <span className="font-mono">{entry.changedFiles.length}</span>{" "}
                 {entry.changedFiles.length === 1 ? "file" : "files"} changed
-              </button>
+              </Button>
             </CollapsibleTrigger>
           )}
           {entry.adoptedRef ? (

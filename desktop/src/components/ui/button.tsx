@@ -19,21 +19,22 @@ const buttonVariants = cva(
   /* Motion: a spring curve on colour AND transform, so a press reads as the
      surface giving way rather than as a repaint. `active:` goes DOWN past rest
      -- returning to zero would feel like nothing happened. */
-  "relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-md text-[13px] leading-none font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow,transform] duration-[120ms] ease-[var(--spring)] active:duration-[60ms] disabled:pointer-events-none disabled:cursor-default aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+  "relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-md bg-gradient-to-b text-[13px] leading-none font-medium whitespace-nowrap shadow-[var(--control-relief)] transition-[color,background-color,border-color,box-shadow,transform] duration-[120ms] ease-[var(--spring)] [--control-relief:var(--relief)] [--control-relief-pressed:var(--relief-pressed)] [--press-distance:2px] active:translate-y-[var(--press-distance)] active:shadow-[var(--control-relief-pressed)] active:duration-[60ms] disabled:pointer-events-none disabled:cursor-default disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground disabled:shadow-none aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
   {
     variants: {
       variant: {
-        /* The one permitted gradient, and now with enough range to be seen as
+        /* Strong and quiet controls share one physical construction. Importance
+           changes the fill strength; pressability does not disappear. */
+        /* The permitted gradient, and now with enough range to be seen as
            one: `-lift` at the top, `-deep` at the bottom, both mixes of the
            same meaning colour. Same hue, two stops, top to bottom -- what a
            physical control looks like, not what a template looks like. The
            multi-hue two-colour button is the AI-default tell this whole visual
            language exists to avoid, and widening a single-hue ramp does not
            move it any closer to that.
-           Filled actions only: outline, ghost, secondary and link stay flat, so
-           the ramp continues to mean "this is the action". Both filled variants
-           are reached by every dialog and setup-screen action, because those
-           use the implicit default rather than a variant of their own.
+           Strong actions use the full hue. Outline, ghost, secondary, and link
+           use its pale derived ramp so they retain hierarchy while agreeing
+           that they answer a press.
            Three states, three distinct fills: at rest the ramp runs lift ->
            deep, hover darkens the top stop so the ramp compresses as though
            already yielding, and active flattens to `deep` outright -- a pressed
@@ -43,28 +44,32 @@ const buttonVariants = cva(
            declared together in styles.css -- see the rule there for why a
            button may look proud of the surface and a panel may not. */
         default:
-          "bg-navy bg-gradient-to-b from-navy-lift to-navy-deep text-primary-foreground shadow-[var(--relief)] hover:from-navy hover:to-navy-deep active:translate-y-[2px] active:from-navy-deep active:to-navy-deep active:shadow-[var(--relief-pressed)] disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground disabled:shadow-none",
+          "bg-navy from-navy-lift to-navy-deep text-primary-foreground hover:from-navy hover:to-navy-deep active:from-navy-deep active:to-navy-deep",
         destructive:
-          "bg-clay bg-gradient-to-b from-clay-lift to-clay-deep text-destructive-foreground shadow-[var(--relief)] hover:from-clay hover:to-clay-deep active:translate-y-[2px] active:from-clay-deep active:to-clay-deep active:shadow-[var(--relief-pressed)] disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground disabled:shadow-none",
+          "bg-clay from-clay-lift to-clay-deep text-destructive-foreground hover:from-clay hover:to-clay-deep active:from-clay-deep active:to-clay-deep",
         "ghost-destructive":
-          "text-clay hover:bg-clay-wash hover:text-clay disabled:opacity-45",
+          "from-quiet-clay-lift to-quiet-clay-deep text-clay hover:from-quiet-clay hover:to-quiet-clay-deep",
         "outline-destructive":
-          "border border-clay/35 bg-panel text-clay hover:border-clay/55 hover:bg-clay-wash hover:text-clay disabled:opacity-45",
+          "border border-clay/35 from-quiet-clay-lift to-quiet-clay-deep text-clay hover:border-clay/55 hover:from-quiet-clay hover:to-quiet-clay-deep",
         outline:
-          "border border-rule bg-panel text-ink hover:border-navy/45 hover:bg-navy-wash hover:text-navy disabled:opacity-45",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-rule/60 disabled:opacity-45",
-        ghost: "text-muted-foreground hover:bg-canvas hover:text-ink disabled:opacity-45",
-        link: "text-primary underline-offset-2 hover:underline disabled:opacity-45",
+          "border border-rule from-quiet-lift to-quiet-deep text-ink hover:border-navy/45 hover:from-quiet hover:to-quiet-deep hover:text-navy",
+        secondary: "from-quiet-lift to-quiet-deep text-secondary-foreground hover:from-quiet hover:to-quiet-deep",
+        ghost: "from-quiet-lift to-quiet-deep text-muted-foreground hover:from-quiet hover:to-quiet-deep hover:text-ink",
+        link: "from-quiet-lift to-quiet-deep text-primary underline-offset-2 hover:from-quiet hover:to-quiet-deep hover:underline",
       },
       size: {
         default: "h-8 px-3 has-[>svg]:px-2.5",
-        xs: "h-6 gap-1 px-2 text-[12px] has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-7 px-2.5 text-[12px] has-[>svg]:px-2",
+        xs: "h-6 gap-1 px-2 text-[12px] [--control-relief:var(--relief-micro)] [--control-relief-pressed:var(--relief-micro-pressed)] [--press-distance:1px] has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
+        sm: "h-7 px-2.5 text-[12px] [--control-relief:var(--relief-compact)] [--control-relief-pressed:var(--relief-compact-pressed)] [--press-distance:1px] has-[>svg]:px-2",
         lg: "h-9 px-4 has-[>svg]:px-3.5",
         icon: "size-8",
-        "icon-xs": "size-6 [&_svg:not([class*='size-'])]:size-3",
-        "icon-sm": "size-7",
+        "icon-xs": "size-6 [--control-relief:var(--relief-micro)] [--control-relief-pressed:var(--relief-micro-pressed)] [--press-distance:1px] [&_svg:not([class*='size-'])]:size-3",
+        "icon-sm": "size-7 [--control-relief:var(--relief-compact)] [--control-relief-pressed:var(--relief-compact-pressed)] [--press-distance:1px]",
         "icon-lg": "size-9",
+        inline: "h-6 px-1.5 text-[12px] [--control-relief:var(--relief-micro)] [--control-relief-pressed:var(--relief-micro-pressed)] [--press-distance:1px]",
+        row: "h-auto min-h-9 w-full justify-start px-3 py-2.5 text-left [--control-relief:var(--relief-compact)] [--control-relief-pressed:var(--relief-compact-pressed)] [--press-distance:1px]",
+        "row-sm": "h-9 w-full justify-start px-3 text-left [--control-relief:var(--relief-compact)] [--control-relief-pressed:var(--relief-compact-pressed)] [--press-distance:1px]",
+        file: "h-auto min-h-6 w-full justify-start px-3 py-1 text-left font-mono text-[12px] break-all [--control-relief:var(--relief-micro)] [--control-relief-pressed:var(--relief-micro-pressed)] [--press-distance:1px]",
       },
     },
     defaultVariants: {

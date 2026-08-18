@@ -229,7 +229,7 @@ describe("elevation is a scale, not a shadow utility", () => {
     /* And it still expresses selection, so this is a substitution rather than an
        omission. */
     expect(code, "the selected tab must still be marked somehow").toMatch(
-      /data-\[state=active\]:bg-navy-wash/u
+      /data-\[state=active\]:from-navy-wash/u
     );
   });
 });

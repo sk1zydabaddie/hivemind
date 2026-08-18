@@ -53,10 +53,12 @@ describe("shared UI primitives stay visually authoritative", () => {
     ).toEqual([]);
   });
 
-  test("only filled command and checked-control primitives own gradients", async () => {
+  test("only interactive primitives own control gradients", async () => {
     const allowed = new Set([
       "components/ui/button.tsx",
-      "components/ui/pressable.tsx"
+      "components/ui/pressable.tsx",
+      "components/ui/selection-control.tsx",
+      "components/ui/tabs.tsx"
     ]);
     const files = await sourceFiles();
     const owners: string[] = [];
@@ -68,6 +70,28 @@ describe("shared UI primitives stay visually authoritative", () => {
       }
     }
     expect(owners, "a local gradient creates a second button language").toEqual([]);
+  });
+
+  test("callers cannot bypass the branded button primitives", async () => {
+    const files = await sourceFiles();
+    const rawButtons: string[] = [];
+    for (const file of files) {
+      if (file.endsWith(path.join("ui", "selection-control.tsx"))) continue;
+      const source = await readFile(file, "utf8");
+      if (/<button\b/u.test(source)) {
+        rawButtons.push(path.relative(sourceRoot, file).replaceAll("\\", "/"));
+      }
+    }
+    expect(rawButtons, "use Button or SelectionControl so controls cannot drift").toEqual([]);
+  });
+
+  test("selection state changes gradient stops instead of hiding beneath them", async () => {
+    const source = await readFile(
+      path.join(sourceRoot, "components", "ui", "selection-control.tsx"),
+      "utf8"
+    );
+    expect(source).not.toMatch(/aria-\[pressed=true\]:bg-/u);
+    expect(source.match(/aria-\[pressed=true\]:from-navy-wash/gu)?.length ?? 0).toBe(8);
   });
 
   test("Button callers cannot override the primitive's visual contract", async () => {

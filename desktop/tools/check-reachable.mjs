@@ -215,7 +215,7 @@ const PROBE = `
     const style = getComputedStyle(el);
     const contentSized = ["card", "graph", "lane", "task"].includes(
       el.getAttribute("data-shape")
-    );
+    ) || ["row", "file"].includes(el.getAttribute("data-size"));
     return [
       contentSized ? "content-sized" : Math.round(el.getBoundingClientRect().height * 10) / 10,
       style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft,
@@ -225,7 +225,7 @@ const PROBE = `
     ].join("|");
   };
   const primitiveGroups = new Map();
-  for (const el of document.querySelectorAll('[data-slot="button"], [data-slot="selection-control"], [data-slot="panel-header"], [data-slot="dialog-header"][class*="border-b"], [data-slot="dialog-footer"][class*="border-t"]')) {
+  for (const el of document.querySelectorAll('[data-slot="button"], [data-slot="selection-control"], [data-slot="tabs-trigger"], [data-slot="checkbox"], [data-slot="radio"], [data-slot="switch-thumb"], [data-slot="panel-header"], [data-slot="dialog-header"][class*="border-b"], [data-slot="dialog-footer"][class*="border-t"]')) {
     if (el.offsetParent === null) continue;
     const slot = el.getAttribute("data-slot");
     const key = [
@@ -234,6 +234,7 @@ const PROBE = `
       el.getAttribute("data-size") || "",
       el.getAttribute("data-shape") || "",
       el.getAttribute("aria-pressed") || "",
+      el.getAttribute("data-state") || "",
       el.querySelector(":scope > svg") === null ? "text-only" : "with-icon",
       el.disabled ? "disabled" : "enabled"
     ].join(":");

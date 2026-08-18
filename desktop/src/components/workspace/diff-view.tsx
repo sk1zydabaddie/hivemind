@@ -271,16 +271,18 @@ function Row({
         {line.text === "" ? " " : line.text}
       </code>
       {annotatable ? (
-        <button
+        <Button
           aria-label={`Add a note to line ${diffLineNumber(line)}`}
-          className={`cursor-pointer justify-self-center text-muted-foreground transition-opacity hover:text-navy ${
-            annotated ? "text-navy opacity-100" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+          className={`${
+            annotated ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
           }`}
+          size="icon-xs"
           type="button"
+          variant="ghost"
           onClick={onOpen}
         >
-          <MessageSquarePlus aria-hidden="true" className="size-3.5" />
-        </button>
+          <MessageSquarePlus aria-hidden="true" />
+        </Button>
       ) : (
         <span />
       )}

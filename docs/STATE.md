@@ -1442,3 +1442,21 @@ showed the shared spacing and selection treatment, and the temporary theme
 workshop was absent. Core passed 815 tests with two skipped, Desktop passed all
 296 tests, Rust passed all 32 tests, and all 24 surface/viewport reachability
 checks passed. No paid provider call was used.
+
+The 2026-08-18 interaction correction supersedes the flat-control part of that
+record. Every application-owned button now routes through `Button` or
+`SelectionControl`; tabs and pressables share large, compact, or micro
+raised/pressed token pairs; and quiet variants use a derived navy/clay ramp
+instead of becoming flat exceptions. Provider marks remain untouched identity
+art, not invented controls. A source guard rejects raw `<button>` callers, and
+the production reachability instrument now compares tabs, checkboxes, radios,
+and switch thumbs too.
+
+The substrate now uses one `--canvas-atmosphere` token at both body and React
+root, with 88%-opaque panels allowing the broad navy/clay fields to remain
+visible. It adds no elevation, backdrop filter, or decorative loop. Installed
+build **26.818.856** was verified against the binary on disk and inspected at a
+1440×900 client size on Work and Settings. Evidence:
+`docs/evidence/ui-consistency-installed-26.818.856/`. No paid provider call was
+used. Final verification passed Core 815/817 with two intentional skips,
+Desktop 298/298, Rust 32/32, and all 24 production surface/viewport checks.

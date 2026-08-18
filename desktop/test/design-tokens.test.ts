@@ -281,11 +281,19 @@ describe("palette discipline", () => {
      * as a generic AI product -- not gradients as such. A vertical ramp from a
      * colour to a darker mix of itself is what a physical control looks like.
      *
-     * So: no radial or conic anywhere, and every linear ramp must be vertical
-     * and single-hue. The stops are Tailwind `from-`/`to-` utilities in the
-     * markup rather than CSS here, so the stylesheet keeps only the ban on the
-     * shapes that cannot be constrained. */
-    expect(styles).not.toMatch(/radial-gradient|conic-gradient/u);
+     * Controls remain vertical and single-hue. The substrate may use exactly
+     * two broad, low-strength radial fields to keep the otherwise empty canvas
+     * from looking unfinished; they carry no state and introduce no hue. */
+    expect(styles).not.toMatch(/conic-gradient/u);
+    expect(styles.match(/radial-gradient/gu)?.length ?? 0).toBe(2);
+    const atmosphere = /--canvas-atmosphere:\s*([\s\S]*?);\s*\n/u.exec(styles)?.[1] ?? "";
+    expect(atmosphere.match(/radial-gradient/gu)?.length ?? 0).toBe(2);
+    expect(atmosphere).toContain("linear-gradient(to bottom");
+    for (const strength of atmosphere.matchAll(/var\(--(?:navy|clay)\)\s+(\d+)%/gu)) {
+      expect(Number(strength[1]), "substrate field exceeds its quiet ceiling").toBeLessThanOrEqual(10);
+    }
+    expect(styles).toMatch(/body\s*\{[\s\S]*?background-image:\s*var\(--canvas-atmosphere\)/u);
+    expect(styles).toMatch(/\.brand-canvas\s*\{[\s\S]*?background-image:\s*var\(--canvas-atmosphere\)/u);
     for (const direction of ["to right", "to left", "45deg", "90deg", "to top"]) {
       expect(styles).not.toContain(direction);
     }
@@ -357,7 +365,7 @@ describe("palette discipline", () => {
     for (const file of files) {
       if (!file.endsWith(".tsx")) continue;
       const source = await readFile(file, "utf8");
-      if (!/shadow-\[var\(--relief\)\]/u.test(source)) continue;
+      if (!/shadow-\[var\(--(?:control-)?relief(?:-(?:compact|micro))?\)\]/u.test(source)) continue;
       reliefUsers.push(path.basename(file));
 
       /* PER VARIANT, not per file. This used to assert against the whole
@@ -366,7 +374,7 @@ describe("palette discipline", () => {
          matching on the other one, and the suite went green on a button that no
          longer answered. Every class string that raises itself is checked on
          its own terms. */
-      const raised = (source.match(/"[^"]*shadow-\[var\(--relief\)\][^"]*"/gu) ?? []);
+      const raised = (source.match(/"[^"]*shadow-\[var\(--(?:control-)?relief(?:-(?:compact|micro))?\)\][^"]*"/gu) ?? []);
       expect(raised.length, `${path.basename(file)} raises nothing this test can read`)
         .toBeGreaterThan(0);
       for (const variant of raised) {
@@ -378,7 +386,7 @@ describe("palette discipline", () => {
            still that this exact element shows the pressed state when the
            control is pressed. */
         expect(variant, `${which} takes relief with no pressed state`).toMatch(
-          /(?:active|group-active):shadow-\[var\(--relief-pressed\)\]/u
+          /(?:active|group-active):shadow-\[var\(--(?:control-)?relief(?:-(?:compact|micro))?-pressed\)\]/u
         );
         /* It has to MOVE. The distance is a value and may be turned up -- it
            went from 1px to 2px when the relief was strengthened -- so this
@@ -386,7 +394,7 @@ describe("palette discipline", () => {
            exact utility. What is not negotiable is that something moves: a
            shadow swap with a stationary label is a repaint, not a press. */
         expect(variant, `${which} is raised but does not depress`).toMatch(
-          /(?:active|group-active):translate-y-(?:px|\[[1-9]\d*px\])/u
+          /(?:active|group-active):translate-y-(?:px|\[(?:[1-9]\d*px|var\(--press-distance\))\])/u
         );
       }
     }
@@ -408,14 +416,16 @@ describe("palette discipline", () => {
     expect(
       [...reliefUsers].sort(),
       "relief belongs to controls that answer when pressed, and to nothing else"
-    ).toEqual(["button.tsx", "pressable.tsx"]);
+    ).toEqual(["button.tsx", "pressable.tsx", "selection-control.tsx", "tabs.tsx"]);
 
     /* A 16px control cannot borrow a large button's soft scale and remain
        legible at native size. Compact controls override the same paired tokens
        with a crisp two-pixel base; the press contract above still applies. */
-    const pressables = await readFile(path.join(root, "components", "ui", "pressable.tsx"), "utf8");
-    expect(pressables).toMatch(/\[--relief:[^\]]*inset_0_-2px/u);
-    expect(pressables).toMatch(/\[--relief-pressed:/u);
+    const reliefTokens = (await readStyles()).replace(/\/\*[\s\S]*?\*\//gu, "");
+    expect(reliefTokens).toMatch(/--relief-compact\s*:/u);
+    expect(reliefTokens).toMatch(/--relief-compact-pressed\s*:/u);
+    expect(reliefTokens).toMatch(/--relief-micro\s*:/u);
+    expect(reliefTokens).toMatch(/--relief-micro-pressed\s*:/u);
 
     /**
      * The converse half, for controls that are FLAT at rest and depress anyway.
@@ -447,7 +457,7 @@ describe("palette discipline", () => {
         expect(
           variant,
           `${path.basename(file)} depresses without moving: ${variant.slice(0, 70)}`
-        ).toMatch(/(?:active|group-active):translate-y-(?:px|\[[1-9]\d*px\])/u);
+        ).toMatch(/(?:active|group-active):translate-y-(?:px|\[(?:[1-9]\d*px|var\(--press-distance\))\])/u);
       }
     }
 

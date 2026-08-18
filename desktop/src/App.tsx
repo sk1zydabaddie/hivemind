@@ -250,7 +250,7 @@ export default function App(): React.JSX.Element {
       {/* One toolbar on the canvas carries the brand, the sections, the project
           and the connection. Everything below it is a panel. */}
       <Tabs
-        className="h-screen overflow-hidden bg-canvas"
+        className="brand-canvas h-screen overflow-hidden"
         value={section}
         onValueChange={setSection}
       >

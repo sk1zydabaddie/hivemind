@@ -30,44 +30,11 @@ export function TabsList({
 }
 
 /**
- * Pills, and a decision about what relief is allowed to mean.
- *
- * ## The question
- *
- * Every pressable control in this app may now claim relief, because relief is a
- * claim about affordance and a pressed control redeems it. A tab is pressable.
- * So may a SELECTED tab stay raised?
- *
- * ## The call: no. Selection is not a press.
- *
- * Relief says "this responds to pressure", and it is redeemed *by the press* --
- * the rim inverts, the shadow collapses, the label drops, and then it all comes
- * back. That is a claim about what will happen when you push, and it is answered
- * in about 60ms.
- *
- * "This is the tab you are on" is a different claim entirely. It is persistent,
- * it is about location rather than affordance, and nothing about pressing
- * demonstrates it. A selected tab wearing a permanent pressed state would be
- * asserting it is mid-press indefinitely -- an animation frozen on one frame --
- * and a selected tab wearing a permanent RAISED state would look identical to
- * the three unselected ones beside it, which is the same failure the attention
- * edge rule guards against: if everything glows, nothing does.
- *
- * So the two claims get different devices, and this is the split:
- *
- *   - **Pressing** -> relief, on any tab, for as long as the press lasts.
- *   - **Being selected** -> a filled pill. Fill and colour, never elevation.
- *
- * That keeps one device for one meaning, which is the only reason the relief
- * rule has been worth enforcing at all.
- *
- * ## Why pills rather than the underline
- *
- * The underline read as chrome, which was the argument for it, and it lost on
- * looking: a 2px rule under 13px text is a smaller signal than the thing it is
- * marking. The pill is the shape asked for. 21st.dev's catalogue is still not
- * the source -- structure and interaction come from Radix, every visual decision
- * here is this project's.
+ * Tabs are controls, so they use compact relief like every other object that
+ * answers a press. Their persistent selected state is still a separate claim:
+ * navy fill and text identify location, while relief identifies affordance.
+ * Neither state claims elevation; tabs occlude nothing and elevation remains a
+ * closed, independently tested scale.
  */
 export function TabsTrigger({
   className,
@@ -79,19 +46,9 @@ export function TabsTrigger({
       className={cn(
         /* The focus ring is inset: a tab outlined one pixel clear of itself
            reads as a floating box rather than as a focused tab. */
-        "relative my-1.5 inline-flex cursor-pointer items-center gap-1.5 rounded-md border-0 bg-transparent px-2.5 text-[13px] font-medium text-muted-foreground focus-visible:outline-offset-[-3px]",
-        "transition-[color,background-color,box-shadow,translate] duration-[120ms] ease-[var(--spring)]",
-        "hover:bg-canvas hover:text-ink",
-        /* SELECTED: a filled pill. Fill and colour carry the state -- see the
-           note above for why elevation deliberately does not. */
-        "data-[state=active]:bg-navy-wash data-[state=active]:text-navy",
-        /* PRESSED: the surface gives way. Flat at rest and pressed on `:active`,
-           which is the honest pairing for chrome -- a tab does not sit proud of
-           the toolbar, so claiming relief at rest would be the panel-shadow
-           mistake with a hover state. What it does do is answer, and the answer
-           is the depression plus the movement. `design-tokens.test.ts` enforces
-           that half too: anything taking the pressed shadow must also move. */
-        "active:translate-y-[2px] active:shadow-[var(--relief-pressed)] active:duration-[60ms]",
+        "relative my-1.5 inline-flex cursor-pointer items-center gap-1.5 rounded-md border-0 bg-gradient-to-b from-quiet-lift to-quiet-deep px-2.5 text-[13px] font-medium text-muted-foreground shadow-[var(--relief-compact)] transition-[color,background-color,box-shadow,translate] duration-[120ms] ease-[var(--spring)] hover:from-quiet hover:to-quiet-deep hover:text-ink active:translate-y-[1px] active:shadow-[var(--relief-compact-pressed)] active:duration-[60ms] focus-visible:outline-offset-[-3px]",
+        /* Selection changes the quiet ramp, not its physical construction. */
+        "data-[state=active]:from-navy-wash data-[state=active]:to-quiet-deep data-[state=active]:text-navy",
         "[&>svg]:size-3.5 [&>svg]:shrink-0",
         className
       )}

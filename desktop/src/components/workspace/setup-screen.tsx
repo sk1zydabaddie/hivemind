@@ -692,18 +692,19 @@ function ProviderRow({
         {provider.caveat === null ? (
           <span aria-hidden="true" className="size-5 shrink-0" />
         ) : (
-          <button
+          <Button
             aria-expanded={expanded}
             aria-label={`What is unverified about ${provider.label}`}
-            className="grid size-5 shrink-0 cursor-pointer place-items-center rounded-sm text-muted-foreground hover:bg-canvas hover:text-ink"
+            size="icon-xs"
             type="button"
+            variant="ghost"
             onClick={onExpand}
           >
             <ChevronDown
               aria-hidden="true"
               className={`size-3.5 transition-transform ${expanded ? "rotate-180" : ""}`}
             />
-          </button>
+          </Button>
         )}
       </div>
       {/* Unchanged text, moved out of the way. It is what to read before

@@ -13,11 +13,10 @@
  * redemption the rule demands — the same redemption a button offers and a panel
  * never can. `--shadow-panel` is still deleted for the same reason it always was.
  *
- * So the enforcement is identical rather than relaxed: every control in this file
- * carries `--relief` at rest, `--relief-pressed` on `:active`, and a downward
- * translate, and `design-tokens.test.ts` checks each class string on its own
- * terms — the per-variant check, not a per-file one, because a file-level check
- * let one of the two button variants lose its press and still pass.
+ * So the enforcement is identical rather than relaxed: every control in this
+ * file carries one of the shared relief pairs at rest and on `:active`, plus a
+ * downward translate. Compact and micro tokens keep the geometry legible at
+ * native size without copying shadow values into the component.
  *
  * ## Why these are built rather than taken
  *
@@ -26,10 +25,8 @@
  * rule about component sources: take structure and interaction logic, never
  * styling opinions.
  *
- * ## The one thing that is NOT here
- *
- * Tabs. A selected tab is a state, not a press — see `tabs.tsx` for why that
- * distinction is load-bearing rather than pedantic.
+ * Tabs use their own Radix structure but the same compact token pair. Their
+ * selected fill remains a separate state signal from their press affordance.
  */
 import { Checkbox as CheckboxPrimitive, RadioGroup as RadioGroupPrimitive, Switch as SwitchPrimitive } from "radix-ui";
 import { CheckIcon } from "lucide-react";
@@ -40,16 +37,15 @@ import { cn } from "@/lib/utils";
 /**
  * The raised-and-pressed pair, in one place.
  *
- * Written once and shared so a control cannot take half of it. The three parts
- * are the raised shadow, the pressed shadow, and the movement — and it is the
- * movement that separates a press from a repaint, so it is not optional.
+ * Tokens are declared once in styles.css so a control cannot locally invent a
+ * stronger or weaker shadow. Movement still separates a press from a repaint.
  */
 const PRESSABLE =
   /* At compact control size, the general button relief compresses into a single dark edge.
      These are the SAME paired tokens and the SAME press, with crisper compact
      values: a two-pixel base and contact shadow survive native-scale rendering
      while the outer blur stays below the attention edge's visual weight. */
-  "cursor-pointer [--relief:inset_0_1px_0_#ffffffb8,inset_0_-2px_0_#000000a3,inset_0_0_0_1px_#00000045,0_2px_0_#0000005c,0_4px_6px_-3px_#00000073] [--relief-pressed:inset_0_2px_3px_#00000080,inset_0_1px_0_#0000006b,inset_0_-1px_0_#ffffff5c,inset_0_0_0_1px_#00000052] shadow-[var(--relief)] transition-[background-color,box-shadow,translate] duration-[120ms] ease-[var(--spring)] active:translate-y-[2px] active:shadow-[var(--relief-pressed)] active:duration-[60ms] disabled:cursor-default disabled:shadow-none disabled:opacity-45";
+  "cursor-pointer shadow-[var(--relief-compact)] transition-[background-color,box-shadow,translate] duration-[120ms] ease-[var(--spring)] active:translate-y-[1px] active:shadow-[var(--relief-compact-pressed)] active:duration-[60ms] disabled:cursor-default disabled:shadow-none disabled:opacity-45";
 
 /** Checked fills use the same single-hue ramp as a filled button. */
 const CHECKED_FILL =
@@ -137,22 +133,13 @@ export function Switch({
     >
       <SwitchPrimitive.Thumb
         className={cn(
-          /* No ramp. A 12px thumb gets its form from the relief, and a
-             panel-to-canvas gradient would be a two-token ramp -- white to
-             near-white is not what the single-hue rule guards against, but
-             carving a neutral exception into a rule is worse than not needing
-             one. */
+          /* The 12px thumb gets its form from the micro relief. The track is
+             the recessed part, so the gradient belongs to neither surface. */
           "pointer-events-none block size-3 rounded-full bg-panel",
           "data-[state=checked]:translate-x-[14px]",
-          /* The pair in ONE string, deliberately. Split across two literals for
-             readability it read as a raised thumb with no press, because the
-             enforcement examines each class string on its own -- and that
-             per-string check is there because a per-file one let a button
-             variant lose its press silently. Keeping the pair adjacent is the
-             point of it being a pair.
-             `group-active:` rather than `active:`: the pointer lands on the
+          /* `group-active:` rather than `active:`: the pointer lands on the
              track, so `active:` on the thumb never fires. */
-          "[--relief:inset_0_1px_0_#ffffffb8,inset_0_-2px_0_#000000a3,inset_0_0_0_1px_#00000045,0_2px_0_#0000005c,0_4px_6px_-3px_#00000073] [--relief-pressed:inset_0_2px_3px_#00000080,inset_0_1px_0_#0000006b,inset_0_-1px_0_#ffffff5c,inset_0_0_0_1px_#00000052] shadow-[var(--relief)] translate-x-[2px] transition-[translate,box-shadow] duration-[120ms] ease-[var(--spring)] group-active:shadow-[var(--relief-pressed)] group-active:translate-y-[2px]"
+          "shadow-[var(--relief-micro)] translate-x-[2px] transition-[translate,box-shadow] duration-[120ms] ease-[var(--spring)] group-active:shadow-[var(--relief-micro-pressed)] group-active:translate-y-[1px]"
         )}
         data-slot="switch-thumb"
       />

@@ -11,9 +11,10 @@
 /* Hivemind identity, taken from the logo. Navy and charcoal carry the brand;
    amber and clay only ever carry meaning. No other hues.
 
-   ONE gradient shape is permitted, added 2026-08-14: a vertical ramp from a
-   meaning colour to a slightly darker mix of ITSELF, on filled primary actions
-   only. Same hue, two stops, top to bottom. The thing being avoided has never
+   ONE control-gradient shape is permitted: a vertical ramp from a meaning
+   colour to a slightly darker mix of ITSELF, on every control that answers a
+   press. Strong actions use the full meaning colour; quiet controls use a pale
+   navy or clay base. Same hue, two stops, top to bottom. The thing being avoided has never
    been gradients as such -- it is the two-colour multi-hue button that reads as
    a generic AI product, and a same-hue ramp is what a physical control looks
    like rather than what a template looks like. `design-tokens.test.ts` holds
@@ -42,6 +43,14 @@
   --amber-wash: #f9f3e8;
   --clay-wash: #f9edeb;
 
+  /* The application substrate is atmospheric rather than blank. Broad fields
+     stay far below the amber edge's local contrast and use identity/meaning
+     hues only; panels remain legible because they are nearly opaque. */
+  --canvas-atmosphere:
+    radial-gradient(circle at 12% -12%, color-mix(in oklab, var(--navy) 10%, transparent) 0, transparent 42%),
+    radial-gradient(circle at 96% 108%, color-mix(in oklab, var(--clay) 6%, transparent) 0, transparent 38%),
+    linear-gradient(to bottom, color-mix(in oklab, var(--panel) 46%, var(--canvas)), var(--canvas) 42%, color-mix(in oklab, var(--navy) 2%, var(--canvas)));
+
   /* The ramp a physical control has, with RANGE. These were 88% -- a 12%
      darkening, which measured as a gradient and read as a flat rectangle that
      changed colour. A ramp you cannot see is not a ramp.
@@ -54,6 +63,15 @@
   --navy-deep: color-mix(in oklab, var(--navy) 68%, #000000);
   --clay-lift: color-mix(in oklab, var(--clay) 80%, #ffffff);
   --clay-deep: color-mix(in oklab, var(--clay) 68%, #000000);
+
+  /* Quiet controls use the same physical lighting as strong actions without
+     borrowing their importance. These are derived ramps, not new colours. */
+  --quiet: var(--navy-wash);
+  --quiet-lift: color-mix(in oklab, var(--quiet) 80%, #ffffff);
+  --quiet-deep: color-mix(in oklab, var(--quiet) 92%, #000000);
+  --quiet-clay: var(--clay-wash);
+  --quiet-clay-lift: color-mix(in oklab, var(--quiet-clay) 80%, #ffffff);
+  --quiet-clay-deep: color-mix(in oklab, var(--quiet-clay) 92%, #000000);
 
   /* MOTION.
      Spring curves rather than linear easing, because a panel that decelerates
@@ -229,6 +247,31 @@
     inset 0 -1px 0 0 color-mix(in oklab, #ffffff 22%, transparent),
     inset 0 0 0 1px color-mix(in oklab, #000000 22%, transparent);
 
+  /* The same claim at two smaller scales. Compact controls keep a definite
+     two-pixel base; micro icon controls trade blur for a crisp one-pixel edge. */
+  --relief-compact:
+    inset 0 1px 0 color-mix(in oklab, #ffffff 72%, transparent),
+    inset 0 -2px 0 color-mix(in oklab, #000000 64%, transparent),
+    inset 0 0 0 1px color-mix(in oklab, #000000 27%, transparent),
+    0 2px 0 color-mix(in oklab, #000000 36%, transparent),
+    0 4px 6px -3px color-mix(in oklab, #000000 45%, transparent);
+  --relief-compact-pressed:
+    inset 0 2px 3px color-mix(in oklab, #000000 50%, transparent),
+    inset 0 1px 0 color-mix(in oklab, #000000 42%, transparent),
+    inset 0 -1px 0 color-mix(in oklab, #ffffff 36%, transparent),
+    inset 0 0 0 1px color-mix(in oklab, #000000 32%, transparent);
+  --relief-micro:
+    inset 0 1px 0 color-mix(in oklab, #ffffff 62%, transparent),
+    inset 0 -1px 0 color-mix(in oklab, #000000 52%, transparent),
+    inset 0 0 0 1px color-mix(in oklab, #000000 24%, transparent),
+    0 1px 0 color-mix(in oklab, #000000 30%, transparent),
+    0 3px 5px -3px color-mix(in oklab, #000000 38%, transparent);
+  --relief-micro-pressed:
+    inset 0 1px 3px color-mix(in oklab, #000000 46%, transparent),
+    inset 0 1px 0 color-mix(in oklab, #000000 38%, transparent),
+    inset 0 -1px 0 color-mix(in oklab, #ffffff 30%, transparent),
+    inset 0 0 0 1px color-mix(in oklab, #000000 28%, transparent);
+
   /* ── Depth: three distances, and no blur at all ────────────────────
    *
    * This was `backdrop-filter` on nine surfaces. It was measured and removed,
@@ -333,6 +376,12 @@
   --shadow-elevation-overlay: var(--elevation-overlay);
   --color-clay-deep: var(--clay-deep);
   --color-clay-lift: var(--clay-lift);
+  --color-quiet: var(--quiet);
+  --color-quiet-lift: var(--quiet-lift);
+  --color-quiet-deep: var(--quiet-deep);
+  --color-quiet-clay: var(--quiet-clay);
+  --color-quiet-clay-lift: var(--quiet-clay-lift);
+  --color-quiet-clay-deep: var(--quiet-clay-deep);
   --color-rule: var(--rule);
   --color-amber: var(--amber);
   --color-clay: var(--clay);
@@ -424,7 +473,9 @@
 
   body {
     margin: 0;
-    background: var(--canvas);
+    background-color: var(--canvas);
+    background-image: var(--canvas-atmosphere);
+    background-attachment: fixed;
     color: var(--ink);
     font-family: var(--font-sans);
     font-size: 14px;
@@ -432,6 +483,15 @@
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
+  }
+
+  /* The React root used to repaint the body with solid canvas, which made the
+     atmosphere correct in source and absent on screen. This class is the one
+     application substrate and deliberately carries no elevation. */
+  .brand-canvas {
+    background-color: var(--canvas);
+    background-image: var(--canvas-atmosphere);
+    background-attachment: fixed;
   }
 
   h1,

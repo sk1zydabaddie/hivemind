@@ -24,7 +24,7 @@ export function Panel({
     <section
       data-slot="panel"
       className={cn(
-        "grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-lg border border-rule bg-panel",
+        "grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-lg border border-rule bg-panel/88",
         className
       )}
       {...props}

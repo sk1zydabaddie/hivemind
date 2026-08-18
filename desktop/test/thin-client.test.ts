@@ -177,14 +177,11 @@ describe("React workspace boundary", () => {
        which is the word-ban failure this project has now recorded five times.
        Comments are stripped, and the ban keeps only what is genuinely dead.
 
-       `backdrop-filter` itself left this list deliberately. A blunt ban here
-       would contradict the glass material, which is governed precisely in
-       `design-tokens.test.ts`: a declared token pair, an allowlist of the four
-       surfaces that actually float, and a ceiling that keeps it quieter than
-       the amber attention edge. Two rules disagreeing about the same property
-       is how they drift. */
+       Gradient shape is governed precisely in `design-tokens.test.ts`; this
+       test only owns removal of the legacy named paths. Two rules disagreeing
+       about the same property is how they drift. */
     const declarations = styles.replace(/\/\*[\s\S]*?\*\//gu, "");
-    expect(declarations).not.toMatch(/--field-ivory|--meridian|linear-gradient/u);
+    expect(declarations).not.toMatch(/--field-ivory|--meridian/u);
 
     /* The legacy stylesheet existed only to serve the three tabs that have now
        been folded into Work and Project. Every surface is utility-only, so the

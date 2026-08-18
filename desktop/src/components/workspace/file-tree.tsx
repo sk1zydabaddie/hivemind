@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen } from "lucide-
 import { useCallback, useEffect, useState } from "react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SelectionControl } from "@/components/ui/selection-control";
 import type {
   ProjectFileListing,
   WorkspaceAction
@@ -216,10 +217,9 @@ function Row({
   onClick: () => void;
 }): React.JSX.Element {
   return (
-    <button
-      className={`flex w-full items-center gap-1.5 rounded-sm px-2 py-1 text-left text-[12px] leading-tight transition-colors hover:bg-panel ${
-        selected ? "bg-panel font-medium text-ink" : "text-ink"
-      }`}
+    <SelectionControl
+      active={selected}
+      shape="tree"
       style={indent(depth)}
       type="button"
       onClick={onClick}
@@ -227,7 +227,7 @@ function Row({
       {chevron ?? <span aria-hidden="true" className="size-3 shrink-0" />}
       {icon}
       <span className="truncate font-mono">{label}</span>
-    </button>
+    </SelectionControl>
   );
 }
 

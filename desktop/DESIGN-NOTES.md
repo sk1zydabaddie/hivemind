@@ -787,23 +787,26 @@ reads identically to "slow" until someone goes looking.
 
 The constraint was lifted, with a limit, and the limit is the interesting part.
 
-> One gradient shape: a **vertical ramp from a meaning colour to a darker mix of
-> itself**. Same hue, two stops, top to bottom, on filled primary actions only.
+> One control-gradient shape: a **vertical ramp from a meaning colour to a
+> darker mix of itself**. Same hue, two stops, top to bottom. Strong actions use
+> the full hue; quiet controls use a pale derived base.
 
 What was ever wrong with gradients was never gradients. It was the **two-colour
 multi-hue button** — navy into violet, teal into blue — which is the visual tell
 of a product assembled from a template. A same-hue ramp is what a physical
 control looks like.
 
-The darker stop is `color-mix(in oklab, var(--navy) 88%, #000000)` rather than a
+The darker stop is `color-mix(in oklab, var(--navy) 68%, #000000)` rather than a
 second hand-picked hex, and that is load-bearing: two hand-picked stops are one
 careless edit from being two different hues, and a mix cannot drift from its own
 base. `design-tokens.test.ts` enforces both halves — every `-deep` token must be
 a `color-mix` of a palette colour, and every `from-`/`to-` pair in the markup
 must resolve to the same base name. Mutation-tested: `from-navy to-amber` fails.
 
-Outline, ghost, secondary and link stay flat, so the gradient keeps meaning
-*this is the action* rather than becoming decoration.
+As of the consistency correction on 2026-08-18, outline, ghost, secondary and
+link controls no longer become flat exceptions. They use `--quiet-lift` to
+`--quiet-deep`, so importance still comes from fill strength while pressability
+always has the same physical construction.
 
 ## Per-task-type routing: the third input — 2026-08-14
 
@@ -3595,9 +3598,10 @@ collapsed into one treatment:
   contact shadow survive native-scale rendering.
 
 The completed step mark remains flat because it reports state rather than
-answering a press. “Choose another” remains an outline action, so it stays flat
-under the standing gradient rule. Adding relief to either would make decoration
-claim an interaction or make every action compete with the filled primary.
+answering a press. “Choose another” is an outline action and now uses the quiet
+control ramp and relief: it answers a press, while the pale fill keeps it from
+competing with the filled primary. Provider marks remain identity rather than
+controls, so they still take no app tint, tile, gradient or shadow.
 
 The outline action now opens a chooser with both ways people actually locate a
 project: a native folder browser first, and a manual full-path field beneath it.
@@ -3875,9 +3879,10 @@ The closed ownership is now:
 - `Button` owns command height, padding, type, radius, gradient, and relief.
   Callers may position or constrain it, but visual overrides fail
   `ui-consistency.test.ts`.
-- `SelectionControl` owns selected wash, pressure response, radius, and spacing
-  for cards, chips, segments, panes, graph nodes, and lanes. Selection stays
-  flat at rest; it does not borrow a primary command's gradient.
+- `SelectionControl` owns selected wash, pressure response, radius, gradient,
+  and spacing for cards, chips, segments, panes, graph nodes, lanes and file
+  rows. Its quiet ramp expresses pressability; navy wash separately expresses
+  selection. It never borrows a primary command's strength.
 - `PanelHeader` owns its height, fill, rule, and horizontal gutter. Callers do
   not restyle it.
 - Framed `DialogContent`, `DialogHeader`, and `DialogFooter` own the zero-gap
@@ -3895,4 +3900,37 @@ Build `26.817.1941` was installed and inspected at 1440×900 on both the Work
 surface and the loaded Settings dialog. That screen-level check confirmed the
 closed component ownership above and the absence of the deleted theme
 workshop; source and replay results were not accepted as substitutes for it.
+
+### The interaction system is closed at every scale — 2026-08-18
+
+The installed audit found the remaining inconsistency after the first pass:
+only filled Button variants carried the construction people recognized, while
+outline/ghost/link Buttons, tabs, selection controls, and eleven raw `<button>`
+call sites remained separate visual systems. The fix closes both routes:
+
+- `--relief`, `--relief-compact`, and `--relief-micro` each have a paired
+  all-inset pressed token. Large controls travel 2px; compact and micro controls
+  travel 1px. Shadow values no longer live in `pressable.tsx`.
+- every application-owned button now routes through `Button` or
+  `SelectionControl`; `ui-consistency.test.ts` rejects a new raw `<button>`;
+- tabs, checkboxes, radios, switch thumbs, selection controls, and Button
+  variants all use the same vertical, derived-hue lighting contract;
+- `verify:reachable` now compares rendered tabs and pressables as well as Button
+  and SelectionControl groups.
+
+The background follows the same palette without pretending to be elevation.
+`--canvas-atmosphere` is two broad, low-strength navy/clay radial fields over a
+vertical canvas ramp. The React root consumes that token directly—body-only
+styling had been painted over—and substrate panels are 88% opaque so the field
+can be seen without sacrificing text. There is no backdrop filter, no ambient
+animation, and no new elevation level.
+
+Build `26.818.856` was built, installed, verified against the binary on disk,
+and inspected at a 1440×900 client size. The Work surface proves the large,
+row, tab and icon treatments plus the live substrate; Settings proves the
+compact provider-role controls. Evidence is in
+`docs/evidence/ui-consistency-installed-26.818.856/`.
+
+Final verification passed Core 815/817 with two intentional skips, Desktop
+298/298, Rust 32/32, and all 24 production surface/viewport checks.
 

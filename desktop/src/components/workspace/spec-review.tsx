@@ -187,14 +187,16 @@ export function SpecReviewPanel({
           </Button>
         </div>
         {nonGoals.length === 0 ? (
-          <button
-            className="justify-self-start text-[12px] text-muted-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:text-ink"
+          <Button
+            className="justify-self-start"
             disabled={busy}
+            size="inline"
             type="button"
+            variant="link"
             onClick={() => onNonGoalsChange([{ text: NOTHING_TO_DECLINE, drafted: false }])}
           >
             There is nothing this should leave alone
-          </button>
+          </Button>
         ) : null}
       </div>
     </section>

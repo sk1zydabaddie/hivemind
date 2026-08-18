@@ -369,16 +369,17 @@ function RunCard({
             </div>
           </div>
           <CollapsibleTrigger asChild>
-            <button
+            <Button
               aria-label={open ? "Hide the detail" : "Show the detail"}
-              className="shrink-0 cursor-pointer rounded-sm p-1 text-muted-foreground hover:bg-canvas hover:text-ink"
+              size="icon-xs"
               type="button"
+              variant="ghost"
             >
               <ChevronRight
                 aria-hidden="true"
                 className={`size-3.5 transition-transform ${open ? "rotate-90" : ""}`}
               />
-            </button>
+            </Button>
           </CollapsibleTrigger>
         </div>
 
