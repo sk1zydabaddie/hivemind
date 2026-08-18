@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "project": {
+    "name": "hivemind-ai",
+    "productType": "Tauri desktop coding orchestrator",
+    "stack": ["Tauri 2", "React 19", "TypeScript 5", "Tailwind CSS 4", "Radix UI"]
+  },
+  "sources": {
+    "tokens": ["desktop/src/styles.css"],
+    "components": ["desktop/src/components/ui", "desktop/src/components/workspace"],
+    "assets": ["desktop/src/assets"],
+    "instructions": ["AGENTS.md", "desktop/DESIGN-NOTES.md", "docs/STATE.md"]
+  },
+  "design": {
+    "colorMode": "light",
+    "colors": {
+      "canvas": "#f5f6f8",
+      "panel": "#ffffff",
+      "ink": "#1f2328",
+      "navy": "#1b3a6b",
+      "muted": "#667085",
+      "amber": "#b88936",
+      "clay": "#b65b4f"
+    },
+    "typography": {"sans": "Geist Variable", "mono": "Geist Mono Variable"},
+    "spacing": {"rhythm": "compact desktop instrument"},
+    "radius": {"default": "5px"},
+    "shadows": {
+      "relief": "paired resting and pressed tokens for explicit action buttons",
+      "elevation": "closed raised, floating, and overlay levels redeemed by occlusion"
+    },
+    "motion": {
+      "fast": "120ms",
+      "standard": "180ms",
+      "panel": "240ms",
+      "reducedMotion": "functional state remains legible without animation"
+    },
+    "density": "compact"
+  },
+  "components": {
+    "installed": [],
+    "preferredPrimitives": ["Button", "SelectionControl", "Tabs", "Panel", "Dialog"],
+    "patterns": [
+      "flat chrome navigation with underline selection",
+      "rule-separated ground-level content",
+      "navy relief reserved for explicit command actions",
+      "plain-language labels with compact iconography"
+    ]
+  },
+  "constraints": {
+    "must": [
+      "Preserve the existing information architecture and audited dispatcher boundaries.",
+      "Use plain language on primary surfaces and never expose internal task IDs.",
+      "Reserve relief for controls that answer a press; relief is permitted, not mandatory.",
+      "Keep navigation tabs visually part of the chrome with a flat underline selected state.",
+      "Keep the substrate at ground level and elevation within the closed three-level scale.",
+      "Keep every visual effect below the amber attention edge unless it occludes that edge.",
+      "Keep provider brand marks at their own brand color or monochrome treatment.",
+      "Provide visible focus, keyboard access, responsive reachability, and reduced-motion liveness."
+    ],
+    "avoid": [
+      "raised or pill-shaped top navigation",
+      "raised example or suggestion rows",
+      "blank white-on-white surfaces without hierarchy",
+      "backdrop filters or glass blur",
+      "decorative gradients unrelated to a real control affordance",
+      "shadows on ground-level panels",
+      "tinting monochrome provider marks",
+      "structural or workflow changes during this visual-only overhaul"
+    ]
+  },
+  "decisions": [
+    {
+      "date": "2026-08-18",
+      "decision": "Treat relief as an optional affordance for explicit command actions, not a universal style for every interactive element.",
+      "source": "User feedback plus desktop/DESIGN-NOTES.md"
+    },
+    {
+      "date": "2026-08-18",
+      "decision": "Top navigation and suggestion rows remain flat; active navigation uses an underline and suggestions use rule-separated hover and focus states.",
+      "source": "User feedback plus desktop/DESIGN-NOTES.md"
+    },
+    {
+      "date": "2026-08-18",
+      "decision": "The overhaul changes visual presentation only and preserves the current UI structure and audited action paths.",
+      "source": "User request"
+    }
+  ],
+  "evidence": [
+    {"fact": "project.instructions", "source": "AGENTS.md"},
+    {"fact": "design.system", "source": "desktop/DESIGN-NOTES.md"},
+    {"fact": "current.state", "source": "docs/STATE.md"},
+    {"fact": "installed.ui.feedback", "source": "user screenshots from build 26.818.931"},
+    {"fact": "21st.review", "source": "21st review desktop --json on 2026-08-18"}
+  ],
+  "generatedAt": "2026-08-18T19:22:16.890Z"
+}

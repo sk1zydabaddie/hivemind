@@ -3956,3 +3956,24 @@ captured at a 1440x900 client size. Those captures show the measured navy face,
 short contact shadow, and inherited white foreground at native scale; they are
 recorded in `docs/evidence/ui-reference-correction-installed-26.818.931/`.
 
+### Relief is permission, not a universal interactive style — 2026-08-18
+
+The installed screen exposed a more fundamental error than the gradient values.
+The rule says that only a control which answers a press **may** claim relief; it
+does not say every interactive element must become the same raised button. The
+implementation had made that substitution in two conspicuous places:
+
+- `TabsTrigger` turned the Work, Agents, and Project navigation back into the
+  lifted pills this document had already rejected in favour of an underline on
+  the chrome edge;
+- the three example prompts were routed through the raised `Button` row variant,
+  making lightweight suggestions compete with committed actions.
+
+The next visual pass is therefore an overhaul of presentation hierarchy, not a
+stronger version of the same effect. Explicit command actions may retain the
+navy relief; navigation, suggestions, and selection rows use flat state devices
+such as underline, fill, rules, hover, and focus. Structure, copy, dispatcher
+paths, and authoritative state remain unchanged. The grounded design context is
+recorded in `.21st/design.json`; production implementation is gated on choosing
+one of the explored visual directions.
+

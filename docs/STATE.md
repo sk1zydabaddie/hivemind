@@ -1477,3 +1477,15 @@ at a 1440x900 client size in
 `docs/evidence/ui-reference-correction-installed-26.818.931/`; both show the
 corrected navy control faces, compact contact shadows, and readable inherited
 foregrounds at native scale.
+
+The user rejected the broader hierarchy on 2026-08-18 even though the corrected
+button itself matched its reference. The active path had interpreted “only a
+control which answers a press may claim relief” as “every interactive element
+must claim relief.” That made the top navigation and the three example prompts
+look like primary raised actions. A 21st review and source audit confirmed the
+drift: `TabsTrigger` contradicted the earlier flat underline decision, while the
+examples used the raised `Button` row variant. The 21st MCP is now registered,
+its review/explore/build skills are installed, and `.21st/design.json` records
+the repository constraints. No production overhaul direction has been selected
+or implemented yet; the next gate is the user's choice among three visual-only
+directions. No paid 21st AI generation was run.
