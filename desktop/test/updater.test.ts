@@ -181,6 +181,8 @@ describe("the updater", () => {
       }
     ).scripts;
     expect(scripts["release:local"]).toBeDefined();
+    expect(scripts["release:github"]).toMatch(/verify-release\.mjs/u);
+    expect(scripts["verify:release"]).toBeDefined();
     expect(scripts["updater:serve"]).toBeDefined();
 
     const release = await readFile(path.join(desktopRoot, "scripts", "release-local.mjs"), "utf8");
@@ -188,9 +190,26 @@ describe("the updater", () => {
        as "no update available" — silence again. */
     expect(release).toMatch(/"sign"/u);
     expect(release).toMatch(/signature/u);
+    expect(release).toMatch(/Hivemind-AI_\$\{version\}_x64-setup\.exe/u);
     /* And it refuses loudly when the key is missing, rather than publishing
        something nothing will accept. */
     expect(release).toMatch(/No signing key/u);
+
+    const publish = await readFile(
+      path.join(desktopRoot, "scripts", "publish-github-release.mjs"),
+      "utf8"
+    );
+    expect(publish).toMatch(/draft:\s*true/u);
+    expect(publish).toMatch(/JSON\.stringify\(\{ draft: false \}\)/u);
+
+    const verify = await readFile(
+      path.join(desktopRoot, "scripts", "verify-release.mjs"),
+      "utf8"
+    );
+    expect(verify).toMatch(/windows-x86_64/u);
+    expect(verify).toMatch(/signature\.length/u);
+    expect(verify).toMatch(/manifest\.version !== expectedVersion/u);
+    expect(verify).toMatch(/method:\s*"HEAD"/u);
   });
 });
 

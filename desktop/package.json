@@ -18,6 +18,8 @@
     "bundle:stamp": "node scripts/stamp-version.mjs",
     "verify:reachable": "node tools/check-reachable.mjs",
     "release:local": "node scripts/release-local.mjs",
+    "release:github": "node scripts/release-local.mjs --github && node scripts/publish-github-release.mjs && node scripts/verify-release.mjs",
+    "verify:release": "node scripts/verify-release.mjs",
     "updater:serve": "node scripts/updater-serve.mjs",
     "tauri:build:localupdate": "npm run bundle:stamp && tauri build --bundles nsis --config src-tauri/gen/version.conf.json --config src-tauri/updater-dev.conf.json"
   },

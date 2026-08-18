@@ -40,6 +40,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const desktop = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const githubRelease = process.argv.includes("--github");
 const keyDir = path.join(process.env.APPDATA ?? process.env.HOME ?? "", "Hivemind AI", "updater");
 const privateKey = path.join(keyDir, "hivemind-updater.key");
 
@@ -109,6 +110,29 @@ mkdirSync(updates, { recursive: true });
 
 /* `pub-date` must be RFC 3339 or the plugin refuses the manifest. The installer
    is copied rather than linked so the served directory is self-contained. */
+const installerName = `Hivemind AI_${version}_x64-setup.exe`;
+/* GitHub normalizes spaces in uploaded asset names to dots. Use a stable,
+   space-free public name so the signed manifest names the asset GitHub
+   actually serves; keep the human-readable local filename unchanged. */
+const installerAssetName = githubRelease
+  ? `Hivemind-AI_${version}_x64-setup.exe`
+  : installerName;
+let installerUrl = `http://127.0.0.1:8787/${encodeURIComponent(installerAssetName)}`;
+if (githubRelease) {
+  const config = JSON.parse(
+    readFileSync(path.join(desktop, "src-tauri", "tauri.conf.json"), "utf8")
+  );
+  const endpoint = config.plugins?.updater?.endpoints?.[0] ?? "";
+  const match = endpoint.match(
+    /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/releases\/latest\/download\/latest\.json$/u
+  );
+  if (!match) {
+    console.error(`The production updater endpoint is not a GitHub latest-release URL: ${endpoint}`);
+    process.exit(1);
+  }
+  installerUrl = `https://github.com/${match[1]}/${match[2]}/releases/download/v${version}/${installerAssetName}`;
+}
+
 const manifest = {
   version,
   notes: `Hivemind ${version}`,
@@ -116,17 +140,17 @@ const manifest = {
   platforms: {
     "windows-x86_64": {
       signature,
-      url: `http://127.0.0.1:8787/Hivemind%20AI_${version}_x64-setup.exe`
+      url: installerUrl
     }
   }
 };
 writeFileSync(path.join(updates, "latest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 writeFileSync(
-  path.join(updates, `Hivemind AI_${version}_x64-setup.exe`),
+  path.join(updates, installerAssetName),
   readFileSync(installer)
 );
 
-console.log(`published ${version}`);
+console.log(`prepared ${githubRelease ? "GitHub" : "local"} release ${version}`);
 console.log(`  manifest  ${path.join(updates, "latest.json")}`);
 console.log(`  installer ${(statSync(installer).size / 1024 / 1024).toFixed(1)} MB`);
 console.log("");
