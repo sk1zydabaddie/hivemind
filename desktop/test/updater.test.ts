@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -50,7 +51,7 @@ describe("the updater", () => {
       { cwd: desktopRoot, encoding: "utf8" }
     )
       .split(/\r?\n/u)
-      .filter(Boolean);
+      .filter((file) => file !== "" && existsSync(path.join(desktopRoot, file)));
     for (const file of frontendFiles) {
       const source = await readFile(path.join(desktopRoot, file), "utf8");
       expect(source, `${file} must not import the updater's direct JS API`).not.toMatch(

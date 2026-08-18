@@ -205,7 +205,53 @@ const PROBE = `
     .filter((image) => image.offsetParent !== null)
     .filter((image) => !image.complete || image.naturalWidth === 0 || image.naturalHeight === 0)
     .map((image) => image.currentSrc || image.src || "(empty source)");
-  return { controls: controls.length, unreachable, clipped, brokenImages };
+
+  /* Shared primitives are a contract only when identical variants actually
+     render identically. Source scans cannot see a local class overriding a
+     component's padding, fill, radius, or shadow, so compare the computed
+     result in the production bundle. Disabled and selected states are separate
+     groups because they are deliberately different states. */
+  const visualSignature = (el) => {
+    const style = getComputedStyle(el);
+    const contentSized = ["card", "graph", "lane", "task"].includes(
+      el.getAttribute("data-shape")
+    );
+    return [
+      contentSized ? "content-sized" : Math.round(el.getBoundingClientRect().height * 10) / 10,
+      style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft,
+      style.gap, style.fontSize, style.fontWeight, style.borderRadius,
+      style.borderTopWidth, style.borderTopColor, style.backgroundColor,
+      style.backgroundImage, style.color, style.boxShadow
+    ].join("|");
+  };
+  const primitiveGroups = new Map();
+  for (const el of document.querySelectorAll('[data-slot="button"], [data-slot="selection-control"], [data-slot="panel-header"], [data-slot="dialog-header"][class*="border-b"], [data-slot="dialog-footer"][class*="border-t"]')) {
+    if (el.offsetParent === null) continue;
+    const slot = el.getAttribute("data-slot");
+    const key = [
+      slot,
+      el.getAttribute("data-variant") || "",
+      el.getAttribute("data-size") || "",
+      el.getAttribute("data-shape") || "",
+      el.getAttribute("aria-pressed") || "",
+      el.querySelector(":scope > svg") === null ? "text-only" : "with-icon",
+      el.disabled ? "disabled" : "enabled"
+    ].join(":");
+    const signature = visualSignature(el);
+    if (!primitiveGroups.has(key)) primitiveGroups.set(key, new Map());
+    const signatures = primitiveGroups.get(key);
+    if (!signatures.has(signature)) signatures.set(signature, []);
+    signatures.get(signature).push(
+      (el.innerText || el.getAttribute("aria-label") || slot).replace(/\s+/g, " ").trim().slice(0, 36)
+    );
+  }
+  const inconsistentControls = [...primitiveGroups.entries()]
+    .filter(([, signatures]) => signatures.size > 1)
+    .map(([group, signatures]) => ({
+      group,
+      variants: [...signatures.entries()].map(([signature, labels]) => ({ signature, labels }))
+    }));
+  return { controls: controls.length, unreachable, clipped, brokenImages, inconsistentControls };
 `;
 
 /* Build the replay through the SAME production transform that Tauri bundles.
@@ -353,6 +399,7 @@ for (const viewport of VIEWPORTS) {
       found.unreachable.length === 0 &&
       found.clipped.length === 0 &&
       found.brokenImages.length === 0 &&
+      found.inconsistentControls.length === 0 &&
       browserIssues.length === 0
     ) {
       console.log(`  ok   ${label}  (${found.controls} controls)`);
@@ -370,6 +417,9 @@ for (const viewport of VIEWPORTS) {
     }
     for (const source of found.brokenImages) {
       console.log(`         image did not load: ${source}`);
+    }
+    for (const issue of found.inconsistentControls) {
+      console.log(`         inconsistent ${issue.group}: ${JSON.stringify(issue.variants)}`);
     }
     for (const issue of browserIssues) {
       console.log(`         browser error: ${issue}`);

@@ -84,7 +84,7 @@ export function AccountsPanel({
 
   return (
     <Panel>
-      <PanelHeader className="bg-panel/82">
+      <PanelHeader>
         <PanelLabel className="text-ink">Accounts</PanelLabel>
         <PanelCount>{view.accounts.length}</PanelCount>
       </PanelHeader>

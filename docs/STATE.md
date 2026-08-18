@@ -1417,3 +1417,19 @@ and the only product update routes are `newer_version` and
 `take_newer_version`; the latter owns the on-disk idleness proof. The desktop
 regression test fails on `updater:default`, any `updater:allow-*` permission, or
 any direct frontend import of the updater JavaScript API.
+
+The UI consistency phase closes A-13 and A-14 and turns consistency into a
+release check. Command visuals live only in `Button`; selected-option visuals
+live only in `SelectionControl`; panel headers and framed-dialog gutters are
+owned by their primitives. The experimental theme workshop and its local token
+override were deleted. `ui-consistency.test.ts` rejects duplicate gradients,
+selection styling, panel-header overrides and Button visual overrides, while
+`verify:reachable` compares the computed production styles of every visible
+shared primitive at all three required viewport sizes.
+
+The phase shipped and was inspected in the installed Windows application as
+build `26.817.1941` at 1440×900. The Work surface and loaded Settings dialog
+showed the shared spacing and selection treatment, and the temporary theme
+workshop was absent. Core passed 815 tests with two skipped, Desktop passed all
+296 tests, Rust passed all 32 tests, and all 24 surface/viewport reachability
+checks passed. No paid provider call was used.

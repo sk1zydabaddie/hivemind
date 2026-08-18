@@ -322,7 +322,8 @@ export default function App(): React.JSX.Element {
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  className="h-7 max-w-[280px] gap-1.5 px-2"
+                  className="max-w-[280px]"
+                  size="sm"
                   type="button"
                   variant="ghost"
                   onClick={() => setProjectOpen(true)}
@@ -343,7 +344,7 @@ export default function App(): React.JSX.Element {
               <TooltipTrigger asChild>
                 <Button
                   aria-label="Commands"
-                  className="h-7 gap-1.5 px-2"
+                  size="sm"
                   type="button"
                   variant="ghost"
                   onClick={() => setPaletteOpen(true)}

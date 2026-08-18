@@ -3844,3 +3844,38 @@ declaration says why the obvious tidy-up is a bug. That converts a silent
 write-only field into a stated decision — which is the actual remedy for this
 family, since the problem was never the field but the silence around it.
 
+## UI consistency is a rendered contract — 2026-08-17
+
+The consistency pass found four ways a shared component could still disagree
+with itself on screen: callers overrode Button height and padding; identical
+Panel headers replaced their primitive's fill five times; selection cards,
+chips, segments and pane toggles each recreated the same state; and framed
+dialogs used two gutter systems. The temporary theme workshop amplified every
+one by allowing production tokens to change from local storage.
+
+The closed ownership is now:
+
+- `Button` owns command height, padding, type, radius, gradient, and relief.
+  Callers may position or constrain it, but visual overrides fail
+  `ui-consistency.test.ts`.
+- `SelectionControl` owns selected wash, pressure response, radius, and spacing
+  for cards, chips, segments, panes, graph nodes, and lanes. Selection stays
+  flat at rest; it does not borrow a primary command's gradient.
+- `PanelHeader` owns its height, fill, rule, and horizontal gutter. Callers do
+  not restyle it.
+- Framed `DialogContent`, `DialogHeader`, and `DialogFooter` own the zero-gap
+  shell and one header/footer gutter rhythm.
+
+Source enforcement is necessary and insufficient. `verify:reachable` now
+groups visible production primitives by variant, size, icon state, selection
+and disabled state, then compares computed height, padding, gap, type, radius,
+border, fill, gradient, colour, and shadow. The rendered check caught an
+inherited line-height difference on its first run; it was fixed in the Button
+primitive. A shared class that renders differently now fails the same
+production-bundle path used for viewport and CSP verification.
+
+Build `26.817.1941` was installed and inspected at 1440×900 on both the Work
+surface and the loaded Settings dialog. That screen-level check confirmed the
+closed component ownership above and the absence of the deleted theme
+workshop; source and replay results were not accepted as substitutes for it.
+

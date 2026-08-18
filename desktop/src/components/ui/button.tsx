@@ -19,7 +19,7 @@ const buttonVariants = cva(
   /* Motion: a spring curve on colour AND transform, so a press reads as the
      surface giving way rather than as a repaint. `active:` goes DOWN past rest
      -- returning to zero would feel like nothing happened. */
-  "relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-md text-[13px] font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow,transform] duration-[120ms] ease-[var(--spring)] active:duration-[60ms] disabled:pointer-events-none disabled:cursor-default aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+  "relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-md text-[13px] leading-none font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow,transform] duration-[120ms] ease-[var(--spring)] active:duration-[60ms] disabled:pointer-events-none disabled:cursor-default aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
   {
     variants: {
       variant: {
@@ -46,6 +46,10 @@ const buttonVariants = cva(
           "bg-navy bg-gradient-to-b from-navy-lift to-navy-deep text-primary-foreground shadow-[var(--relief)] hover:from-navy hover:to-navy-deep active:translate-y-[2px] active:from-navy-deep active:to-navy-deep active:shadow-[var(--relief-pressed)] disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground disabled:shadow-none",
         destructive:
           "bg-clay bg-gradient-to-b from-clay-lift to-clay-deep text-destructive-foreground shadow-[var(--relief)] hover:from-clay hover:to-clay-deep active:translate-y-[2px] active:from-clay-deep active:to-clay-deep active:shadow-[var(--relief-pressed)] disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground disabled:shadow-none",
+        "ghost-destructive":
+          "text-clay hover:bg-clay-wash hover:text-clay disabled:opacity-45",
+        "outline-destructive":
+          "border border-clay/35 bg-panel text-clay hover:border-clay/55 hover:bg-clay-wash hover:text-clay disabled:opacity-45",
         outline:
           "border border-rule bg-panel text-ink hover:border-navy/45 hover:bg-navy-wash hover:text-navy disabled:opacity-45",
         secondary: "bg-secondary text-secondary-foreground hover:bg-rule/60 disabled:opacity-45",

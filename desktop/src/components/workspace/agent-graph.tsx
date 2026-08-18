@@ -1,6 +1,7 @@
 import { AlertTriangle, Check, Cpu, Pause } from "lucide-react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SelectionControl } from "@/components/ui/selection-control";
 import { taskTitleOrNull } from "@/lib/identifiers";
 import { taskPhase, type PhaseStanding } from "@/lib/phases";
 import type { BoardProjection } from "@/lib/projection";
@@ -297,17 +298,16 @@ function AgentNode({
     .filter((title): title is string => title !== null);
 
   return (
-    <button
-      aria-pressed={selected}
-      className={`relative grid cursor-pointer content-start gap-2.5 overflow-hidden rounded-md border border-l-2 bg-panel px-3 py-2.5 text-left ring-2 transition-colors ${
+    <SelectionControl
+      active={selected}
+      className={
         selected
-          ? /* Raised: the inspected agent comes forward from its siblings. */
-            "border-navy border-l-navy bg-navy-wash ring-navy/20 shadow-[var(--elevation-raised)]"
+          ? undefined
           : flagged
             ? "border-clay/40 border-l-clay ring-clay/20 hover:border-clay/70"
             : `${standingEdge[standing]} ${standingLeft[standing]} ${standingRing[standing]} hover:border-navy/40`
-      }`}
-      type="button"
+      }
+      shape="graph"
       onClick={onSelect}
     >
       {/* The completion moment. One wipe of the run's own colour across the
@@ -353,7 +353,7 @@ function AgentNode({
           </span>
         ) : null}
       </div>
-    </button>
+    </SelectionControl>
   );
 }
 

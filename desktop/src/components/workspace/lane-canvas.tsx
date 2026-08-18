@@ -1,4 +1,5 @@
 import { Hex, hexTone } from "@/components/workspace/hex";
+import { SelectionControl } from "@/components/ui/selection-control";
 import { PHASES, taskPhase, type PhaseStanding } from "@/lib/phases";
 import type { GateRule } from "@/lib/gates";
 import type { TaskProjection } from "@/lib/projection";
@@ -125,12 +126,9 @@ function Lane({
   const current = Math.min(phase.reached, PHASES.length - 1);
   const tone = hexTone[standing];
   return (
-    <button
-      aria-pressed={selected}
-      className={`group grid min-w-0 flex-1 cursor-pointer grid-rows-[auto_minmax(0,1fr)] gap-2 rounded-md border px-2.5 pt-2.5 pb-2 text-left transition-colors ${
-        selected ? "border-navy/35 bg-navy-wash" : "border-transparent hover:bg-panel"
-      }`}
-      type="button"
+    <SelectionControl
+      active={selected}
+      shape="lane"
       onClick={onSelect}
     >
       <span className="grid gap-0.5">
@@ -194,6 +192,6 @@ function Lane({
           {task.lease_files.length} {task.lease_files.length === 1 ? "file" : "files"}
         </span>
       )}
-    </button>
+    </SelectionControl>
   );
 }

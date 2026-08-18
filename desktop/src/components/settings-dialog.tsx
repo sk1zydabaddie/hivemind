@@ -2,7 +2,6 @@ import { AlertTriangle, Check, FolderGit2, Loader, Minus, Plug } from "lucide-re
 import { getVersion } from "@tauri-apps/api/app";
 import { useEffect, useState } from "react";
 
-import { ThemePlayground } from "@/components/theme-playground";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,6 +11,7 @@ import {
   DialogTitle
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SelectionControl } from "@/components/ui/selection-control";
 import { list } from "@/lib/durable";
 import { plainActionError } from "@/lib/plain-language";
 import { displayProjectPath } from "@/lib/project-session";
@@ -129,8 +129,8 @@ export function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="grid h-[min(800px,calc(100vh-40px))] w-[min(880px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)] gap-0 p-0 sm:max-w-none">
-        <DialogHeader className="border-b border-rule px-5 py-4">
+      <DialogContent frame className="grid h-[min(800px,calc(100vh-40px))] w-[min(880px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)] sm:max-w-none">
+        <DialogHeader frame>
           <DialogTitle className="text-[20px] leading-tight font-semibold tracking-tighter">
             Settings
           </DialogTitle>
@@ -281,16 +281,11 @@ export function SettingsDialog({
             <Section title="How often Hivemind interrupts you">
               <div className="grid gap-2">
                 {LEVELS.map((entry) => (
-                  <button
-                    aria-pressed={entry.value === level}
-                    className={`cursor-pointer rounded-md border p-3 text-left transition-[color,background-color,border-color,box-shadow,translate] duration-[120ms] ease-[var(--spring)] active:translate-y-[2px] active:shadow-[var(--relief-pressed)] ${
-                      entry.value === level
-                        ? "border-navy bg-navy-wash"
-                        : "border-rule bg-panel hover:border-navy/40"
-                    }`}
+                  <SelectionControl
+                    active={entry.value === level}
                     disabled={disabled}
                     key={entry.value}
-                    type="button"
+                    shape="card"
                     onClick={() => {
                       void onAction({ type: "autonomy.set", payload: { level: entry.value } });
                     }}
@@ -299,14 +294,10 @@ export function SettingsDialog({
                     <span className="mt-0.5 block text-[12px] leading-relaxed text-muted-foreground">
                       {entry.detail}
                     </span>
-                  </button>
+                  </SelectionControl>
                 ))}
               </div>
             </Section>
-
-            {/* EXPERIMENTAL, and deliberately last: it is a workshop bench, not
-                a setting. Removing it is this block plus the import above. */}
-            <ThemePlayground />
 
             <BuildLine />
           </div>

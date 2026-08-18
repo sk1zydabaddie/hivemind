@@ -71,7 +71,7 @@ describe("elevation is a scale, not a shadow utility", () => {
     /* A discrete card brought forward from siblings it shares a surface with —
        and `styles.css`, which is `.lift:hover`: hovering a clickable card is
        that same claim, made for as long as the pointer is on it. */
-    "elevation-raised": ["work-tab.tsx", "agent-graph.tsx", "styles.css"]
+    "elevation-raised": ["work-tab.tsx", "selection-control.tsx", "styles.css"]
   };
 
   test("each level appears only where it is allowed, and none is unused", async () => {

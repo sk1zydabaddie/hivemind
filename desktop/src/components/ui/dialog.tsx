@@ -54,9 +54,11 @@ function DialogOverlay({
 function DialogContent({
   className,
   children,
+  frame = false,
   showCloseButton = true,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
+  frame?: boolean
   showCloseButton?: boolean
 }) {
   return (
@@ -66,6 +68,7 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
           "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-xl border border-rule bg-background/86 shadow-[var(--elevation-overlay),var(--glass-edge-near)] p-5 duration-[240ms] ease-[var(--spring)] outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
+          frame && "gap-0 p-0",
           className
         )}
         {...props}
@@ -85,11 +88,19 @@ function DialogContent({
   )
 }
 
-function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
+function DialogHeader({
+  className,
+  frame = false,
+  ...props
+}: React.ComponentProps<"div"> & { frame?: boolean }) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-2 text-center sm:text-left", className)}
+      className={cn(
+        "flex flex-col gap-2 text-center sm:text-left",
+        frame && "border-b border-rule px-5 py-4",
+        className
+      )}
       {...props}
     />
   )
@@ -97,10 +108,12 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
 
 function DialogFooter({
   className,
+  frame = false,
   showCloseButton = false,
   children,
   ...props
 }: React.ComponentProps<"div"> & {
+  frame?: boolean
   showCloseButton?: boolean
 }) {
   return (
@@ -108,6 +121,7 @@ function DialogFooter({
       data-slot="dialog-footer"
       className={cn(
         "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
+        frame && "items-center border-t border-rule bg-canvas px-5 py-3",
         className
       )}
       {...props}

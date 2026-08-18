@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/pressable";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SelectionControl } from "@/components/ui/selection-control";
 import { useDismissed } from "@/lib/dismissible";
 import { displayProjectPath, PROJECT_FAULT, type GitReadiness } from "@/lib/project-session";
 import { PROVIDER_MARKS } from "@/lib/provider-marks";
@@ -860,14 +861,11 @@ function ModelStep({
                 {choosable.map((model) => {
                   const active = model.agent_id === connected?.agent_id;
                   return (
-                    <button
-                      aria-pressed={active}
-                      className={`cursor-pointer rounded-sm border px-2 py-1 text-left transition-[color,background-color,border-color,box-shadow,translate] duration-[120ms] ease-[var(--spring)] active:translate-y-[2px] active:shadow-[var(--relief-pressed)] ${
-                        active ? "border-navy bg-navy-wash" : "border-rule bg-panel hover:border-navy/40"
-                      }`}
+                    <SelectionControl
+                      active={active}
                       disabled={busy !== null}
                       key={model.agent_id}
-                      type="button"
+                      shape="chip"
                       onClick={() => {
                         if (!active) void onChange(role.tool, model.agent_id);
                       }}
@@ -880,7 +878,7 @@ function ModelStep({
                           </span>
                         ) : null}
                       </span>
-                    </button>
+                    </SelectionControl>
                   );
                 })}
               </div>

@@ -49,6 +49,7 @@ import {
   PanelLabel
 } from "@/components/ui/panel";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SelectionControl } from "@/components/ui/selection-control";
 import { AgentGraph } from "@/components/workspace/agent-graph";
 import {
   DiffView,
@@ -822,7 +823,7 @@ export function WorkTab({
           }`}
         >
           <Panel>
-            <PanelHeader className="bg-panel/82">
+            <PanelHeader>
               <PanelLabel className="text-ink">Current work</PanelLabel>
               <PanelCount>{tasks.length}</PanelCount>
             </PanelHeader>
@@ -1006,8 +1007,8 @@ export function WorkTab({
       />
 
       <Dialog open={checksOpen} onOpenChange={setChecksOpen}>
-        <DialogContent className="grid h-[min(720px,calc(100vh-40px))] w-[min(920px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)] gap-0 p-0 sm:max-w-none">
-          <DialogHeader className="border-b border-rule px-5 py-4">
+        <DialogContent frame className="grid h-[min(720px,calc(100vh-40px))] w-[min(920px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)] sm:max-w-none">
+          <DialogHeader frame>
             <DialogTitle>What the checks said</DialogTitle>
             <DialogDescription>
               The recorded output of the last time Hivemind ran this project's checks.
@@ -1510,11 +1511,10 @@ function RunHeader({
           </Button>
           {runActive ? (
             <Button
-              className="text-clay hover:bg-clay-wash hover:text-clay"
               disabled={stopBusy}
               size="sm"
               type="button"
-              variant="ghost"
+              variant="ghost-destructive"
               onClick={onStop}
             >
               <CircleStop aria-hidden="true" />
@@ -1899,8 +1899,8 @@ function TaskRow({
       ? task.depends_on.map((taskId) => taskLabel(taskId, taskTitles)).join(", ")
       : "";
   return (
-    <button
-      aria-pressed={selected}
+    <SelectionControl
+      active={selected}
       /* A LANE, not a list row.
        *
        * Parallel work is the whole claim of this product and it was drawn as a
@@ -1911,17 +1911,8 @@ function TaskRow({
        *
        * No border-bottom: the tracks do the separating now, and a horizontal
        * rule per row is exactly the noise the gate rules must not become. */
-      className={`lane group relative flex w-full cursor-pointer items-start gap-2.5 py-2.5 pr-3 pl-2.5 text-left ${
-        selected
-          ? /* Raised: the selected task comes forward from the rows it shares a
-               surface with. The lowest level there is -- 4.3 out of 255 over
-               4px -- because a list whose selection lifts hard is a list that
-               flinches every time the selection moves. */
-            "bg-navy-wash shadow-[var(--elevation-raised)]"
-          : "bg-panel hover:bg-canvas"
-      }`}
       data-standing={phase.standing}
-      type="button"
+      shape="task"
       onClick={onSelect}
     >
       {/* The lane's track and its head. The hexagon is the product's own shape;
@@ -1973,7 +1964,7 @@ function TaskRow({
           </span>
         ) : null}
       </span>
-    </button>
+    </SelectionControl>
   );
 }
 
@@ -2037,12 +2028,11 @@ function InspectorPane({
           {stoppable ? (
             <Button
               aria-label="Stop this task"
-              className="text-clay hover:bg-clay-wash hover:text-clay"
               disabled={busy}
               size="icon-sm"
               title="Stop this task"
               type="button"
-              variant="outline"
+              variant="outline-destructive"
               onClick={onStop}
             >
               <CircleStop aria-hidden="true" />
@@ -2062,18 +2052,14 @@ function InspectorPane({
             role="group"
           >
             {(["summary", "raw"] as const).map((option) => (
-              <button
-                className={`h-6 cursor-pointer px-2 text-[11px] font-medium transition-colors ${
-                  mode === option
-                    ? "bg-navy-wash text-navy"
-                    : "bg-panel text-muted-foreground hover:text-ink"
-                }`}
+              <SelectionControl
+                active={mode === option}
                 key={option}
-                type="button"
+                shape="segment"
                 onClick={() => setMode(option)}
               >
                 {option === "summary" ? "Highlights" : "Everything"}
-              </button>
+              </SelectionControl>
             ))}
           </span>
         </div>
@@ -2499,9 +2485,8 @@ function PromptDock({
             }}
           />
           <Button
-            className={idle ? "h-9 px-3.5" : "size-9"}
             disabled={busy || value.trim() === ""}
-            size={idle ? "default" : "icon"}
+            size={idle ? "lg" : "icon-lg"}
             type="submit"
           >
             {idle ? (
@@ -2626,11 +2611,12 @@ function PlanTakeover({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="grid h-[min(780px,calc(100vh-40px))] w-[min(1120px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 p-0 sm:max-w-none"
+        frame
+        className="grid h-[min(780px,calc(100vh-40px))] w-[min(1120px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-none"
         showCloseButton={false}
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
-        <DialogHeader className="gap-1.5 border-b border-rule px-6 py-5">
+        <DialogHeader frame className="gap-1.5">
           <span className="text-[11px] font-medium tracking-label text-navy uppercase">
             {ratificationPending ? "Before anything starts" : "The approved plan"}
           </span>
@@ -2717,7 +2703,7 @@ function PlanTakeover({
           </div>
         </ScrollArea>
 
-        <DialogFooter className="items-center justify-between border-t border-rule bg-panel px-6 py-3 sm:justify-between">
+        <DialogFooter frame className="justify-between sm:justify-between">
           <div className="flex min-w-0 items-center gap-2.5">
             {/* The plan's fingerprint used to sit here as a bare hash. It names
                 nothing a person can act on, and the full-record dialog is where
@@ -2869,14 +2855,14 @@ function AmendmentDialog({
     "w-full rounded-md border border-rule bg-canvas px-2 py-1.5 font-mono text-[13px] font-normal text-ink transition-colors focus-visible:border-navy/45 focus-visible:bg-panel";
   return (
     <Dialog open onOpenChange={(next) => (next ? undefined : onClose())}>
-      <DialogContent className="w-[min(740px,calc(100vw-40px))] gap-0 p-0 sm:max-w-none">
+      <DialogContent frame className="w-[min(740px,calc(100vw-40px))] sm:max-w-none">
         <form
           onSubmit={(event) => {
             event.preventDefault();
             void onSubmit();
           }}
         >
-          <DialogHeader className="border-b border-rule px-5 py-4">
+          <DialogHeader frame>
             <DialogTitle>
               {value.kind === "add_task" ? "Add a step" : `Edit ${value.draft.taskId}`}
             </DialogTitle>
@@ -2983,7 +2969,7 @@ function AmendmentDialog({
               </>
             ) : null}
           </div>
-          <DialogFooter className="items-center justify-between border-t border-rule bg-canvas px-5 py-3 sm:justify-between">
+          <DialogFooter frame className="justify-between sm:justify-between">
             <span className="text-[12px] text-muted-foreground">
               Current plan: {plan.tasks.length} {plan.tasks.length === 1 ? "step" : "steps"}
             </span>
@@ -3115,8 +3101,8 @@ function TaskDiffDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="grid h-[min(720px,calc(100vh-40px))] w-[min(1180px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 p-0 sm:max-w-none">
-        <DialogHeader className="border-b border-rule px-5 py-4">
+      <DialogContent frame className="grid h-[min(720px,calc(100vh-40px))] w-[min(1180px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-none">
+        <DialogHeader frame>
           <DialogTitle>{taskTitle}</DialogTitle>
           <DialogDescription>
             {focusFile === null
@@ -3182,7 +3168,7 @@ function TaskDiffDialog({
             )}
           </div>
         </div>
-        <DialogFooter className="items-center justify-between gap-3 border-t border-rule bg-panel px-5 py-3 sm:justify-between">
+        <DialogFooter frame className="justify-between gap-3 sm:justify-between">
           <span className="text-[12px] text-muted-foreground">
             {annotations.length === 0
               ? "Notes steer the agent. They never approve or ship anything."
@@ -3210,16 +3196,14 @@ function PaneButton({
   onClick: () => void;
 }): React.JSX.Element {
   return (
-    <button
-      className={`rounded-sm px-2.5 py-1 text-[12px] transition-colors disabled:opacity-40 ${
-        active ? "bg-panel font-medium text-ink" : "text-muted-foreground hover:text-ink"
-      }`}
+    <SelectionControl
+      active={active}
       disabled={disabled}
-      type="button"
+      shape="pane"
       onClick={onClick}
     >
       {children}
-    </button>
+    </SelectionControl>
   );
 }
 
@@ -3238,8 +3222,8 @@ function PatchDialog({
 }): React.JSX.Element {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="grid h-[min(720px,calc(100vh-40px))] w-[min(1000px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)] gap-0 p-0 sm:max-w-none">
-        <DialogHeader className="border-b border-rule px-5 py-4">
+      <DialogContent frame className="grid h-[min(720px,calc(100vh-40px))] w-[min(1000px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)] sm:max-w-none">
+        <DialogHeader frame>
           <DialogTitle>
             Every line that would land
           </DialogTitle>

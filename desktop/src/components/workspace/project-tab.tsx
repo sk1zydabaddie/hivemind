@@ -193,7 +193,7 @@ export function ProjectTab({
            the same reasoning the bare state above already followed. */
         <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_340px] items-start gap-3 overflow-hidden">
           <Panel className="max-h-full">
-            <PanelHeader className="bg-panel/82">
+            <PanelHeader>
               <PanelLabel className="text-ink">Past runs</PanelLabel>
               <PanelCount>{runs.length}</PanelCount>
             </PanelHeader>
@@ -220,7 +220,7 @@ export function ProjectTab({
             <AccountsPanel onAction={onAction} />
             <SpendPanel usage={usage} />
             <Panel className="max-h-full">
-              <PanelHeader className="bg-panel/82">
+              <PanelHeader>
                 <PanelLabel className="text-ink">What it has learned</PanelLabel>
                 <PanelCount>{learned.length}</PanelCount>
               </PanelHeader>
@@ -499,7 +499,7 @@ function SpendPanel({ usage }: { usage: UsagePanel }): React.JSX.Element | null 
   if (usage.providers.length === 0) return null;
   return (
     <Panel>
-      <PanelHeader className="bg-panel/82">
+      <PanelHeader>
         <PanelLabel className="text-ink">Agents and what they spent</PanelLabel>
         <PanelCount>{usage.providers.length}</PanelCount>
       </PanelHeader>
@@ -798,8 +798,8 @@ function TrailDialog({
 }): React.JSX.Element {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="grid h-[min(720px,calc(100vh-40px))] w-[min(900px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)] gap-0 p-0 sm:max-w-none">
-        <DialogHeader className="border-b border-rule px-5 py-4">
+      <DialogContent frame className="grid h-[min(720px,calc(100vh-40px))] w-[min(900px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)] sm:max-w-none">
+        <DialogHeader frame>
           <DialogTitle>
             Everything this project recorded
           </DialogTitle>
