@@ -1,12 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Hivemind grants the webview two plugin permissions: sending a notification when something needs a human, and the updater's default set. Every other action is a custom command through the audited dispatcher, which needs no ACL entry. Note that install is NOT reachable from the webview's updater permission alone -- it goes through `install_update`, which holds the idleness gate.",
+  "description": "Hivemind grants the webview notification access only. Update discovery and installation are custom Rust commands; every updater plugin IPC command is explicitly denied so the webview cannot bypass the on-disk idleness gate.",
   "windows": [
     "main"
   ],
   "permissions": [
     "notification:default",
-    "updater:default"
+    "updater:deny-check",
+    "updater:deny-download",
+    "updater:deny-install",
+    "updater:deny-download-and-install"
   ]
 }

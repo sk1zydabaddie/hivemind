@@ -17,7 +17,7 @@ const repoRoot = path.resolve(desktopRoot, "..");
  * written.
  */
 describe("the updater", () => {
-  test("the plugin is a dependency, registered, and permitted", async () => {
+  test("the plugin is registered for Rust but every webview updater command is denied", async () => {
     const cargo = await readFile(path.join(desktopRoot, "src-tauri", "Cargo.toml"), "utf8");
     expect(cargo).toMatch(/tauri-plugin-updater/u);
 
@@ -28,7 +28,35 @@ describe("the updater", () => {
     const capability = JSON.parse(
       await readFile(path.join(desktopRoot, "src-tauri", "capabilities", "default.json"), "utf8")
     ) as { permissions: string[] };
-    expect(capability.permissions).toContain("updater:default");
+    const updaterPermissions = capability.permissions.filter((permission) =>
+      permission.startsWith("updater:")
+    );
+    expect(updaterPermissions).toEqual([
+      "updater:deny-check",
+      "updater:deny-download",
+      "updater:deny-install",
+      "updater:deny-download-and-install"
+    ]);
+    expect(
+      updaterPermissions.some((permission) =>
+        permission === "updater:default" || permission.includes(":allow-")
+      ),
+      "any updater grant lets webview code walk around the Rust idleness gate"
+    ).toBe(false);
+
+    const frontendFiles = execFileSync(
+      "git",
+      ["ls-files", "src/**/*.ts", "src/**/*.tsx"],
+      { cwd: desktopRoot, encoding: "utf8" }
+    )
+      .split(/\r?\n/u)
+      .filter(Boolean);
+    for (const file of frontendFiles) {
+      const source = await readFile(path.join(desktopRoot, file), "utf8");
+      expect(source, `${file} must not import the updater's direct JS API`).not.toMatch(
+        /@tauri-apps\/plugin-updater/u
+      );
+    }
   });
 
   /* A build with no public key cannot verify anything, so the plugin refuses
@@ -76,7 +104,7 @@ describe("the updater", () => {
   /**
    * The gate lives in Rust, not in the bar.
    *
-   * `install_update` replaces the running binary. A gate evaluated in React is
+   * `take_newer_version` replaces the running binary. A gate evaluated in React is
    * one that anything able to call the plugin walks around, and the standing
    * rule is that the client holds no gate logic. So the refusal is computed
    * where the reservations can actually be read — from disk, rather than by
@@ -93,8 +121,8 @@ describe("the updater", () => {
     /* And check is NOT gated: a busy project must still be able to discover
        that an update exists, or the silence is rebuilt at a different level. */
     const check = updater.slice(
-      updater.indexOf("pub async fn check_for_update"),
-      updater.indexOf("pub async fn install_update")
+      updater.indexOf("pub async fn newer_version"),
+      updater.indexOf("pub async fn take_newer_version")
     );
     expect(check).not.toMatch(/daemon_work/u);
   });

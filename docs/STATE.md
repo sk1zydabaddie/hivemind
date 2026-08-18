@@ -1409,3 +1409,11 @@ next session does not have to rediscover them.
 The current full-codebase audit and its open, reproducible register are in
 `docs/AUDIT-2026-08-17.md`. `AUDIT-FINDINGS.md` remains the historical record
 of its one closed finding; do not reuse the old phantom F-number backlog.
+
+The first audit repair closes A-01. The WebView has no updater grant: its
+capability explicitly denies check, download, install, and
+download-and-install. Rust continues to use the registered plugin internally,
+and the only product update routes are `newer_version` and
+`take_newer_version`; the latter owns the on-disk idleness proof. The desktop
+regression test fails on `updater:default`, any `updater:allow-*` permission, or
+any direct frontend import of the updater JavaScript API.

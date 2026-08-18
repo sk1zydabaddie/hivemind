@@ -30,11 +30,13 @@ fn main() {
            `select_project`. This keeps browsing in the OS and authority in the
            existing shell boundary. */
         .plugin(tauri_plugin_dialog::init())
-        /* The updater. Its JS API is deliberately NOT used: install is a gate
-           -- it refuses to replace the running binary while agents are mid-run
-           -- and a gate evaluated in React is a gate anything calling the
-           plugin can walk around. `updater.rs` holds the decision; the surface
-           renders what it is told. */
+        /* The updater. Its JS API is deliberately NOT reachable: install is a
+           gate -- it refuses to replace the running binary while agents are
+           mid-run -- and a gate evaluated in React is a gate anything calling
+           the plugin can walk around. The capability file explicitly denies
+           every updater IPC command. Rust still uses the plugin internally;
+           `newer_version.rs` holds the decision and the surface renders only
+           its structured answer. */
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             newer_version,
