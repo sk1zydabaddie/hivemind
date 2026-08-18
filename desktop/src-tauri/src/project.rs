@@ -1781,16 +1781,18 @@ fn chrono_now() -> String {
 // normal first-run case for someone who has been editing without one, and the
 // front door used to explain the requirement and then stop.
 //
-// This offers the step instead. It refuses rather than guesses when the folder
-// holds something that should not be committed -- there is no "commit
-// everything and hope" path, because the first commit is what every later diff
-// is measured against.
+// This offers the step instead. Known generated directories can be ignored and
+// verified mechanically; secrets, built binaries, and ambiguous folder shapes
+// still refuse rather than guess. There is no "commit everything and hope"
+// path, because the first commit is what every later diff is measured against.
 
 #[derive(serde::Serialize)]
 pub struct GitReadiness {
     pub is_repo: bool,
     /// Files that would be committed, so the offer can name them.
     pub would_commit: Vec<String>,
+    /// Generated top-level directories Hivemind can safely add to .gitignore.
+    pub would_ignore: Vec<String>,
     /// Why Hivemind will not initialise this folder, when it will not.
     pub refusal: Option<String>,
 }
@@ -1810,7 +1812,7 @@ const NEVER_COMMIT: [&str; 6] = [
 ];
 
 /// Directories whose contents are installed or generated, never authored.
-const NOT_AUTHORED_DIRS: [&str; 8] = [
+const NOT_AUTHORED_DIRS: [&str; 13] = [
     "node_modules",
     "vendor",
     "target",
@@ -1819,6 +1821,11 @@ const NOT_AUTHORED_DIRS: [&str; 8] = [
     "venv",
     "bower_components",
     "Pods",
+    "dist",
+    "build",
+    "coverage",
+    ".next",
+    "out",
 ];
 
 /// Extensions that mean "this file is built, not written".
@@ -1851,19 +1858,17 @@ const SOURCE_EXTENSIONS: [&str; 42] = [
 /// `node_modules` into a first commit that every later diff is measured
 /// against. A list can only refuse what somebody thought to list.
 ///
-/// Three shapes are refused, and each is stated as what it IS rather than as a
-/// rule number, because the person reading it has to decide what to do next.
+/// The shapes that require human judgment are refused, and each is stated as
+/// what it IS rather than as a rule number. Known generated directories are
+/// handled separately as a mechanical preparation, not flattened into this
+/// human-judgment path.
 fn shape_refusal(root: &Path, entries: &[String]) -> Option<String> {
-    let mut installed_dirs: Vec<&str> = Vec::new();
     let mut binaries: Vec<&str> = Vec::new();
     let mut has_source = false;
 
     for name in entries {
         let path = root.join(name);
         if path.is_dir() {
-            if NOT_AUTHORED_DIRS.iter().any(|dir| name == dir) {
-                installed_dirs.push(name);
-            }
             // A directory is not walked. Depth would make this slow on a large
             // tree for no gain: the shapes being refused are all visible at the
             // top level, and a folder whose only source lives three levels down
@@ -1890,13 +1895,6 @@ fn shape_refusal(root: &Path, entries: &[String]) -> Option<String> {
             binaries.join(", ")
         ));
     }
-    if !installed_dirs.is_empty() {
-        installed_dirs.sort_unstable();
-        return Some(format!(
-            "This folder holds installed dependencies ({}) and is not tracked by git, so a first commit would take all of them. Add a .gitignore, or set the repository up yourself, and open it again.",
-            installed_dirs.join(", ")
-        ));
-    }
     if !has_source {
         return Some(
             "This folder has no source files in it, so there is nothing for Hivemind to work on yet. Choose the folder your project lives in."
@@ -1916,11 +1914,13 @@ pub async fn inspect_git_readiness(project_path: String) -> Result<GitReadiness,
         return Ok(GitReadiness {
             is_repo: true,
             would_commit: Vec::new(),
+            would_ignore: Vec::new(),
             refusal: None,
         });
     }
 
     let mut would_commit = Vec::new();
+    let mut would_ignore = Vec::new();
     let mut dangerous = Vec::new();
     // Every top-level name, including the ones the display list hides. The
     // shape check has to see `node_modules` -- it is the whole reason the check
@@ -1936,7 +1936,8 @@ pub async fn inspect_git_readiness(project_path: String) -> Result<GitReadiness,
             continue;
         }
         present.push(name.clone());
-        if name == "node_modules" {
+        if entry.path().is_dir() && NOT_AUTHORED_DIRS.iter().any(|dir| name == *dir) {
+            would_ignore.push(name);
             continue;
         }
         if NEVER_COMMIT.iter().any(|needle| name == *needle) {
@@ -1945,6 +1946,7 @@ pub async fn inspect_git_readiness(project_path: String) -> Result<GitReadiness,
         would_commit.push(name);
     }
     would_commit.sort();
+    would_ignore.sort();
 
     // Refuse rather than guess. A .env in the folder is not something to decide
     // about on somebody's behalf -- and a first commit cannot be un-made
@@ -1966,8 +1968,42 @@ pub async fn inspect_git_readiness(project_path: String) -> Result<GitReadiness,
     Ok(GitReadiness {
         is_repo: false,
         would_commit,
+        would_ignore,
         refusal,
     })
+}
+
+fn add_generated_ignores(root: &Path, entries: &[String]) -> Result<(), String> {
+    if entries.is_empty() {
+        return Ok(());
+    }
+    let path = root.join(".gitignore");
+    let existing = match std::fs::read_to_string(&path) {
+        Ok(value) => value,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(format!("could not read .gitignore: {error}")),
+    };
+    let mut next = existing.clone();
+    if !next.is_empty() && !next.ends_with('\n') {
+        next.push('\n');
+    }
+    let mut added_header = false;
+    for entry in entries {
+        let rule = format!("{entry}/");
+        if existing.lines().any(|line| line.trim() == rule) {
+            continue;
+        }
+        if !added_header {
+            next.push_str("# Added by Hivemind before the first commit.\n");
+            added_header = true;
+        }
+        next.push_str(&rule);
+        next.push('\n');
+    }
+    if next != existing {
+        std::fs::write(&path, next).map_err(|error| format!("could not update .gitignore: {error}"))?;
+    }
+    Ok(())
 }
 
 /// Make a folder into a git repository, with an explicit first commit.
@@ -2003,7 +2039,16 @@ pub async fn initialize_git(project_path: String) -> Result<GitReadiness, String
         ))
     };
 
+    /* Verify git exists before changing a project file. Generated directories
+       are the one refusal Hivemind can resolve without guessing: their names
+       come from the closed list above, and the action verifies git ignores
+       every one before staging anything. */
+    run(&["--version"])?;
+    add_generated_ignores(root, &readiness.would_ignore)?;
     run(&["init"])?;
+    for entry in &readiness.would_ignore {
+        run(&["check-ignore", "--quiet", "--", entry])?;
+    }
     run(&["add", "-A"])?;
     // A message that says what it did and why, because this commit is the base
     // every later diff is measured against and somebody will read it later
@@ -2015,7 +2060,7 @@ pub async fn initialize_git(project_path: String) -> Result<GitReadiness, String
         "user.email=setup@hivemind.local",
         "commit",
         "-m",
-        "Start tracking this project\n\nCreated by Hivemind when the folder was opened, so changes can be\nkept separate until you choose to ship them. Everything already in\nthe folder is in this commit.",
+        "Start tracking this project\n\nCreated by Hivemind when the folder was opened, so changes can be\nkept separate until you choose to ship them. Project files that are\nnot generated or ignored are in this commit.",
     ])?;
 
     inspect_git_readiness(project_path).await
@@ -2077,9 +2122,10 @@ mod git_readiness_tests {
     }
 
     #[test]
-    fn a_folder_of_installed_dependencies_is_refused() {
+    fn generated_dependencies_are_offered_with_ignore_entries() {
         let dir = temp_dir("deps-only");
         std::fs::create_dir_all(dir.join("node_modules")).expect("deps");
+        std::fs::create_dir_all(dir.join("dist")).expect("build output");
         std::fs::write(dir.join("index.js"), "export default 1;\n").expect("source");
 
         let readiness = tauri::async_runtime::block_on(inspect_git_readiness(
@@ -2087,8 +2133,40 @@ mod git_readiness_tests {
         ))
         .expect("readiness");
 
-        let refusal = readiness.refusal.expect("untracked node_modules is refused");
-        assert!(refusal.contains("installed dependencies"), "{refusal}");
+        assert_eq!(readiness.refusal, None);
+        assert_eq!(readiness.would_ignore, vec!["dist", "node_modules"]);
+        assert!(!readiness.would_commit.contains(&"node_modules".to_string()));
+        assert!(!readiness.would_commit.contains(&"dist".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn one_action_ignores_generated_directories_and_creates_the_first_commit() {
+        let dir = temp_dir("prepare-generated");
+        std::fs::create_dir_all(dir.join("node_modules")).expect("deps");
+        std::fs::create_dir_all(dir.join("dist")).expect("build output");
+        std::fs::write(dir.join("node_modules").join("dependency.js"), "generated\n").expect("dep");
+        std::fs::write(dir.join("dist").join("bundle.js"), "generated\n").expect("bundle");
+        std::fs::write(dir.join("index.js"), "export default 1;\n").expect("source");
+
+        let result = tauri::async_runtime::block_on(initialize_git(
+            dir.to_string_lossy().to_string(),
+        ))
+        .expect("one-click git setup");
+        assert!(result.is_repo);
+        let ignore = std::fs::read_to_string(dir.join(".gitignore")).expect("gitignore");
+        assert!(ignore.contains("node_modules/"), "{ignore}");
+        assert!(ignore.contains("dist/"), "{ignore}");
+        let tracked = std::process::Command::new("git")
+            .args(["ls-files"])
+            .current_dir(&dir)
+            .output()
+            .expect("git ls-files");
+        let tracked = String::from_utf8_lossy(&tracked.stdout);
+        assert!(tracked.contains("index.js"), "{tracked}");
+        assert!(tracked.contains(".gitignore"), "{tracked}");
+        assert!(!tracked.contains("node_modules"), "{tracked}");
+        assert!(!tracked.contains("dist/"), "{tracked}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

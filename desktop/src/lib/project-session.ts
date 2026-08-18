@@ -11,6 +11,7 @@ export interface ProjectConnection {
 export interface GitReadiness {
   is_repo: boolean;
   would_commit: string[];
+  would_ignore: string[];
   refusal: string | null;
 }
 

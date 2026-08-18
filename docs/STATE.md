@@ -109,6 +109,21 @@ capture. Evidence:
 `docs/evidence/update-recheck-checking-installed-26.817.1710.png`, and
 `docs/evidence/update-recheck-result-installed-26.817.1710.png`.
 
+The next correction restores the one-click path without weakening the first
+commit boundary. A structured `would_ignore` list now separates known generated
+directories from actual refusals. For the former, “Set up git for me” writes
+exact `.gitignore` entries, verifies them with git, and only then stages and
+commits the remaining project files. Secrets, loose binaries, and folders with
+no recognisable source remain refusals. React displays that shell-owned answer;
+it does not decide what is safe to ignore.
+
+Installed build 26.817.1726 was opened at a 1440x900 client size against the
+untracked Skybound project. The running installed app identified `dist` and
+`node_modules`, described the exact preparation, and exposed the enabled raised
+“Set up git for me” action. It was deliberately not pressed against that real
+project; the mutation is covered by the disposable Rust integration test.
+Evidence: `docs/evidence/git-one-click-installed-26.817.1726.png`.
+
 ### Two platforms green, with counts
 
 | Platform | Filesystem | Result |

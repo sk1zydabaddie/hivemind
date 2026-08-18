@@ -56,8 +56,10 @@ describe("cold open", () => {
     );
     expect(hook).toMatch(/invoke<GitReadiness>\("inspect_git_readiness"/u);
     expect(screen).toMatch(/gitReadiness !== null && gitRefusal === null/u);
-    expect(screen).toMatch(/gitRefusal \?\? problem\.detail/u);
+    expect(screen).toMatch(/gitRefusal \?\? \(generatedIgnores\.length/u);
     expect(screen).toMatch(/Nothing changed\. \{actionError\}/u);
+    expect(screen).toMatch(/Set up git for me/u);
+    expect(screen).toMatch(/generatedIgnores\.join/u);
     expect(screen).toMatch(/disabled=\{!chosen \|\| initializing \|\| gitBlocksSetup\}/u);
     expect(screen).toMatch(/Waiting on git/u);
   });

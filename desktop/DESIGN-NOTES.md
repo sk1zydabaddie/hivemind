@@ -3618,6 +3618,15 @@ is visible as “Nothing changed” with its reason. The later “Set it up” s
 also disabled while git is unresolved; it is not a second route around the
 same prerequisite.
 
+Known generated directories are not a question for the person after all. When
+the only problem is a closed-list dependency or build directory (`node_modules`,
+`dist`, `target`, and their peers), the same raised action becomes “Set up git
+for me.” The shell appends exact top-level rules to `.gitignore`, initializes
+git, verifies every directory is ignored, stages the remaining files, and makes
+the first commit. Any failed verification stops before staging. Secrets, loose
+binaries, and folders with no recognisable source still refuse because ignoring
+those would require judgment rather than preparation.
+
 The update bar follows the same rule. A recheck sets “Checking…” before the
 round trip and, when the answer is identical, leaves “Checked again just now;
 the result did not change.” A fast request or an unchanged failure can no
