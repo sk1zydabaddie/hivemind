@@ -1406,5 +1406,6 @@ next session does not have to rediscover them.
 | One closed finding, kept for its cause | `docs/AUDIT-FINDINGS.md` |
 | Everything deferred, in one register | `Hivemind_Build_Progress.md` |
 
-**There is no audit backlog beyond `AUDIT-FINDINGS.md`.** If a plan refers to
-numbered findings above F-1, that list does not exist and never did.
+The current full-codebase audit and its open, reproducible register are in
+`docs/AUDIT-2026-08-17.md`. `AUDIT-FINDINGS.md` remains the historical record
+of its one closed finding; do not reuse the old phantom F-number backlog.
