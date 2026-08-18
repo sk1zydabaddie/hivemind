@@ -1418,6 +1418,15 @@ and the only product update routes are `newer_version` and
 regression test fails on `updater:default`, any `updater:allow-*` permission, or
 any direct frontend import of the updater JavaScript API.
 
+The public updater channel closes A-02. `sk1zydabaddie/hivemind` is public and
+release `v26.818.803` points at commit `1ba0bcf`; its anonymous `latest.json`
+and signed 10,870,760-byte Windows installer are reachable. Publication is
+fail-closed: the release remains a draft until both assets upload, and
+`verify:release` rejects an unreachable or stale manifest, a missing signature,
+an insecure installer URL, or an implausibly small artifact. The same build was
+installed and verified against the binary on disk, then opened at 1440×900 with
+no update-check failure surface.
+
 The UI consistency phase closes A-13 and A-14 and turns consistency into a
 release check. Command visuals live only in `Button`; selected-option visuals
 live only in `SelectionControl`; panel headers and framed-dialog gutters are

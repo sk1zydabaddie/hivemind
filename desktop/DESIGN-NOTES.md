@@ -3632,6 +3632,23 @@ round trip and, when the answer is identical, leaves “Checked again just now;
 the result did not change.” A fast request or an unchanged failure can no
 longer make a real click look inert.
 
+### A public updater channel is a release invariant — 2026-08-18
+
+An HTTPS URL in configuration is not an update channel. The repository was
+private and the stable GitHub Releases URL returned 404 to every installed
+client; source tests could prove only that the URL existed. The repository is
+now public, and publication is one fail-closed command: prepare the signature
+and manifest, create a draft release, upload both assets, publish only after
+both succeed, then fetch them anonymously through the configured endpoint.
+
+The remote guard compares the returned version to the exact locally stamped
+build. That last comparison matters because a valid older manifest is still a
+failed release. Public asset names contain no spaces because GitHub normalizes
+spaces during upload; the manifest must name the served asset, not the local
+installer filename. Release tags are never reused, because a CDN may continue
+serving an earlier deleted asset at the same tag URL. These were observed
+failures, not speculative rules.
+
 The provider selection is genuinely plural now. Continue builds a deterministic
 plan that gives every selected, connectable provider at least one real worker
 probe and fills every empty role; a regression test proves a second selection
