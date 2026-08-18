@@ -788,8 +788,8 @@ reads identically to "slow" until someone goes looking.
 The constraint was lifted, with a limit, and the limit is the interesting part.
 
 > One control-gradient shape: a **vertical ramp from a meaning colour to a
-> darker mix of itself**. Same hue, two stops, top to bottom. Strong actions use
-> the full hue; quiet controls use a pale derived base.
+> darker mix of itself**. Same hue, two stops, top to bottom. Application-owned
+> controls use the reference navy face; destructive controls use clay.
 
 What was ever wrong with gradients was never gradients. It was the **two-colour
 multi-hue button** — navy into violet, teal into blue — which is the visual tell
@@ -803,10 +803,10 @@ base. `design-tokens.test.ts` enforces both halves — every `-deep` token must 
 a `color-mix` of a palette colour, and every `from-`/`to-` pair in the markup
 must resolve to the same base name. Mutation-tested: `from-navy to-amber` fails.
 
-As of the consistency correction on 2026-08-18, outline, ghost, secondary and
-link controls no longer become flat exceptions. They use `--quiet-lift` to
-`--quiet-deep`, so importance still comes from fill strength while pressability
-always has the same physical construction.
+As of the measured correction on 2026-08-18, outline, ghost, secondary and link
+controls use `--quiet-lift` to `--quiet-deep`, which now aliases the same navy
+ramp as the reference button. Washing those controls toward white erased them
+against the canvas and was rejected from the installed build.
 
 ## Per-task-type routing: the third input — 2026-08-14
 
@@ -3933,4 +3933,26 @@ compact provider-role controls. Evidence is in
 
 Final verification passed Core 815/817 with two intentional skips, Desktop
 298/298, Rust 32/32, and all 24 production surface/viewport checks.
+
+### The reference is the ceiling, not a starting point — 2026-08-18
+
+The installed correction above was rejected on screen. Its quiet controls were
+near-white on a white canvas, while five or six simultaneous shadow terms made
+them read as extruded slabs. The supplied reference measures approximately
+`#425c85` at the lit face and `#0e2140` at the bottom, followed by one dark edge
+and a short soft falloff. That is now the standard:
+
+- quiet controls alias the reference navy ramp instead of a near-white wash;
+- resting relief has exactly two terms: one restrained top reflection and one
+  short contact shadow; compact and micro scales keep the same construction;
+- selected cards receive no elevation token because selection occludes nothing;
+- enabled navy controls own descendant foreground contrast, and the production
+  reachability run fails on dark caller text inside them.
+
+Build `26.818.931` was built, installed, and verified against the binary on
+disk. All 24 production surface/viewport checks passed, including the new
+descendant-contrast guard. The installed Work and Settings surfaces were then
+captured at a 1440x900 client size. Those captures show the measured navy face,
+short contact shadow, and inherited white foreground at native scale; they are
+recorded in `docs/evidence/ui-reference-correction-installed-26.818.931/`.
 

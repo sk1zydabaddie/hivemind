@@ -71,7 +71,7 @@ describe("elevation is a scale, not a shadow utility", () => {
     /* A discrete card brought forward from siblings it shares a surface with —
        and `styles.css`, which is `.lift:hover`: hovering a clickable card is
        that same claim, made for as long as the pointer is on it. */
-    "elevation-raised": ["work-tab.tsx", "selection-control.tsx", "styles.css"]
+    "elevation-raised": ["work-tab.tsx", "styles.css"]
   };
 
   test("each level appears only where it is allowed, and none is unused", async () => {
@@ -229,7 +229,7 @@ describe("elevation is a scale, not a shadow utility", () => {
     /* And it still expresses selection, so this is a substitution rather than an
        omission. */
     expect(code, "the selected tab must still be marked somehow").toMatch(
-      /data-\[state=active\]:from-navy-wash/u
+      /data-\[state=active\]:from-navy-lift/u
     );
   });
 });

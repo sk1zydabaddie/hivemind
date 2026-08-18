@@ -252,7 +252,35 @@ const PROBE = `
       group,
       variants: [...signatures.entries()].map(([signature, labels]) => ({ signature, labels }))
     }));
-  return { controls: controls.length, unreachable, clipped, brokenImages, inconsistentControls };
+  /* A dark shared face needs a light foreground all the way through its
+     descendants. The installed audit found black caller spans on navy row
+     buttons even though the Button root itself correctly computed to white. */
+  const lowContrastControls = [];
+  const channelsOf = (value) => {
+    const match = /rgba?\\(\\s*(\\d+(?:\\.\\d+)?)\\D+(\\d+(?:\\.\\d+)?)\\D+(\\d+(?:\\.\\d+)?)/u.exec(value);
+    return match === null ? null : match.slice(1, 4).map(Number);
+  };
+  for (const control of document.querySelectorAll('[data-slot="button"], [data-slot="selection-control"], [data-slot="tabs-trigger"]')) {
+    if (control.offsetParent === null || control.disabled) continue;
+    const candidates = [control, ...control.querySelectorAll("*")];
+    for (const candidate of candidates) {
+      const ownsText = candidate === control || [...candidate.childNodes].some(
+        (node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim() !== ""
+      );
+      if (!ownsText || candidate.getBoundingClientRect().width === 0) continue;
+      const color = getComputedStyle(candidate).color;
+      const channels = channelsOf(color);
+      if (channels !== null && channels.reduce((sum, channel) => sum + channel, 0) / 3 < 180) {
+        lowContrastControls.push({
+          label: (candidate.textContent || control.getAttribute("aria-label") || "control").trim().slice(0, 48),
+          control: (control.innerText || control.getAttribute("aria-label") || control.getAttribute("data-slot") || "control").replace(/\\s+/g, " ").trim().slice(0, 72),
+          element: candidate.tagName.toLowerCase() + "." + candidate.className.toString().replace(/\\s+/g, ".").slice(0, 80),
+          color
+        });
+      }
+    }
+  }
+  return { controls: controls.length, unreachable, clipped, brokenImages, inconsistentControls, lowContrastControls };
 `;
 
 /* Build the replay through the SAME production transform that Tauri bundles.
@@ -401,6 +429,7 @@ for (const viewport of VIEWPORTS) {
       found.clipped.length === 0 &&
       found.brokenImages.length === 0 &&
       found.inconsistentControls.length === 0 &&
+      found.lowContrastControls.length === 0 &&
       browserIssues.length === 0
     ) {
       console.log(`  ok   ${label}  (${found.controls} controls)`);
@@ -421,6 +450,9 @@ for (const viewport of VIEWPORTS) {
     }
     for (const issue of found.inconsistentControls) {
       console.log(`         inconsistent ${issue.group}: ${JSON.stringify(issue.variants)}`);
+    }
+    for (const issue of found.lowContrastControls) {
+      console.log(`         dark text on dark control "${issue.control}": ${issue.element} "${issue.label}" rendered ${issue.color}`);
     }
     for (const issue of browserIssues) {
       console.log(`         browser error: ${issue}`);

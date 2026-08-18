@@ -1460,3 +1460,20 @@ build **26.818.856** was verified against the binary on disk and inspected at a
 `docs/evidence/ui-consistency-installed-26.818.856/`. No paid provider call was
 used. Final verification passed Core 815/817 with two intentional skips,
 Desktop 298/298, Rust 32/32, and all 24 production surface/viewport checks.
+
+The installed UI record above was rejected by the user on 2026-08-18. Build
+26.818.856 used near-white quiet faces and stacked five or six shadow terms,
+which produced white-on-white extruded slabs rather than the supplied navy
+reference. The correction makes the reference navy ramp the shared control
+face, reduces resting relief to one top reflection plus one contact shadow,
+removes selection-only elevation, and makes descendant foreground contrast a
+production reachability failure.
+
+Build **26.818.931** was built, installed, and verified against the binary on
+disk. Core passed 815/817 with two intentional skips, Desktop passed 299/299,
+Rust passed 32/32, and all 24 production surface/viewport checks passed. No paid
+provider call was used. The installed Work and Settings surfaces were captured
+at a 1440x900 client size in
+`docs/evidence/ui-reference-correction-installed-26.818.931/`; both show the
+corrected navy control faces, compact contact shadows, and readable inherited
+foregrounds at native scale.

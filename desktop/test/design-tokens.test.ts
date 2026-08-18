@@ -475,6 +475,8 @@ describe("palette discipline", () => {
       value.replace(/color-mix\([^()]*\)/gu, "MIX").split(",");
     const relief = layers(/--relief:\s*([^;]+);/u.exec(reliefCss)?.[1] ?? "");
     const pressed = layers(/--relief-pressed:\s*([^;]+);/u.exec(reliefCss)?.[1] ?? "");
+    expect(relief, "resting relief must match the two-term reference construction").toHaveLength(2);
+    expect(relief.some((layer) => /inset\s+0\s+-/u.test(layer)), "relief invents a dark extruded base").toBe(false);
     expect(relief.some((layer) => !layer.includes("inset"))).toBe(true);
     expect(pressed.every((layer) => layer.includes("inset"))).toBe(true);
 

@@ -293,7 +293,7 @@ export default function App(): React.JSX.Element {
               <Workflow aria-hidden="true" />
               Agents
               {agentsWorking > 0 ? (
-                <span className="ml-0.5 font-mono text-[11px] text-navy">
+                <span className="ml-0.5 font-mono text-[11px]">
                   {agentsWorking}
                 </span>
               ) : null}

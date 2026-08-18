@@ -46,9 +46,9 @@ export function TabsTrigger({
       className={cn(
         /* The focus ring is inset: a tab outlined one pixel clear of itself
            reads as a floating box rather than as a focused tab. */
-        "relative my-1.5 inline-flex cursor-pointer items-center gap-1.5 rounded-md border-0 bg-gradient-to-b from-quiet-lift to-quiet-deep px-2.5 text-[13px] font-medium text-muted-foreground shadow-[var(--relief-compact)] transition-[color,background-color,box-shadow,translate] duration-[120ms] ease-[var(--spring)] hover:from-quiet hover:to-quiet-deep hover:text-ink active:translate-y-[1px] active:shadow-[var(--relief-compact-pressed)] active:duration-[60ms] focus-visible:outline-offset-[-3px]",
+        "relative my-1.5 inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-navy-deep bg-gradient-to-b from-quiet-lift to-quiet-deep px-2.5 text-[13px] font-medium text-primary-foreground shadow-[var(--relief-compact)] transition-[color,background-color,box-shadow,translate] duration-[120ms] ease-[var(--spring)] hover:from-quiet hover:to-quiet-deep active:translate-y-[1px] active:shadow-[var(--relief-compact-pressed)] active:duration-[60ms] focus-visible:outline-offset-[-3px]",
         /* Selection changes the quiet ramp, not its physical construction. */
-        "data-[state=active]:from-navy-wash data-[state=active]:to-quiet-deep data-[state=active]:text-navy",
+        "data-[state=active]:from-navy-lift data-[state=active]:to-navy data-[state=active]:text-primary-foreground",
         "[&>svg]:size-3.5 [&>svg]:shrink-0",
         className
       )}

@@ -19,7 +19,7 @@ const buttonVariants = cva(
   /* Motion: a spring curve on colour AND transform, so a press reads as the
      surface giving way rather than as a repaint. `active:` goes DOWN past rest
      -- returning to zero would feel like nothing happened. */
-  "relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-md bg-gradient-to-b text-[13px] leading-none font-medium whitespace-nowrap shadow-[var(--control-relief)] transition-[color,background-color,border-color,box-shadow,transform] duration-[120ms] ease-[var(--spring)] [--control-relief:var(--relief)] [--control-relief-pressed:var(--relief-pressed)] [--press-distance:2px] active:translate-y-[var(--press-distance)] active:shadow-[var(--control-relief-pressed)] active:duration-[60ms] disabled:pointer-events-none disabled:cursor-default disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground disabled:shadow-none aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+  "relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-md border border-navy-deep bg-gradient-to-b text-[13px] leading-none font-medium whitespace-nowrap shadow-[var(--control-relief)] transition-[color,background-color,border-color,box-shadow,transform] duration-[120ms] ease-[var(--spring)] [--control-relief:var(--relief)] [--control-relief-pressed:var(--relief-pressed)] [--press-distance:2px] active:translate-y-[var(--press-distance)] active:shadow-[var(--control-relief-pressed)] active:duration-[60ms] disabled:pointer-events-none disabled:cursor-default disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground disabled:shadow-none aria-invalid:border-destructive [&_*]:!text-[inherit] [&_kbd]:border-white/30 [&_kbd]:bg-transparent [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
   {
     variants: {
       variant: {
@@ -46,16 +46,16 @@ const buttonVariants = cva(
         default:
           "bg-navy from-navy-lift to-navy-deep text-primary-foreground hover:from-navy hover:to-navy-deep active:from-navy-deep active:to-navy-deep",
         destructive:
-          "bg-clay from-clay-lift to-clay-deep text-destructive-foreground hover:from-clay hover:to-clay-deep active:from-clay-deep active:to-clay-deep",
+          "border-clay-deep bg-clay from-clay-lift to-clay-deep text-destructive-foreground hover:from-clay hover:to-clay-deep active:from-clay-deep active:to-clay-deep",
         "ghost-destructive":
-          "from-quiet-clay-lift to-quiet-clay-deep text-clay hover:from-quiet-clay hover:to-quiet-clay-deep",
+          "border-clay-deep from-clay-lift to-clay-deep text-destructive-foreground hover:from-clay hover:to-clay-deep",
         "outline-destructive":
-          "border border-clay/35 from-quiet-clay-lift to-quiet-clay-deep text-clay hover:border-clay/55 hover:from-quiet-clay hover:to-quiet-clay-deep",
+          "border-clay-deep from-clay-lift to-clay-deep text-destructive-foreground hover:from-clay hover:to-clay-deep",
         outline:
-          "border border-rule from-quiet-lift to-quiet-deep text-ink hover:border-navy/45 hover:from-quiet hover:to-quiet-deep hover:text-navy",
-        secondary: "from-quiet-lift to-quiet-deep text-secondary-foreground hover:from-quiet hover:to-quiet-deep",
-        ghost: "from-quiet-lift to-quiet-deep text-muted-foreground hover:from-quiet hover:to-quiet-deep hover:text-ink",
-        link: "from-quiet-lift to-quiet-deep text-primary underline-offset-2 hover:from-quiet hover:to-quiet-deep hover:underline",
+          "border border-navy-deep from-quiet-lift to-quiet-deep text-primary-foreground hover:from-quiet hover:to-quiet-deep",
+        secondary: "border border-navy-deep from-quiet-lift to-quiet-deep text-primary-foreground hover:from-quiet hover:to-quiet-deep",
+        ghost: "border border-navy-deep from-quiet-lift to-quiet-deep text-primary-foreground hover:from-quiet hover:to-quiet-deep",
+        link: "border border-navy-deep from-quiet-lift to-quiet-deep text-primary-foreground underline-offset-2 hover:from-quiet hover:to-quiet-deep hover:underline",
       },
       size: {
         default: "h-8 px-3 has-[>svg]:px-2.5",

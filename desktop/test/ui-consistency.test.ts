@@ -91,7 +91,16 @@ describe("shared UI primitives stay visually authoritative", () => {
       "utf8"
     );
     expect(source).not.toMatch(/aria-\[pressed=true\]:bg-/u);
-    expect(source.match(/aria-\[pressed=true\]:from-navy-wash/gu)?.length ?? 0).toBe(8);
+    expect(source.match(/aria-\[pressed=true\]:from-navy(?:\s|$)/gu)?.length ?? 0).toBe(8);
+  });
+
+  test("dark control faces own descendant contrast", async () => {
+    for (const primitive of ["button.tsx", "selection-control.tsx"]) {
+      const source = await readFile(path.join(sourceRoot, "components", "ui", primitive), "utf8");
+      expect(source, `${primitive} lets caller text colours disappear on navy`).toContain(
+        "[&_*]:!text-[inherit]"
+      );
+    }
   });
 
   test("Button callers cannot override the primitive's visual contract", async () => {
