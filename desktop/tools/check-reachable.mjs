@@ -262,6 +262,18 @@ const PROBE = `
       ? null
       : { rgb: match.slice(1, 4).map(Number), alpha: match[4] === undefined ? 1 : Number(match[4]) };
   };
+  const relativeLuminance = (rgb) => {
+    const linear = rgb.map((channel) => {
+      const value = channel / 255;
+      return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    });
+    return (0.2126 * linear[0]) + (0.7152 * linear[1]) + (0.0722 * linear[2]);
+  };
+  const contrastRatio = (a, b) => {
+    const first = relativeLuminance(a);
+    const second = relativeLuminance(b);
+    return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+  };
   for (const control of document.querySelectorAll('[data-slot="button"], [data-slot="selection-control"], [data-slot="tabs-trigger"]')) {
     if (control.offsetParent === null || control.disabled) continue;
     /* Contrast ownership applies only when the primitive paints an opaque dark
@@ -280,7 +292,7 @@ const PROBE = `
       if (!ownsText || candidate.getBoundingClientRect().width === 0) continue;
       const color = getComputedStyle(candidate).color;
       const channels = channelsOf(color);
-      if (channels !== null && channels.rgb.reduce((sum, channel) => sum + channel, 0) / 3 < 180) {
+      if (channels !== null && contrastRatio(face.rgb, channels.rgb) < 4.5) {
         lowContrastControls.push({
           label: (candidate.textContent || control.getAttribute("aria-label") || "control").trim().slice(0, 48),
           control: (control.innerText || control.getAttribute("aria-label") || control.getAttribute("data-slot") || "control").replace(/\\s+/g, " ").trim().slice(0, 72),
@@ -462,7 +474,7 @@ for (const viewport of VIEWPORTS) {
       console.log(`         inconsistent ${issue.group}: ${JSON.stringify(issue.variants)}`);
     }
     for (const issue of found.lowContrastControls) {
-      console.log(`         dark text on dark control "${issue.control}": ${issue.element} "${issue.label}" rendered ${issue.color}`);
+      console.log(`         low-contrast text on control "${issue.control}": ${issue.element} "${issue.label}" rendered ${issue.color}`);
     }
     for (const issue of browserIssues) {
       console.log(`         browser error: ${issue}`);

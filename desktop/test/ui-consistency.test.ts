@@ -53,23 +53,17 @@ describe("shared UI primitives stay visually authoritative", () => {
     ).toEqual([]);
   });
 
-  test("only interactive primitives own control gradients", async () => {
-    const allowed = new Set([
-      "components/ui/button.tsx",
-      "components/ui/pressable.tsx",
-      "components/ui/selection-control.tsx",
-      "components/ui/tabs.tsx"
-    ]);
+  test("no component invents a local control gradient", async () => {
     const files = await sourceFiles();
     const owners: string[] = [];
     for (const file of files) {
       const relative = path.relative(sourceRoot, file).replaceAll("\\", "/");
       const source = await readFile(file, "utf8");
-      if (/bg-gradient-|\bfrom-(?:navy|clay)|\bto-(?:navy|clay)/u.test(source) && !allowed.has(relative)) {
+      if (/bg-gradient-|\bfrom-(?:navy|clay)|\bto-(?:navy|clay)/u.test(source)) {
         owners.push(relative);
       }
     }
-    expect(owners, "a local gradient creates a second button language").toEqual([]);
+    expect(owners, "the Orca-derived control language is solid, not gradient-painted").toEqual([]);
   });
 
   test("callers cannot bypass the branded button primitives", async () => {

@@ -4018,3 +4018,50 @@ against the executable on disk. All 24 production surface/viewport checks
 passed. The installed 1440x900 Work and Settings evidence is in
 `docs/evidence/ui-precision-instrument-installed-26.819.2308/`.
 
+### Orca-derived Hivemind supersedes Precision Instrument — 2026-08-20
+
+Screenshots were not treated as sufficient specification for this pass. The
+official `stablyai/orca` repository was cloned fresh and inspected at commit
+`9d06b3ba938d3c5467de5b82b0bec322af2620a8`. Its source establishes a compact,
+solid system rather than the guessed glossy language used in earlier passes:
+
+| Orca relationship | Hivemind adaptation |
+| --- | --- |
+| `#0a0a0a`, `#171717`, `#1e1e1e`, `#262626` surface ladder | `#080d15`, `#101822`, `#172230`, `#223044` navy-black ladder |
+| 7% white ordinary rules; 15% white inputs | 8% white ordinary rules; 15% white inputs |
+| `0.625rem` base curve and `.6/.8/1/1.4/1.8/2.2` scale | 10px base with 6/8/10/14/18/22px steps, plus the existing 4px micro step |
+| 36px default and 32px compact buttons | the same shared `Button` geometry |
+| solid buttons and flat line tabs | solid Hivemind-navy committed actions; flat underline navigation |
+
+Only visual relationships were copied. Hivemind's React structure, placement,
+copy, workflows, dispatcher, authoritative state, and provider marks did not
+move. Orca's Electron mechanics, editor layout, dependencies, and information
+architecture were not imported. No mixed 21st component family was installed.
+
+The rejected dot grid, broad atmospheric fields, light substrate, control
+gradients, and unused gradient tokens were removed rather than retained as
+fallbacks. Ground panels have no decorative elevation. The closed raised,
+floating, and overlay membership remains intact, while dark-surface shadow
+measurements replace the obsolete near-white calculations. The production
+reachability contrast check now uses WCAG relative luminance instead of an RGB
+average that incorrectly classified the clay action face as dark text.
+
+Installed inspection rejected build `26.820.24`: its inherited light dialog
+scrim washed the dark shell gray. The scrim now uses the canvas color at 72%
+and both Dialog and Command own opaque dark surfaces. Final build `26.820.31`
+was built, installed, verified against the executable on disk, and inspected at
+a 1440×900 client size on Setup, Work, and Settings. Evidence is in
+`docs/evidence/orca-skin-installed-26.820.31/`.
+
+The 21st workflow remained part of the pass. The local design context was read
+before implementation and `21st review desktop --json` reviewed 87 files after
+the change. Catalogue search could not run in this shell because the 21st CLI
+was not signed in and no `API_KEY_21ST` was available; that limitation is
+recorded rather than describing an unauthenticated search as completed. The
+existing authenticated catalogue research remains advisory, and the official
+Orca source is the implementation reference for this selected skin.
+
+Final verification passed Core 815/817 with two intentional skips, Desktop
+300/300, Rust 32/32, and all 24 production surface/viewport checks. No paid
+provider call or paid 21st generation was used.
+

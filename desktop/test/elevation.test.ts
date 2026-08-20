@@ -104,7 +104,7 @@ describe("elevation is a scale, not a shadow utility", () => {
      stated precisely, so it is enforced on the VALUES rather than on intent. */
   test("the levels are strictly ordered, so no two express the same height", async () => {
     const css = (await readStyles()).replace(/\/\*[\s\S]*?\*\//gu, "");
-    const shape = (level: string): { offset: number; blur: number; ink: number } => {
+    const shape = (level: string): { offset: number; blur: number; opacity: number } => {
       const at = css.indexOf(`--${level}:`);
       expect(at, `--${level} is not declared`).toBeGreaterThan(-1);
       const value = css.slice(at, css.indexOf(";", at));
@@ -112,7 +112,7 @@ describe("elevation is a scale, not a shadow utility", () => {
       return {
         offset: Math.max(...[...value.matchAll(/0 (\d+)px/gu)].map((m) => Number(m[1]))),
         blur: Math.max(...[...value.matchAll(/0 \d+px (\d+)px/gu)].map((m) => Number(m[1]))),
-        ink: Math.max(...[...value.matchAll(/var\(--ink\) (\d+)%/gu)].map((m) => Number(m[1])))
+        opacity: Math.max(...[...value.matchAll(/rgb\(0 0 0 \/ (0(?:\.\d+)?|1(?:\.0+)?)\)/gu)].map((m) => Number(m[1])))
       };
     };
     const raised = shape("elevation-raised");
@@ -122,48 +122,31 @@ describe("elevation is a scale, not a shadow utility", () => {
     expect(floating.blur, "floating must reach further than raised").toBeGreaterThan(raised.blur);
     expect(overlay.blur, "overlay must reach further than floating").toBeGreaterThan(floating.blur);
     expect(overlay.offset, "overlay must sit higher than raised").toBeGreaterThan(raised.offset);
-    expect(overlay.ink, "overlay must be the darkest").toBeGreaterThan(raised.ink);
+    expect(overlay.opacity, "overlay must be the darkest").toBeGreaterThan(raised.opacity);
   });
 
-  /**
-   * The two constraints, as numbers taken from rendered pixels.
-   *
-   * Measured by `elevation-measure.mjs`, which renders each shadow on the real
-   * canvas colour and samples outward from the edge. Peak is the darkest pixel
-   * out of 255; reach is how far before it falls under 1/255.
-   *
-   * - The amber attention edge peaks at **14.7 over 11px**. `raised` (4.3/4) and
-   *   `floating` (10.3/10) share a screen with it and stay under it on both axes.
-   *   The first `floating` candidate measured 16.3/13 and was rejected for
-   *   exceeding it — the ceiling did its job before anything shipped.
-   * - `overlay` (25.3/36) is louder, and is the one level that OCCLUDES the edge
-   *   rather than competing with it.
-   * - Soft means soft: a deliberately-too-heavy shadow measured 59/57 and reads
-   *   as a grey smudge on `#f5f6f8`, for the same reason the blur was removed.
-   *
-   * A test cannot re-render pixels, so it guards the INPUTS those numbers came
-   * from. If an ink percentage grows past these, the measurement is stale and has
-   * to be retaken rather than assumed still true.
-   */
-  test("it stays calmer than the amber edge, and soft on a near-white canvas", async () => {
+  test("ordinary levels stay below the amber edge on the brightest work surface", async () => {
     const css = (await readStyles()).replace(/\/\*[\s\S]*?\*\//gu, "");
-    const inkOf = (level: string): number[] => {
+    const opacityOf = (level: string): number[] => {
       const at = css.indexOf(`--${level}:`);
       const value = css.slice(at, css.indexOf(";", at));
-      return [...value.matchAll(/var\(--ink\) (\d+)%/gu)].map((m) => Number(m[1]));
+      return [...value.matchAll(/rgb\(0 0 0 \/ (0(?:\.\d+)?|1(?:\.0+)?)\)/gu)].map((m) => Number(m[1]));
     };
 
+    /* #101822 is the brightest ground plane behind elevated content. A black
+       shadow changes its strongest channel (34) by alpha * 34. */
+    const brightestChannel = 0x22;
     for (const level of ["elevation-raised", "elevation-floating"]) {
-      const inks = inkOf(level);
-      expect(inks.length, `--${level} has no ink terms to check`).toBeGreaterThan(0);
-      for (const ink of inks) {
-        expect(ink, `--${level} at ${String(ink)}% risks outshouting the amber edge`)
-          .toBeLessThanOrEqual(10);
+      const opacities = opacityOf(level);
+      expect(opacities.length, `--${level} has no black terms to check`).toBeGreaterThan(0);
+      for (const opacity of opacities) {
+        expect(opacity * brightestChannel, `--${level} risks outshouting the amber edge`)
+          .toBeLessThanOrEqual(14.7);
       }
     }
-    for (const ink of inkOf("elevation-overlay")) {
-      expect(ink, `--elevation-overlay at ${String(ink)}% reads as a grey smudge`)
-        .toBeLessThanOrEqual(20);
+    for (const opacity of opacityOf("elevation-overlay")) {
+      expect(opacity * brightestChannel, "--elevation-overlay exceeds the overlay ceiling")
+        .toBeLessThanOrEqual(26);
     }
   });
 

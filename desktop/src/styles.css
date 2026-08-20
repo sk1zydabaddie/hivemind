@@ -8,71 +8,38 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Hivemind identity, taken from the logo. Navy and charcoal carry the brand;
-   amber and clay only ever carry meaning. No other hues.
-
-   ONE control-gradient shape is permitted: a vertical ramp from a meaning
-   colour to a slightly darker mix of ITSELF, on every control that answers a
-   press. Strong actions use the full meaning colour; quiet controls use a pale
-   navy or clay base. Same hue, two stops, top to bottom. The thing being avoided has never
-   been gradients as such -- it is the two-colour multi-hue button that reads as
-   a generic AI product, and a same-hue ramp is what a physical control looks
-   like rather than what a template looks like. `design-tokens.test.ts` holds
-   the line: any gradient must be `to bottom` and both stops must resolve to the
-   same base hue. */
+/* Hivemind identity on Orca-derived dark geometry. Navy and charcoal carry the
+   brand; amber and clay only carry meaning. The shell uses stepped opaque
+   surfaces instead of decorative gradients or backdrop filters. */
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 
-  /* Panels float on the canvas; the canvas is never a content surface. */
-  --canvas: #f5f6f8;
-  --panel: #ffffff;
+  /* Orca-derived surface ladder, shifted toward Hivemind's navy. The source
+     reference uses #0a0a0a / #171717 / #1e1e1e / #262626; these four values
+     preserve those luminance steps without abandoning the product's colour. */
+  --canvas: #080d15;
+  --panel: #101822;
   --ground: var(--panel);
-  --surface: var(--canvas);
-  --ink: #1f2328;
-  --navy: #1b3a6b;
-  /* One rule colour. There used to be a second, lighter one for "inner"
-     borders, which meant every surface had to decide which weight it was --
-     and they disagreed. A single hairline is the whole separation language. */
-  --rule: #e3e6ea;
-  --muted: #667085;
-  --amber: #b88936;
-  --clay: #b65b4f;
+  --surface: #172230;
+  --surface-strong: #223044;
+  --ink: #f4f7fb;
+  --brand-navy: #1b3a6b;
+  --navy: #7fa9e4;
+  --rule: rgb(255 255 255 / 0.08);
+  --input-rule: rgb(255 255 255 / 0.15);
+  --muted: #96a3b5;
+  --amber: #d4a95f;
+  --clay: #df786d;
 
-  /* Tints of the three meaning colours, for filled states only. */
-  --navy-wash: #eef2f8;
-  --amber-wash: #f9f3e8;
-  --clay-wash: #f9edeb;
+  /* Meaning fills are dark surface mixes, not pale cards pasted onto a dark
+     shell. Their hue remains visible while their luminance stays in the same
+     family as surrounding Orca-derived surfaces. */
+  --navy-wash: color-mix(in oklab, var(--navy) 13%, var(--panel));
+  --amber-wash: color-mix(in oklab, var(--amber) 12%, var(--panel));
+  --clay-wash: color-mix(in oklab, var(--clay) 12%, var(--panel));
 
-  /* The application substrate is atmospheric rather than blank. A low-strength
-     navy instrument grid gives the canvas a tempo at native scale; two broad
-     fields keep it from becoming graph paper. All three stay far below the
-     amber edge's local contrast and use identity/meaning hues only. */
-  --canvas-atmosphere:
-    radial-gradient(circle, color-mix(in oklab, var(--navy) 8%, transparent) 0.65px, transparent 0.8px),
-    radial-gradient(circle at 12% -12%, color-mix(in oklab, var(--navy) 10%, transparent) 0, transparent 42%),
-    radial-gradient(circle at 96% 108%, color-mix(in oklab, var(--clay) 6%, transparent) 0, transparent 38%),
-    linear-gradient(to bottom, color-mix(in oklab, var(--panel) 46%, var(--canvas)), var(--canvas) 42%, color-mix(in oklab, var(--navy) 2%, var(--canvas)));
-  --canvas-atmosphere-size: 24px 24px, auto, auto, auto;
-
-  /* The ramp a physical control has, with RANGE. These were 88% -- a 12%
-     darkening, which measured as a gradient and read as a flat rectangle that
-     changed colour. A ramp you cannot see is not a ramp.
-     Two stops now, in both directions from the meaning colour: `-lift` is the
-     top catching light, `-deep` is the bottom in its own shade. Still one hue,
-     still vertical, still a mix of the palette colour with white or black
-     rather than a second hand-picked hue -- which is the only rule that ever
-     mattered here, and it is untouched. */
-  --navy-lift: color-mix(in oklab, var(--navy) 80%, #ffffff);
-  --navy-deep: color-mix(in oklab, var(--navy) 68%, #000000);
-  --clay-lift: color-mix(in oklab, var(--clay) 80%, #ffffff);
+  /* Destructive controls use a border derived from their one semantic hue. */
   --clay-deep: color-mix(in oklab, var(--clay) 68%, #000000);
-
-  /* Quiet controls keep the reference button's navy face. Hierarchy comes from
-     size, placement, and label—not from washing a control back into the white
-     canvas until it disappears. */
-  --quiet: var(--navy);
-  --quiet-lift: var(--navy-lift);
-  --quiet-deep: var(--navy-deep);
 
   /* MOTION.
      Spring curves rather than linear easing, because a panel that decelerates
@@ -133,44 +100,30 @@
    * would hand selection two devices again and would claim an "above" that no
    * occlusion demonstrates. Selection is fill; elevation is layering.
    *
-   * ## The numbers are measured, not chosen
+   * ## The dark-surface ceiling
    *
-   * Two constraints, both checked by rendering and sampling pixels rather than
-   * by looking -- `elevation-measure.mjs`, reported as peak darkening out of 255
-   * and reach in pixels before it drops below 1/255:
-   *
-   *   1. CALMER THAN THE AMBER EDGE. The attention edge peaks at 14.7 over 11px.
-   *      `raised` (4.3/4) and `floating` (10.3/10) coexist with it on screen and
-   *      stay under it on both axes. The first `floating` candidate measured
-   *      16.3/13 and was rejected for exceeding it -- the ceiling did its job
-   *      before anything shipped. `overlay` (25.3/36) is louder, and is the one
-   *      level that OCCLUDES the amber edge rather than competing with it.
-   *   2. SOFT MEANS SOFT. A near-white canvas has nothing behind a surface, so a
-   *      heavy shadow reads as a grey smudge -- the same fact that killed the
-   *      blur. A deliberately-too-heavy control measured 59/57 and looks exactly
-   *      like that. Nothing here exceeds 26.
-   *
-   * And the scale is RADIUS-INVARIANT, which was checked rather than assumed
-   * before it was built: measured at 0px and 20px corners, peak and reach move
-   * by at most 0.3/255 along an edge. A large radius softens the CORNER
-   * (overlay 7 -> 5) and never the ordering, so a radius chosen later cannot
-   * invalidate these values.
+   * The attention edge still sets the 14.7/255 ceiling. On the brightest
+   * ground plane behind elevation (#101822), raised and floating black alphas darken the
+   * strongest channel by 11.6 and 14.3 respectively. Overlay may be louder
+   * because it occludes the attention edge; it remains below 26/255. The test
+   * calculates those results from the tokens instead of carrying light-theme
+   * measurements that no longer describe the installed skin.
    *
    * Replaces four tokens -- `--shadow-panel`, `--shadow-float`, `--shadow-lift`,
    * `--shadow-overlay` -- of which THREE had no consumers at all. Four
    * overlapping names with no assignment rules is how the original mistake got
    * made twice. */
   --elevation-raised:
-    0 1px 2px -1px color-mix(in oklab, var(--ink) 10%, transparent),
-    0 2px 6px -3px color-mix(in oklab, var(--ink) 8%, transparent);
+    0 1px 2px rgb(0 0 0 / 0.24),
+    0 3px 8px -4px rgb(0 0 0 / 0.34);
 
   --elevation-floating:
-    0 1px 3px -1px color-mix(in oklab, var(--ink) 9%, transparent),
-    0 5px 12px -6px color-mix(in oklab, var(--ink) 10%, transparent);
+    0 2px 5px -2px rgb(0 0 0 / 0.32),
+    0 8px 18px -8px rgb(0 0 0 / 0.42);
 
   --elevation-overlay:
-    0 3px 7px -3px color-mix(in oklab, var(--ink) 12%, transparent),
-    0 14px 32px -12px color-mix(in oklab, var(--ink) 16%, transparent);
+    0 4px 12px -4px rgb(0 0 0 / 0.5),
+    0 18px 42px -12px rgb(0 0 0 / 0.62);
 
   /* RELIEF, and the rule that keeps it from becoming elevation.
    *
@@ -202,39 +155,38 @@
    *
    * ## Matched to the reference, 2026-08-18
    *
-   * The reference has two lighting terms, not an elevation stack: a restrained
-   * top reflection and one short contact shadow. The navy gradient itself does
-   * most of the form work. Adding a dark base, containing hairline, contact
-   * shadow, and ambient shadow at once produced the extruded white slabs the
-   * installed audit rejected.
+   * The control has two lighting terms, not an elevation stack: a restrained
+   * top reflection and one short contact shadow. Adding a dark base, containing
+   * hairline, contact shadow, and ambient shadow at once produced the extruded
+   * slabs the installed audit rejected.
    *
    * White and black rather than palette tokens because these are LIGHTING
    * overlays on whatever fill they sit on -- they must behave the same on navy
    * and on clay, and a palette-tinted shadow would not.
    */
   --relief:
-    inset 0 1px 0 color-mix(in oklab, #ffffff 24%, transparent),
-    0 2px 3px -1px color-mix(in oklab, #000000 34%, transparent);
+    inset 0 1px 0 rgb(255 255 255 / 0.14),
+    0 1px 2px rgb(0 0 0 / 0.34);
 
   /* Every layer inset: the outer shadows do not soften, they GO. A pressed
      button that kept a drop shadow would be hovering while depressed, which is
      the tell that the effect is decoration -- `design-tokens.test.ts` asserts
      exactly this and it is why the assertion exists. */
   --relief-pressed:
-    inset 0 2px 3px color-mix(in oklab, #000000 38%, transparent),
-    inset 0 0 0 1px color-mix(in oklab, #000000 18%, transparent);
+    inset 0 1px 2px rgb(0 0 0 / 0.38),
+    inset 0 0 0 1px rgb(0 0 0 / 0.18);
 
   /* The same two-term construction at smaller scales. Compact controls keep a
      short contact shadow; micro controls shorten it to one pixel. */
   --relief-compact:
-    inset 0 1px 0 color-mix(in oklab, #ffffff 22%, transparent),
-    0 2px 3px -1px color-mix(in oklab, #000000 30%, transparent);
+    inset 0 1px 0 rgb(255 255 255 / 0.12),
+    0 1px 2px rgb(0 0 0 / 0.3);
   --relief-compact-pressed:
     inset 0 2px 3px color-mix(in oklab, #000000 36%, transparent),
     inset 0 0 0 1px color-mix(in oklab, #000000 16%, transparent);
   --relief-micro:
-    inset 0 1px 0 color-mix(in oklab, #ffffff 20%, transparent),
-    0 1px 2px color-mix(in oklab, #000000 28%, transparent);
+    inset 0 1px 0 rgb(255 255 255 / 0.1),
+    0 1px 1px rgb(0 0 0 / 0.28);
   --relief-micro-pressed:
     inset 0 1px 2px color-mix(in oklab, #000000 34%, transparent),
     inset 0 0 0 1px color-mix(in oklab, #000000 15%, transparent);
@@ -245,13 +197,9 @@
    * and the reason is worth keeping because it is a property of the PALETTE
    * rather than of the values chosen.
    *
-   * **Frosted glass needs a backdrop with structure.** A blur does not add
-   * anything; it redistributes what is already behind the surface. This app is
-   * white panels on a `#f5f6f8` canvas -- behind any given surface is another
-   * surface almost exactly the same colour, so there is nothing for a blur to
-   * reveal and no radius that changes that. Turning it up produces a stronger
-   * smudge of one flat tone, which is still one flat tone. The effect was
-   * edges and fills wearing the name of a blur.
+   * **Frosted glass needs a useful backdrop.** A blur does not add structure;
+   * it redistributes what is behind the surface. The Orca-derived shell uses
+   * opaque stepped planes, so blur would soften text without clarifying depth.
    *
    * And it was not free. Subtracting a frame with the filters forced to `none`
    * changed 4.73% of the window, all of it glyph edges -- including on mono
@@ -260,8 +208,8 @@
    * the cost was softer text everywhere, in exchange for an effect that needed
    * 6x magnification to see. See STATE.md §4.
    *
-   * WHAT REMAINS is the part that was doing the visible work anyway: a
-   * translucent fill and a lit top edge, at three ordered distances.
+   * WHAT REMAINS is the part doing the visible work: an opaque stepped fill
+   * and a lit top edge, at three ordered distances.
    *
    *   near   dialogs, the command palette, menus, tooltips. Brightest edge.
    *   mid    panels, cards, the setup steps. The body of the app.
@@ -276,19 +224,16 @@
    * screen that means "a person must act", so it stays the loudest thing on
    * it. A 9% white rim is a hint at a boundary, not a highlight.
    *
-   * AND NEVER BEHIND DENSE MONOSPACE. Token counts, the spend meter, diff
-   * gutters, live check output and the plan review's conformance commands stay
-   * flat and fully opaque. Translucency costs most exactly where small
-   * monospaced figures are read. That rule survives the blur's removal because
-   * it was never about the blur.
+   * Dense monospace remains on opaque fills: token counts, the spend meter,
+   * diff gutters, live check output and conformance commands never rely on an
+   * ancestor surface for legibility.
    */
   --glass-edge-near: inset 0 1px 0 0 color-mix(in oklab, #ffffff 9%, transparent);
   --glass-edge: inset 0 1px 0 0 color-mix(in oklab, #ffffff 5%, transparent);
   --glass-edge-far: inset 0 1px 0 0 color-mix(in oklab, #ffffff 3%, transparent);
 
-  /* Barely rounded. A 10px panel corner reads as a card on a marketing page;
-     an instrument's panels are square enough that the rule is what you see. */
-  --radius: 5px;
+  /* Orca's exact base curve; the derived scale lives in @theme below. */
+  --radius: 0.625rem;
 
   /* shadcn semantic tokens, so `npx shadcn add <x>` lands on this palette. */
   --background: var(--ground);
@@ -297,8 +242,8 @@
   --card-foreground: var(--ink);
   --popover: var(--ground);
   --popover-foreground: var(--ink);
-  --primary: var(--navy);
-  --primary-foreground: var(--ground);
+  --primary: var(--brand-navy);
+  --primary-foreground: var(--ink);
   --secondary: var(--surface);
   --secondary-foreground: var(--ink);
   --muted-surface: var(--surface);
@@ -308,7 +253,7 @@
   --destructive: var(--clay);
   --destructive-foreground: var(--ground);
   --border: var(--rule);
-  --input: var(--rule);
+  --input: var(--input-rule);
   --ring: var(--navy);
 
   /* The sidebar group, so a generated sidebar is not the one component that
@@ -332,20 +277,15 @@
   --color-panel: var(--panel);
   --color-ground: var(--ground);
   --color-surface: var(--surface);
+  --color-surface-strong: var(--surface-strong);
   --color-ink: var(--ink);
   --color-navy: var(--navy);
-  --color-navy-deep: var(--navy-deep);
-  --color-navy-lift: var(--navy-lift);
   --ease-spring: var(--spring);
   --ease-spring-firm: var(--spring-firm);
   --shadow-elevation-raised: var(--elevation-raised);
   --shadow-elevation-floating: var(--elevation-floating);
   --shadow-elevation-overlay: var(--elevation-overlay);
   --color-clay-deep: var(--clay-deep);
-  --color-clay-lift: var(--clay-lift);
-  --color-quiet: var(--quiet);
-  --color-quiet-lift: var(--quiet-lift);
-  --color-quiet-deep: var(--quiet-deep);
   --color-rule: var(--rule);
   --color-amber: var(--amber);
   --color-clay: var(--clay);
@@ -386,23 +326,15 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* One radius scale, and it is nearly square. 2px marks, 3px chips and
-     inputs, 4px controls, 5px panels, 6px overlays.
-     DERIVED from `--radius` rather than written out, so the whole scale moves
-     together from one number. At the shipped `--radius: 5px` these resolve to
-     exactly the 2/3/4/5/6 they were written as -- the change is single-sourcing,
-     not a new look. `round()` was tried and dropped: it needs a newer engine
-     than this has to guarantee, and the multipliers are already exact at the
-     default -- 5 x 0.4/0.6/0.8/1.2 is 2/3/4/6 with nothing left over.
-     The experimental theme panel writes `--radius` and nothing else; when a
-     value is chosen, `--radius` is the only line to edit. */
+  /* Orca's exact base curve and derived scale. The shell keeps Hivemind's
+     structure, but controls and surfaces now share the reference's geometry. */
   --radius-xs: calc(var(--radius) * 0.4);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.2);
-  --radius-2xl: calc(var(--radius) * 1.2);
-  --radius-3xl: calc(var(--radius) * 1.2);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
 
   /* Two shadows, and both belong to things that genuinely float ABOVE the app.
      A panel is separated by its 1px rule and by the canvas behind it -- there
@@ -438,9 +370,6 @@
   body {
     margin: 0;
     background-color: var(--canvas);
-    background-image: var(--canvas-atmosphere);
-    background-size: var(--canvas-atmosphere-size);
-    background-attachment: fixed;
     color: var(--ink);
     font-family: var(--font-sans);
     font-size: 14px;
@@ -450,14 +379,11 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  /* The React root used to repaint the body with solid canvas, which made the
-     atmosphere correct in source and absent on screen. This class is the one
-     application substrate and deliberately carries no elevation. */
+  /* The application substrate matches Orca's uninterrupted workbench plane.
+     The previous dot grid was an invented visual motif and is intentionally
+     gone; hierarchy now comes from stepped surfaces and rules. */
   .brand-canvas {
     background-color: var(--canvas);
-    background-image: var(--canvas-atmosphere);
-    background-size: var(--canvas-atmosphere-size);
-    background-attachment: fixed;
   }
 
   h1,
@@ -498,7 +424,28 @@
 
   ::selection {
     background: var(--navy);
-    color: var(--ground);
+    color: var(--canvas);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--muted) 38%, transparent);
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--muted) 58%, transparent);
+    background-clip: padding-box;
   }
 
   /* ONE icon set: lucide-react, and nothing else. Its default stroke of 2 is

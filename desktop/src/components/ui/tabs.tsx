@@ -44,8 +44,8 @@ export function TabsTrigger({
       className={cn(
         /* The focus ring is inset: a tab outlined one pixel clear of itself
            reads as a floating box rather than as a focused tab. */
-        "relative inline-flex cursor-pointer items-center gap-1.5 border-0 bg-transparent px-2.5 text-[13px] font-medium text-muted-foreground transition-[color,background-color] duration-[120ms] after:absolute after:inset-x-2.5 after:bottom-0 after:h-[2px] after:origin-center after:scale-x-0 after:bg-navy after:transition-transform after:duration-[120ms] hover:bg-navy-wash/55 hover:text-ink active:bg-navy-wash focus-visible:outline-offset-[-3px]",
-        "data-[state=active]:bg-navy-wash/38 data-[state=active]:text-navy data-[state=active]:after:scale-x-100",
+        "relative inline-flex cursor-pointer items-center gap-1.5 border-0 bg-transparent px-2.5 text-[13px] font-medium text-muted-foreground transition-[color,background-color] duration-[120ms] after:absolute after:inset-x-2.5 after:bottom-0 after:h-[2px] after:origin-center after:scale-x-0 after:bg-navy after:transition-transform after:duration-[120ms] hover:bg-surface/70 hover:text-ink active:bg-surface focus-visible:outline-offset-[-3px]",
+        "data-[state=active]:bg-transparent data-[state=active]:text-ink data-[state=active]:after:scale-x-100",
         "[&>svg]:size-3.5 [&>svg]:shrink-0",
         className
       )}

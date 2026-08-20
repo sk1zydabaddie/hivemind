@@ -27,19 +27,20 @@ const resolve = (styles: string, name: string): string => {
   return value.toLowerCase();
 };
 
-/**
- * The palette, from the product's logo. These eight are the whole vocabulary:
- * navy and charcoal are the identity, amber and clay only ever carry meaning.
- */
+/** Orca-derived dark surfaces with Hivemind's existing semantic hues. */
 const palette = {
-  ground: "#ffffff",
-  surface: "#f5f6f8",
-  ink: "#1f2328",
-  navy: "#1b3a6b",
-  rule: "#e3e6ea",
-  muted: "#667085",
-  amber: "#b88936",
-  clay: "#b65b4f"
+  ground: "#101822",
+  canvas: "#080d15",
+  surface: "#172230",
+  surfaceStrong: "#223044",
+  ink: "#f4f7fb",
+  brandNavy: "#1b3a6b",
+  navy: "#7fa9e4",
+  rule: "rgb(255 255 255 / 0.08)",
+  inputRule: "rgb(255 255 255 / 0.15)",
+  muted: "#96a3b5",
+  amber: "#d4a95f",
+  clay: "#df786d"
 } as const;
 
 /**
@@ -59,8 +60,8 @@ const shadcnTokens: Record<string, string> = {
   "card-foreground": palette.ink,
   popover: palette.ground,
   "popover-foreground": palette.ink,
-  primary: palette.navy,
-  "primary-foreground": palette.ground,
+  primary: palette.brandNavy,
+  "primary-foreground": palette.ink,
   secondary: palette.surface,
   "secondary-foreground": palette.ink,
   // shadcn's muted pair is a SURFACE and a TEXT colour, not one value.
@@ -69,7 +70,7 @@ const shadcnTokens: Record<string, string> = {
   destructive: palette.clay,
   "destructive-foreground": palette.ground,
   border: palette.rule,
-  input: palette.rule,
+  input: palette.inputRule,
   ring: palette.navy,
   sidebar: palette.surface,
   "sidebar-foreground": palette.ink,
@@ -177,13 +178,13 @@ describe("shadcn token contract", () => {
  */
 describe("radius contract", () => {
   const radii: Record<string, string> = {
-    "radius-xs": "2px",
-    "radius-sm": "3px",
-    "radius-md": "4px",
-    "radius-lg": "5px",
-    "radius-xl": "6px",
-    "radius-2xl": "6px",
-    "radius-3xl": "6px"
+    "radius-xs": "4px",
+    "radius-sm": "6px",
+    "radius-md": "8px",
+    "radius-lg": "10px",
+    "radius-xl": "14px",
+    "radius-2xl": "18px",
+    "radius-3xl": "22px"
   };
 
   /* Evaluates `calc(var(--radius) * N)` the way the engine will, so the scale
@@ -194,12 +195,15 @@ describe("radius contract", () => {
     const value = resolve(styles, token);
     const direct = /^(\d+(?:\.\d+)?)px$/u.exec(value.trim());
     if (direct !== null) return Number(direct[1]);
-    const scaled = /calc\(\s*(\d+(?:\.\d+)?)px\s*\*\s*(\d+(?:\.\d+)?)\s*\)/u.exec(value);
+    const directRem = /^(\d+(?:\.\d+)?)rem$/u.exec(value.trim());
+    if (directRem !== null) return Number(directRem[1]) * 16;
+    const scaled = /calc\(\s*(\d+(?:\.\d+)?)(px|rem)\s*\*\s*(\d+(?:\.\d+)?)\s*\)/u.exec(value);
     expect(scaled, `${token} is neither a length nor a scale of one: ${value}`).not.toBeNull();
-    return Number(scaled![1]) * Number(scaled![2]);
+    const unit = scaled![2] === "rem" ? 16 : 1;
+    return Number(scaled![1]) * unit * Number(scaled![3]);
   };
 
-  test("the six steps are the whole scale, and it stays barely rounded", async () => {
+  test("the seven steps reproduce Orca's 10px base curve", async () => {
     const styles = await readStyles();
     const theme = themeBlock(styles);
 
@@ -210,14 +214,10 @@ describe("radius contract", () => {
       );
     }
 
-    /* Nothing above 6px, because a panel corner larger than that reads as a
-       card on a marketing page rather than as an instrument's edge.
-       This is a claim about the SHIPPED default. The experimental theme panel
-       moves `--radius` at runtime on purpose and is temporary; what must not
-       drift is the value in the stylesheet. */
+    /* The largest derived overlay radius is 22px at the shipped 10px base. */
     for (const declared of theme.match(/--radius[a-z0-9-]*:\s*[^;]+/gu) ?? []) {
       const token = declared.split(":")[0]!.trim();
-      expect(computed(styles, token), `${token} is above 6px`).toBeLessThanOrEqual(6);
+      expect(computed(styles, token), `${token} is above 22px`).toBeLessThanOrEqual(22);
     }
   });
 
@@ -238,14 +238,18 @@ describe("radius contract", () => {
 });
 
 describe("palette discipline", () => {
-  test("the eight palette values are exactly the logo's, and are declared once", async () => {
+  test("the dark surface ladder and Hivemind hues resolve exactly", async () => {
     const styles = await readStyles();
     for (const [name, value] of Object.entries({
       panel: palette.ground,
-      canvas: palette.surface,
+      canvas: palette.canvas,
+      surface: palette.surface,
+      "surface-strong": palette.surfaceStrong,
       ink: palette.ink,
+      "brand-navy": palette.brandNavy,
       navy: palette.navy,
       rule: palette.rule,
+      "input-rule": palette.inputRule,
       muted: palette.muted,
       amber: palette.amber,
       clay: palette.clay
@@ -254,84 +258,21 @@ describe("palette discipline", () => {
     }
   });
 
-  test("no colour outside the palette and its tints reaches the stylesheet", async () => {
+  test("the skin uses palette values, derived tints, and no decorative gradients", async () => {
     const styles = await readStyles();
+    const declarations = styles.replace(/\/\*[\s\S]*?\*\//gu, "");
     const allowed = new Set([
       ...Object.values(palette),
       "#fff",
-      "#edeff2", // rule-soft
-      "#eef2f8", // navy wash
-      "#f9f3e8", // amber wash
-      "#f9edeb", // clay wash
-      /* Pure black, and ONLY as a darkening term -- never a colour anything is
-         painted. Two uses: deriving `--navy-deep` from `--navy` so a ramp's two
-         stops cannot drift into different hues, and the shading half of
-         `--relief`, which is a lighting overlay on whatever fill it sits on
-         rather than a colour of its own. */
+      "#ffffff",
       "#000000"
     ]);
     const hexes = new Set(
-      (styles.match(/#[0-9a-fA-F]{3,8}\b/gu) ?? []).map((hex) => hex.toLowerCase())
+      (declarations.match(/#[0-9a-fA-F]{3,8}\b/gu) ?? []).map((hex) => hex.toLowerCase())
     );
     expect([...hexes].filter((hex) => !allowed.has(hex))).toEqual([]);
-    /* Gradients: one shape, permitted 2026-08-14, and the rule is narrow.
-     *
-     * The blanket ban that used to live here was the wrong instrument. What
-     * this project needs to avoid is the two-colour MULTI-HUE button that reads
-     * as a generic AI product -- not gradients as such. A vertical ramp from a
-     * colour to a darker mix of itself is what a physical control looks like.
-     *
-     * Controls remain vertical and single-hue. The substrate may use one
-     * low-strength navy dot grid plus two broad radial fields to keep the
-     * otherwise empty canvas from looking unfinished; they carry no state and
-     * introduce no hue. */
-    expect(styles).not.toMatch(/conic-gradient/u);
-    expect(styles.match(/radial-gradient/gu)?.length ?? 0).toBe(3);
-    const atmosphere = /--canvas-atmosphere:\s*([\s\S]*?);\s*\n/u.exec(styles)?.[1] ?? "";
-    expect(atmosphere.match(/radial-gradient/gu)?.length ?? 0).toBe(3);
-    expect(atmosphere).toMatch(/radial-gradient\(circle,\s*color-mix/u);
-    expect(atmosphere).toContain("linear-gradient(to bottom");
-    for (const strength of atmosphere.matchAll(/var\(--(?:navy|clay)\)\s+(\d+)%/gu)) {
-      expect(Number(strength[1]), "substrate field exceeds its quiet ceiling").toBeLessThanOrEqual(10);
-    }
-    expect(styles).toMatch(/body\s*\{[\s\S]*?background-image:\s*var\(--canvas-atmosphere\)/u);
-    expect(styles).toMatch(/\.brand-canvas\s*\{[\s\S]*?background-image:\s*var\(--canvas-atmosphere\)/u);
-    expect(styles).toMatch(/--canvas-atmosphere-size:\s*24px 24px, auto, auto, auto/u);
-    for (const direction of ["to right", "to left", "45deg", "90deg", "to top"]) {
-      expect(styles).not.toContain(direction);
-    }
-
-    /* And the derived stops must be mixes of a palette colour, never a second
-       hand-picked hue -- which is the only way two stops drift apart.
-       BOTH ends of a ramp: `-lift` mixes toward white, `-deep` toward black.
-       These were 88% mixes and are now 80/68, because a 12% darkening measured
-       as a gradient and read as a flat rectangle. The RANGE is a value and may
-       be turned up; the single hue is the rule and may not. */
-    /* A ramp stop is a bare `color-mix`. Anchoring on that excludes
-       `--shadow-lift`, which ends in the same word and is a box-shadow -- the
-       first draft of this matched it and the baseline failed, which is the
-       cheapest possible moment to learn that a pattern is too greedy. */
-    const stops = [...styles.matchAll(/--(\w+)-(?:lift|deep):\s*(color-mix\([^;]+);/gu)];
-    expect(stops.length, "no ramp stops are declared").toBeGreaterThan(0);
-    for (const [whole, base, value] of stops) {
-      expect(value, `${whole!} must be derived from its base`).toContain(`var(--${base!})`);
-      expect(value).toMatch(/color-mix\(in oklab/u);
-      /* The half the name check cannot do. `from-navy-lift to-navy-deep` passes
-         any assertion about utility NAMES however the tokens are defined -- so a
-         stop mixed with clay instead of white would produce a two-hue ramp that
-         reads exactly like the generic-AI button this rule exists to prevent,
-         and nothing would notice. Mutation testing found this hole by doing it.
-         The only permitted second term is pure white or pure black, because a
-         lighting mix is not a colour choice. */
-      const terms = value.match(/#[0-9a-fA-F]{3,8}/gu) ?? [];
-      expect(terms.length, `${whole!} mixes with no literal`).toBeGreaterThan(0);
-      for (const term of terms) {
-        expect(
-          term.toLowerCase(),
-          `${whole!} mixes its base with ${term} -- a ramp stop may only be lightened or darkened`
-        ).toMatch(/^#(?:fff(?:fff)?|000(?:000)?)$/u);
-      }
-    }
+    expect(declarations).not.toMatch(/(?:linear|radial|conic)-gradient/u);
+    expect(declarations).not.toContain("--canvas-atmosphere");
   });
 
   test("exactly one thing can carry the attention edge, and panels never float", async () => {
@@ -533,7 +474,7 @@ describe("palette discipline", () => {
     expect(reduced).toMatch(/\.animate-spin\s*\{\s*animation:\s*none/u);
   });
 
-  test("every gradient in the markup is vertical and stays on one hue", async () => {
+  test("no component invents a local gradient", async () => {
     const root = path.join(desktopRoot, "src");
     const files: string[] = [];
     const walk = async (dir: string): Promise<void> => {
@@ -545,34 +486,14 @@ describe("palette discipline", () => {
     };
     await walk(root);
 
-    /* The failure being prevented is specific: `from-navy to-amber` -- two
-       meaning colours in one control, which is the generic-AI-product tell.
-       Same-hue ramps are fine and are the whole point of allowing this. */
     const offences: string[] = [];
-    let ramps = 0;
     for (const file of files) {
       const source = await readFile(file, "utf8");
-      /* Only vertical ramps exist. Anything else is refused outright. */
-      for (const horizontal of source.match(/bg-gradient-to-(?:r|l|tr|tl|br|bl)/gu) ?? []) {
-        offences.push(`${path.basename(file)}: ${horizontal}`);
-      }
-      for (const match of source.matchAll(
-        /from-([a-z-]+)(?:\/\d+)?\s+(?:hover:)?to-([a-z-]+)(?:\/\d+)?/gu
-      )) {
-        ramps += 1;
-        /* `-lift` joined `-deep` when the ramp was widened: the top stop is now
-           a mix toward white and the bottom a mix toward black, both of the
-           SAME palette colour. Stripping both keeps the real rule -- one hue
-           per ramp -- while allowing the range to be as wide as it needs. */
-        const base = (name: string): string => name.replace(/-lift$|-deep$|-wash$/u, "");
-        if (base(match[1]!) !== base(match[2]!)) {
-          offences.push(`${path.basename(file)}: from-${match[1]} to-${match[2]}`);
-        }
+      for (const gradient of source.match(/bg-gradient-|\bfrom-(?:navy|clay)|\bto-(?:navy|clay)/gu) ?? []) {
+        offences.push(`${path.basename(file)}: ${gradient}`);
       }
     }
-    expect(offences, "a gradient left its hue or ran horizontally").toEqual([]);
-    /* Non-vacuous: if the ramps disappear this stops proving anything. */
-    expect(ramps).toBeGreaterThan(0);
+    expect(offences, "a component reintroduced the discarded gradient language").toEqual([]);
   });
 });
 
@@ -588,13 +509,13 @@ describe("palette discipline", () => {
  * the mono figures the denylist was written to protect.
  *
  * So the blur is gone and **its absence is now the thing being enforced**. What
- * remains is what was doing the visible work all along: a translucent fill and a
- * lit top edge, at three ordered distances. Frosted glass needs a backdrop with
- * structure, and white panels on a #f5f6f8 canvas have none -- that is a fact
- * about the palette, so no value would have fixed it.
+ * remains is what was doing the visible work all along: an opaque stepped fill
+ * and a lit top edge, at three ordered distances. Frosted glass needs a backdrop
+ * with structure, and this application needs stable glyph contrast more than it
+ * needs optical blending -- no blur value would have fixed that tradeoff.
  *
- * The two rules that outlived both reversals: nothing dense and monospaced sits
- * on a translucent fill, and nothing here gets louder than the amber attention
+ * The two rules that outlived both reversals: dense monospaced content paints
+ * its own opaque ground, and nothing here gets louder than the amber attention
  * edge. */
 /* The same walk the attention-edge test does, hoisted so the glass rules can
    use it too. */
@@ -613,11 +534,10 @@ async function sourceFiles(): Promise<string[]> {
 }
 
 describe("depth is fills and edges, and never a blur", () => {
-  /* Where small monospaced figures are read. Translucency costs most exactly
-     here and buys least: a token count that is hard to read is worse than a
-     surface that is plain. Kept after the blur's removal because it was never
-     about the blur -- a pale fill over a busy backdrop hurts a 11px figure
-     whatever the filter says. */
+  /* Where small monospaced figures are read. Surface blending costs most
+     exactly here and buys least: a token count that is hard to read is worse
+     than a surface that is plain. Kept after the blur's removal because it was
+     never about the blur -- dense figures need an opaque ground. */
   const DENSE_MONO = [
     "diff-view.tsx",
     "checks-output.tsx",
@@ -683,7 +603,7 @@ describe("depth is fills and edges, and never a blur", () => {
     expect(near, "the edge must stay a hint, not a highlight").toBeLessThanOrEqual(12);
   });
 
-  test("every surface at a depth is translucent, or the edge lights nothing", async () => {
+  test("every depth edge remains assigned to real surfaces", async () => {
     const files = await sourceFiles();
     let users = 0;
     const perDepth = new Map<string, number>();
@@ -700,17 +620,11 @@ describe("depth is fills and edges, and never a blur", () => {
         if (taken === 0) continue;
         users += taken;
         perDepth.set(edge, (perDepth.get(edge) ?? 0) + taken);
-        /* An edge on an opaque fill is a hairline pretending to be a pane. The
-           translucency is what the edge is the boundary OF, so without it the
-           token is decoration -- the configured-and-doing-nothing shape. */
-        expect(source, `${path.basename(file)} lights the edge of an opaque surface`).toMatch(
-          /bg-[a-z-]+\/\d{2}/u
-        );
       }
     }
-    /* A ratchet, not a sanity check. A slack floor let three surfaces be
-       stripped back to opaque without a word, which is how a material decays
-       into a dialog trick one refactor at a time. */
+    /* A ratchet, not a sanity check: the edge scale remains an assigned
+       hierarchy rather than three decorative declarations. Opaque stepped
+       surfaces are deliberate in the Orca-derived skin. */
     expect(users, "depth is meant to be the app's material, not a dialog trick")
       .toBeGreaterThanOrEqual(9);
     for (const edge of DEPTHS) {
@@ -719,7 +633,7 @@ describe("depth is fills and edges, and never a blur", () => {
     }
   });
 
-  test("nothing dense and monospaced sits on a translucent surface", async () => {
+  test("dense monospaced content paints its own opaque surface", async () => {
     const files = await sourceFiles();
     for (const name of DENSE_MONO) {
       const found = files.find((file) => path.basename(file) === name);
@@ -732,15 +646,15 @@ describe("depth is fills and edges, and never a blur", () => {
       }
 
       /* The half that actually matters. The plan review's file lists are mono
-         and sit inside a dialog that is itself translucent -- what keeps them
-         legible is their OWN opaque fill, painted over whatever the ancestor is
-         doing. A translucent fill here would put the figures on the dialog's
-         surface, and no rule about this file's own depth tokens would notice. */
+         and can sit inside an occluding dialog -- what keeps them legible is
+         their OWN opaque fill, painted over whatever the ancestor is doing. A
+         blended fill here would put the figures on the dialog's surface, and no
+         rule about this file's own depth tokens would notice. */
       const fills = source.match(/\bbg-(?:panel|canvas|surface)(?:\/\d+)?\b/gu) ?? [];
       expect(fills.length, `${name} paints no fill of its own to sit on`).toBeGreaterThan(0);
       expect(
         fills.filter((fill) => fill.includes("/")),
-        `${name} carries dense figures on a translucent fill`
+        `${name} carries dense figures on a blended fill`
       ).toEqual([]);
     }
   });

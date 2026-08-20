@@ -137,14 +137,14 @@ describe("the accumulation is a count, not a metric", () => {
 });
 
 describe("the mark is the real one", () => {
-  test("the brand mark ships as the asset, in both themes", async () => {
+  test("the brand mark ships as the dark-surface asset for the owned app skin", async () => {
     const app = await readFile(path.join(desktopRoot, "src", "App.tsx"), "utf8");
-    expect(app).toMatch(/assets\/mark\.png/u);
     expect(app).toMatch(/assets\/mark-dark\.png/u);
-    /* The near-black half of the mark disappears on the dark canvas, so the
-       swap is a real requirement rather than a nicety — and it is done in CSS
-       so it follows the OS with no JS and no flash of the wrong one. */
-    expect(app).toMatch(/prefers-color-scheme: dark/u);
+    /* The application now owns one dark visual skin. Following the unrelated
+       OS preference here would put the light-canvas asset on a dark app surface
+       and recreate the disappearing-mark bug this assertion originally caught. */
+    expect(app).not.toMatch(/assets\/mark\.png/u);
+    expect(app).not.toMatch(/prefers-color-scheme: dark/u);
     expect(app).not.toMatch(/const hex = \(cx: number/u);
   });
 });

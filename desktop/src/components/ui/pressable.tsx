@@ -25,8 +25,6 @@
  * rule about component sources: take structure and interaction logic, never
  * styling opinions.
  *
- * Tabs use their own Radix structure but the same compact token pair. Their
- * selected fill remains a separate state signal from their press affordance.
  */
 import { Checkbox as CheckboxPrimitive, RadioGroup as RadioGroupPrimitive, Switch as SwitchPrimitive } from "radix-ui";
 import { CheckIcon } from "lucide-react";
@@ -47,9 +45,9 @@ const PRESSABLE =
      while the outer blur stays below the attention edge's visual weight. */
   "cursor-pointer shadow-[var(--relief-compact)] transition-[background-color,box-shadow,translate] duration-[120ms] ease-[var(--spring)] active:translate-y-[1px] active:shadow-[var(--relief-compact-pressed)] active:duration-[60ms] disabled:cursor-default disabled:shadow-none disabled:opacity-45";
 
-/** Checked fills use the same single-hue ramp as a filled button. */
+/** Checked fills use the same Hivemind primary face as a committed action. */
 const CHECKED_FILL =
-  "data-[state=checked]:bg-navy data-[state=checked]:bg-gradient-to-b data-[state=checked]:from-navy-lift data-[state=checked]:to-navy-deep data-[state=checked]:text-primary-foreground";
+  "data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground";
 
 export function Checkbox({
   className,
@@ -59,10 +57,9 @@ export function Checkbox({
     <CheckboxPrimitive.Root
       data-slot="checkbox"
       className={cn(
-        "grid size-[18px] shrink-0 place-items-center rounded-[3px] border border-navy-deep bg-gradient-to-b from-quiet-lift to-quiet-deep text-transparent outline-none",
+        "grid size-[18px] shrink-0 place-items-center rounded-sm border border-input bg-canvas text-transparent outline-none",
         PRESSABLE,
         CHECKED_FILL,
-        "data-[state=checked]:border-navy-deep",
         className
       )}
       {...props}
@@ -87,10 +84,9 @@ export function RadioGroupItem({
     <RadioGroupPrimitive.Item
       data-slot="radio"
       className={cn(
-        "grid size-[18px] shrink-0 place-items-center rounded-full border border-navy-deep bg-gradient-to-b from-quiet-lift to-quiet-deep outline-none",
+        "grid size-[18px] shrink-0 place-items-center rounded-full border border-input bg-canvas outline-none",
         PRESSABLE,
         CHECKED_FILL,
-        "data-[state=checked]:border-navy-deep",
         className
       )}
       {...props}
@@ -120,12 +116,12 @@ export function Switch({
     <SwitchPrimitive.Root
       data-slot="switch"
       className={cn(
-        "group relative inline-flex h-4 w-7 shrink-0 cursor-pointer items-center rounded-full border border-navy-deep bg-gradient-to-b from-quiet-lift to-quiet-deep outline-none",
+        "group relative inline-flex h-4 w-7 shrink-0 cursor-pointer items-center rounded-full border border-input bg-canvas outline-none",
         /* The groove: an inset shadow, and inset only. A switch track is the
            inverse of relief and must never be confused for it. */
         "shadow-[inset_0_1px_2px_0_color-mix(in_oklab,#000000_18%,transparent)]",
         "transition-colors duration-[120ms] ease-[var(--spring)]",
-        "data-[state=checked]:border-navy-deep data-[state=checked]:bg-navy",
+        "data-[state=checked]:border-primary data-[state=checked]:bg-primary",
         "disabled:cursor-default disabled:opacity-45",
         className
       )}
@@ -134,7 +130,7 @@ export function Switch({
       <SwitchPrimitive.Thumb
         className={cn(
           /* The 12px thumb gets its form from the micro relief. The track is
-             the recessed part, so the gradient belongs to neither surface. */
+             the recessed part and stays flat. */
           "pointer-events-none block size-3 rounded-full bg-panel",
           "data-[state=checked]:translate-x-[14px]",
           /* `group-active:` rather than `active:`: the pointer lands on the

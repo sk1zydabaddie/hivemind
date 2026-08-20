@@ -12,7 +12,6 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 
 import markDark from "@/assets/mark-dark.png";
-import markLight from "@/assets/mark.png";
 import { useCallback, useEffect, useState } from "react";
 
 import { SettingsDialog } from "@/components/settings-dialog";
@@ -254,9 +253,9 @@ export default function App(): React.JSX.Element {
         value={section}
         onValueChange={setSection}
       >
-        {/* Chrome, not a widget tray. White, ruled off from the canvas below,
-            44px tall, and every control on it is the same height. */}
-        <header className="flex h-11 shrink-0 items-stretch gap-4 border-b border-rule bg-panel/78 shadow-[var(--glass-edge-far)] pr-2.5 pl-3">
+        {/* Chrome, not a widget tray. It uses the first raised surface step,
+            ruled off from the darker workbench below. */}
+        <header className="flex h-11 shrink-0 items-stretch gap-4 border-b border-rule bg-panel shadow-[var(--glass-edge-far)] pr-2.5 pl-3">
           <div className="flex shrink-0 items-center gap-2">
             <BrandMark />
             <span className="text-[13px] leading-none font-semibold tracking-tight text-ink">
@@ -643,38 +642,19 @@ export default function App(): React.JSX.Element {
   );
 }
 
-/* The product's own mark, reduced: two interlocking hexagons in the two
-   identity colours. The four rounded squares this replaced were a generic
-   swarm glyph and, literally, four cards in a grid. */
-/* The real mark, not an approximation of it.
- *
- * This was a hand-drawn pair of thin hexagon outlines standing in for the
- * brand. The actual mark is two interlocking hexagonal LINKS with an over/under
- * crossing and heavy rounded strokes, and the two hexagons are rotated thirty
- * degrees from each other -- which is exactly what makes them read as linked
- * rather than stacked. Close enough to describe in a sentence, and far enough
- * that three traces of it came out looking like a different logo side by side.
- * So it ships as the asset itself rather than as a drawing of the asset.
- *
- * Two files rather than one because the mark is navy AND near-black: on the
- * dark canvas the near-black half disappears completely. The dark variant is
- * generated from the same source by mapping each half to the theme's own navy
- * and ink, so the two cannot drift apart. `picture` does the swap in CSS, so it
- * follows the OS theme with no JS and no flash of the wrong one.
- */
+/* The real dark-surface brand asset, not a CSS approximation. The application
+ * now owns a dark visual skin regardless of the OS colour preference, so the
+ * mark follows the app surface rather than an unrelated system setting. */
 function BrandMark(): React.JSX.Element {
   return (
-    <picture className="flex shrink-0 items-center">
-      <source media="(prefers-color-scheme: dark)" srcSet={markDark} />
-      <img
-        alt=""
-        className="block size-[19px] select-none"
-        draggable={false}
-        height={19}
-        src={markLight}
-        width={19}
-      />
-    </picture>
+    <img
+      alt=""
+      className="block size-[19px] shrink-0 select-none"
+      draggable={false}
+      height={19}
+      src={markDark}
+      width={19}
+    />
   );
 }
 

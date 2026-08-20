@@ -10,9 +10,8 @@ import { cn } from "@/lib/utils";
  * plan review each had their own panel padding, their own header height and
  * their own idea of what a section label looked like.
  *
- * A panel is a bordered region on the canvas. It has NO shadow -- the 1px rule
- * and the canvas behind it are the separation, which is the whole visual
- * language here. There is no elevated variant, deliberately.
+ * A panel is one step above the workbench plane. Its 1px low-contrast rule and
+ * fill establish the layer; it still has no decorative elevation shadow.
  */
 
 export function Panel({
@@ -24,7 +23,7 @@ export function Panel({
     <section
       data-slot="panel"
       className={cn(
-        "grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-lg border border-rule bg-navy-wash/34",
+        "grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-lg border border-rule bg-panel",
         className
       )}
       {...props}
@@ -45,7 +44,7 @@ export function PanelHeader({
     <header
       data-slot="panel-header"
       className={cn(
-        "flex h-9 shrink-0 items-center gap-3 border-b border-rule bg-canvas/82 shadow-[var(--glass-edge)] px-3",
+        "flex h-9 shrink-0 items-center gap-3 border-b border-rule bg-surface/72 shadow-[var(--glass-edge)] px-3",
         className
       )}
       {...props}

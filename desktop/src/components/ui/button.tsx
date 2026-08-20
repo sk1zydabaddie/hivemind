@@ -4,72 +4,40 @@ import { Slot } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 
-/* Conformed to the token contract: 4px corners, 13px label, 1px edges, and no
- * ring of its own -- focus is the single navy hairline declared once in
- * styles.css, so every focusable thing in the app agrees.
- *
- * Icons are 14px at stroke 1.75 to match the rest of the instrument; the
- * generated component's 16px/stroke-2 read a size too loud beside 13px text.
- */
+/* Orca-derived geometry and density, expressed through Hivemind's existing
+ * primitive. The committed-action variant keeps Hivemind's press redemption;
+ * every utility variant stays in the surface plane. */
 const buttonVariants = cva(
-  /* A disabled control is never filled. A navy button at 45% opacity still
-     reads as pressable -- "Start building" sat over an empty box looking like
-     it would do something -- so the filled variants drop to the canvas instead
-     of fading. */
-  /* Motion: a spring curve on colour AND transform, so a press reads as the
-     surface giving way rather than as a repaint. `active:` goes DOWN past rest
-     -- returning to zero would feel like nothing happened. */
-  "relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-md border border-transparent bg-transparent text-[13px] leading-none font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow,transform] duration-[120ms] ease-[var(--spring)] [--control-relief:var(--relief)] [--control-relief-pressed:var(--relief-pressed)] [--press-distance:2px] active:duration-[60ms] disabled:pointer-events-none disabled:cursor-default disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground disabled:shadow-none aria-invalid:border-destructive [&_kbd]:bg-transparent [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+  "relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-md border border-transparent bg-transparent text-sm leading-none font-medium whitespace-nowrap outline-none transition-[color,background-color,border-color,box-shadow,transform] duration-[120ms] ease-[var(--spring)] [--control-relief:var(--relief)] [--control-relief-pressed:var(--relief-pressed)] [--press-distance:2px] focus-visible:border-navy focus-visible:ring-[3px] focus-visible:ring-navy/25 active:duration-[60ms] disabled:pointer-events-none disabled:cursor-default disabled:border-rule disabled:bg-surface disabled:bg-none disabled:text-muted-foreground disabled:shadow-none disabled:opacity-50 aria-invalid:border-destructive [&_kbd]:bg-transparent [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        /* Relief is reserved for committed actions. Quiet utilities still
-           answer a press, but they sit in the chrome or content plane and use
-           fill, border and focus instead of pretending to be raised objects. */
-        /* The permitted gradient, and now with enough range to be seen as
-           one: `-lift` at the top, `-deep` at the bottom, both mixes of the
-           same meaning colour. Same hue, two stops, top to bottom -- what a
-           physical control looks like, not what a template looks like. The
-           multi-hue two-colour button is the AI-default tell this whole visual
-           language exists to avoid, and widening a single-hue ramp does not
-           move it any closer to that.
-           Strong actions use the full hue. Outline, ghost, secondary, and link
-           use its pale derived ramp so they retain hierarchy while agreeing
-           that they answer a press.
-           Three states, three distinct fills: at rest the ramp runs lift ->
-           deep, hover darkens the top stop so the ramp compresses as though
-           already yielding, and active flattens to `deep` outright -- a pressed
-           face is out of the light, so a lit ramp on it would contradict the
-           shadow. */
-        /* Raised at rest, pressed in on `active:`. The two shadows are a pair
-           declared together in styles.css -- see the rule there for why a
-           button may look proud of the surface and a panel may not. */
         default:
-          "border-navy-deep bg-navy bg-gradient-to-b from-navy-lift to-navy-deep text-primary-foreground shadow-[var(--control-relief)] hover:from-navy hover:to-navy-deep active:translate-y-[var(--press-distance)] active:from-navy-deep active:to-navy-deep active:shadow-[var(--control-relief-pressed)] [&_*]:!text-[inherit] [&_kbd]:border-white/30",
+          "border-primary/80 bg-primary text-primary-foreground shadow-[var(--control-relief)] hover:bg-primary/90 active:translate-y-[var(--press-distance)] active:bg-primary/80 active:shadow-[var(--control-relief-pressed)] [&_*]:!text-[inherit] [&_kbd]:border-white/30",
         destructive:
-          "border-clay-deep bg-clay bg-gradient-to-b from-clay-lift to-clay-deep text-destructive-foreground shadow-[var(--control-relief)] hover:from-clay hover:to-clay-deep active:translate-y-[var(--press-distance)] active:from-clay-deep active:to-clay-deep active:shadow-[var(--control-relief-pressed)] [&_*]:!text-[inherit] [&_kbd]:border-white/30",
+          "border-clay-deep bg-clay text-destructive-foreground shadow-[var(--control-relief)] hover:bg-clay/90 active:translate-y-[var(--press-distance)] active:bg-clay/80 active:shadow-[var(--control-relief-pressed)] [&_*]:!text-[inherit] [&_kbd]:border-white/30",
         "ghost-destructive":
           "text-clay hover:border-clay/20 hover:bg-clay-wash active:bg-clay-wash",
         "outline-destructive":
-          "border-clay/35 bg-panel/72 text-clay hover:border-clay/55 hover:bg-clay-wash active:bg-clay-wash",
+          "border-clay/35 bg-canvas text-clay shadow-[0_1px_2px_rgb(0_0_0/0.24)] hover:border-clay/55 hover:bg-clay-wash active:bg-clay-wash",
         outline:
-          "border-rule bg-panel/72 text-navy hover:border-navy/30 hover:bg-navy-wash/72 active:bg-navy-wash",
+          "border-input bg-canvas text-ink shadow-[0_1px_2px_rgb(0_0_0/0.24)] hover:border-muted-foreground/35 hover:bg-surface active:bg-surface-strong",
         secondary:
-          "border-rule bg-navy-wash/48 text-navy hover:border-navy/25 hover:bg-navy-wash active:bg-navy-wash",
+          "bg-surface text-ink hover:bg-surface-strong active:bg-surface-strong/80",
         ghost:
-          "text-navy hover:border-navy/15 hover:bg-navy-wash/72 active:bg-navy-wash",
+          "text-muted-foreground hover:bg-surface hover:text-ink active:bg-surface-strong",
         link:
-          "text-navy underline-offset-2 hover:bg-navy-wash/60 hover:underline active:bg-navy-wash",
+          "text-navy underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-8 px-3 has-[>svg]:px-2.5",
+        default: "h-9 px-4 py-2 has-[>svg]:px-3",
         xs: "h-6 gap-1 px-2 text-[12px] [--control-relief:var(--relief-micro)] [--control-relief-pressed:var(--relief-micro-pressed)] [--press-distance:1px] has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-7 px-2.5 text-[12px] [--control-relief:var(--relief-compact)] [--control-relief-pressed:var(--relief-compact-pressed)] [--press-distance:1px] has-[>svg]:px-2",
-        lg: "h-9 px-4 has-[>svg]:px-3.5",
-        icon: "size-8",
+        sm: "h-8 gap-1.5 px-3 text-[13px] [--control-relief:var(--relief-compact)] [--control-relief-pressed:var(--relief-compact-pressed)] [--press-distance:1px] has-[>svg]:px-2.5",
+        lg: "h-10 px-6 has-[>svg]:px-4",
+        icon: "size-9",
         "icon-xs": "size-6 [--control-relief:var(--relief-micro)] [--control-relief-pressed:var(--relief-micro-pressed)] [--press-distance:1px] [&_svg:not([class*='size-'])]:size-3",
-        "icon-sm": "size-7 [--control-relief:var(--relief-compact)] [--control-relief-pressed:var(--relief-compact-pressed)] [--press-distance:1px]",
-        "icon-lg": "size-9",
+        "icon-sm": "size-8 [--control-relief:var(--relief-compact)] [--control-relief-pressed:var(--relief-compact-pressed)] [--press-distance:1px]",
+        "icon-lg": "size-10",
         inline: "h-6 px-1.5 text-[12px] [--control-relief:var(--relief-micro)] [--control-relief-pressed:var(--relief-micro-pressed)] [--press-distance:1px]",
         row: "h-auto min-h-9 w-full justify-start px-3 py-2.5 text-left [--control-relief:var(--relief-compact)] [--control-relief-pressed:var(--relief-compact-pressed)] [--press-distance:1px]",
         "row-sm": "h-9 w-full justify-start px-3 text-left [--control-relief:var(--relief-compact)] [--control-relief-pressed:var(--relief-compact-pressed)] [--press-distance:1px]",

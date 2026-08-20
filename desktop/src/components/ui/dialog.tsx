@@ -37,13 +37,9 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        /* Light, deliberately -- and this one survived the blur's removal on
-           its own merits. A 35% scrim under an 86% fill left about 9% of what
-           is behind surviving, which is to say the app went dark under the
-           dialog. At 18% you can see the run still going behind the plan you
-           are approving, which is true and worth seeing: a plan review is a
-           decision about work already in flight, not a modal detour. */
-        "fixed inset-0 z-50 bg-ink/18 duration-[180ms] ease-[var(--spring)] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
+        /* A dark canvas scrim preserves context without washing the workbench
+           grey. It is a flat fill: no backdrop filter and no false glass. */
+        "fixed inset-0 z-50 bg-canvas/72 duration-[180ms] ease-[var(--spring)] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
         className
       )}
       {...props}
@@ -67,7 +63,7 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-xl border border-rule bg-background/86 shadow-[var(--elevation-overlay),var(--glass-edge-near)] p-5 duration-[240ms] ease-[var(--spring)] outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
+          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-xl border border-rule bg-background shadow-[var(--elevation-overlay),var(--glass-edge-near)] p-5 duration-[240ms] ease-[var(--spring)] outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
           frame && "gap-0 p-0",
           className
         )}

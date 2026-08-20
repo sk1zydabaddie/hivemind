@@ -166,8 +166,15 @@ describe("React workspace boundary", () => {
       expect(styles).toContain(`${token}:`);
     }
 
-    // Logo palette, and only the logo palette.
-    for (const token of ["--ink: #1f2328", "--navy: #1b3a6b", "--amber: #b88936", "--clay: #b65b4f"]) {
+    // Orca-derived dark shell with Hivemind's brand navy retained explicitly.
+    for (const token of [
+      "--canvas: #080d15",
+      "--panel: #101822",
+      "--brand-navy: #1b3a6b",
+      "--navy: #7fa9e4",
+      "--amber: #d4a95f",
+      "--clay: #df786d"
+    ]) {
       expect(styles).toContain(token);
     }
     /* Dead tokens from the pre-Tailwind stylesheet, checked against DECLARATIONS

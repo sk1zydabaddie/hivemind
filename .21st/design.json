@@ -12,19 +12,22 @@
     "instructions": ["AGENTS.md", "desktop/DESIGN-NOTES.md", "docs/STATE.md"]
   },
   "design": {
-    "colorMode": "light",
+    "colorMode": "dark",
     "colors": {
-      "canvas": "#f5f6f8",
-      "panel": "#ffffff",
-      "ink": "#1f2328",
-      "navy": "#1b3a6b",
-      "muted": "#667085",
-      "amber": "#b88936",
-      "clay": "#b65b4f"
+      "canvas": "#080d15",
+      "panel": "#101822",
+      "surface": "#172230",
+      "surfaceStrong": "#223044",
+      "ink": "#f4f7fb",
+      "brandNavy": "#1b3a6b",
+      "accentNavy": "#7fa9e4",
+      "muted": "#96a3b5",
+      "amber": "#d4a95f",
+      "clay": "#df786d"
     },
     "typography": {"sans": "Geist Variable", "mono": "Geist Mono Variable"},
     "spacing": {"rhythm": "compact desktop instrument"},
-    "radius": {"default": "5px"},
+    "radius": {"default": "10px", "scale": "4px 6px 8px 10px 14px 18px 22px"},
     "shadows": {
       "relief": "paired resting and pressed tokens for explicit action buttons",
       "elevation": "closed raised, floating, and overlay levels redeemed by occlusion"
@@ -36,15 +39,15 @@
       "reducedMotion": "functional state remains legible without animation"
     },
     "density": "compact",
-    "selectedDirection": "Precision Instrument"
+    "selectedDirection": "Orca-derived Hivemind"
   },
   "components": {
     "installed": [],
     "preferredPrimitives": ["Button", "SelectionControl", "Tabs", "Panel", "Dialog"],
     "patterns": [
       "flat chrome navigation with underline selection",
-      "rule-separated ground-level content",
-      "navy relief reserved for explicit command actions",
+      "four opaque navy-black surface steps separated by 8% white rules",
+      "solid navy relief reserved for explicit committed actions",
       "plain-language labels with compact iconography"
     ]
   },
@@ -62,9 +65,9 @@
     "avoid": [
       "raised or pill-shaped top navigation",
       "raised example or suggestion rows",
-      "blank white-on-white surfaces without hierarchy",
+      "white-on-white or light-theme surfaces",
       "backdrop filters or glass blur",
-      "decorative gradients unrelated to a real control affordance",
+      "decorative gradients and atmospheric dot grids",
       "shadows on ground-level panels",
       "tinting monochrome provider marks",
       "structural or workflow changes during this visual-only overhaul"
@@ -95,6 +98,11 @@
       "date": "2026-08-19",
       "decision": "Use 21st as grounded catalogue research and code review while retaining one Hivemind primitive family; install no mixed-author component set.",
       "source": "21st search and get review"
+    },
+    {
+      "date": "2026-08-20",
+      "decision": "Orca-derived Hivemind supersedes Precision Instrument. The official stablyai/orca source at commit 9d06b3ba938d3c5467de5b82b0bec322af2620a8 supplies the curve, alpha, density, and solid-control relationships; Hivemind keeps its navy hues, structure, workflows, and audited dispatcher.",
+      "source": "User direction plus fresh official Orca clone and installed-app review"
     }
   ],
   "evidence": [
@@ -102,9 +110,11 @@
     {"fact": "design.system", "source": "desktop/DESIGN-NOTES.md"},
     {"fact": "current.state", "source": "docs/STATE.md"},
     {"fact": "installed.ui.feedback", "source": "user screenshots from build 26.818.931"},
-    {"fact": "21st.review", "source": "21st review desktop --json on 2026-08-18"},
+    {"fact": "21st.review", "source": "21st review desktop --json over 87 files on 2026-08-20"},
     {"fact": "visual.references", "source": "docs/evidence/ui-reference-research-2026-08-19/README.md"},
-    {"fact": "21st.catalogue", "source": "21st searches plus code retrieval for ids 18169, 23286, 9051, and 7406 on 2026-08-19"}
+    {"fact": "21st.catalogue", "source": "21st searches plus code retrieval for ids 18169, 23286, 9051, and 7406 on 2026-08-19"},
+    {"fact": "orca.source", "source": "stablyai/orca commit 9d06b3ba938d3c5467de5b82b0bec322af2620a8"},
+    {"fact": "installed.ui", "source": "docs/evidence/orca-skin-installed-26.820.31/"}
   ],
-  "generatedAt": "2026-08-20T06:22:41.454Z"
+  "generatedAt": "2026-08-20T23:00:00.000Z"
 }

@@ -924,7 +924,7 @@ function StepMark({ index, done }: { index: number; done: boolean }): React.JSX.
     <span
       aria-hidden="true"
       className={`grid size-5 shrink-0 place-items-center rounded-xs font-mono text-[11px] ${
-        done ? "bg-navy text-white" : "bg-canvas text-muted-foreground"
+        done ? "bg-navy text-panel" : "bg-canvas text-muted-foreground"
       }`}
     >
       {done ? <Check className="size-3" /> : index}

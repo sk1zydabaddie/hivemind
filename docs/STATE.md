@@ -1522,3 +1522,37 @@ the termination regression test asserts the shared source. Production runtime
 behavior is unchanged. The affected seven-file regression set passed 59/59;
 the exact full Core suite then passed 815/817 with two intentional skips.
 Desktop passed 300/300 and Rust passed 32/32.
+
+### The selected installed skin now comes from Orca source, not screenshot guesses
+
+The user rejected Precision Instrument as visually unrelated to the products
+used as references and explicitly requested a close visual copy of Orca while
+keeping Hivemind's structure and navy identity. The official `stablyai/orca`
+repository was cloned fresh at commit
+`9d06b3ba938d3c5467de5b82b0bec322af2620a8`; its CSS and shared Button source,
+not a reconstructed screenshot, supplied the measurable surface ladder, alpha
+hierarchy, radius scale, and compact control geometry.
+
+Hivemind now has a navy-black four-step opaque surface system, Orca's 10px base
+curve and 36px/32px control density, 8% ordinary rules and 15% input rules,
+solid shared controls, flat underline navigation, and quiet rule-separated
+suggestions. The original `#1b3a6b` Hivemind navy remains the committed-action
+face. The dot grid, atmospheric fields, local control gradients, light
+substrate, and obsolete gradient tokens were deleted. Structure, copy,
+provider identity art, workflows, authoritative state, and the audited
+dispatcher did not change.
+
+The first installed pass, build `26.820.24`, exposed a light dialog scrim that
+made the dark app appear gray. It was rejected on screen. Dialog and Command now
+use opaque dark surfaces over a navy-black scrim. Final build **26.820.31** was
+built, installed, verified against the binary on disk, and captured at a
+1440×900 client size on Setup, Work, and Settings. Evidence:
+`docs/evidence/orca-skin-installed-26.820.31/`.
+
+Production reachability passed all 24 surface/viewport combinations. Its text
+contrast probe now uses relative luminance rather than average RGB, fixing the
+old false classification of the clay face. A 21st source review covered 87
+files; fresh catalogue search was unavailable because the CLI had no signed-in
+session or API key, so no catalogue result or paid generation is claimed for
+this pass. Final verification passed Core 815/817 with two intentional skips,
+Desktop 300/300, Rust 32/32, and all 24 production surface/viewport checks.
