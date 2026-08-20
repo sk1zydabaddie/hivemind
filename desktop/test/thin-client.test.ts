@@ -412,14 +412,18 @@ describe("React workspace boundary", () => {
       path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
       "utf8"
     );
+    const providerList = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "provider-list.tsx"),
+      "utf8"
+    );
     const core = await readFile(
       path.resolve(desktopRoot, "..", "src", "config-actions.ts"),
       "utf8"
     );
 
     expect(setup).toMatch(/type: "provider\.auth\.start"/u);
-    expect(setup).toMatch(/Open .* sign-in/u);
-    expect(setup).not.toMatch(/type="password"|api[_ -]?key|access[_ -]?token/iu);
+    expect(providerList).toMatch(/Open .* sign-in/u);
+    expect(`${setup}\n${providerList}`).not.toMatch(/type="password"|api[_ -]?key|access[_ -]?token/iu);
     expect(core).toMatch(/externalTerminalInvocation/u);
     expect(core).toMatch(/providerAuthentication\(providerId\)/u);
     expect(core).not.toMatch(/auth status|login status|credentials\.json/iu);
@@ -445,6 +449,10 @@ describe("React workspace boundary", () => {
     );
     const settings = await readFile(
       path.join(desktopRoot, "src", "components", "settings-dialog.tsx"),
+      "utf8"
+    );
+    const setup = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
       "utf8"
     );
 
@@ -479,11 +487,31 @@ describe("React workspace boundary", () => {
       expect(label).not.toMatch(/api key|access token|credential|password/u);
     }
 
-    /* Settings dispatches only the four audited settings actions plus the
-       interruption level it already owned. */
+    /* Setup and Settings use one provider-row implementation. Settings renders
+       Core-discovered slugs grouped by provider, never the old static
+       cheap/balanced/strong presentation. */
+    expect(setup).toMatch(/ProviderListRow/u);
+    expect(settings).toMatch(/ProviderListRow/u);
+    expect(settings).toMatch(/discovery\.models\.map/u);
+    expect(settings).toMatch(/<optgroup/u);
+    expect(settings).not.toMatch(/Codex\s*[—-]\s*(?:cheaper|balanced|strongest)/iu);
+    expect(settings).toMatch(/Advanced project rules/u);
+    expect(settings).toMatch(/open \? <div/u);
+
+    /* Settings dispatches only its audited project/settings actions. Model
+       discovery is read-only; model connection repeats discovery in Core
+       before the selected slug can reach the existing paid probe. */
     const dispatched = [...settings.matchAll(/type: "([a-z_.]+)"/gu)].map((match) => match[1]);
     expect(new Set(dispatched)).toEqual(
-      new Set(["config.inspect", "config.set", "project.init", "adapter.connect", "autonomy.set"])
+      new Set([
+        "config.inspect",
+        "config.set",
+        "project.init",
+        "provider.auth.start",
+        "models.discover",
+        "adapter.connect_model",
+        "autonomy.set"
+      ])
     );
     const audit = await readFile(
       path.resolve(desktopRoot, "..", "docs", "m8-action-routing-audit.md"),

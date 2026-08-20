@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, FolderGit2, Loader, Minus, Plug } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, FolderGit2, Loader, Minus, Plug, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
 import { useEffect, useState } from "react";
 
@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SelectionControl } from "@/components/ui/selection-control";
+import { ProviderListRow, ProviderMark, providerRank } from "@/components/workspace/provider-list";
 import { list } from "@/lib/durable";
 import { plainActionError } from "@/lib/plain-language";
 import { displayProjectPath } from "@/lib/project-session";
@@ -19,8 +20,10 @@ import type {
   AdapterConnectResult,
   AutonomyLevel,
   CapabilityStatus,
-  CatalogueAgent,
+  CatalogueProvider,
   InspectedAdapter,
+  ModelDiscoveryView,
+  ProviderModelDiscovery,
   ProbedCapability,
   ProjectConfigView,
   WorkspaceAction,
@@ -92,6 +95,8 @@ export function SettingsDialog({
   onAction: <T>(action: WorkspaceAction) => Promise<T>;
 }): React.JSX.Element {
   const [view, setView] = useState<ProjectConfigView | null>(null);
+  const [modelDiscovery, setModelDiscovery] = useState<ModelDiscoveryView | null>(null);
+  const [discoveringModels, setDiscoveringModels] = useState(false);
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
   const level = inspection?.autonomy.configured_level ?? "auto";
@@ -107,9 +112,25 @@ export function SettingsDialog({
     }
   };
 
+  const refreshModels = async (): Promise<void> => {
+    setDiscoveringModels(true);
+    setError("");
+    try {
+      setModelDiscovery(
+        await onAction<ModelDiscoveryView>({ type: "models.discover", payload: {} })
+      );
+    } catch (cause) {
+      setError(plainActionError(cause));
+    } finally {
+      setDiscoveringModels(false);
+    }
+  };
+
   useEffect(() => {
     if (!open) return;
-    void refresh();
+    /* Keep the two reports ordered so a successful config read cannot erase a
+       model-discovery error that completed a moment earlier. */
+    void refresh().then(refreshModels);
   }, [open]);
 
   const change = async (payload: Record<string, unknown>): Promise<void> => {
@@ -129,18 +150,27 @@ export function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent frame className="grid h-[min(800px,calc(100vh-40px))] w-[min(880px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)] sm:max-w-none">
+      <DialogContent frame className="grid h-[min(820px,calc(100vh-32px))] w-[min(940px,calc(100vw-32px))] grid-rows-[auto_minmax(0,1fr)] sm:max-w-none">
         <DialogHeader frame>
           <DialogTitle className="text-[20px] leading-tight font-semibold tracking-tighter">
             Settings
           </DialogTitle>
           <DialogDescription>
-            Settings belong to the project you have open, not to the app.
+            Simple choices first. Project rules and technical details stay under Advanced.
           </DialogDescription>
+          <div className="mt-2 flex min-w-0 items-center gap-2 border-t border-rule pt-2">
+            <FolderGit2 aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+              {displayProjectPath(projectPath)}
+            </span>
+            <Button size="xs" type="button" variant="outline" onClick={onChooseProject}>
+              Change folder
+            </Button>
+          </div>
         </DialogHeader>
 
         <ScrollArea className="min-h-0 bg-canvas">
-          <div className="grid gap-4 px-5 py-5">
+          <div className="grid gap-3 px-5 py-4">
             {error === "" ? null : (
               <p
                 className="m-0 rounded-md border border-clay/25 border-l-2 border-l-clay bg-clay-wash px-3 py-2 text-[12px] break-words text-clay"
@@ -150,95 +180,49 @@ export function SettingsDialog({
               </p>
             )}
 
-            <Section title="Project">
-              <div className="flex items-center gap-3">
-                <code className="min-w-0 flex-1 font-mono text-[13px] break-all text-ink">
-                  {displayProjectPath(projectPath)}
-                </code>
-                <Button size="sm" type="button" variant="outline" onClick={onChooseProject}>
-                  <FolderGit2 aria-hidden="true" />
-                  Change
+            {view !== null && !view.initialized ? (
+              <div className="rounded-md border border-amber/25 border-l-2 border-l-amber bg-amber-wash px-3 py-2.5">
+                <strong className="block text-[13px] font-semibold text-ink">
+                  This folder is not set up yet
+                </strong>
+                <p className="mt-1 mb-2 text-[12px] leading-relaxed text-muted-foreground">
+                  {view.config_problem ??
+                    "Hivemind keeps its record inside the project. Setting it up writes that folder and nothing else."}
+                </p>
+                <Button
+                  disabled={disabled}
+                  size="sm"
+                  type="button"
+                  onClick={() => {
+                    setWorking(true);
+                    void onAction<ProjectConfigView>({ type: "project.init", payload: {} })
+                      .then(setView)
+                      .catch((cause: unknown) => setError(plainActionError(cause)))
+                      .finally(() => setWorking(false));
+                  }}
+                >
+                  Set this folder up
                 </Button>
               </div>
-              {view !== null && !view.initialized ? (
-                <div className="mt-3 rounded-md border border-amber/25 border-l-2 border-l-amber bg-amber-wash px-3 py-2.5">
-                  <strong className="block text-[13px] font-semibold text-ink">
-                    This folder is not set up yet
-                  </strong>
-                  <p className="mt-1 mb-2 text-[12px] leading-relaxed text-muted-foreground">
-                    {view.config_problem ??
-                      "Hivemind keeps its record inside the project. Setting it up writes that folder and nothing else."}
-                  </p>
-                  <Button
-                    disabled={disabled}
-                    size="sm"
-                    type="button"
-                    onClick={() => {
-                      setWorking(true);
-                      void onAction<ProjectConfigView>({ type: "project.init", payload: {} })
-                        .then(setView)
-                        .catch((cause: unknown) => setError(plainActionError(cause)))
-                        .finally(() => setWorking(false));
-                    }}
-                  >
-                    Set this folder up
-                  </Button>
-                </div>
-              ) : null}
-            </Section>
+            ) : null}
 
             <AgentSection
               disabled={disabled}
+              discoveringModels={discoveringModels}
+              modelDiscovery={modelDiscovery}
               view={view}
               onAction={onAction}
               onConnected={setView}
               onError={setError}
+              onRefreshModels={() => void refreshModels()}
             />
 
-            <Section title="Which agent handles what">
+            <Section title="Run limits" description="Guardrails for one run. The defaults are safe for most projects.">
               {config === null ? (
                 <Waiting />
               ) : (
                 <>
-                  <p className="m-0 mb-2.5 text-[12px] leading-relaxed text-muted-foreground">
-                    Hivemind picks an agent by how risky the files a task touches
-                    are. A file matching nothing counts as risky, so these lists
-                    are what keep ordinary work off your most expensive agent.
-                  </p>
-                  <div className="grid gap-px overflow-hidden rounded-md border border-rule bg-rule">
-                    {SCOPES.map((scope) => (
-                      <div className="grid grid-cols-[132px_minmax(0,1fr)] gap-3 bg-panel px-3 py-2.5" key={scope.key}>
-                        <div>
-                          <strong className="block text-[13px] font-medium text-ink">{scope.label}</strong>
-                          <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
-                            {scope.detail}
-                          </span>
-                        </div>
-                        <GlobList
-                          disabled={disabled}
-                          globs={config[scope.key]}
-                          onChange={(next) => void change({ [scope.key]: next })}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </Section>
-
-            <TaskTypeRouting
-              config={config}
-              disabled={disabled}
-              adapters={view?.adapters ?? []}
-              onChange={change}
-            />
-
-            <Section title="Spending limits">
-              {config === null ? (
-                <Waiting />
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-3 sm:grid-cols-3">
                     <NumberField
                       detail={`One agent call really costs ${view!.limits.observed_worker_call_tokens.low.toLocaleString()}–${view!.limits.observed_worker_call_tokens.high.toLocaleString()} tokens on this project's own runs. A limit below that stops the run after you have paid for the call.`}
                       disabled={disabled}
@@ -257,8 +241,6 @@ export function SettingsDialog({
                       value={config.session_ceiling_tokens}
                       onCommit={(value) => void change({ session_ceiling_tokens: value })}
                     />
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-3">
                     <NumberField
                       detail={`How many agents work at once. Between 1 and ${view!.limits.max_concurrent_workers_hard_max}.`}
                       disabled={disabled}
@@ -266,19 +248,12 @@ export function SettingsDialog({
                       value={config.max_concurrent_workers}
                       onCommit={(value) => void change({ max_concurrent_workers: value })}
                     />
-                    <TextField
-                      detail="Run after every change. If this is wrong, nothing can be verified and nothing ships."
-                      disabled={disabled}
-                      label="Your project's checks"
-                      value={config.test_command}
-                      onCommit={(value) => void change({ test_command: value })}
-                    />
                   </div>
                 </>
               )}
             </Section>
 
-            <Section title="How often Hivemind interrupts you">
+            <Section title="When Hivemind asks you" description="Choose how often work pauses for your approval.">
               <div className="grid gap-2">
                 {LEVELS.map((entry) => (
                   <SelectionControl
@@ -299,6 +274,13 @@ export function SettingsDialog({
               </div>
             </Section>
 
+            <AdvancedSettings
+              adapters={view?.adapters ?? []}
+              config={config}
+              disabled={disabled}
+              onChange={change}
+            />
+
             <BuildLine />
           </div>
         </ScrollArea>
@@ -312,27 +294,53 @@ export function SettingsDialog({
 function AgentSection({
   view,
   disabled,
+  modelDiscovery,
+  discoveringModels,
   onAction,
   onConnected,
-  onError
+  onError,
+  onRefreshModels
 }: {
   view: ProjectConfigView | null;
   disabled: boolean;
+  modelDiscovery: ModelDiscoveryView | null;
+  discoveringModels: boolean;
   onAction: <T>(action: WorkspaceAction) => Promise<T>;
   onConnected: (view: ProjectConfigView) => void;
   onError: (message: string) => void;
+  onRefreshModels: () => void;
 }): React.JSX.Element {
-  const [connecting, setConnecting] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState<{ role: string; label: string; startedAt: number } | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [authBusy, setAuthBusy] = useState<string | null>(null);
+  const [opened, setOpened] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
   const [probe, setProbe] = useState<{ role: string; result: ProbedCapability[]; ok: boolean } | null>(null);
 
-  const connect = async (role: string, agent: CatalogueAgent): Promise<void> => {
-    setConnecting(`${role}:${agent.id}`);
+  useEffect(() => {
+    if (connecting === null) return undefined;
+    const tick = (): void => setElapsedSeconds(
+      Math.floor((Date.now() - connecting.startedAt) / 1_000)
+    );
+    tick();
+    const timer = window.setInterval(tick, 1_000);
+    return () => window.clearInterval(timer);
+  }, [connecting]);
+
+  const connect = async (role: string, providerId: string, modelSlug: string): Promise<void> => {
+    const provider = view?.providers?.find((entry) => entry.id === providerId);
+    setConnecting({
+      role,
+      label: `${provider?.label ?? providerId} · ${modelSlug}`,
+      startedAt: Date.now()
+    });
     setProbe(null);
+    setNotice("");
     onError("");
     try {
       const result = await onAction<AdapterConnectResult>({
-        type: "adapter.connect",
-        payload: { role, agent_id: agent.id }
+        type: "adapter.connect_model",
+        payload: { role, provider_id: providerId, model_slug: modelSlug }
       });
       /* `result.probe.capabilities` was two unguarded levels, and the inline
          type that made it compile was invisible to the first version of the
@@ -348,12 +356,38 @@ function AgentSection({
     }
   };
 
+  const startAuthentication = async (provider: CatalogueProvider): Promise<void> => {
+    setAuthBusy(provider.id);
+    setNotice("");
+    onError("");
+    try {
+      await onAction({
+        type: "provider.auth.start",
+        payload: { provider_id: provider.id }
+      });
+      setNotice(
+        `${provider.label} opened its own sign-in flow. Finish there, then refresh models or run a check here.`
+      );
+    } catch (cause) {
+      onError(`${provider.label}: ${plainActionError(cause)}`);
+    } finally {
+      setAuthBusy(null);
+    }
+  };
+
+  const providers = [...(view?.providers ?? [])].sort(
+    (left, right) => providerRank(left.status) - providerRank(right.status)
+  );
+
   return (
-    <Section title="Your coding agent">
+    <Section
+      title="Your coding agents"
+      description="Sign in to the provider subscriptions you already use, then choose a detected model for each job."
+    >
       <p className="m-0 text-[12px] leading-relaxed text-muted-foreground">
         Hivemind runs the coding agent you already pay for. It never asks for a
-        key of its own — you keep your subscription, and Hivemind starts the
-        agent the same way you would.
+        key of its own. Sign-in stays with the provider, and an Unverified agent
+        is never presented as proven.
       </p>
 
       {view === null ? (
@@ -362,27 +396,66 @@ function AgentSection({
         </div>
       ) : (
         <>
-          <div className="mt-3 grid gap-px overflow-hidden rounded-md border border-rule bg-rule">
-            {list(view.adapters).map((adapter) => (
-              <RoleRow adapter={adapter} key={adapter.role} />
+          <div className="mt-3 overflow-hidden rounded-sm border border-rule">
+            {providers.map((provider) => (
+              <ProviderListRow
+                authenticationBusy={authBusy === provider.id}
+                checksBusy={connecting !== null}
+                expanded={opened === provider.id}
+                key={provider.id}
+                leading={
+                  <span className="grid size-5 shrink-0 place-items-center" title={provider.checked_here ? "Checked in this project" : "Not checked in this project"}>
+                    <StatusMark state={provider.checked_here ? "ok" : provider.connectable ? "unverified" : "none"} />
+                  </span>
+                }
+                provider={provider}
+                onAuthenticate={() => void startAuthentication(provider)}
+                onExpand={() => setOpened(opened === provider.id ? null : provider.id)}
+              />
             ))}
           </div>
 
-          <h4 className="mt-4 mb-2 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
-            Agents Hivemind can run
-          </h4>
-          <div className="grid gap-2">
-            {list(view.catalogue).map((agent) => (
-              <AgentCard
-                agent={agent}
-                busy={connecting !== null}
-                connecting={connecting}
-                disabled={disabled}
-                key={agent.id}
-                roles={list(view.roles)}
-                onConnect={(role) => void connect(role, agent)}
-              />
-            ))}
+          {notice === "" ? null : (
+            <p className="mt-2 mb-0 rounded-sm border-l-2 border-navy bg-navy-wash px-2.5 py-1.5 text-[12px] text-ink" role="status">
+              {notice}
+            </p>
+          )}
+
+          <ModelDiscoverySummary
+            discovering={discoveringModels}
+            discoveries={modelDiscovery?.providers ?? []}
+            providers={providers}
+            onRefresh={onRefreshModels}
+          />
+
+          <div className="mt-4 border-t border-rule pt-3">
+            <h4 className="m-0 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
+              Models by job
+            </h4>
+            <p className="mt-1 mb-2.5 text-[11px] leading-relaxed text-muted-foreground">
+              Planner and manager each use one model. Workers may use a small pool so Hivemind can keep routine work away from an expensive model.
+            </p>
+            {connecting === null ? null : (
+              <p className="mb-2.5 flex items-center gap-1.5 rounded-sm border-l-2 border-navy bg-navy-wash px-2.5 py-1.5 text-[11px] text-ink" role="status">
+                <Loader aria-hidden="true" className="size-3 animate-spin" />
+                Checking {connecting.label} for {connecting.role} · {elapsedSeconds}s
+              </p>
+            )}
+            <div className="grid gap-px overflow-hidden rounded-sm border border-rule bg-rule">
+              {list(view.roles).map((role) => (
+                <RoleModelRow
+                  adapters={list(view.adapters).filter((adapter) => adapter.role === role)}
+                  connecting={connecting}
+                  discoveries={modelDiscovery?.providers ?? []}
+                  disabled={disabled}
+                  elapsedSeconds={elapsedSeconds}
+                  key={role}
+                  providers={providers}
+                  role={role}
+                  onConnect={(providerId, modelSlug) => void connect(role, providerId, modelSlug)}
+                />
+              ))}
+            </div>
           </div>
 
           {probe === null ? null : <ProbeReport ok={probe.ok} capabilities={probe.result} role={probe.role} />}
@@ -392,111 +465,198 @@ function AgentSection({
   );
 }
 
-function RoleRow({ adapter }: { adapter: InspectedAdapter }): React.JSX.Element {
-  const broken = adapter.problems.length > 0;
+function ModelDiscoverySummary({
+  discoveries,
+  providers,
+  discovering,
+  onRefresh
+}: {
+  discoveries: ProviderModelDiscovery[];
+  providers: CatalogueProvider[];
+  discovering: boolean;
+  onRefresh: () => void;
+}): React.JSX.Element {
+  const detected = discoveries.reduce((total, entry) => total + entry.models.length, 0);
+  const needsAttention = discoveries.filter((entry) => entry.status !== "detected");
   return (
-    <div className="grid grid-cols-[152px_minmax(0,1fr)_auto] items-center gap-3 bg-panel px-3 py-2.5">
-      <div>
-        <strong className="block text-[13px] font-medium text-ink capitalize">{adapter.role}</strong>
-        <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
-          {ROLE_PURPOSE[adapter.role] ?? "Used by Hivemind by name"}
+    <div className="mt-2.5 rounded-sm border border-rule bg-canvas px-2.5 py-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="min-w-0 flex-1 text-[11px] leading-relaxed text-muted-foreground">
+          {discovering
+            ? "Asking the installed CLIs for models…"
+            : detected === 0
+              ? "No model list is available yet. Sign in or configure a provider, then refresh."
+              : `${detected} model slug${detected === 1 ? "" : "s"} detected from the installed CLIs without running a model.`}
         </span>
+        <Button disabled={discovering} size="xs" type="button" variant="outline" onClick={onRefresh}>
+          <RefreshCw aria-hidden="true" className={discovering ? "animate-spin" : ""} />
+          Refresh models
+        </Button>
       </div>
-      <div className="min-w-0">
-        {adapter.installed ? (
-          <>
-            <span className="font-mono text-[12px] break-all text-ink">
-              {adapter.model ?? adapter.tool ?? adapter.role}
-            </span>
-            {broken ? (
-              <span className="mt-0.5 block text-[11px] leading-snug break-words text-clay">
-                {adapter.problems.join("; ")}
-              </span>
-            ) : adapter.connected_at === null ? (
-              <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                Installed before Hivemind could check it — reconnect to verify what it can do.
-              </span>
-            ) : (
-              <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                Checked when you connected it
-              </span>
-            )}
-          </>
-        ) : (
-          <span className="text-[12px] text-muted-foreground">Not connected</span>
-        )}
-      </div>
-      <StatusMark state={adapter.installed && !broken ? (adapter.connected_at === null ? "unverified" : "ok") : adapter.installed ? "bad" : "none"} />
+      {!discovering && needsAttention.length > 0 ? (
+        <details className="mt-1.5 text-[11px] text-muted-foreground">
+          <summary className="cursor-pointer select-none focus-visible:text-ink">
+            {needsAttention.length} provider{needsAttention.length === 1 ? "" : "s"} returned no models
+          </summary>
+          <ul className="mt-1.5 mb-0 grid list-none gap-1 border-t border-rule pt-1.5 pl-0">
+            {needsAttention.map((entry) => (
+              <li className="flex gap-2" key={entry.provider_id}>
+                <strong className="shrink-0 font-medium text-ink">
+                  {providers.find((provider) => provider.id === entry.provider_id)?.label ?? entry.provider_id}
+                </strong>
+                <span>{entry.detail}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
     </div>
   );
 }
 
-function AgentCard({
-  agent,
-  roles,
-  disabled,
-  busy,
+function RoleModelRow({
+  role,
+  adapters,
+  discoveries,
+  providers,
   connecting,
+  disabled,
+  elapsedSeconds,
   onConnect
 }: {
-  agent: CatalogueAgent;
-  /* Readonly because it arrives through `list()`, which hands back a shared
-     frozen empty array when the record predates the field. */
-  roles: readonly string[];
+  role: string;
+  adapters: InspectedAdapter[];
+  discoveries: ProviderModelDiscovery[];
+  providers: CatalogueProvider[];
+  connecting: { role: string; label: string; startedAt: number } | null;
   disabled: boolean;
-  busy: boolean;
-  connecting: string | null;
-  onConnect: (role: string) => void;
+  elapsedSeconds: number;
+  onConnect: (providerId: string, modelSlug: string) => void;
 }): React.JSX.Element {
-  const tone =
-    agent.status === "supported"
-      ? "border-rule"
-      : agent.status === "unverified"
-        ? "border-amber/30 border-l-2 border-l-amber"
-        : "border-rule border-l-2 border-l-rule";
+  const current = adapters.filter(
+    (adapter) =>
+      adapter.installed &&
+      adapter.connected_at !== null &&
+      adapter.problems.length === 0 &&
+      adapter.model !== null
+  );
+  const primary = current[0];
+  const options = discoveries.flatMap((discovery) =>
+    discovery.status !== "detected"
+      ? []
+      : discovery.models.map((model) => ({
+          providerId: discovery.provider_id,
+          slug: model.slug
+        }))
+  );
+  const candidateCurrentKey =
+    role === "worker" || primary?.provider_id == null || primary.model === null
+      ? ""
+      : choiceKey(primary.provider_id, primary.model);
+  /* A previously connected model can disappear from a provider's live list.
+     Keep showing it in the checked chip, but never give a select a value for
+     an option the provider no longer publishes. */
+  const currentKey = options.some(
+    (option) => choiceKey(option.providerId, option.slug) === candidateCurrentKey
+  )
+    ? candidateCurrentKey
+    : "";
+  const [choice, setChoice] = useState(currentKey);
+  useEffect(() => setChoice(currentKey), [currentKey]);
+  const parsed = parseChoiceKey(choice);
+  const alreadyConnected =
+    parsed !== null &&
+    current.some(
+      (adapter) => adapter.provider_id === parsed.providerId && adapter.model === parsed.modelSlug
+    );
+  const working = connecting?.role === role;
+
   return (
-    <article className={`rounded-md border bg-panel px-3 py-2.5 ${tone}`}>
-      <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-        <strong className="text-[13px] font-semibold text-ink">{agent.label}</strong>
-        <span className="font-mono text-[11px] text-muted-foreground">{agent.harness}</span>
-        <span aria-hidden="true" className="h-2.5 w-px bg-rule" />
-        <span className="text-[11px] text-muted-foreground">{agent.subscription}</span>
-        <span className="ml-auto">
-          <StatusWord status={agent.status} />
+    <div className="grid gap-2 bg-panel px-3 py-2.5 sm:grid-cols-[150px_minmax(0,1fr)_auto] sm:items-center">
+      <div>
+        <strong className="block text-[13px] font-medium text-ink capitalize">
+          {role === "worker" ? "Workers" : role}
+        </strong>
+        <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
+          {ROLE_PURPOSE[role] ?? "Used by Hivemind by name"}
         </span>
       </div>
-      {agent.caveat === null ? null : (
-        <p className="mt-1.5 mb-0 text-[11px] leading-relaxed break-words text-muted-foreground">
-          {agent.caveat}
-        </p>
-      )}
-      {agent.connectable ? (
-        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] text-muted-foreground">Use it for</span>
-          {roles.map((role) => (
-            <Button
-              disabled={disabled || busy}
-              key={role}
-              size="xs"
-              type="button"
-              variant="outline"
-              onClick={() => onConnect(role)}
-            >
-              {connecting === `${role}:${agent.id}` ? (
-                <Loader aria-hidden="true" className="animate-spin" />
-              ) : (
-                <Plug aria-hidden="true" />
-              )}
-              {role}
-            </Button>
-          ))}
-          <span className="text-[11px] text-muted-foreground">
-            — connecting runs it once to check what it can actually do (about 40K tokens).
+      <div className="min-w-0">
+        {current.length === 0 ? (
+          <span className="mb-1.5 block text-[11px] text-muted-foreground">Nothing checked yet</span>
+        ) : (
+          <div className="mb-1.5 flex flex-wrap gap-1">
+            {current.map((adapter) => (
+              <span className="inline-flex max-w-full items-center gap-1 rounded-sm border border-rule bg-canvas px-1.5 py-0.5" key={adapter.tool ?? `${adapter.role}:${adapter.model}`}>
+                {adapter.provider_id == null ? null : <ProviderMark provider={adapter.provider_id} />}
+                <code className="truncate font-mono text-[10px] text-ink">{adapter.model}</code>
+              </span>
+            ))}
+          </div>
+        )}
+        <select
+          aria-label={`Model for ${role}`}
+          className="h-8 w-full rounded-sm border border-input bg-canvas px-2 font-mono text-[11px] text-ink focus-visible:border-navy/55 disabled:opacity-45"
+          disabled={disabled || connecting !== null || options.length === 0}
+          value={choice}
+          onChange={(event) => setChoice(event.target.value)}
+        >
+          <option value="">Choose a detected model</option>
+          {providers.map((provider) => {
+            const providerOptions = options.filter((option) => option.providerId === provider.id);
+            return providerOptions.length === 0 ? null : (
+              <optgroup key={provider.id} label={provider.label}>
+                {providerOptions.map((option) => (
+                  <option key={choiceKey(option.providerId, option.slug)} value={choiceKey(option.providerId, option.slug)}>
+                    {option.slug}
+                  </option>
+                ))}
+              </optgroup>
+            );
+          })}
+        </select>
+        {primary?.model_choice_refusal == null ? null : (
+          <span className="mt-1 block text-[10px] leading-relaxed text-amber">
+            {primary.model_choice_refusal}
           </span>
-        </div>
-      ) : null}
-    </article>
+        )}
+      </div>
+      <div className="flex items-center gap-2 sm:flex-col sm:items-end">
+        <Button
+          disabled={disabled || connecting !== null || parsed === null || alreadyConnected}
+          size="sm"
+          type="button"
+          onClick={() => {
+            if (parsed !== null) onConnect(parsed.providerId, parsed.modelSlug);
+          }}
+        >
+          {working ? <Loader aria-hidden="true" className="animate-spin" /> : <Plug aria-hidden="true" />}
+          {working ? `Checking · ${elapsedSeconds}s` : role === "worker" ? "Add and check" : "Check and use"}
+        </Button>
+        <span className="text-right text-[10px] leading-snug text-muted-foreground">
+          One real check · about 40K tokens
+        </span>
+      </div>
+    </div>
   );
+}
+
+function choiceKey(providerId: string, modelSlug: string): string {
+  return JSON.stringify([providerId, modelSlug]);
+}
+
+function parseChoiceKey(value: string): { providerId: string; modelSlug: string } | null {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) &&
+      parsed.length === 2 &&
+      typeof parsed[0] === "string" &&
+      typeof parsed[1] === "string"
+      ? { providerId: parsed[0], modelSlug: parsed[1] }
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /* The probe's answer, reported as a delta rather than as a claim. */
@@ -544,19 +704,100 @@ function ProbeReport({
   );
 }
 
-function StatusWord({ status }: { status: CatalogueAgent["status"] }): React.JSX.Element {
-  const text =
-    status === "supported" ? "Proven on real runs" : status === "unverified" ? "Unverified" : "Not integrated";
-  const tone =
-    status === "supported" ? "text-navy" : status === "unverified" ? "text-amber" : "text-muted-foreground";
-  return <span className={`text-[11px] font-medium ${tone}`}>{text}</span>;
-}
-
 function StatusMark({ state }: { state: "ok" | "bad" | "unverified" | "none" }): React.JSX.Element {
   if (state === "ok") return <Check aria-hidden="true" className="mt-0.5 size-3.5 text-navy" />;
   if (state === "bad") return <AlertTriangle aria-hidden="true" className="mt-0.5 size-3.5 text-clay" />;
   if (state === "unverified") return <Minus aria-hidden="true" className="mt-0.5 size-3.5 text-amber" />;
   return <Minus aria-hidden="true" className="mt-0.5 size-3.5 text-muted-foreground" />;
+}
+
+function AdvancedSettings({
+  config,
+  adapters,
+  disabled,
+  onChange
+}: {
+  config: ProjectConfigView["config"];
+  adapters: InspectedAdapter[];
+  disabled: boolean;
+  onChange: (payload: Record<string, unknown>) => Promise<void>;
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <section className="overflow-hidden rounded-md border border-rule bg-panel">
+      <div className="px-2 py-2">
+        <Button
+          aria-expanded={open}
+          className="w-full justify-start"
+          size="sm"
+          type="button"
+          variant="ghost"
+          onClick={() => setOpen((current) => !current)}
+        >
+          <SlidersHorizontal aria-hidden="true" />
+          <span className="flex-1 text-left">Advanced project rules</span>
+          <ChevronDown aria-hidden="true" className={open ? "rotate-180" : ""} />
+        </Button>
+        <p className="mt-1 mb-0 px-2 text-[11px] text-muted-foreground">
+          File risk, project checks, and optional routing by kind of work.
+        </p>
+      </div>
+      {open ? <div className="grid gap-5 border-t border-rule bg-canvas/55 px-4 py-4">
+        {config === null ? (
+          <Waiting />
+        ) : (
+          <>
+            <div>
+              <h4 className="m-0 mb-2 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
+                Project checks
+              </h4>
+              <TextField
+                detail="Runs after every change. If it fails, Hivemind cannot ship the work."
+                disabled={disabled}
+                label="Command"
+                value={config.test_command}
+                onCommit={(value) => void onChange({ test_command: value })}
+              />
+            </div>
+
+            <div className="border-t border-rule pt-4">
+              <h4 className="m-0 mb-1 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
+                File risk
+              </h4>
+              <p className="mt-0 mb-2.5 text-[11px] leading-relaxed text-muted-foreground">
+                These patterns keep sensitive files away from lower-cost models. Files matching nothing are treated as risky.
+              </p>
+              <div className="grid gap-px overflow-hidden rounded-sm border border-rule bg-rule">
+                {SCOPES.map((scope) => (
+                  <div className="grid gap-2 bg-panel px-3 py-2.5 sm:grid-cols-[132px_minmax(0,1fr)]" key={scope.key}>
+                    <div>
+                      <strong className="block text-[12px] font-medium text-ink">{scope.label}</strong>
+                      <span className="mt-0.5 block text-[10px] leading-snug text-muted-foreground">
+                        {scope.detail}
+                      </span>
+                    </div>
+                    <GlobList
+                      disabled={disabled}
+                      globs={config[scope.key]}
+                      onChange={(next) => void onChange({ [scope.key]: next })}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        <TaskTypeRouting
+          adapters={adapters}
+          config={config}
+          disabled={disabled}
+          onChange={onChange}
+        />
+      </div> : null}
+    </section>
+  );
 }
 
 /* ── Fields ───────────────────────────────────────────────────────────────── */
@@ -682,16 +923,23 @@ function Waiting(): React.JSX.Element {
 
 function Section({
   title,
+  description,
   children
 }: {
   title: string;
+  description?: string;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
     <section className="rounded-md border border-rule bg-panel p-4">
-      <h3 className="m-0 mb-2.5 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
-        {title}
-      </h3>
+      <div className="mb-2.5">
+        <h3 className="m-0 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
+          {title}
+        </h3>
+        {description === undefined ? null : (
+          <p className="mt-1 mb-0 text-[11px] leading-relaxed text-muted-foreground">{description}</p>
+        )}
+      </div>
       {children}
     </section>
   );
@@ -797,13 +1045,7 @@ function TaskTypeRouting({
   disabled: boolean;
   onChange: (payload: Record<string, unknown>) => Promise<void>;
 }): React.JSX.Element {
-  if (config === null) {
-    return (
-      <Section title="Which agent handles which kind of work">
-        <Waiting />
-      </Section>
-    );
-  }
+  if (config === null) return <span />;
   /* Absent, not empty. Core always sends this now, but a daemon older than the
      field does not -- and the shell and Core ship as separate binaries that are
      routinely at different versions on the same machine, which is the reason
@@ -835,11 +1077,12 @@ function TaskTypeRouting({
   };
 
   return (
-    <Section title="Which agent handles which kind of work">
-      <p className="m-0 mb-3 text-[12px] leading-relaxed text-muted-foreground">
-        Work is already routed by how risky the files are. This adds the second
-        question: what KIND of work it is. The risk limit still wins — nothing here
-        can send dangerous work to a cheaper agent.
+    <div className="border-t border-rule pt-4">
+      <h4 className="m-0 mb-1 text-[11px] font-medium tracking-label text-muted-foreground uppercase">
+        Routing by kind of work
+      </h4>
+      <p className="m-0 mb-3 text-[11px] leading-relaxed text-muted-foreground">
+        Optional. File risk still wins, so this can never weaken a safety limit.
       </p>
 
       {choosable.length === 0 ? (
@@ -871,10 +1114,10 @@ function TaskTypeRouting({
               onChange={(event) => set(kind.id, event.target.value)}
             >
               <option value="">However it is routed today</option>
-              <option value="strongest">The strongest agent available</option>
-              <option value="cheapest">The cheapest agent available</option>
+              <option value="strongest">Best available model</option>
+              <option value="cheapest">Lowest-cost available model</option>
               {choosable.map((adapter) => (
-                <option key={adapter.role} value={adapter.tool ?? ""}>
+                <option key={adapter.tool ?? adapter.role} value={adapter.tool ?? ""}>
                   {adapter.role}
                   {adapter.model === null ? "" : ` · ${adapter.model}`}
                 </option>
@@ -883,6 +1126,6 @@ function TaskTypeRouting({
           </div>
         ))}
       </div>
-    </Section>
+    </div>
   );
 }

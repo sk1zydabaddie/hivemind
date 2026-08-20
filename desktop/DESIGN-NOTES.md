@@ -4146,3 +4146,52 @@ opened their own flow and returned a Hivemind handoff notice without credential
 entry. A local no-network delayed probe produced non-identical `0s` and later
 elapsed captures. Evidence is in `docs/evidence/desktop-26.820.1257/`.
 
+### Settings is one plain-language surface — 2026-08-20
+
+Settings no longer restates the static agent catalogue as a stack of technical
+cards. Its first section now reuses Setup's exact provider-row implementation:
+the same source-coloured or monochrome mark, subscription wording, provider-
+owned Sign in handoff, current-project standing, and expandable evidence. This
+is a shared component, not two visually similar copies. An unknown provider id
+gets alignment space rather than an invented monogram.
+
+Model choice is a separate, live question. On opening Settings, Core asks each
+installed CLI for the model slugs it publishes without sending a model prompt:
+Codex uses app-server `model/list`, Claude Code exposes its installed aliases,
+OpenCode and Grok use their list commands, and Kimi Code exposes its configured
+aliases. Planner, manager, and worker rows group those exact slugs by provider.
+No credential file is read. A selected slug is discovered again inside Core
+before it can reach the existing paid capability probe, so React cannot forge
+an executable or model argument. A newly detected model receives conservative
+standard-tier and 100K-context metadata rather than an unmeasured cheap or
+strong routing claim.
+
+The old Codex cheap/balanced/strong presentation is gone. The ordinary surface
+contains the provider and model choices, three run limits, and one plain-
+language approval choice. Project checks, file-risk patterns, and optional
+routing by kind of work sit behind one flat Advanced disclosure. Its controls
+are mounted only while open, so a collapsed section cannot leave invisible
+keyboard targets outside the viewport. Paid capability checks are still
+explicit committed actions and disclose the measured approximate call cost
+before the press; simply opening Settings and refreshing models is no-cost.
+
+The 21st workflow read the repository design context before implementation.
+Fresh catalogue search remained unavailable because the CLI is not signed in,
+so no search result was claimed and no mixed component family was installed.
+The final `21st review` over Settings, the shared provider row, and Setup found
+zero errors. Its three warnings point to pre-existing Setup widths that pass all
+three production reachability sizes, so they were not used to rewrite working
+geometry.
+
+Installed build **26.820.1450** was inspected at a 1440x900 client size. The
+upper capture proves the shared five-provider family, truthful 22-model
+discovery summary, and concrete model-slug controls. The lower capture proves
+the compact run limits, plain-language approval choices, collapsed flat
+Advanced disclosure, and exact installed build footer. Evidence is in
+`docs/evidence/settings-overhaul-installed-26.820.1450/`.
+
+Final verification passed Core 821/823 with two intentional skips, Desktop
+302/302, Rust 33/33, and all 24 production surface/viewport checks. No provider
+model, paid capability probe, provider sign-in, or paid 21st generation call
+was run.
+

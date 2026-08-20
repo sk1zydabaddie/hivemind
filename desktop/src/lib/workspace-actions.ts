@@ -313,19 +313,6 @@ export interface AdapterProbeResult {
   readback_source: string | null;
 }
 
-export interface CatalogueAgent {
-  id: string;
-  label: string;
-  harness: string;
-  subscription: string;
-  status: "supported" | "unverified" | "unsupported";
-  caveat: string | null;
-  model: string | null;
-  routing_tier: string;
-  context_window: number;
-  connectable: boolean;
-}
-
 /** A harness and the subscription that pays for it. Not a harness-and-model. */
 export interface CatalogueProvider {
   id: string;
@@ -377,6 +364,8 @@ export interface InspectedAdapter {
   installed: boolean;
   tool: string | null;
   agent_id: string | null;
+  /** Provider derived by Core; absent only when talking to an older daemon. */
+  provider_id?: string | null;
   model: string | null;
   routing_tier: string | null;
   problems: string[];
@@ -391,6 +380,23 @@ export interface InspectedAdapter {
      Computed by Core: the client cannot import it, and a second copy of a
      capability-contract rule is how two surfaces come to disagree. */
   model_choice_refusal?: string | null;
+}
+
+export interface DiscoveredModel {
+  slug: string;
+  label: string;
+}
+
+export interface ProviderModelDiscovery {
+  provider_id: string;
+  status: "detected" | "empty" | "unavailable";
+  models: DiscoveredModel[];
+  source: string;
+  detail: string;
+}
+
+export interface ModelDiscoveryView {
+  providers: ProviderModelDiscovery[];
 }
 
 export interface ProjectConfigView {
@@ -415,9 +421,6 @@ export interface ProjectConfigView {
   } | null;
   roles?: string[];
   adapters?: InspectedAdapter[];
-  /* The flattened (provider x model) list `adapter.connect` takes. Still the
-     connect unit; no longer what the picker shows. */
-  catalogue?: CatalogueAgent[];
   providers?: CatalogueProvider[];
   models?: CatalogueModelView[];
   recommendations?: RoleRecommendation[];
@@ -465,7 +468,9 @@ export type WorkspaceAction = {
     | "config.set"
     | "project.init"
     | "provider.auth.start"
+    | "models.discover"
     | "adapter.connect"
+    | "adapter.connect_model"
     /* The file tree and the file viewer. Read-only and confined in Core -- see
        src/project-files.ts. The client cannot widen either: it names a path and
        Core decides, exactly as with every other action. */

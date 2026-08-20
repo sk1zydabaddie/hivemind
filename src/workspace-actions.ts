@@ -25,8 +25,10 @@ import { inspectWorkspace } from "./workspace-inspection.js";
 import { resumeTask } from "./task-resume.js";
 import { draftSpecFromPrompt } from "./spec-draft-action.js";
 import { adapterRoleNames, isAdapterRoleName } from "./agent-catalogue.js";
+import { discoverProviderModels } from "./model-discovery.js";
 import {
   connectAdapter,
+  connectDiscoveredAdapter,
   initProjectForDesktop,
   inspectProjectConfig,
   inspectProviderAccounts,
@@ -71,12 +73,16 @@ export const workspaceActionTypes = [
      fixed key list and cannot reach a gate; `project.init` sets a folder up;
      `adapter.connect` writes a profile only after a probe has confirmed the
      capabilities it claims. `provider.auth.start` launches one fixed CLI-owned
-     sign-in flow and receives no credential or login result. */
+     sign-in flow and receives no credential or login result. `models.discover`
+     asks those CLIs for a no-cost list; `adapter.connect_model` repeats that
+     check before a listed slug can reach a paid capability probe. */
   "config.inspect",
   "config.set",
   "project.init",
   "provider.auth.start",
+  "models.discover",
   "adapter.connect",
+  "adapter.connect_model",
   /* The file tree and the file viewer. Read-only, confined to the resolved
      project root, and refusing `.hivemind/` and `.git/` outright -- see
      src/project-files.ts for why a reader is still an authorization surface. */
@@ -345,6 +351,10 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
       ? startProviderAuthentication(repoRoot, parsed.value.provider_id)
       : parsed;
   }
+  if (raw.type === "models.discover") {
+    if (Object.keys(payload).length > 0) return { ok: false, reason: "models.discover takes no fields" };
+    return { ok: true, value: await discoverProviderModels(repoRoot) };
+  }
   if (raw.type === "adapter.connect") {
     const parsed = exactStrings(payload, ["role", "agent_id"]);
     if (!parsed.ok) return parsed;
@@ -352,6 +362,19 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
       return { ok: false, reason: `role must be one of ${adapterRoleNames.join(", ")}` };
     }
     return connectAdapter(repoRoot, parsed.value.role, parsed.value.agent_id);
+  }
+  if (raw.type === "adapter.connect_model") {
+    const parsed = exactStrings(payload, ["role", "provider_id", "model_slug"]);
+    if (!parsed.ok) return parsed;
+    if (!isAdapterRoleName(parsed.value.role)) {
+      return { ok: false, reason: `role must be one of ${adapterRoleNames.join(", ")}` };
+    }
+    return connectDiscoveredAdapter(
+      repoRoot,
+      parsed.value.role,
+      parsed.value.provider_id,
+      parsed.value.model_slug
+    );
   }
   return { ok: false, reason: "unsupported workspace action" };
 }

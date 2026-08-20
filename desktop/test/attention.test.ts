@@ -125,6 +125,9 @@ describe("the notification reaches the artifact", () => {
       await readFile(path.join(desktopRoot, "src-tauri", "capabilities", "default.json"), "utf8")
     ) as { permissions: string[]; windows: string[] };
     expect(capability.permissions).toContain("notification:default");
+    expect(
+      capability.permissions.filter((permission) => permission.startsWith("core:app:"))
+    ).toEqual(["core:app:allow-version"]);
     expect(capability.windows).toContain("main");
   });
 

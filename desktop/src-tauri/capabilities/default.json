@@ -1,12 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Hivemind grants the webview notification access only. Update discovery and installation are custom Rust commands; every updater plugin IPC command is explicitly denied so the webview cannot bypass the on-disk idleness gate.",
+  "description": "Hivemind grants notification access and one read-only app-version command so the installed build can identify itself. Update discovery and installation are custom Rust commands; every updater plugin IPC command is explicitly denied so the webview cannot bypass the on-disk idleness gate.",
   "windows": [
     "main"
   ],
   "permissions": [
     "notification:default",
+    "core:app:allow-version",
     "updater:deny-check",
     "updater:deny-download",
     "updater:deny-install",

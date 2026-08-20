@@ -1634,3 +1634,35 @@ handles that could outlive their test. Shared cleanup now verifies the OS pid,
 uses a bounded Windows process-tree fallback, destroys owned pipes, and gives
 the two affected memory tests bounded `EBUSY` cleanup retries. Production
 runtime behavior is unchanged by that harness repair.
+
+### Settings now discovers real installed models instead of selling tiers
+
+Settings is now one plain-language surface that mirrors Setup's provider list
+instead of maintaining a second provider design. Codex, Grok Build, Claude
+Code, OpenCode, and Kimi Code use the same shared mark, subscription wording,
+provider-owned sign-in handoff, standing, and expandable evidence on both
+surfaces. The old Codex cheap/balanced/strongest cards and their inferred tier
+claims are deleted.
+
+Opening Settings performs a bounded, read-only model discovery against the
+installed provider CLIs. The installed machine currently reports 7 Codex, 3
+Claude Code, 10 OpenCode, and 2 Grok Build model slugs; Kimi Code honestly
+reports none. Planner, manager, and worker controls group those 22 exact slugs
+by provider. Core repeats discovery before accepting a selected slug, so React
+cannot submit a stale or invented model. Selecting `Check and use` remains an
+explicit paid capability probe with the approximate measured token cost shown
+before the press; no provider model was run during this verification.
+
+Run limits and approval behavior now use direct user-facing language. File
+risk, project checks, and optional routing by work kind are behind one flat
+Advanced disclosure and are not mounted while collapsed. The installed build
+footer is now available through one narrowly scoped Tauri app-version
+permission rather than a broad default capability.
+
+Installed build **26.820.1450** was built, installed, verified against the
+executable on disk, and inspected at a 1440x900 client size. Evidence is in
+`docs/evidence/settings-overhaul-installed-26.820.1450/`. All 24 production
+surface/viewport checks passed. Final suites passed Core 821/823 with two
+intentional skips, Desktop 302/302, and Rust 33/33. The 21st review of the
+three changed UI files found zero errors; its three warnings are pre-existing
+Setup widths already covered by the passing reachability matrix.

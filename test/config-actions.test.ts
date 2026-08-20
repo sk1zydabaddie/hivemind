@@ -6,13 +6,13 @@ import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 
-import { agentCatalogue, catalogueModels, catalogueProviders, findCatalogueAgent } from "../src/agent-catalogue.js";
+import { agentCatalogue, catalogueAgentForDiscoveredModel, catalogueModels, catalogueProviders, findCatalogueAgent } from "../src/agent-catalogue.js";
 import { describePrice, priceForModel, priceIsStale } from "../src/model-prices.js";
 import { ROLE_RECOMMENDATIONS, modelChoiceAllowed, modelChoiceRefusal, recommendationFor } from "../src/role-recommendations.js";
 import { validateConfig } from "../src/config.js";
 import { isMachineSpecific, trackedMachineFiles, untrackMachineFiles } from "../src/project-sharing.js";
 import { currentMachine, machineStanding } from "../src/verification-standing.js";
-import { buildProfileForAgent, connectAdapter, initProjectForDesktop, inspectProjectConfig, setProjectConfig, startProviderAuthentication } from "../src/config-actions.js";
+import { buildProfileForAgent, connectAdapter, connectDiscoveredAdapter, initProjectForDesktop, inspectProjectConfig, setProjectConfig, startProviderAuthentication } from "../src/config-actions.js";
 import { executeWorkspaceAction } from "../src/workspace-actions.js";
 
 const run = promisify(execFile);
@@ -128,6 +128,7 @@ test("config.inspect reports the roles Core resolves, so the client stops guessi
     const view = result.ok ? (result.value as { roles: string[]; writable_keys: string[]; limits: { observed_worker_call_tokens: { high: number } } }) : null;
     assert.deepEqual(view!.roles, ["planner", "manager", "worker"]);
     assert.ok(view!.writable_keys.includes("run_ceiling_tokens"));
+    assert.equal("catalogue" in (result.ok ? (result.value as object) : {}), false);
     /* Measured on this project's own runs, not guessed: a ceiling below one
        real worker call is a trap that stops a run after the money is spent. */
     assert.ok(view!.limits.observed_worker_call_tokens.high > 100_000);
@@ -140,7 +141,7 @@ test("the dispatcher refuses stray fields on the read-only settings actions", as
   const repo = await repoWithProject();
   try {
     await initProjectForDesktop(repo);
-    for (const type of ["config.inspect", "project.init"]) {
+    for (const type of ["config.inspect", "project.init", "models.discover"]) {
       const refused = await executeWorkspaceAction(repo, { type, payload: { approved: true } });
       assert.equal(refused.ok, false);
     }
@@ -150,6 +151,16 @@ test("the dispatcher refuses stray fields on the read-only settings actions", as
     });
     assert.equal(badRole.ok, false);
     assert.match(badRole.reason, /role must be one of/u);
+    const modelWithStrayField = await executeWorkspaceAction(repo, {
+      type: "adapter.connect_model",
+      payload: {
+        role: "worker",
+        provider_id: "codex-cli",
+        model_slug: "gpt-5.6-terra",
+        approved: true
+      }
+    });
+    assert.equal(modelWithStrayField.ok, false);
   } finally {
     await rm(repo, { recursive: true, force: true });
   }
@@ -267,10 +278,8 @@ test("a provider is a harness, not a harness-and-model pair", () => {
   const providers = catalogueProviders();
   const codex = providers.find((entry) => entry.id === "codex-cli");
   assert.ok(codex, "codex is a provider");
-  /* Three catalogue entries collapse to one row. The picker used to show
-     "Codex — balanced / cheaper / strongest": three rows that are one provider,
-     labelled with `routing_tier`, which is Hivemind's internal routing
-     vocabulary and no part of what a person is choosing. */
+  /* Multiple catalogue models collapse to one provider row. Internal routing
+     vocabulary is no part of what a person is choosing here. */
   assert.equal(providers.filter((entry) => entry.id === "codex-cli").length, 1);
   assert.equal(codex!.label, "Codex");
   assert.ok(!/balanced|cheaper|strongest/iu.test(providers.map((p) => p.label).join(" ")));
@@ -366,7 +375,7 @@ test("Grok receives its prompt as the value of the final --single flag", () => {
   assert.equal(profile.invoke.includes("grok-4.6"), true);
 });
 
-test("a model carries its real slug, and a provider that pins none says so", () => {
+test("every catalogue model carries the actual slug passed to its CLI", () => {
   const models = catalogueModels("codex-cli");
   assert.deepEqual(
     models.map((model) => model.slug),
@@ -376,9 +385,80 @@ test("a model carries its real slug, and a provider that pins none says so", () 
   for (const model of models) {
     assert.ok(!/balanced|cheaper|strongest/iu.test(model.label), model.label);
   }
-  /* Claude Code pins nothing, which is a finding rather than an omission. */
+  /* Claude's invocation has always passed `--model sonnet`; presenting it as
+     "whatever the harness chooses" hid a real pin from both pickers. */
   const claude = catalogueModels("claude");
-  assert.equal(claude.every((model) => model.slug === null), true);
+  assert.deepEqual(claude.map((model) => model.slug), ["sonnet"]);
+});
+
+test("a detected model has a reversible durable id and conservative unknown metadata", () => {
+  const agent = catalogueAgentForDiscoveredModel("codex-cli", "gpt-5.5");
+  assert.ok(agent);
+  assert.equal(agent!.model, "gpt-5.5");
+  assert.equal(agent!.routing_tier, "standard");
+  assert.equal(agent!.context_window, 100_000);
+  assert.equal(findCatalogueAgent(agent!.id)?.model, "gpt-5.5");
+  assert.equal(catalogueAgentForDiscoveredModel("codex-cli", "bad slug"), null);
+});
+
+test("a model picker choice is re-discovered in Core before the existing probe records it", async () => {
+  const repo = await repoWithProject();
+  try {
+    await initProjectForDesktop(repo);
+    const discoveryRunner = async (spec: { kind: string }) => ({
+      ok: true,
+      stdout:
+        spec.kind === "app-server"
+          ? JSON.stringify({ data: [{ model: "gpt-5.5", displayName: "GPT-5.5", hidden: false }] })
+          : spec.kind === "alias-config"
+            ? '{"providers":{},"models":{}}'
+            : "",
+      stderr: "",
+      reason: null
+    });
+
+    const forged = await connectDiscoveredAdapter(repo, "planner", "codex-cli", "gpt-forged", {
+      discoveryRunner
+    });
+    assert.equal(forged.ok, false);
+    assert.match(forged.ok ? "" : forged.reason, /not in the current model list/u);
+
+    const connected = await connectDiscoveredAdapter(repo, "planner", "codex-cli", "gpt-5.5", {
+      discoveryRunner,
+      probe: {
+        runner: async () => ({
+          ok: true,
+          reason: null,
+          stdout:
+            '{"type":"thread.started","thread_id":"abc"}\n{"type":"turn.completed","usage":{"input_tokens":1000,"output_tokens":20}}',
+          stderr: "",
+          exitCode: 0,
+          timedOut: false,
+          wallTimeMs: 100,
+          effectiveTokens: 1020,
+          wroteNonceFile: true
+        }),
+        readback: async () => ({
+          source: "test rollout",
+          model: "gpt-5.5",
+          sandbox: "workspace-write",
+          approvalPolicy: "never",
+          workspaceRoots: [repo],
+          subagents: "v2"
+        })
+      }
+    });
+    assert.equal(connected.ok, true, connected.ok ? undefined : connected.reason);
+    const inspected = await inspectProjectConfig(repo);
+    assert.equal(inspected.ok, true);
+    const planner = inspected.ok
+      ? (inspected.value as { adapters: Array<{ role: string; provider_id: string | null; model: string | null }> }).adapters.find((entry) => entry.role === "planner")
+      : null;
+    assert.equal(planner?.provider_id, "codex-cli");
+    assert.equal(planner?.model, "gpt-5.5");
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
 });
 
 test("every priced model has provenance, and staleness is computed not assumed", () => {

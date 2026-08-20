@@ -311,7 +311,7 @@ function kimiInvoke(model = "kimi-code/kimi-for-coding"): string[] {
 export const agentCatalogue: CatalogueAgent[] = [
   {
     id: "codex-terra",
-    label: "Codex — balanced",
+    label: "Codex · GPT-5.6 Terra",
     harness: "codex-cli",
     subscription: "ChatGPT Plus, Pro or Business",
     status: "supported",
@@ -335,7 +335,7 @@ export const agentCatalogue: CatalogueAgent[] = [
   },
   {
     id: "codex-luna",
-    label: "Codex — cheaper",
+    label: "Codex · GPT-5.6 Luna",
     harness: "codex-cli",
     subscription: "ChatGPT Plus, Pro or Business",
     status: "supported",
@@ -359,7 +359,7 @@ export const agentCatalogue: CatalogueAgent[] = [
   },
   {
     id: "codex-sol",
-    label: "Codex — strongest",
+    label: "Codex · GPT-5.6 Sol",
     harness: "codex-cli",
     subscription: "ChatGPT Pro or Business",
     status: "supported",
@@ -388,13 +388,13 @@ export const agentCatalogue: CatalogueAgent[] = [
        from scratch. Offered, but it cannot be connected until a probe passes,
        and the probe cannot pass while the usage readback is unknown. */
     id: "claude-code",
-    label: "Claude Code",
+    label: "Claude Code · sonnet",
     harness: "claude",
     subscription: "Claude Pro or Max",
     status: "unverified",
     caveat:
       "A live Claude Code 2.1.233 probe verified all nine capability checks, including its model, file-only tool set, endpoint, per-model token reporting, no helper agents, and an unchanged branch. Hivemind still labels it unverified because no whole piece of work has been built, checked, and shipped through this harness. Safe mode also switches off your hooks, CLAUDE.md, skills, plugins, and MCP servers inside a Hivemind worker; that loss is deliberate because hooks are shell commands and can replace a prompt before the model reads it.",
-    model: null,
+    model: "sonnet",
     routing_tier: "standard",
     cost_rank: 10,
     context_window: 200_000,
@@ -413,13 +413,13 @@ export const agentCatalogue: CatalogueAgent[] = [
   },
   {
     id: "opencode",
-    label: "OpenCode",
+    label: "OpenCode · opencode/deepseek-v4-flash-free",
     harness: "opencode",
     subscription: "OpenCode's free model or a connected provider",
     status: "unverified",
     caveat:
       "A probe has been through it and it passed: it denies itself a shell and helper agents, it says so before it runs, and its token counts are read from its own output. What it does not report is which model actually answered, so Hivemind cannot send cheaper work to a cheaper model on this one. No whole piece of work has been built and shipped through it yet, which is what would make it proven.",
-    model: null,
+    model: "opencode/deepseek-v4-flash-free",
     routing_tier: "standard",
     cost_rank: 10,
     context_window: 200_000,
@@ -494,18 +494,106 @@ export const agentCatalogue: CatalogueAgent[] = [
   }
 ];
 
+const DISCOVERED_AGENT_PREFIX = "detected-model-";
+
+/** A model id is data passed as one argv value, never executable syntax. */
+export function validDiscoveredModelSlug(slug: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$/u.test(slug);
+}
+
+function discoveredAgentId(providerId: string, slug: string): string {
+  return `${DISCOVERED_AGENT_PREFIX}${Buffer.from(JSON.stringify([providerId, slug]), "utf8").toString("base64url")}`;
+}
+
+function decodedDiscoveredAgentId(id: string): { providerId: string; slug: string } | null {
+  if (!id.startsWith(DISCOVERED_AGENT_PREFIX)) return null;
+  try {
+    const parsed: unknown = JSON.parse(
+      Buffer.from(id.slice(DISCOVERED_AGENT_PREFIX.length), "base64url").toString("utf8")
+    );
+    if (!Array.isArray(parsed) || parsed.length !== 2) return null;
+    const [providerId, slug] = parsed;
+    return typeof providerId === "string" &&
+      typeof slug === "string" &&
+      MODEL_DISCOVERY_SPECS[providerId] !== undefined &&
+      validDiscoveredModelSlug(slug)
+      ? { providerId, slug }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function invocationForDiscoveredModel(providerId: string, slug: string): string[] | null {
+  switch (providerId) {
+    case "codex-cli":
+      return codexInvoke(slug);
+    case "claude":
+      return claudeInvoke(slug);
+    case "opencode":
+      return openCodeInvoke(slug);
+    case "grok":
+      return grokInvoke(slug);
+    case "kimi":
+      return kimiInvoke(slug);
+    default:
+      return null;
+  }
+}
+
+/**
+ * Build the same bounded profile shape for a slug the installed CLI published.
+ *
+ * A previously catalogued pair keeps its stable id and measured routing facts.
+ * A newly detected pair gets conservative metadata: standard rather than
+ * strong/cheap, and a 100K context ceiling. That can make it ineligible for
+ * risky work or stop early; it cannot silently grant the model a stronger or
+ * cheaper routing claim nobody measured.
+ */
+export function catalogueAgentForDiscoveredModel(
+  providerId: string,
+  slug: string
+): CatalogueAgent | null {
+  if (MODEL_DISCOVERY_SPECS[providerId] === undefined || !validDiscoveredModelSlug(slug)) {
+    return null;
+  }
+  const known = agentCatalogue.find(
+    (agent) => agent.harness === providerId && agent.model === slug
+  );
+  if (known !== undefined) return known;
+  const base = agentCatalogue.find(
+    (agent) => agent.harness === providerId && agent.connectable && agent.invoke !== null
+  );
+  const invoke = invocationForDiscoveredModel(providerId, slug);
+  if (base === undefined || invoke === null) return null;
+  return {
+    ...base,
+    id: discoveredAgentId(providerId, slug),
+    label: `${PROVIDER_LABELS[providerId] ?? base.label} · ${slug}`,
+    model: slug,
+    routing_tier: "standard",
+    cost_rank: 10,
+    context_window: Math.min(base.context_window, 100_000),
+    invoke
+  };
+}
+
 export function findCatalogueAgent(id: string): CatalogueAgent | null {
-  return agentCatalogue.find((agent) => agent.id === id) ?? null;
+  const known = agentCatalogue.find((agent) => agent.id === id);
+  if (known !== undefined) return known;
+  const decoded = decodedDiscoveredAgentId(id);
+  return decoded === null
+    ? null
+    : catalogueAgentForDiscoveredModel(decoded.providerId, decoded.slug);
 }
 
 /* ── Providers and models, which is what a person actually chooses ──────────
  *
  * A catalogue entry is one (PROVIDER x MODEL) pair, because that pair is the
  * unit `adapter.connect` probes and writes a profile for. That is correct as a
- * connect unit and wrong as a question to ask somebody. It produced a picker
- * offering "Codex — balanced", "Codex — cheaper" and "Codex — strongest": three
- * rows that are one provider, labelled with `routing_tier`, which is Hivemind's
- * internal routing vocabulary and no part of what the person is deciding.
+ * connect unit and wrong as a question to ask somebody. It once produced three
+ * Codex rows labelled with Hivemind's internal routing tiers even though they
+ * were one provider. That vocabulary is no part of what the person decides.
  *
  * So the catalogue is projected two ways. Neither is new data:
  *
@@ -544,6 +632,28 @@ export interface CatalogueProvider {
     detail: string;
   };
 }
+
+/**
+ * How the installed harness publishes the model names it can be asked to run.
+ *
+ * The commands live beside the provider invocations for the same reason the
+ * sign-in commands do: this is provider knowledge, while `model-discovery.ts`
+ * is only the bounded mechanism that runs and parses one of these shapes.
+ * None of these commands starts a model turn or consumes model tokens.
+ */
+export type ModelDiscoverySpec =
+  | {
+      kind: "app-server";
+      invocation: readonly [string, ...string[]];
+      source: string;
+      emptyDetail?: string;
+    }
+  | {
+      kind: "help-aliases" | "line-list" | "headed-list" | "alias-config";
+      invocation: readonly [string, ...string[]];
+      source: string;
+      emptyDetail?: string;
+    };
 
 export interface ProviderAuthentication {
   experience: CatalogueProvider["authentication"]["experience"];
@@ -659,6 +769,52 @@ const PROVIDER_AUTHENTICATION: Record<string, ProviderAuthentication> = {
     command: [process.platform === "win32" ? "kimi.cmd" : "kimi", "login"],
     experience: "device_code",
     detail: "Kimi starts its device-code sign-in in a separate terminal. The code and confirmation remain between Kimi and your browser."
+  }
+};
+
+function readOnlyCliInvocation(
+  executable: string,
+  args: readonly string[]
+): readonly [string, ...string[]] {
+  return process.platform === "win32"
+    ? ["cmd.exe", "/d", "/s", "/c", `${executable}.cmd`, ...args]
+    : [executable, ...args];
+}
+
+/**
+ * No-cost model discovery supported by each installed harness.
+ *
+ * These are deliberately the provider's own list/help surfaces. Hivemind does
+ * not read an auth file or scrape a credential directory, and none starts a
+ * model turn. The mechanism independently bounds runtime and output before it
+ * trusts any returned slug.
+ */
+export const MODEL_DISCOVERY_SPECS: Record<string, ModelDiscoverySpec> = {
+  "codex-cli": {
+    kind: "app-server",
+    invocation: readOnlyCliInvocation("codex", ["app-server", "--stdio"]),
+    source: "Codex model/list for the selected ChatGPT account"
+  },
+  claude: {
+    kind: "help-aliases",
+    invocation: readOnlyCliInvocation("claude", ["--help"]),
+    source: "Aliases advertised by the installed Claude Code CLI"
+  },
+  opencode: {
+    kind: "line-list",
+    invocation: readOnlyCliInvocation("opencode", ["models"]),
+    source: "OpenCode models for its configured providers"
+  },
+  grok: {
+    kind: "headed-list",
+    invocation: readOnlyCliInvocation("grok", ["models"]),
+    source: "Grok models for the selected X.AI account"
+  },
+  kimi: {
+    kind: "alias-config",
+    invocation: readOnlyCliInvocation("kimi", ["provider", "list", "--json"]),
+    source: "Models configured in the installed Kimi Code CLI",
+    emptyDetail: "Kimi Code has no configured model aliases yet. Add a provider in Kimi, then refresh this list."
   }
 };
 

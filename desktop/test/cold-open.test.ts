@@ -134,7 +134,7 @@ describe("cold open", () => {
      indistinguishable from the agent that actually works. */
   test("an unverified agent does not look like a verified one", async () => {
     const source = await readFile(
-      path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
+      path.join(desktopRoot, "src", "components", "workspace", "provider-list.tsx"),
       "utf8"
     );
     expect(source).toMatch(/provider\.checked_here/u);
@@ -147,16 +147,15 @@ describe("cold open", () => {
     expect(source).toMatch(/provider\.caveat/u);
   });
 
-  /* The screen asked one question that was secretly three: "Codex — balanced /
-     cheaper / strongest" is one provider and three models, labelled with
-     `routing_tier`, which is Hivemind's internal routing vocabulary. */
+  /* The screen once asked one provider question as three model-tier rows.
+     `routing_tier` is Hivemind's internal vocabulary, not provider identity. */
   test("the picker shows providers and models, never the routing tier", async () => {
     const source = await readFile(
       path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
       "utf8"
     );
     const rendered = source.replace(/\/\*[\s\S]*?\*\//gu, "");
-    /* The leak was the LABEL form -- "Codex — balanced" -- not the words. Prose
+    /* The leak was the provider-plus-tier LABEL form, not the words. Prose
        about routing ordinary work to a cheaper model is the product explaining
        itself correctly, and banning the word would catch that instead. A word
        ban cannot express a structural rule; this targets the structure. */
@@ -311,7 +310,6 @@ describe("a record older than a field is an input, not an accident", () => {
     for (const field of [
       "roles",
       "adapters",
-      "catalogue",
       "providers",
       "models",
       "recommendations",
@@ -346,7 +344,8 @@ describe("a record older than a field is an input, not an accident", () => {
       "utf8"
     );
     expect(settings).toMatch(/list\(view\.adapters\)/u);
-    expect(settings).toMatch(/list\(view\.catalogue\)/u);
+    expect(settings).toMatch(/list\(view\.roles\)/u);
+    expect(settings).toMatch(/modelDiscovery\?\.providers \?\? \[\]/u);
     /* And the one that crashed on an index rather than a call. */
     expect(settings).toMatch(/config\.task_type_routing \?\? \{\}/u);
   });

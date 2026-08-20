@@ -1,13 +1,13 @@
-import { ArrowRight, Check, ChevronDown, ExternalLink, FolderGit2, Loader, Plug, X } from "lucide-react";
+import { ArrowRight, Check, FolderGit2, Loader, Plug, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/pressable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SelectionControl } from "@/components/ui/selection-control";
+import { ProviderListRow, providerRank } from "@/components/workspace/provider-list";
 import { useDismissed } from "@/lib/dismissible";
 import { displayProjectPath, PROJECT_FAULT, type GitReadiness } from "@/lib/project-session";
-import { PROVIDER_MARKS } from "@/lib/provider-marks";
 import { REQUIRED_ROLES } from "@/lib/providers";
 import type {
   CatalogueModelView,
@@ -610,16 +610,23 @@ function ConnectStep({
           ) : (
             <div className="overflow-hidden rounded-sm border border-rule">
               {providers.map((provider) => (
-                <ProviderRow
+                <ProviderListRow
                   authenticationBusy={authBusy === provider.id}
                   checksBusy={busy !== null}
                   expanded={opened === provider.id}
                   key={provider.id}
-                  picked={chosen.has(provider.id)}
+                  leading={
+                    <Checkbox
+                      aria-label={`Use ${provider.label}`}
+                      checked={chosen.has(provider.id)}
+                      disabled={!provider.connectable}
+                      onCheckedChange={() => toggle(provider.id)}
+                    />
+                  }
                   provider={provider}
+                  selected={chosen.has(provider.id)}
                   onExpand={() => setOpened(opened === provider.id ? null : provider.id)}
                   onAuthenticate={() => void startAuthentication(provider)}
-                  onToggle={() => toggle(provider.id)}
                 />
               ))}
             </div>
@@ -692,160 +699,6 @@ function ConnectStep({
         />
       ) : null}
     </li>
-  );
-}
-
-/** Verified first, then probed-but-unverified, then the rest. */
-function providerRank(status: CatalogueProvider["status"]): number {
-  if (status === "supported") return 0;
-  return status === "unverified" ? 1 : 2;
-}
-
-/* One row, scannable: tick, mark, name, subscription, status, chevron. */
-function ProviderRow({
-  provider,
-  picked,
-  expanded,
-  authenticationBusy,
-  checksBusy,
-  onToggle,
-  onExpand,
-  onAuthenticate
-}: {
-  provider: CatalogueProvider;
-  picked: boolean;
-  expanded: boolean;
-  authenticationBusy: boolean;
-  checksBusy: boolean;
-  onToggle: () => void;
-  onExpand: () => void;
-  onAuthenticate: () => void;
-}): React.JSX.Element {
-  return (
-    <div className="border-b border-rule last:border-b-0">
-      <div
-        className={`flex items-center gap-2.5 px-2.5 py-2 ${picked ? "bg-navy-wash" : "bg-panel"}`}
-      >
-        {/* A real control rather than a native input: a native checkbox is
-            drawn by the platform and cannot carry relief, so the one control
-            on this screen that most obviously answers when pressed was the one
-            that could not show it. */}
-        <Checkbox
-          aria-label={`Use ${provider.label}`}
-          checked={picked}
-          disabled={!provider.connectable}
-          onCheckedChange={onToggle}
-        />
-        <ProviderMark provider={provider.id} />
-        <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink">
-          {provider.label}
-        </span>
-        <span className="hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block">
-          {provider.subscription}
-        </span>
-        <Button
-          aria-label={`Open ${provider.label} sign-in`}
-          disabled={authenticationBusy || checksBusy}
-          size="xs"
-          title={provider.authentication.detail}
-          type="button"
-          variant="outline"
-          onClick={onAuthenticate}
-        >
-          {authenticationBusy ? (
-            <Loader aria-hidden="true" />
-          ) : (
-            <ExternalLink aria-hidden="true" />
-          )}
-          {authenticationBusy
-            ? "Opening…"
-            : provider.checked_here
-              ? "Sign in again"
-              : "Sign in"}
-        </Button>
-        <span
-          className={`shrink-0 text-[11px] font-medium ${
-            provider.checked_here || provider.status === "supported"
-              ? "text-navy"
-              : provider.connectable
-                ? "text-amber"
-                : "text-muted-foreground"
-          }`}
-        >
-          {provider.checked_here
-            ? "Checked here"
-            : provider.status === "supported"
-              ? "Proven end to end"
-              : provider.connectable
-                ? "Ready to check"
-                : "Cannot connect yet"}
-        </span>
-        {provider.caveat === null ? (
-          <span aria-hidden="true" className="size-5 shrink-0" />
-        ) : (
-          <Button
-            aria-expanded={expanded}
-            aria-label={`What is unverified about ${provider.label}`}
-            size="icon-xs"
-            type="button"
-            variant="ghost"
-            onClick={onExpand}
-          >
-            <ChevronDown
-              aria-hidden="true"
-              className={`size-3.5 transition-transform ${expanded ? "rotate-180" : ""}`}
-            />
-          </Button>
-        )}
-      </div>
-      {/* Unchanged text, moved out of the way. It is what to read before
-          trusting a provider, not what to read while picking one. */}
-      {expanded && provider.caveat !== null ? (
-        <p className="m-0 border-t border-rule bg-canvas px-2.5 py-2 text-[11px] leading-relaxed break-words text-muted-foreground">
-          {provider.caveat}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * Real marks where one exists, a monogram where none does — rather than a
- * generic glyph standing in for a brand, or an invented logo.
- *
- * SIZED TO THE TEXT, in `em` rather than pixels. A 16px mark beside 12px text is
- * a mark that outranks its own label, and a fixed pixel size stops being right
- * the moment the type scale or the family changes — which the experimental theme
- * panel does live. `1.15em` tracks the label it belongs to, whatever that label
- * turns out to be.
- */
-function ProviderMark({ provider }: { provider: string }): React.JSX.Element {
-  const mark = PROVIDER_MARKS[provider];
-  if (mark === undefined) {
-    return (
-      <span
-        aria-hidden="true"
-        className="grid size-[1.15em] shrink-0 place-items-center rounded-xs border border-rule text-[0.62em] font-semibold text-muted-foreground"
-      >
-        {provider.slice(0, 1).toUpperCase()}
-      </span>
-    );
-  }
-  return (
-    <picture className="flex size-[1.15em] shrink-0 items-center">
-      {mark.dark === undefined ? null : (
-        <source media="(prefers-color-scheme: dark)" srcSet={mark.dark} />
-      )}
-      {/* `rounded-[0.2em]` because three of the five marks are full-bleed tiles
-          with their own background; a square tile against a rounded row reads as
-          a sticker rather than as a logo. */}
-      <img
-        alt=""
-        className="block size-[1.15em] rounded-[0.2em]"
-        draggable={false}
-        src={mark.light}
-      />
-    </picture>
   );
 }
 

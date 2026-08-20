@@ -11,13 +11,18 @@ import {
   adapterRoleNames,
   catalogueModels,
   catalogueProviders,
+  catalogueAgentForDiscoveredModel,
   findCatalogueAgent,
   providerAuthentication,
-  agentCatalogue,
   type AdapterRoleName,
   type CatalogueAgent
 } from "./agent-catalogue.js";
 import { probeAdapter, type AdapterProbeResult, type ProbeOptions } from "./adapter-probe.js";
+import {
+  discoverProviderModels,
+  type ModelDiscoveryRunner,
+  type ModelDiscoveryView
+} from "./model-discovery.js";
 import { configStanding, harnessConfigDigest } from "./harness-config-digest.js";
 import { ensureHarnessProjectConfig } from "./harness-project-config.js";
 import {
@@ -135,6 +140,7 @@ export interface InspectedAdapter {
   installed: boolean;
   tool: string | null;
   agent_id: string | null;
+  provider_id: string | null;
   model: string | null;
   routing_tier: string | null;
   problems: string[];
@@ -228,6 +234,7 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
         installed: false,
         tool: null,
         agent_id: null,
+        provider_id: null,
         model: null,
         routing_tier: null,
         problems: [],
@@ -257,6 +264,7 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
       installed: true,
       tool: typeof profile.tool === "string" ? profile.tool : null,
       agent_id: record?.agent_id ?? null,
+      provider_id: findCatalogueAgent(record?.agent_id ?? "")?.harness ?? null,
       model: modelFromInvoke(invoke),
       routing_tier: typeof profile.routing_tier === "string" ? profile.routing_tier : null,
       problems,
@@ -327,10 +335,9 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
       /* The roles Core resolves by name, so the client stops hardcoding them. */
       roles: [...adapterRoleNames],
       adapters,
-      /* What a person actually chooses, in the three independent parts they
-         are actually choosing between. `catalogue` below is the flattened
-         (provider x model) list the connect action still takes, kept because
-         it IS the connect unit -- but it is no longer what the picker shows. */
+      /* What a person actually chooses, in the independent parts they are
+         actually choosing between. The old flattened provider x model
+         response is gone; dynamic ids remain a private connect-record detail. */
       providers: catalogueProviders().map((provider) => ({
         ...provider,
         checked_here: checkedHarnesses.has(provider.id)
@@ -350,18 +357,6 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
         };
       }),
       recommendations: ROLE_RECOMMENDATIONS,
-      catalogue: agentCatalogue.map((agent) => ({
-        id: agent.id,
-        label: agent.label,
-        harness: agent.harness,
-        subscription: agent.subscription,
-        status: agent.status,
-        caveat: agent.caveat,
-        model: agent.model,
-        routing_tier: agent.routing_tier,
-        context_window: agent.context_window,
-        connectable: agent.connectable
-      })),
       limits: {
         max_concurrent_workers_hard_max: HARD_MAX_CONCURRENT_WORKERS,
         max_concurrent_workers_default: DEFAULT_MAX_CONCURRENT_WORKERS,
@@ -724,6 +719,49 @@ export async function connectAdapter(
 ): Promise<ActionResult> {
   const agent = findCatalogueAgent(agentId);
   if (agent === null) return { ok: false, reason: `unknown coding agent: ${agentId}` };
+  return connectCatalogueAgent(repoRoot, role, agent, options);
+}
+
+/**
+ * Connect a model the selected provider's own no-cost list command returned.
+ *
+ * Discovery is repeated inside Core at action time. The client therefore
+ * cannot turn an arbitrary string into a provider argument by forging an
+ * option in the picker; the slug must be present in a fresh CLI-owned result.
+ */
+export async function connectDiscoveredAdapter(
+  repoRoot: string,
+  role: AdapterRoleName,
+  providerId: string,
+  modelSlug: string,
+  options: { discoveryRunner?: ModelDiscoveryRunner; probe?: ProbeOptions } = {}
+): Promise<ActionResult> {
+  const discovered: ModelDiscoveryView = await discoverProviderModels(repoRoot, {
+    runner: options.discoveryRunner
+  });
+  const provider = discovered.providers.find((entry) => entry.provider_id === providerId);
+  if (
+    provider?.status !== "detected" ||
+    !provider.models.some((model) => model.slug === modelSlug)
+  ) {
+    return {
+      ok: false,
+      reason: `model ${modelSlug} is not in the current model list reported by ${providerId}`
+    };
+  }
+  const agent = catalogueAgentForDiscoveredModel(providerId, modelSlug);
+  if (agent === null) {
+    return { ok: false, reason: `${providerId} cannot run the detected model ${modelSlug}` };
+  }
+  return connectCatalogueAgent(repoRoot, role, agent, options.probe ?? {});
+}
+
+async function connectCatalogueAgent(
+  repoRoot: string,
+  role: AdapterRoleName,
+  agent: CatalogueAgent,
+  options: ProbeOptions
+): Promise<ActionResult> {
   if (agent.invoke === null) {
     return {
       ok: false,
