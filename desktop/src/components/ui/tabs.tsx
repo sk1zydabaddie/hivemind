@@ -30,11 +30,9 @@ export function TabsList({
 }
 
 /**
- * Tabs are controls, so they use compact relief like every other object that
- * answers a press. Their persistent selected state is still a separate claim:
- * navy fill and text identify location, while relief identifies affordance.
- * Neither state claims elevation; tabs occlude nothing and elevation remains a
- * closed, independently tested scale.
+ * Navigation is cut into the chrome rather than placed on top of it. The
+ * underline is location, the hover wash is affordance, and neither makes the
+ * tab compete with a command action for physical weight.
  */
 export function TabsTrigger({
   className,
@@ -46,9 +44,8 @@ export function TabsTrigger({
       className={cn(
         /* The focus ring is inset: a tab outlined one pixel clear of itself
            reads as a floating box rather than as a focused tab. */
-        "relative my-1.5 inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-navy-deep bg-gradient-to-b from-quiet-lift to-quiet-deep px-2.5 text-[13px] font-medium text-primary-foreground shadow-[var(--relief-compact)] transition-[color,background-color,box-shadow,translate] duration-[120ms] ease-[var(--spring)] hover:from-quiet hover:to-quiet-deep active:translate-y-[1px] active:shadow-[var(--relief-compact-pressed)] active:duration-[60ms] focus-visible:outline-offset-[-3px]",
-        /* Selection changes the quiet ramp, not its physical construction. */
-        "data-[state=active]:from-navy-lift data-[state=active]:to-navy data-[state=active]:text-primary-foreground",
+        "relative inline-flex cursor-pointer items-center gap-1.5 border-0 bg-transparent px-2.5 text-[13px] font-medium text-muted-foreground transition-[color,background-color] duration-[120ms] after:absolute after:inset-x-2.5 after:bottom-0 after:h-[2px] after:origin-center after:scale-x-0 after:bg-navy after:transition-transform after:duration-[120ms] hover:bg-navy-wash/55 hover:text-ink active:bg-navy-wash focus-visible:outline-offset-[-3px]",
+        "data-[state=active]:bg-navy-wash/38 data-[state=active]:text-navy data-[state=active]:after:scale-x-100",
         "[&>svg]:size-3.5 [&>svg]:shrink-0",
         className
       )}

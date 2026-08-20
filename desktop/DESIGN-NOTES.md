@@ -3977,3 +3977,44 @@ paths, and authoritative state remain unchanged. The grounded design context is
 recorded in `.21st/design.json`; production implementation is gated on choosing
 one of the explored visual directions.
 
+### Precision Instrument is visual language, not layout — 2026-08-19
+
+The selected direction changes only Hivemind's visual treatment. It does not
+move controls, replace navigation, alter information architecture, change copy,
+or create a parallel workflow. Real screenshots from DeepSeek Harness, the
+Codex/VS Code agent surface, Claude Code, OpenCode, Nexa, and Orca were recorded
+in `docs/evidence/ui-reference-research-2026-08-19/`. They are references for
+tone, density, borders, surface separation, typography, and interaction
+hierarchy only—not templates for Hivemind's structure.
+
+The 21st workflow searched the catalogue with the repository context and then
+reviewed the source for items `18169`, `23286`, `9051`, and `7406`. The active
+design kept the underlined-navigation principle from `18169`, the restrained
+top reflection and contact shadow from `23286`, and a much lower-strength
+technical-grid principle from `7406`. It rejected their incompatible component
+families, pill radii, extra bevels, local state, dependencies, violet hue, and
+full-screen structures. Item `9051` was rejected because its toolbar state and
+surface language duplicated Hivemind's existing primitives. No catalogue code
+was pasted or installed, so the UI remains one coherent Hivemind component
+family rather than a mix of authors and libraries.
+
+The resulting hierarchy is explicit:
+
+- committed default and destructive actions may use the single-hue navy or clay
+  relief and its required pressed-state pair;
+- quiet, outline, secondary, ghost, and link actions remain flat;
+- top navigation uses a navy underline on the chrome edge;
+- suggestions remain rule-separated rows with hover and focus state;
+- selection controls use a ground-level navy wash rather than relief;
+- the canvas uses a 24px, low-strength navy dot grid beneath the existing broad
+  fields, with no backdrop filter, motion, or new elevation membership;
+- large work panels use a translucent navy wash so the substrate remains
+  perceptible instead of returning to white-on-white.
+
+Build `26.819.2301` proved that the initial panel surface still hid the canvas,
+so that pass was rejected after installed visual inspection. Build
+`26.819.2308` contains the corrected workplane, was installed, and was verified
+against the executable on disk. All 24 production surface/viewport checks
+passed. The installed 1440x900 Work and Settings evidence is in
+`docs/evidence/ui-precision-instrument-installed-26.819.2308/`.
+

@@ -11,6 +11,7 @@ import { readCanonMemory } from "../src/memory-canon.js";
 import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { readQuotaLedger } from "../src/resource-ledger.js";
+import { stopChildProcess } from "./support/child-process.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -257,13 +258,7 @@ async function startDaemon(repo: string): Promise<DaemonProcess> {
 }
 
 async function stopDaemon(daemon: DaemonProcess): Promise<void> {
-  if (daemon.child.exitCode !== null) {
-    return;
-  }
-  await new Promise<void>((resolve) => {
-    daemon.child.once("exit", () => resolve());
-    daemon.child.kill();
-  });
+  await stopChildProcess(daemon.child, "the memory-consolidation daemon");
 }
 
 function readLine(child: ChildProcessWithoutNullStreams): Promise<string> {

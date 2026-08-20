@@ -17,6 +17,7 @@ import { mcpToolDefinitions } from "../src/mcp.js";
 import { createSpec } from "../src/spec.js";
 import { createRatifiedSpec } from "./support/spec.js";
 import { withTemplateRepo } from "./support/fixture-repo.js";
+import { stopChildProcess } from "./support/child-process.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -526,13 +527,7 @@ async function startDaemon(repo: string): Promise<DaemonProcess> {
 }
 
 async function stopProcess(processInfo: { child: ChildProcessWithoutNullStreams }): Promise<void> {
-  if (processInfo.child.exitCode !== null) {
-    return;
-  }
-  await new Promise<void>((resolve) => {
-    processInfo.child.once("exit", () => resolve());
-    processInfo.child.kill();
-  });
+  await stopChildProcess(processInfo.child, "the MCP test process");
 }
 
 function readLine(child: ChildProcessWithoutNullStreams): Promise<string> {

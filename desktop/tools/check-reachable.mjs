@@ -257,11 +257,21 @@ const PROBE = `
      buttons even though the Button root itself correctly computed to white. */
   const lowContrastControls = [];
   const channelsOf = (value) => {
-    const match = /rgba?\\(\\s*(\\d+(?:\\.\\d+)?)\\D+(\\d+(?:\\.\\d+)?)\\D+(\\d+(?:\\.\\d+)?)/u.exec(value);
-    return match === null ? null : match.slice(1, 4).map(Number);
+    const match = /rgba?\\(\\s*(\\d+(?:\\.\\d+)?)\\D+(\\d+(?:\\.\\d+)?)\\D+(\\d+(?:\\.\\d+)?)(?:\\D+(0(?:\\.\\d+)?|1(?:\\.0+)?))?/u.exec(value);
+    return match === null
+      ? null
+      : { rgb: match.slice(1, 4).map(Number), alpha: match[4] === undefined ? 1 : Number(match[4]) };
   };
   for (const control of document.querySelectorAll('[data-slot="button"], [data-slot="selection-control"], [data-slot="tabs-trigger"]')) {
     if (control.offsetParent === null || control.disabled) continue;
+    /* Contrast ownership applies only when the primitive paints an opaque dark
+       face. Flat navigation and utility actions intentionally inherit the
+       panel below them; treating transparent black as a dark fill would turn
+       their correct navy text into a false failure. */
+    const face = channelsOf(getComputedStyle(control).backgroundColor);
+    if (face === null || face.alpha < 0.8 || face.rgb.reduce((sum, channel) => sum + channel, 0) / 3 >= 140) {
+      continue;
+    }
     const candidates = [control, ...control.querySelectorAll("*")];
     for (const candidate of candidates) {
       const ownsText = candidate === control || [...candidate.childNodes].some(
@@ -270,7 +280,7 @@ const PROBE = `
       if (!ownsText || candidate.getBoundingClientRect().width === 0) continue;
       const color = getComputedStyle(candidate).color;
       const channels = channelsOf(color);
-      if (channels !== null && channels.reduce((sum, channel) => sum + channel, 0) / 3 < 180) {
+      if (channels !== null && channels.rgb.reduce((sum, channel) => sum + channel, 0) / 3 < 180) {
         lowContrastControls.push({
           label: (candidate.textContent || control.getAttribute("aria-label") || "control").trim().slice(0, 48),
           control: (control.innerText || control.getAttribute("aria-label") || control.getAttribute("data-slot") || "control").replace(/\\s+/g, " ").trim().slice(0, 72),

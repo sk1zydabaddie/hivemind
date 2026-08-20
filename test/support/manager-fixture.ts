@@ -17,6 +17,7 @@ import { integratedTaskIdsFromEvents } from "../../src/integration-state.js";
 import { requestLease } from "../../src/lease.js";
 import { readQuotaLedger, readQuotaLedgerState, recordQuotaUsage, reserveMeteredCall } from "../../src/resource-ledger.js";
 import { latestTaskRunState } from "../../src/run-state.js";
+import { stopChildProcess } from "./child-process.js";
 import {
   approvePendingManagerAction,
   continueAutonomousManagerLoop,
@@ -1071,13 +1072,7 @@ export async function startDaemon(repo: string): Promise<DaemonProcess> {
 }
 
 export async function stopDaemon(daemon: DaemonProcess): Promise<void> {
-  if (daemon.child.exitCode !== null) {
-    return;
-  }
-  await new Promise<void>((resolve) => {
-    daemon.child.once("exit", () => resolve());
-    daemon.child.kill();
-  });
+  await stopChildProcess(daemon.child, "the manager-fixture daemon");
 }
 
 export async function listenServer(server: Server): Promise<void> {

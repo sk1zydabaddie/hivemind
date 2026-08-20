@@ -44,10 +44,8 @@ test("the runner puts a ceiling on every test", async () => {
 
 /* The helper that hung, checked for the shape rather than the wording: a wait
    on a process exiting must carry its own ceiling. */
-test("stopping the daemon cannot wait forever", async () => {
-  const source = await readFile("test/daemon.test.ts", "utf8");
-  const helper = source.slice(source.indexOf("async function stopDaemon"));
-  const body = helper.slice(0, helper.indexOf("\nfunction readLine"));
+test("stopping any test child cannot wait forever", async () => {
+  const body = await readFile("test/support/child-process.ts", "utf8");
 
   assert.match(body, /setTimeout/u, "the wait must be bounded");
   assert.match(body, /SIGKILL/u, "and it must escalate rather than give up quietly");

@@ -46,7 +46,14 @@ underline, fill, rules, hover, and focus instead of pretending to be buttons.
   gradients.
 - Structural or workflow changes in the visual-only overhaul.
 
-## Pending design selection
+## Selected direction
 
-The 21st exploration phase is comparing three directions that all keep the
-existing structure. No production direction is selected yet.
+Precision Instrument was selected on 2026-08-19. The reference products inform
+surface tone, rule hierarchy, typography, density, icon treatment, and control
+states only. Hivemind's structure, navigation placement, workflows, copy, and
+audited action paths remain fixed.
+
+The grounded image and 21st catalogue record is in
+`docs/evidence/ui-reference-research-2026-08-19/README.md`. No catalogue
+component was installed: the useful patterns were conformed to the existing
+Hivemind primitives so the application retains one component family.

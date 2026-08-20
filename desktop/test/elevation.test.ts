@@ -210,8 +210,8 @@ describe("elevation is a scale, not a shadow utility", () => {
    * Chrome is not a card, so the active tab is deliberately NOT on the scale.
    *
    * Tabs are cut into the toolbar rather than sitting on it, and selection is
-   * already expressed by a filled pill — a decision made specifically so that
-   * relief and selection would stop sharing a device. Giving the active tab
+   * expressed by an underline — a decision made specifically so that relief
+   * and selection would stop sharing a device. Giving the active tab
    * elevation would hand selection two devices again, and would claim an "above"
    * that no occlusion demonstrates: a selected tab covers nothing.
    *
@@ -219,7 +219,7 @@ describe("elevation is a scale, not a shadow utility", () => {
    * level list and an earlier decision pulled in opposite directions, and the
    * next person to read the list will wonder why tabs are missing from it.
    */
-  test("selection alone earns no level: the active tab stays fill-only", async () => {
+  test("selection alone earns no level: the active tab stays underline-only", async () => {
     const code = await codeOf(path.join(desktopRoot, "src", "components", "ui", "tabs.tsx"));
     for (const level of Object.keys(LEVELS)) {
       expect(code, `tabs.tsx claims --${level}; selection is fill, not elevation`).not.toContain(
@@ -229,7 +229,7 @@ describe("elevation is a scale, not a shadow utility", () => {
     /* And it still expresses selection, so this is a substitution rather than an
        omission. */
     expect(code, "the selected tab must still be marked somehow").toMatch(
-      /data-\[state=active\]:from-navy-lift/u
+      /data-\[state=active\]:after:scale-x-100/u
     );
   });
 });

@@ -43,13 +43,16 @@
   --amber-wash: #f9f3e8;
   --clay-wash: #f9edeb;
 
-  /* The application substrate is atmospheric rather than blank. Broad fields
-     stay far below the amber edge's local contrast and use identity/meaning
-     hues only; panels remain legible because they are nearly opaque. */
+  /* The application substrate is atmospheric rather than blank. A low-strength
+     navy instrument grid gives the canvas a tempo at native scale; two broad
+     fields keep it from becoming graph paper. All three stay far below the
+     amber edge's local contrast and use identity/meaning hues only. */
   --canvas-atmosphere:
+    radial-gradient(circle, color-mix(in oklab, var(--navy) 8%, transparent) 0.65px, transparent 0.8px),
     radial-gradient(circle at 12% -12%, color-mix(in oklab, var(--navy) 10%, transparent) 0, transparent 42%),
     radial-gradient(circle at 96% 108%, color-mix(in oklab, var(--clay) 6%, transparent) 0, transparent 38%),
     linear-gradient(to bottom, color-mix(in oklab, var(--panel) 46%, var(--canvas)), var(--canvas) 42%, color-mix(in oklab, var(--navy) 2%, var(--canvas)));
+  --canvas-atmosphere-size: 24px 24px, auto, auto, auto;
 
   /* The ramp a physical control has, with RANGE. These were 88% -- a 12%
      darkening, which measured as a gradient and read as a flat rectangle that
@@ -436,6 +439,7 @@
     margin: 0;
     background-color: var(--canvas);
     background-image: var(--canvas-atmosphere);
+    background-size: var(--canvas-atmosphere-size);
     background-attachment: fixed;
     color: var(--ink);
     font-family: var(--font-sans);
@@ -452,6 +456,7 @@
   .brand-canvas {
     background-color: var(--canvas);
     background-image: var(--canvas-atmosphere);
+    background-size: var(--canvas-atmosphere-size);
     background-attachment: fixed;
   }
 

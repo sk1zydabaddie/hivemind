@@ -1484,8 +1484,41 @@ control which answers a press may claim relief” as “every interactive elemen
 must claim relief.” That made the top navigation and the three example prompts
 look like primary raised actions. A 21st review and source audit confirmed the
 drift: `TabsTrigger` contradicted the earlier flat underline decision, while the
-examples used the raised `Button` row variant. The 21st MCP is now registered,
-its review/explore/build skills are installed, and `.21st/design.json` records
-the repository constraints. No production overhaul direction has been selected
-or implemented yet; the next gate is the user's choice among three visual-only
-directions. No paid 21st AI generation was run.
+examples used the raised `Button` row variant.
+
+The user selected the visual-only **Precision Instrument** direction on
+2026-08-19 and explicitly kept the existing structure, placement, copy,
+workflows, and dispatcher paths fixed. The implementation now reserves the
+measured navy relief for committed default and destructive actions. Navigation,
+suggestions, quiet buttons, and selection controls use flat underline, rule,
+wash, border, hover, and focus states instead. A low-strength navy dot grid and
+cool wash give the substrate technical atmosphere without blur, motion, a new
+hue, or a new elevation level. The existing Hivemind primitives were revised in
+place; no catalogue component family was installed or mixed into the product.
+
+The 21st workflow included four project-context catalogue searches, source
+review of items `18169`, `23286`, `9051`, and `7406`, and a review of the final
+changed paths. It informed the underline, restrained action face, and technical
+canvas decisions while incompatible pill, bevel, local-state, dependency, and
+full-screen component patterns were rejected. No paid 21st AI generation or
+provider/model call was run.
+
+The first installed pass, build `26.819.2301`, exposed a remaining white
+workplane and was rejected rather than reported complete. Final build
+`26.819.2308` was built, installed, and verified against the binary on disk.
+All 24 surface/viewport reachability checks passed, including the adjusted
+opaque-face contrast guard. Installed Work and Settings captures at a 1440x900
+client size are recorded in
+`docs/evidence/ui-precision-instrument-installed-26.819.2308/`.
+
+The first required full Core run also exposed a separate verification-rig bug:
+six test files still duplicated the old unbounded daemon shutdown wait that
+`suite-terminates.test.ts` documented and guarded in only one file. Parallel
+Core runs could therefore stop printing while live test daemons waited forever.
+Test-owned child cleanup now has one shared bounded implementation in
+`test/support/child-process.ts`: graceful stop, forced stop, then an explicit
+failure if the process survives. All seven daemon-owning test paths use it, and
+the termination regression test asserts the shared source. Production runtime
+behavior is unchanged. The affected seven-file regression set passed 59/59;
+the exact full Core suite then passed 815/817 with two intentional skips.
+Desktop passed 300/300 and Rust passed 32/32.

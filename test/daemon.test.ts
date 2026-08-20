@@ -17,6 +17,7 @@ import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
 import { authorizePlanlessManualTaskIfEligible } from "./support/manual-task.js";
 import { withTemplateRepo } from "./support/fixture-repo.js";
+import { stopChildProcess } from "./support/child-process.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -580,28 +581,7 @@ function boundaryLength(buffer: string, index: number): number {
  * carried a 5s timeout since it was written.
  */
 async function stopDaemon(daemon: DaemonProcess): Promise<void> {
-  if (daemon.child.exitCode !== null) {
-    return;
-  }
-
-  const exitedWithin = async (ms: number): Promise<boolean> =>
-    await new Promise<boolean>((resolve) => {
-      const timer = setTimeout(() => resolve(false), ms);
-      daemon.child.once("exit", () => {
-        clearTimeout(timer);
-        resolve(true);
-      });
-    });
-
-  daemon.child.kill();
-  if (await exitedWithin(5000)) return;
-
-  daemon.child.kill("SIGKILL");
-  if (await exitedWithin(5000)) return;
-
-  throw new Error(
-    `the daemon (pid ${String(daemon.child.pid)}) survived SIGTERM and SIGKILL. It is still running and will break the next run.`
-  );
+  await stopChildProcess(daemon.child, "the daemon");
 }
 
 function readLine(child: ChildProcessWithoutNullStreams): Promise<string> {

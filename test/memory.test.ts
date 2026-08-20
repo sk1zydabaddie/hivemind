@@ -17,6 +17,7 @@ import { mcpToolDefinitions } from "../src/mcp.js";
 import { buildPlanningGenerationPrompt } from "../src/planning-prompt.js";
 import { readEvents } from "../src/events.js";
 import { executeWorkspaceAction } from "../src/workspace-actions.js";
+import { stopChildProcess } from "./support/child-process.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -346,13 +347,7 @@ async function startDaemon(repo: string): Promise<DaemonProcess> {
 }
 
 async function stopDaemon(daemon: DaemonProcess): Promise<void> {
-  if (daemon.child.exitCode !== null) {
-    return;
-  }
-  await new Promise<void>((resolve) => {
-    daemon.child.once("exit", () => resolve());
-    daemon.child.kill();
-  });
+  await stopChildProcess(daemon.child, "the memory daemon");
 }
 
 function readLine(child: ChildProcessWithoutNullStreams): Promise<string> {

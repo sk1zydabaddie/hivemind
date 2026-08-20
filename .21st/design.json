@@ -35,7 +35,8 @@
       "panel": "240ms",
       "reducedMotion": "functional state remains legible without animation"
     },
-    "density": "compact"
+    "density": "compact",
+    "selectedDirection": "Precision Instrument"
   },
   "components": {
     "installed": [],
@@ -84,6 +85,16 @@
       "date": "2026-08-18",
       "decision": "The overhaul changes visual presentation only and preserves the current UI structure and audited action paths.",
       "source": "User request"
+    },
+    {
+      "date": "2026-08-19",
+      "decision": "Precision Instrument is selected. External agent products inform tonal hierarchy, borders, typography, density, and interaction states only; Hivemind structure and placement do not change.",
+      "source": "User selection and clarification"
+    },
+    {
+      "date": "2026-08-19",
+      "decision": "Use 21st as grounded catalogue research and code review while retaining one Hivemind primitive family; install no mixed-author component set.",
+      "source": "21st search and get review"
     }
   ],
   "evidence": [
@@ -91,7 +102,9 @@
     {"fact": "design.system", "source": "desktop/DESIGN-NOTES.md"},
     {"fact": "current.state", "source": "docs/STATE.md"},
     {"fact": "installed.ui.feedback", "source": "user screenshots from build 26.818.931"},
-    {"fact": "21st.review", "source": "21st review desktop --json on 2026-08-18"}
+    {"fact": "21st.review", "source": "21st review desktop --json on 2026-08-18"},
+    {"fact": "visual.references", "source": "docs/evidence/ui-reference-research-2026-08-19/README.md"},
+    {"fact": "21st.catalogue", "source": "21st searches plus code retrieval for ids 18169, 23286, 9051, and 7406 on 2026-08-19"}
   ],
-  "generatedAt": "2026-08-18T19:22:16.890Z"
+  "generatedAt": "2026-08-20T06:22:41.454Z"
 }

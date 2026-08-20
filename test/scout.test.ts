@@ -17,6 +17,7 @@ import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
 import { authorizePlanlessManualTaskIfEligible } from "./support/manual-task.js";
 import { withTemplateRepo } from "./support/fixture-repo.js";
+import { stopChildProcess } from "./support/child-process.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -316,19 +317,7 @@ async function startDaemon(repo: string): Promise<DaemonProcess> {
 }
 
 async function stopDaemon(daemon: DaemonProcess): Promise<void> {
-  if (daemon.child.exitCode !== null) {
-    return;
-  }
-  await new Promise<void>((resolve) => {
-    daemon.child.once("exit", () => resolve());
-    daemon.child.kill("SIGTERM");
-    setTimeout(() => {
-      if (daemon.child.exitCode === null) {
-        daemon.child.kill("SIGKILL");
-      }
-      resolve();
-    }, 500).unref();
-  });
+  await stopChildProcess(daemon.child, "the scout daemon");
 }
 
 function readLine(child: ChildProcessWithoutNullStreams): Promise<string> {

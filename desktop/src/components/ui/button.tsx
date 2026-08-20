@@ -19,12 +19,13 @@ const buttonVariants = cva(
   /* Motion: a spring curve on colour AND transform, so a press reads as the
      surface giving way rather than as a repaint. `active:` goes DOWN past rest
      -- returning to zero would feel like nothing happened. */
-  "relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-md border border-navy-deep bg-gradient-to-b text-[13px] leading-none font-medium whitespace-nowrap shadow-[var(--control-relief)] transition-[color,background-color,border-color,box-shadow,transform] duration-[120ms] ease-[var(--spring)] [--control-relief:var(--relief)] [--control-relief-pressed:var(--relief-pressed)] [--press-distance:2px] active:translate-y-[var(--press-distance)] active:shadow-[var(--control-relief-pressed)] active:duration-[60ms] disabled:pointer-events-none disabled:cursor-default disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground disabled:shadow-none aria-invalid:border-destructive [&_*]:!text-[inherit] [&_kbd]:border-white/30 [&_kbd]:bg-transparent [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+  "relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-md border border-transparent bg-transparent text-[13px] leading-none font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow,transform] duration-[120ms] ease-[var(--spring)] [--control-relief:var(--relief)] [--control-relief-pressed:var(--relief-pressed)] [--press-distance:2px] active:duration-[60ms] disabled:pointer-events-none disabled:cursor-default disabled:border disabled:border-rule disabled:bg-canvas disabled:bg-none disabled:text-muted-foreground disabled:shadow-none aria-invalid:border-destructive [&_kbd]:bg-transparent [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
   {
     variants: {
       variant: {
-        /* Strong and quiet controls share one physical construction. Importance
-           changes the fill strength; pressability does not disappear. */
+        /* Relief is reserved for committed actions. Quiet utilities still
+           answer a press, but they sit in the chrome or content plane and use
+           fill, border and focus instead of pretending to be raised objects. */
         /* The permitted gradient, and now with enough range to be seen as
            one: `-lift` at the top, `-deep` at the bottom, both mixes of the
            same meaning colour. Same hue, two stops, top to bottom -- what a
@@ -44,18 +45,21 @@ const buttonVariants = cva(
            declared together in styles.css -- see the rule there for why a
            button may look proud of the surface and a panel may not. */
         default:
-          "bg-navy from-navy-lift to-navy-deep text-primary-foreground hover:from-navy hover:to-navy-deep active:from-navy-deep active:to-navy-deep",
+          "border-navy-deep bg-navy bg-gradient-to-b from-navy-lift to-navy-deep text-primary-foreground shadow-[var(--control-relief)] hover:from-navy hover:to-navy-deep active:translate-y-[var(--press-distance)] active:from-navy-deep active:to-navy-deep active:shadow-[var(--control-relief-pressed)] [&_*]:!text-[inherit] [&_kbd]:border-white/30",
         destructive:
-          "border-clay-deep bg-clay from-clay-lift to-clay-deep text-destructive-foreground hover:from-clay hover:to-clay-deep active:from-clay-deep active:to-clay-deep",
+          "border-clay-deep bg-clay bg-gradient-to-b from-clay-lift to-clay-deep text-destructive-foreground shadow-[var(--control-relief)] hover:from-clay hover:to-clay-deep active:translate-y-[var(--press-distance)] active:from-clay-deep active:to-clay-deep active:shadow-[var(--control-relief-pressed)] [&_*]:!text-[inherit] [&_kbd]:border-white/30",
         "ghost-destructive":
-          "border-clay-deep from-clay-lift to-clay-deep text-destructive-foreground hover:from-clay hover:to-clay-deep",
+          "text-clay hover:border-clay/20 hover:bg-clay-wash active:bg-clay-wash",
         "outline-destructive":
-          "border-clay-deep from-clay-lift to-clay-deep text-destructive-foreground hover:from-clay hover:to-clay-deep",
+          "border-clay/35 bg-panel/72 text-clay hover:border-clay/55 hover:bg-clay-wash active:bg-clay-wash",
         outline:
-          "border border-navy-deep from-quiet-lift to-quiet-deep text-primary-foreground hover:from-quiet hover:to-quiet-deep",
-        secondary: "border border-navy-deep from-quiet-lift to-quiet-deep text-primary-foreground hover:from-quiet hover:to-quiet-deep",
-        ghost: "border border-navy-deep from-quiet-lift to-quiet-deep text-primary-foreground hover:from-quiet hover:to-quiet-deep",
-        link: "border border-navy-deep from-quiet-lift to-quiet-deep text-primary-foreground underline-offset-2 hover:from-quiet hover:to-quiet-deep hover:underline",
+          "border-rule bg-panel/72 text-navy hover:border-navy/30 hover:bg-navy-wash/72 active:bg-navy-wash",
+        secondary:
+          "border-rule bg-navy-wash/48 text-navy hover:border-navy/25 hover:bg-navy-wash active:bg-navy-wash",
+        ghost:
+          "text-navy hover:border-navy/15 hover:bg-navy-wash/72 active:bg-navy-wash",
+        link:
+          "text-navy underline-offset-2 hover:bg-navy-wash/60 hover:underline active:bg-navy-wash",
       },
       size: {
         default: "h-8 px-3 has-[>svg]:px-2.5",

@@ -281,19 +281,22 @@ describe("palette discipline", () => {
      * as a generic AI product -- not gradients as such. A vertical ramp from a
      * colour to a darker mix of itself is what a physical control looks like.
      *
-     * Controls remain vertical and single-hue. The substrate may use exactly
-     * two broad, low-strength radial fields to keep the otherwise empty canvas
-     * from looking unfinished; they carry no state and introduce no hue. */
+     * Controls remain vertical and single-hue. The substrate may use one
+     * low-strength navy dot grid plus two broad radial fields to keep the
+     * otherwise empty canvas from looking unfinished; they carry no state and
+     * introduce no hue. */
     expect(styles).not.toMatch(/conic-gradient/u);
-    expect(styles.match(/radial-gradient/gu)?.length ?? 0).toBe(2);
+    expect(styles.match(/radial-gradient/gu)?.length ?? 0).toBe(3);
     const atmosphere = /--canvas-atmosphere:\s*([\s\S]*?);\s*\n/u.exec(styles)?.[1] ?? "";
-    expect(atmosphere.match(/radial-gradient/gu)?.length ?? 0).toBe(2);
+    expect(atmosphere.match(/radial-gradient/gu)?.length ?? 0).toBe(3);
+    expect(atmosphere).toMatch(/radial-gradient\(circle,\s*color-mix/u);
     expect(atmosphere).toContain("linear-gradient(to bottom");
     for (const strength of atmosphere.matchAll(/var\(--(?:navy|clay)\)\s+(\d+)%/gu)) {
       expect(Number(strength[1]), "substrate field exceeds its quiet ceiling").toBeLessThanOrEqual(10);
     }
     expect(styles).toMatch(/body\s*\{[\s\S]*?background-image:\s*var\(--canvas-atmosphere\)/u);
     expect(styles).toMatch(/\.brand-canvas\s*\{[\s\S]*?background-image:\s*var\(--canvas-atmosphere\)/u);
+    expect(styles).toMatch(/--canvas-atmosphere-size:\s*24px 24px, auto, auto, auto/u);
     for (const direction of ["to right", "to left", "45deg", "90deg", "to top"]) {
       expect(styles).not.toContain(direction);
     }
@@ -416,7 +419,7 @@ describe("palette discipline", () => {
     expect(
       [...reliefUsers].sort(),
       "relief belongs to controls that answer when pressed, and to nothing else"
-    ).toEqual(["button.tsx", "pressable.tsx", "selection-control.tsx", "tabs.tsx"]);
+    ).toEqual(["button.tsx", "pressable.tsx"]);
 
     /* A 16px control cannot borrow a large button's soft scale and remain
        legible at native size. Compact controls override the same paired tokens

@@ -85,22 +85,41 @@ describe("shared UI primitives stay visually authoritative", () => {
     expect(rawButtons, "use Button or SelectionControl so controls cannot drift").toEqual([]);
   });
 
-  test("selection state changes gradient stops instead of hiding beneath them", async () => {
+  test("selection state stays flat and uses the shared navy wash", async () => {
     const source = await readFile(
       path.join(sourceRoot, "components", "ui", "selection-control.tsx"),
       "utf8"
     );
-    expect(source).not.toMatch(/aria-\[pressed=true\]:bg-/u);
-    expect(source.match(/aria-\[pressed=true\]:from-navy(?:\s|$)/gu)?.length ?? 0).toBe(8);
+    expect(source).not.toMatch(/bg-gradient-|shadow-\[var\(--control-relief\)/u);
+    expect(source.match(/aria-\[pressed=true\]:bg-navy-wash/gu)?.length ?? 0).toBe(8);
   });
 
-  test("dark control faces own descendant contrast", async () => {
-    for (const primitive of ["button.tsx", "selection-control.tsx"]) {
-      const source = await readFile(path.join(sourceRoot, "components", "ui", primitive), "utf8");
-      expect(source, `${primitive} lets caller text colours disappear on navy`).toContain(
-        "[&_*]:!text-[inherit]"
-      );
-    }
+  test("only the dark Button variants force descendant contrast", async () => {
+    const button = await readFile(path.join(sourceRoot, "components", "ui", "button.tsx"), "utf8");
+    const selection = await readFile(
+      path.join(sourceRoot, "components", "ui", "selection-control.tsx"),
+      "utf8"
+    );
+    expect(button.match(/\[&_\*\]:!text-\[inherit\]/gu)?.length ?? 0).toBe(2);
+    expect(selection).not.toContain("[&_*]:!text-[inherit]");
+  });
+
+  test("relief is reserved for committed actions, not navigation or suggestions", async () => {
+    const button = await readFile(path.join(sourceRoot, "components", "ui", "button.tsx"), "utf8");
+    const tabs = await readFile(path.join(sourceRoot, "components", "ui", "tabs.tsx"), "utf8");
+    const work = await readFile(
+      path.join(sourceRoot, "components", "workspace", "work-tab.tsx"),
+      "utf8"
+    );
+
+    const defaultVariant = /default:\s*\n\s*"([^"]+)"/u.exec(button)?.[1] ?? "";
+    const secondaryVariant = /secondary:\s*\n\s*"([^"]+)"/u.exec(button)?.[1] ?? "";
+    expect(defaultVariant).toContain("shadow-[var(--control-relief)]");
+    expect(defaultVariant).toContain("active:shadow-[var(--control-relief-pressed)]");
+    expect(secondaryVariant).not.toMatch(/control-relief|bg-gradient/u);
+    expect(tabs).toContain("data-[state=active]:after:scale-x-100");
+    expect(tabs).not.toMatch(/shadow-\[var\(--relief|bg-gradient/u);
+    expect(work).toMatch(/size="row"[\s\S]{0,100}variant="secondary"/u);
   });
 
   test("Button callers cannot override the primitive's visual contract", async () => {
