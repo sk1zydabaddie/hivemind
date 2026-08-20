@@ -4065,3 +4065,46 @@ Final verification passed Core 815/817 with two intentional skips, Desktop
 300/300, Rust 32/32, and all 24 production surface/viewport checks. No paid
 provider call or paid 21st generation was used.
 
+### Hivemind identity lives above Orca material — 2026-08-20
+
+The user accepted the Orca-derived installed skin and selected a narrower
+identity pass rather than another overhaul. Orca remains the material system:
+10px curves, compact controls, opaque stepped planes, low-alpha rules, flat
+navigation, and the closed elevation scale are unchanged. Hivemind now owns
+four repeated visual signatures:
+
+- the dark ladder moves from neutral navy-black to a more legible midnight
+  sequence: `#07111c`, `#0d1923`, `#14253b`, and `#1e3553`;
+- the default committed-action Button alone takes a shallow same-hue navy face,
+  a brighter hover face, and a pressed inverse. The shared relief pair and 2px
+  press still redeem it. Destructive, outline, secondary, ghost, navigation,
+  suggestion, selection, checkbox, radio, and switch treatments do not take
+  this gradient;
+- the flat active navigation line starts at one 5px hex node, echoing the mark
+  without turning a tab into a raised control;
+- `hivemind-field.svg` draws two interlocking hex loops and deterministic branch
+  lines behind only Setup and the idle Work canvas. It is a same-origin emitted
+  asset, not a CSP-blocked data URL. It is never repeated or animated, its
+  strongest source opacity is 7%, and it is removed below 1080px rather than
+  competing with content.
+
+No React structure, copy, workflow, provider identity art, dispatcher path, or
+authoritative state changed. No old gradient vocabulary was restored: the
+three primary-face state tokens are closed to `Button` and the earlier dot
+grid and broad atmospheric fields remain deleted.
+
+The 21st build workflow read the current project context and attempted a fresh
+catalogue search before implementation; the CLI remained signed out with no
+token. `21st review desktop --json` then reviewed 87 files and reported the
+same broad static findings already disproved or covered by the global focus
+contract and the 24 production reachability runs, so no unsafe autofix was
+applied. No 21st component family was installed and no paid generation ran.
+
+`npm run ship` built, installed, and verified build **26.820.1055** against the
+executable on disk. The production bundle emitted `hivemind-field-*.svg` beside
+the application assets. The running installed app was inspected at a 1440×900
+client size on Setup, Work, and Settings; evidence is in
+`docs/evidence/hivemind-identity-installed-26.820.1055/`. Final verification
+passed Core 815/817 with two intentional skips, Desktop 301/301, Rust 32/32,
+and all 24 production surface/viewport checks.
+

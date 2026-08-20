@@ -5,15 +5,16 @@ import { Slot } from "radix-ui"
 import { cn } from "@/lib/utils"
 
 /* Orca-derived geometry and density, expressed through Hivemind's existing
- * primitive. The committed-action variant keeps Hivemind's press redemption;
- * every utility variant stays in the surface plane. */
+ * primitive. The committed-action variant owns the one Hivemind signature
+ * face and its press redemption; every utility variant stays in the surface
+ * plane and remains solid. */
 const buttonVariants = cva(
   "relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-md border border-transparent bg-transparent text-sm leading-none font-medium whitespace-nowrap outline-none transition-[color,background-color,border-color,box-shadow,transform] duration-[120ms] ease-[var(--spring)] [--control-relief:var(--relief)] [--control-relief-pressed:var(--relief-pressed)] [--press-distance:2px] focus-visible:border-navy focus-visible:ring-[3px] focus-visible:ring-navy/25 active:duration-[60ms] disabled:pointer-events-none disabled:cursor-default disabled:border-rule disabled:bg-surface disabled:bg-none disabled:text-muted-foreground disabled:shadow-none disabled:opacity-50 aria-invalid:border-destructive [&_kbd]:bg-transparent [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
         default:
-          "border-primary/80 bg-primary text-primary-foreground shadow-[var(--control-relief)] hover:bg-primary/90 active:translate-y-[var(--press-distance)] active:bg-primary/80 active:shadow-[var(--control-relief-pressed)] [&_*]:!text-[inherit] [&_kbd]:border-white/30",
+          "border-primary/80 bg-primary bg-[image:var(--primary-face)] text-primary-foreground shadow-[var(--control-relief)] hover:bg-[image:var(--primary-face-hover)] active:translate-y-[var(--press-distance)] active:bg-[image:var(--primary-face-pressed)] active:shadow-[var(--control-relief-pressed)] [&_*]:!text-[inherit] [&_kbd]:border-white/30",
         destructive:
           "border-clay-deep bg-clay text-destructive-foreground shadow-[var(--control-relief)] hover:bg-clay/90 active:translate-y-[var(--press-distance)] active:bg-clay/80 active:shadow-[var(--control-relief-pressed)] [&_*]:!text-[inherit] [&_kbd]:border-white/30",
         "ghost-destructive":

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 640">
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path
+      d="M80 320h210l76-76h108m-184 76 76 76h108m-108-152 76-76h116m-116 228 76 76h116"
+      stroke="#7fa9e4"
+      stroke-opacity=".035"
+    />
+    <path
+      d="m474 244 76-44 76 44v88l-76 44-76-44zm76 132 76-44 76 44v88l-76 44-76-44z"
+      stroke="#7fa9e4"
+      stroke-opacity=".07"
+    />
+    <path
+      d="m550 200 76-44 76 44v88l-76 44-76-44zm76 132 76-44 76 44v88l-76 44-76-44z"
+      stroke="#f4f7fb"
+      stroke-opacity=".028"
+    />
+    <path
+      d="M702 200h98l54 54v132l-54 54h-98m-328-196h-8m8 152h-8m192-228v-38m0 380v-38"
+      stroke="#7fa9e4"
+      stroke-opacity=".035"
+    />
+  </g>
+  <g fill="#7fa9e4" fill-opacity=".06">
+    <path d="m286 314 6 3.5v7l-6 3.5-6-3.5v-7z" />
+    <path d="m366 238 6 3.5v7l-6 3.5-6-3.5v-7z" />
+    <path d="m366 390 6 3.5v7l-6 3.5-6-3.5v-7z" />
+    <path d="m854 248 6 3.5v7l-6 3.5-6-3.5v-7z" />
+    <path d="m854 380 6 3.5v7l-6 3.5-6-3.5v-7z" />
+  </g>
+</svg>

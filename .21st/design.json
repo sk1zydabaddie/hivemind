@@ -14,10 +14,10 @@
   "design": {
     "colorMode": "dark",
     "colors": {
-      "canvas": "#080d15",
-      "panel": "#101822",
-      "surface": "#172230",
-      "surfaceStrong": "#223044",
+      "canvas": "#07111c",
+      "panel": "#0d1923",
+      "surface": "#14253b",
+      "surfaceStrong": "#1e3553",
       "ink": "#f4f7fb",
       "brandNavy": "#1b3a6b",
       "accentNavy": "#7fa9e4",
@@ -39,15 +39,16 @@
       "reducedMotion": "functional state remains legible without animation"
     },
     "density": "compact",
-    "selectedDirection": "Orca-derived Hivemind"
+    "selectedDirection": "Orca-derived Hivemind identity"
   },
   "components": {
     "installed": [],
     "preferredPrimitives": ["Button", "SelectionControl", "Tabs", "Panel", "Dialog"],
     "patterns": [
       "flat chrome navigation with underline selection",
-      "four opaque navy-black surface steps separated by 8% white rules",
-      "solid navy relief reserved for explicit committed actions",
+      "four opaque midnight-blue surface steps separated by 8% white rules",
+      "one-hue navy face and pressed inverse reserved for default committed actions",
+      "one non-repeating logo-derived field on Setup and the idle Work canvas",
       "plain-language labels with compact iconography"
     ]
   },
@@ -67,7 +68,7 @@
       "raised example or suggestion rows",
       "white-on-white or light-theme surfaces",
       "backdrop filters or glass blur",
-      "decorative gradients and atmospheric dot grids",
+      "multi-hue or unbounded gradients and repeating atmospheric grids",
       "shadows on ground-level panels",
       "tinting monochrome provider marks",
       "structural or workflow changes during this visual-only overhaul"
@@ -103,6 +104,11 @@
       "date": "2026-08-20",
       "decision": "Orca-derived Hivemind supersedes Precision Instrument. The official stablyai/orca source at commit 9d06b3ba938d3c5467de5b82b0bec322af2620a8 supplies the curve, alpha, density, and solid-control relationships; Hivemind keeps its navy hues, structure, workflows, and audited dispatcher.",
       "source": "User direction plus fresh official Orca clone and installed-app review"
+    },
+    {
+      "date": "2026-08-20",
+      "decision": "Keep Orca as the material foundation and concentrate Hivemind identity in a slightly bluer surface ladder, one same-hue primary-action face with a pressed inverse, a hex-node navigation line, and one quiet self-hosted interlocking-field asset in unused space. Secondary controls, navigation relief, structure, and behavior remain unchanged.",
+      "source": "User approval plus installed build 26.820.1055 review"
     }
   ],
   "evidence": [
@@ -114,7 +120,8 @@
     {"fact": "visual.references", "source": "docs/evidence/ui-reference-research-2026-08-19/README.md"},
     {"fact": "21st.catalogue", "source": "21st searches plus code retrieval for ids 18169, 23286, 9051, and 7406 on 2026-08-19"},
     {"fact": "orca.source", "source": "stablyai/orca commit 9d06b3ba938d3c5467de5b82b0bec322af2620a8"},
-    {"fact": "installed.ui", "source": "docs/evidence/orca-skin-installed-26.820.31/"}
+    {"fact": "installed.ui", "source": "docs/evidence/orca-skin-installed-26.820.31/"},
+    {"fact": "installed.identity", "source": "docs/evidence/hivemind-identity-installed-26.820.1055/"}
   ],
-  "generatedAt": "2026-08-20T23:00:00.000Z"
+  "generatedAt": "2026-08-20T11:11:16.3643118-07:00"
 }

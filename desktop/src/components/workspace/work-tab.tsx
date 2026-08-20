@@ -1682,7 +1682,7 @@ function MetaLine({
 
 function IdleBoard({ onPick }: { onPick: (value: string) => void }): React.JSX.Element {
   return (
-    <div className="min-h-0 overflow-auto px-6 py-7">
+    <div className="hivemind-identity-field min-h-0 overflow-auto px-6 py-7">
       <div className="max-w-[560px]">
         <h2 className="m-0 text-[22px] leading-tight font-semibold tracking-tighter text-ink">
           Describe what you want built.

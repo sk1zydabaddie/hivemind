@@ -133,9 +133,9 @@ describe("elevation is a scale, not a shadow utility", () => {
       return [...value.matchAll(/rgb\(0 0 0 \/ (0(?:\.\d+)?|1(?:\.0+)?)\)/gu)].map((m) => Number(m[1]));
     };
 
-    /* #101822 is the brightest ground plane behind elevated content. A black
-       shadow changes its strongest channel (34) by alpha * 34. */
-    const brightestChannel = 0x22;
+    /* #0d1923 is the brightest ground plane behind elevated content. A black
+       shadow changes its strongest channel (35) by alpha * 35. */
+    const brightestChannel = 0x23;
     for (const level of ["elevation-raised", "elevation-floating"]) {
       const opacities = opacityOf(level);
       expect(opacities.length, `--${level} has no black terms to check`).toBeGreaterThan(0);

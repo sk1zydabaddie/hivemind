@@ -1556,3 +1556,28 @@ files; fresh catalogue search was unavailable because the CLI had no signed-in
 session or API key, so no catalogue result or paid generation is claimed for
 this pass. Final verification passed Core 815/817 with two intentional skips,
 Desktop 300/300, Rust 32/32, and all 24 production surface/viewport checks.
+
+### Orca material now carries a bounded Hivemind identity layer
+
+The accepted Orca-derived shell remains intact. A visual-only identity pass
+now makes it read as Hivemind without returning to the rejected universal
+gradient/elevation treatment. The four opaque planes are slightly bluer; only
+the default committed action uses a shallow same-hue navy face and pressed
+inverse; active navigation retains its flat line but begins at a small hex
+node; and one non-repeating interlocking-hex field occupies unused Setup and
+idle Work space.
+
+The field is `desktop/src/assets/hivemind-field.svg`, emitted beside the release
+bundle under `self` rather than inlined as a CSP-blocked data image. Its maximum
+source opacity is 7%, it is absent below 1080px, and it has no animation,
+filter, tiling, or dense-content consumer. The previous dot grid, broad
+atmosphere, duplicate gradients, and universal relief paths remain deleted.
+Secondary controls, suggestions, selections, provider marks, structure, copy,
+workflows, state ownership, and dispatcher boundaries did not change.
+
+Installed build **26.820.1055** was built, installed, verified against the
+binary on disk, and inspected at a 1440×900 client size on Setup, Work, and
+Settings. Evidence: `docs/evidence/hivemind-identity-installed-26.820.1055/`.
+All 24 production surface/viewport combinations passed, Core passed 815/817
+with two intentional skips, Desktop passed 301/301, and Rust passed 32/32. No
+paid provider or paid 21st generation call was used.

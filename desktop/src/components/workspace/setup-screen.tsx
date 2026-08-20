@@ -105,7 +105,7 @@ export function SetupScreen({
        space it wants. Work and Project already did this with `h-full min-h-0`;
        this was the one surface that did not. */
     <ScrollArea className="min-h-0 flex-1">
-      <div className="px-6 py-8">
+      <div className="hivemind-identity-field px-6 py-8">
         <div className="max-w-[680px]">
           {connecting ? (
             <p className="m-0 flex items-center gap-2 text-[13px] text-muted-foreground">

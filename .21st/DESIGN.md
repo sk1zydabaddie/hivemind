@@ -19,12 +19,14 @@
 
 ## Visual hierarchy
 
-The canvas is solid navy-black ground. Four opaque surface steps, restrained
+The canvas is solid midnight-blue ground. Four opaque surface steps, restrained
 8% white rules, and lit top edges establish hierarchy; only occluding content
 may use one of the three closed elevation levels. Explicit command buttons may
-use the solid Hivemind-navy physical-control relief. Navigation, suggestions,
-and selection rows remain flat and communicate state through underline, fill,
-rules, hover, and focus instead of pretending to be buttons.
+use the one-hue Hivemind-navy face and its pressed inverse. Navigation,
+suggestions, and selection rows remain flat and communicate state through a
+hex-node underline, fill, rules, hover, and focus instead of pretending to be
+buttons. One non-repeating interlocking field derived from the brand mark may
+occupy unused Setup and idle Work space; it never becomes wallpaper.
 
 ## Constraints
 
@@ -43,9 +45,9 @@ rules, hover, and focus instead of pretending to be buttons.
 - Raised or pill-shaped navigation.
 - Raised suggestion rows.
 - White-on-white or light-theme hierarchy.
-- Backdrop filters, glass blur, decorative panel shadows, and unbounded
-  gradients.
-- Atmospheric dot grids or decorative canvas fields.
+- Backdrop filters, glass blur, decorative panel shadows, and multi-hue or
+  unbounded gradients.
+- Repeating atmospheric grids or decorative fields behind dense content.
 - Structural or workflow changes in the visual-only overhaul.
 
 ## Selected direction
@@ -64,3 +66,10 @@ The grounded image and 21st catalogue record is in
 component was installed: the useful patterns and the Orca source measurements
 were conformed to the existing Hivemind primitives so the application retains
 one component family.
+
+The Hivemind identity pass selected on 2026-08-20 keeps that material system
+and adds only four brand signatures: a slightly bluer opaque ladder, one
+same-hue face owned by the default committed-action Button, a small hex node on
+the flat active-tab line, and one self-hosted logo-derived field on Setup and
+the idle Work canvas. The field's strongest SVG opacity is 7%, it disappears
+below 1080px, and it has no tiling, animation, filter, or inline data URL.

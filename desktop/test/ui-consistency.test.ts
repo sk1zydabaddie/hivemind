@@ -63,7 +63,7 @@ describe("shared UI primitives stay visually authoritative", () => {
         owners.push(relative);
       }
     }
-    expect(owners, "the Orca-derived control language is solid, not gradient-painted").toEqual([]);
+    expect(owners, "components must use the shared primary-face token, never local gradient utilities").toEqual([]);
   });
 
   test("callers cannot bypass the branded button primitives", async () => {
@@ -110,6 +110,10 @@ describe("shared UI primitives stay visually authoritative", () => {
     const secondaryVariant = /secondary:\s*\n\s*"([^"]+)"/u.exec(button)?.[1] ?? "";
     expect(defaultVariant).toContain("shadow-[var(--control-relief)]");
     expect(defaultVariant).toContain("active:shadow-[var(--control-relief-pressed)]");
+    expect(defaultVariant).toContain("bg-[image:var(--primary-face)]");
+    expect(defaultVariant).toContain("hover:bg-[image:var(--primary-face-hover)]");
+    expect(defaultVariant).toContain("active:bg-[image:var(--primary-face-pressed)]");
+    expect(button.slice(button.indexOf("destructive:"))).not.toContain("--primary-face");
     expect(secondaryVariant).not.toMatch(/control-relief|bg-gradient/u);
     expect(tabs).toContain("data-[state=active]:after:scale-x-100");
     expect(tabs).not.toMatch(/shadow-\[var\(--relief|bg-gradient/u);

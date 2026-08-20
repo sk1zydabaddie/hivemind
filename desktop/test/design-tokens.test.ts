@@ -29,10 +29,10 @@ const resolve = (styles: string, name: string): string => {
 
 /** Orca-derived dark surfaces with Hivemind's existing semantic hues. */
 const palette = {
-  ground: "#101822",
-  canvas: "#080d15",
-  surface: "#172230",
-  surfaceStrong: "#223044",
+  ground: "#0d1923",
+  canvas: "#07111c",
+  surface: "#14253b",
+  surfaceStrong: "#1e3553",
   ink: "#f4f7fb",
   brandNavy: "#1b3a6b",
   navy: "#7fa9e4",
@@ -258,7 +258,7 @@ describe("palette discipline", () => {
     }
   });
 
-  test("the skin uses palette values, derived tints, and no decorative gradients", async () => {
+  test("the skin uses palette values and only the three-state primary face gradient", async () => {
     const styles = await readStyles();
     const declarations = styles.replace(/\/\*[\s\S]*?\*\//gu, "");
     const allowed = new Set([
@@ -271,8 +271,40 @@ describe("palette discipline", () => {
       (declarations.match(/#[0-9a-fA-F]{3,8}\b/gu) ?? []).map((hex) => hex.toLowerCase())
     );
     expect([...hexes].filter((hex) => !allowed.has(hex))).toEqual([]);
-    expect(declarations).not.toMatch(/(?:linear|radial|conic)-gradient/u);
+    expect(declarations.match(/linear-gradient\(/gu)?.length ?? 0).toBe(3);
+    expect(declarations).not.toMatch(/(?:radial|conic)-gradient/u);
+    for (const token of ["--primary-face", "--primary-face-hover", "--primary-face-pressed"]) {
+      expect(declarations, `${token} is missing its one-hue action face`).toMatch(
+        new RegExp(`${token}:\\s*linear-gradient\\(`, "u")
+      );
+    }
     expect(declarations).not.toContain("--canvas-atmosphere");
+  });
+
+  test("the identity field is one quiet self-hosted asset with two deliberate consumers", async () => {
+    const styles = await readStyles();
+    expect(styles).toContain('url("./assets/hivemind-field.svg")');
+    expect(styles).not.toMatch(/hivemind-field[^;]*data:/u);
+
+    const field = await readFile(
+      path.join(desktopRoot, "src", "assets", "hivemind-field.svg"),
+      "utf8"
+    );
+    expect(field).not.toMatch(/filter|animate|gradient/iu);
+    const opacities = [...field.matchAll(/(?:stroke|fill)-opacity="([0-9.]+)"/gu)].map(
+      (match) => Number(match[1])
+    );
+    expect(opacities.length).toBeGreaterThan(0);
+    expect(Math.max(...opacities), "the identity field exceeds its quiet-weight ceiling")
+      .toBeLessThanOrEqual(0.07);
+
+    const consumers: string[] = [];
+    for (const file of await sourceFiles()) {
+      if (!file.endsWith(".tsx")) continue;
+      const source = await readFile(file, "utf8");
+      if (source.includes("hivemind-identity-field")) consumers.push(path.basename(file));
+    }
+    expect(consumers.sort()).toEqual(["setup-screen.tsx", "work-tab.tsx"]);
   });
 
   test("exactly one thing can carry the attention edge, and panels never float", async () => {
@@ -493,7 +525,7 @@ describe("palette discipline", () => {
         offences.push(`${path.basename(file)}: ${gradient}`);
       }
     }
-    expect(offences, "a component reintroduced the discarded gradient language").toEqual([]);
+    expect(offences, "a component invented a gradient instead of using the primary-face token").toEqual([]);
   });
 });
 

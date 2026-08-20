@@ -10,18 +10,20 @@
 
 /* Hivemind identity on Orca-derived dark geometry. Navy and charcoal carry the
    brand; amber and clay only carry meaning. The shell uses stepped opaque
-   surfaces instead of decorative gradients or backdrop filters. */
+   surfaces instead of decorative gradients or backdrop filters. The one
+   gradient exception is the committed primary action: one hue, paired with a
+   pressed inverse, and owned by Button. */
 :root {
   color-scheme: dark;
 
   /* Orca-derived surface ladder, shifted toward Hivemind's navy. The source
      reference uses #0a0a0a / #171717 / #1e1e1e / #262626; these four values
      preserve those luminance steps without abandoning the product's colour. */
-  --canvas: #080d15;
-  --panel: #101822;
+  --canvas: #07111c;
+  --panel: #0d1923;
   --ground: var(--panel);
-  --surface: #172230;
-  --surface-strong: #223044;
+  --surface: #14253b;
+  --surface-strong: #1e3553;
   --ink: #f4f7fb;
   --brand-navy: #1b3a6b;
   --navy: #7fa9e4;
@@ -30,6 +32,19 @@
   --muted: #96a3b5;
   --amber: #d4a95f;
   --clay: #df786d;
+
+  /* The Hivemind signature action face. This is not a general gradient
+     vocabulary: all three states stay inside brand navy, Button is their only
+     consumer, and the active state reverses the light so the press redeems the
+     relief claim. */
+  --primary-lift: color-mix(in oklab, var(--brand-navy) 80%, var(--navy));
+  --primary-deep: color-mix(in oklab, var(--brand-navy) 82%, #000000);
+  --primary-face:
+    linear-gradient(180deg, var(--primary-lift) 0%, var(--brand-navy) 54%, var(--primary-deep) 100%);
+  --primary-face-hover:
+    linear-gradient(180deg, color-mix(in oklab, var(--brand-navy) 72%, var(--navy)) 0%, var(--brand-navy) 58%, var(--primary-deep) 100%);
+  --primary-face-pressed:
+    linear-gradient(180deg, var(--primary-deep) 0%, var(--brand-navy) 52%, var(--primary-lift) 100%);
 
   /* Meaning fills are dark surface mixes, not pale cards pasted onto a dark
      shell. Their hue remains visible while their luminance stays in the same
@@ -103,8 +118,8 @@
    * ## The dark-surface ceiling
    *
    * The attention edge still sets the 14.7/255 ceiling. On the brightest
-   * ground plane behind elevation (#101822), raised and floating black alphas darken the
-   * strongest channel by 11.6 and 14.3 respectively. Overlay may be louder
+   * ground plane behind elevation (#0d1923), raised and floating black alphas darken the
+   * strongest channel by 11.9 and 14.7 respectively. Overlay may be louder
    * because it occludes the attention edge; it remains below 26/255. The test
    * calculates those results from the tokens instead of carrying light-theme
    * measurements that no longer describe the installed skin.
@@ -380,10 +395,21 @@
   }
 
   /* The application substrate matches Orca's uninterrupted workbench plane.
-     The previous dot grid was an invented visual motif and is intentionally
+     The previous dot grid was an invented repeated motif and is intentionally
      gone; hierarchy now comes from stepped surfaces and rules. */
   .brand-canvas {
     background-color: var(--canvas);
+  }
+
+  /* One self-hosted drawing derived from the interlocking Hivemind mark. It is
+     present only where the workplane genuinely has unused space, never tiled,
+     never animated, and its strongest 1px stroke changes a channel by less
+     than the amber attention-edge ceiling. */
+  .hivemind-identity-field {
+    background-image: url("./assets/hivemind-field.svg");
+    background-position: right -8% center;
+    background-repeat: no-repeat;
+    background-size: clamp(560px, 54vw, 760px) auto;
   }
 
   h1,
@@ -446,6 +472,12 @@
   ::-webkit-scrollbar-thumb:hover {
     background: color-mix(in oklab, var(--muted) 58%, transparent);
     background-clip: padding-box;
+  }
+
+  @media (max-width: 1080px) {
+    .hivemind-identity-field {
+      background-image: none;
+    }
   }
 
   /* ONE icon set: lucide-react, and nothing else. Its default stroke of 2 is

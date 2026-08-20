@@ -168,8 +168,8 @@ describe("React workspace boundary", () => {
 
     // Orca-derived dark shell with Hivemind's brand navy retained explicitly.
     for (const token of [
-      "--canvas: #080d15",
-      "--panel: #101822",
+      "--canvas: #07111c",
+      "--panel: #0d1923",
       "--brand-navy: #1b3a6b",
       "--navy: #7fa9e4",
       "--amber: #d4a95f",
