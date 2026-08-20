@@ -39,6 +39,7 @@ const buttonVariants = cva(
         "icon-xs": "size-6 [--control-relief:var(--relief-micro)] [--control-relief-pressed:var(--relief-micro-pressed)] [--press-distance:1px] [&_svg:not([class*='size-'])]:size-3",
         "icon-sm": "size-8 [--control-relief:var(--relief-compact)] [--control-relief-pressed:var(--relief-compact-pressed)] [--press-distance:1px]",
         "icon-lg": "size-10",
+        "icon-round": "size-10 rounded-full",
         inline: "h-6 px-1.5 text-[12px] [--control-relief:var(--relief-micro)] [--control-relief-pressed:var(--relief-micro-pressed)] [--press-distance:1px]",
         row: "h-auto min-h-9 w-full justify-start px-3 py-2.5 text-left [--control-relief:var(--relief-compact)] [--control-relief-pressed:var(--relief-compact-pressed)] [--press-distance:1px]",
         "row-sm": "h-9 w-full justify-start px-3 text-left [--control-relief:var(--relief-compact)] [--control-relief-pressed:var(--relief-compact-pressed)] [--press-distance:1px]",

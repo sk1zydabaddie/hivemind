@@ -4195,3 +4195,35 @@ Final verification passed Core 821/823 with two intentional skips, Desktop
 model, paid capability probe, provider sign-in, or paid 21st generation call
 was run.
 
+### The first prompt starts where attention is — 2026-08-20
+
+An empty Work surface no longer splits attention between introductory copy,
+example requests, and a composer pinned to the bottom edge. It contains one
+chat-shaped composer centered in the available canvas. The container uses the
+existing `rounded-xl` 14px step, remains a ground-level opaque panel with no
+invented elevation, and keeps the quiet Hivemind identity field behind unused
+space. Its only action is a circular up-arrow Button: a committed action that
+uses the existing primary face, relief pair, focus ring, disabled state, and
+pressed redemption.
+
+Submitting is the visual state change. Presentation state moves the same form
+to the footer immediately, before the planner response returns; durable plan,
+task, and gate truth remain outside React. Once docked, the composer retains
+the same radius and circular send action while the existing guidance, approval,
+continuation, spend, and feedback behavior remains available. Disconnecting
+resets only the placement so a newly selected empty project starts centered.
+
+The three examples and the old explanatory empty-state block were deleted,
+not hidden or retained as fallback code. The 21st build workflow attempted its
+required catalogue search but the CLI remained signed out. Its final review of
+the changed Work and Button files reported zero errors; the remaining warnings
+are pre-existing shared Button and Work-file findings, while the new bounded
+composer passed the production viewport matrix.
+
+Installed build **26.820.1508** was built, installed, verified against the
+binary on disk, and inspected at a 1440x900 client size. Evidence is in
+`docs/evidence/work-centered-composer-installed-26.820.1508/`. All 24
+production surface/viewport checks passed. No planner or provider model call
+was made to create the screenshot. Final verification passed Core 821/823 with
+two intentional skips, Desktop 302/302, and Rust 33/33.
+

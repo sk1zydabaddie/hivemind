@@ -1,7 +1,7 @@
 import {
   AlertTriangle,
   ArrowRight,
-  ArrowUpRight,
+  ArrowUp,
   Check,
   ChevronDown,
   ChevronRight,
@@ -157,12 +157,6 @@ const LANES: Array<{ key: string; label: string; states: TaskState[] }> = [
   { key: "finished", label: "Finished", states: ["verified", "merged", "cancelled"] }
 ];
 
-const EXAMPLE_ASKS = [
-  "Add a dark mode toggle to the settings page",
-  "Validate the sign-up form before it submits",
-  "Make the dashboard load faster on first paint"
-];
-
 const toneText: Record<Tone, string> = {
   neutral: "text-muted-foreground",
   live: "text-navy",
@@ -222,6 +216,7 @@ export function WorkTab({
   const [specReview, setSpecReview] = useState<SpecReview | null>(null);
   const [nonGoals, setNonGoals] = useState<NonGoalEntry[]>([]);
   const [composer, setComposer] = useState("");
+  const [composerHasMoved, setComposerHasMoved] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [busy, setBusy] = useState(false);
   const [amendment, setAmendment] = useState<{
@@ -252,6 +247,13 @@ export function WorkTab({
   useEffect(() => {
     activityEndRef.current?.scrollIntoView({ block: "nearest" });
   }, [projection.eventCount]);
+
+  /* Moving the composer is presentation state, not project truth. Reset it
+     when this surface disconnects from a project; otherwise a newly selected
+     empty folder could inherit the previous project's bottom placement. */
+  useEffect(() => {
+    if (connectionState !== "connected") setComposerHasMoved(false);
+  }, [connectionState]);
 
   /* `/` reaches the composer from anywhere, Escape sets the current
      interruption aside. Both stay out of the way while you are typing. */
@@ -378,6 +380,7 @@ export function WorkTab({
     event.preventDefault();
     const message = composer.trim();
     if (message === "") return;
+    setComposerHasMoved(true);
     setBusy(true);
     setFeedback("");
     try {
@@ -637,12 +640,48 @@ export function WorkTab({
 
   const idle =
     tasks.length === 0 && displayedPlan === null && !runActive && attention === null;
+  const composerCentered = idle && !composerHasMoved;
 
   /* What the canvas draws: the tasks of this run, in the order the daemon
      scheduled them. Capped at six because past that the lanes are narrower than
      their own titles, and a lane you cannot read is not a picture of anything —
      the rail below still lists every one of them. */
   const laneTasks = tasks.slice(0, 6);
+
+  const promptDock = (
+    <PromptDock
+      busy={busy}
+      composerRef={composerRef}
+      continuationAvailable={continuationAvailable}
+      centered={composerCentered}
+      feedback={feedback || plainActionError(actionError)}
+      idle={idle}
+      managerStartAvailable={managerStartAvailable}
+      runActive={runActive}
+      spend={inspection?.spend ?? null}
+      value={composer}
+      onChange={setComposer}
+      onContinue={continueRun}
+      onStartManager={async () => {
+        setBusy(true);
+        setFeedback("");
+        try {
+          const started = await startManager();
+          if (inspection?.autonomy.configured_level === "review_everything") {
+            setFeedback("The first step is prepared. Continue when you are ready.");
+          } else {
+            await continueSession(started.session_id);
+            setFeedback("Working until it finishes or something needs you.");
+          }
+        } catch (error) {
+          setFeedback(plainActionError(error));
+        } finally {
+          setBusy(false);
+        }
+      }}
+      onSubmit={submitPrompt}
+    />
+  );
 
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden p-3">
@@ -700,10 +739,17 @@ export function WorkTab({
             : "grid-cols-[minmax(0,1fr)_300px] min-[1100px]:grid-cols-[minmax(0,1fr)_360px] min-[1600px]:grid-cols-[minmax(0,1fr)_420px]"
         }`}
       >
-        {/* The work panel owns the composer as its own last row, so no amount of
-            content above can ever push it out of reach. */}
+        {/* Before the first request, the composer owns the middle of the empty
+            canvas. As soon as durable work exists, the same form becomes the
+            panel's trailing row so activity can never push it out of reach. */}
         <div className="grid min-h-0 overflow-hidden">
-          <Panel className="grid-rows-[auto_minmax(0,1fr)_auto]">
+          <Panel
+            className={
+              composerCentered
+                ? "grid-rows-[auto_minmax(0,1fr)]"
+                : "grid-rows-[auto_minmax(0,1fr)_auto]"
+            }
+          >
             <RunHeader
               advancing={projection.artifactMovements.at(-1)?.id ?? null}
               attentionCount={openQueue.length}
@@ -732,8 +778,10 @@ export function WorkTab({
               onOpenPlan={() => void openPlanReview()}
               onStop={() => void stopRun()}
             />
-            {idle ? (
-              <IdleBoard onPick={setComposer} />
+            {composerCentered ? (
+              promptDock
+            ) : idle ? (
+              <div className="hivemind-identity-field min-h-0" />
             ) : /* The map is already a picture of the same fact at full size,
                    so the lane canvas is not drawn over it — that would be two
                    drawings of one thing competing for the same column. */
@@ -766,38 +814,7 @@ export function WorkTab({
                 />
               </div>
             )}
-
-            <PromptDock
-              busy={busy}
-              composerRef={composerRef}
-              continuationAvailable={continuationAvailable}
-              feedback={feedback || plainActionError(actionError)}
-              idle={idle}
-              managerStartAvailable={managerStartAvailable}
-              runActive={runActive}
-              spend={inspection?.spend ?? null}
-              value={composer}
-              onChange={setComposer}
-              onContinue={continueRun}
-              onStartManager={async () => {
-                setBusy(true);
-                setFeedback("");
-                try {
-                  const started = await startManager();
-                  if (inspection?.autonomy.configured_level === "review_everything") {
-                    setFeedback("The first step is prepared. Continue when you are ready.");
-                  } else {
-                    await continueSession(started.session_id);
-                    setFeedback("Working until it finishes or something needs you.");
-                  }
-                } catch (error) {
-                  setFeedback(plainActionError(error));
-                } finally {
-                  setBusy(false);
-                }
-              }}
-              onSubmit={submitPrompt}
-            />
+            {composerCentered ? null : promptDock}
           </Panel>
         </div>
 
@@ -1678,72 +1695,6 @@ function MetaLine({
   );
 }
 
-/* ── Decision 1, before anything exists ───────────────────────────────────── */
-
-function IdleBoard({ onPick }: { onPick: (value: string) => void }): React.JSX.Element {
-  return (
-    <div className="hivemind-identity-field min-h-0 overflow-auto px-6 py-7">
-      <div className="max-w-[560px]">
-        <h2 className="m-0 text-[22px] leading-tight font-semibold tracking-tighter text-ink">
-          Describe what you want built.
-        </h2>
-        <p className="mt-2.5 mb-0 max-w-[480px] text-[13px] leading-relaxed text-muted-foreground">
-          Hivemind splits the work across agents, keeps each one inside its own
-          files, and checks every change.
-        </p>
-
-        {/* The product's whole shape, stated as two numbered steps rather than
-            as a paragraph. It is the one claim the empty state has to make. */}
-        <ol className="mt-5 mb-0 grid list-none gap-2 border-l border-rule p-0 pl-3.5">
-          <li className="flex items-baseline gap-2.5 text-[13px] text-ink">
-            <span className="font-mono text-[11px] text-navy">01</span>
-            You say what you want built.
-          </li>
-          <li className="flex items-baseline gap-2.5 text-[13px] text-ink">
-            <span className="font-mono text-[11px] text-navy">02</span>
-            You say ship, once it is checked.
-          </li>
-          <li className="flex items-baseline gap-2.5 text-[13px] text-muted-foreground">
-            <span className="font-mono text-[11px] text-muted-foreground">--</span>
-            Everything between those happens on its own.
-          </li>
-        </ol>
-
-        <div className="mt-7 flex items-center gap-3">
-          <span className="text-[11px] font-medium tracking-label text-muted-foreground uppercase">
-            Try one of these
-          </span>
-          <span aria-hidden="true" className="h-px flex-1 bg-rule" />
-        </div>
-        <ul className="m-0 mt-2 grid list-none overflow-hidden rounded-md border border-rule p-0">
-          {EXAMPLE_ASKS.map((ask, index) => (
-            <li className="border-b border-rule last:border-b-0" key={ask}>
-              <Button
-                className="group"
-                size="row"
-                type="button"
-                variant="secondary"
-                onClick={() => onPick(ask)}
-              >
-                <span className="font-mono text-[11px] text-muted-foreground group-hover:text-navy">
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-                <span className="min-w-0 flex-1 text-[13px] break-words text-ink group-hover:text-navy">
-                  {ask}
-                </span>
-                <ArrowUpRight
-                  aria-hidden="true"
-                  className="size-3.5 shrink-0 text-navy opacity-0 transition-opacity group-hover:opacity-100"
-                />
-              </Button>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
-}
-
 /* ── The work itself ─────────────────────────────────────────────────────── */
 
 function TaskBoard({
@@ -2435,11 +2386,12 @@ function ShippedCard({
   );
 }
 
-/* ── Decision 1, anchored forever at the bottom ──────────────────────────── */
+/* ── Decision 1, centered first and then anchored at the bottom ───────────── */
 
 function PromptDock({
   value,
   composerRef,
+  centered,
   idle,
   runActive,
   continuationAvailable,
@@ -2454,6 +2406,7 @@ function PromptDock({
 }: {
   value: string;
   composerRef: React.RefObject<HTMLTextAreaElement | null>;
+  centered: boolean;
   idle: boolean;
   runActive: boolean;
   continuationAvailable: boolean;
@@ -2466,54 +2419,56 @@ function PromptDock({
   onContinue: () => Promise<void>;
   onStartManager: () => Promise<void>;
 }): React.JSX.Element {
-  return (
-    <footer className="shrink-0 border-t border-rule bg-canvas p-2.5">
-      <form className="grid gap-2" onSubmit={(event) => void onSubmit(event)}>
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2 rounded-md border border-rule bg-panel p-1.5 transition-colors focus-within:border-navy/45">
-          <textarea
-            className="max-h-[180px] min-h-[36px] w-full resize-y border-0 bg-transparent px-1.5 py-1.5 text-[14px] leading-relaxed text-ink outline-none placeholder:text-muted-foreground"
-            id="work-composer"
-            placeholder={
-              runActive
-                ? "Add guidance for the next step…"
-                : idle
-                  ? "Describe what you want built…"
-                  : "Describe the next change you want…"
+  const form = (
+    <form
+      className={centered ? "grid w-full max-w-[680px] gap-2" : "grid gap-2"}
+      onSubmit={(event) => void onSubmit(event)}
+    >
+      <div
+        className={`grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2 rounded-xl border border-input bg-panel transition-colors focus-within:border-navy/55 focus-within:ring-[3px] focus-within:ring-navy/15 ${
+          centered ? "min-h-[112px] p-2.5" : "p-1.5"
+        }`}
+      >
+        <textarea
+          className="max-h-[180px] min-h-[36px] w-full resize-y border-0 bg-transparent px-1.5 py-1.5 text-[14px] leading-relaxed text-ink outline-transparent placeholder:text-muted-foreground focus-visible:outline-1 focus-visible:outline-navy/60"
+          id="work-composer"
+          placeholder={
+            runActive
+              ? "Add guidance for the next step…"
+              : idle
+                ? "Describe what you want built…"
+                : "Describe the next change you want…"
+          }
+          ref={composerRef}
+          rows={centered ? 3 : 2}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
             }
-            ref={composerRef}
-            rows={idle ? 3 : 2}
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                event.preventDefault();
-                event.currentTarget.form?.requestSubmit();
-              }
-            }}
-          />
-          <Button
-            disabled={busy || value.trim() === ""}
-            size={idle ? "lg" : "icon-lg"}
-            type="submit"
-          >
-            {idle ? (
-              <>
-                Start building
-                <ArrowRight aria-hidden="true" />
-              </>
-            ) : (
-              <Send aria-hidden="true" className="size-4" />
-            )}
-          </Button>
-        </div>
-        {feedback ? (
-          <p
-            className="m-0 rounded-sm border-l-2 border-navy bg-navy-wash px-2.5 py-1.5 text-[12px] leading-snug break-words text-navy"
-            role="status"
-          >
-            {feedback}
-          </p>
-        ) : null}
+          }}
+        />
+        <Button
+          aria-label={runActive ? "Send guidance" : "Send request"}
+          disabled={busy || value.trim() === ""}
+          size="icon-round"
+          title={runActive ? "Send guidance" : "Send request"}
+          type="submit"
+        >
+          <ArrowUp aria-hidden="true" className="size-4" />
+        </Button>
+      </div>
+      {feedback ? (
+        <p
+          className="m-0 rounded-sm border-l-2 border-navy bg-navy-wash px-2.5 py-1.5 text-[12px] leading-snug break-words text-navy"
+          role="status"
+        >
+          {feedback}
+        </p>
+      ) : null}
+      {centered ? null : (
         <div className="flex items-center gap-2.5 px-1">
           <span className="min-w-0 flex-1 text-[11px] leading-snug break-words text-muted-foreground">
             {runActive
@@ -2524,7 +2479,13 @@ function PromptDock({
             ⌘↵
           </kbd>
           {managerStartAvailable ? (
-            <Button disabled={busy} size="sm" type="button" variant="outline" onClick={() => void onStartManager()}>
+            <Button
+              disabled={busy}
+              size="sm"
+              type="button"
+              variant="outline"
+              onClick={() => void onStartManager()}
+            >
               Start the approved plan
             </Button>
           ) : null}
@@ -2535,7 +2496,17 @@ function PromptDock({
           ) : null}
           <SpendMeter spend={spend} />
         </div>
-      </form>
+      )}
+    </form>
+  );
+
+  return centered ? (
+    <div className="hivemind-identity-field grid min-h-0 place-items-center overflow-auto px-6 py-8">
+      {form}
+    </div>
+  ) : (
+    <footer className="shrink-0 border-t border-rule bg-canvas p-2.5">
+      {form}
     </footer>
   );
 }

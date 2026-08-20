@@ -1666,3 +1666,21 @@ surface/viewport checks passed. Final suites passed Core 821/823 with two
 intentional skips, Desktop 302/302, and Rust 33/33. The 21st review of the
 three changed UI files found zero errors; its three warnings are pre-existing
 Setup widths already covered by the passing reachability matrix.
+
+### Empty Work now begins with one centered composer
+
+The idle Work surface no longer shows explanatory steps, example requests, or
+a second prompt box at the bottom. One `rounded-xl` composer sits in the center
+with a circular up-arrow committed action. Pressing it moves that same form to
+the footer immediately while the audited planner action runs; this is local
+placement only and creates no authoritative workflow state in React. Existing
+guidance, approvals, continuation, feedback, spend reporting, and dispatcher
+paths are unchanged after the move.
+
+Installed build **26.820.1508** was built, installed, verified against the
+binary on disk, and inspected at a 1440x900 client size. Evidence is in
+`docs/evidence/work-centered-composer-installed-26.820.1508/`. All 24
+production surface/viewport checks passed, including the bottom composer in
+mid-run and ready-to-ship replays. No planner call was made for visual proof.
+Final verification passed Core 821/823 with two intentional skips, Desktop
+302/302, and Rust 33/33.

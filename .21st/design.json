@@ -114,6 +114,11 @@
       "date": "2026-08-20",
       "decision": "Settings follows Setup's single shared provider-row family, puts no-cost CLI-detected model slugs beside the planner, manager, and worker jobs, and moves file risk, checks, and work-kind routing behind one flat Advanced disclosure. Paid capability checks remain explicit committed actions with their measured cost shown before pressing.",
       "source": "User request plus repository design context and 21st review"
+    },
+    {
+      "date": "2026-08-20",
+      "decision": "The empty Work surface is a conventional centered chat composer with the existing 14px radius token and one circular committed send action. Submitting moves that same form to the panel footer immediately; examples and introductory instructions are removed rather than restyled.",
+      "source": "User request plus installed build 26.820.1508 review"
     }
   ],
   "evidence": [
@@ -128,7 +133,8 @@
     {"fact": "installed.ui", "source": "docs/evidence/orca-skin-installed-26.820.31/"},
     {"fact": "installed.identity", "source": "docs/evidence/hivemind-identity-installed-26.820.1055/"},
     {"fact": "settings.review", "source": "21st review over the three changed UI files on 2026-08-20: 0 errors, 3 pre-existing Setup width warnings"},
-    {"fact": "settings.installed", "source": "docs/evidence/settings-overhaul-installed-26.820.1450/; installed binary 26.820.1450 at 1440x900; 24 reachability checks passed"}
+    {"fact": "settings.installed", "source": "docs/evidence/settings-overhaul-installed-26.820.1450/; installed binary 26.820.1450 at 1440x900; 24 reachability checks passed"},
+    {"fact": "work.composer.installed", "source": "docs/evidence/work-centered-composer-installed-26.820.1508/; installed binary 26.820.1508 at 1440x900; 24 reachability checks passed"}
   ],
-  "generatedAt": "2026-08-20T23:45:00-07:00"
+  "generatedAt": "2026-08-20T15:10:00-07:00"
 }

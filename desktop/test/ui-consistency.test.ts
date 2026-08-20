@@ -98,7 +98,7 @@ describe("shared UI primitives stay visually authoritative", () => {
     expect(selection).not.toContain("[&_*]:!text-[inherit]");
   });
 
-  test("relief is reserved for committed actions, not navigation or suggestions", async () => {
+  test("relief is reserved for committed actions, not navigation", async () => {
     const button = await readFile(path.join(sourceRoot, "components", "ui", "button.tsx"), "utf8");
     const tabs = await readFile(path.join(sourceRoot, "components", "ui", "tabs.tsx"), "utf8");
     const work = await readFile(
@@ -117,7 +117,8 @@ describe("shared UI primitives stay visually authoritative", () => {
     expect(secondaryVariant).not.toMatch(/control-relief|bg-gradient/u);
     expect(tabs).toContain("data-[state=active]:after:scale-x-100");
     expect(tabs).not.toMatch(/shadow-\[var\(--relief|bg-gradient/u);
-    expect(work).toMatch(/size="row"[\s\S]{0,100}variant="secondary"/u);
+    expect(work).toMatch(/size="icon-round"/u);
+    expect(work).not.toMatch(/Try one of these|EXAMPLE_ASKS/u);
   });
 
   test("Button callers cannot override the primitive's visual contract", async () => {

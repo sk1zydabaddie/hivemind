@@ -325,13 +325,14 @@ describe("React workspace boundary", () => {
     expect(work).toMatch(/task\.integration === "merged" \|\| task\.state === "merged"/u);
   });
 
-  test("prompt is a fixed row of the work column and text does not truncate mid-word", async () => {
+  test("prompt starts centered, then becomes a fixed row without truncating text", async () => {
     const styles = await readFile(path.join(desktopRoot, "src", "styles.css"), "utf8");
     const work = await readFile(path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"), "utf8");
 
     // Two fixed rows: the interruption slot and the body. The body splits into the
-    // work panel and the rail, and the work panel owns the composer as its own
-    // trailing row, so tall content cannot displace it.
+    // work panel and the rail. The empty state owns one centered composer; once
+    // work exists, the same form becomes the panel's trailing row so tall
+    // content cannot displace it.
     expect(work).toMatch(
       /grid h-full min-h-0 grid-rows-\[auto_minmax\(0,1fr\)\] overflow-hidden/u
     );
@@ -340,9 +341,14 @@ describe("React workspace boundary", () => {
        work column takes the width rather than holding an empty panel open. */
     expect(work).toMatch(/grid-cols-\[minmax\(0,1fr\)_360px\]/u);
     expect(work).toMatch(/tasks\.length === 0[\s\S]{0,120}grid-cols-\[minmax\(0,1fr\)\]/u);
-    expect(work).toMatch(
-      /<Panel className="grid-rows-\[auto_minmax\(0,1fr\)_auto\]">[\s\S]*<PromptDock/u
-    );
+    expect(work).toMatch(/composerCentered[\s\S]{0,180}grid-rows-\[auto_minmax\(0,1fr\)\]/u);
+    expect(work).toMatch(/grid-rows-\[auto_minmax\(0,1fr\)_auto\]/u);
+    expect(work).toMatch(/place-items-center[\s\S]{0,180}\{form\}/u);
+    expect(work).toMatch(/setComposerHasMoved\(true\)[\s\S]{0,80}setBusy\(true\)/u);
+    expect(work).toMatch(/\{composerCentered \? null : promptDock\}/u);
+    expect(work).toMatch(/size="icon-round"/u);
+    expect(work).toMatch(/<ArrowUp aria-hidden="true"/u);
+    expect(work).not.toMatch(/Try one of these|EXAMPLE_ASKS/u);
     // The interruption row is always rendered, even when empty, so the grid keeps
     // its shape and nothing below it can shift.
     expect(work).toMatch(/<div className="min-w-0">\s*\{shipItem \? \([\s\S]*<ShipBar/u);
