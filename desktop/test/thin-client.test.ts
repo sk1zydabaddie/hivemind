@@ -407,6 +407,31 @@ describe("React workspace boundary", () => {
     expect(providers).not.toMatch(/ProviderOption|ProviderCapability/u);
   });
 
+  test("provider sign-in stays CLI-owned and provider checks report factual liveness", async () => {
+    const setup = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
+      "utf8"
+    );
+    const core = await readFile(
+      path.resolve(desktopRoot, "..", "src", "config-actions.ts"),
+      "utf8"
+    );
+
+    expect(setup).toMatch(/type: "provider\.auth\.start"/u);
+    expect(setup).toMatch(/Open .* sign-in/u);
+    expect(setup).not.toMatch(/type="password"|api[_ -]?key|access[_ -]?token/iu);
+    expect(core).toMatch(/externalTerminalInvocation/u);
+    expect(core).toMatch(/providerAuthentication\(providerId\)/u);
+    expect(core).not.toMatch(/auth status|login status|credentials\.json/iu);
+
+    /* The spinner may be frozen by reduced motion. Provider name, sequence
+       position and elapsed seconds must still change without relying on it. */
+    expect(setup).toMatch(/index: index \+ 1/u);
+    expect(setup).toMatch(/total: plan\.length/u);
+    expect(setup).toMatch(/setElapsedSeconds/u);
+    expect(setup).toMatch(/Checking \$\{busy\.label\} — \$\{busy\.index\} of \$\{busy\.total\}/u);
+  });
+
   /**
    * The settings surface reads Core's catalogue rather than carrying its own,
    * so the honesty rule has to hold where the catalogue now lives. One harness

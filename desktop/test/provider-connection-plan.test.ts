@@ -16,6 +16,7 @@ const providers: CatalogueProvider[] = [
     caveat: null,
     pins_model: true,
     connectable: true,
+    authentication: { experience: "browser", detail: "Provider-owned sign-in" },
     checked_here: false
   },
   {
@@ -26,6 +27,7 @@ const providers: CatalogueProvider[] = [
     caveat: "Probe it",
     pins_model: false,
     connectable: true,
+    authentication: { experience: "browser", detail: "Provider-owned sign-in" },
     checked_here: false
   },
   {
@@ -36,6 +38,7 @@ const providers: CatalogueProvider[] = [
     caveat: "No invocation",
     pins_model: false,
     connectable: false,
+    authentication: { experience: "device_code", detail: "Provider-owned sign-in" },
     checked_here: false
   }
 ];

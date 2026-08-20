@@ -12,7 +12,7 @@ import { ROLE_RECOMMENDATIONS, modelChoiceAllowed, modelChoiceRefusal, recommend
 import { validateConfig } from "../src/config.js";
 import { isMachineSpecific, trackedMachineFiles, untrackMachineFiles } from "../src/project-sharing.js";
 import { currentMachine, machineStanding } from "../src/verification-standing.js";
-import { buildProfileForAgent, connectAdapter, initProjectForDesktop, inspectProjectConfig, setProjectConfig } from "../src/config-actions.js";
+import { buildProfileForAgent, connectAdapter, initProjectForDesktop, inspectProjectConfig, setProjectConfig, startProviderAuthentication } from "../src/config-actions.js";
 import { executeWorkspaceAction } from "../src/workspace-actions.js";
 
 const run = promisify(execFile);
@@ -316,6 +316,40 @@ test("provider rows distinguish product evidence from a current project check", 
     assert.equal(providers.find((provider) => provider.id === "claude")?.checked_here, false);
     assert.equal(providers.find((provider) => provider.id === "grok")?.connectable, true);
     assert.equal(providers.find((provider) => provider.id === "kimi")?.connectable, true);
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("provider sign-in launches only the catalogue-owned command and returns no credential", async () => {
+  const repo = await repoWithProject();
+  try {
+    let launched: readonly string[] | null = null;
+    let launchedFrom = "";
+    const result = await startProviderAuthentication(repo, "grok", {
+      launcher: async (invocation, options) => {
+        launched = invocation;
+        launchedFrom = options.cwd;
+      }
+    });
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    assert.deepEqual(
+      launched,
+      process.platform === "win32"
+        ? ["grok.cmd", "login", "--oauth"]
+        : ["grok", "login", "--oauth"]
+    );
+    assert.equal(launchedFrom, repo);
+    assert.equal(JSON.stringify(result).match(/token|credential|password/giu), null);
+
+    let called = false;
+    const unknown = await startProviderAuthentication(repo, "not-a-provider", {
+      launcher: async () => {
+        called = true;
+      }
+    });
+    assert.equal(unknown.ok, false);
+    assert.equal(called, false);
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

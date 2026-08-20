@@ -198,7 +198,9 @@ export function UpdateBar({ projectPath }: { projectPath: string }): React.JSX.E
      routes differ by minutes and a person deserves to know which they are
      getting before they press it. */
   const takes =
-    answer.source === "did_not_take"
+    outcome?.state === "work_in_flight"
+      ? "Try again"
+      : answer.source === "did_not_take"
       ? /* Not "Try again", which reads as re-running the whole thing. The build
            is already done and on disk; only the install is repeated. */
         "Install it again"
@@ -281,6 +283,8 @@ export function UpdateBar({ projectPath }: { projectPath: string }): React.JSX.E
         <Button disabled={busy} size="sm" type="button" onClick={() => void take()}>
           {busy ? (
             <Loader aria-hidden="true" className="animate-spin" />
+          ) : outcome?.state === "work_in_flight" ? (
+            <RefreshCw aria-hidden="true" />
           ) : answer.source === "did_not_take" ? (
             <RefreshCw aria-hidden="true" />
           ) : (

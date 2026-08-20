@@ -31,6 +31,7 @@ import {
   inspectProjectConfig,
   inspectProviderAccounts,
   invalidateVerificationForHarness,
+  startProviderAuthentication,
   setProjectConfig
 } from "./config-actions.js";
 import { adoptSpec, readSpecForReview } from "./spec-review.js";
@@ -69,10 +70,12 @@ export const workspaceActionTypes = [
   /* The settings surface. `config.inspect` is read-only; `config.set` accepts a
      fixed key list and cannot reach a gate; `project.init` sets a folder up;
      `adapter.connect` writes a profile only after a probe has confirmed the
-     capabilities it claims. */
+     capabilities it claims. `provider.auth.start` launches one fixed CLI-owned
+     sign-in flow and receives no credential or login result. */
   "config.inspect",
   "config.set",
   "project.init",
+  "provider.auth.start",
   "adapter.connect",
   /* The file tree and the file viewer. Read-only, confined to the resolved
      project root, and refusing `.hivemind/` and `.git/` outright -- see
@@ -335,6 +338,12 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
   if (raw.type === "project.init") {
     if (Object.keys(payload).length > 0) return { ok: false, reason: "project.init takes no fields" };
     return initProjectForDesktop(repoRoot);
+  }
+  if (raw.type === "provider.auth.start") {
+    const parsed = exactStrings(payload, ["provider_id"]);
+    return parsed.ok
+      ? startProviderAuthentication(repoRoot, parsed.value.provider_id)
+      : parsed;
   }
   if (raw.type === "adapter.connect") {
     const parsed = exactStrings(payload, ["role", "agent_id"]);

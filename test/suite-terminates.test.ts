@@ -49,6 +49,13 @@ test("stopping any test child cannot wait forever", async () => {
 
   assert.match(body, /setTimeout/u, "the wait must be bounded");
   assert.match(body, /SIGKILL/u, "and it must escalate rather than give up quietly");
+  assert.match(body, /process\.kill\(pid, 0\)/u, "cleanup must verify the OS process is gone");
+  assert.match(body, /taskkill/u, "Windows cleanup must have a bounded process-tree fallback");
+  assert.doesNotMatch(
+    body,
+    /exitCode !== null \|\| child\.signalCode !== null/u,
+    "sending a Windows signal is not proof the process released its handles"
+  );
   /* A daemon that survives both signals is a finding, not something for the
      cleanup path to swallow. */
   assert.match(body, /throw new Error/u);

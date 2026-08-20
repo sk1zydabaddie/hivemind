@@ -12,8 +12,10 @@ import { readFile } from "node:fs/promises";
  * with nothing on screen saying so. Seeing the quota is half of it; being able
  * to switch to another account is the other half.
  *
- * **Hivemind never handles authentication.** Every one of these harnesses keeps
- * its own credentials in its own directory, written by its own `login` command.
+ * **Hivemind never handles credentials.** It may launch one fixed harness-owned
+ * `login` command, but the CLI and browser remain the sole credential owners.
+ * Every harness keeps its own credentials in its own directory, written by
+ * that provider-owned command.
  * An "account" here is therefore nothing but *a directory the harness already
  * owns*, named so a person can pick between them. Hivemind sets exactly one
  * environment variable to point the harness at one of its own homes, and that

@@ -230,7 +230,10 @@ async function withMemoryRepo(run: (repo: string) => Promise<void>): Promise<voi
     assert.equal(await initProject(repo), 0);
     await run(repo);
   } finally {
-    await rm(repo, { recursive: true, force: true });
+    /* Windows can release the daemon PID before its console host releases the
+       repository cwd. Bounded retries make cleanup wait for that OS handle;
+       `force` alone does not retry EBUSY. */
+    await rm(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 }
 

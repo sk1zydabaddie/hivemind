@@ -1,5 +1,5 @@
 {
-  "captured_from": "a real project: project.init then adapter.connect against codex-cli 0.147.0 on 2026-08-11",
+  "captured_from": "a real project: project.init then adapter.connect against codex-cli 0.147.0 on 2026-08-11; deterministic provider sign-in metadata refreshed from Core on 2026-08-20",
   "config": {
     "initialized": true,
     "config_problem": null,
@@ -227,7 +227,11 @@
         "subscription": "ChatGPT Plus, Pro or Business",
         "status": "supported",
         "caveat": null,
-        "pins_model": true
+        "pins_model": true,
+        "authentication": {
+          "experience": "browser",
+          "detail": "Codex opens its ChatGPT sign-in in your browser. Finish there, then return to Hivemind and run the check."
+        }
       },
       {
         "id": "claude",
@@ -235,7 +239,11 @@
         "subscription": "Claude Pro or Max",
         "status": "unverified",
         "caveat": "Its token reporting has only ever been checked against recorded output, never against a live run, and the profile it used to ship with carried a permission-bypass flag this build refuses. Connecting it runs the same probe as any other agent; anything the probe cannot confirm is reported as unverified rather than assumed.",
-        "pins_model": false
+        "pins_model": false,
+        "authentication": {
+          "experience": "browser",
+          "detail": "Claude Code opens its own account sign-in. Finish there, then return to Hivemind and run the check."
+        }
       },
       {
         "id": "opencode",
@@ -243,7 +251,11 @@
         "subscription": "whatever provider you point it at",
         "status": "unverified",
         "caveat": "A probe has been through it and it passed: it denies itself a shell and helper agents, it says so before it runs, and its token counts are read from its own output. What it does not report is which model actually answered, so Hivemind cannot send cheaper work to a cheaper model on this one. No whole piece of work has been built and shipped through it yet, which is what would make it proven.",
-        "pins_model": false
+        "pins_model": false,
+        "authentication": {
+          "experience": "interactive",
+          "detail": "OpenCode asks which model provider to use in its own terminal and stores that provider's credential itself."
+        }
       },
       {
         "id": "grok",
@@ -251,7 +263,11 @@
         "subscription": "an X.AI plan or an XAI_API_KEY",
         "status": "unverified",
         "caveat": "Its flags are the best shaped of any agent here -- a real sandbox, a positive tool allowlist, and a switch that turns off helper agents. What is unknown is whether it reports any of that back once it runs, and that cannot be found out without an account. Connecting it runs the same probe as any other agent.",
-        "pins_model": false
+        "pins_model": false,
+        "authentication": {
+          "experience": "browser",
+          "detail": "Grok opens X.AI's OAuth sign-in in your browser. Finish there, then return to Hivemind and run the check."
+        }
       },
       {
         "id": "kimi",
@@ -259,7 +275,11 @@
         "subscription": "a Kimi account or a Moonshot API key",
         "status": "unverified",
         "caveat": "It can be told to run with a fixed list of tools and no shell, and that list is enforced before a tool runs rather than only suggested to the model. What is unknown is whether its file tools stay inside the folder you point them at -- nothing it reports says so, and that cannot be found out without an account. Connecting it runs the same probe as any other agent.",
-        "pins_model": false
+        "pins_model": false,
+        "authentication": {
+          "experience": "device_code",
+          "detail": "Kimi starts its device-code sign-in in a separate terminal. The code and confirmation remain between Kimi and your browser."
+        }
       }
     ],
     "models": [

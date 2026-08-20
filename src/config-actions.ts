@@ -1,4 +1,5 @@
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import path from "node:path";
 
 import {
@@ -11,6 +12,7 @@ import {
   catalogueModels,
   catalogueProviders,
   findCatalogueAgent,
+  providerAuthentication,
   agentCatalogue,
   type AdapterRoleName,
   type CatalogueAgent
@@ -39,8 +41,85 @@ import {
   type MachineIdentity
 } from "./verification-standing.js";
 import { writeJsonAtomic } from "./atomic.js";
+import { spawnEnvironment } from "./spawn-environment.js";
 
 type ActionResult = { ok: true; value: unknown } | { ok: false; reason: string };
+
+type AuthenticationLauncher = (
+  invocation: readonly [string, ...string[]],
+  options: { cwd: string; env: NodeJS.ProcessEnv }
+) => Promise<void>;
+
+/**
+ * Put a fixed provider command in a terminal the provider owns.
+ *
+ * The daemon has no interactive console, so starting the CLI directly would
+ * make OpenCode's provider picker and Kimi's device code invisible. Each
+ * platform wrapper therefore opens an external terminal. The wrapped argv is
+ * not supplied by the client: it comes only from `agent-catalogue.ts`.
+ */
+function externalTerminalInvocation(
+  command: readonly [string, ...string[]]
+): readonly [string, ...string[]] {
+  if (process.platform === "win32") {
+    /* `start` gives the inner cmd its own visible console. `/k` deliberately
+       leaves the provider's final answer on screen so a failed sign-in does
+       not flash and disappear. The person closes that provider-owned window. */
+    return [
+      "cmd.exe",
+      "/d",
+      "/s",
+      "/c",
+      "start",
+      "",
+      "cmd.exe",
+      "/d",
+      "/s",
+      "/k",
+      ...command
+    ];
+  }
+  const shellCommand = command.map(posixQuote).join(" ");
+  if (process.platform === "darwin") {
+    const appleScriptCommand = shellCommand
+      .replaceAll("\\", "\\\\")
+      .replaceAll('"', '\\"');
+    return [
+      "osascript",
+      "-e",
+      `tell application "Terminal" to do script "${appleScriptCommand}"`
+    ];
+  }
+  return [
+    "x-terminal-emulator",
+    "-e",
+    "sh",
+    "-lc",
+    `${shellCommand}; status=$?; printf '\\nYou can close this window.\\n'; read -r _; exit $status`
+  ];
+}
+
+function posixQuote(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+const launchAuthentication: AuthenticationLauncher = async (command, options) => {
+  const invocation = externalTerminalInvocation(command);
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(invocation[0], invocation.slice(1), {
+      cwd: options.cwd,
+      env: options.env,
+      detached: true,
+      stdio: "ignore",
+      windowsHide: false
+    });
+    child.once("error", reject);
+    child.once("spawn", () => {
+      child.unref();
+      resolve();
+    });
+  });
+};
 
 /**
  * The settings surface, server-side.
@@ -585,6 +664,48 @@ export function buildProfileForAgent(agent: CatalogueAgent, role: AdapterRoleNam
     cost_rank: agent.cost_rank,
     usage_parser: agent.usage_parser,
     roles: role === "worker" ? ["worker"] : ["orchestrator"]
+  };
+}
+
+/**
+ * Start one provider CLI's own sign-in flow without crossing the credential
+ * boundary.
+ *
+ * The only client input is a catalogue provider id. That id selects fixed argv
+ * recorded beside the provider invocation; no executable, argument, URL,
+ * token, or environment value can be supplied through the action. The child
+ * receives the same selected provider home an ordinary probe would use, but
+ * Hivemind neither reads that directory nor inspects the result of sign-in.
+ */
+export async function startProviderAuthentication(
+  repoRoot: string,
+  providerId: string,
+  options: { launcher?: AuthenticationLauncher } = {}
+): Promise<ActionResult> {
+  const authentication = providerAuthentication(providerId);
+  if (authentication === null) {
+    return { ok: false, reason: `unknown provider sign-in: ${providerId}` };
+  }
+  const accounts = await readAccounts(repoRoot);
+  const selected = selectedAccount(accounts, providerId);
+  try {
+    await (options.launcher ?? launchAuthentication)(authentication.command, {
+      cwd: repoRoot,
+      env: spawnEnvironment(process.env, accountEnvironment(selected))
+    });
+  } catch (cause) {
+    return {
+      ok: false,
+      reason: `could not open the provider's sign-in window: ${cause instanceof Error ? cause.message : String(cause)}`
+    };
+  }
+  return {
+    ok: true,
+    value: {
+      provider_id: providerId,
+      experience: authentication.experience,
+      detail: authentication.detail
+    }
   };
 }
 

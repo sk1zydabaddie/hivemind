@@ -4108,3 +4108,41 @@ client size on Setup, Work, and Settings; evidence is in
 passed Core 815/817 with two intentional skips, Desktop 301/301, Rust 32/32,
 and all 24 production surface/viewport checks.
 
+### Sign-in is a handoff; verification is a measured run — 2026-08-20
+
+Provider setup now has two visibly and architecturally separate verbs:
+
+- `Sign in` is a quiet outline action. Core maps a provider id to one fixed
+  provider-owned CLI login command and launches it in a separate terminal or
+  browser flow. React receives only the experience and explanatory text, never
+  the command. Hivemind does not read or keep credentials.
+- `Continue` answers with durable evidence and therefore keeps the committed
+  navy relief. It runs the existing capability probe and writes a profile only
+  after that probe passes. Choosing a provider is not presented as proof that
+  it works.
+
+This distinction also keeps the relief rule coherent: opening an external
+provider flow is a secondary handoff, while committing to measured setup is
+the answering control. Provider brand marks remain identity art rather than
+buttons. OpenAI, Grok, and OpenCode retain their monochrome artwork; Claude and
+Kimi retain their source colors. The marks are sized in `em` beside the label
+and emitted under the Tauri application's own origin rather than tinted or
+inlined as CSP-blocked data images.
+
+Provider-check progress never fabricates a percentage. The honest information
+available is the selected provider sequence, the current provider, and elapsed
+time, so the control reads `Checking <provider> — <index> of <total> · <seconds>s`.
+That text is the functional liveness channel when reduced-motion suppresses the
+decorative spinner. It must differ between captures taken several seconds
+apart even when no pixel rotation occurs. The updater uses the same distinction:
+an active provider check produces provider-check wording and a `Try again`
+action, not a claim that ordinary task work is running and not another build
+request.
+
+Installed build **26.820.1257** was checked at a 1440×900 client size. The
+provider screen shows all five marks, stronger native-scale checkbox relief,
+quiet Sign in actions, and the relieved Continue action. Kimi and Grok each
+opened their own flow and returned a Hivemind handoff notice without credential
+entry. A local no-network delayed probe produced non-identical `0s` and later
+elapsed captures. Evidence is in `docs/evidence/desktop-26.820.1257/`.
+

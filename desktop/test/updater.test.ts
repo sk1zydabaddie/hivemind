@@ -113,11 +113,19 @@ describe("the updater", () => {
    */
   test("install is gated on the on-disk idleness proof, in Rust", async () => {
     const updater = await readFile(path.join(desktopRoot, "src-tauri", "src", "newer_version.rs"), "utf8");
+    const project = await readFile(path.join(desktopRoot, "src-tauri", "src", "project.rs"), "utf8");
+    const bar = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "update-bar.tsx"),
+      "utf8"
+    );
     expect(updater).toMatch(/daemon_work/u);
     /* Anything other than Idle refuses — Unknown included, because a daemon
        that cannot answer must not read as one with nothing running. */
     expect(updater).toMatch(/matches!\(standing\.work, DaemonWork::Idle\)/u);
     expect(updater).toMatch(/WorkInFlight/u);
+    expect(project).toMatch(/provider check is still finishing/u);
+    expect(project).toMatch(/session\.starts_with\("probe-"\)/u);
+    expect(bar).toMatch(/outcome\?\.state === "work_in_flight"[\s\S]{0,80}"Try again"/u);
 
     /* And check is NOT gated: a busy project must still be able to discover
        that an update exists, or the silence is rebuilt at a different level. */

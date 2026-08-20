@@ -638,6 +638,23 @@ test("the UI action registry exposes no direct gate bypass or canon promotion su
   });
 });
 
+test("provider sign-in cannot accept a command, URL, or credential from the client", async () => {
+  await withRepo(async (repo) => {
+    for (const extra of [
+      { command: "powershell" },
+      { url: "https://example.test" },
+      { token: "not-a-real-token" }
+    ]) {
+      const result = await executeWorkspaceAction(repo, {
+        type: "provider.auth.start",
+        payload: { provider_id: "grok", ...extra }
+      });
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.match(result.reason, /unsupported field/u);
+    }
+  });
+});
+
 test("memory review handoff returns only the hardened local TTY command and never promotes", async () => {
   await withRepo(async (repo) => {
     assert.equal((await executeWorkspaceAction(repo, {

@@ -1,5 +1,5 @@
-import { ArrowRight, Check, ChevronDown, FolderGit2, Loader, Plug, X } from "lucide-react";
-import { useState } from "react";
+import { ArrowRight, Check, ChevronDown, ExternalLink, FolderGit2, Loader, Plug, X } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/pressable";
@@ -451,10 +451,31 @@ function ConnectStep({
   onAction: <T>(action: WorkspaceAction) => Promise<T>;
   onReload: () => Promise<void>;
 }): React.JSX.Element {
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState<{
+    key: string;
+    label: string;
+    index: number;
+    total: number;
+    startedAt: number;
+  } | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [authBusy, setAuthBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
   const [failure, setFailure] = useState("");
   const [picked, setPicked] = useState<Set<string> | null>(null);
   const [opened, setOpened] = useState<string | null>(null);
+
+  /* Windows reduced motion can stop the spinner, but it cannot stop the
+     report. This is a discrete elapsed count, not decorative animation: two
+     captures three seconds apart show different factual text. */
+  useEffect(() => {
+    if (busy === null) return undefined;
+    const tick = (): void =>
+      setElapsedSeconds(Math.floor((Date.now() - busy.startedAt) / 1_000));
+    tick();
+    const timer = window.setInterval(tick, 1_000);
+    return () => window.clearInterval(timer);
+  }, [busy]);
 
   const providers = [...(view?.providers ?? [])].sort(
     (left, right) => providerRank(left.status) - providerRank(right.status)
@@ -502,6 +523,7 @@ function ConnectStep({
 
   const connectAll = async (): Promise<void> => {
     setFailure("");
+    setNotice("");
     /* A Continue with no runnable provider is a dead end reached by pressing
        the button the screen told you to press. Say so instead. */
     const plan = connectionPlan();
@@ -511,22 +533,53 @@ function ConnectStep({
       );
       return;
     }
-    for (const connection of plan) {
+    const startedAt = Date.now();
+    for (const [index, connection] of plan.entries()) {
       const providerLabel = providers.find((entry) => entry.id === connection.providerId)?.label;
-      setBusy(providerLabel ?? connection.role);
+      setBusy({
+        key: connection.role,
+        label: providerLabel ?? connection.role,
+        index: index + 1,
+        total: plan.length,
+        startedAt
+      });
       try {
         await onAction({
           type: "adapter.connect",
           payload: { role: connection.role, agent_id: connection.agentId }
         });
+        /* Each completed probe becomes visible immediately. Waiting until the
+           entire sequence ends made a real success look frozen behind the
+           next provider's spinner. */
+        await onReload();
       } catch (cause) {
         setFailure(`${providerLabel ?? connection.role}: ${cause instanceof Error ? cause.message : String(cause)}`);
+        setOpened(connection.providerId);
         break;
-      } finally {
-        setBusy(null);
       }
     }
-    await onReload();
+    setBusy(null);
+  };
+
+  const startAuthentication = async (provider: CatalogueProvider): Promise<void> => {
+    setFailure("");
+    setNotice("");
+    setAuthBusy(provider.id);
+    try {
+      await onAction({
+        type: "provider.auth.start",
+        payload: { provider_id: provider.id }
+      });
+      setNotice(
+        `${provider.label} opened its own sign-in flow in a separate window. Finish there, then keep it ticked and press Continue to check it.`
+      );
+    } catch (cause) {
+      setFailure(
+        `${provider.label}: ${cause instanceof Error ? cause.message : String(cause)}`
+      );
+    } finally {
+      setAuthBusy(null);
+    }
   };
 
   return (
@@ -558,11 +611,14 @@ function ConnectStep({
             <div className="overflow-hidden rounded-sm border border-rule">
               {providers.map((provider) => (
                 <ProviderRow
+                  authenticationBusy={authBusy === provider.id}
+                  checksBusy={busy !== null}
                   expanded={opened === provider.id}
                   key={provider.id}
                   picked={chosen.has(provider.id)}
                   provider={provider}
                   onExpand={() => setOpened(opened === provider.id ? null : provider.id)}
+                  onAuthenticate={() => void startAuthentication(provider)}
                   onToggle={() => toggle(provider.id)}
                 />
               ))}
@@ -571,7 +627,7 @@ function ConnectStep({
 
           <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
             <Button
-              disabled={busy !== null || plannedConnections.length === 0}
+              disabled={busy !== null || authBusy !== null || plannedConnections.length === 0}
               type="button"
               onClick={() => void connectAll()}
             >
@@ -580,7 +636,9 @@ function ConnectStep({
               ) : (
                 <Loader aria-hidden="true" className="animate-spin" />
               )}
-              {busy === null ? "Continue" : `Checking ${busy}…`}
+              {busy === null
+                ? "Continue"
+                : `Checking ${busy.label} — ${busy.index} of ${busy.total} · ${elapsedSeconds}s`}
             </Button>
             <span className="text-[11px] text-muted-foreground">
               Runs every selected provider at least once and fills the empty roles — about{" "}
@@ -601,6 +659,12 @@ function ConnectStep({
         </p>
       )}
 
+      {notice === "" ? null : (
+        <p className="m-0 rounded-sm border-l-2 border-navy bg-navy-wash px-2.5 py-1.5 text-[12px] leading-snug break-words text-ink" role="status">
+          {notice}
+        </p>
+      )}
+
       {/* Every role that EXISTS, rather than only once they all do. Gating this
           on `done` made it unreachable from the one real capture there is --
           which has `worker` connected and the other two not -- and there is no
@@ -609,11 +673,12 @@ function ConnectStep({
       {enabled && connectedRoles.size > 0 ? (
         <ModelStep
           adapters={adapters}
-          busy={busy}
+          busy={busy?.key ?? null}
           models={models}
           recommendations={recommendations}
           onChange={async (role, agentId) => {
-            setBusy(role);
+            const startedAt = Date.now();
+            setBusy({ key: role, label: role, index: 1, total: 1, startedAt });
             setFailure("");
             try {
               await onAction({ type: "adapter.connect", payload: { role, agent_id: agentId } });
@@ -641,14 +706,20 @@ function ProviderRow({
   provider,
   picked,
   expanded,
+  authenticationBusy,
+  checksBusy,
   onToggle,
-  onExpand
+  onExpand,
+  onAuthenticate
 }: {
   provider: CatalogueProvider;
   picked: boolean;
   expanded: boolean;
+  authenticationBusy: boolean;
+  checksBusy: boolean;
   onToggle: () => void;
   onExpand: () => void;
+  onAuthenticate: () => void;
 }): React.JSX.Element {
   return (
     <div className="border-b border-rule last:border-b-0">
@@ -672,6 +743,26 @@ function ProviderRow({
         <span className="hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block">
           {provider.subscription}
         </span>
+        <Button
+          aria-label={`Open ${provider.label} sign-in`}
+          disabled={authenticationBusy || checksBusy}
+          size="xs"
+          title={provider.authentication.detail}
+          type="button"
+          variant="outline"
+          onClick={onAuthenticate}
+        >
+          {authenticationBusy ? (
+            <Loader aria-hidden="true" />
+          ) : (
+            <ExternalLink aria-hidden="true" />
+          )}
+          {authenticationBusy
+            ? "Opening…"
+            : provider.checked_here
+              ? "Sign in again"
+              : "Sign in"}
+        </Button>
         <span
           className={`shrink-0 text-[11px] font-medium ${
             provider.checked_here || provider.status === "supported"

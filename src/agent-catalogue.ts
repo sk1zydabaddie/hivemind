@@ -532,6 +532,24 @@ export interface CatalogueProvider {
   pins_model: boolean;
   /** Whether at least one catalogue entry has a complete, probeable argv. */
   connectable: boolean;
+  /**
+   * The provider-owned sign-in flow Hivemind may launch.
+   *
+   * This deliberately carries no status reader and no credential location.
+   * The provider CLI and the browser remain the only credential owners;
+   * Hivemind merely starts this fixed command in a separate terminal.
+   */
+  authentication: {
+    experience: "browser" | "interactive" | "device_code";
+    detail: string;
+  };
+}
+
+export interface ProviderAuthentication {
+  experience: CatalogueProvider["authentication"]["experience"];
+  detail: string;
+  /** Fixed provider-owned argv. No caller-supplied token reaches this array. */
+  command: readonly [string, ...string[]];
 }
 
 export interface CatalogueModel {
@@ -609,6 +627,60 @@ const PROVIDER_LABELS: Record<string, string> = {
   kimi: "Kimi Code"
 };
 
+/* Authentication belongs beside invocation because both are provider-specific
+   executable knowledge. The command is intentionally fixed: the audited
+   action accepts only a provider id and cannot turn this into a general shell.
+
+   These flows own their own browser/device interaction and credential store.
+   Hivemind does not inspect their login status afterwards; the capability
+   probe remains the only evidence that a provider can actually run here. */
+const PROVIDER_AUTHENTICATION: Record<string, ProviderAuthentication> = {
+  "codex-cli": {
+    command: [process.platform === "win32" ? "codex.cmd" : "codex", "login"],
+    experience: "browser",
+    detail: "Codex opens its ChatGPT sign-in in your browser. Finish there, then return to Hivemind and run the check."
+  },
+  claude: {
+    command: [process.platform === "win32" ? "claude.cmd" : "claude", "auth", "login"],
+    experience: "browser",
+    detail: "Claude Code opens its own account sign-in. Finish there, then return to Hivemind and run the check."
+  },
+  opencode: {
+    command: [process.platform === "win32" ? "opencode.cmd" : "opencode", "auth", "login"],
+    experience: "interactive",
+    detail: "OpenCode asks which model provider to use in its own terminal and stores that provider's credential itself."
+  },
+  grok: {
+    command: [process.platform === "win32" ? "grok.cmd" : "grok", "login", "--oauth"],
+    experience: "browser",
+    detail: "Grok opens X.AI's OAuth sign-in in your browser. Finish there, then return to Hivemind and run the check."
+  },
+  kimi: {
+    command: [process.platform === "win32" ? "kimi.cmd" : "kimi", "login"],
+    experience: "device_code",
+    detail: "Kimi starts its device-code sign-in in a separate terminal. The code and confirmation remain between Kimi and your browser."
+  }
+};
+
+export function providerAuthentication(providerId: string): ProviderAuthentication | null {
+  return PROVIDER_AUTHENTICATION[providerId] ?? null;
+}
+
+function providerAuthenticationPresentation(
+  providerId: string
+): CatalogueProvider["authentication"] {
+  const authentication = providerAuthentication(providerId);
+  if (authentication === null) {
+    /* A provider with no sign-in flow would put a dead button on first run.
+       This is catalogue corruption, not a state the client can repair. */
+    throw new Error(`provider ${providerId} has no authentication flow`);
+  }
+  return {
+    experience: authentication.experience,
+    detail: authentication.detail
+  };
+}
+
 /** Model labels, where a slug is too terse to read. */
 const MODEL_LABELS: Record<string, string> = {
   "gpt-5.6-sol": "GPT-5.6 Sol",
@@ -635,7 +707,8 @@ export function catalogueProviders(): CatalogueProvider[] {
         status: agent.status,
         caveat: agent.caveat,
         pins_model: agent.model !== null,
-        connectable: agent.connectable
+        connectable: agent.connectable,
+        authentication: providerAuthenticationPresentation(agent.harness)
       });
       continue;
     }

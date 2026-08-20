@@ -335,6 +335,10 @@ export interface CatalogueProvider {
   caveat: string | null;
   pins_model: boolean;
   connectable: boolean;
+  authentication: {
+    experience: "browser" | "interactive" | "device_code";
+    detail: string;
+  };
   /** A current capability record exists for this project and machine. */
   checked_here: boolean;
 }
@@ -460,6 +464,7 @@ export type WorkspaceAction = {
     | "config.inspect"
     | "config.set"
     | "project.init"
+    | "provider.auth.start"
     | "adapter.connect"
     /* The file tree and the file viewer. Read-only and confined in Core -- see
        src/project-files.ts. The client cannot widen either: it names a path and

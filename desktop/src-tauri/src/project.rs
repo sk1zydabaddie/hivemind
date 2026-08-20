@@ -1535,7 +1535,13 @@ pub struct DaemonStanding {
     pub detail: String,
 }
 
-fn active_reservations(project_root: &Path) -> Result<usize, ()> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ActiveReservations {
+    total: usize,
+    provider_checks: usize,
+}
+
+fn active_reservations(project_root: &Path) -> Result<ActiveReservations, ()> {
     let ledger = project_root
         .join(".hivemind")
         .join("resource")
@@ -1543,7 +1549,12 @@ fn active_reservations(project_root: &Path) -> Result<usize, ()> {
     let raw = match fs::read_to_string(&ledger) {
         Ok(value) => value,
         // No ledger at all means nothing has ever been metered here.
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(ActiveReservations {
+                total: 0,
+                provider_checks: 0,
+            })
+        }
         Err(_) => return Err(()),
     };
     let parsed: serde_json::Value = serde_json::from_str(&raw).map_err(|_| ())?;
@@ -1552,20 +1563,32 @@ fn active_reservations(project_root: &Path) -> Result<usize, ()> {
         // idleness. Say so rather than reading zero out of an absent field.
         return Err(());
     };
-    let mut active = 0;
+    let mut active = ActiveReservations {
+        total: 0,
+        provider_checks: 0,
+    };
+    let mut count = |entry: &serde_json::Value| {
+        if entry.get("status").and_then(|value| value.as_str()) != Some("active") {
+            return;
+        }
+        active.total += 1;
+        if entry
+            .get("session_id")
+            .and_then(|value| value.as_str())
+            .is_some_and(|session| session.starts_with("probe-"))
+        {
+            active.provider_checks += 1;
+        }
+    };
     match reservations {
         serde_json::Value::Array(entries) => {
             for entry in entries {
-                if entry.get("status").and_then(|value| value.as_str()) == Some("active") {
-                    active += 1;
-                }
+                count(entry);
             }
         }
         serde_json::Value::Object(entries) => {
             for (_, entry) in entries {
-                if entry.get("status").and_then(|value| value.as_str()) == Some("active") {
-                    active += 1;
-                }
+                count(entry);
             }
         }
         _ => return Err(()),
@@ -1594,7 +1617,7 @@ pub(crate) fn daemon_work(project_root: &Path) -> DaemonStanding {
             detail: "Hivemind could not read this project's records, so it cannot tell whether anything is still running.".to_string(),
         };
     };
-    if reservations == 0 && worktrees == 0 {
+    if reservations.total == 0 && worktrees == 0 {
         return DaemonStanding {
             work: DaemonWork::Idle,
             detail: "Nothing is running in this project.".to_string(),
@@ -1624,19 +1647,35 @@ pub(crate) fn daemon_work(project_root: &Path) -> DaemonStanding {
         ProcessLiveness::Dead => DaemonStanding {
             work: DaemonWork::Idle,
             detail: format!(
-                "Nothing is running. {reservations} call(s) and {worktrees} task workspace(s) were left behind by a background process that is no longer alive."
+                "Nothing is running. {} call(s) and {worktrees} task workspace(s) were left behind by a background process that is no longer alive.",
+                reservations.total
             ),
         },
-        ProcessLiveness::Alive => DaemonStanding {
-            work: DaemonWork::Busy,
-            detail: format!(
-                "This project still has {worktrees} task workspace(s) and {reservations} call(s) in progress."
-            ),
-        },
+        ProcessLiveness::Alive => {
+            let detail = if reservations.provider_checks == reservations.total
+                && reservations.provider_checks > 0
+                && worktrees == 0
+            {
+                format!(
+                    "A provider check is still finishing ({} active). Try again when it completes.",
+                    reservations.provider_checks
+                )
+            } else {
+                format!(
+                    "This project still has {worktrees} task workspace(s) and {} call(s) in progress.",
+                    reservations.total
+                )
+            };
+            DaemonStanding {
+                work: DaemonWork::Busy,
+                detail,
+            }
+        }
         ProcessLiveness::Unknown => DaemonStanding {
             work: DaemonWork::Unknown,
             detail: format!(
-                "This project has {worktrees} task workspace(s) and {reservations} call(s) recorded, and Hivemind cannot tell whether the process holding them is still alive."
+                "This project has {worktrees} task workspace(s) and {} call(s) recorded, and Hivemind cannot tell whether the process holding them is still alive.",
+                reservations.total
             ),
         },
     }
@@ -2280,6 +2319,10 @@ mod idleness_tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn project_with_reservation(label: &str, status: &str) -> PathBuf {
+        project_with_reservation_session(label, status, "run-1")
+    }
+
+    fn project_with_reservation_session(label: &str, status: &str, session_id: &str) -> PathBuf {
         let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let project = std::env::temp_dir().join(format!(
             "hivemind-idle-{label}-{}-{nonce}",
@@ -2289,7 +2332,7 @@ mod idleness_tests {
         fs::write(
             project.join(".hivemind").join("resource").join("ledger.json"),
             format!(
-                r#"{{"version":1,"providers":{{}},"reservations":[{{"reservation_id":"r1","status":"{status}"}}]}}"#
+                r#"{{"version":1,"providers":{{}},"reservations":[{{"reservation_id":"r1","status":"{status}","session_id":"{session_id}"}}]}}"#
             ),
         )
         .unwrap();
@@ -2333,6 +2376,25 @@ mod idleness_tests {
             "a live daemon with an active reservation must never read as idle: {}",
             standing.detail
         );
+
+        terminate_fixture_process(child.id());
+        let _ = fs::remove_dir_all(&project);
+    }
+
+    #[test]
+    fn a_live_provider_probe_is_named_as_a_retryable_check() {
+        let project = project_with_reservation_session("probe", "active", "probe-worker-grok");
+        let child = spawn_sleeper();
+        record_daemon(&project, child.id());
+
+        let standing = daemon_work(&project);
+        assert_eq!(standing.work, DaemonWork::Busy);
+        assert!(
+            standing.detail.contains("provider check is still finishing"),
+            "the updater must name the transient provider check: {}",
+            standing.detail
+        );
+        assert!(standing.detail.contains("Try again"));
 
         terminate_fixture_process(child.id());
         let _ = fs::remove_dir_all(&project);

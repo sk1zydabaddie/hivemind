@@ -1581,3 +1581,56 @@ Settings. Evidence: `docs/evidence/hivemind-identity-installed-26.820.1055/`.
 All 24 production surface/viewport combinations passed, Core passed 815/817
 with two intentional skips, Desktop passed 301/301, and Rust passed 32/32. No
 paid provider or paid 21st generation call was used.
+
+### Provider sign-in is CLI-owned and provider checks report honest liveness
+
+The setup surface now separates two actions that were previously conflated.
+`Sign in` launches one fixed command from Core's provider catalogue in a
+separate provider-owned terminal or browser flow. The audited client action
+accepts only a provider id: it cannot supply an executable, arguments, URL,
+token, or environment value. Hivemind never receives, reads, stores, or
+forwards the credential. `Continue` remains the evidence-producing action: it
+runs each selected provider and records a profile only after the existing
+capability probe passes.
+
+Codex, Claude Code, OpenCode, Grok Build, and Kimi Code all expose that fixed
+handoff. Grok uses its OAuth login and Kimi uses its device-code login; the
+installed app was not taught provider-specific commands or credential logic.
+The provider catalogue supplies the plain-language experience and detail to
+React, while the command remains server-only. A dispatcher regression rejects
+client attempts to submit command, URL, or token fields.
+
+Provider checking now reports the current provider, its position in the real
+sequence, and elapsed seconds, for example `Checking Kimi Code — 1 of 3 · 0s`.
+It does not claim a completion percentage because the provider probes expose
+no honest completion fraction. Reduced-motion can still suppress decorative
+rotation; the changing stage and elapsed text remain a functional, non-motion
+liveness channel. Each successful provider is re-read immediately rather than
+waiting for the whole sequence. Update retry state also distinguishes active
+provider checks from task work and offers `Try again` instead of another build
+command while a check is still finishing.
+
+The production replay fixture was refreshed with Core's authentication
+projection after the new installed-build guard correctly refused a setup
+screen whose older captured provider objects could no longer render. No React
+fallback was added. Build **26.820.1257** was then built, installed, and
+verified against the executable on disk. All 24 production
+surface/viewport checks passed. The release bundle emitted all five provider
+marks as same-origin SVG assets, so the installed Tauri CSP does not depend on
+`data:` images.
+
+Installed 1440×900-client evidence is in
+`docs/evidence/desktop-26.820.1257/`: the provider list, Kimi and Grok handoff
+notices, and two local no-network liveness captures taken 3.2 seconds apart.
+The liveness pair differs at both the visible elapsed value and SHA-256
+(`455dfb2e…` versus `461d8351…`). The delayed probe used a disposable local
+command shim and intentionally failed closed; no provider model call, paid
+call, credential entry, or authentication completion was performed.
+
+Final verification passed Core 817/819 with two intentional skips, Desktop
+302/302, Rust 33/33, and all 24 production surface/viewport checks. The full
+Core run also exposed Windows test-owned child processes and post-exit file
+handles that could outlive their test. Shared cleanup now verifies the OS pid,
+uses a bounded Windows process-tree fallback, destroys owned pipes, and gives
+the two affected memory tests bounded `EBUSY` cleanup retries. Production
+runtime behavior is unchanged by that harness repair.
