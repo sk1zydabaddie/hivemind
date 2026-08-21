@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
+
+import { stopChildProcess } from "./support/child-process.js";
+
+const execFileAsync = promisify(execFile);
 
 /**
  * The suite must be able to fail. It must not be able to hang.
@@ -49,7 +54,8 @@ test("stopping any test child cannot wait forever", async () => {
 
   assert.match(body, /setTimeout/u, "the wait must be bounded");
   assert.match(body, /SIGKILL/u, "and it must escalate rather than give up quietly");
-  assert.match(body, /process\.kill\(pid, 0\)/u, "cleanup must verify the OS process is gone");
+  assert.match(body, /process\.kill\(pid, 0\)/u, "POSIX cleanup must verify the OS process is gone");
+  assert.match(body, /tasklist/u, "Windows cleanup must verify the OS process is gone");
   assert.match(body, /taskkill/u, "Windows cleanup must have a bounded process-tree fallback");
   assert.doesNotMatch(
     body,
@@ -59,6 +65,35 @@ test("stopping any test child cannot wait forever", async () => {
   /* A daemon that survives both signals is a finding, not something for the
      cleanup path to swallow. */
   assert.match(body, /throw new Error/u);
+});
+
+test("stopping a live child is visible in the OS process table", async () => {
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    windowsHide: true
+  });
+  await new Promise<void>((resolve, reject) => {
+    child.once("spawn", resolve);
+    child.once("error", reject);
+  });
+  assert.notEqual(child.pid, undefined);
+  const pid = child.pid!;
+
+  await stopChildProcess(child, "the process-table regression fixture");
+
+  if (process.platform === "win32") {
+    const listed = await execFileAsync(
+      "tasklist",
+      ["/FI", `PID eq ${String(pid)}`, "/FO", "CSV", "/NH"],
+      { windowsHide: true }
+    );
+    assert.doesNotMatch(
+      listed.stdout,
+      new RegExp(`^\"[^\"]*\",\"${String(pid)}\"(?:,|$)`, "mu"),
+      "the stopped child is still present in the Windows process table"
+    );
+  } else {
+    assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
+  }
 });
 
 /**

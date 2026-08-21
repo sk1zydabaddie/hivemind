@@ -4258,3 +4258,20 @@ Final verification passed Core 821/823 with two intentional Windows skips,
 Desktop 304/304, Rust 34/34, and all 24 installed-production reachability
 checks. No paid model or provider call was run.
 
+### Empty navigation destinations state what will appear — 2026-08-20
+
+Work owns the first request. Agents must not duplicate that composer merely
+because both destinations share the run shell. Before durable work exists, the
+Agents canvas stays quiet and says that agents will appear after a conversation
+starts. It offers no action and claims no elevation. Once work exists, the same
+destination replaces that message with the authoritative agent graph.
+
+This is a presentation branch only. The shared run header, checks,
+interruptions, inspector, and shipping controls remain one implementation, and
+React derives emptiness from Core's projected tasks rather than inventing a
+second lifecycle state. Installed build **26.820.1827** was inspected at
+1440x900; evidence is in `docs/evidence/agents-empty-installed-26.820.1827/`.
+Final verification passed Core 822/824 with two intentional Windows skips,
+Desktop 304/304, Rust 34/34, and all 24 installed-production reachability
+checks. No paid model or provider call was run.
+

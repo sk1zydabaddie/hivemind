@@ -1719,3 +1719,29 @@ is still valid, and daemon cleanup gives the OS a bounded retry window. The
 affected daemon, memory-consolidation, and MCP files passed independently, and
 the exact complete Core command then passed with zero failures. Production
 runtime behavior is unchanged by this test-only repair.
+
+### Empty Agents no longer duplicates Work
+
+Before a request exists, Work remains the only place that owns the centered
+composer. Agents now shows a quiet, non-interactive explanation that the agent
+map will appear after a conversation starts. Once durable work exists, the tab
+still renders the real agent graph from Core's task projection; the shared
+header, checks, interruption control, inspector, and shipping path are
+unchanged. No client authority or alternate workflow was added.
+
+Installed build **26.820.1827** was built, installed, verified against the
+binary on disk, and inspected at 1440x900. Evidence is in
+`docs/evidence/agents-empty-installed-26.820.1827/`. All 24 production
+surface/viewport checks passed. No planner, manager, worker, provider, or other
+paid model call was made.
+
+The complete verification pass also exposed and repaired a Windows-only test
+runner defect. Node's `process.kill(pid, 0)` reported `ESRCH` for a measured
+live child, so the shared test cleanup helper could incorrectly skip its
+bounded process-tree termination and leave temporary repositories locked.
+Windows liveness now comes from `tasklist`, POSIX retains signal-0, and the
+runner caps file concurrency at eight so the complete suite does not overwhelm
+Windows process cleanup. The six affected files passed 55/55 together. Final
+verification passed Core 822/824 with two intentional Windows skips, Desktop
+304/304, Rust 34/34, and all 24 installed reachability checks. This repair is
+test-only; production runtime behavior is unchanged.

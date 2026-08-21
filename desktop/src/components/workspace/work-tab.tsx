@@ -837,7 +837,25 @@ export function WorkTab({
               onOpenPlan={() => void openPlanReview()}
               onStop={() => void stopRun()}
             />
-            {composerCentered ? (
+            {stage === "graph" && idle ? (
+              <section
+                aria-labelledby="agents-empty-title"
+                className="flex min-h-0 items-center justify-center px-6 text-center"
+              >
+                <div className="max-w-[420px]">
+                  <h2
+                    className="text-[16px] leading-tight font-semibold tracking-tight text-ink"
+                    id="agents-empty-title"
+                  >
+                    Your agents will appear here
+                  </h2>
+                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
+                    Start a conversation in Work to see who is working, what
+                    each agent owns, and how their tasks connect.
+                  </p>
+                </div>
+              </section>
+            ) : composerCentered ? (
               promptDock
             ) : idle ? (
               <div className="hivemind-identity-field min-h-0" />

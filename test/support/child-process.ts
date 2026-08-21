@@ -4,7 +4,34 @@ import { setTimeout as sleep } from "node:timers/promises";
 const GRACEFUL_STOP_MS = 5_000;
 const FORCED_STOP_MS = 5_000;
 
-function processExists(pid: number): boolean {
+async function windowsProcessExists(pid: number): Promise<boolean> {
+  return await new Promise<boolean>((resolve) => {
+    execFile(
+      "tasklist",
+      ["/FI", `PID eq ${String(pid)}`, "/FO", "CSV", "/NH"],
+      { windowsHide: true, timeout: FORCED_STOP_MS },
+      (error, stdout) => {
+        if (error !== null) {
+          // A failed liveness instrument cannot prove the process is gone.
+          resolve(true);
+          return;
+        }
+        resolve(
+          stdout
+            .split(/\r?\n/u)
+            .some((line) => new RegExp(`^\"[^\"]*\",\"${String(pid)}\"(?:,|$)`, "u").test(line))
+        );
+      }
+    );
+  });
+}
+
+async function processExists(pid: number): Promise<boolean> {
+  if (process.platform === "win32") {
+    // Node's process.kill(pid, 0) returned ESRCH for a measured live Windows
+    // child on 2026-08-20. tasklist asks the OS process table directly.
+    return await windowsProcessExists(pid);
+  }
   try {
     process.kill(pid, 0);
     return true;
@@ -18,13 +45,13 @@ async function goneWithin(
   timeoutMs: number
 ): Promise<boolean> {
   const pid = child.pid;
-  if (pid === undefined) return child.exitCode !== null;
+  if (pid === undefined) return false;
   const deadline = Date.now() + timeoutMs;
   do {
-    if (!processExists(pid)) return true;
+    if (!(await processExists(pid))) return true;
     await sleep(50);
   } while (Date.now() < deadline);
-  return !processExists(pid);
+  return !(await processExists(pid));
 }
 
 function closePipes(child: ChildProcessWithoutNullStreams): void {
@@ -54,7 +81,7 @@ export async function stopChildProcess(
   child: ChildProcessWithoutNullStreams,
   label = "test child process"
 ): Promise<void> {
-  if (child.pid !== undefined && !processExists(child.pid)) {
+  if (child.pid === undefined || !(await processExists(child.pid))) {
     closePipes(child);
     return;
   }

@@ -356,8 +356,9 @@ describe("React workspace boundary", () => {
     const work = await readFile(path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"), "utf8");
 
     // Two fixed rows: the interruption slot and the body. The body splits into the
-    // work panel and the rail. The empty state owns one centered composer; once
-    // work exists, the same form becomes the panel's trailing row so tall
+    // work panel and the rail. Empty Work owns one centered composer; Agents
+    // names what will appear there without duplicating the prompt. Once work
+    // exists, the same Work form becomes the panel's trailing row so tall
     // content cannot displace it.
     expect(work).toMatch(
       /grid h-full min-h-0 grid-rows-\[auto_minmax\(0,1fr\)\] overflow-hidden/u
@@ -370,6 +371,8 @@ describe("React workspace boundary", () => {
     expect(work).toMatch(/composerCentered[\s\S]{0,180}grid-rows-\[auto_minmax\(0,1fr\)\]/u);
     expect(work).toMatch(/grid-rows-\[auto_minmax\(0,1fr\)_auto\]/u);
     expect(work).toMatch(/place-items-center[\s\S]{0,180}\{form\}/u);
+    expect(work).toMatch(/stage === "graph" && idle[\s\S]{0,500}Your agents will appear here/u);
+    expect(work).toMatch(/Start a conversation in Work to see who is working/u);
     expect(work).toMatch(/setComposerHasMoved\(true\)[\s\S]{0,80}setBusy\(true\)/u);
     expect(work).toMatch(/\{composerCentered \? null : promptDock\}/u);
     expect(work).toMatch(/size="icon-round"/u);
