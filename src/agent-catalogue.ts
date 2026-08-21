@@ -623,9 +623,10 @@ export interface CatalogueProvider {
   /**
    * The provider-owned sign-in flow Hivemind may launch.
    *
-   * This deliberately carries no status reader and no credential location.
-   * The provider CLI and the browser remain the only credential owners;
-   * Hivemind merely starts this fixed command in a separate terminal.
+   * This deliberately carries no credential location. The provider CLI and
+   * browser remain the only credential owners; Hivemind merely starts this
+   * fixed command in a separate terminal. Read-only status commands are kept
+   * separately so none of their raw output becomes presentation data.
    */
   authentication: {
     experience: "browser" | "interactive" | "device_code";
@@ -660,6 +661,16 @@ export interface ProviderAuthentication {
   detail: string;
   /** Fixed provider-owned argv. No caller-supplied token reaches this array. */
   command: readonly [string, ...string[]];
+}
+
+/**
+ * A provider-owned, read-only command that reports login standing without
+ * returning a credential or starting a model turn. Some CLIs do not publish
+ * such a command; those remain `unknown` until a capability probe succeeds.
+ */
+export interface ProviderAuthenticationStatusSpec {
+  kind: "login-text" | "logged-in-json" | "credential-count";
+  invocation: readonly [string, ...string[]];
 }
 
 export interface CatalogueModel {
@@ -742,8 +753,9 @@ const PROVIDER_LABELS: Record<string, string> = {
    action accepts only a provider id and cannot turn this into a general shell.
 
    These flows own their own browser/device interaction and credential store.
-   Hivemind does not inspect their login status afterwards; the capability
-   probe remains the only evidence that a provider can actually run here. */
+   Where a CLI publishes a no-cost status command Hivemind may ask it for the
+   boolean standing afterwards; the capability probe remains the only evidence
+   that the provider can actually satisfy Hivemind's runtime contract. */
 const PROVIDER_AUTHENTICATION: Record<string, ProviderAuthentication> = {
   "codex-cli": {
     command: [process.platform === "win32" ? "codex.cmd" : "codex", "login"],
@@ -780,6 +792,24 @@ function readOnlyCliInvocation(
     ? ["cmd.exe", "/d", "/s", "/c", `${executable}.cmd`, ...args]
     : [executable, ...args];
 }
+
+export const PROVIDER_AUTHENTICATION_STATUS_SPECS: Record<
+  string,
+  ProviderAuthenticationStatusSpec
+> = {
+  "codex-cli": {
+    kind: "login-text",
+    invocation: readOnlyCliInvocation("codex", ["login", "status"])
+  },
+  claude: {
+    kind: "logged-in-json",
+    invocation: readOnlyCliInvocation("claude", ["auth", "status", "--json"])
+  },
+  opencode: {
+    kind: "credential-count",
+    invocation: readOnlyCliInvocation("opencode", ["auth", "list"])
+  }
+};
 
 /**
  * No-cost model discovery supported by each installed harness.

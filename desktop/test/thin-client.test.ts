@@ -541,12 +541,18 @@ describe("React workspace boundary", () => {
     /* Settings dispatches only its audited project/settings actions. Model
        discovery is read-only; model connection repeats discovery in Core
        before the selected slug can reach the existing paid probe. */
-    const dispatched = [...settings.matchAll(/type: "([a-z_.]+)"/gu)].map((match) => match[1]);
+    const providerAuthentication = await readFile(
+      path.join(desktopRoot, "src", "lib", "provider-authentication.ts"),
+      "utf8"
+    );
+    const dispatched = [...`${settings}\n${providerAuthentication}`.matchAll(/type: "([a-z_.]+)"/gu)]
+      .map((match) => match[1]);
     expect(new Set(dispatched)).toEqual(
       new Set([
         "config.inspect",
         "config.set",
         "project.init",
+        "provider.auth.inspect",
         "provider.auth.start",
         "models.discover",
         "adapter.connect_model",

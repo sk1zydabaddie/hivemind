@@ -16,6 +16,7 @@ import { ProviderListRow, ProviderMark, providerRank } from "@/components/worksp
 import { list } from "@/lib/durable";
 import { plainActionError } from "@/lib/plain-language";
 import { displayProjectPath } from "@/lib/project-session";
+import { useProviderAuthentication } from "@/lib/provider-authentication";
 import type {
   AdapterConnectResult,
   AutonomyLevel,
@@ -316,6 +317,8 @@ function AgentSection({
   const [opened, setOpened] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [probe, setProbe] = useState<{ role: string; result: ProbedCapability[]; ok: boolean } | null>(null);
+  const { standings: authenticationStandings, watchForCompletion } =
+    useProviderAuthentication({ active: view !== null, onAction });
 
   useEffect(() => {
     if (connecting === null) return undefined;
@@ -358,6 +361,7 @@ function AgentSection({
 
   const startAuthentication = async (provider: CatalogueProvider): Promise<void> => {
     setAuthBusy(provider.id);
+    watchForCompletion(provider.id);
     setNotice("");
     onError("");
     try {
@@ -369,6 +373,7 @@ function AgentSection({
         `${provider.label} opened its own sign-in flow. Finish there, then refresh models or run a check here.`
       );
     } catch (cause) {
+      watchForCompletion(null);
       onError(`${provider.label}: ${plainActionError(cause)}`);
     } finally {
       setAuthBusy(null);
@@ -400,6 +405,7 @@ function AgentSection({
             {providers.map((provider) => (
               <ProviderListRow
                 authenticationBusy={authBusy === provider.id}
+                authenticationStatus={authenticationStandings.get(provider.id)?.status ?? "unknown"}
                 checksBusy={connecting !== null}
                 expanded={opened === provider.id}
                 key={provider.id}

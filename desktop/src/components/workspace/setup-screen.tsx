@@ -8,6 +8,7 @@ import { SelectionControl } from "@/components/ui/selection-control";
 import { ProviderListRow, providerRank } from "@/components/workspace/provider-list";
 import { useDismissed } from "@/lib/dismissible";
 import { displayProjectPath, PROJECT_FAULT, type GitReadiness } from "@/lib/project-session";
+import { useProviderAuthentication } from "@/lib/provider-authentication";
 import { REQUIRED_ROLES } from "@/lib/providers";
 import type {
   CatalogueModelView,
@@ -464,6 +465,8 @@ function ConnectStep({
   const [failure, setFailure] = useState("");
   const [picked, setPicked] = useState<Set<string> | null>(null);
   const [opened, setOpened] = useState<string | null>(null);
+  const { standings: authenticationStandings, watchForCompletion } =
+    useProviderAuthentication({ active: enabled, onAction });
 
   /* Windows reduced motion can stop the spinner, but it cannot stop the
      report. This is a discrete elapsed count, not decorative animation: two
@@ -565,6 +568,7 @@ function ConnectStep({
     setFailure("");
     setNotice("");
     setAuthBusy(provider.id);
+    watchForCompletion(provider.id);
     try {
       await onAction({
         type: "provider.auth.start",
@@ -574,6 +578,7 @@ function ConnectStep({
         `${provider.label} opened its own sign-in flow in a separate window. Finish there, then keep it ticked and press Continue to check it.`
       );
     } catch (cause) {
+      watchForCompletion(null);
       setFailure(
         `${provider.label}: ${cause instanceof Error ? cause.message : String(cause)}`
       );
@@ -612,6 +617,7 @@ function ConnectStep({
               {providers.map((provider) => (
                 <ProviderListRow
                   authenticationBusy={authBusy === provider.id}
+                  authenticationStatus={authenticationStandings.get(provider.id)?.status ?? "unknown"}
                   checksBusy={busy !== null}
                   expanded={opened === provider.id}
                   key={provider.id}

@@ -330,6 +330,16 @@ export interface CatalogueProvider {
   checked_here: boolean;
 }
 
+export interface ProviderAuthenticationStanding {
+  provider_id: string;
+  status: "signed_in" | "signed_out" | "unknown";
+  detail: string;
+}
+
+export interface ProviderAuthenticationStatusView {
+  providers: ProviderAuthenticationStanding[];
+}
+
 export interface ModelPrice {
   input_per_m: number;
   output_per_m: number;
@@ -467,6 +477,7 @@ export type WorkspaceAction = {
     | "config.inspect"
     | "config.set"
     | "project.init"
+    | "provider.auth.inspect"
     | "provider.auth.start"
     | "models.discover"
     | "adapter.connect"

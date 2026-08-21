@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
 import { planProviderConnections } from "../src/components/workspace/setup-screen";
+import {
+  providerIsConnected,
+  providerStanding
+} from "../src/components/workspace/provider-list";
 import type {
   CatalogueModelView,
   CatalogueProvider,
@@ -84,6 +88,14 @@ const recommendations: RoleRecommendation[] = [
 ];
 
 describe("provider connection planning", () => {
+  test("a CLI-reported sign-in replaces the login action without claiming a capability check", () => {
+    const codex = providers[0]!;
+    expect(providerIsConnected(codex, "signed_in")).toBe(true);
+    expect(providerStanding(codex, "signed_in")).toBe("Signed in");
+    expect(providerIsConnected(codex, "signed_out")).toBe(false);
+    expect(providerStanding({ ...codex, checked_here: true }, "unknown")).toBe("Checked here");
+  });
+
   test("every selected runnable provider receives a real probe", () => {
     const plan = planProviderConnections({
       chosen: new Set(["codex-cli", "claude"]),

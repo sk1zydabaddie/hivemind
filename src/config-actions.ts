@@ -670,7 +670,8 @@ export function buildProfileForAgent(agent: CatalogueAgent, role: AdapterRoleNam
  * recorded beside the provider invocation; no executable, argument, URL,
  * token, or environment value can be supplied through the action. The child
  * receives the same selected provider home an ordinary probe would use, but
- * Hivemind neither reads that directory nor inspects the result of sign-in.
+ * Hivemind never reads that directory. A separate read-only action may ask the
+ * CLI for a boolean login standing, but this launcher receives no result.
  */
 export async function startProviderAuthentication(
   repoRoot: string,

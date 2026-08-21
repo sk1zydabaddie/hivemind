@@ -333,6 +333,17 @@ class ReplayEventSource {
         if (settings === null) throw new Error("no captured settings state");
         return settings.config;
       }
+      if (action.type === "provider.auth.inspect") {
+        if (settings === null) throw new Error("no captured settings state");
+        const providers = (settings.config as { providers?: Array<{ id?: unknown }> }).providers ?? [];
+        return {
+          providers: providers.map((provider) => ({
+            provider_id: String(provider.id ?? ""),
+            status: "unknown",
+            detail: "The replay does not contain provider login standing."
+          }))
+        };
+      }
       if (action.type === "adapter.connect") {
         if (settings === null) throw new Error("no captured settings state");
         return settings.connect;

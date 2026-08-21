@@ -36,6 +36,7 @@ import {
   startProviderAuthentication,
   setProjectConfig
 } from "./config-actions.js";
+import { inspectProviderAuthentication } from "./provider-auth-status.js";
 import { adoptSpec, readSpecForReview } from "./spec-review.js";
 
 export const workspaceActionTypes = [
@@ -73,12 +74,14 @@ export const workspaceActionTypes = [
      fixed key list and cannot reach a gate; `project.init` sets a folder up;
      `adapter.connect` writes a profile only after a probe has confirmed the
      capabilities it claims. `provider.auth.start` launches one fixed CLI-owned
-     sign-in flow and receives no credential or login result. `models.discover`
+     sign-in flow and receives no credential. `provider.auth.inspect` asks only
+     the CLI's own no-cost status command and returns a tri-state. `models.discover`
      asks those CLIs for a no-cost list; `adapter.connect_model` repeats that
      check before a listed slug can reach a paid capability probe. */
   "config.inspect",
   "config.set",
   "project.init",
+  "provider.auth.inspect",
   "provider.auth.start",
   "models.discover",
   "adapter.connect",
@@ -350,6 +353,11 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
     return parsed.ok
       ? startProviderAuthentication(repoRoot, parsed.value.provider_id)
       : parsed;
+  }
+  if (raw.type === "provider.auth.inspect") {
+    return Object.keys(payload).length === 0
+      ? { ok: true, value: await inspectProviderAuthentication(repoRoot) }
+      : { ok: false, reason: "provider.auth.inspect takes no fields" };
   }
   if (raw.type === "models.discover") {
     if (Object.keys(payload).length > 0) return { ok: false, reason: "models.discover takes no fields" };

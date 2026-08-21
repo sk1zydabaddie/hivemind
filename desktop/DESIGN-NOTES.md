@@ -4275,3 +4275,32 @@ Final verification passed Core 822/824 with two intentional Windows skips,
 Desktop 304/304, Rust 34/34, and all 24 installed-production reachability
 checks. No paid model or provider call was run.
 
+### Connected providers replace the sign-in action — 2026-08-20
+
+Provider-wide evidence, a current-project capability check, and the CLI's
+current login standing are three different facts. The shared Setup/Settings
+row now keeps them separate. Core asks only the fixed, provider-owned no-cost
+status commands published by Codex, Claude Code, and OpenCode, bounds their
+runtime and output, and reduces the answer to `signed_in`, `signed_out`, or
+`unknown`. Raw output, account email, organization, and credentials never
+cross the dispatcher. Grok and Kimi expose no equivalent safe status command
+in the installed versions, so they remain unknown unless a stronger successful
+project capability check already exists.
+
+When either source proves a connection, the quiet `Sign in` Button is replaced
+in place by a non-interactive checkmarked `Connected` status using the existing
+navy wash, border, radius, and compact height. The adjacent standing still says
+whether the proof is only `Signed in` or the stronger `Checked here`; product-
+wide `Proven end to end` is no longer allowed to masquerade as the person's
+current account state. Returning focus after an external sign-in re-runs the
+read-only status action, while React owns no credential or authoritative login
+decision.
+
+Installed build **26.820.2158** was built, installed, verified against the
+binary on disk, and inspected at a 1440x900 client size. The installed Settings
+surface shows Codex, Claude Code, and OpenCode with checkmarked `Connected`
+replacements and `Signed in` standing. Evidence is in
+`docs/evidence/provider-connected-installed-26.820.2158/`. All 24 production
+surface/viewport checks passed. No provider model, paid capability probe,
+provider sign-in, or paid 21st generation call was run.
+

@@ -1745,3 +1745,29 @@ Windows process cleanup. The six affected files passed 55/55 together. Final
 verification passed Core 822/824 with two intentional Windows skips, Desktop
 304/304, Rust 34/34, and all 24 installed reachability checks. This repair is
 test-only; production runtime behavior is unchanged.
+
+### Provider rows now show the account that is actually connected
+
+The shared Setup/Settings provider row no longer leaves `Sign in` visible after
+the provider CLI reports an active account. A new read-only audited action runs
+only fixed no-cost status commands owned by the installed CLI and returns a
+tri-state with generic detail. It does not read credential files, accept a
+command from React, or return raw provider output. Codex, Claude Code, and
+OpenCode publish a usable status surface in the installed versions. Grok and
+Kimi do not, so their login standing remains unknown unless an existing
+current-project capability record supplies stronger evidence.
+
+The UI replaces the action with a checkmarked `Connected` status when either a
+safe CLI status or a current capability record proves the connection. The
+adjacent text distinguishes `Signed in` from `Checked here`; product-wide
+support evidence remains separate. The action is refreshed on initial render
+and when focus returns from a sign-in handoff, while Core remains the source of
+the decision.
+
+Installed build **26.820.2158** was built, installed, verified against the
+binary on disk, and inspected at a 1440x900 client size. Evidence is in
+`docs/evidence/provider-connected-installed-26.820.2158/`. The installed
+Settings surface shows Codex, Claude Code, and OpenCode as connected and leaves
+Grok and Kimi actionable. All 24 production surface/viewport checks passed. No
+provider model, paid capability probe, provider sign-in, or paid 21st generation
+call was run.
