@@ -1684,3 +1684,38 @@ production surface/viewport checks passed, including the bottom composer in
 mid-run and ready-to-ship replays. No planner call was made for visual proof.
 Final verification passed Core 821/823 with two intentional skips, Desktop
 302/302, and Rust 33/33.
+
+### Work exposes project switching and contextual attachments
+
+The existing recent-project switch path is now visible from the project name
+in the header. Its menu identifies the current project, lists recent projects,
+and retains `Open another project…` for the native folder picker. Switching
+reuses the audited workspace action and rebuilds only the selected client view;
+work owned by another project's daemon is not stopped. The command-palette
+shortcut remains available, but is no longer the only discoverable route.
+
+The empty composer now uses an 18px curve, a full-width 15px prompt field, and
+a balanced bottom action row. Its plus control opens `Files…` and `Folder…`
+pickers. Tauri canonicalizes every selection and returns only project-relative
+paths; project-external paths, the root, `.git`, and `.hivemind` fail closed.
+React neither reads file contents nor owns attachment authority. The active tab
+uses a plain centered underline with no decorative hex node, and the idle
+`Nothing running` label is centered independently of the right-side controls.
+
+Installed build **26.820.1621** was built, installed, verified against the
+binary on disk, and inspected at a 1440x900 client size. Switching from
+Hivemind AI to Skybound Flight Simulator and back succeeded in the installed
+app. Evidence is in
+`docs/evidence/project-switcher-composer-installed-26.820.1621/`, including
+the attachment menu. All 24 production surface/viewport checks passed. No
+planner, provider, or other paid model call was made.
+
+Final verification passed Core 821/823 with two intentional Windows skips,
+Desktop 304/304, and Rust 34/34. The first complete Core run exposed a Windows
+test-harness defect: a single-pid signal could let a test daemon's process tree
+retain its temporary folder, producing `EBUSY` and then a file timeout. Shared
+test cleanup now uses Windows process-tree termination while the owned root PID
+is still valid, and daemon cleanup gives the OS a bounded retry window. The
+affected daemon, memory-consolidation, and MCP files passed independently, and
+the exact complete Core command then passed with zero failures. Production
+runtime behavior is unchanged by this test-only repair.

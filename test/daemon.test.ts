@@ -737,5 +737,5 @@ async function gitStdout(cwd: string, args: string[]): Promise<string> {
 }
 
 async function cleanupTempRepo(repo: string): Promise<void> {
-  await rm(repo, { recursive: true, force: true, maxRetries: 3 });
+  await rm(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }

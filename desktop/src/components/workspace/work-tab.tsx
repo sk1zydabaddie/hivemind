@@ -8,6 +8,8 @@ import {
   CircleStop,
   ClipboardList,
   FileCode2,
+  FilePlus2,
+  FolderPlus,
   Layers3,
   MessageSquareText,
   Plus,
@@ -17,6 +19,7 @@ import {
   X
 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonProgress } from "@/components/ui/button";
@@ -36,6 +39,7 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -105,6 +109,7 @@ import type {
 interface WorkTabProps {
   projection: BoardProjection;
   inspection: WorkspaceInspection | null;
+  projectRoot: string;
   actionError: string;
   connectionState: string;
   connectionDetail: string;
@@ -119,6 +124,11 @@ interface WorkTabProps {
 }
 
 type Tone = "neutral" | "live" | "good" | "warning" | "danger";
+
+interface PromptAttachment {
+  kind: "file" | "folder";
+  path: string;
+}
 
 interface AmendmentDraft {
   taskId: string;
@@ -184,6 +194,7 @@ const toneDot: Record<ThreadTone, string> = {
 export function WorkTab({
   projection,
   inspection,
+  projectRoot,
   actionError,
   connectionState,
   connectionDetail,
@@ -216,6 +227,9 @@ export function WorkTab({
   const [specReview, setSpecReview] = useState<SpecReview | null>(null);
   const [nonGoals, setNonGoals] = useState<NonGoalEntry[]>([]);
   const [composer, setComposer] = useState("");
+  const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
+  const [attachmentBusy, setAttachmentBusy] = useState(false);
+  const [attachmentError, setAttachmentError] = useState("");
   const [composerHasMoved, setComposerHasMoved] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [busy, setBusy] = useState(false);
@@ -254,6 +268,37 @@ export function WorkTab({
   useEffect(() => {
     if (connectionState !== "connected") setComposerHasMoved(false);
   }, [connectionState]);
+
+  useEffect(() => {
+    setAttachments([]);
+    setAttachmentError("");
+  }, [projectRoot]);
+
+  const addAttachments = async (kind: PromptAttachment["kind"]): Promise<void> => {
+    setAttachmentBusy(true);
+    setAttachmentError("");
+    try {
+      const selected =
+        kind === "file"
+          ? await invoke<PromptAttachment[]>("choose_project_files", { projectRoot })
+          : await invoke<PromptAttachment[]>("choose_project_attachment_folder", {
+              projectRoot
+            });
+      setAttachments((current) => {
+        const merged = [...current];
+        for (const attachment of selected) {
+          if (!merged.some((entry) => entry.kind === attachment.kind && entry.path === attachment.path)) {
+            merged.push(attachment);
+          }
+        }
+        return merged.slice(0, 20);
+      });
+    } catch (error) {
+      setAttachmentError(plainActionError(error));
+    } finally {
+      setAttachmentBusy(false);
+    }
+  };
 
   /* `/` reaches the composer from anywhere, Escape sets the current
      interruption aside. Both stay out of the way while you are typing. */
@@ -378,8 +423,14 @@ export function WorkTab({
     event: React.FormEvent<HTMLFormElement>
   ): Promise<void> => {
     event.preventDefault();
-    const message = composer.trim();
-    if (message === "") return;
+    const typedMessage = composer.trim();
+    if (typedMessage === "") return;
+    const message =
+      attachments.length === 0
+        ? typedMessage
+        : `${typedMessage}\n\nProject references:\n${attachments
+            .map((attachment) => `- @${attachment.path}`)
+            .join("\n")}`;
     setComposerHasMoved(true);
     setBusy(true);
     setFeedback("");
@@ -411,6 +462,7 @@ export function WorkTab({
         }
       }
       setComposer("");
+      setAttachments([]);
     } catch (error) {
       setFeedback(plainActionError(error));
     } finally {
@@ -650,6 +702,9 @@ export function WorkTab({
 
   const promptDock = (
     <PromptDock
+      attachmentBusy={attachmentBusy}
+      attachmentError={attachmentError}
+      attachments={attachments}
       busy={busy}
       composerRef={composerRef}
       continuationAvailable={continuationAvailable}
@@ -660,7 +715,11 @@ export function WorkTab({
       runActive={runActive}
       spend={inspection?.spend ?? null}
       value={composer}
+      onAddAttachments={addAttachments}
       onChange={setComposer}
+      onRemoveAttachment={(attachment) =>
+        setAttachments((current) => current.filter((entry) => entry !== attachment))
+      }
       onContinue={continueRun}
       onStartManager={async () => {
         setBusy(true);
@@ -1486,8 +1545,14 @@ function RunHeader({
           They used to be interleaved with an interruption SETTING in a single
           row of middot-separated readings, where a person had no way to tell
           which was status and which was a control they had set. */}
-      <div className="flex items-start gap-4">
-        <div className="min-w-0 flex-1">
+      <div className="relative flex min-h-8 items-start gap-4">
+        <div
+          className={
+            subject === null && tasks.length === 0 && !runActive
+              ? "pointer-events-none absolute inset-0 flex items-center justify-center"
+              : "min-w-0 flex-1"
+          }
+        >
           {subject === null ? null : (
             <>
               <span className="block text-[11px] font-medium tracking-label text-muted-foreground uppercase">
@@ -1512,7 +1577,7 @@ function RunHeader({
           </h2>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           {planAvailable ? (
             <Button size="sm" type="button" variant="ghost" onClick={onOpenPlan}>
               <Layers3 aria-hidden="true" />
@@ -2392,6 +2457,9 @@ function PromptDock({
   value,
   composerRef,
   centered,
+  attachments,
+  attachmentBusy,
+  attachmentError,
   idle,
   runActive,
   continuationAvailable,
@@ -2399,7 +2467,9 @@ function PromptDock({
   busy,
   feedback,
   spend,
+  onAddAttachments,
   onChange,
+  onRemoveAttachment,
   onSubmit,
   onContinue,
   onStartManager
@@ -2407,6 +2477,9 @@ function PromptDock({
   value: string;
   composerRef: React.RefObject<HTMLTextAreaElement | null>;
   centered: boolean;
+  attachments: PromptAttachment[];
+  attachmentBusy: boolean;
+  attachmentError: string;
   idle: boolean;
   runActive: boolean;
   continuationAvailable: boolean;
@@ -2414,23 +2487,92 @@ function PromptDock({
   busy: boolean;
   feedback: string;
   spend: WorkspaceInspection["spend"] | null;
+  onAddAttachments: (kind: PromptAttachment["kind"]) => Promise<void>;
   onChange: (value: string) => void;
+  onRemoveAttachment: (attachment: PromptAttachment) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   onContinue: () => Promise<void>;
   onStartManager: () => Promise<void>;
 }): React.JSX.Element {
+  const attachmentMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          aria-label="Add files or a folder"
+          disabled={busy || attachmentBusy}
+          size="icon-sm"
+          title="Add files or a folder"
+          type="button"
+          variant="ghost"
+        >
+          <Plus aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="top">
+        <DropdownMenuLabel>Add to your request</DropdownMenuLabel>
+        <DropdownMenuItem onSelect={() => void onAddAttachments("file")}>
+          <FilePlus2 aria-hidden="true" />
+          Files…
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void onAddAttachments("folder")}>
+          <FolderPlus aria-hidden="true" />
+          Folder…
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+  const sendButton = (
+    <Button
+      aria-label={runActive ? "Send guidance" : "Send request"}
+      disabled={busy || value.trim() === ""}
+      size="icon-round"
+      title={runActive ? "Send guidance" : "Send request"}
+      type="submit"
+    >
+      <ArrowUp aria-hidden="true" className="size-4" />
+    </Button>
+  );
   const form = (
     <form
       className={centered ? "grid w-full max-w-[680px] gap-2" : "grid gap-2"}
       onSubmit={(event) => void onSubmit(event)}
     >
       <div
-        className={`grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2 rounded-xl border border-input bg-panel transition-colors focus-within:border-navy/55 focus-within:ring-[3px] focus-within:ring-navy/15 ${
-          centered ? "min-h-[112px] p-2.5" : "p-1.5"
+        className={`grid gap-2 rounded-2xl border border-input bg-panel transition-colors focus-within:border-navy/55 focus-within:ring-1 focus-within:ring-navy/20 ${
+          centered ? "grid-cols-[minmax(0,1fr)]" : "grid-cols-[auto_minmax(0,1fr)_auto] items-end"
+        } ${
+          centered ? "min-h-[120px] px-3 py-2.5" : "px-2 py-1.5"
         }`}
       >
+        {attachments.length === 0 ? null : (
+          <div
+            className={`flex flex-wrap gap-1.5 ${centered ? "" : "col-span-3"}`}
+            aria-label="Attached project items"
+          >
+            {attachments.map((attachment) => (
+              <span
+                className="flex max-w-full items-center gap-1 rounded-sm border border-rule bg-surface px-1.5 py-1 font-mono text-[11px] text-ink"
+                key={`${attachment.kind}:${attachment.path}`}
+              >
+                <span className="max-w-[420px] break-all">{attachment.path}</span>
+                <Button
+                  aria-label={`Remove ${attachment.path}`}
+                  disabled={busy}
+                  size="icon-xs"
+                  title={`Remove ${attachment.path}`}
+                  type="button"
+                  variant="ghost"
+                  onClick={() => onRemoveAttachment(attachment)}
+                >
+                  <X aria-hidden="true" />
+                </Button>
+              </span>
+            ))}
+          </div>
+        )}
+        {centered ? null : attachmentMenu}
         <textarea
-          className="max-h-[180px] min-h-[36px] w-full resize-y border-0 bg-transparent px-1.5 py-1.5 text-[14px] leading-relaxed text-ink outline-transparent placeholder:text-muted-foreground focus-visible:outline-1 focus-visible:outline-navy/60"
+          className="max-h-[180px] min-h-[44px] w-full resize-none border-0 bg-transparent px-2 py-1.5 text-[15px] leading-relaxed text-ink outline-none placeholder:text-muted-foreground focus-visible:outline-none"
           id="work-composer"
           placeholder={
             runActive
@@ -2450,16 +2592,20 @@ function PromptDock({
             }
           }}
         />
-        <Button
-          aria-label={runActive ? "Send guidance" : "Send request"}
-          disabled={busy || value.trim() === ""}
-          size="icon-round"
-          title={runActive ? "Send guidance" : "Send request"}
-          type="submit"
-        >
-          <ArrowUp aria-hidden="true" className="size-4" />
-        </Button>
+        {centered ? (
+          <div className="flex items-center justify-between">
+            {attachmentMenu}
+            {sendButton}
+          </div>
+        ) : (
+          sendButton
+        )}
       </div>
+      {attachmentError ? (
+        <p className="m-0 text-[12px] leading-snug text-clay" role="alert">
+          {attachmentError}
+        </p>
+      ) : null}
       {feedback ? (
         <p
           className="m-0 rounded-sm border-l-2 border-navy bg-navy-wash px-2.5 py-1.5 text-[12px] leading-snug break-words text-navy"

@@ -59,17 +59,30 @@ export async function stopChildProcess(
     return;
   }
 
+  /* On Windows, Node implements signal delivery for a single pid. The root can
+     disappear before its console/process descendants release their cwd, which
+     makes the liveness probe look settled while a later rm still receives
+     EBUSY. taskkill /T is the platform's process-tree primitive, so use it
+     while the known test-owned root identity still exists instead of waiting
+     until that identity is gone and its descendants are orphaned. */
+  if (process.platform === "win32" && child.pid !== undefined) {
+    await forceWindowsProcessTree(child.pid);
+    if (await goneWithin(child, FORCED_STOP_MS)) {
+      closePipes(child);
+      return;
+    }
+    throw new Error(
+      `${label} (pid ${String(child.pid)}) survived Windows process-tree termination; it is still running and would invalidate the next test run`
+    );
+  }
+
   child.kill("SIGTERM");
   if (await goneWithin(child, GRACEFUL_STOP_MS)) {
     closePipes(child);
     return;
   }
 
-  if (process.platform === "win32" && child.pid !== undefined) {
-    await forceWindowsProcessTree(child.pid);
-  } else {
-    child.kill("SIGKILL");
-  }
+  child.kill("SIGKILL");
   if (await goneWithin(child, FORCED_STOP_MS)) {
     closePipes(child);
     return;

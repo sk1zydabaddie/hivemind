@@ -1,5 +1,6 @@
 import {
   Check,
+  ChevronDown,
   FolderGit2,
   LayoutList,
   Library,
@@ -39,6 +40,14 @@ import {
   CommandList,
   CommandShortcut
 } from "@/components/ui/command";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Tooltip,
@@ -164,6 +173,10 @@ export default function App(): React.JSX.Element {
     workspace.connection?.project_root ?? workspace.projectPath
   );
   const projectName = projectNameFromPath(visibleProjectPath);
+  const recentProjects = recents.filter(
+    (entry) =>
+      displayProjectPath(entry.path).toLocaleLowerCase() !== visibleProjectPath.toLocaleLowerCase()
+  );
   const shellUpdateRequired = workspace.connectionState === "update required";
   /* Only the daemon answering with real project state counts as live. Until
      then this is a setup problem, not an empty workspace. */
@@ -318,25 +331,65 @@ export default function App(): React.JSX.Element {
               }
             />
             <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-rule" />
-            <Tooltip>
-              <TooltipTrigger asChild>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <Button
+                  aria-label={`Switch project, currently ${projectName}`}
                   className="max-w-[280px]"
                   size="sm"
+                  title={visibleProjectPath}
                   type="button"
                   variant="ghost"
-                  onClick={() => setProjectOpen(true)}
                 >
                   <FolderGit2 aria-hidden="true" />
                   <span className="font-mono text-[12px] text-ink">{projectName}</span>
+                  <ChevronDown aria-hidden="true" />
                 </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                <span className="font-mono">{visibleProjectPath}</span>
-                <br />
-                Click to open a different project.
-              </TooltipContent>
-            </Tooltip>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-[360px]">
+                <DropdownMenuLabel>Projects</DropdownMenuLabel>
+                {selectedPath === "" ? null : (
+                  <div
+                    aria-label="Current project"
+                    className="flex items-start gap-2 px-2.5 py-2 text-[13px]"
+                  >
+                    <Check aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-navy" />
+                    <span className="min-w-0">
+                      <span className="block font-medium text-ink">{projectName}</span>
+                      <span className="block break-all font-mono text-[11px] text-muted-foreground">
+                        {visibleProjectPath}
+                      </span>
+                    </span>
+                  </div>
+                )}
+                {recentProjects.length === 0 ? null : (
+                  <>
+                    <DropdownMenuSeparator />
+                    {recentProjects.map((entry) => (
+                      <DropdownMenuItem
+                        key={entry.path}
+                        onSelect={() => void workspace.switchProject(entry.path)}
+                      >
+                        <FolderGit2 aria-hidden="true" />
+                        <span className="min-w-0">
+                          <span className="block font-medium text-ink">
+                            {projectNameFromPath(entry.path)}
+                          </span>
+                          <span className="block break-all font-mono text-[11px] text-muted-foreground">
+                            {displayProjectPath(entry.path)}
+                          </span>
+                        </span>
+                      </DropdownMenuItem>
+                    ))}
+                  </>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => setProjectOpen(true)}>
+                  <FolderGit2 aria-hidden="true" />
+                  Open another project…
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             {/* The palette exists; nothing on screen said so. A keycap in the
                 chrome is the cheapest way to teach a shortcut. */}
             <Tooltip>
@@ -455,6 +508,7 @@ export default function App(): React.JSX.Element {
             connectionDetail={workspace.connectionDetail}
             connectionState={workspace.connectionState}
             inspection={workspace.inspection}
+            projectRoot={workspace.connection?.project_root ?? workspace.projectPath}
             projection={workspace.projection}
             stage={value === "agents" ? "graph" : "thread"}
             onAction={workspace.performAction}

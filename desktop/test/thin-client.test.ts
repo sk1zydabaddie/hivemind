@@ -27,6 +27,32 @@ describe("React workspace boundary", () => {
     expect(project).toMatch(/picker\.set_directory\(initial\)/u);
   });
 
+  test("the composer attaches only project-relative files through the native shell", async () => {
+    const work = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"),
+      "utf8"
+    );
+    const shell = await readFile(
+      path.join(desktopRoot, "src-tauri", "src", "main.rs"),
+      "utf8"
+    );
+    const project = await readFile(
+      path.join(desktopRoot, "src-tauri", "src", "project.rs"),
+      "utf8"
+    );
+
+    expect(work).toMatch(/invoke<PromptAttachment\[\]?>\("choose_project_files"/u);
+    expect(work).toMatch(/invoke<PromptAttachment\[\]?>\("choose_project_attachment_folder"/u);
+    expect(work).toMatch(/Project references:/u);
+    expect(work).toMatch(/aria-label="Attached project items"/u);
+    expect(shell).toMatch(/choose_project_files/u);
+    expect(shell).toMatch(/choose_project_attachment_folder/u);
+    expect(project).toMatch(/strip_prefix\(project_root\)/u);
+    expect(project).toMatch(/\.git/u);
+    expect(project).toMatch(/\.hivemind/u);
+    expect(project).not.toMatch(/read_to_string\(selected|fs::read\(selected/u);
+  });
+
   test("uses project-bound streams and the audited Tauri action bridge", async () => {
     const hook = await readFile(
       path.join(desktopRoot, "src", "hooks", "use-workspace.ts"),
@@ -348,6 +374,11 @@ describe("React workspace boundary", () => {
     expect(work).toMatch(/\{composerCentered \? null : promptDock\}/u);
     expect(work).toMatch(/size="icon-round"/u);
     expect(work).toMatch(/<ArrowUp aria-hidden="true"/u);
+    expect(work).toMatch(/rounded-2xl/u);
+    expect(work).toMatch(/resize-none/u);
+    expect(work).toMatch(/text-\[15px\]/u);
+    expect(work).toMatch(/flex items-center justify-between/u);
+    expect(work).toMatch(/subject === null && tasks\.length === 0 && !runActive[\s\S]{0,140}absolute inset-0 flex items-center justify-center/u);
     expect(work).not.toMatch(/Try one of these|EXAMPLE_ASKS/u);
     // The interruption row is always rendered, even when empty, so the grid keeps
     // its shape and nothing below it can shift.
@@ -933,6 +964,21 @@ describe("React workspace boundary", () => {
     );
     expect(hook).toMatch(/onSwitchStart[\s\S]{0,320}createBoardProjection\(\)/u);
     expect(app).toMatch(/recent_projects/u);
+    expect(app).toMatch(/aria-label=\{`Switch project, currently \$\{projectName\}`\}/u);
+    expect(app).toMatch(/<DropdownMenuLabel>Projects<\/DropdownMenuLabel>/u);
+    expect(app).toMatch(/recentProjects\.map[\s\S]{0,500}workspace\.switchProject\(entry\.path\)/u);
+    expect(app).toMatch(/Open another project…/u);
+  });
+
+  test("navigation keeps only the centered underline selected state", async () => {
+    const tabs = await readFile(
+      path.join(desktopRoot, "src", "components", "ui", "tabs.tsx"),
+      "utf8"
+    );
+    expect(tabs).toMatch(/after:left-2\.5/u);
+    expect(tabs).toMatch(/after:right-2\.5/u);
+    expect(tabs).toMatch(/after:origin-center/u);
+    expect(tabs).not.toMatch(/clip-path|before:scale-100/u);
   });
 
   test("an untracked folder is offered git rather than refused", async () => {

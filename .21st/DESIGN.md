@@ -24,8 +24,8 @@ The canvas is solid midnight-blue ground. Four opaque surface steps, restrained
 may use one of the three closed elevation levels. Explicit command buttons may
 use the one-hue Hivemind-navy face and its pressed inverse. Navigation,
 suggestions, and selection rows remain flat and communicate state through a
-hex-node underline, fill, rules, hover, and focus instead of pretending to be
-buttons. One non-repeating interlocking field derived from the brand mark may
+plain centered underline, fill, rules, hover, and focus instead of pretending
+to be buttons. One non-repeating interlocking field derived from the brand mark may
 occupy unused Setup and idle Work space; it never becomes wallpaper.
 
 ## Constraints
@@ -68,8 +68,9 @@ were conformed to the existing Hivemind primitives so the application retains
 one component family.
 
 The Hivemind identity pass selected on 2026-08-20 keeps that material system
-and adds only four brand signatures: a slightly bluer opaque ladder, one
-same-hue face owned by the default committed-action Button, a small hex node on
-the flat active-tab line, and one self-hosted logo-derived field on Setup and
-the idle Work canvas. The field's strongest SVG opacity is 7%, it disappears
+and concentrates identity in three signatures: a slightly bluer opaque ladder,
+one same-hue face owned by the default committed-action Button, and one
+self-hosted logo-derived field on Setup and the idle Work canvas. Active tabs
+use a plain centered underline; the earlier hex node was removed after
+installed-scale review. The field's strongest SVG opacity is 7%, it disappears
 below 1080px, and it has no tiling, animation, filter, or inline data URL.

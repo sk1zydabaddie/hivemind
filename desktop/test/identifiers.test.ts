@@ -81,6 +81,7 @@ function renderWork(scenario: Scenario, stage: "thread" | "graph"): string {
       connectionDetail: "",
       connectionState: "connected",
       inspection: scenario.inspection ?? null,
+      projectRoot: "D:\\Projects\\example",
       projection: projectionFor(scenario),
       stage,
       onAction: async () => undefined as never,

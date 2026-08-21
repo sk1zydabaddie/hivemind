@@ -30,6 +30,14 @@ pub struct ProjectConnection {
     status: String,
 }
 
+const MAX_PROMPT_ATTACHMENTS: usize = 20;
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct PromptAttachment {
+    kind: &'static str,
+    path: String,
+}
+
 #[tauri::command]
 pub async fn choose_project_folder(
     app: tauri::AppHandle,
@@ -56,6 +64,113 @@ pub async fn choose_project_folder(
     })
     .await
     .map_err(|error| format!("the folder picker stopped unexpectedly: {error}"))?
+}
+
+#[tauri::command]
+pub async fn choose_project_files(
+    app: tauri::AppHandle,
+    project_root: String,
+) -> Result<Vec<PromptAttachment>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = canonical_attachment_root(&project_root)?;
+        let selected = app
+            .dialog()
+            .file()
+            .set_title("Add project files")
+            .set_directory(&root)
+            .blocking_pick_files()
+            .unwrap_or_default();
+        if selected.len() > MAX_PROMPT_ATTACHMENTS {
+            return Err(format!(
+                "Add no more than {MAX_PROMPT_ATTACHMENTS} files at a time."
+            ));
+        }
+        selected
+            .into_iter()
+            .map(|selected| {
+                let path = selected
+                    .into_path()
+                    .map_err(|error| format!("the selected file is not a local path: {error}"))?;
+                prompt_attachment(&root, &path, "file")
+            })
+            .collect()
+    })
+    .await
+    .map_err(|error| format!("the file picker stopped unexpectedly: {error}"))?
+}
+
+#[tauri::command]
+pub async fn choose_project_attachment_folder(
+    app: tauri::AppHandle,
+    project_root: String,
+) -> Result<Vec<PromptAttachment>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = canonical_attachment_root(&project_root)?;
+        let selected = app
+            .dialog()
+            .file()
+            .set_title("Add a project folder")
+            .set_directory(&root)
+            .blocking_pick_folder();
+        selected
+            .map(|selected| {
+                let path = selected.into_path().map_err(|error| {
+                    format!("the selected folder is not a local path: {error}")
+                })?;
+                prompt_attachment(&root, &path, "folder").map(|attachment| vec![attachment])
+            })
+            .transpose()
+            .map(|selected| selected.unwrap_or_default())
+    })
+    .await
+    .map_err(|error| format!("the folder picker stopped unexpectedly: {error}"))?
+}
+
+fn canonical_attachment_root(project_root: &str) -> Result<PathBuf, String> {
+    let root = fs::canonicalize(project_root.trim())
+        .map_err(|error| format!("could not open this project's folder: {error}"))?;
+    if !root.is_dir() {
+        return Err("the open project is not a folder".to_string());
+    }
+    Ok(root)
+}
+
+fn prompt_attachment(
+    project_root: &Path,
+    selected: &Path,
+    kind: &'static str,
+) -> Result<PromptAttachment, String> {
+    let selected = fs::canonicalize(selected)
+        .map_err(|error| format!("could not inspect the selected {kind}: {error}"))?;
+    let expected_kind = match kind {
+        "file" => selected.is_file(),
+        "folder" => selected.is_dir(),
+        _ => false,
+    };
+    if !expected_kind {
+        return Err(format!("the selected item is not a {kind}"));
+    }
+    let relative = selected.strip_prefix(project_root).map_err(|_| {
+        "Choose files or folders inside this project so Hivemind can safely use them."
+            .to_string()
+    })?;
+    if relative.as_os_str().is_empty() {
+        return Err("Choose a folder inside this project, not the project itself.".to_string());
+    }
+    let parts = relative
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    if parts
+        .iter()
+        .any(|part| part.eq_ignore_ascii_case(".git") || part.eq_ignore_ascii_case(".hivemind"))
+    {
+        return Err("Hivemind's private project files cannot be attached.".to_string());
+    }
+    Ok(PromptAttachment {
+        kind,
+        path: parts.join("/"),
+    })
 }
 
 /// Why opening a project failed, as a CODE the shell can branch on.
@@ -924,6 +1039,37 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn prompt_attachments_are_project_relative_and_fail_closed() {
+        let project = fixture_project("prompt-attachments");
+        let source = project.join("src");
+        fs::create_dir_all(&source).unwrap();
+        let file = source.join("app.ts");
+        fs::write(&file, "export {};\n").unwrap();
+
+        assert_eq!(
+            prompt_attachment(&project, &file, "file").unwrap(),
+            PromptAttachment {
+                kind: "file",
+                path: "src/app.ts".to_string(),
+            }
+        );
+        assert_eq!(
+            prompt_attachment(&project, &source, "folder").unwrap(),
+            PromptAttachment {
+                kind: "folder",
+                path: "src".to_string(),
+            }
+        );
+        assert!(prompt_attachment(&project, &project, "folder").is_err());
+        assert!(prompt_attachment(&project, &project.join(".hivemind"), "folder").is_err());
+
+        let outside = fixture_project("prompt-attachment-outside");
+        assert!(prompt_attachment(&project, &outside, "folder").is_err());
+        cleanup_fixture(&outside);
+        cleanup_fixture(&project);
+    }
 
     #[test]
     fn attaches_only_when_state_and_health_match_the_selected_project() {

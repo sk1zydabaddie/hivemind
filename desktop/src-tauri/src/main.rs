@@ -6,9 +6,10 @@ mod newer_version;
 
 use newer_version::{newer_version, take_newer_version};
 use project::{
-    choose_project_folder, dismiss_hint, dismissed_hints, initialize_git, initialize_project,
-    inspect_daemon_work, inspect_git_readiness, recent_projects, remember_project, restart_daemon,
-    select_project, workspace_action,
+    choose_project_attachment_folder, choose_project_files, choose_project_folder, dismiss_hint,
+    dismissed_hints, initialize_git, initialize_project, inspect_daemon_work,
+    inspect_git_readiness, recent_projects, remember_project, restart_daemon, select_project,
+    workspace_action,
 };
 
 fn main() {
@@ -41,6 +42,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             newer_version,
             take_newer_version,
+            choose_project_attachment_folder,
+            choose_project_files,
             choose_project_folder,
             dismiss_hint,
             dismissed_hints,

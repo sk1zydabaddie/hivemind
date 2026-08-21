@@ -4227,3 +4227,34 @@ production surface/viewport checks passed. No planner or provider model call
 was made to create the screenshot. Final verification passed Core 821/823 with
 two intentional skips, Desktop 302/302, and Rust 33/33.
 
+### Work chrome favors balance over decorative signatures — 2026-08-20
+
+The active navigation treatment is a plain, centered underline. This
+supersedes the earlier hex-node treatment: the node added visual weight without
+carrying state that the line did not already communicate. Navigation remains
+flat and makes no claim to button relief.
+
+The idle composer uses the 18px radius step. Its prompt is a full-width 15px
+field with matching horizontal insets, while the plus and circular send actions
+share a bottom row so neither distorts the text's visual center. The docked
+composer keeps the compact single-row geometry required by smaller production
+viewports. `Nothing running` is centered against the whole header rather than
+the space left over by Checks and Interruptions.
+
+The project-name control is a flat disclosure into an overlay menu, not a
+raised primary action. Current-project identity, recent-project switching, and
+the native folder picker live together there. Attachments use the same quiet
+disclosure language; their visual chips show relative paths and never imply
+that Hivemind copied or uploaded file contents.
+
+Installed build **26.820.1621** was inspected at a 1440x900 client size.
+Evidence is in
+`docs/evidence/project-switcher-composer-installed-26.820.1621/`. The 21st
+review over App, Tabs, and Work reported zero errors; its nine warnings are
+pre-existing fixed-width, long-duration, and autofocus findings covered by the
+passing production reachability matrix.
+
+Final verification passed Core 821/823 with two intentional Windows skips,
+Desktop 304/304, Rust 34/34, and all 24 installed-production reachability
+checks. No paid model or provider call was run.
+
