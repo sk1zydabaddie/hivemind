@@ -122,7 +122,7 @@ it does not decide what is safe to ignore.
 
 Installed build **26.820.2342** contains the greenfield path. The disposable
 Rust action test proves the one click creates one commit with no tracked files;
-the installed binary version was verified on disk after all 24 reachability
+the installed binary version was verified on disk after all 27 reachability
 surfaces passed at 1280×720, 1366×768, and 1440×900.
 
 Installed build 26.817.1726 was opened at a 1440x900 client size against the
