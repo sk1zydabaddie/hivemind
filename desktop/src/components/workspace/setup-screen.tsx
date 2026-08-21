@@ -92,6 +92,7 @@ export function SetupScreen({
   const checkingGit = problem?.action === "git" && gitReadiness === null && actionError === "";
   const gitRefusal = problem?.action === "git" ? gitReadiness?.refusal ?? null : null;
   const generatedIgnores = gitReadiness?.would_ignore ?? [];
+  const startsEmpty = gitReadiness?.starts_empty ?? false;
   const gitBlocksSetup = problem?.action === "git";
 
   return (
@@ -139,9 +140,11 @@ export function SetupScreen({
                         ? "Hivemind is checking what the first commit would contain."
                         : actionError !== ""
                           ? "Hivemind could not confirm that a first commit would be safe."
-                          : gitRefusal ?? (generatedIgnores.length > 0
-                              ? `Hivemind will add ${generatedIgnores.join(", ")} to .gitignore, verify they are excluded, then create the repository and first commit.`
-                              : problem.detail)
+                          : gitRefusal ?? (startsEmpty
+                              ? "Hivemind will create a Git repository and an empty first commit, ready for a new project."
+                              : generatedIgnores.length > 0
+                                ? `Hivemind will add ${generatedIgnores.join(", ")} to .gitignore, verify they are excluded, then create the repository and first commit.`
+                                : problem.detail)
                       : problem.detail}
                   </p>
                   {actionError === "" ? null : (
@@ -166,11 +169,7 @@ export function SetupScreen({
                       onClick={onInitializeGit}
                       type="button"
                     >
-                      {initializing
-                        ? "Setting up git…"
-                        : generatedIgnores.length > 0
-                          ? "Set up git for me"
-                          : "Start tracking this folder"}
+                      {initializing ? "Setting up git…" : "Set up git for me"}
                     </Button>
                   ) : null}
                   {checkingGit ? (

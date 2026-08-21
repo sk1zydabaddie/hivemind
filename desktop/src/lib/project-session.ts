@@ -10,6 +10,7 @@ export interface ProjectConnection {
 /** The shell's read-only answer about whether it is safe to create a first commit. */
 export interface GitReadiness {
   is_repo: boolean;
+  starts_empty: boolean;
   would_commit: string[];
   would_ignore: string[];
   refusal: string | null;

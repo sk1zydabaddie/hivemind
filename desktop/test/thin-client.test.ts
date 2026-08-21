@@ -1008,7 +1008,7 @@ describe("React workspace boundary", () => {
     /* Explaining a requirement is not offering the step. This used to say
        "choose a folder that is a git repository" and stop. */
     expect(setup).toMatch(/action: "git"/u);
-    expect(setup.replace(/\s+/gu, " ")).toMatch(/Start tracking this folder/u);
+    expect(setup.replace(/\s+/gu, " ")).toMatch(/Set up git for me/u);
 
     /* And it refuses rather than guesses when the folder holds a secret: a
        first commit cannot be un-made without rewriting history. */

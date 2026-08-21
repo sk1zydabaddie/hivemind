@@ -1974,6 +1974,8 @@ fn chrono_now() -> String {
 #[derive(serde::Serialize)]
 pub struct GitReadiness {
     pub is_repo: bool,
+    /// The folder has no files yet, so the first commit must be empty.
+    pub starts_empty: bool,
     /// Files that would be committed, so the offer can name them.
     pub would_commit: Vec<String>,
     /// Generated top-level directories Hivemind can safely add to .gitignore.
@@ -2048,6 +2050,13 @@ const SOURCE_EXTENSIONS: [&str; 42] = [
 /// handled separately as a mechanical preparation, not flattened into this
 /// human-judgment path.
 fn shape_refusal(root: &Path, entries: &[String]) -> Option<String> {
+    // A truly empty directory is a valid greenfield project. There is nothing
+    // ambiguous to inspect or accidentally commit, and Git supports an
+    // explicit empty base commit for exactly this case.
+    if entries.is_empty() {
+        return None;
+    }
+
     let mut binaries: Vec<&str> = Vec::new();
     let mut has_source = false;
 
@@ -2098,6 +2107,7 @@ pub async fn inspect_git_readiness(project_path: String) -> Result<GitReadiness,
     if root.join(".git").exists() {
         return Ok(GitReadiness {
             is_repo: true,
+            starts_empty: false,
             would_commit: Vec::new(),
             would_ignore: Vec::new(),
             refusal: None,
@@ -2152,6 +2162,7 @@ pub async fn inspect_git_readiness(project_path: String) -> Result<GitReadiness,
 
     Ok(GitReadiness {
         is_repo: false,
+        starts_empty: present.is_empty(),
         would_commit,
         would_ignore,
         refusal,
@@ -2244,6 +2255,7 @@ pub async fn initialize_git(project_path: String) -> Result<GitReadiness, String
         "-c",
         "user.email=setup@hivemind.local",
         "commit",
+        "--allow-empty",
         "-m",
         "Start tracking this project\n\nCreated by Hivemind when the folder was opened, so changes can be\nkept separate until you choose to ship them. Project files that are\nnot generated or ignored are in this commit.",
     ])?;
@@ -2356,7 +2368,7 @@ mod git_readiness_tests {
     }
 
     #[test]
-    fn a_folder_with_no_source_is_refused() {
+    fn a_non_empty_folder_with_no_recognisable_source_is_refused() {
         let dir = temp_dir("no-source");
         std::fs::write(dir.join("holiday.jpg"), "not source").expect("file");
 
@@ -2365,8 +2377,50 @@ mod git_readiness_tests {
         ))
         .expect("readiness");
 
-        let refusal = readiness.refusal.expect("a folder with no source is refused");
+        let refusal = readiness
+            .refusal
+            .expect("an ambiguous non-empty folder is refused");
         assert!(refusal.contains("no source files"), "{refusal}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_empty_folder_is_offered_and_one_action_creates_an_empty_first_commit() {
+        let dir = temp_dir("empty-project");
+
+        let readiness = tauri::async_runtime::block_on(inspect_git_readiness(
+            dir.to_string_lossy().to_string(),
+        ))
+        .expect("readiness");
+        assert!(!readiness.is_repo);
+        assert!(readiness.starts_empty);
+        assert_eq!(readiness.refusal, None);
+        assert!(readiness.would_commit.is_empty());
+
+        let result = tauri::async_runtime::block_on(initialize_git(
+            dir.to_string_lossy().to_string(),
+        ))
+        .expect("one-click empty-project setup");
+        assert!(result.is_repo);
+
+        let commit_count = std::process::Command::new("git")
+            .args(["rev-list", "--count", "HEAD"])
+            .current_dir(&dir)
+            .output()
+            .expect("git rev-list");
+        assert!(commit_count.status.success());
+        assert_eq!(String::from_utf8_lossy(&commit_count.stdout).trim(), "1");
+
+        let tracked = std::process::Command::new("git")
+            .args(["ls-files"])
+            .current_dir(&dir)
+            .output()
+            .expect("git ls-files");
+        assert!(tracked.status.success());
+        assert!(
+            String::from_utf8_lossy(&tracked.stdout).trim().is_empty(),
+            "the greenfield base commit must not invent a project file"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

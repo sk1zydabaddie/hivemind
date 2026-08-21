@@ -114,8 +114,16 @@ commit boundary. A structured `would_ignore` list now separates known generated
 directories from actual refusals. For the former, “Set up git for me” writes
 exact `.gitignore` entries, verifies them with git, and only then stages and
 commits the remaining project files. Secrets, loose binaries, and folders with
-no recognisable source remain refusals. React displays that shell-owned answer;
+non-empty folders with no recognisable source remain refusals. A genuinely
+empty folder is now treated as a safe greenfield project: “Set up git for me”
+creates the repository and an explicit empty first commit, then lets setup
+continue without inventing a source file. React displays that shell-owned answer;
 it does not decide what is safe to ignore.
+
+Installed build **26.820.2342** contains the greenfield path. The disposable
+Rust action test proves the one click creates one commit with no tracked files;
+the installed binary version was verified on disk after all 24 reachability
+surfaces passed at 1280×720, 1366×768, and 1440×900.
 
 Installed build 26.817.1726 was opened at a 1440x900 client size against the
 untracked Skybound project. The running installed app identified `dist` and

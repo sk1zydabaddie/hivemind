@@ -56,7 +56,8 @@ describe("cold open", () => {
     );
     expect(hook).toMatch(/invoke<GitReadiness>\("inspect_git_readiness"/u);
     expect(screen).toMatch(/gitReadiness !== null && gitRefusal === null/u);
-    expect(screen).toMatch(/gitRefusal \?\? \(generatedIgnores\.length/u);
+    expect(screen).toMatch(/gitRefusal \?\? \(startsEmpty/u);
+    expect(screen).toMatch(/create a Git repository and an empty first commit/u);
     expect(screen).toMatch(/Nothing changed\. \{actionError\}/u);
     expect(screen).toMatch(/Set up git for me/u);
     expect(screen).toMatch(/generatedIgnores\.join/u);

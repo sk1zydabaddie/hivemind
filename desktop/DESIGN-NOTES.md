@@ -3628,8 +3628,12 @@ the only problem is a closed-list dependency or build directory (`node_modules`,
 for me.” The shell appends exact top-level rules to `.gitignore`, initializes
 git, verifies every directory is ignored, stages the remaining files, and makes
 the first commit. Any failed verification stops before staging. Secrets, loose
-binaries, and folders with no recognisable source still refuse because ignoring
-those would require judgment rather than preparation.
+binaries, and non-empty folders with no recognisable source still refuse because
+ignoring those would require judgment rather than preparation. A truly empty
+folder is different: it is a valid greenfield project with nothing to inspect or
+accidentally commit. The one-click action initializes Git and creates an explicit
+empty base commit; it never invents a placeholder source file merely to satisfy
+Git.
 
 The update bar follows the same rule. A recheck sets “Checking…” before the
 round trip and, when the answer is identical, leaves “Checked again just now;
