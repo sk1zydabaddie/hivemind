@@ -1771,3 +1771,29 @@ Settings surface shows Codex, Claude Code, and OpenCode as connected and leaves
 Grok and Kimi actionable. All 24 production surface/viewport checks passed. No
 provider model, paid capability probe, provider sign-in, or paid 21st generation
 call was run.
+
+### Idle Work now shows the Hivemind system and chooses project agents
+
+The first-request canvas uses a wider single connected Hivemind drawing at the
+same 7% visual ceiling. It remains static for reduced-motion users; otherwise a
+slow bounded position-and-scale drift gives the unused canvas life without
+moving the composer. The field is removed immediately when the first form is
+submitted rather than waiting for a planner response or task event.
+
+The centered composer now uses the 22px radius step and contains a flat Agents
+menu beside attachments. The menu reads Core's configured Planner, Manager,
+and Workers and the no-cost model slugs published by the installed CLIs.
+Changing a role is not client state: it routes through
+`adapter.connect_model`, repeats the normal capability check, and only then
+lets Core replace the durable profile. The UI warns that selection may use
+provider quota and disables role changes during active work.
+
+Installed build **26.820.2311** was built, installed, verified against the
+binary on disk, and inspected at a 1440x900 client size. Evidence is in
+`docs/evidence/idle-composer-agents-installed-26.820.2311/`; the user also
+independently inspected and accepted the installed result. The reachability
+guard now opens this menu, inspects menu items, and tolerates the brief no-body
+navigation boundary it exposed. All 27 surface/viewport combinations passed.
+Final verification passed Core 824/826 with two intentional Windows skips,
+Desktop 305/305, and Rust 34/34. Model discovery was no-cost; no model,
+capability probe, or paid 21st generation call was run.

@@ -49,6 +49,12 @@ const SURFACES = [
     url: `${BASE}/replay.html?scenario=e2e-textkit-parallel-run%40midrun`
   },
   {
+    name: "work — choose project agents",
+    url: `${BASE}/replay.html?scenario=empty-project&section=work`,
+    open: "Choose planner, manager, and worker models",
+    dialog: false
+  },
+  {
     name: "work — ready to ship",
     url: `${BASE}/replay.html?scenario=e2e-textkit-parallel-run%40ship`
   },
@@ -151,7 +157,7 @@ const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
    same thing a keyboard user's focus does, so a control it cannot bring into
    the viewport is one nobody can reach by any means. */
 const PROBE = `
-  const controls = [...document.querySelectorAll('button, [role="tab"], a[href], input, textarea, select')]
+  const controls = [...document.querySelectorAll('button, [role="tab"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], a[href], input, textarea, select')]
     .filter((el) => {
       if (el.disabled) return false;
       const box = el.getBoundingClientRect();
@@ -383,7 +389,7 @@ for (const viewport of VIEWPORTS) {
     let ready = false;
     for (let attempt = 0; attempt < 60 && !ready; attempt += 1) {
       ready = await page.evaluate(
-        "return (document.body.innerText || '').trim().length > 200;"
+        "return document.body !== null && (document.body.innerText || '').trim().length > 200;"
       );
       if (!ready) await settle(300);
     }
@@ -391,7 +397,7 @@ for (const viewport of VIEWPORTS) {
       await page.send("Page.reload", { ignoreCache: true });
       for (let attempt = 0; attempt < 60 && !ready; attempt += 1) {
         ready = await page.evaluate(
-          "return (document.body.innerText || '').trim().length > 200;"
+          "return document.body !== null && (document.body.innerText || '').trim().length > 200;"
         );
         if (!ready) await settle(300);
       }

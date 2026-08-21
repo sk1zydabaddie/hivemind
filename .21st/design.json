@@ -129,6 +129,11 @@
       "date": "2026-08-20",
       "decision": "Work alone owns the first-request composer. Before durable work exists, Agents shows a quiet explanatory empty state with no action; once work exists, it becomes the authoritative agent graph while retaining the shared run shell.",
       "source": "User request plus installed build 26.820.1827 review"
+    },
+    {
+      "date": "2026-08-20",
+      "decision": "The idle Work field becomes a denser single connected drawing at the existing 7% ceiling and may breathe slowly only when the OS allows decorative motion. It is removed at submit time, before durable work arrives. The centered composer advances to the 22px radius step and exposes one compact Agents menu whose planner, manager, and worker choices read no-cost detected slugs and change roles only through the existing capability-checked dispatcher action.",
+      "source": "User request plus project-aware 21st build review"
     }
   ],
   "evidence": [
@@ -146,7 +151,9 @@
     {"fact": "settings.installed", "source": "docs/evidence/settings-overhaul-installed-26.820.1450/; installed binary 26.820.1450 at 1440x900; 24 reachability checks passed"},
     {"fact": "work.composer.installed", "source": "docs/evidence/work-centered-composer-installed-26.820.1508/; installed binary 26.820.1508 at 1440x900; 24 reachability checks passed"},
     {"fact": "work.project-switcher-attachments.installed", "source": "docs/evidence/project-switcher-composer-installed-26.820.1621/; installed binary 26.820.1621 at 1440x900; 24 reachability checks passed"},
-    {"fact": "agents.empty.installed", "source": "docs/evidence/agents-empty-installed-26.820.1827/; installed binary 26.820.1827 at 1440x900; 24 reachability checks passed"}
+    {"fact": "agents.empty.installed", "source": "docs/evidence/agents-empty-installed-26.820.1827/; installed binary 26.820.1827 at 1440x900; 24 reachability checks passed"},
+    {"fact": "idle.composer.21st-review", "source": "21st review over work-tab.tsx and styles.css on 2026-08-20: 0 errors; warnings were pre-existing fixed-width, long-event-animation, and autofocus findings"},
+    {"fact": "idle.composer.installed", "source": "docs/evidence/idle-composer-agents-installed-26.820.2311/; installed binary 26.820.2311 at 1440x900; user visual acceptance; 27 reachability checks passed"}
   ],
   "generatedAt": "2026-08-20T15:10:00-07:00"
 }

@@ -73,4 +73,7 @@ one same-hue face owned by the default committed-action Button, and one
 self-hosted logo-derived field on Setup and the idle Work canvas. Active tabs
 use a plain centered underline; the earlier hex node was removed after
 installed-scale review. The field's strongest SVG opacity is 7%, it disappears
-below 1080px, and it has no tiling, animation, filter, or inline data URL.
+below 1080px, and it has no tiling, filter, or inline data URL. On idle Work it
+may drift slowly inside a `prefers-reduced-motion: no-preference` boundary and
+is removed immediately when the first request is submitted; Setup remains
+static.

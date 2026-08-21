@@ -58,6 +58,7 @@ const settings = await fetch("/tools/settings-live.json")
   .then(async (response) => (response.ok ? ((await response.json()) as {
     config: Record<string, unknown>;
     connect: Record<string, unknown>;
+    model_discovery: Record<string, unknown>;
   }) : null))
   .catch(() => null);
 
@@ -343,6 +344,10 @@ class ReplayEventSource {
             detail: "The replay does not contain provider login standing."
           }))
         };
+      }
+      if (action.type === "models.discover") {
+        if (settings === null) throw new Error("no captured model discovery");
+        return settings.model_discovery;
       }
       if (action.type === "adapter.connect") {
         if (settings === null) throw new Error("no captured settings state");

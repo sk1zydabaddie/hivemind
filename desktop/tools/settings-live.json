@@ -1,5 +1,69 @@
 {
-  "captured_from": "a real project: project.init then adapter.connect against codex-cli 0.147.0 on 2026-08-11; deterministic provider sign-in metadata refreshed from Core on 2026-08-20",
+  "captured_from": "a real project: project.init then adapter.connect against codex-cli 0.147.0 on 2026-08-11; deterministic provider sign-in metadata and no-cost installed-CLI model discovery refreshed from Core on 2026-08-20",
+  "model_discovery": {
+    "providers": [
+      {
+        "provider_id": "codex-cli",
+        "status": "detected",
+        "models": [
+          { "slug": "gpt-5.6-sol", "label": "GPT-5.6-Sol" },
+          { "slug": "gpt-5.6-terra", "label": "GPT-5.6-Terra" },
+          { "slug": "gpt-5.6-luna", "label": "GPT-5.6-Luna" },
+          { "slug": "gpt-5.5", "label": "GPT-5.5" },
+          { "slug": "gpt-5.4", "label": "GPT-5.4" },
+          { "slug": "gpt-5.4-mini", "label": "GPT-5.4-Mini" },
+          { "slug": "gpt-5.3-codex-spark", "label": "GPT-5.3-Codex-Spark" }
+        ],
+        "source": "Codex model/list for the selected ChatGPT account",
+        "detail": "7 models detected without running a model."
+      },
+      {
+        "provider_id": "claude",
+        "status": "detected",
+        "models": [
+          { "slug": "fable", "label": "Fable" },
+          { "slug": "opus", "label": "Opus" },
+          { "slug": "sonnet", "label": "Sonnet" }
+        ],
+        "source": "Aliases advertised by the installed Claude Code CLI",
+        "detail": "3 models detected without running a model."
+      },
+      {
+        "provider_id": "opencode",
+        "status": "detected",
+        "models": [
+          { "slug": "opencode/big-pickle", "label": "opencode/big-pickle" },
+          { "slug": "opencode/hy3-free", "label": "opencode/hy3-free" },
+          { "slug": "opencode/mimo-v2.5-free", "label": "opencode/mimo-v2.5-free" },
+          { "slug": "opencode/muse-spark-1.2-contributor-free", "label": "opencode/muse-spark-1.2-contributor-free" },
+          { "slug": "opencode/nemotron-3-ultra-free", "label": "opencode/nemotron-3-ultra-free" },
+          { "slug": "opencode/nemotron-3.5-lightning-free", "label": "opencode/nemotron-3.5-lightning-free" },
+          { "slug": "opencode/x-preview-f-free", "label": "opencode/x-preview-f-free" },
+          { "slug": "audn/necromicon", "label": "audn/necromicon" },
+          { "slug": "vast-dspark/DeepSeek-V4-Flash-Abliterated-DSpark", "label": "vast-dspark/DeepSeek-V4-Flash-Abliterated-DSpark" }
+        ],
+        "source": "OpenCode models for its configured providers",
+        "detail": "9 models detected without running a model."
+      },
+      {
+        "provider_id": "grok",
+        "status": "detected",
+        "models": [
+          { "slug": "grok-4.6", "label": "grok-4.6" },
+          { "slug": "grok-4.5", "label": "grok-4.5" }
+        ],
+        "source": "Grok models for the selected X.AI account",
+        "detail": "2 models detected without running a model."
+      },
+      {
+        "provider_id": "kimi",
+        "status": "empty",
+        "models": [],
+        "source": "Models configured in the installed Kimi Code CLI",
+        "detail": "Kimi Code has no configured model aliases yet. Add a provider in Kimi, then refresh this list."
+      }
+    ]
+  },
   "config": {
     "initialized": true,
     "config_problem": null,

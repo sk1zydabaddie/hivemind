@@ -298,11 +298,14 @@ describe("React workspace boundary", () => {
     const audit = await readFile(path.resolve(desktopRoot, "..", "docs", "m8-action-routing-audit.md"), "utf8");
     const actions = [...work.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
     expect(new Set(actions)).toEqual(new Set([
+      "adapter.connect_model",
       "autonomy.set",
       "change.inspect",
+      "config.inspect",
       "guidance.record",
       "manager.continue",
       "manager.start",
+      "models.discover",
       "plan.amend",
       "plan.prepare",
       "plan.ratify",
@@ -377,10 +380,17 @@ describe("React workspace boundary", () => {
     expect(work).toMatch(/\{composerCentered \? null : promptDock\}/u);
     expect(work).toMatch(/size="icon-round"/u);
     expect(work).toMatch(/<ArrowUp aria-hidden="true"/u);
-    expect(work).toMatch(/rounded-2xl/u);
+    expect(work).toMatch(/rounded-3xl/u);
     expect(work).toMatch(/resize-none/u);
     expect(work).toMatch(/text-\[15px\]/u);
     expect(work).toMatch(/flex items-center justify-between/u);
+    expect(work).toMatch(/aria-label="Choose planner, manager, and worker models"/u);
+    expect(work).toMatch(/type: "config\.inspect"/u);
+    expect(work).toMatch(/type: "models\.discover"/u);
+    expect(work).toMatch(/type: "adapter\.connect_model"/u);
+    expect(work).toMatch(/may use provider quota/u);
+    expect(work).toMatch(/hivemind-identity-field hivemind-identity-field--idle/u);
+    expect(work).toMatch(/\) : idle \? \(\s*<div className="min-h-0" \/>/u);
     expect(work).toMatch(/subject === null && tasks\.length === 0 && !runActive[\s\S]{0,140}absolute inset-0 flex items-center justify-center/u);
     expect(work).not.toMatch(/Try one of these|EXAMPLE_ASKS/u);
     // The interruption row is always rendered, even when empty, so the grid keeps

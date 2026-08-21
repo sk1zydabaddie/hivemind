@@ -297,6 +297,12 @@ describe("palette discipline", () => {
     expect(opacities.length).toBeGreaterThan(0);
     expect(Math.max(...opacities), "the identity field exceeds its quiet-weight ceiling")
       .toBeLessThanOrEqual(0.07);
+    expect(styles).toMatch(
+      /@media \(prefers-reduced-motion: no-preference\)[\s\S]*\.hivemind-identity-field--idle[\s\S]*animation: hivemind-field-breathe/u
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 1080px\)[\s\S]*\.hivemind-identity-field--idle[\s\S]*animation: none/u
+    );
 
     const consumers: string[] = [];
     for (const file of await sourceFiles()) {

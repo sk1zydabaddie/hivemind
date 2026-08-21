@@ -4304,3 +4304,42 @@ replacements and `Signed in` standing. Evidence is in
 surface/viewport checks passed. No provider model, paid capability probe,
 provider sign-in, or paid 21st generation call was run.
 
+### The first-request canvas carries a living Hivemind field — 2026-08-20
+
+The idle Work field is still one self-hosted, non-repeating SVG rather than a
+grid or wallpaper. It now draws a wider connected system on both sides of the
+composer. More cells and branches make the identity visible at native scale;
+the strongest stroke remains at the existing 7% ceiling, so added density does
+not compete with the amber attention edge.
+
+Decorative motion is a slow six-to-twelve-pixel change in field position and
+scale. It exists only under `prefers-reduced-motion: no-preference`. Reduced
+motion retains the complete static field, and Hivemind never changes the OS
+setting to make decoration move. The idle-only class is removed synchronously
+when the first form is submitted, before the planner returns or durable tasks
+arrive, so neither the field nor its animation remains behind live work.
+
+The centered composer advances from the 18px to the 22px radius step. Its new
+flat `Agents` disclosure opens inside the composer and shows Planner, Manager,
+and Workers separately. Opening it performs only the existing no-cost
+`config.inspect` and `models.discover` reads. Selecting a different slug uses
+the existing audited `adapter.connect_model` action, which repeats the provider
+capability check before Core changes the durable role profile. The menu says
+that this may consume provider quota; no React-owned model setting or unchecked
+shortcut was added. Role changes are disabled while a run is active.
+
+The 21st build workflow used the checked-in project design context after both
+required catalogue searches reported that the CLI was signed out. Its final
+review reported zero errors. No catalogue component was installed, so Button,
+DropdownMenu, tokens, and role actions remain one Hivemind component family.
+
+Installed build **26.820.2311** was built, installed, verified against the
+binary on disk, and inspected at a 1440x900 client size. Evidence is in
+`docs/evidence/idle-composer-agents-installed-26.820.2311/`. The user also
+independently inspected and accepted the installed visual result. Production
+reachability now opens the role menu and treats menu items as controls; all 27
+surface/viewport combinations passed. Final verification passed Core 824/826
+with two intentional Windows skips, Desktop 305/305, and Rust 34/34. Model
+discovery was no-cost; no model, capability probe, or paid 21st generation call
+was run.
+

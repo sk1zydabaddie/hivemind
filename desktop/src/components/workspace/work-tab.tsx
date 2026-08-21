@@ -44,6 +44,9 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import {
@@ -92,9 +95,13 @@ import {
 } from "@/lib/work-thread";
 import { attentionHeadline, summarizeWorkerOutput } from "@/lib/work-presentation";
 import { containsInternalVocabulary } from "@/lib/vocabulary";
+import { list } from "@/lib/durable";
 import type {
+  AdapterConnectResult,
   AutonomyLevel,
+  ModelDiscoveryView,
   PreparedPlan,
+  ProjectConfigView,
   QueuedWorkResult,
   SpecReview,
   StartedSession,
@@ -231,6 +238,12 @@ export function WorkTab({
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [attachmentError, setAttachmentError] = useState("");
   const [composerHasMoved, setComposerHasMoved] = useState(false);
+  const [rolePickerOpen, setRolePickerOpen] = useState(false);
+  const [rolePickerView, setRolePickerView] = useState<ProjectConfigView | null>(null);
+  const [rolePickerModels, setRolePickerModels] = useState<ModelDiscoveryView | null>(null);
+  const [rolePickerBusy, setRolePickerBusy] = useState(false);
+  const [roleChanging, setRoleChanging] = useState<string | null>(null);
+  const [rolePickerError, setRolePickerError] = useState("");
   const [feedback, setFeedback] = useState("");
   const [busy, setBusy] = useState(false);
   const [amendment, setAmendment] = useState<{
@@ -272,7 +285,61 @@ export function WorkTab({
   useEffect(() => {
     setAttachments([]);
     setAttachmentError("");
+    setRolePickerOpen(false);
+    setRolePickerView(null);
+    setRolePickerModels(null);
+    setRolePickerError("");
   }, [projectRoot]);
+
+  /* The composer reads the same shell-owned role configuration as Settings.
+     Opening the menu is the no-cost boundary: it inspects project profiles and
+     asks installed CLIs for their published model slugs. Choosing a different
+     slug is deliberately separate and runs the normal capability check before
+     Core replaces a role profile. */
+  const loadRolePicker = async (): Promise<void> => {
+    setRolePickerBusy(true);
+    setRolePickerError("");
+    try {
+      const [view, models] = await Promise.all([
+        onAction<ProjectConfigView>({ type: "config.inspect", payload: {} }),
+        onAction<ModelDiscoveryView>({ type: "models.discover", payload: {} })
+      ]);
+      setRolePickerView(view);
+      setRolePickerModels(models);
+    } catch (error) {
+      setRolePickerError(plainActionError(error));
+    } finally {
+      setRolePickerBusy(false);
+    }
+  };
+
+  const chooseRoleModel = async (
+    role: string,
+    providerId: string,
+    modelSlug: string
+  ): Promise<void> => {
+    setRoleChanging(role);
+    setRolePickerError("");
+    setFeedback(`Checking ${modelSlug} before using it for ${role}…`);
+    try {
+      const result = await onAction<AdapterConnectResult>({
+        type: "adapter.connect_model",
+        payload: { role, provider_id: providerId, model_slug: modelSlug }
+      });
+      const nextView = result.config ?? await onAction<ProjectConfigView>({
+        type: "config.inspect",
+        payload: {}
+      });
+      setRolePickerView(nextView);
+      setFeedback(`${composerRoleLabel(role)} now ${role === "worker" ? "include" : "uses"} ${modelSlug}.`);
+    } catch (error) {
+      const message = plainActionError(error);
+      setRolePickerError(message);
+      setFeedback(message);
+    } finally {
+      setRoleChanging(null);
+    }
+  };
 
   const addAttachments = async (kind: PromptAttachment["kind"]): Promise<void> => {
     setAttachmentBusy(true);
@@ -712,6 +779,12 @@ export function WorkTab({
       feedback={feedback || plainActionError(actionError)}
       idle={idle}
       managerStartAvailable={managerStartAvailable}
+      roleChanging={roleChanging}
+      rolePickerBusy={rolePickerBusy}
+      rolePickerError={rolePickerError}
+      rolePickerModels={rolePickerModels}
+      rolePickerOpen={rolePickerOpen}
+      rolePickerView={rolePickerView}
       runActive={runActive}
       spend={inspection?.spend ?? null}
       value={composer}
@@ -721,6 +794,11 @@ export function WorkTab({
         setAttachments((current) => current.filter((entry) => entry !== attachment))
       }
       onContinue={continueRun}
+      onChooseRoleModel={chooseRoleModel}
+      onRolePickerOpenChange={(open) => {
+        setRolePickerOpen(open);
+        if (open) void loadRolePicker();
+      }}
       onStartManager={async () => {
         setBusy(true);
         setFeedback("");
@@ -858,7 +936,7 @@ export function WorkTab({
             ) : composerCentered ? (
               promptDock
             ) : idle ? (
-              <div className="hivemind-identity-field min-h-0" />
+              <div className="min-h-0" />
             ) : /* The map is already a picture of the same fact at full size,
                    so the lane canvas is not drawn over it — that would be two
                    drawings of one thing competing for the same column. */
@@ -2484,10 +2562,18 @@ function PromptDock({
   managerStartAvailable,
   busy,
   feedback,
+  rolePickerOpen,
+  rolePickerView,
+  rolePickerModels,
+  rolePickerBusy,
+  rolePickerError,
+  roleChanging,
   spend,
   onAddAttachments,
   onChange,
+  onChooseRoleModel,
   onRemoveAttachment,
+  onRolePickerOpenChange,
   onSubmit,
   onContinue,
   onStartManager
@@ -2504,10 +2590,18 @@ function PromptDock({
   managerStartAvailable: boolean;
   busy: boolean;
   feedback: string;
+  rolePickerOpen: boolean;
+  rolePickerView: ProjectConfigView | null;
+  rolePickerModels: ModelDiscoveryView | null;
+  rolePickerBusy: boolean;
+  rolePickerError: string;
+  roleChanging: string | null;
   spend: WorkspaceInspection["spend"] | null;
   onAddAttachments: (kind: PromptAttachment["kind"]) => Promise<void>;
   onChange: (value: string) => void;
+  onChooseRoleModel: (role: string, providerId: string, modelSlug: string) => Promise<void>;
   onRemoveAttachment: (attachment: PromptAttachment) => void;
+  onRolePickerOpenChange: (open: boolean) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   onContinue: () => Promise<void>;
   onStartManager: () => Promise<void>;
@@ -2539,6 +2633,25 @@ function PromptDock({
       </DropdownMenuContent>
     </DropdownMenu>
   );
+  const roleMenu = (
+    <ComposerRolePicker
+      busy={busy || rolePickerBusy}
+      changingRole={roleChanging}
+      disabled={runActive}
+      error={rolePickerError}
+      models={rolePickerModels}
+      open={rolePickerOpen}
+      view={rolePickerView}
+      onChoose={onChooseRoleModel}
+      onOpenChange={onRolePickerOpenChange}
+    />
+  );
+  const leftActions = (
+    <div className="flex min-w-0 items-center gap-1">
+      {attachmentMenu}
+      {roleMenu}
+    </div>
+  );
   const sendButton = (
     <Button
       aria-label={runActive ? "Send guidance" : "Send request"}
@@ -2556,7 +2669,7 @@ function PromptDock({
       onSubmit={(event) => void onSubmit(event)}
     >
       <div
-        className={`grid gap-2 rounded-2xl border border-input bg-panel transition-colors focus-within:border-navy/55 focus-within:ring-1 focus-within:ring-navy/20 ${
+        className={`grid gap-2 rounded-3xl border border-input bg-panel transition-colors focus-within:border-navy/55 focus-within:ring-1 focus-within:ring-navy/20 ${
           centered ? "grid-cols-[minmax(0,1fr)]" : "grid-cols-[auto_minmax(0,1fr)_auto] items-end"
         } ${
           centered ? "min-h-[120px] px-3 py-2.5" : "px-2 py-1.5"
@@ -2588,7 +2701,7 @@ function PromptDock({
             ))}
           </div>
         )}
-        {centered ? null : attachmentMenu}
+        {centered ? null : leftActions}
         <textarea
           className="max-h-[180px] min-h-[44px] w-full resize-none border-0 bg-transparent px-2 py-1.5 text-[15px] leading-relaxed text-ink outline-none placeholder:text-muted-foreground focus-visible:outline-none"
           id="work-composer"
@@ -2612,7 +2725,7 @@ function PromptDock({
         />
         {centered ? (
           <div className="flex items-center justify-between">
-            {attachmentMenu}
+            {leftActions}
             {sendButton}
           </div>
         ) : (
@@ -2665,13 +2778,165 @@ function PromptDock({
   );
 
   return centered ? (
-    <div className="hivemind-identity-field grid min-h-0 place-items-center overflow-auto px-6 py-8">
+    <div className="hivemind-identity-field hivemind-identity-field--idle grid min-h-0 place-items-center overflow-auto px-6 py-8">
       {form}
     </div>
   ) : (
     <footer className="shrink-0 border-t border-rule bg-canvas p-2.5">
       {form}
     </footer>
+  );
+}
+
+const composerRolePurpose: Record<string, string> = {
+  planner: "Turns your request into a checked plan",
+  manager: "Chooses the next safe step",
+  worker: "Writes each scoped change"
+};
+
+function composerRoleLabel(role: string): string {
+  if (role === "worker") return "Workers";
+  if (role === "manager") return "Manager";
+  if (role === "planner") return "Planner";
+  return role;
+}
+
+function ComposerRolePicker({
+  open,
+  view,
+  models,
+  busy,
+  disabled,
+  changingRole,
+  error,
+  onOpenChange,
+  onChoose
+}: {
+  open: boolean;
+  view: ProjectConfigView | null;
+  models: ModelDiscoveryView | null;
+  busy: boolean;
+  disabled: boolean;
+  changingRole: string | null;
+  error: string;
+  onOpenChange: (open: boolean) => void;
+  onChoose: (role: string, providerId: string, modelSlug: string) => Promise<void>;
+}): React.JSX.Element {
+  const roles = list(view?.roles);
+  const adapters = list(view?.adapters);
+  const providers = list(view?.providers);
+  const discoveries = list(models?.providers);
+
+  return (
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          aria-label="Choose planner, manager, and worker models"
+          disabled={disabled || (busy && view === null)}
+          size="sm"
+          title="Choose planner, manager, and worker models"
+          type="button"
+          variant="ghost"
+        >
+          <SlidersHorizontal aria-hidden="true" />
+          Agents
+          <ChevronDown aria-hidden="true" className="size-3" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-[min(380px,calc(100vw-40px))]" side="top">
+        <DropdownMenuLabel>Project agents</DropdownMenuLabel>
+        <p className="mx-2.5 mt-0 mb-1.5 text-[11px] leading-relaxed text-muted-foreground">
+          Choose the model for each job. Changing one runs that provider&apos;s normal capability check and may use provider quota.
+        </p>
+        <DropdownMenuSeparator />
+        {busy && view === null ? (
+          <DropdownMenuItem disabled>Finding your configured models…</DropdownMenuItem>
+        ) : roles.length === 0 ? (
+          <DropdownMenuItem disabled>No configured roles are available</DropdownMenuItem>
+        ) : (
+          roles.map((role) => {
+            const current = adapters.filter(
+              (adapter) =>
+                adapter.role === role &&
+                adapter.installed &&
+                adapter.connected_at !== null &&
+                adapter.problems.length === 0 &&
+                adapter.model !== null
+            );
+            const currentModels = current
+              .map((adapter) => adapter.model)
+              .filter((model): model is string => model !== null);
+            const summary = currentModels.length === 0
+              ? "Not selected"
+              : currentModels.length === 1
+                ? currentModels[0]
+                : `${currentModels.length} models`;
+            const roleOptions = discoveries.flatMap((discovery) =>
+              discovery.status !== "detected"
+                ? []
+                : discovery.models.map((model) => ({
+                    providerId: discovery.provider_id,
+                    modelSlug: model.slug
+                  }))
+            );
+            return (
+              <DropdownMenuSub key={role}>
+                <DropdownMenuSubTrigger disabled={disabled || busy || changingRole !== null}>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium text-ink">{composerRoleLabel(role)}</span>
+                    <span className="block break-all font-mono text-[10px] text-muted-foreground">
+                      {changingRole === role ? "Checking…" : summary}
+                    </span>
+                  </span>
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-[min(360px,calc(100vw-56px))]">
+                  <DropdownMenuLabel>
+                    {composerRoleLabel(role)} · {composerRolePurpose[role] ?? "Project role"}
+                  </DropdownMenuLabel>
+                  {roleOptions.length === 0 ? (
+                    <DropdownMenuItem disabled>No detected models for this job</DropdownMenuItem>
+                  ) : (
+                    providers.map((provider) => {
+                      const options = roleOptions.filter((option) => option.providerId === provider.id);
+                      if (options.length === 0) return null;
+                      return (
+                        <Fragment key={`${role}:${provider.id}`}>
+                          <DropdownMenuLabel className="normal-case">{provider.label}</DropdownMenuLabel>
+                          {options.map((option) => {
+                            const selected = current.some(
+                              (adapter) =>
+                                adapter.provider_id === option.providerId &&
+                                adapter.model === option.modelSlug
+                            );
+                            return (
+                              <DropdownMenuItem
+                                disabled={selected || changingRole !== null}
+                                key={`${role}:${option.providerId}:${option.modelSlug}`}
+                                onSelect={() => void onChoose(role, option.providerId, option.modelSlug)}
+                              >
+                                <span className="min-w-0 flex-1 break-all font-mono text-[11px]">
+                                  {option.modelSlug}
+                                </span>
+                                {selected ? <Check aria-label="Selected" className="text-navy" /> : null}
+                              </DropdownMenuItem>
+                            );
+                          })}
+                        </Fragment>
+                      );
+                    })
+                  )}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            );
+          })
+        )}
+        {error === "" ? null : (
+          <p className="mx-2.5 mt-1.5 mb-1 text-[11px] leading-relaxed text-clay" role="alert">
+            {error}
+          </p>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

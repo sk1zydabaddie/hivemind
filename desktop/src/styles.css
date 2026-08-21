@@ -402,14 +402,35 @@
   }
 
   /* One self-hosted drawing derived from the interlocking Hivemind mark. It is
-     present only where the workplane genuinely has unused space, never tiled,
-     never animated, and its strongest 1px stroke changes a channel by less
-     than the amber attention-edge ceiling. */
+     present only where the workplane genuinely has unused space and is never
+     tiled. More connected cells make it legible at installed scale without
+     raising any stroke beyond the amber attention-edge ceiling. */
   .hivemind-identity-field {
     background-image: url("./assets/hivemind-field.svg");
-    background-position: right -8% center;
+    background-position: center;
     background-repeat: no-repeat;
-    background-size: clamp(560px, 54vw, 760px) auto;
+    background-size: clamp(980px, 92vw, 1380px) auto;
+  }
+
+  /* Decorative motion belongs only to the untouched first-request canvas.
+     The class is removed on submit, so the field disappears immediately rather
+     than lingering while Core prepares the first durable record. */
+  @media (prefers-reduced-motion: no-preference) {
+    .hivemind-identity-field--idle {
+      animation: hivemind-field-breathe 18s ease-in-out infinite alternate;
+      will-change: background-position, background-size;
+    }
+  }
+
+  @keyframes hivemind-field-breathe {
+    from {
+      background-position: center calc(50% - 5px);
+      background-size: clamp(980px, 91vw, 1366px) auto;
+    }
+    to {
+      background-position: center calc(50% + 7px);
+      background-size: clamp(995px, 93vw, 1394px) auto;
+    }
   }
 
   h1,
@@ -477,6 +498,10 @@
   @media (max-width: 1080px) {
     .hivemind-identity-field {
       background-image: none;
+    }
+
+    .hivemind-identity-field--idle {
+      animation: none;
     }
   }
 
