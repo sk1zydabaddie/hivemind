@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 
+import { probeUsageSessionId } from "../src/adapter-probe.js";
 import { inspectWorkspace } from "../src/workspace-inspection.js";
 
 const execFileAsync = promisify(execFile);
@@ -83,6 +84,83 @@ test("the spend readout equals every call the run actually paid for", async () =
       inspected.value.spend.run_ceiling_tokens > spentTokens - spentTokens / 5,
       "a default run ceiling must not sit below what an ordinary one-task run costs"
     );
+  } finally {
+    await rm(repo, { recursive: true, force: true, maxRetries: 3 });
+  }
+});
+
+/**
+ * A-04: connecting an agent books its capability probe under a probe session
+ * (`probe-<tool>`), which no run or spec ever names -- so setup spend, the
+ * ~120K tokens a new user pays before a line of code exists, was durable in
+ * the ledger and invisible on every meter. It now gets its own spend figures.
+ *
+ * Two directions, both pinned: the probe entries must appear on the setup
+ * figures, and they must NOT inflate the run figures -- those are what the
+ * run and session ceilings bind, and setup is not that run. The probe entries
+ * are injected into the REAL captured ledger in exactly the shape
+ * `liveProbeRunner` books them, with the session id minted by the same
+ * function the runner uses, so the writer and this reader cannot drift apart.
+ */
+test("setup probe spend is reported on its own figures and never inflates the run's", async () => {
+  const repo = await realpath(await mkdtemp(path.join(tmpdir(), "hivemind-spend-setup-")));
+  try {
+    const git = (args: string[]) => execFileAsync("git", args, { cwd: repo, windowsHide: true });
+    await git(["init"]);
+    await git(["config", "user.email", "test@example.test"]);
+    await git(["config", "user.name", "Test"]);
+    await writeFile(path.join(repo, "README.md"), "# captured\n", "utf8");
+    await git(["add", "."]);
+    await git(["commit", "-m", "base"]);
+    await cp(CAPTURED, path.join(repo, ".hivemind"), { recursive: true });
+    const configPath = path.join(repo, ".hivemind", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8")) as { repo_root: string };
+    config.repo_root = repo;
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+    const before = await inspectWorkspace(repo);
+    assert.equal(before.ok, true, before.ok ? undefined : before.reason);
+    if (!before.ok) return;
+    assert.equal(before.value.spend.setup_calls, 0, "the capture holds no probe sessions");
+
+    const ledgerPath = path.join(repo, ".hivemind", "resource", "ledger.json");
+    const ledger = JSON.parse(await readFile(ledgerPath, "utf8")) as {
+      providers: Record<string, { session_usage: Record<string, unknown> }>;
+      reservations: Record<string, Record<string, unknown>>;
+    };
+    const probeSession = probeUsageSessionId("codex-cli");
+    ledger.providers["planner"].session_usage[probeSession] = {
+      requests: 2,
+      self_measured_tokens: 500,
+      provider_reported_tokens: 118_000,
+      provider_reported_requests: 2,
+      effective_tokens: 118_000
+    };
+    /* An in-flight probe: a real reservation shape from the capture, made
+       active on the probe session. */
+    const template = Object.values(ledger.reservations)[0];
+    const active = structuredClone(template);
+    active.reservation_id = "probe-active-reservation";
+    active.status = "active";
+    active.session_id = probeSession;
+    active.reserved_tokens = 45_000;
+    active.settlement = null;
+    ledger.reservations["probe-active-reservation"] = active;
+    await writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, "utf8");
+
+    const after = await inspectWorkspace(repo);
+    assert.equal(after.ok, true, after.ok ? undefined : after.reason);
+    if (!after.ok) return;
+
+    /* Direction one: setup spend is visible. */
+    assert.equal(after.value.spend.setup_calls, 3, "two settled probe requests plus one in flight");
+    assert.equal(after.value.spend.setup_tokens, 118_000);
+    assert.equal(after.value.spend.setup_reserved_tokens, 45_000);
+
+    /* Direction two: the ceiling-bound run figures are untouched by it. */
+    assert.equal(after.value.spend.calls, before.value.spend.calls);
+    assert.equal(after.value.spend.effective_tokens, before.value.spend.effective_tokens);
+    assert.equal(after.value.spend.reserved_tokens, before.value.spend.reserved_tokens);
   } finally {
     await rm(repo, { recursive: true, force: true, maxRetries: 3 });
   }

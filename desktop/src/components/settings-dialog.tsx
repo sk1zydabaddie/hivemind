@@ -95,33 +95,58 @@ export function SettingsDialog({
   onConnectAgent?: () => void;
   onAction: <T>(action: WorkspaceAction) => Promise<T>;
 }): React.JSX.Element {
-  const [view, setView] = useState<ProjectConfigView | null>(null);
-  const [modelDiscovery, setModelDiscovery] = useState<ModelDiscoveryView | null>(null);
+  /* Everything on this screen belongs to exactly one project (A-08: switching
+     visibly offered the previous project's workers with the controls live).
+     Every stored answer NAMES the project it belongs to, and the values the
+     dialog renders are DERIVED: an answer for any other project is invisible.
+     A read-time guard instead of a clear, so there is no clearing to forget,
+     no render-time state write, and a late answer from the previous project
+     lands carrying the previous project's name and is never shown. */
+  const [loadedView, setLoadedView] = useState<{
+    forProject: string;
+    value: ProjectConfigView;
+  } | null>(null);
+  const [loadedModels, setLoadedModels] = useState<{
+    forProject: string;
+    value: ModelDiscoveryView;
+  } | null>(null);
+  const [problem, setProblem] = useState<{ forProject: string; message: string } | null>(null);
   const [discoveringModels, setDiscoveringModels] = useState(false);
-  const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
   const level = inspection?.autonomy.configured_level ?? "auto";
+  const view = loadedView !== null && loadedView.forProject === projectPath ? loadedView.value : null;
+  const modelDiscovery =
+    loadedModels !== null && loadedModels.forProject === projectPath ? loadedModels.value : null;
+  const error = problem !== null && problem.forProject === projectPath ? problem.message : "";
+  const setError = (message: string): void => {
+    setProblem(message === "" ? null : { forProject: projectPath, message });
+  };
+  const setView = (value: ProjectConfigView): void => {
+    setLoadedView({ forProject: projectPath, value });
+  };
 
   /* Core owns every value on this screen. The client reads it, shows it, and
      sends changes back through the audited dispatcher; it decides nothing. */
   const refresh = async (): Promise<void> => {
+    const requested = projectPath;
     try {
-      setView(await onAction<ProjectConfigView>({ type: "config.inspect", payload: {} }));
-      setError("");
+      const value = await onAction<ProjectConfigView>({ type: "config.inspect", payload: {} });
+      setLoadedView({ forProject: requested, value });
+      setProblem(null);
     } catch (cause) {
-      setError(plainActionError(cause));
+      setProblem({ forProject: requested, message: plainActionError(cause) });
     }
   };
 
   const refreshModels = async (): Promise<void> => {
+    const requested = projectPath;
     setDiscoveringModels(true);
-    setError("");
+    setProblem(null);
     try {
-      setModelDiscovery(
-        await onAction<ModelDiscoveryView>({ type: "models.discover", payload: {} })
-      );
+      const value = await onAction<ModelDiscoveryView>({ type: "models.discover", payload: {} });
+      setLoadedModels({ forProject: requested, value });
     } catch (cause) {
-      setError(plainActionError(cause));
+      setProblem({ forProject: requested, message: plainActionError(cause) });
     } finally {
       setDiscoveringModels(false);
     }
@@ -132,22 +157,27 @@ export function SettingsDialog({
     /* Keep the two reports ordered so a successful config read cannot erase a
        model-discovery error that completed a moment earlier. */
     void refresh().then(refreshModels);
-  }, [open]);
+  }, [open, projectPath]);
 
   const change = async (payload: Record<string, unknown>): Promise<void> => {
+    const requested = projectPath;
     setWorking(true);
-    setError("");
+    setProblem(null);
     try {
-      setView(await onAction<ProjectConfigView>({ type: "config.set", payload }));
+      const value = await onAction<ProjectConfigView>({ type: "config.set", payload });
+      setLoadedView({ forProject: requested, value });
     } catch (cause) {
-      setError(plainActionError(cause));
+      setProblem({ forProject: requested, message: plainActionError(cause) });
     } finally {
       setWorking(false);
     }
   };
 
   const config = view?.config ?? null;
-  const disabled = busy || working || inspection === null;
+  /* `view === null` is the project-identity half of the gate: after a switch,
+     the previous project's controls must not accept a change against the new
+     project before the new project's own `config.inspect` has landed. */
+  const disabled = busy || working || inspection === null || view === null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -225,7 +255,7 @@ export function SettingsDialog({
                 <>
                   <div className="grid gap-3 sm:grid-cols-3">
                     <NumberField
-                      detail={`One agent call really costs ${view!.limits.observed_worker_call_tokens.low.toLocaleString()}–${view!.limits.observed_worker_call_tokens.high.toLocaleString()} tokens on this project's own runs. A limit below that stops the run after you have paid for the call.`}
+                      detail={`One agent call really costs ${view!.limits.observed_worker_call_tokens.low.toLocaleString()}Ã¢â‚¬â€œ${view!.limits.observed_worker_call_tokens.high.toLocaleString()} tokens on this project's own runs. A limit below that stops the run after you have paid for the call.`}
                       disabled={disabled}
                       label="Most one call may use"
                       value={config.run_ceiling_tokens}
@@ -290,7 +320,7 @@ export function SettingsDialog({
   );
 }
 
-/* ── Bring your own agent ─────────────────────────────────────────────────── */
+/* Ã¢â€â‚¬Ã¢â€â‚¬ Bring your own agent Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */
 
 function AgentSection({
   view,
@@ -334,7 +364,7 @@ function AgentSection({
     const provider = view?.providers?.find((entry) => entry.id === providerId);
     setConnecting({
       role,
-      label: `${provider?.label ?? providerId} · ${modelSlug}`,
+      label: `${provider?.label ?? providerId} Ã‚Â· ${modelSlug}`,
       startedAt: Date.now()
     });
     setProbe(null);
@@ -444,7 +474,7 @@ function AgentSection({
             {connecting === null ? null : (
               <p className="mb-2.5 flex items-center gap-1.5 rounded-sm border-l-2 border-navy bg-navy-wash px-2.5 py-1.5 text-[11px] text-ink" role="status">
                 <Loader aria-hidden="true" className="size-3 animate-spin" />
-                Checking {connecting.label} for {connecting.role} · {elapsedSeconds}s
+                Checking {connecting.label} for {connecting.role} Ã‚Â· {elapsedSeconds}s
               </p>
             )}
             <div className="grid gap-px overflow-hidden rounded-sm border border-rule bg-rule">
@@ -489,7 +519,7 @@ function ModelDiscoverySummary({
       <div className="flex flex-wrap items-center gap-2">
         <span className="min-w-0 flex-1 text-[11px] leading-relaxed text-muted-foreground">
           {discovering
-            ? "Asking the installed CLIs for models…"
+            ? "Asking the installed CLIs for modelsÃ¢â‚¬Â¦"
             : detected === 0
               ? "No model list is available yet. Sign in or configure a provider, then refresh."
               : `${detected} model slug${detected === 1 ? "" : "s"} detected from the installed CLIs without running a model.`}
@@ -637,10 +667,10 @@ function RoleModelRow({
           }}
         >
           {working ? <Loader aria-hidden="true" className="animate-spin" /> : <Plug aria-hidden="true" />}
-          {working ? `Checking · ${elapsedSeconds}s` : role === "worker" ? "Add and check" : "Check and use"}
+          {working ? `Checking Ã‚Â· ${elapsedSeconds}s` : role === "worker" ? "Add and check" : "Check and use"}
         </Button>
         <span className="text-right text-[10px] leading-snug text-muted-foreground">
-          One real check · about 40K tokens
+          One real check Ã‚Â· about 40K tokens
         </span>
       </div>
     </div>
@@ -696,7 +726,7 @@ function ProbeReport({
               <span className="text-[12px] font-medium text-ink">{entry.label}</span>
               {entry.requested === null && entry.reported === null ? null : (
                 <span className="ml-2 font-mono text-[11px] text-muted-foreground">
-                  asked {entry.requested ?? "—"} · got {entry.reported ?? "no answer"}
+                  asked {entry.requested ?? "Ã¢â‚¬â€"} Ã‚Â· got {entry.reported ?? "no answer"}
                 </span>
               )}
               <span className="mt-0.5 block text-[11px] leading-relaxed break-words text-muted-foreground">
@@ -806,7 +836,7 @@ function AdvancedSettings({
   );
 }
 
-/* ── Fields ───────────────────────────────────────────────────────────────── */
+/* Ã¢â€â‚¬Ã¢â€â‚¬ Fields Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */
 
 function GlobList({
   globs,
@@ -922,7 +952,7 @@ function Waiting(): React.JSX.Element {
   return (
     <p className="m-0 flex items-center gap-2 text-[12px] text-muted-foreground">
       <Loader aria-hidden="true" className="size-3.5 animate-spin text-navy" />
-      Reading this project's settings…
+      Reading this project's settingsÃ¢â‚¬Â¦
     </p>
   );
 }
@@ -1038,7 +1068,7 @@ const WORK_KINDS: Array<{ id: string; label: string; detail: string }> = [
    from a stronger model is not something this project has measured on your
    work. Said plainly, so declining it is an informed choice. */
 const VISUAL_SUGGESTION =
-  "Screens are where a stronger model most often pays for itself — layout and spacing are judged by eye, and cheaper models tend to need more revisions. Hivemind will not do this on its own: it costs more per task, and this has not been measured on your project.";
+  "Screens are where a stronger model most often pays for itself Ã¢â‚¬â€ layout and spacing are judged by eye, and cheaper models tend to need more revisions. Hivemind will not do this on its own: it costs more per task, and this has not been measured on your project.";
 
 function TaskTypeRouting({
   config,
@@ -1125,7 +1155,7 @@ function TaskTypeRouting({
               {choosable.map((adapter) => (
                 <option key={adapter.tool ?? adapter.role} value={adapter.tool ?? ""}>
                   {adapter.role}
-                  {adapter.model === null ? "" : ` · ${adapter.model}`}
+                  {adapter.model === null ? "" : ` Ã‚Â· ${adapter.model}`}
                 </option>
               ))}
             </select>

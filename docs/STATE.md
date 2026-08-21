@@ -1899,3 +1899,43 @@ Windows skips, Desktop **307/307**, Rust **35/35**, the external real project
 **7/7**, and `git diff --check`. No paid provider call was made during the final
 verification reruns; the paid calls were limited to the recorded Claude/Grok
 real-project workflow above.
+
+### Records reconciled, advisories closed, three register fixes — 2026-08-21
+
+The stale-records pass: this file's head count table (see §1), the
+AUDIT-FINDINGS.md guard note (recorded as F-5 there), and the audit register
+were each reconciled against the code, and the register now carries a dated
+status table for all findings. DESIGN-NOTES marks every pre-dark-skin measured
+figure as sampled on the light palette; the load-bearing elevation ceiling was
+already re-derived by computation against the dark ground and needed no
+re-sample.
+
+Dependency advisories: both lockfiles pinned vulnerable versions while
+node_modules held patched ones, so every green suite had run against code
+`npm ci` would never install. `npm audit fix` synced both; a fresh `npm ci` in
+each package followed by the full suites proved the clean install. `ship` now
+runs `verify:advisories` before anything is built — high-severity production
+advisories block, dev-only advisories report, offline fails closed — proven to
+block on the vulnerable lockfiles and pass on the fixed ones.
+
+Register fixes A-04, A-07 and A-08 shipped and were verified in the installed
+application by a new no-cost Selenium/Tauri walk
+(`desktop/e2e/installed-findings-check.mjs`), not by source or unit fixtures:
+setup-probe spend reads `setup 4 calls 134.8K` on Skybound's own idle Work
+meter; a forced real `git add` failure left the untracked folder
+byte-identical with "Nothing changed." rendered from the shell's typed
+verdict; and settings after a project switch carried only the selected
+project. The walk's severe-log gate earned itself immediately: the first A-08
+fix cleared state in render and threw React error #185 during the switch —
+caught installed, replaced with derived reads, re-shipped. The walk also found
+A-37 (a completed read-only task's worktree closes the idleness proof
+forever, F-4's shape through a different leftover) — recorded open in the
+register with evidence.
+
+Installed build **26.821.1251** was built, installed, and verified with
+matching executable, Core, and shell identities; all 30 production
+reachability combinations passed on each of the three ships this pass made.
+Evidence: `docs/evidence/findings-installed-26.821.1251/`. Final verification
+on the fresh clean installs passed Core **835/837** with two intentional
+Windows skips, Desktop **312/312**, and Rust **38/38**. No paid provider,
+capability, or model call was made anywhere in this pass.

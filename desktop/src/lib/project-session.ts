@@ -43,6 +43,50 @@ export interface ProjectFault {
   message: string;
 }
 
+/**
+ * How one-click git setup failed, as a code rather than as a sentence (A-07).
+ *
+ * "Nothing changed." is a claim about durable state, and the screen used to
+ * make it for every failure -- including the ones that had already rewritten
+ * `.gitignore` and left a half-made `.git` behind. The shell now measures the
+ * claim: `nothing_changed` means the folder was put back byte-identical, and
+ * `partial_state` means it was not (or could not be confirmed), with the
+ * leftovers named. The copy branches on this code and never on the message.
+ */
+export interface GitSetupFailure {
+  code: "nothing_changed" | "partial_state";
+  message: string;
+  /** What is still on disk when `code` is "partial_state". */
+  remaining: string[];
+}
+
+/** Whatever a rejected `initialize_git` produced, as a typed setup failure. */
+export function gitSetupFailureFrom(value: unknown): GitSetupFailure {
+  if (typeof value === "object" && value !== null) {
+    const record = value as { code?: unknown; message?: unknown; remaining?: unknown };
+    if (
+      (record.code === "nothing_changed" || record.code === "partial_state") &&
+      typeof record.message === "string"
+    ) {
+      return {
+        code: record.code,
+        message: record.message,
+        remaining: Array.isArray(record.remaining)
+          ? record.remaining.filter((entry): entry is string => typeof entry === "string")
+          : []
+      };
+    }
+  }
+  /* An answer with no recognized code cannot prove the folder was put back,
+     so it must not let the screen say so. Unprovable cleanliness is claimed
+     by nobody -- the same direction every other gate here fails in. */
+  return {
+    code: "partial_state",
+    message: value instanceof Error ? value.message : String(value),
+    remaining: []
+  };
+}
+
 /** An Error that carries a code, for the checks the shell makes on this side. */
 export function faultError(code: string, message: string): Error & { code: string } {
   return Object.assign(new Error(message), { code });

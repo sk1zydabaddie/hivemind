@@ -124,6 +124,13 @@ export interface WorkspaceInspection {
     run_ceiling_tokens: number;
     session_ceiling_tokens: number;
     near_session_ceiling: boolean;
+    /* Setup (capability-probe) spend, its own figures rather than a share of
+       the ceiling-bound ones. Optional: a daemon older than these fields is a
+       permanent input, and their absence means "not reported", never zero
+       spend proven. */
+    setup_calls?: number;
+    setup_tokens?: number;
+    setup_reserved_tokens?: number;
   };
   swarm: {
     characterizations: Array<{

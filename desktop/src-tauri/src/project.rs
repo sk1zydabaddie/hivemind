@@ -1495,7 +1495,7 @@ mod tests {
     }
 }
 
-// ── Recent projects, and why they live in the shell ────────────────────────
+// â”€â”€ Recent projects, and why they live in the shell â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // "Which projects have I opened" is SHELL state, not project state. Putting it
 // inside any one project would make one project the registry of the others,
@@ -1568,7 +1568,7 @@ pub async fn remember_project(app: tauri::AppHandle, project_path: String) -> Re
         .map_err(|error| format!("could not write the recent project list: {error}"))
 }
 
-// ── What this person has already been shown ───────────────────────────────
+// â”€â”€ What this person has already been shown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Shell state, in the app's own config directory, for the same reason
 // `recent-projects.json` lives there: it is about this INSTALLATION and this
@@ -1622,13 +1622,13 @@ pub async fn dismiss_hint(app: tauri::AppHandle, hint: String) -> Result<(), Str
         .map_err(|error| format!("could not write the dismissal list: {error}"))
 }
 
-// ── The build-mismatch exit ────────────────────────────────────────────────
+// â”€â”€ The build-mismatch exit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // The daemon build check is correct and stays exactly as strict: two runs
 // against a stale build cost ~38K tokens, and it exists because of them. What
 // it did not have was a way out. After an update the first screen said
 //
-//     daemon build mismatch: state 9f9f…, running 9f9f…, expected a1b2…;
+//     daemon build mismatch: state 9f9fâ€¦, running 9f9fâ€¦, expected a1b2â€¦;
 //     restart the daemon before using this project
 //
 // -- two 64-character hashes, the word "daemon", and an instruction naming an
@@ -1959,7 +1959,7 @@ fn chrono_now() -> String {
     format!("{seconds}")
 }
 
-// ── Git, on a folder that has none ────────────────────────────────────────
+// â”€â”€ Git, on a folder that has none â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Everything downstream assumes git: worktrees, base commits, diffs, and
 // adoption's fast-forward. Pointing at a folder that is not a repository is a
@@ -2202,6 +2202,129 @@ fn add_generated_ignores(root: &Path, entries: &[String]) -> Result<(), String> 
     Ok(())
 }
 
+/// A failed setup names what it left behind, in a code the client branches
+/// on. Control flow never depends on message text: "the folder was put back"
+/// and "something remains" are different facts produced by the same failure,
+/// and the client's copy must not claim the first while the second is true --
+/// which is exactly what "Nothing changed." did for every failure (A-07).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct GitSetupFailure {
+    /// "nothing_changed": the folder is byte-identical to how the action
+    /// found it. "partial_state": rollback could not complete, or completion
+    /// could not be confirmed.
+    pub code: &'static str,
+    pub message: String,
+    /// The paths still on disk when `code` is "partial_state". Empty otherwise.
+    pub remaining: Vec<String>,
+}
+
+impl GitSetupFailure {
+    fn untouched(message: String) -> Self {
+        Self {
+            code: "nothing_changed",
+            message,
+            remaining: Vec::new(),
+        }
+    }
+}
+
+/// Put the folder back exactly as `perform_git_setup` found it. Returns the
+/// names it could NOT put back; an empty list means the folder is untouched.
+fn undo_git_setup(
+    root: &Path,
+    original_gitignore: Option<String>,
+    created_git_dir: bool,
+) -> Vec<String> {
+    let mut remaining = Vec::new();
+    let git_dir = root.join(".git");
+    /* Only a repository THIS call created is removed. `created_git_dir` was
+       measured before the first mutation, so a pre-existing `.git` -- whatever
+       shape it is in -- is never this function's to delete. */
+    if created_git_dir && git_dir.exists() {
+        let _ = std::fs::remove_dir_all(&git_dir);
+        if git_dir.exists() {
+            remaining.push(".git".to_string());
+        }
+    }
+    let ignore_path = root.join(".gitignore");
+    let restored = match original_gitignore {
+        Some(content) => std::fs::write(&ignore_path, content).is_ok(),
+        None => match std::fs::remove_file(&ignore_path) {
+            Ok(()) => true,
+            Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+        },
+    };
+    if !restored {
+        remaining.push(".gitignore".to_string());
+    }
+    remaining
+}
+
+/// The mutation sequence behind one-click git setup, with the command runner
+/// injected so a test can fail any single step against a real folder and hold
+/// the rollback to its claim.
+///
+/// The invariant: this either completes fully, or the folder is left
+/// byte-identical to how it was found -- and when even that cannot be
+/// guaranteed, the failure says exactly what remains instead of claiming
+/// cleanliness it cannot prove.
+fn perform_git_setup(
+    root: &Path,
+    would_ignore: &[String],
+    run: &dyn Fn(&[&str]) -> Result<(), String>,
+) -> Result<(), GitSetupFailure> {
+    /* Captured BEFORE the first mutation, so "nothing changed" is a
+       measurement against this state rather than a hope. */
+    let original_gitignore = match std::fs::read_to_string(root.join(".gitignore")) {
+        Ok(value) => Some(value),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => {
+            return Err(GitSetupFailure::untouched(format!(
+                "could not read .gitignore: {error}"
+            )))
+        }
+    };
+    let git_dir_existed = root.join(".git").exists();
+
+    let sequence = || -> Result<(), String> {
+        add_generated_ignores(root, would_ignore)?;
+        run(&["init"])?;
+        for entry in would_ignore {
+            run(&["check-ignore", "--quiet", "--", entry])?;
+        }
+        run(&["add", "-A"])?;
+        // A message that says what it did and why, because this commit is the base
+        // every later diff is measured against and somebody will read it later
+        // wondering where it came from.
+        run(&[
+            "-c",
+            "user.name=Hivemind",
+            "-c",
+            "user.email=setup@hivemind.local",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "Start tracking this project\n\nCreated by Hivemind when the folder was opened, so changes can be\nkept separate until you choose to ship them. Project files that are\nnot generated or ignored are in this commit.",
+        ])?;
+        Ok(())
+    };
+    match sequence() {
+        Ok(()) => Ok(()),
+        Err(cause) => {
+            let remaining = undo_git_setup(root, original_gitignore, !git_dir_existed);
+            if remaining.is_empty() {
+                Err(GitSetupFailure::untouched(cause))
+            } else {
+                Err(GitSetupFailure {
+                    code: "partial_state",
+                    message: cause,
+                    remaining,
+                })
+            }
+        }
+    }
+}
+
 /// Make a folder into a git repository, with an explicit first commit.
 ///
 /// Deliberately NOT a silent `git init && git add -A && git commit`. It refuses
@@ -2209,13 +2332,15 @@ fn add_generated_ignores(root: &Path, entries: &[String]) -> Result<(), String> 
 /// than trusted from the caller -- the readiness answer and the action are two
 /// round trips apart, and a file can appear between them.
 #[tauri::command]
-pub async fn initialize_git(project_path: String) -> Result<GitReadiness, String> {
-    let readiness = inspect_git_readiness(project_path.clone()).await?;
+pub async fn initialize_git(project_path: String) -> Result<GitReadiness, GitSetupFailure> {
+    let readiness = inspect_git_readiness(project_path.clone())
+        .await
+        .map_err(GitSetupFailure::untouched)?;
     if readiness.is_repo {
         return Ok(readiness);
     }
     if let Some(reason) = readiness.refusal {
-        return Err(reason);
+        return Err(GitSetupFailure::untouched(reason));
     }
 
     let root = std::path::Path::new(&project_path);
@@ -2237,30 +2362,20 @@ pub async fn initialize_git(project_path: String) -> Result<GitReadiness, String
 
     /* Verify git exists before changing a project file. Generated directories
        are the one refusal Hivemind can resolve without guessing: their names
-       come from the closed list above, and the action verifies git ignores
+       come from the closed list above, and the sequence verifies git ignores
        every one before staging anything. */
-    run(&["--version"])?;
-    add_generated_ignores(root, &readiness.would_ignore)?;
-    run(&["init"])?;
-    for entry in &readiness.would_ignore {
-        run(&["check-ignore", "--quiet", "--", entry])?;
-    }
-    run(&["add", "-A"])?;
-    // A message that says what it did and why, because this commit is the base
-    // every later diff is measured against and somebody will read it later
-    // wondering where it came from.
-    run(&[
-        "-c",
-        "user.name=Hivemind",
-        "-c",
-        "user.email=setup@hivemind.local",
-        "commit",
-        "--allow-empty",
-        "-m",
-        "Start tracking this project\n\nCreated by Hivemind when the folder was opened, so changes can be\nkept separate until you choose to ship them. Project files that are\nnot generated or ignored are in this commit.",
-    ])?;
+    run(&["--version"]).map_err(GitSetupFailure::untouched)?;
+    perform_git_setup(root, &readiness.would_ignore, &run)?;
 
-    inspect_git_readiness(project_path).await
+    inspect_git_readiness(project_path).await.map_err(|error| GitSetupFailure {
+        /* The commit exists by this point, so claiming nothing changed would
+           be the exact lie this type exists to prevent. */
+        code: "partial_state",
+        message: format!(
+            "the repository was created, but its state could not be re-read: {error}"
+        ),
+        remaining: vec![".git".to_string()],
+    })
 }
 
 #[cfg(test)]
@@ -2469,6 +2584,108 @@ mod git_readiness_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A-07: the sequence used to stop wherever it failed, leaving a
+    /// half-made repository and a rewritten .gitignore while the screen said
+    /// "Nothing changed." The runner here is real git on a real folder with
+    /// exactly one step broken, so the rollback is held to its claim: the
+    /// folder must come back byte-identical, and the failure must say so in
+    /// its code.
+    #[test]
+    fn a_failed_setup_puts_the_folder_back_byte_for_byte() {
+        let dir = temp_dir("rollback");
+        std::fs::create_dir_all(dir.join("node_modules")).expect("deps");
+        std::fs::write(dir.join("node_modules").join("dep.js"), "generated\n").expect("dep");
+        std::fs::write(dir.join("index.js"), "export default 1;\n").expect("source");
+        std::fs::write(dir.join(".gitignore"), "custom-rule\n").expect("prior ignore");
+
+        let real = |args: &[&str]| -> Result<(), String> {
+            let output = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .output()
+                .map_err(|error| format!("git could not be started: {error}"))?;
+            if output.status.success() {
+                Ok(())
+            } else {
+                Err(format!("git {} failed", args.join(" ")))
+            }
+        };
+        let failing_at_add = |args: &[&str]| -> Result<(), String> {
+            if args.first() == Some(&"add") {
+                return Err("simulated: git add failed".to_string());
+            }
+            real(args)
+        };
+
+        let failure = perform_git_setup(&dir, &["node_modules".to_string()], &failing_at_add)
+            .expect_err("the injected failure must surface");
+
+        assert_eq!(failure.code, "nothing_changed");
+        assert!(failure.remaining.is_empty(), "{:?}", failure.remaining);
+        assert!(
+            !dir.join(".git").exists(),
+            "the half-made repository must be removed"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join(".gitignore")).expect("gitignore"),
+            "custom-rule\n",
+            "the pre-action .gitignore must be restored byte for byte"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_failed_setup_where_no_gitignore_existed_leaves_none_behind() {
+        let dir = temp_dir("rollback-clean");
+        std::fs::create_dir_all(dir.join("node_modules")).expect("deps");
+        std::fs::write(dir.join("index.js"), "export default 1;\n").expect("source");
+
+        let failing_at_commit = |args: &[&str]| -> Result<(), String> {
+            if args.contains(&"commit") {
+                return Err("simulated: git commit failed".to_string());
+            }
+            let output = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .output()
+                .map_err(|error| format!("git could not be started: {error}"))?;
+            if output.status.success() {
+                Ok(())
+            } else {
+                Err(format!("git {} failed", args.join(" ")))
+            }
+        };
+
+        let failure = perform_git_setup(&dir, &["node_modules".to_string()], &failing_at_commit)
+            .expect_err("the injected failure must surface");
+
+        assert_eq!(failure.code, "nothing_changed");
+        assert!(
+            !dir.join(".gitignore").exists(),
+            "a .gitignore this call wrote must not survive its failure"
+        );
+        assert!(!dir.join(".git").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The other branch of the claim: when rollback itself cannot complete,
+    /// the answer names what remains instead of asserting cleanliness. A
+    /// `.git` that is a FILE cannot be removed by `remove_dir_all`, which is
+    /// a deterministic stand-in for a directory held by another process.
+    #[test]
+    fn a_rollback_that_cannot_complete_names_what_remains() {
+        let dir = temp_dir("rollback-stuck");
+        std::fs::write(dir.join(".git"), "not a directory").expect("blocker");
+
+        let remaining = undo_git_setup(&dir, None, true);
+
+        assert!(
+            remaining.contains(&".git".to_string()),
+            "an unremovable leftover must be named: {remaining:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn an_ordinary_folder_is_offered_with_the_files_it_would_commit_named() {
         let dir = temp_dir("ordinary");
@@ -2501,7 +2718,7 @@ mod git_readiness_tests {
     }
 }
 
-// ── The idleness proof, against a crash and against a live run ──────────────
+// â”€â”€ The idleness proof, against a crash and against a live run â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // This proof gates two irreversible-feeling acts: restarting the daemon after
 // an update, and installing a new build over the running one. It has to be

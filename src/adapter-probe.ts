@@ -260,11 +260,28 @@ async function findFileContaining(dir: string, needle: string, depth = 0): Promi
   return null;
 }
 
+/**
+ * The one place the probe-session id scheme lives.
+ *
+ * A capability probe books real paid usage into the ledger under this id.
+ * A-04 was the meter never listing probe sessions, so the ~120K tokens a
+ * first setup spends were durable in the ledger and invisible on screen. The
+ * writer here and the reader in `workspace-inspection.ts` share these two
+ * functions rather than each knowing the string shape, so they cannot drift.
+ */
+export function probeUsageSessionId(tool: string): string {
+  return `probe-${tool}`;
+}
+
+export function isProbeUsageSession(sessionId: string): boolean {
+  return sessionId.startsWith("probe-");
+}
+
 /** The default runner: one real call through the profile's own argv. */
 export const liveProbeRunner: ProbeRunner = async ({ repoRoot, profile, prompt, nonceFile, accountEnv }) => {
   const started = Date.now();
   const result = await runAdapterProcess(repoRoot, profile, repoRoot, prompt, {
-    usageSessionId: `probe-${profile.tool}`,
+    usageSessionId: probeUsageSessionId(profile.tool),
     accountEnv
   });
   const wrote = await nonceFileWritten(repoRoot, nonceFile);

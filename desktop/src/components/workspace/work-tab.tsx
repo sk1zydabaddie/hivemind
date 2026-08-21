@@ -2830,7 +2830,17 @@ function PromptDock({
           {feedback}
         </p>
       ) : null}
-      {centered ? null : (
+      {centered ? (
+        /* The idle canvas stays quiet, but money already spent is not noise:
+           a first setup pays for its capability probes before any run exists
+           (A-04), and the person lands exactly here afterwards. The meter
+           appears only when there is a figure to report. */
+        spend !== null && (spend.calls > 0 || (spend.setup_calls ?? 0) > 0) ? (
+          <div className="flex items-center justify-end px-1">
+            <SpendMeter spend={spend} />
+          </div>
+        ) : null
+      ) : (
         <div className="flex items-center gap-2.5 px-1">
           <span className="min-w-0 flex-1 text-[11px] leading-snug break-words text-muted-foreground">
             {runActive
@@ -3057,6 +3067,15 @@ function SpendMeter({
         {formatCompact(spend.effective_tokens)} + {formatCompact(spend.reserved_tokens)} held /{" "}
         {formatCompact(spend.session_ceiling_tokens)}
       </span>
+      {/* Setup spend is real money paid before any run exists (A-04: three
+          probes, 122,977 tokens, and the meter read "0 calls"). Its own
+          figure, because the run/session ceilings do not bind it. */}
+      {(spend.setup_calls ?? 0) > 0 ? (
+        <span>
+          · setup {spend.setup_calls} {spend.setup_calls === 1 ? "call" : "calls"}{" "}
+          {formatCompact((spend.setup_tokens ?? 0) + (spend.setup_reserved_tokens ?? 0))}
+        </span>
+      ) : null}
     </span>
   );
 }

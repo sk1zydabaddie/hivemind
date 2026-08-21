@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
 import { plainConnectionProblem } from "../src/components/workspace/setup-screen";
-import { PROJECT_FAULT, projectFaultFrom } from "../src/lib/project-session";
+import { gitSetupFailureFrom, PROJECT_FAULT, projectFaultFrom } from "../src/lib/project-session";
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -58,11 +58,56 @@ describe("cold open", () => {
     expect(screen).toMatch(/gitReadiness !== null && gitRefusal === null/u);
     expect(screen).toMatch(/gitRefusal \?\? \(startsEmpty/u);
     expect(screen).toMatch(/create a Git repository and an empty first commit/u);
-    expect(screen).toMatch(/Nothing changed\. \{actionError\}/u);
     expect(screen).toMatch(/Set up git for me/u);
     expect(screen).toMatch(/generatedIgnores\.join/u);
     expect(screen).toMatch(/disabled=\{!chosen \|\| initializing \|\| gitBlocksSetup\}/u);
     expect(screen).toMatch(/Waiting on git/u);
+  });
+
+  /**
+   * A-07: "Nothing changed." rendered after EVERY one-click git setup failure,
+   * including the ones that had already rewritten `.gitignore` and left a
+   * half-made `.git` behind -- a false claim about durable state. The shell
+   * now measures the claim (rollback, then a typed verdict), and the screen's
+   * copy branches on that code, never on the message.
+   */
+  test("the nothing-changed claim is measured, not assumed", async () => {
+    const screen = (
+      await readFile(
+        path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
+        "utf8"
+      )
+    )
+      .replace(/\{\/\*[\s\S]*?\*\/\}/gu, "")
+      .replace(/\/\*[\s\S]*?\*\//gu, "");
+    /* The claim renders only when the shell's typed code says the folder was
+       put back -- a branch on `.code`, which cannot see the message. */
+    expect(screen).toMatch(
+      /gitSetupFailure === null \|\| gitSetupFailure\.code === "nothing_changed"[\s\S]{0,80}Nothing changed\./u
+    );
+    /* And the other verdict names what remains instead of claiming clean. */
+    expect(screen).toMatch(/Still in the folder: \$\{gitSetupFailure\.remaining\.join/u);
+  });
+
+  test("a setup failure without a recognized code cannot claim the folder was put back", () => {
+    /* The shell's own verdicts pass through typed... */
+    expect(
+      gitSetupFailureFrom({ code: "nothing_changed", message: "git add failed", remaining: [] })
+        .code
+    ).toBe("nothing_changed");
+    const partial = gitSetupFailureFrom({
+      code: "partial_state",
+      message: "git add failed",
+      remaining: [".git"]
+    });
+    expect(partial.code).toBe("partial_state");
+    expect(partial.remaining).toEqual([".git"]);
+    /* ...and anything else -- a transport error, an older shell, a plain
+       string -- decodes as partial_state: unprovable cleanliness is claimed
+       by nobody. */
+    expect(gitSetupFailureFrom("command not found").code).toBe("partial_state");
+    expect(gitSetupFailureFrom(new Error("boom")).code).toBe("partial_state");
+    expect(gitSetupFailureFrom({ code: "surprise", message: "x" }).code).toBe("partial_state");
   });
 
   test("each failure a person can act on offers its action", () => {

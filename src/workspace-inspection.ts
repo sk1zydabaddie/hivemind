@@ -22,6 +22,7 @@ import {
 import { readQuotaLedgerState, type QuotaLedger } from "./resource-ledger.js";
 import { readPromotedRoutingPolicy } from "./learned-routing.js";
 import { loadAdapterProfile } from "./adapter.js";
+import { isProbeUsageSession } from "./adapter-probe.js";
 import { getProcessLiveness, type ProcessLiveness } from "./process-liveness.js";
 import { latestTaskRunState } from "./run-state.js";
 import type { LearnedRoutingPolicy, RoutingProviderScorecard } from "./routing-policy-schema.js";
@@ -112,6 +113,13 @@ export interface WorkspaceInspection {
     run_ceiling_tokens: number;
     session_ceiling_tokens: number;
     near_session_ceiling: boolean;
+    /* Setup spend, reported on its own rather than absorbed (A-04): the
+       capability probes a connect runs are paid project spend, but they are
+       not the run the ceilings bind, so they must neither vanish nor inflate
+       the ceiling-bound figures above. */
+    setup_calls: number;
+    setup_tokens: number;
+    setup_reserved_tokens: number;
   };
   swarm: {
     characterizations: WorkspaceCharacterization[];
@@ -355,13 +363,23 @@ export async function inspectWorkspace(
   ))];
   let calls = 0;
   let effectiveTokens = 0;
+  /* Setup spend, counted separately (A-04). Connecting an agent books its
+     capability probe under a probe session, which no run or spec ever names --
+     so the ~120K tokens a first setup pays were durable in the ledger and
+     invisible on every meter. They are project spend and get their own figures;
+     they are NOT folded into the run figures, because those are what the run
+     and session ceilings bind and setup is not that run. */
+  let setupCalls = 0;
+  let setupTokens = 0;
   for (const entry of Object.values(ledger.value.providers)) {
     if (entry.unmetered) continue;
-    for (const id of spendSessions) {
-      const usage = entry.session_usage[id];
-      if (usage !== undefined) {
+    for (const [usageSessionId, usage] of Object.entries(entry.session_usage)) {
+      if (spendSessions.includes(usageSessionId)) {
         calls += usage.requests;
         effectiveTokens += usage.effective_tokens;
+      } else if (isProbeUsageSession(usageSessionId)) {
+        setupCalls += usage.requests;
+        setupTokens += usage.effective_tokens;
       }
     }
   }
@@ -371,9 +389,19 @@ export async function inspectWorkspace(
   /* A reservation is a provider call already admitted and in flight. Counting
      it keeps the live readout from saying "0 calls" while the provider process
      is running; once settled, the same call moves into session_usage and is no
-     longer counted here. */
+     longer counted here. The same live treatment applies to a probe in
+     flight, on the setup figures. */
   calls += activeReservations.length;
   const reservedTokens = activeReservations.reduce(
+    (total, reservation) => total + reservation.reserved_tokens,
+    0
+  );
+  const activeProbeReservations = Object.values(ledger.value.reservations).filter(
+    (reservation) =>
+      reservation.status === "active" && isProbeUsageSession(reservation.session_id)
+  );
+  setupCalls += activeProbeReservations.length;
+  const setupReservedTokens = activeProbeReservations.reduce(
     (total, reservation) => total + reservation.reserved_tokens,
     0
   );
@@ -408,7 +436,10 @@ export async function inspectWorkspace(
         committed_tokens: committedTokens,
         run_ceiling_tokens: config.config.resource_policy?.run_ceiling?.tokens ?? 150_000,
         session_ceiling_tokens: config.config.resource_policy?.session_ceiling?.tokens ?? 500_000,
-        near_session_ceiling: committedTokens >= (config.config.resource_policy?.session_ceiling?.tokens ?? 500_000) * 0.8
+        near_session_ceiling: committedTokens >= (config.config.resource_policy?.session_ceiling?.tokens ?? 500_000) * 0.8,
+        setup_calls: setupCalls,
+        setup_tokens: setupTokens,
+        setup_reserved_tokens: setupReservedTokens
       },
       swarm,
       memory: memory.value,
@@ -897,7 +928,7 @@ function attemptOutcome(
 // Scope only. This decides which run a verified task is attributed to; whether
 // the task is verified at all is decided solely by the caller's
 // integratedTaskIdsFromEvents set, so History and `hivemind status` cannot
-// disagree — including after a retraction the run window alone cannot see.
+// disagree â€” including after a retraction the run window alone cannot see.
 function runVerifiedTaskIds(runEvents: HivemindEvent[], integrated: Set<string>): string[] {
   const ids = new Set<string>();
   for (const event of runEvents) {

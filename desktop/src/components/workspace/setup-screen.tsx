@@ -7,7 +7,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { SelectionControl } from "@/components/ui/selection-control";
 import { ProviderListRow, providerRank } from "@/components/workspace/provider-list";
 import { useDismissed } from "@/lib/dismissible";
-import { displayProjectPath, PROJECT_FAULT, type GitReadiness } from "@/lib/project-session";
+import {
+  displayProjectPath,
+  PROJECT_FAULT,
+  type GitReadiness,
+  type GitSetupFailure
+} from "@/lib/project-session";
 import { useProviderAuthentication } from "@/lib/provider-authentication";
 import { REQUIRED_ROLES } from "@/lib/providers";
 import type {
@@ -48,6 +53,7 @@ export function SetupScreen({
   connectionState,
   actionError,
   gitReadiness,
+  gitSetupFailure,
   live,
   view,
   onChooseProject,
@@ -65,6 +71,7 @@ export function SetupScreen({
   connectionState: string;
   actionError: string;
   gitReadiness: GitReadiness | null;
+  gitSetupFailure: GitSetupFailure | null;
   /** True once the daemon is answering: the project is set up and live. */
   live: boolean;
   /** The project's own configuration, or null until it has been read. */
@@ -149,7 +156,17 @@ export function SetupScreen({
                   </p>
                   {actionError === "" ? null : (
                     <p className="mt-2 mb-0 text-[12px] font-medium text-clay" role="alert">
-                      Nothing changed. {actionError}
+                      {/* "Nothing changed." is a claim about durable state, and
+                          for one-click git setup it is now MEASURED: the shell
+                          reports whether its rollback put the folder back, and
+                          the copy branches on that code -- never on the message
+                          (A-07). A failure whose rollback also failed names
+                          exactly what remains instead of claiming cleanliness. */}
+                      {gitSetupFailure === null || gitSetupFailure.code === "nothing_changed"
+                        ? `Nothing changed. ${actionError}`
+                        : gitSetupFailure.remaining.length > 0
+                          ? `Setup stopped partway and could not put everything back. Still in the folder: ${gitSetupFailure.remaining.join(", ")}. ${actionError}`
+                          : `Setup stopped partway, and Hivemind could not confirm the folder was put back. ${actionError}`}
                     </p>
                   )}
                   {problem.action === "initialize" ? (

@@ -15,10 +15,12 @@ import {
   createProjectSession,
   createProjectStreamGuard,
   actionErrorAfterDurableProgress,
+  gitSetupFailureFrom,
   PROJECT_FAULT,
   projectFaultFrom,
   validateProjectConnection,
   type GitReadiness,
+  type GitSetupFailure,
   type ProjectConnection
 } from "../lib/project-session";
 import {
@@ -38,6 +40,8 @@ interface WorkspaceView {
   inspection: WorkspaceInspection | null;
   actionError: string;
   gitReadiness: GitReadiness | null;
+  /** How the last one-click git setup failed, typed. Null when it has not. */
+  gitSetupFailure: GitSetupFailure | null;
   switchProject: (projectPath: string) => Promise<void>;
   initializeProject: () => Promise<void>;
   initializeGit: () => Promise<void>;
@@ -71,6 +75,7 @@ export function useWorkspace(): WorkspaceView {
   const [actionError, setActionError] = useState("");
   const actionErrorRef = useRef("");
   const [gitReadiness, setGitReadiness] = useState<GitReadiness | null>(null);
+  const [gitSetupFailure, setGitSetupFailure] = useState<GitSetupFailure | null>(null);
   const [initializing, setInitializing] = useState(false);
   const [revision, setRevision] = useState(0);
   const projectionRef = useRef(createBoardProjection());
@@ -286,6 +291,7 @@ export function useWorkspace(): WorkspaceView {
           setInspection(null);
           recordActionError("");
           setGitReadiness(null);
+          setGitSetupFailure(null);
           projectionRef.current = createBoardProjection();
           setConnectionState("selecting project");
           setConnectionCode(PROJECT_FAULT.noProjectSelected);
@@ -413,11 +419,18 @@ export function useWorkspace(): WorkspaceView {
   const initializeGit = useCallback(async () => {
     setInitializing(true);
     recordActionError("");
+    setGitSetupFailure(null);
     try {
       await invoke("initialize_git", { projectPath });
       await session.switchProject(projectPath);
     } catch (error) {
-      recordActionError(error instanceof Error ? error.message : String(error));
+      /* The shell's answer, typed. The screen's "Nothing changed." claim is
+         allowed only when the shell measured exactly that (A-07); anything
+         unrecognizable decodes as partial_state, the claim that promises
+         less. */
+      const failure = gitSetupFailureFrom(error);
+      setGitSetupFailure(failure);
+      recordActionError(failure.message);
     } finally {
       setInitializing(false);
     }
@@ -519,6 +532,7 @@ export function useWorkspace(): WorkspaceView {
     inspection,
     actionError,
     gitReadiness,
+    gitSetupFailure,
     switchProject,
     initializeProject,
     initializeGit,

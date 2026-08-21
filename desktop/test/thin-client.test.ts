@@ -601,6 +601,43 @@ describe("React workspace boundary", () => {
     expect(settings).toMatch(/stops the run after you have paid for the call/u);
   });
 
+  /**
+   * A-08: switching projects visibly showed the PREVIOUS project's worker
+   * state in Settings with the controls enabled, because the dialog's one
+   * load effect was keyed to `open` alone and nothing ever cleared `view`.
+   * The 2026-08-20 settings overhaul rewrote that very effect and kept the
+   * defect, which is why this is asserted rather than remembered.
+   *
+   * The invariant: every value the dialog shows or mutates belongs to the
+   * project named in its own header, or the surface is blank and disabled.
+   * Four shapes carry it, and losing any one of them re-opens the defect.
+   */
+  test("settings state is keyed to the project, not to the dialog being open", async () => {
+    const settings = (
+      await readFile(path.join(desktopRoot, "src", "components", "settings-dialog.tsx"), "utf8")
+    )
+      .replace(/\/\*[\s\S]*?\*\//gu, "")
+      .replace(/^\s*\/\/.*$/gmu, "");
+    /* 1. The load re-runs when the project changes, not only on open. */
+    expect(settings).toMatch(/\}, \[open, projectPath\]\);/u);
+    /* 2. Every stored answer names the project it was fetched for... */
+    expect(settings).toMatch(/setLoadedView\(\{ forProject: requested, value \}\)/u);
+    /* 3. ...and the rendered values are DERIVED, so an answer for any other
+       project -- stale on screen or arriving late -- is structurally
+       invisible. No clear to forget, no render-time state write. */
+    expect(settings).toMatch(
+      /loadedView\.forProject === projectPath \? loadedView\.value : null/u
+    );
+    expect(settings).toMatch(
+      /loadedModels\.forProject === projectPath \? loadedModels\.value : null/u
+    );
+    /* 4. Mutations stay disabled until THIS project's config.inspect lands --
+       `inspection` alone unlocks too early, on the first answer of any kind. */
+    expect(settings).toMatch(
+      /disabled = busy \|\| working \|\| inspection === null \|\| view === null/u
+    );
+  });
+
   test("the run thread is built from durable daemon events, not client memory", async () => {
     const work = await readFile(
       path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"),
@@ -993,7 +1030,11 @@ describe("React workspace boundary", () => {
       path.join(desktopRoot, "src", "hooks", "use-workspace.ts"),
       "utf8"
     );
-    expect(hook).toMatch(/onSwitchStart[\s\S]{0,320}createBoardProjection\(\)/u);
+    /* The window covers every clearing line in `onSwitchStart`; it grows when
+       a new piece of per-project state earns a clear there, as the git-setup
+       failure verdict did (A-07). */
+    expect(hook).toMatch(/onSwitchStart[\s\S]{0,400}createBoardProjection\(\)/u);
+    expect(hook).toMatch(/onSwitchStart[\s\S]{0,400}setGitSetupFailure\(null\)/u);
     expect(app).toMatch(/recent_projects/u);
     expect(app).toMatch(/aria-label=\{`Switch project, currently \$\{projectName\}`\}/u);
     expect(app).toMatch(/<DropdownMenuLabel>Projects<\/DropdownMenuLabel>/u);
