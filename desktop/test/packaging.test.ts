@@ -277,3 +277,51 @@ describe("the reachability check is part of shipping", () => {
     expect(() => findBrowser(["/definitely/not/here"], 9444)).toThrow(/no Chromium/u);
   });
 });
+
+/**
+ * The dependency advisory gate is part of shipping (A-29).
+ *
+ * Four vulnerable packages sat in the production MCP path while every
+ * documented release check stayed green, because no check ever asked. Worse,
+ * they sat in the LOCKFILE while node_modules held patched versions -- so the
+ * suites kept passing against code a clean `npm ci` would never install. The
+ * gate audits both lockfiles, which is exactly the artifact the suites cannot
+ * vouch for.
+ *
+ * Policy (decided 2026-08-21): production advisories at high or above block
+ * the ship; dev-only advisories are printed and never block, because a gate
+ * that blocks for things nobody can act on gets removed by whoever it blocks.
+ */
+describe("the advisory gate is part of shipping", () => {
+  test("ship runs it, and runs it before anything is built", async () => {
+    const scripts = (
+      JSON.parse(await readFile(path.join(repoRoot, "desktop", "package.json"), "utf8")) as {
+        scripts: Record<string, string>;
+      }
+    ).scripts;
+    expect(scripts["verify:advisories"]).toBe("node scripts/audit-gate.mjs");
+    expect(scripts.ship).toMatch(/verify:advisories/u);
+    /* Before the build, for the same reason verify:reachable runs first: a
+       check that runs once the installer exists is a report, not a gate. */
+    expect(scripts.ship.indexOf("verify:advisories")).toBeLessThan(
+      scripts.ship.indexOf("tauri:build")
+    );
+  });
+
+  test("it audits both packages, blocks at high on production deps, and only reports dev", async () => {
+    const gate = (
+      await readFile(path.join(repoRoot, "desktop", "scripts", "audit-gate.mjs"), "utf8")
+    ).replace(/\/\*[\s\S]*?\*\//gu, "").replace(/^\s*\/\/.*$/gmu, "");
+    /* Both lockfiles are the product: the root package ships inside the app
+       as Core. A gate scoped to one of them is scoped to where the problem
+       was found, not where it lives. */
+    expect(gate).toMatch(/repoRoot/u);
+    expect(gate).toMatch(/desktop/u);
+    expect(gate).toMatch(/--omit=dev/u);
+    expect(gate).toMatch(/--audit-level=high/u);
+    /* The blocking decision reads the tool's exit status -- its contractual
+       signal -- never its printed text. */
+    expect(gate).toMatch(/result\.status !== 0/u);
+    expect(gate).not.toMatch(/vulnerabilit(y|ies)"|stdout.*match/u);
+  });
+});
