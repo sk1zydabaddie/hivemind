@@ -150,7 +150,12 @@ describe("the mark is the real one", () => {
 });
 
 describe("the build mismatch has an exit", () => {
-  test("it is recognised by code and offers the action", async () => {
+  /* 30s, not the 5s default: this test dynamically imports setup-screen, and
+     under the contention of the full 27-file parallel run that import alone
+     crossed 5s (measured 2026-08-21: 1.4s solo, timed out in the full run).
+     A ceiling is sized against the largest unit it actually bounds -- here the
+     import under full-suite contention, not the assertion. */
+  test("it is recognised by code and offers the action", { timeout: 30_000 }, async () => {
     const { plainConnectionProblem } = await import(
       "../src/components/workspace/setup-screen"
     );

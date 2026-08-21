@@ -11,13 +11,19 @@ current user can still block a plan the project has already committed to.
 | ID | Finding | Severity | Product impact today | Status |
 | --- | --- | --- | --- | --- |
 | F-1 | The test suite cannot run on the platforms being ported to | High (blocked the cross-platform plan) | None | **Closed 2026-08-12** — `8b96387`, `62e8089` |
+| F-2 | Two thirds of the worker pool could never be verified through the app | High (routing picked from profiles no user could probe) | None | **Closed 2026-08-14** — fixed in the pass that found it |
+| F-3 | Hivemind committed its own machine evidence by default | High (a clone inherited another machine's verdicts) | None | **Closed 2026-08-15** — fixed in the pass that found it |
+| F-4 | A crash left the project permanently unable to prove itself idle | High (both remedies were gated on the thing the crash broke) | None | **Closed 2026-08-15** — fixed in the pass that found it |
+| F-5 | This file's own "only finding" guard note became a false record | Medium (misdirects orientation) | Misled the 2026-08-21 orientation pass | **Closed 2026-08-21** — fixed in the pass that found it |
 
-> **There is no other finding in this file, and there never has been.** If a
-> plan refers to audit findings numbered above F-1 — a §7–§22 backlog, or
-> anything similar — that backlog does not exist in this repository and did not
-> come from it. Recorded here so a future session cannot inherit it as real
-> work. The numbered list that *does* exist is the seven-item table in
-> `CROSS-PLATFORM.md`, which is remaining **port** work, not audit findings.
+> **The live open register is `docs/AUDIT-2026-08-17.md`, not this file.**
+> Every finding in this file is closed; what this file keeps is the reason each
+> one was possible. If a plan refers to audit findings this file does not
+> contain — a §7–§22 backlog, or anything similar — that backlog does not exist
+> in this repository and did not come from it. The numbered list that *does*
+> exist elsewhere is the seven-item table in `CROSS-PLATFORM.md`, which is
+> remaining **port** work, and the A-numbered register in `AUDIT-2026-08-17.md`,
+> which is the current audit.
 
 ---
 
@@ -300,3 +306,46 @@ Five tests, written against the broken behaviour first, two of which failed:
 
 The live-daemon case spawns a real process and the crash case kills one
 mid-reservation, because the whole question is what a real dead pid does.
+
+---
+
+## F-5 — The "only finding" guard note became the false record it was built to prevent
+
+**Found:** 2026-08-21, by an orientation pass reading this file cold.
+**Status:** fixed in the same pass.
+
+### What was true
+
+This file's header table listed only F-1, and directly beneath it a bold note
+read *"There is no other finding in this file, and there never has been."* The
+note was written to stop a future session inheriting a phantom backlog — a
+§7–§22 register that had been prioritised against without ever existing.
+
+F-2, F-3 and F-4 were then appended below that note on 2026-08-14 and
+2026-08-15 without the table or the note being touched. For six days the
+file's own guard asserted that most of its contents did not exist, and an
+orientation brief written from it repeated the error.
+
+### Why it is a finding and not a typo
+
+It is the project's standing rule — *recording a rule prevents nothing; only a
+mechanism does* — applied to a record rather than a rule. The note was a
+hand-maintained summary of the file's own contents: a count typed by hand, in
+prose, which nothing forced anyone to update when the body grew. That is the
+same failure as the stale count table at the head of `STATE.md`, found in the
+same pass: **any place that must agree with another place will eventually
+disagree with it.**
+
+The sharper version, and the reason it earns an entry: the note was itself a
+guard against stale records. A guard that shares the failure mode of the thing
+it guards adds a place to be wrong without adding a place to be right.
+
+### Fixed by
+
+- the table lists every finding, and the note no longer asserts a count of
+  this file's contents — it names where the live register is
+  (`docs/AUDIT-2026-08-17.md`) and disclaims only backlogs this file *never*
+  contained, which cannot go stale by appending;
+- the general correction, applied here and to `STATE.md` §1 in the same pass:
+  **a record must not carry a hand-maintained summary of itself.** Anything
+  that has to agree with the body belongs in the body, once.

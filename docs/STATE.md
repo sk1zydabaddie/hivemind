@@ -132,18 +132,30 @@ untracked Skybound project. The running installed app identified `dist` and
 project; the mutation is covered by the disposable Rust integration test.
 Evidence: `docs/evidence/git-one-click-installed-26.817.1726.png`.
 
-### Two platforms green, with counts
+### Two platforms green — current counts live in the newest dated section
 
-| Platform | Filesystem | Result |
-| --- | --- | --- |
-| Windows | NTFS | **761 passed, 0 failed, 2 skipped** |
-| Linux | native ext4 | **763 passed, 0 failed, 0 skipped** |
+**This section no longer carries counts, and that is the fix for a defect it
+had.** This file grows by appending dated sections, and the numbers once typed
+here went stale while the tail stayed right: on 2026-08-21 this table still
+read 761/763/180/15 while the newest section correctly recorded 834/836, 307
+and 35. A hand-typed count at the head of a growing document is a second place
+that must agree with the first, and it will not. So counts now appear in
+exactly one place: **the newest dated section at the end of this file**, where
+every verification pass already records them beside the build they verified. A
+number can only be stale where it claims to be current, and now only one place
+makes that claim.
 
-Plus desktop **180 passed / 16 files** and Rust **15 passed**.
+What this section still records is history, not a count:
 
-The two skips are genuine platform skips, not hidden failures. The counts differ
-legitimately. Both numbers must come off that platform's **native** filesystem —
-see the rig rule in §4.
+- Both platforms have run the same suite green. Windows is re-verified on
+  every shipping pass — see the newest dated section. Linux was last verified
+  **2026-08-14: 763 passed, 0 failed, 0 skipped on native ext4**, at that
+  day's suite size. It has not been re-run since the suite grew, so the Linux
+  figure is a dated result, not a current one.
+- The Windows skips are genuine platform skips, not hidden failures. The
+  platform counts differ legitimately.
+- Both numbers must come off that platform's **native** filesystem — see the
+  rig rule in §4.
 
 To reproduce the Linux number: copy the tree to a path on the distro's **own**
 ext4 (`~`, not `/mnt/d`), `npm ci`, `npm test`. Two traps, both hit before:

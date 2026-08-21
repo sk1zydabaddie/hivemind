@@ -4401,3 +4401,37 @@ errors, or a shell that stops responding. Build **26.821.647** reopened the
 completed real project with no browser errors. This complements, rather than
 replaces, the 30 viewport reachability checks.
 
+### The light-palette measurements in this file are historical — 2026-08-21
+
+The skin flipped from light to dark on 2026-08-20 (the Orca-derived shell,
+`b4bea13`). Every measured visual figure recorded in this file before that
+date was sampled on the light `#f5f6f8` canvas: the amber attention-edge peak
+of 14.7/255 over 11px, the raised 4.3/4 and floating 10.3/10 shadow values,
+the 59/57 grey-smudge rejection, the 16.3/13 rejected `floating` candidate,
+and the glass-diff percentages. The same figures appear in `docs/STATE.md` §4;
+that is the same light-palette record. The sections stay because they are the
+reasons the decisions were made; the figures no longer describe the installed
+skin.
+
+**The load-bearing ones did not go stale — they were re-derived, and by a
+mechanism rather than a re-sample.** The elevation ceiling is computed from
+the tokens against the dark ground plane `#0d1923` in
+`desktop/test/elevation.test.ts` (raised 11.9 and floating 14.7 on the
+strongest channel, overlay below 26), and `styles.css` records that
+dark-surface derivation beside the tokens themselves. A hand-sampled figure
+would have had to be re-sampled on every palette change; a computed one moves
+with the tokens, which is why the test calculates instead of carrying a
+measurement.
+
+The backdrop-filter ban survives the palette change on its palette-independent
+leg — a promoted compositing layer loses subpixel antialiasing window-wide —
+and is still asserted. Its other leg, "a blur has nothing to redistribute on a
+near-white canvas", is an argument about the old palette; on the dark opaque
+stepped planes the ban holds for the antialiasing reason and because blur
+would soften text without clarifying depth (see the depth comment in
+`styles.css`).
+
+**Reading rule for this file:** a measured figure binds only if a test
+computes or asserts it against the current tokens. A figure that lives only in
+prose is a record of the palette it was measured on, dated by its section.
+
