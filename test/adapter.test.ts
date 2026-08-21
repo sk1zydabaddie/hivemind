@@ -8,6 +8,7 @@ import test from "node:test";
 
 import {
   buildAgentPrompt,
+  extractAdapterModelOutput,
   findDangerousAdapterArgs,
   findRefusedAdapterModes,
   invokeAgent,
@@ -247,6 +248,47 @@ test("adapter usage parsers normalize Codex text, Codex JSONL, and Claude JSON i
       total_tokens: 190
     }
   );
+});
+
+test("Claude stream-json exposes the final result as model output", () => {
+  /* Shape captured from the installed app's failing planner invocation. The
+     assistant event contains the response for display, while Claude's final
+     result event is the adapter contract used for both output and metering. */
+  const drafted = JSON.stringify({
+    title: "Reply to the user",
+    goal: "Acknowledge the message and ask what they want to build.",
+    non_goals: [],
+    acceptance: ["The user receives a helpful response."],
+    open_questions: ["What would you like Hivemind to build?"],
+    assumptions: [],
+    alternatives: [
+      { title: "Ask a focused question", description: "Clarify the requested work." },
+      { title: "Offer examples", description: "Suggest a few possible starting points." }
+    ],
+    self_critique: "A focused question avoids inventing project work."
+  });
+  const stdout = [
+    JSON.stringify({ type: "system", subtype: "init", session_id: "fixture" }),
+    JSON.stringify({
+      type: "assistant",
+      message: { role: "assistant", content: [{ type: "text", text: drafted }] }
+    }),
+    JSON.stringify({
+      type: "result",
+      subtype: "success",
+      result: drafted,
+      usage: { input_tokens: 100, cache_read_input_tokens: 20, output_tokens: 40 }
+    })
+  ].join("\n");
+
+  assert.equal(extractAdapterModelOutput("claude-json", stdout), drafted);
+  assert.deepEqual(parseAdapterProviderUsage("claude-json", stdout, ""), {
+    input_tokens: 100,
+    cached_input_tokens: 20,
+    output_tokens: 40,
+    reasoning_tokens: null,
+    total_tokens: 160
+  });
 });
 
 test("Grok and Kimi persisted-session usage is normalized without self-measured guesses", () => {

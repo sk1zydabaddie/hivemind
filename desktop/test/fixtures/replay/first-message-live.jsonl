@@ -1,0 +1,2 @@
+{"ts":"2026-08-21T07:00:00.000Z","type":"conversation.message_recorded","task_id":null,"data":{"message_id":"S-001","text":"Hello, this is a test to see if you respond"}}
+{"ts":"2026-08-21T07:00:01.000Z","type":"spec.draft_started","task_id":null,"data":{"spec_id":"S-001","tool":"planner"}}

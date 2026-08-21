@@ -4347,3 +4347,31 @@ with two intentional Windows skips, Desktop 305/305, and Rust 34/34. Model
 discovery was no-cost; no model, capability probe, or paid 21st generation call
 was run.
 
+### Conversation turns and run records are different shapes — 2026-08-21
+
+The earlier rule that the run thread is “no longer a chat” applied one visual
+shape to two different kinds of information. A task milestone is a record and
+keeps the fixed time gutter, rule, and node. A message is a conversation turn:
+the person's submitted text aligns right in a bounded navy-wash bubble and the
+product's normalized response aligns left. This supersedes the quoted-block
+treatment for messages only; plan, task, verification, and ship records do not
+become chat bubbles.
+
+Conversation truth is durable Core state. `conversation.message_recorded` and
+the `spec.draft_*` events are appended before and after the provider boundary,
+so reloads reconstruct the same request, stage, response, or failure. React may
+move and clear the composer at submit time, but it does not invent the message,
+provider result, gate state, or completion state.
+
+The drafting stage reports functional liveness as changing elapsed text from a
+durable start timestamp. It does not depend on decorative animation, so reduced
+motion never turns it into a frozen glyph. Source drafting exposes no honest
+total and therefore gets no percentage or progress bar. The product presents a
+normalized goal and blocking questions; it never presents hidden model
+reasoning or raw chain of thought as if that were the product's voice.
+
+This contract is installed in build **26.821.51**. The production replay gate
+opens the first-message state at all three supported viewport sizes and proves
+functional liveness by requiring elapsed text to differ after three seconds.
+That brings reachability coverage to 30 surface/viewport combinations.
+

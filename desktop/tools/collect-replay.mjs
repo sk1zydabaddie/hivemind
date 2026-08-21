@@ -21,6 +21,10 @@ const execFileAsync = promisify(execFile);
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(desktopRoot, "..");
 const evidenceRoot = path.join(repoRoot, "docs", "evidence");
+const replayRoots = [
+  evidenceRoot,
+  path.join(desktopRoot, "test", "fixtures", "replay")
+];
 
 const EVENT_LINE = /^\{"ts":"20\d\d-/u;
 
@@ -36,7 +40,7 @@ async function collectEvidenceFiles() {
       }
     }
   }
-  await walk(evidenceRoot);
+  for (const root of replayRoots) await walk(root);
   return found.sort();
 }
 
@@ -631,7 +635,10 @@ for (const file of files) {
        review is genuinely short -- a plan prepared and a decision recorded is
        two -- and it is the state the review screens most needed. Keep anything
        carrying a plan however brief. */
-    if (run.length < 3 && !run.some((event) => event.type.startsWith("plan."))) continue;
+    if (
+      run.length < 3 &&
+      !run.some((event) => event.type.startsWith("plan.") || event.type === "conversation.message_recorded")
+    ) continue;
     const id = `${path.basename(file).replace(/\.(jsonl|md)$/u, "")}${index === 0 ? "" : `-${index + 1}`}`;
     const projected = await inspect(run, file);
     const patches = await readCapturedPatches(file);
@@ -749,7 +756,9 @@ if (planned !== undefined) {
   }
 }
 
-const richest = scenarios.find((scenario) => scenario.inspection !== null);
+const richest = [...scenarios]
+  .filter((scenario) => scenario.inspection !== null)
+  .sort((left, right) => right.events.length - left.events.length)[0];
 const empty = richest === undefined ? null : emptyProjectScenario(richest);
 if (empty !== null) {
   scenarios.push(empty);

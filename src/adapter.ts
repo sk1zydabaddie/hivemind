@@ -1501,7 +1501,7 @@ function normalizeAdapterResult(
   }
   const usage = parseAdapterProviderUsage(parser, stdout, stderr);
   return {
-    modelOutput: extractModelOutput(parser, stdout),
+    modelOutput: extractAdapterModelOutput(parser, stdout),
     providerUsageCapture:
       usage !== null
         ? { status: "captured", parser, usage }
@@ -1519,7 +1519,7 @@ function normalizeAdapterResult(
   };
 }
 
-function extractModelOutput(parser: AdapterUsageParser, stdout: string): string {
+export function extractAdapterModelOutput(parser: AdapterUsageParser, stdout: string): string {
   if (parser === "codex-text") {
     return stdout;
   }
@@ -1564,7 +1564,12 @@ function extractModelOutput(parser: AdapterUsageParser, stdout: string): string 
   }
 
   if (parser === "claude-json") {
-    const parsed = parseJsonObject(stdout);
+    /* Claude's `--output-format stream-json` writes one JSON record per line.
+       The final `result` record is the same authoritative reply that the
+       single-object format exposes, and is already what the usage parser
+       reads. Keep output and usage normalization on the same record so a
+       valid streamed reply cannot be metered and then silently discarded. */
+    const parsed = parseJsonObject(stdout) ?? findResultRecord(stdout);
     return parsed !== null && typeof parsed.result === "string" ? parsed.result : "";
   }
 

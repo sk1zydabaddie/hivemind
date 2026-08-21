@@ -338,7 +338,8 @@ export async function inspectWorkspace(
   const preparedPlanSession = planState.current === null
     ? null
     : latestPreparedPlanSession(events.value, planState.current);
-  const sessionId = preparedPlanSession ?? session.value?.session_id ?? null;
+  const draftSession = latestDraftSession(events.value);
+  const sessionId = preparedPlanSession ?? session.value?.session_id ?? draftSession;
   /**
    * Drafting is billed to the spec, not to the run.
    *
@@ -349,7 +350,7 @@ export async function inspectWorkspace(
    * the money invisible, in the direction that flatters us. Both sessions are
    * the same first run as far as anyone reading the number is concerned.
    */
-  const spendSessions = [...new Set([sessionId, specId].filter(
+  const spendSessions = [...new Set([sessionId, specId, draftSession].filter(
     (id): id is string => typeof id === "string" && id !== ""
   ))];
   let calls = 0;
@@ -364,10 +365,18 @@ export async function inspectWorkspace(
       }
     }
   }
-  const reservedTokens = sessionId === null
-    ? 0
-    : Object.values(ledger.value.reservations).reduce((total, reservation) =>
-      total + (reservation.status === "active" && reservation.session_id === sessionId ? reservation.reserved_tokens : 0), 0);
+  const activeReservations = Object.values(ledger.value.reservations).filter(
+    (reservation) => reservation.status === "active" && spendSessions.includes(reservation.session_id)
+  );
+  /* A reservation is a provider call already admitted and in flight. Counting
+     it keeps the live readout from saying "0 calls" while the provider process
+     is running; once settled, the same call moves into session_usage and is no
+     longer counted here. */
+  calls += activeReservations.length;
+  const reservedTokens = activeReservations.reduce(
+    (total, reservation) => total + reservation.reserved_tokens,
+    0
+  );
   const committedTokens = effectiveTokens + reservedTokens;
   const tasks = buildWorkspaceTasks(status.value, events.value, planState.current ?? planState.review, queues.value.needsYou, integrated);
   const executionGroups = buildWorkspaceExecutionGroups(tasks, planState.current ?? planState.review, events.value);
@@ -420,6 +429,15 @@ function latestPreparedPlanSession(
   return typeof prepared?.data.usage_session_id === "string"
     ? prepared.data.usage_session_id
     : null;
+}
+
+function latestDraftSession(events: HivemindEvent[]): string | null {
+  const event = [...events].reverse().find((candidate) =>
+    candidate.type === "spec.draft_started" ||
+    candidate.type === "spec.draft_completed" ||
+    candidate.type === "spec.draft_failed"
+  );
+  return typeof event?.data.spec_id === "string" ? event.data.spec_id : null;
 }
 
 function buildWorkspaceTasks(

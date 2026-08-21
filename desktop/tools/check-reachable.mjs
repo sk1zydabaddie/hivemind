@@ -49,6 +49,11 @@ const SURFACES = [
     url: `${BASE}/replay.html?scenario=e2e-textkit-parallel-run%40midrun`
   },
   {
+    name: "work — first-message liveness",
+    url: `${BASE}/replay.html?scenario=first-message-live&section=work`,
+    liveness: true
+  },
+  {
     name: "work — choose project agents",
     url: `${BASE}/replay.html?scenario=empty-project&section=work`,
     open: "Choose planner, manager, and worker models",
@@ -452,6 +457,27 @@ for (const viewport of VIEWPORTS) {
       return [];
     });
     const label = `${viewport.width}x${viewport.height}  ${surface.name}`;
+    if (surface.liveness === true) {
+      const before = await page.evaluate(`
+        return [...document.querySelectorAll("span")]
+          .map((element) => element.textContent?.trim() ?? "")
+          .find((text) => text.endsWith(" elapsed")) ?? null;
+      `);
+      await settle(3_100);
+      const after = await page.evaluate(`
+        return [...document.querySelectorAll("span")]
+          .map((element) => element.textContent?.trim() ?? "")
+          .find((text) => text.endsWith(" elapsed")) ?? null;
+      `);
+      if (before === null || after === null || before === after) {
+        const visibleText = await page.evaluate(
+          `return (document.body.innerText ?? "").replace(/\\s+/g, " ").trim().slice(0, 500);`
+        );
+        failures += 1;
+        console.error(`  FAIL ${label}: functional liveness did not change (${before} -> ${after}); visible: ${visibleText}`);
+        continue;
+      }
+    }
     if (
       found.unreachable.length === 0 &&
       found.clipped.length === 0 &&

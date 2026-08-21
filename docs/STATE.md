@@ -1805,3 +1805,39 @@ navigation boundary it exposed. All 27 surface/viewport combinations passed.
 Final verification passed Core 824/826 with two intentional Windows skips,
 Desktop 305/305, and Rust 34/34. Model discovery was no-cost; no model,
 capability probe, or paid 21st generation call was run.
+
+### First requests are now a durable conversation — 2026-08-21
+
+The blank Work canvas and the three-charge Claude failure had one concrete
+adapter cause and one presentation gap. Claude's stream-json usage parser read
+the final result record, but its model-output parser accepted only a single JSON
+object. Hivemind therefore metered valid streamed replies, handed an empty
+string to spec parsing, and silently repeated the paid request twice. Output
+normalization now reads the same final result record as usage normalization. A
+captured stream-shaped regression proves the reply and its provider usage are
+both recovered.
+
+One submitted request now makes one drafting call. An unreadable reply is a
+visible failure and retry is a new user action, not hidden spending. Core
+records the user's message, drafting start, completion, and failure in the
+append-only event trail. Those events, rather than React memory, drive the Work
+conversation after reload. The submitted text leaves the composer immediately;
+the canvas shows the user turn, a planner stage with elapsed seconds, then the
+normalized response or a concise failure with technical detail collapsed.
+Elapsed text continues to tick when reduced motion is enabled and no completion
+percentage is invented.
+
+Drafting reservations and settled usage are associated with the spec session
+before an active spec or manager session exists. An admitted provider process
+therefore reads as one live call instead of `0 calls`, then moves to settled
+usage without double-counting. Run milestones remain the existing left-edge
+log; only actual conversation turns use conventional user-right/product-left
+alignment. No model transcript or private chain of thought is exposed.
+
+Installed build **26.821.51** was built, installed, and verified against the
+binary on disk. Production reachability now includes a replayed first-message
+draft at 1280x720, 1366x768, and 1440x900; each capture waits three seconds and
+requires the visible elapsed text to change. All 30 surface/viewport
+combinations passed. Final verification passed Core 824/826 with two
+intentional Windows skips, Desktop 306/306, and Rust 35/35. No paid provider,
+capability, or 21st generation call was run.

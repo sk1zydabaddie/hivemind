@@ -21,6 +21,25 @@ export interface ThreadRequest {
   text: string;
 }
 
+export interface ThreadDraft {
+  kind: "draft";
+  id: string;
+  at: string;
+  specId: string;
+  state: "live" | "done" | "failed";
+  durationMs: number | null;
+}
+
+export interface ThreadAssistant {
+  kind: "assistant";
+  id: string;
+  at: string;
+  text: string;
+  questions: string[];
+  tone: "neutral" | "danger";
+  detail: string | null;
+}
+
 export interface ThreadGuidance {
   kind: "guidance";
   id: string;
@@ -78,6 +97,8 @@ export interface ThreadShipped {
 
 export type ThreadEntry =
   | ThreadRequest
+  | ThreadDraft
+  | ThreadAssistant
   | ThreadGuidance
   | ThreadPlan
   | ThreadMilestone
@@ -196,7 +217,7 @@ export function runSpanMs(events: HivemindEvent[]): number | null {
   if (stamps.length < 2) return null;
 
   const startedAt = events
-    .filter((event) => event.type === "plan.prepared")
+    .filter((event) => event.type === "conversation.message_recorded" || event.type === "plan.prepared")
     .map((event) => Date.parse(event.ts))
     .filter((value) => Number.isFinite(value))
     .sort((left, right) => left - right)
@@ -233,9 +254,71 @@ export function buildRunThread(
     if (SUPPRESSED.has(event.type) || event.type.startsWith("quality.")) continue;
     const id = `${event.ts}-${event.type}-${index}`;
 
+    if (event.type === "conversation.message_recorded") {
+      const text = readString(event.data.text);
+      if (text !== null) {
+        entries.push({ kind: "request", id, at: event.ts, text });
+      }
+      continue;
+    }
+
+    if (event.type === "spec.draft_started") {
+      const specId = readString(event.data.spec_id);
+      if (specId !== null) {
+        entries.push({
+          kind: "draft",
+          id,
+          at: event.ts,
+          specId,
+          state: "live",
+          durationMs: null
+        });
+      }
+      continue;
+    }
+
+    if (event.type === "spec.draft_completed" || event.type === "spec.draft_failed") {
+      const specId = readString(event.data.spec_id);
+      const draft = [...entries].reverse().find(
+        (entry): entry is ThreadDraft => entry.kind === "draft" && entry.specId === specId
+      );
+      if (draft) {
+        draft.state = event.type === "spec.draft_completed" ? "done" : "failed";
+        draft.durationMs = elapsed(draft.at, event.ts);
+      }
+      if (event.type === "spec.draft_completed") {
+        const goal = readString(event.data.goal);
+        if (goal !== null) {
+          entries.push({
+            kind: "assistant",
+            id,
+            at: event.ts,
+            text: goal,
+            questions: readStringArray(event.data.open_questions) ?? [],
+            tone: "neutral",
+            detail: null
+          });
+        }
+      } else {
+        const message = readString(event.data.message);
+        if (message !== null) {
+          entries.push({
+            kind: "assistant",
+            id,
+            at: event.ts,
+            text: message,
+            questions: [],
+            tone: "danger",
+            detail: readString(event.data.detail)
+          });
+        }
+      }
+      continue;
+    }
+
     if (event.type === "plan.prepared") {
       const text = readString(event.data.prompt);
-      if (text !== null) {
+      if (text !== null && !entries.some((entry) => entry.kind === "request" && entry.text === text)) {
         entries.push({ kind: "request", id: `${id}-ask`, at: event.ts, text });
       }
       entries.push({

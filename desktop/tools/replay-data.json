@@ -7338,7 +7338,7 @@
                 "id": "reverify:2026-08-11T05:49:38.503Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-oxLpBh\\.hivemind\\resource\\verification-sets\\V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-MAwxWM\\.hivemind\\resource\\verification-sets\\V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T05:49:38.503Z",
                 "task_id": "T-001",
                 "action": {
@@ -7922,7 +7922,7 @@
                 "id": "reverify:2026-08-11T05:49:38.503Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-oxLpBh\\.hivemind\\resource\\verification-sets\\V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-MAwxWM\\.hivemind\\resource\\verification-sets\\V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T05:49:38.503Z",
                 "task_id": "T-001",
                 "action": {
@@ -8506,7 +8506,7 @@
                 "id": "reverify:2026-08-11T05:49:38.503Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-oxLpBh\\.hivemind\\resource\\verification-sets\\V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-MAwxWM\\.hivemind\\resource\\verification-sets\\V-4631ca6c-f96f-4fe5-b431-8abcffbc0f68\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T05:49:38.503Z",
                 "task_id": "T-001",
                 "action": {
@@ -9090,7 +9090,7 @@
                 "id": "reverify:2026-08-11T05:50:41.550Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-oxLpBh\\.hivemind\\resource\\verification-sets\\V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003 + T-004; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-MAwxWM\\.hivemind\\resource\\verification-sets\\V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003 + T-004; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T05:50:41.550Z",
                 "task_id": "T-001",
                 "action": {
@@ -9675,7 +9675,7 @@
                 "id": "reverify:2026-08-11T05:50:41.550Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-oxLpBh\\.hivemind\\resource\\verification-sets\\V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003 + T-004; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-MAwxWM\\.hivemind\\resource\\verification-sets\\V-dd2b132a-b1b5-4873-8eb5-d01b6c17f501\\manifest.json' Fresh checks will re-evaluate T-001 + T-002 + T-003 + T-004; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T05:50:41.550Z",
                 "task_id": "T-001",
                 "action": {
@@ -20044,7 +20044,7 @@
                 "id": "reverify:2026-08-11T22:02:17.710Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-THXtJR\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-NXd14p\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T22:02:17.710Z",
                 "task_id": "T-001",
                 "action": {
@@ -20194,7 +20194,7 @@
                 "id": "reverify:2026-08-11T22:02:17.710Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-THXtJR\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-NXd14p\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T22:02:17.710Z",
                 "task_id": "T-001",
                 "action": {
@@ -21808,7 +21808,7 @@
                 "id": "reverify:2026-08-11T22:02:17.710Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-mYgoYQ\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-r3WpNn\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T22:02:17.710Z",
                 "task_id": "T-001",
                 "action": {
@@ -21958,7 +21958,7 @@
                 "id": "reverify:2026-08-11T22:02:17.710Z:unknown",
                 "kind": "reverification_required",
                 "title": "The latest project checks need to run again",
-                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-mYgoYQ\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
+                "detail": "verification-set manifest is unavailable for V-ba979481-c7ad-41e8-bf9f-daec50043254: ENOENT: no such file or directory, open 'C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-replay-r3WpNn\\.hivemind\\resource\\verification-sets\\V-ba979481-c7ad-41e8-bf9f-daec50043254\\manifest.json' Fresh checks will re-evaluate T-001; they will not reuse or alter the old result.",
                 "created_at": "2026-08-11T22:02:17.710Z",
                 "task_id": "T-001",
                 "action": {
@@ -29180,7 +29180,7 @@
       "patches": {},
       "span_ms": 122866,
       "inspection": null,
-      "inspection_error": "plan-lint failed: GROUNDING_FRESHNESS: tentative plan base 6b0e28b3f0f406deeb659313bcb8977436eebf44 is stale relative to current HEAD 3a2820bf841003a953584d9b968ff15efe9ae76a"
+      "inspection_error": "plan-lint failed: GROUNDING_FRESHNESS: tentative plan base 6b0e28b3f0f406deeb659313bcb8977436eebf44 is stale relative to current HEAD 4eb82c63b5f130ec2757c5174a9f9f2833d21b49"
     },
     {
       "id": "final-run-transcript-4",
@@ -31540,6 +31540,92 @@
       "inspection_error": null
     },
     {
+      "id": "first-message-live",
+      "source": "desktop/test/fixtures/replay/first-message-live.jsonl",
+      "events": [
+        {
+          "ts": "2026-08-21T07:00:00.000Z",
+          "type": "conversation.message_recorded",
+          "task_id": null,
+          "data": {
+            "message_id": "S-001",
+            "text": "Hello, this is a test to see if you respond"
+          }
+        },
+        {
+          "ts": "2026-08-21T07:00:01.000Z",
+          "type": "spec.draft_started",
+          "task_id": null,
+          "data": {
+            "spec_id": "S-001",
+            "tool": "planner"
+          }
+        }
+      ],
+      "patches": {},
+      "span_ms": 1000,
+      "inspection": {
+        "status": {
+          "tasks": [],
+          "leases": {},
+          "integration": {
+            "queue": [],
+            "status": null
+          },
+          "replans": []
+        },
+        "tasks": [],
+        "execution_groups": [],
+        "task_titles": {},
+        "active_spec_id": null,
+        "active_spec_title": null,
+        "manager_session": null,
+        "autonomy": {
+          "configured_level": "auto",
+          "run_levels": []
+        },
+        "plan_review": null,
+        "current_plan": null,
+        "integration_failure": null,
+        "needs_you": [],
+        "later": [],
+        "spend": {
+          "session_id": "S-001",
+          "calls": 0,
+          "effective_tokens": 0,
+          "reserved_tokens": 0,
+          "committed_tokens": 0,
+          "run_ceiling_tokens": 300000,
+          "session_ceiling_tokens": 3000000,
+          "near_session_ceiling": false
+        },
+        "swarm": {
+          "characterizations": [],
+          "warnings": []
+        },
+        "memory": {
+          "pending_lessons": [],
+          "routing_changes": [],
+          "draft_tests": [],
+          "canon": [],
+          "active_routing": {
+            "status": "absent",
+            "canon_id": null,
+            "reason": "no human-promoted learned routing policy exists",
+            "task_types": []
+          },
+          "warnings": []
+        },
+        "history": {
+          "runs": [],
+          "run_ceiling_tokens": 300000,
+          "session_ceiling_tokens": 3000000,
+          "warnings": []
+        }
+      },
+      "inspection_error": null
+    },
+    {
       "id": "firstrun-pending-plan",
       "source": "docs/evidence/e2e-2026-08-11-firstrun/firstrun-pending-plan.jsonl",
       "events": [
@@ -31582,7 +31668,7 @@
       "patches": {},
       "span_ms": 14,
       "inspection": null,
-      "inspection_error": "plan-lint failed: GROUNDING_FRESHNESS: tentative plan base 6b0e28b3f0f406deeb659313bcb8977436eebf44 is stale relative to current HEAD 2dda5f98746df97af9516dcca67bbb07e715bd55"
+      "inspection_error": "plan-lint failed: GROUNDING_FRESHNESS: tentative plan base 6b0e28b3f0f406deeb659313bcb8977436eebf44 is stale relative to current HEAD fc691330ce4452c0d3f921686b6b5107c84953ba"
     },
     {
       "id": "firstrun-quota-stop",
@@ -31627,11 +31713,11 @@
       "patches": {},
       "span_ms": 14,
       "inspection": null,
-      "inspection_error": "plan-lint failed: GROUNDING_FRESHNESS: tentative plan base 6b0e28b3f0f406deeb659313bcb8977436eebf44 is stale relative to current HEAD 3a2820bf841003a953584d9b968ff15efe9ae76a"
+      "inspection_error": "plan-lint failed: GROUNDING_FRESHNESS: tentative plan base 6b0e28b3f0f406deeb659313bcb8977436eebf44 is stale relative to current HEAD 4eb82c63b5f130ec2757c5174a9f9f2833d21b49"
     },
     {
       "id": "empty-project",
-      "source": "docs/evidence/e2e-2026-08-11-firstrun-noterminal/first-run.jsonl (run-shaped fields cleared: a project that has done nothing)",
+      "source": "docs/evidence/e2e-2026-08-11-textkit/e2e-textkit-parallel-run.jsonl (run-shaped fields cleared: a project that has done nothing)",
       "events": [],
       "span_ms": 0,
       "inspection": {
@@ -31639,10 +31725,85 @@
           "tasks": [
             {
               "task_id": "T-001",
-              "title": "Add and test the greet helper",
+              "title": "Implement and test slugify helper",
               "allowed_files": [
-                "src/greet.js",
-                "test/greet.test.js"
+                "src/slugify.js",
+                "test/slugify.test.js"
+              ],
+              "lease": {
+                "held": false,
+                "files": []
+              },
+              "worktree": "missing",
+              "patch": {
+                "bundle": "absent",
+                "submitted": false,
+                "analyzed": false,
+                "accepted": false,
+                "verdict": null,
+                "reason": "patch bundle not found",
+                "submitted_at": null,
+                "analyzed_at": null
+              },
+              "queued": false,
+              "integrated": true
+            },
+            {
+              "task_id": "T-002",
+              "title": "Implement and test truncate helper",
+              "allowed_files": [
+                "src/truncate.js",
+                "test/truncate.test.js"
+              ],
+              "lease": {
+                "held": false,
+                "files": []
+              },
+              "worktree": "missing",
+              "patch": {
+                "bundle": "absent",
+                "submitted": false,
+                "analyzed": false,
+                "accepted": false,
+                "verdict": null,
+                "reason": "patch bundle not found",
+                "submitted_at": null,
+                "analyzed_at": null
+              },
+              "queued": false,
+              "integrated": true
+            },
+            {
+              "task_id": "T-003",
+              "title": "Implement and test wordCount helper",
+              "allowed_files": [
+                "src/wordCount.js",
+                "test/wordCount.test.js"
+              ],
+              "lease": {
+                "held": false,
+                "files": []
+              },
+              "worktree": "missing",
+              "patch": {
+                "bundle": "absent",
+                "submitted": false,
+                "analyzed": false,
+                "accepted": false,
+                "verdict": null,
+                "reason": "patch bundle not found",
+                "submitted_at": null,
+                "analyzed_at": null
+              },
+              "queued": false,
+              "integrated": true
+            },
+            {
+              "task_id": "T-004",
+              "title": "Export and document text helpers",
+              "allowed_files": [
+                "README.md",
+                "src/index.js"
               ],
               "lease": {
                 "held": false,
@@ -31678,7 +31839,9 @@
         "manager_session": null,
         "autonomy": {
           "configured_level": "auto",
-          "run_levels": []
+          "run_levels": [
+            "review_plan"
+          ]
         },
         "plan_review": null,
         "current_plan": null,
@@ -31686,13 +31849,13 @@
         "needs_you": [],
         "later": [],
         "spend": {
-          "session_id": "c927985a-4143-48d6-bd3d-80734249fd8a",
-          "calls": 3,
-          "effective_tokens": 176610,
+          "session_id": "625f918d-57e2-4ebb-9c1f-b4e87ae46978",
+          "calls": 5,
+          "effective_tokens": 622583,
           "reserved_tokens": 0,
-          "committed_tokens": 176610,
-          "run_ceiling_tokens": 300000,
-          "session_ceiling_tokens": 3000000,
+          "committed_tokens": 622583,
+          "run_ceiling_tokens": 200000,
+          "session_ceiling_tokens": 2500000,
           "near_session_ceiling": false
         },
         "swarm": {
@@ -31713,9 +31876,43 @@
           "warnings": []
         },
         "history": {
-          "runs": [],
-          "run_ceiling_tokens": 300000,
-          "session_ceiling_tokens": 3000000,
+          "runs": [
+            {
+              "session_id": "625f918d-57e2-4ebb-9c1f-b4e87ae46978",
+              "spec_id": "S-001",
+              "started_at": "2026-08-11T05:47:51.755Z",
+              "last_activity_at": "2026-08-11T05:52:12.136Z",
+              "duration_ms": 260381,
+              "outcome": "completed",
+              "outcome_detail": "All 4 planned tasks shipped to the project.",
+              "verified_tasks": [
+                "T-001",
+                "T-002",
+                "T-003",
+                "T-004"
+              ],
+              "merged_tasks": [
+                "T-001",
+                "T-002",
+                "T-003",
+                "T-004"
+              ],
+              "stopped_tasks": [],
+              "calls": 5,
+              "effective_tokens": 622583,
+              "provider_reported_tokens": 622583,
+              "self_measured_tokens": 7555,
+              "evidence_paths": [
+                ".hivemind/orchestrator/sessions/625f918d-57e2-4ebb-9c1f-b4e87ae46978.json",
+                ".hivemind/log/events.jsonl"
+              ],
+              "autonomy_levels": [
+                "review_plan"
+              ]
+            }
+          ],
+          "run_ceiling_tokens": 200000,
+          "session_ceiling_tokens": 2500000,
           "warnings": []
         }
       },
@@ -31743,6 +31940,11 @@
             "kind": "directory"
           },
           {
+            "name": "public",
+            "path": "public",
+            "kind": "directory"
+          },
+          {
             "name": "scripts",
             "path": "scripts",
             "kind": "directory"
@@ -31766,6 +31968,16 @@
             "name": "tools",
             "path": "tools",
             "kind": "directory"
+          },
+          {
+            "name": "updates",
+            "path": "updates",
+            "kind": "directory"
+          },
+          {
+            "name": ".gitignore",
+            "path": ".gitignore",
+            "kind": "file"
           },
           {
             "name": "components.json",
@@ -31818,12 +32030,52 @@
         "path": "app",
         "entries": []
       },
+      "public": {
+        "path": "public",
+        "entries": [
+          {
+            "name": "favicon.png",
+            "path": "public/favicon.png",
+            "kind": "file"
+          }
+        ]
+      },
       "scripts": {
         "path": "scripts",
         "entries": [
           {
+            "name": "install-local.mjs",
+            "path": "scripts/install-local.mjs",
+            "kind": "file"
+          },
+          {
             "name": "prepare-bundle.mjs",
             "path": "scripts/prepare-bundle.mjs",
+            "kind": "file"
+          },
+          {
+            "name": "publish-github-release.mjs",
+            "path": "scripts/publish-github-release.mjs",
+            "kind": "file"
+          },
+          {
+            "name": "release-local.mjs",
+            "path": "scripts/release-local.mjs",
+            "kind": "file"
+          },
+          {
+            "name": "stamp-version.mjs",
+            "path": "scripts/stamp-version.mjs",
+            "kind": "file"
+          },
+          {
+            "name": "updater-serve.mjs",
+            "path": "scripts/updater-serve.mjs",
+            "kind": "file"
+          },
+          {
+            "name": "verify-release.mjs",
+            "path": "scripts/verify-release.mjs",
             "kind": "file"
           }
         ]
@@ -31831,6 +32083,11 @@
       "src": {
         "path": "src",
         "entries": [
+          {
+            "name": "assets",
+            "path": "src/assets",
+            "kind": "directory"
+          },
           {
             "name": "components",
             "path": "src/components",
@@ -31852,6 +32109,11 @@
             "kind": "file"
           },
           {
+            "name": "assets.d.ts",
+            "path": "src/assets.d.ts",
+            "kind": "file"
+          },
+          {
             "name": "main.tsx",
             "path": "src/main.tsx",
             "kind": "file"
@@ -31866,6 +32128,11 @@
       "src-tauri": {
         "path": "src-tauri",
         "entries": [
+          {
+            "name": "capabilities",
+            "path": "src-tauri/capabilities",
+            "kind": "directory"
+          },
           {
             "name": "gen",
             "path": "src-tauri/gen",
@@ -31905,12 +32172,37 @@
             "name": "tauri.conf.json",
             "path": "src-tauri/tauri.conf.json",
             "kind": "file"
+          },
+          {
+            "name": "updater-dev.conf.json",
+            "path": "src-tauri/updater-dev.conf.json",
+            "kind": "file"
           }
         ]
       },
       "test": {
         "path": "test",
         "entries": [
+          {
+            "name": "fixtures",
+            "path": "test/fixtures",
+            "kind": "directory"
+          },
+          {
+            "name": "attention.test.ts",
+            "path": "test/attention.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "cold-open.test.ts",
+            "path": "test/cold-open.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "command-surface.test.ts",
+            "path": "test/command-surface.test.ts",
+            "kind": "file"
+          },
           {
             "name": "design-tokens.test.ts",
             "path": "test/design-tokens.test.ts",
@@ -31922,8 +32214,23 @@
             "kind": "file"
           },
           {
+            "name": "durable-shape.test.ts",
+            "path": "test/durable-shape.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "elevation.test.ts",
+            "path": "test/elevation.test.ts",
+            "kind": "file"
+          },
+          {
             "name": "identifiers.test.ts",
             "path": "test/identifiers.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "identity.test.ts",
+            "path": "test/identity.test.ts",
             "kind": "file"
           },
           {
@@ -31957,8 +32264,28 @@
             "kind": "file"
           },
           {
+            "name": "provider-connection-plan.test.ts",
+            "path": "test/provider-connection-plan.test.ts",
+            "kind": "file"
+          },
+          {
             "name": "provider-usage.test.ts",
             "path": "test/provider-usage.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "seams.test.ts",
+            "path": "test/seams.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "spacing-scale.test.ts",
+            "path": "test/spacing-scale.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "swap-helper.test.ts",
+            "path": "test/swap-helper.test.ts",
             "kind": "file"
           },
           {
@@ -31969,6 +32296,16 @@
           {
             "name": "thin-client.test.ts",
             "path": "test/thin-client.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "ui-consistency.test.ts",
+            "path": "test/ui-consistency.test.ts",
+            "kind": "file"
+          },
+          {
+            "name": "updater.test.ts",
+            "path": "test/updater.test.ts",
             "kind": "file"
           },
           {
@@ -31992,8 +32329,23 @@
         "path": "tools",
         "entries": [
           {
+            "name": "check-reachable.mjs",
+            "path": "tools/check-reachable.mjs",
+            "kind": "file"
+          },
+          {
             "name": "collect-replay.mjs",
             "path": "tools/collect-replay.mjs",
+            "kind": "file"
+          },
+          {
+            "name": "managed-browser.d.mts",
+            "path": "tools/managed-browser.d.mts",
+            "kind": "file"
+          },
+          {
+            "name": "managed-browser.mjs",
+            "path": "tools/managed-browser.mjs",
             "kind": "file"
           },
           {
@@ -32013,6 +32365,66 @@
           }
         ]
       },
+      "updates": {
+        "path": "updates",
+        "entries": [
+          {
+            "name": "Hivemind AI_26.815.2331_x64-setup.exe",
+            "path": "updates/Hivemind AI_26.815.2331_x64-setup.exe",
+            "kind": "file"
+          },
+          {
+            "name": "Hivemind AI_26.815.2339_x64-setup.exe",
+            "path": "updates/Hivemind AI_26.815.2339_x64-setup.exe",
+            "kind": "file"
+          },
+          {
+            "name": "Hivemind AI_26.817.1941_x64-setup.exe",
+            "path": "updates/Hivemind AI_26.817.1941_x64-setup.exe",
+            "kind": "file"
+          },
+          {
+            "name": "Hivemind-AI_26.817.1941_x64-setup.exe",
+            "path": "updates/Hivemind-AI_26.817.1941_x64-setup.exe",
+            "kind": "file"
+          },
+          {
+            "name": "Hivemind-AI_26.818.803_x64-setup.exe",
+            "path": "updates/Hivemind-AI_26.818.803_x64-setup.exe",
+            "kind": "file"
+          },
+          {
+            "name": "latest.json",
+            "path": "updates/latest.json",
+            "kind": "file"
+          }
+        ]
+      },
+      "src/assets": {
+        "path": "src/assets",
+        "entries": [
+          {
+            "name": "providers",
+            "path": "src/assets/providers",
+            "kind": "directory"
+          },
+          {
+            "name": "hivemind-field.svg",
+            "path": "src/assets/hivemind-field.svg",
+            "kind": "file"
+          },
+          {
+            "name": "mark-dark.png",
+            "path": "src/assets/mark-dark.png",
+            "kind": "file"
+          },
+          {
+            "name": "mark.png",
+            "path": "src/assets/mark.png",
+            "kind": "file"
+          }
+        ]
+      },
       "src/components": {
         "path": "src/components",
         "entries": [
@@ -32027,11 +32439,6 @@
             "kind": "directory"
           },
           {
-            "name": "agent-setup-dialog.tsx",
-            "path": "src/components/agent-setup-dialog.tsx",
-            "kind": "file"
-          },
-          {
             "name": "settings-dialog.tsx",
             "path": "src/components/settings-dialog.tsx",
             "kind": "file"
@@ -32041,6 +32448,11 @@
       "src/hooks": {
         "path": "src/hooks",
         "entries": [
+          {
+            "name": "use-attention.ts",
+            "path": "src/hooks/use-attention.ts",
+            "kind": "file"
+          },
           {
             "name": "use-workspace.ts",
             "path": "src/hooks/use-workspace.ts",
@@ -32052,8 +32464,28 @@
         "path": "src/lib",
         "entries": [
           {
+            "name": "attention.ts",
+            "path": "src/lib/attention.ts",
+            "kind": "file"
+          },
+          {
             "name": "diff-model.ts",
             "path": "src/lib/diff-model.ts",
+            "kind": "file"
+          },
+          {
+            "name": "dismissible.ts",
+            "path": "src/lib/dismissible.ts",
+            "kind": "file"
+          },
+          {
+            "name": "durable.ts",
+            "path": "src/lib/durable.ts",
+            "kind": "file"
+          },
+          {
+            "name": "gates.ts",
+            "path": "src/lib/gates.ts",
             "kind": "file"
           },
           {
@@ -32084,6 +32516,16 @@
           {
             "name": "projection.ts",
             "path": "src/lib/projection.ts",
+            "kind": "file"
+          },
+          {
+            "name": "provider-authentication.ts",
+            "path": "src/lib/provider-authentication.ts",
+            "kind": "file"
+          },
+          {
+            "name": "provider-marks.ts",
+            "path": "src/lib/provider-marks.ts",
             "kind": "file"
           },
           {
@@ -32128,6 +32570,16 @@
           }
         ]
       },
+      "src-tauri/capabilities": {
+        "path": "src-tauri/capabilities",
+        "entries": [
+          {
+            "name": "default.json",
+            "path": "src-tauri/capabilities/default.json",
+            "kind": "file"
+          }
+        ]
+      },
       "src-tauri/gen": {
         "path": "src-tauri/gen",
         "entries": [
@@ -32137,8 +32589,18 @@
             "kind": "directory"
           },
           {
+            "name": "app-version.txt",
+            "path": "src-tauri/gen/app-version.txt",
+            "kind": "file"
+          },
+          {
             "name": "shell-build-id.txt",
             "path": "src-tauri/gen/shell-build-id.txt",
+            "kind": "file"
+          },
+          {
+            "name": "version.conf.json",
+            "path": "src-tauri/gen/version.conf.json",
             "kind": "file"
           }
         ]
@@ -32252,8 +32714,18 @@
             "kind": "file"
           },
           {
+            "name": "newer_version.rs",
+            "path": "src-tauri/src/newer_version.rs",
+            "kind": "file"
+          },
+          {
             "name": "project.rs",
             "path": "src-tauri/src/project.rs",
+            "kind": "file"
+          },
+          {
+            "name": "selfbuild.rs",
+            "path": "src-tauri/src/selfbuild.rs",
             "kind": "file"
           }
         ]
@@ -32279,6 +32751,61 @@
           {
             "name": "CACHEDIR.TAG",
             "path": "src-tauri/target/CACHEDIR.TAG",
+            "kind": "file"
+          }
+        ]
+      },
+      "test/fixtures": {
+        "path": "test/fixtures",
+        "entries": [
+          {
+            "name": "replay",
+            "path": "test/fixtures/replay",
+            "kind": "directory"
+          }
+        ]
+      },
+      "src/assets/providers": {
+        "path": "src/assets/providers",
+        "entries": [
+          {
+            "name": "claude-ai-icon.svg",
+            "path": "src/assets/providers/claude-ai-icon.svg",
+            "kind": "file"
+          },
+          {
+            "name": "grok-dark.svg",
+            "path": "src/assets/providers/grok-dark.svg",
+            "kind": "file"
+          },
+          {
+            "name": "grok-light.svg",
+            "path": "src/assets/providers/grok-light.svg",
+            "kind": "file"
+          },
+          {
+            "name": "kimi-icon.svg",
+            "path": "src/assets/providers/kimi-icon.svg",
+            "kind": "file"
+          },
+          {
+            "name": "openai_dark.svg",
+            "path": "src/assets/providers/openai_dark.svg",
+            "kind": "file"
+          },
+          {
+            "name": "openai.svg",
+            "path": "src/assets/providers/openai.svg",
+            "kind": "file"
+          },
+          {
+            "name": "opencode-dark.svg",
+            "path": "src/assets/providers/opencode-dark.svg",
+            "kind": "file"
+          },
+          {
+            "name": "opencode.svg",
+            "path": "src/assets/providers/opencode.svg",
             "kind": "file"
           }
         ]
@@ -32327,8 +32854,18 @@
             "kind": "file"
           },
           {
+            "name": "pressable.tsx",
+            "path": "src/components/ui/pressable.tsx",
+            "kind": "file"
+          },
+          {
             "name": "scroll-area.tsx",
             "path": "src/components/ui/scroll-area.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "selection-control.tsx",
+            "path": "src/components/ui/selection-control.tsx",
             "kind": "file"
           },
           {
@@ -32346,6 +32883,11 @@
       "src/components/workspace": {
         "path": "src/components/workspace",
         "entries": [
+          {
+            "name": "accounts-panel.tsx",
+            "path": "src/components/workspace/accounts-panel.tsx",
+            "kind": "file"
+          },
           {
             "name": "agent-graph.tsx",
             "path": "src/components/workspace/agent-graph.tsx",
@@ -32372,6 +32914,16 @@
             "kind": "file"
           },
           {
+            "name": "hex.tsx",
+            "path": "src/components/workspace/hex.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "lane-canvas.tsx",
+            "path": "src/components/workspace/lane-canvas.tsx",
+            "kind": "file"
+          },
+          {
             "name": "phase-spine.tsx",
             "path": "src/components/workspace/phase-spine.tsx",
             "kind": "file"
@@ -32382,13 +32934,33 @@
             "kind": "file"
           },
           {
+            "name": "provenance-note.tsx",
+            "path": "src/components/workspace/provenance-note.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "provider-list.tsx",
+            "path": "src/components/workspace/provider-list.tsx",
+            "kind": "file"
+          },
+          {
             "name": "setup-screen.tsx",
             "path": "src/components/workspace/setup-screen.tsx",
             "kind": "file"
           },
           {
+            "name": "sharing-bar.tsx",
+            "path": "src/components/workspace/sharing-bar.tsx",
+            "kind": "file"
+          },
+          {
             "name": "spec-review.tsx",
             "path": "src/components/workspace/spec-review.tsx",
+            "kind": "file"
+          },
+          {
+            "name": "update-bar.tsx",
+            "path": "src/components/workspace/update-bar.tsx",
             "kind": "file"
           },
           {
@@ -32697,6 +33269,16 @@
             "kind": "file"
           }
         ]
+      },
+      "test/fixtures/replay": {
+        "path": "test/fixtures/replay",
+        "entries": [
+          {
+            "name": "first-message-live.jsonl",
+            "path": "test/fixtures/replay/first-message-live.jsonl",
+            "kind": "file"
+          }
+        ]
       }
     },
     "files": {
@@ -32714,14 +33296,14 @@
       },
       "package.json": {
         "path": "package.json",
-        "text": "{\n  \"name\": \"hivemind-desktop\",\n  \"version\": \"0.0.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"dev\": \"vite\",\n    \"build\": \"tsc --noEmit && vite build\",\n    \"bundle:prepare\": \"node scripts/prepare-bundle.mjs\",\n    \"tauri:dev\": \"tauri dev\",\n    \"tauri:build\": \"tauri build --bundles nsis\",\n    \"test\": \"vitest run\",\n    \"replay:collect\": \"node tools/collect-replay.mjs\",\n    \"tauri:build:linux\": \"tauri build --bundles deb,appimage\",\n    \"tauri:build:mac\": \"tauri build --bundles app,dmg\"\n  },\n  \"dependencies\": {\n    \"@fontsource-variable/geist\": \"^5.3.0\",\n    \"@fontsource-variable/geist-mono\": \"^5.3.0\",\n    \"@tailwindcss/vite\": \"^4.3.3\",\n    \"@tauri-apps/api\": \"^2.8.0\",\n    \"class-variance-authority\": \"^0.7.1\",\n    \"clsx\": \"^2.1.1\",\n    \"cmdk\": \"^1.1.1\",\n    \"lucide-react\": \"^0.468.0\",\n    \"radix-ui\": \"^1.6.7\",\n    \"react\": \"^19.1.1\",\n    \"react-dom\": \"^19.1.1\",\n    \"tailwind-merge\": \"^3.3.1\",\n    \"tailwindcss\": \"^4.3.3\",\n    \"tw-animate-css\": \"^1.4.0\"\n  },\n  \"devDependencies\": {\n    \"@tauri-apps/cli\": \"^2.0.0\",\n    \"@types/node\": \"^22.15.30\",\n    \"@types/react\": \"^19.1.8\",\n    \"@types/react-dom\": \"^19.1.6\",\n    \"@vitejs/plugin-react\": \"^4.5.2\",\n    \"typescript\": \"^5.8.3\",\n    \"vite\": \"^6.3.5\",\n    \"vitest\": \"^3.2.4\"\n  }\n}\n",
-        "bytes": 1255,
+        "text": "{\r\n  \"name\": \"hivemind-desktop\",\r\n  \"version\": \"0.0.0\",\r\n  \"private\": true,\r\n  \"type\": \"module\",\r\n  \"scripts\": {\r\n    \"dev\": \"vite\",\r\n    \"build\": \"tsc --noEmit && vite build\",\r\n    \"bundle:prepare\": \"node scripts/prepare-bundle.mjs\",\r\n    \"tauri:dev\": \"tauri dev\",\r\n    \"tauri:build\": \"npm run bundle:stamp && tauri build --bundles nsis --config src-tauri/gen/version.conf.json\",\r\n    \"test\": \"vitest run\",\r\n    \"replay:collect\": \"node tools/collect-replay.mjs\",\r\n    \"tauri:build:linux\": \"tauri build --bundles deb,appimage\",\r\n    \"tauri:build:mac\": \"tauri build --bundles app,dmg\",\r\n    \"install:local\": \"node scripts/install-local.mjs\",\r\n    \"ship\": \"npm run verify:reachable && npm run tauri:build && npm run install:local\",\r\n    \"bundle:stamp\": \"node scripts/stamp-version.mjs\",\r\n    \"verify:reachable\": \"node tools/check-reachable.mjs\",\n    \"release:local\": \"node scripts/release-local.mjs\",\n    \"release:github\": \"node scripts/release-local.mjs --github && node scripts/publish-github-release.mjs && node scripts/verify-release.mjs\",\n    \"verify:release\": \"node scripts/verify-release.mjs\",\n    \"updater:serve\": \"node scripts/updater-serve.mjs\",\n    \"tauri:build:localupdate\": \"npm run bundle:stamp && tauri build --bundles nsis --config src-tauri/gen/version.conf.json --config src-tauri/updater-dev.conf.json\"\r\n  },\r\n  \"dependencies\": {\r\n    \"@fontsource-variable/geist\": \"^5.3.0\",\r\n    \"@fontsource-variable/geist-mono\": \"^5.3.0\",\r\n    \"@tailwindcss/vite\": \"^4.3.3\",\r\n    \"@tauri-apps/api\": \"^2.8.0\",\r\n    \"@tauri-apps/plugin-notification\": \"^2.3.3\",\r\n    \"@tauri-apps/plugin-updater\": \"^2.10.1\",\r\n    \"class-variance-authority\": \"^0.7.1\",\r\n    \"clsx\": \"^2.1.1\",\r\n    \"cmdk\": \"^1.1.1\",\r\n    \"lucide-react\": \"^0.468.0\",\r\n    \"radix-ui\": \"^1.6.7\",\r\n    \"react\": \"^19.1.1\",\r\n    \"react-dom\": \"^19.1.1\",\r\n    \"tailwind-merge\": \"^3.3.1\",\r\n    \"tailwindcss\": \"^4.3.3\",\r\n    \"tw-animate-css\": \"^1.4.0\"\r\n  },\r\n  \"devDependencies\": {\r\n    \"@tauri-apps/cli\": \"^2.0.0\",\r\n    \"@types/node\": \"^22.15.30\",\r\n    \"@types/react\": \"^19.1.8\",\r\n    \"@types/react-dom\": \"^19.1.6\",\r\n    \"@vitejs/plugin-react\": \"^4.5.2\",\r\n    \"typescript\": \"^5.8.3\",\r\n    \"vite\": \"^6.3.5\",\r\n    \"vitest\": \"^3.2.4\"\r\n  }\r\n}\r\n",
+        "bytes": 2195,
         "truncated": false
       }
     }
   },
   "check_output": {
-    "checks_run_id": "C-517ca6ab-68dd-495e-87a6-baa461cf6df8",
+    "checks_run_id": "C-1ee5fb15-3e09-4901-83ad-4c123adb74a9",
     "checks": [
       {
         "id": "lint",
@@ -32735,12 +33317,12 @@
         "id": "tests",
         "command": "\"C:\\\\nvm4w\\\\nodejs\\\\node.exe\" --test test/slugify.test.js",
         "exit_code": 1,
-        "stdout": "TAP version 13\n# Subtest: lowercases and hyphenates\nok 1 - lowercases and hyphenates\n  ---\n  duration_ms: 0.8167\n  type: 'test'\n  ...\n# Subtest: strips punctuation\nnot ok 2 - strips punctuation\n  ---\n  duration_ms: 0.8396\n  type: 'test'\n  location: 'C:\\\\Users\\\\ethan\\\\AppData\\\\Local\\\\Temp\\\\hivemind-replay-checks-pGWDHi\\\\test\\\\slugify.test.js:7:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly equal:\n    + actual - expected\n    \n    + 'hello,-world!'\n    - 'hello-world'\n            ^\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: 'hello-world'\n  actual: 'hello,-world!'\n  operator: 'strictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///C:/Users/ethan/AppData/Local/Temp/hivemind-replay-checks-pGWDHi/test/slugify.test.js:8:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n    Test.postRun (node:internal/test_runner/test:1173:19)\n    Test.run (node:internal/test_runner/test:1101:12)\n    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)\n  ...\n1..2\n# tests 2\n# suites 0\n# pass 1\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 96.2028\n",
+        "stdout": "TAP version 13\n# Subtest: lowercases and hyphenates\nok 1 - lowercases and hyphenates\n  ---\n  duration_ms: 0.7337\n  type: 'test'\n  ...\n# Subtest: strips punctuation\nnot ok 2 - strips punctuation\n  ---\n  duration_ms: 0.7507\n  type: 'test'\n  location: 'C:\\\\Users\\\\ethan\\\\AppData\\\\Local\\\\Temp\\\\hivemind-replay-checks-LMpCLr\\\\test\\\\slugify.test.js:7:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly equal:\n    + actual - expected\n    \n    + 'hello,-world!'\n    - 'hello-world'\n            ^\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: 'hello-world'\n  actual: 'hello,-world!'\n  operator: 'strictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///C:/Users/ethan/AppData/Local/Temp/hivemind-replay-checks-LMpCLr/test/slugify.test.js:8:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n    Test.postRun (node:internal/test_runner/test:1173:19)\n    Test.run (node:internal/test_runner/test:1101:12)\n    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)\n  ...\n1..2\n# tests 2\n# suites 0\n# pass 1\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 77.2838\n",
         "stderr": "",
         "truncated": false
       }
     ],
-    "ran_at": "2026-08-13T20:21:12.345Z",
+    "ran_at": "2026-08-21T07:44:15.670Z",
     "task_ids": [],
     "tests": "fail"
   }

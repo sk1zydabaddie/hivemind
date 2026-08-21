@@ -390,7 +390,11 @@ describe("React workspace boundary", () => {
     expect(work).toMatch(/type: "adapter\.connect_model"/u);
     expect(work).toMatch(/may use provider quota/u);
     expect(work).toMatch(/hivemind-identity-field hivemind-identity-field--idle/u);
-    expect(work).toMatch(/\) : idle \? \(\s*<div className="min-h-0" \/>/u);
+    /* Once a durable conversation exists, the body is the thread even before
+       tasks exist. The old idle blank branch was the reported empty canvas. */
+    expect(work).not.toMatch(/\) : idle \? \(\s*<div className="min-h-0" \/>/u);
+    expect(work).toMatch(/tasks\.length > 0 \? \([\s\S]{0,420}<LaneCanvas/u);
+    expect(work).toMatch(/tasks\.length > 0[\s\S]{0,900}<RunThread/u);
     expect(work).toMatch(/subject === null && tasks\.length === 0 && !runActive[\s\S]{0,140}absolute inset-0 flex items-center justify-center/u);
     expect(work).not.toMatch(/Try one of these|EXAMPLE_ASKS/u);
     // The interruption row is always rendered, even when empty, so the grid keeps
@@ -726,7 +730,14 @@ describe("React workspace boundary", () => {
        whose fill is cleared phases over total phases, with the marker as an
        overlay. Nothing in it is driven by a clock. */
     expect(work).toMatch(/function RunProgress/u);
-    expect(work).not.toMatch(/setInterval|setTimeout\(\(\) => set/u);
+    const runProgress = work.slice(
+      work.indexOf("function RunProgress"),
+      work.indexOf("function Divider")
+    );
+    expect(runProgress).not.toMatch(/setInterval|setTimeout\(\(\) => set/u);
+    /* Drafting has no honest total. Its separate textual elapsed indicator is
+       functional liveness for reduced-motion users, not task progress. */
+    expect(work).toMatch(/function LiveElapsed[\s\S]*setInterval[\s\S]*elapsed/u);
     expect(styles).toMatch(/animation:\s*artifact-advance/u);
     expect(styles).toMatch(/prefers-reduced-motion[\s\S]*\.artifact-marker\s*\{\s*display:\s*none/u);
   });

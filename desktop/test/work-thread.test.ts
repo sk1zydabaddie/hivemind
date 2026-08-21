@@ -191,6 +191,37 @@ describe("run thread", () => {
       text: "Add a dark mode toggle to the settings page"
     });
   });
+
+  test("projects first-message drafting as a durable conversation without duplicating the request", () => {
+    const thread = buildRunThread(
+      newestFirst([
+        event("conversation.message_recorded", null, {
+          message_id: "S-001",
+          text: "Hello, can you respond?"
+        }, "2026-08-06T14:00:00.000Z"),
+        event("spec.draft_started", null, { spec_id: "S-001", tool: "planner" }, "2026-08-06T14:00:01.000Z"),
+        event("spec.draft_completed", null, {
+          spec_id: "S-001",
+          title: "Respond to the user",
+          goal: "Acknowledge the message and ask what they want to build.",
+          open_questions: ["What would you like Hivemind to build?"]
+        }, "2026-08-06T14:00:04.000Z"),
+        event("plan.prepared", null, {
+          spec_id: "S-001",
+          prompt: "Hello, can you respond?"
+        }, "2026-08-06T14:00:05.000Z")
+      ]),
+      TITLES
+    );
+
+    expect(thread.map((entry) => entry.kind)).toEqual(["request", "draft", "assistant", "plan"]);
+    expect(thread[1]).toMatchObject({ kind: "draft", state: "done", durationMs: 3000 });
+    expect(thread[2]).toMatchObject({
+      kind: "assistant",
+      text: "Acknowledge the message and ask what they want to build.",
+      questions: ["What would you like Hivemind to build?"]
+    });
+  });
 });
 
 /* The shipped card is the last thing a person reads, and it was wrong on the

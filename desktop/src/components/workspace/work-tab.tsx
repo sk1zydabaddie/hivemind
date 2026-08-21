@@ -16,6 +16,7 @@ import {
   RotateCcw,
   Send,
   SlidersHorizontal,
+  Sparkles,
   X
 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
@@ -468,7 +469,6 @@ export function WorkTab({
        there is nothing to plan against yet. The drafted spec carries the
        orchestrator's signature only -- the person's comes at the review. */
     if (inspection?.active_spec_id === null || inspection?.active_spec_id === undefined) {
-      setFeedback("Working out what you asked for…");
       await onAction({ type: "spec.draft", payload: { prompt: message, tool: "planner" } });
     }
     const prepared = await onAction<PreparedPlan>({
@@ -501,6 +501,11 @@ export function WorkTab({
     setComposerHasMoved(true);
     setBusy(true);
     setFeedback("");
+    /* Sending moves the message into the durable conversation trail. Keeping
+       the same text in the composer made a submitted request look unsent for
+       the entire provider call. */
+    setComposer("");
+    setAttachments([]);
     try {
       if (runActive) {
         await onAction({
@@ -528,10 +533,13 @@ export function WorkTab({
           setFeedback("Working until it finishes or something needs you.");
         }
       }
-      setComposer("");
-      setAttachments([]);
     } catch (error) {
-      setFeedback(plainActionError(error));
+      const explanation = plainActionError(error);
+      setFeedback(
+        explanation.length <= 180
+          ? explanation
+          : "That request stopped before a plan was ready. See the conversation above for details."
+      );
     } finally {
       setBusy(false);
     }
@@ -757,8 +765,11 @@ export function WorkTab({
     }
   };
 
+  const hasConversation = projection.recentEvents.some((event) =>
+    event.type === "conversation.message_recorded" || event.type.startsWith("spec.draft_")
+  );
   const idle =
-    tasks.length === 0 && displayedPlan === null && !runActive && attention === null;
+    tasks.length === 0 && displayedPlan === null && !runActive && attention === null && !hasConversation;
   const composerCentered = idle && !composerHasMoved;
 
   /* What the canvas draws: the tasks of this run, in the order the daemon
@@ -935,8 +946,6 @@ export function WorkTab({
               </section>
             ) : composerCentered ? (
               promptDock
-            ) : idle ? (
-              <div className="min-h-0" />
             ) : /* The map is already a picture of the same fact at full size,
                    so the lane canvas is not drawn over it — that would be two
                    drawings of one thing competing for the same column. */
@@ -953,13 +962,15 @@ export function WorkTab({
                  where they were; what changes is that during the one moment
                  this product's claim is strongest, the claim is the thing you
                  are looking at rather than a 2px tick in the rail. */
-              <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
-                <LaneCanvas
-                  gates={passedGates(projection)}
-                  selectedTaskId={projection.selectedTaskId}
-                  tasks={laneTasks}
-                  onSelectTask={onSelectTask}
-                />
+              <div className={`grid min-h-0 overflow-hidden ${tasks.length > 0 ? "grid-rows-[auto_minmax(0,1fr)]" : "grid-rows-[minmax(0,1fr)]"}`}>
+                {tasks.length > 0 ? (
+                  <LaneCanvas
+                    gates={passedGates(projection)}
+                    selectedTaskId={projection.selectedTaskId}
+                    tasks={laneTasks}
+                    onSelectTask={onSelectTask}
+                  />
+                ) : null}
                 <RunThread
                   endRef={activityEndRef}
                   events={projection.recentEvents}
@@ -1608,8 +1619,8 @@ function RunHeader({
   const verification = integrationLanguage(integrationStatus);
   const headline =
     tasks.length === 0
-      ? runActive
-        ? "Planning the work"
+      ? runActive || busy
+        ? "Preparing your response"
         : "Nothing running"
       : working > 0
         ? `${working} ${working === 1 ? "agent is" : "agents are"} working`
@@ -2309,6 +2320,20 @@ function RunThread({
   );
 }
 
+/** Textual liveness remains useful when Windows or the browser disables
+ * animation. It is derived from the durable start timestamp and never claims a
+ * completion percentage the provider cannot supply. */
+function LiveElapsed({ startedAt }: { startedAt: string }): React.JSX.Element {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const started = Date.parse(startedAt);
+  const elapsedMs = Number.isFinite(started) ? Math.max(0, now - started) : 0;
+  return <span>{formatDuration(elapsedMs)} elapsed</span>;
+}
+
 function ThreadRow({
   entry,
   plan,
@@ -2322,16 +2347,12 @@ function ThreadRow({
 }): React.JSX.Element {
   if (entry.kind === "request" || entry.kind === "guidance") {
     const guidance = entry.kind === "guidance";
-    /* Not a chat bubble. A chat bubble puts the one thing the person actually
-       wrote on the far right of a 900px column and leaves the left half empty,
-       which is what made this surface read as a messaging app rather than as a
-       record of a run. The request is a quoted block on the same left edge as
-       everything else, marked by a navy rule. */
     return (
-      <article className="border-l-2 border-navy pl-3.5">
-        <div className="flex items-baseline gap-2">
+      <div className="flex justify-end">
+      <article className="max-w-[min(720px,82%)] rounded-2xl rounded-br-md border border-navy/25 bg-navy-wash px-4 py-3">
+        <div className="flex items-baseline justify-end gap-2">
           <span className="text-[11px] font-medium tracking-label text-navy uppercase">
-            {guidance ? "You added" : "You asked for"}
+            {guidance ? "Guidance" : "You"}
           </span>
           <time className="font-mono text-[11px] text-muted-foreground">
             {formatClock(entry.at)}
@@ -2345,6 +2366,59 @@ function ThreadRow({
         <p className="mt-1 mb-0 max-w-[720px] text-[14px] leading-relaxed break-words text-ink">
           {entry.text}
         </p>
+      </article>
+      </div>
+    );
+  }
+
+  if (entry.kind === "draft") {
+    const label =
+      entry.state === "live"
+        ? "Planner is reading your request"
+        : entry.state === "done"
+          ? "Planner prepared a response"
+          : "Planner could not prepare a response";
+    return (
+      <article className="flex max-w-[720px] items-center gap-2.5 text-[13px] text-muted-foreground">
+        <span aria-hidden="true" className="grid size-7 shrink-0 place-items-center rounded-full border border-rule bg-surface text-navy">
+          <Sparkles className="size-3.5" />
+        </span>
+        <span>{label}</span>
+        <span className="font-mono text-[11px]">
+          {entry.state === "live" ? (
+            <LiveElapsed startedAt={entry.at} />
+          ) : entry.durationMs === null ? null : (
+            formatDuration(entry.durationMs)
+          )}
+        </span>
+      </article>
+    );
+  }
+
+  if (entry.kind === "assistant") {
+    return (
+      <article className={`max-w-[720px] rounded-2xl rounded-bl-md border px-4 py-3 ${entry.tone === "danger" ? "border-amber/40 bg-amber/5" : "border-rule bg-surface"}`}>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-medium tracking-label text-navy uppercase">Hivemind</span>
+          <time className="font-mono text-[11px] text-muted-foreground">{formatClock(entry.at)}</time>
+        </div>
+        <p className="mt-1.5 mb-0 text-[14px] leading-relaxed break-words text-ink">
+          {entry.tone === "neutral" ? `I've prepared this direction: ${entry.text}` : entry.text}
+        </p>
+        {entry.questions.length === 0 ? null : (
+          <div className="mt-3 border-t border-rule pt-2.5">
+            <span className="text-[11px] font-medium tracking-label text-muted-foreground uppercase">Before I plan it</span>
+            <ul className="mt-1.5 mb-0 grid gap-1.5 pl-5 text-[13px] leading-relaxed text-ink">
+              {entry.questions.map((question) => <li key={question}>{question}</li>)}
+            </ul>
+          </div>
+        )}
+        {entry.detail === null ? null : (
+          <details className="mt-3 border-t border-rule pt-2 text-[12px] text-muted-foreground">
+            <summary className="cursor-pointer select-none font-medium text-ink">Technical details</summary>
+            <p className="mt-1.5 mb-0 leading-relaxed break-words">{entry.detail}</p>
+          </details>
+        )}
       </article>
     );
   }

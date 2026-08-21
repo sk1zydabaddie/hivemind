@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 
 import { initProject } from "../src/init.js";
+import { readEvents } from "../src/events.js";
 import { draftSpecFromPrompt } from "../src/spec-draft-action.js";
 
 const run = promisify(execFile);
@@ -14,11 +15,9 @@ const run = promisify(execFile);
 /**
  * The front door failing intermittently.
  *
- * A real Linux first run hit `spec drafter returned invalid JSON`; the same
- * prompt succeeded on the very next attempt with the same model. The drafter is
- * a cheap model by default, so malformed output is sampling variance, and a
- * first-time user met a hard refusal with no hint that pressing again was the
- * right move.
+ * A real first run discarded a valid streamed Claude reply and silently made
+ * two more paid calls. One submitted request must make one drafting call; a
+ * retry is a new user action rather than hidden spending.
  *
  * What must NOT be retried away is the drafter's judgement. A blocking question
  * is a successful parse, so these tests pin both directions.
@@ -117,13 +116,21 @@ async function callCount(counter: string): Promise<number> {
   }
 }
 
-test("unreadable output is retried, and the same prompt succeeding second is enough", async () => {
+test("unreadable output is not retried and its conversation failure is durable", async () => {
   const repo = await scratchRepo();
   try {
     const counter = await installDrafter(repo, ["not json at all", JSON.stringify(VALID)]);
     const result = await draftSpecFromPrompt(repo, "Add a greet helper.", "planner");
-    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
-    assert.equal(await callCount(counter), 2, "the drafter should have been asked exactly twice");
+    assert.equal(result.ok, false);
+    assert.equal(await callCount(counter), 1, "one submitted request must mean one provider call");
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true, events.ok ? undefined : events.reason);
+    if (!events.ok) return;
+    assert.deepEqual(
+      events.value.slice(-3).map((event) => event.type),
+      ["conversation.message_recorded", "spec.draft_started", "spec.draft_failed"]
+    );
+    assert.equal(events.value.at(-1)?.data.message, "I couldn't finish preparing a plan. No project source files were changed.");
   } finally {
     await rm(repo, { recursive: true, force: true });
   }
@@ -136,6 +143,14 @@ test("a readable answer is never retried", async () => {
     const result = await draftSpecFromPrompt(repo, "Add a greet helper.", "planner");
     assert.equal(result.ok, true, result.ok ? undefined : result.reason);
     assert.equal(await callCount(counter), 1);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true, events.ok ? undefined : events.reason);
+    if (!events.ok) return;
+    assert.deepEqual(
+      events.value.slice(-3).map((event) => event.type),
+      ["conversation.message_recorded", "spec.draft_started", "spec.draft_completed"]
+    );
+    assert.equal(events.value.at(-1)?.data.goal, VALID.goal);
   } finally {
     await rm(repo, { recursive: true, force: true });
   }
@@ -161,30 +176,6 @@ test("a blocking question is a successful draft and is never retried away", asyn
       "Which of the three services should this live in?"
     ]);
     assert.equal(await callCount(counter), 1, "a blocking question must not be re-rolled");
-  } finally {
-    await rm(repo, { recursive: true, force: true });
-  }
-});
-
-test("retries are bounded, and the refusal says what to do about it", async () => {
-  const repo = await scratchRepo();
-  try {
-    const counter = await installDrafter(repo, ["still not json"]);
-    const result = await draftSpecFromPrompt(repo, "Add a greet helper.", "planner");
-    assert.equal(result.ok, false);
-    if (result.ok) return;
-    assert.equal(await callCount(counter), 3, "the bound is three attempts, not unbounded");
-    /* A person has to be able to act on this. */
-    assert.match(result.reason, /sending the same thing again often works/u);
-    assert.match(result.reason, /more detail|stronger/u);
-    assert.match(result.reason, /Nothing has been written/u);
-    /* And it must be true that nothing was written. */
-    const specs = await readdir(path.join(repo, ".hivemind", "spec")).catch(() => []);
-    assert.equal(
-      specs.some((name) => name.endsWith(".md")),
-      false,
-      "a failed draft must leave no spec behind"
-    );
   } finally {
     await rm(repo, { recursive: true, force: true });
   }
