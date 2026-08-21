@@ -31,7 +31,7 @@ import { authorizeManualTask, reviewManualTaskForAuthorization } from "../src/pl
 import { reconcileTaskRunOnStartup, reconcileTaskRunsOnStartup, requestTaskStop } from "../src/task-control.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
-import { useOnlyFixtureAdapterProfiles, withTemplateRepo } from "./support/fixture-repo.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -109,22 +109,26 @@ test("runTask lease-before-run accepts a contract-backed create lease", async ()
 });
 
 test("runTask refuses a plan-backed dependent task without an identity-bound dependency verification", async () => {
-  await withTempRepo(async ({ repo, baseCommit }) => {
+  await withTempRepo(async ({ repo }) => {
+    await writeFile(path.join(repo, "DEPENDENT.md"), "dependent fixture\n");
+    await git(repo, ["add", "DEPENDENT.md"]);
+    await git(repo, ["commit", "-m", "add dependent fixture"]);
+    const baseCommit = await gitStdout(repo, ["rev-parse", "HEAD"]);
     const agentPath = await writeAgent(repo, "dependency-bypass-agent.mjs", [
       "const { writeFile } = await import('node:fs/promises');",
-      "await writeFile('README.md', '# Fixture\\ndependency bypass worker ran\\n');"
+      "await writeFile('DEPENDENT.md', 'dependency bypass worker ran\\n');"
     ]);
     await prepareLintedPlanWithTasks(repo, [
       planTask("T-BASE", "README.md"),
-      planTask("T-DEP", "README.md", ["T-BASE"])
+      planTask("T-DEP", "DEPENDENT.md", ["T-BASE"])
     ]);
-    await writeContract(repo, "T-DEP", baseCommit, ["README.md"]);
+    await writeContract(repo, "T-DEP", baseCommit, ["DEPENDENT.md"]);
     await writeProfile(repo, "fake", agentPath);
-    const lease = await requestLease(repo, "T-DEP", ["README.md"]);
+    const lease = await requestLease(repo, "T-DEP", ["DEPENDENT.md"]);
     assert.equal(lease.ok, true);
     const intent = await checkWriteIntent(repo, "T-DEP", {
       task_id: "T-DEP",
-      intended_files: ["README.md"],
+      intended_files: ["DEPENDENT.md"],
       intended_symbols: [],
       possible_risks: [],
       will_not_change: []
@@ -1286,7 +1290,6 @@ async function withTempRepo(run: (context: { repo: string; baseCommit: string })
       await git(repo, ["add", "README.md"]);
       await git(repo, ["commit", "-m", "initial"]);
       await initProject(repo);
-      await useOnlyFixtureAdapterProfiles(repo);
       await createRatifiedSpec(repo);
     },
     async (repo) => {

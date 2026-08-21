@@ -10,6 +10,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "npm run bundle:stamp && tauri build --bundles nsis --config src-tauri/gen/version.conf.json",
     "test": "vitest run",
+    "test:e2e:installed": "node e2e/installed-app.mjs",
     "replay:collect": "node tools/collect-replay.mjs",
     "tauri:build:linux": "tauri build --bundles deb,appimage",
     "tauri:build:mac": "tauri build --bundles app,dmg",
@@ -47,6 +48,7 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.5.2",
+    "selenium-webdriver": "^4.47.0",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "vitest": "^3.2.4"

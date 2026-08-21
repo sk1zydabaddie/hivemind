@@ -13,8 +13,10 @@ import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { captureIntegrationQueueExpectation, enqueueIntegrationPatch, integrateShadow } from "../src/integrate.js";
 import { loadIntegrationQueue } from "../src/integration-state.js";
+import { createTentativePlan, groundTentativePlan, lintTentativePlan, ratifyPlan, reviewPlanForRatification } from "../src/plan.js";
 import { executeWorkspaceAction } from "../src/workspace-actions.js";
 import { inspectWorkspace } from "../src/workspace-inspection.js";
+import { createRatifiedSpec } from "./support/spec.js";
 import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
@@ -83,6 +85,45 @@ test("one exact reviewed verification set advances the base once and retains bot
     const second = await adoptVerifiedSet(repo, review.value);
     assert.equal(second.ok, false);
     if (!second.ok) assert.match(second.reason, /already consumed/u);
+  });
+});
+
+test("partial verification of a ratified plan cannot be reviewed or surfaced for adoption", async () => {
+  await withRepo(async ({ repo, baseCommit }) => {
+    await prepareRatifiedTwoTaskPlan(repo);
+    await prepareTask(repo, baseCommit);
+    const firstWave = await integrateShadow(repo);
+    assert.equal(firstWave.ok, true, firstWave.ok ? undefined : firstWave.reason);
+    if (!firstWave.ok || firstWave.value.verification_id === undefined) return;
+    await mkdir(path.join(repo, ".hivemind", "leases"), { recursive: true });
+    await writeFile(path.join(repo, ".hivemind", "leases", "active.json"), '{"README.md":"T-001"}\n');
+
+    const partialReadiness = await inspectLatestAdoptionReadiness(repo);
+    assert.equal(partialReadiness.ok, true, partialReadiness.ok ? undefined : partialReadiness.reason);
+    if (partialReadiness.ok) {
+      assert.equal(partialReadiness.value.status, "none");
+      assert.match(partialReadiness.value.reason, /approved plan is still running.*all 2 write tasks.*still needs T-002/iu);
+    }
+    const partialInspection = await inspectWorkspace(repo);
+    assert.equal(partialInspection.ok, true, partialInspection.ok ? undefined : partialInspection.reason);
+    if (partialInspection.ok) {
+      assert.equal(partialInspection.value.needs_you.some((item) => item.kind === "adoption_ready"), false);
+      assert.equal(partialInspection.value.needs_you.some((item) => item.kind === "reverification_required"), false);
+    }
+    const refused = await reviewVerifiedSetAdoption(repo, firstWave.value.verification_id);
+    assert.equal(refused.ok, false);
+    if (!refused.ok) assert.match(refused.reason, /approved plan is still running/iu);
+
+    await prepareSecondTask(repo, baseCommit);
+    const queued = await enqueueIntegrationPatch(repo, "T-002");
+    assert.equal(queued.ok, true, queued.ok ? undefined : queued.reason);
+    await writeFile(path.join(repo, ".hivemind", "leases", "active.json"), '{"README.md":"T-001","feature.txt":"T-002"}\n');
+    const complete = await integrateShadow(repo);
+    assert.equal(complete.ok, true, complete.ok ? undefined : complete.reason);
+    if (!complete.ok || complete.value.verification_id === undefined) return;
+    const review = await reviewVerifiedSetAdoption(repo, complete.value.verification_id);
+    assert.equal(review.ok, true, review.ok ? undefined : review.reason);
+    if (review.ok) assert.deepEqual(review.value.task_ids, ["T-001", "T-002"]);
   });
 });
 
@@ -715,6 +756,51 @@ async function prepareSecondTask(repo: string, baseCommit: string): Promise<void
   await git(repo, ["reset", "--hard", baseCommit]);
   await appendEvent(repo, { type: "patch.submitted", task_id: "T-002", data: { patch_path: ".hivemind/patches/T-002/diff.patch", changed_files: 1 } });
   await appendEvent(repo, { type: "patch.accepted", task_id: "T-002", data: { verdict: "accept", reason: "scope accepted" } });
+}
+
+async function prepareRatifiedTwoTaskPlan(repo: string): Promise<void> {
+  await createRatifiedSpec(repo, "S-001");
+  const configPath = path.join(repo, ".hivemind", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+  await writeFile(configPath, `${JSON.stringify({
+    ...config,
+    low_globs: ["README.md", "feature.txt"],
+    medium_globs: [],
+    high_globs: [],
+    critical_globs: []
+  }, null, 2)}\n`);
+  const task = (taskId: string, title: string, file: string) => ({
+    task_id: taskId,
+    title,
+    task_type: "deterministic",
+    routing_task_type: "integration",
+    mode: "write",
+    agent_role: "builder",
+    draft_scope: { allowed_files: [file], read_only_files: [], forbidden_files: [], must_not_change: [] },
+    depends_on: [],
+    parallel_safe: true,
+    acceptance_criterion: `${title} is complete.`,
+    required_tests: ["node -e \"process.exit(0)\""],
+    patch_requirements: [],
+    critical_path_approved: false
+  });
+  const created = await createTentativePlan(repo, "S-001", {
+    tasks: [
+      task("T-001", "Update the readme", "README.md"),
+      task("T-002", "Update the feature", "feature.txt")
+    ],
+    execution_groups: [{ group_id: "G-1", mode: "parallel", task_ids: ["T-001", "T-002"] }]
+  });
+  assert.equal(created.ok, true, created.ok ? undefined : created.reason);
+  const grounded = await groundTentativePlan(repo, "S-001");
+  assert.equal(grounded.ok, true, grounded.ok ? undefined : grounded.reason);
+  const linted = await lintTentativePlan(repo, "S-001");
+  assert.equal(linted.ok, true, linted.ok ? undefined : linted.reason);
+  const reviewed = await reviewPlanForRatification(repo, "S-001");
+  assert.equal(reviewed.ok, true, reviewed.ok ? undefined : reviewed.reason);
+  if (!reviewed.ok) return;
+  const ratified = await ratifyPlan(repo, "S-001", reviewed.value.plan_hash);
+  assert.equal(ratified.ok, true, ratified.ok ? undefined : ratified.reason);
 }
 
 async function withAdoptionFixture(run: (input: { repo: string; baseCommit: string; verificationId: string }) => Promise<void>): Promise<void> {

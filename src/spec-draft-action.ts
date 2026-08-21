@@ -14,7 +14,7 @@ import { loadConfig } from "./config.js";
 import { appendEvent } from "./events.js";
 import { recordIdeationRound, startIdeationSession } from "./ideation.js";
 import { trackedFilesAtBase, currentHead } from "./plan.js";
-import { buildSpecDraftingPrompt, parseDraftedSpec, type DraftedSpecProposal } from "./spec-drafting.js";
+import { buildSpecDraftingPrompt, draftedSpecJsonSchema, parseDraftedSpec, type DraftedSpecProposal } from "./spec-drafting.js";
 import {
   activeSpecPath,
   buildDraftedSpec,
@@ -206,7 +206,8 @@ async function draftOnce(
   const process = await runAdapterProcess(repoRoot, profile, repoRoot, drafting, {
     outputLogPath: adapterRunLogPath(repoRoot, `drafting-${specId}-1`),
     usageSessionId: specId,
-    usageRunId: specId
+    usageRunId: specId,
+    ...(profile.usage_parser === "claude-json" ? { structuredOutputSchema: draftedSpecJsonSchema } : {})
   });
   if (!process.ok) return process;
   if (process.value.exitCode !== 0) {

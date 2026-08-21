@@ -672,6 +672,12 @@ async function deriveDeterministicHappyPathProposal(
       }
       continue;
     }
+    if (task.mode === "read_only" && runState.state === "completed") {
+      if (runState.completed.data.changed_files !== 0) {
+        return { kind: "judgment", reason: `${task.task_id} is read-only but reported file changes` };
+      }
+      continue;
+    }
     if (runState.state === "running") {
       if (latestQuotaPauseAfterLatestStart(events.value, task.task_id) !== null && settledParallelLanes.has(task.task_id)) continue;
       return { kind: "waiting", task_id: task.task_id };
@@ -727,11 +733,14 @@ async function deriveDeterministicHappyPathProposal(
       "Core observed accepted queued work and derived the existing shadow-verification action."
     );
   }
-  if (orderedTasks.value.every((task) => integrated.has(task.task_id))) {
+  if (orderedTasks.value.every((task) =>
+    integrated.has(task.task_id) ||
+    (task.mode === "read_only" && latestTaskRunState(events.value, task.task_id).state === "completed")
+  )) {
     return deterministicProposal([], "Every task in the exact ratified plan has current durable verification evidence.");
   }
   const blocked = orderedTasks.value
-    .filter((task) => !integrated.has(task.task_id))
+    .filter((task) => !integrated.has(task.task_id) && !(task.mode === "read_only" && latestTaskRunState(events.value, task.task_id).state === "completed"))
     .map((task) => `${task.task_id} waits for ${task.depends_on.filter((dependency) => !integrated.has(dependency)).join(", ") || "unknown state"}`);
   return { kind: "judgment", reason: `no task has a provable next happy-path action: ${blocked.join("; ")}` };
 }

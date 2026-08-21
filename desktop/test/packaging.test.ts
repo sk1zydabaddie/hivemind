@@ -5,6 +5,18 @@ import { describe, expect, it, test } from "vitest";
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 
 describe("desktop packaging", () => {
+  it("permits only Tauri IPC and loopback daemon traffic through connect-src", async () => {
+    const config = JSON.parse(
+      await readFile(path.join(repoRoot, "desktop", "src-tauri", "tauri.conf.json"), "utf8")
+    ) as { app?: { security?: { csp?: string } } };
+    const csp = config.app?.security?.csp ?? "";
+
+    expect(csp).toContain("connect-src ipc: http://ipc.localhost");
+    expect(csp).toContain("http://127.0.0.1:*");
+    expect(csp).toContain("http://localhost:*");
+    expect(csp).not.toMatch(/connect-src[^;]*https?:\/\/(?!ipc\.localhost|127\.0\.0\.1|localhost)/u);
+  });
+
   it("builds an installable GUI-subsystem bundle with Core runtime resources", async () => {
     const config = JSON.parse(
       await readFile(path.join(repoRoot, "desktop", "src-tauri", "tauri.conf.json"), "utf8")
@@ -14,6 +26,7 @@ describe("desktop packaging", () => {
         targets?: string[] | string;
         icon?: string[];
         resources?: Record<string, string>;
+        windows?: { nsis?: { installerHooks?: string } };
       };
     };
     const main = await readFile(
@@ -80,6 +93,13 @@ describe("desktop packaging", () => {
       "../../node_modules": "core/node_modules",
       "gen/shell-build-id.txt": "core/shell-build-id.txt"
     });
+    expect(config.bundle?.windows?.nsis?.installerHooks).toBe("./windows/installer-hooks.nsh");
+    const installerHooks = await readFile(
+      path.join(repoRoot, "desktop", "src-tauri", "windows", "installer-hooks.nsh"),
+      "utf8"
+    );
+    expect(installerHooks).toMatch(/NSIS_HOOK_PREINSTALL/u);
+    expect(installerHooks).toMatch(/RMDir \/r "\$INSTDIR\\core"/u);
     expect(main).toContain('windows_subsystem = "windows"');
     expect(project).toContain('.join("core")');
     expect(project).toContain('.join("cli.js")');
@@ -127,6 +147,9 @@ describe("shipping", () => {
   expect(installer).toMatch(/VersionInfo\.FileVersion/u);
   expect(installer).toMatch(/installed !== expected/u);
   expect(installer).toMatch(/INSTALL DID NOT TAKE/u);
+  expect(installer).toMatch(/installedCoreBuild !== expectedCoreBuild/u);
+  expect(installer).toMatch(/installedShellBuild !== expectedShellBuild/u);
+  expect(installer).toMatch(/INSTALLED RUNTIME DID NOT MATCH THE BUNDLE/u);
   /* And it exits non-zero, or the check is decoration. */
   expect(installer).toMatch(/process\.exit\(1\)/u);
 

@@ -1841,3 +1841,49 @@ requires the visible elapsed text to change. All 30 surface/viewport
 combinations passed. Final verification passed Core 824/826 with two
 intentional Windows skips, Desktop 306/306, and Rust 35/35. No paid provider,
 capability, or 21st generation call was run.
+
+### Installed real-project reliability pass — 2026-08-21
+
+The installed-app acceptance path now has its own native Selenium/Tauri harness
+instead of relying on source inspection, unit-sized DOM fixtures, or Computer
+Use. It opens the installed executable, selects and initializes a real Git
+repository, configures exact provider roles, exercises a complete planned run,
+ships the verified result, captures the visible product, and fails on blocked
+resources or severe browser messages. A deliberately failing `codex.cmd` is
+placed first on PATH so the provider restriction is enforced rather than
+inferred.
+
+The real project is `D:\Projects\Hivemind Installed E2E Final 26.821.453`, a
+release-readiness board with executable Node tests. Claude Opus planned, Claude
+Sonnet managed, and Grok 4.6 implemented two write tasks plus one read-only
+review. Hivemind made seven provider calls, reported 710.4K effective tokens,
+verified the work, and adopted five files as commit `a0e94bc`. The project's
+seven deterministic tests pass on the adopted main branch. No ChatGPT, Codex,
+or OpenAI model was invoked.
+
+The real run exposed three installed-only reliability failures that smaller
+checks had missed. First, an installer upgrade left removed Core JavaScript in
+the destination directory; the executable version was current while the
+installed Core identity was stale. The NSIS pre-install hook now clears only
+the owned Core resource directory, the bundle records a Core build manifest,
+and local installation verifies executable, shell, and Core identities on
+disk. Second, a completed read-only plan task was omitted from the adoption
+coverage decision, causing post-ship inspection to fail despite a valid
+zero-change review. Adoption now combines adopted write tasks with completed
+zero-change read-only runs. Third, reopening the completed project replayed 86
+events and 1,313 output records and repeatedly dispatched the same empty React
+error state until the next Radix animation exposed React error 185. Projection
+paint is now frame-coalesced and transport-error clearing is idempotent.
+
+Build **26.821.647** was built, installed, and verified with matching executable,
+Core, and shell identities. All 30 production reachability combinations passed.
+The final installed post-ship smoke reopened the completed project with an empty
+browser-error log. Paid workflow evidence is in
+`docs/evidence/installed-native-e2e-26.821.545/`; the final no-cost installed
+smoke is in `docs/evidence/installed-native-e2e-26.821.647-postship/`.
+
+Final repository verification passed Core **834/836** with two intentional
+Windows skips, Desktop **307/307**, Rust **35/35**, the external real project
+**7/7**, and `git diff --check`. No paid provider call was made during the final
+verification reruns; the paid calls were limited to the recorded Claude/Grok
+real-project workflow above.

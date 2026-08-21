@@ -1,0 +1,7 @@
+{
+  "allowOneRetry": false,
+  "connectLiveProviders": false,
+  "reconnectGrok": false,
+  "resumeWorkflow": false,
+  "retryAlreadyUsed": false
+}

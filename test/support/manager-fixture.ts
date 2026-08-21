@@ -35,7 +35,7 @@ import { executeWorkspaceAction } from "../../src/workspace-actions.js";
 import { admitExecutionWave } from "../../src/wave-admission.js";
 import { authorizePlanlessManualTaskIfEligible } from "./manual-task.js";
 import { createRatifiedSpec } from "./spec.js";
-import { useOnlyFixtureAdapterProfiles, withTemplateRepo } from "./fixture-repo.js";
+import { withTemplateRepo } from "./fixture-repo.js";
 
 export const execFileAsync = promisify(execFile);
 export const testDir = dirname(fileURLToPath(import.meta.url));
@@ -59,7 +59,6 @@ export async function withTempRepo(run: (context: { repo: string; baseCommit: st
       await git(repo, ["add", "README.md"]);
       await git(repo, ["commit", "-m", "initial"]);
       await initProject(repo);
-      await useOnlyFixtureAdapterProfiles(repo);
       await setConfigManagerAutonomy(repo, { level: "review_everything" });
     },
     async (repo) => {

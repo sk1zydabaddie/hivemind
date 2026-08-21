@@ -14,13 +14,22 @@ const shellBuildId = execFileSync(
   [path.join(repoRoot, "dist", "src", "cli.js"), "shell-build-id"],
   { cwd: repoRoot, encoding: "utf8" }
 ).trim();
+const coreBuildId = execFileSync(
+  process.execPath,
+  [path.join(repoRoot, "dist", "src", "cli.js"), "build-id"],
+  { cwd: repoRoot, encoding: "utf8" }
+).trim();
 if (!/^[a-f0-9]{64}$/u.test(shellBuildId)) {
   throw new Error("Core returned an invalid desktop shell build identity");
+}
+if (!/^[a-f0-9]{64}$/u.test(coreBuildId)) {
+  throw new Error("Core returned an invalid Core build identity");
 }
 
 const generatedDir = path.join(desktopRoot, "src-tauri", "gen");
 await mkdir(generatedDir, { recursive: true });
 await writeFile(path.join(generatedDir, "shell-build-id.txt"), `${shellBuildId}\n`, "utf8");
+await writeFile(path.join(generatedDir, "core-build-id.txt"), `${coreBuildId}\n`, "utf8");
 
 execFileSync(process.execPath, [npmEntry, "run", "build"], { cwd: desktopRoot, stdio: "inherit" });
 

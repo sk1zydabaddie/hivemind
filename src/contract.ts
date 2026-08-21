@@ -279,7 +279,7 @@ export function validateContract(raw: unknown, expectedTaskId?: string): string[
     }
   }
 
-  if (!Array.isArray(raw.allowed_files) || raw.allowed_files.length === 0) {
+  if (!Array.isArray(raw.allowed_files) || (raw.allowed_files.length === 0 && !isReadOnlyContractShape(raw))) {
     problems.push("allowed_files must be a non-empty array");
   }
   if (!Array.isArray(raw.required_tests) || raw.required_tests.filter((entry) => typeof entry === "string" && entry.trim() !== "").length === 0) {
@@ -419,6 +419,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isAgentRole(value: unknown): value is AgentRole {
   return value === "coordinator" || value === "scout" || value === "builder" || value === "reviewer";
+}
+
+function isReadOnlyContractShape(raw: Record<string, unknown>): boolean {
+  return (raw.agent_role === "reviewer" || raw.agent_role === "scout") &&
+    Array.isArray(raw.allowed_files) && raw.allowed_files.length === 0 &&
+    Array.isArray(raw.read_only_files) && raw.read_only_files.length > 0 &&
+    isRecord(raw.allowed_file_intents) && Object.keys(raw.allowed_file_intents).length === 0;
 }
 
 function isNodeError(error: unknown, code: string): boolean {

@@ -106,6 +106,17 @@ export async function requestLeaseForContract(repoRoot: string, taskId: string):
     return { ok: false, reason: baseScope.reason };
   }
 
+  if (baseScope.value.length === 0) {
+    const eventResult = await appendEvent(repoRoot, {
+      type: "lease.approved",
+      task_id: taskId,
+      data: { requested_files: [], granted: [], read_only: true }
+    });
+    return eventResult.ok
+      ? { ok: true, value: { task_id: taskId, granted: [] } }
+      : { ok: false, reason: `failed to append lease.approved event: ${eventResult.reason}` };
+  }
+
   return requestLease(repoRoot, taskId, baseScope.value);
 }
 

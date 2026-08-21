@@ -96,6 +96,12 @@ describe("read-only event projection", () => {
     ]) {
       applyEventMessage(state, { kind: "event", source: "history", event });
     }
+    selectTask(state, "T-ADOPT");
+    applyOutputMessage(state, {
+      kind: "output",
+      source: "live",
+      record: { task_id: "T-ADOPT", tool: "fixture", ts: new Date().toISOString(), stream: "stdout", text: "done" }
+    });
     expect(state.integration.status).toBe("passed");
     applyEventMessage(state, {
       kind: "event",
@@ -108,6 +114,8 @@ describe("read-only event projection", () => {
     });
     expect(state.integration.status).toBe("merged");
     expect(state.integration.lastEvent?.type).toBe("adoption.completed");
+    expect(state.selectedTaskId).toBeNull();
+    expect(state.selectedOutput).toEqual([]);
   });
 
   test("surfaces blocked and low-confidence project-check evidence", () => {

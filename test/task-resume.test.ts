@@ -14,7 +14,7 @@ import { authorizeManualTask, reviewManualTaskForAuthorization } from "../src/pl
 import { runTask } from "../src/run.js";
 import { resumeTask } from "../src/task-resume.js";
 import { createRatifiedSpec } from "./support/spec.js";
-import { useOnlyFixtureAdapterProfiles, withTemplateRepo } from "./support/fixture-repo.js";
+import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -220,7 +220,6 @@ async function withPausedTask(
       await git(repo, ["add", "."]);
       await git(repo, ["commit", "-m", "initial"]);
       await initProject(repo);
-      await useOnlyFixtureAdapterProfiles(repo);
       await createRatifiedSpec(repo);
 
       /* Declared, not inherited: the pause below depends on there being no

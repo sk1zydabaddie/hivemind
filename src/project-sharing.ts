@@ -127,9 +127,21 @@ export function ignoreFileContents(): string {
  * nothing rewrites it.
  */
 export async function writeIgnoreRules(repoRoot: string): Promise<void> {
+  const ignorePath = path.join(repoRoot, ".hivemind", ".gitignore");
+  const wanted = ignoreFileContents();
+  try {
+    const existing = await readFile(ignorePath, "utf8");
+    /* Git's Windows checkout commonly materializes the tracked file with CRLF.
+       Rewriting the same rules with LF changes no Git object, but can still
+       leave `git status` reporting a dirty worktree under core.autocrlf=true.
+       Existing equivalent generated rules are already converged. */
+    if (existing.replaceAll("\r\n", "\n") === wanted) return;
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+  }
   await writeFile(
-    path.join(repoRoot, ".hivemind", ".gitignore"),
-    ignoreFileContents(),
+    ignorePath,
+    wanted,
     "utf8"
   );
 }

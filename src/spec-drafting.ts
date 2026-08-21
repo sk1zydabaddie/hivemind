@@ -38,6 +38,42 @@ export interface DraftedSpecProposal {
   self_critique: { weakest_point: string; cut_or_change: string };
 }
 
+export const draftedSpecJsonSchema: Record<string, unknown> = {
+  type: "object",
+  properties: {
+    title: { type: "string" },
+    goal: { type: "string" },
+    non_goals: { type: "array", items: { type: "string" } },
+    acceptance: { type: "array", items: { type: "string" }, minItems: 1 },
+    assumptions: { type: "array", items: { type: "string" } },
+    open_questions: { type: "array", items: { type: "string" } },
+    alternatives: {
+      type: "array",
+      minItems: 2,
+      items: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          tradeoffs: { type: "array", items: { type: "string" } }
+        },
+        required: ["title", "tradeoffs"],
+        additionalProperties: false
+      }
+    },
+    self_critique: {
+      type: "object",
+      properties: {
+        weakest_point: { type: "string" },
+        cut_or_change: { type: "string" }
+      },
+      required: ["weakest_point", "cut_or_change"],
+      additionalProperties: false
+    }
+  },
+  required: ["title", "goal", "non_goals", "acceptance", "assumptions", "open_questions", "alternatives", "self_critique"],
+  additionalProperties: false
+};
+
 export function buildSpecDraftingPrompt(input: {
   prompt: string;
   trackedFiles: string[];

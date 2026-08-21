@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -14,12 +14,6 @@ import {
   DEFAULT_SESSION_TOKEN_CEILING,
   loadConfig
 } from "../src/config.js";
-import {
-  findDangerousAdapterArgs,
-  findRefusedAdapterModes,
-  loadAdapterProfile,
-  profileAdmitsRole
-} from "../src/adapter.js";
 import { initProject } from "../src/init.js";
 import { inferAllowedFilesTier } from "../src/routing.js";
 
@@ -42,13 +36,7 @@ test("init creates the M0.1 .hivemind scaffold inside a git repo", async () => {
     await assertExists(path.join(repo, ".hivemind", "adapters"));
     await assertExists(path.join(repo, ".hivemind", "canon"));
     assert.equal(await readFile(path.join(repo, ".hivemind", "log", "events.jsonl"), "utf8"), "");
-    // The desktop asks Core for these two tools by name on a first prompt.
-    await assertExists(path.join(repo, ".hivemind", "adapters", "planner.profile.json"));
-    await assertExists(path.join(repo, ".hivemind", "adapters", "manager.profile.json"));
-    // The manager proposes run_worker without naming a tool, so routing has to
-    // be able to FIND a worker. Without this the orchestrator scoping below
-    // would leave a clean install able to plan but never build.
-    await assertExists(path.join(repo, ".hivemind", "adapters", "worker.profile.json"));
+    assert.deepEqual(await readdir(path.join(repo, ".hivemind", "adapters")), []);
 
     const config = JSON.parse(await readFile(path.join(repo, ".hivemind", "config.json"), "utf8")) as {
       version: number;
@@ -81,7 +69,7 @@ test("init creates the M0.1 .hivemind scaffold inside a git repo", async () => {
       // Cost tiers ship by default: without them every path fell through to
       // the High fallback, which only a strong provider may serve.
       low_globs: ["docs/**", "**/*.md", "**/*.txt"],
-      medium_globs: ["src/**", "app/**", "lib/**", "test/**", "tests/**"],
+      medium_globs: ["src/**", "app/**", "lib/**", "test/**", "tests/**", "**/*.html", "**/*.css"],
       high_globs: ["package.json", "tsconfig.json", "**/*.config.*"],
       critical_globs: [".github/**", "infra/**", "**/auth/**"],
       manager_autonomy: { level: "auto" },
@@ -368,6 +356,8 @@ test("a fresh project routes by cost tier instead of forcing the strongest provi
     // than deprioritised: a new project could only use the most expensive one.
     assert.equal(inferAllowedFilesTier(["docs/guide.md"], config.config), "low");
     assert.equal(inferAllowedFilesTier(["src/feature.ts"], config.config), "medium");
+    assert.equal(inferAllowedFilesTier(["index.html"], config.config), "medium");
+    assert.equal(inferAllowedFilesTier(["styles/site.css"], config.config), "medium");
     assert.equal(inferAllowedFilesTier([".github/workflows/ci.yml"], config.config), "critical");
     // The floor is unchanged: anything the globs do not name is still High.
     assert.equal(inferAllowedFilesTier(["unmatched/elsewhere.bin"], config.config), "high");
@@ -376,34 +366,36 @@ test("a fresh project routes by cost tier instead of forcing the strongest provi
   });
 });
 
-test("a fresh project can reach a first run without hand-written adapter profiles", async () => {
+test("init removes only legacy invented profiles and preserves explicit choices", async () => {
   await withTempDir(async (repo) => {
     await git(repo, ["init"]);
     assert.equal(await initProject(repo), 0);
+    const adapters = path.join(repo, ".hivemind", "adapters");
+    const legacy = path.join(adapters, "planner.profile.json");
+    const explicit = path.join(adapters, "worker.profile.json");
+    await writeFile(legacy, `${JSON.stringify({ tool: "planner", verified_on: "configured-by-init" })}\n`);
+    await writeFile(explicit, `${JSON.stringify({ tool: "worker", verified_on: "2026-08-21T00:00:00Z" })}\n`);
 
-    for (const tool of ["planner", "manager", "worker"]) {
-      const loaded = await loadAdapterProfile(repo, tool);
-      assert.equal(loaded.ok, true, loaded.ok ? undefined : loaded.reason);
-      if (!loaded.ok) continue;
-      assert.equal(loaded.profile.tool, tool);
-      // Confined and explicit: every setting the run depends on is stated, so
-      // an unstated one cannot stay whatever the user's agent config left it.
-      assert.deepEqual(findDangerousAdapterArgs(loaded.profile.invoke), []);
-      assert.equal(loaded.profile.invoke.includes("--model"), true);
-      assert.equal(loaded.profile.invoke.includes("--sandbox"), true);
-      assert.equal(loaded.profile.invoke.includes("workspace-write"), true);
-      assert.equal(loaded.profile.invoke.some((arg) => /ultra|ignore-user-config/iu.test(arg)), false);
-      assert.deepEqual(findRefusedAdapterModes(loaded.profile), []);
-      // Every default states its role. planner and manager are resolved by
-      // name and must never be FOUND by the worker search: offering them as
-      // worker candidates let a default outrank a deliberately configured
-      // provider, and turned a quota pause into a reroute, both without
-      // anyone choosing it.
-      const expected = tool === "worker" ? ["worker"] : ["orchestrator"];
-      assert.deepEqual(loaded.profile.roles, expected);
-      assert.equal(profileAdmitsRole(loaded.profile, "worker"), tool === "worker");
-      assert.equal(profileAdmitsRole(loaded.profile, "orchestrator"), tool !== "worker");
-    }
+    assert.equal(await initProject(repo), 0);
+    await assert.rejects(readFile(legacy, "utf8"), /ENOENT/u);
+    assert.deepEqual(JSON.parse(await readFile(explicit, "utf8")), {
+      tool: "worker",
+      verified_on: "2026-08-21T00:00:00Z"
+    });
+  });
+});
+
+test("re-running init preserves equivalent Windows line endings in the shared ignore file", async () => {
+  await withTempDir(async (repo) => {
+    await git(repo, ["init", "-b", "master"]);
+    assert.equal(await initProject(repo), 0);
+    const ignorePath = path.join(repo, ".hivemind", ".gitignore");
+    const windowsContents = (await readFile(ignorePath, "utf8")).replaceAll("\n", "\r\n");
+    await writeFile(ignorePath, windowsContents, "utf8");
+
+    assert.equal(await initProject(repo), 0);
+
+    assert.equal(await readFile(ignorePath, "utf8"), windowsContents);
   });
 });
 

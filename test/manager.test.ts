@@ -1757,10 +1757,14 @@ test("manager create_task_contract is refused when the current plan fails lint",
 });
 
 test("manager create_task_contract refuses a dependent task until dependencies are event-integrated", async () => {
-  await withTempRepo(async ({ repo, baseCommit }) => {
+  await withTempRepo(async ({ repo }) => {
+    await writeFile(path.join(repo, "DEPENDENT.md"), "dependent fixture\n");
+    await git(repo, ["add", "DEPENDENT.md"]);
+    await git(repo, ["commit", "-m", "add dependent fixture"]);
+    const baseCommit = await gitStdout(repo, ["rev-parse", "HEAD"]);
     await createRatifiedSpec(repo, "S-001");
     const dependency = managerContract("T-BASE", baseCommit, ["README.md"]);
-    const dependent = managerContract("T-DEP", baseCommit, ["README.md"]);
+    const dependent = managerContract("T-DEP", baseCommit, ["DEPENDENT.md"]);
     await prepareLintedPlanWithTasks(repo, [
       planTaskFromContract(dependency),
       planTaskFromContract(dependent, ["T-BASE"])

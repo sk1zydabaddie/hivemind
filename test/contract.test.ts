@@ -42,6 +42,30 @@ test("valid sample contract validates and normalizes", () => {
   assert.deepEqual(normalizeContract(raw), { contract_version: CONTRACT_FORMAT_VERSION, ...raw });
 });
 
+test("read-only reviewer contracts require readable scope and no write intent", () => {
+  const readOnly = {
+    task_id: "T-REVIEW",
+    title: "Review the result",
+    agent_role: "reviewer",
+    routing_task_type: "testing",
+    base_commit: "abc123",
+    acceptance_criterion: "The reviewer reports each acceptance criterion.",
+    allowed_files: [],
+    allowed_file_intents: {},
+    read_only_files: ["README.md"],
+    forbidden_files: ["README.md"],
+    allowed_symbols: [],
+    forbidden_symbols: [],
+    must_not_change: ["README.md"],
+    required_tests: ["Named review check: inspect README.md"],
+    patch_requirements: ["Produce no file changes"]
+  };
+  assert.deepEqual(validateContract(readOnly), []);
+  assert.match(validateContract({ ...readOnly, agent_role: "builder" }).join("; "), /allowed_files must be a non-empty array/u);
+  assert.match(validateContract({ ...readOnly, read_only_files: [] }).join("; "), /allowed_files must be a non-empty array/u);
+  assert.match(validateContract({ ...readOnly, allowed_file_intents: { "README.md": "modify" } }).join("; "), /allowed_files must be a non-empty array/u);
+});
+
 test("contract validation requires exactly one acceptance criterion backed by a test", () => {
   const base = {
     task_id: "T-001",

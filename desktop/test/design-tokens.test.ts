@@ -509,6 +509,8 @@ describe("palette discipline", () => {
        animations must opt into their reduced presentation by name. */
     const universal = /\*,\s*\n\s*\*::before,\s*\n\s*\*::after\s*\{([^}]+)\}/u.exec(reduced)?.[1] ?? "";
     expect(universal).not.toMatch(/animation-duration|animation-iteration-count/u);
+    expect(reduced).toMatch(/\.animate-in,\s*\n\s*\.animate-out\s*\{[\s\S]*?animation:\s*none/u);
+    expect(reduced).not.toMatch(/\.animate-in,[\s\S]*?animation-duration:\s*0\.01ms/u);
     expect(reduced).toMatch(/\.animate-spin\s*\{\s*animation:\s*none/u);
   });
 

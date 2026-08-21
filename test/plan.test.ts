@@ -78,6 +78,18 @@ test("execution contracts require an exact explicitly ratified plan", async () =
     const wrong = await ratifyPlan(repo, "S-001", "0".repeat(64));
     assert.equal(wrong.ok, false);
     if (!wrong.ok) assert.match(wrong.reason, /plan changed after review/u);
+    const prepared = await appendEvent(repo, {
+      type: "plan.prepared",
+      task_id: null,
+      data: {
+        version: 1,
+        spec_id: "S-001",
+        plan_hash: review.value.plan_hash,
+        plan_path: review.value.plan_path,
+        usage_session_id: "11111111-1111-4111-8111-111111111111"
+      }
+    });
+    assert.equal(prepared.ok, true, prepared.ok ? undefined : prepared.reason);
     const ratified = await executeWorkspaceAction(repo, {
       type: "plan.ratify",
       payload: { spec_id: "S-001", expected_plan_hash: review.value.plan_hash }
@@ -99,12 +111,12 @@ test("execution contracts require an exact explicitly ratified plan", async () =
         spec_id: "S-001",
         amendment: {
           kind: "add_task",
-          task: task("T-002", { depends_on: ["T-001"] }),
+          task: task("T-002", { mode: "read_only", draft_scope: draftScope([]), depends_on: ["T-001"] }),
           execution_group: { group_id: "G-2", mode: "sequence" }
         }
       }
     });
-    assert.equal(addition.ok, true);
+    assert.equal(addition.ok, true, addition.ok ? undefined : addition.reason);
   });
 });
 
@@ -154,7 +166,11 @@ test("a planless manual contract requires an exact durable authorization and cha
 });
 
 test("regenerating a ratified plan requires exact re-ratification before new plan content can execute", async () => {
-  await withTempRepo(async ({ repo, baseCommit }) => {
+  await withTempRepo(async ({ repo }) => {
+    await writeFile(path.join(repo, "SECOND.md"), "second fixture\n");
+    await execFileAsync("git", ["add", "SECOND.md"], { cwd: repo, windowsHide: true });
+    await execFileAsync("git", ["commit", "-m", "add second fixture file"], { cwd: repo, windowsHide: true });
+    const baseCommit = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: repo, windowsHide: true })).stdout.trim();
     await createRatifiedSpec(repo, "S-001");
     assert.equal((await createTentativePlan(repo, "S-001", {
       tasks: [task("T-001")],
@@ -168,12 +184,12 @@ test("regenerating a ratified plan requires exact re-ratification before new pla
     assert.equal((await ratifyPlan(repo, "S-001", firstReview.value.plan_hash)).ok, true);
 
     assert.equal((await createTentativePlan(repo, "S-001", {
-      tasks: [task("T-001"), task("T-002")],
+      tasks: [task("T-001"), task("T-002", { draft_scope: draftScope(["SECOND.md"]) })],
       execution_groups: [group("G-1", "sequence", ["T-001", "T-002"])]
     })).ok, true);
     assert.equal((await groundTentativePlan(repo, "S-001")).ok, true);
     assert.equal((await lintTentativePlan(repo, "S-001")).ok, true);
-    const secondContract = contractForTask("T-002", baseCommit);
+    const secondContract = contractForTask("T-002", baseCommit, "SECOND.md");
     const beforeReratification = await createTaskContract(repo, secondContract);
     assert.equal(beforeReratification.ok, false);
     if (!beforeReratification.ok) assert.match(beforeReratification.reason, /not present in the active ratified plan/u);
@@ -778,7 +794,7 @@ test("plan lint passes a clean grounded plan without executable task state", asy
       lint_status: "passed",
       base_commit: baseCommit,
       task_count: 3,
-      rule_count: 8
+      rule_count: 9
     });
     await assertMissing(path.join(repo, ".hivemind", "tasks", "T-WRITE.contract.json"));
     await assertMissing(path.join(repo, ".hivemind", "leases", "active.json"));
@@ -802,6 +818,27 @@ test("plan lint rejects overlapping parallel write scopes", async () => {
   });
 });
 
+test("plan lint rejects overlapping sequential write scopes that cannot hold leases through adoption", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    const planPath = await writePlan(repo, {
+      tasks: [
+        task("T-ONE"),
+        task("T-TWO", { depends_on: ["T-ONE"] })
+      ],
+      execution_groups: [group("G-1", "sequence", ["T-ONE", "T-TWO"])]
+    });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", planPath], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+
+    await assertPlanRejects(
+      repo,
+      ["plan", "S-001", "--lint"],
+      /LEASE_LIFETIME_SCOPE_OVERLAP: tasks T-ONE and T-TWO both allow README\.md/u
+    );
+  });
+});
+
 test("plan lint rejects a parallel group containing a non-parallel-safe task", async () => {
   await withTempRepo(async ({ repo }) => {
     await createRatifiedSpec(repo, "S-001");
@@ -818,11 +855,14 @@ test("plan lint rejects a parallel group containing a non-parallel-safe task", a
 
 test("plan lint rejects dependency cycles with the cycle path", async () => {
   await withTempRepo(async ({ repo }) => {
+    await writeFile(path.join(repo, "SECOND.md"), "second\n");
+    await git(repo, ["add", "SECOND.md"]);
+    await git(repo, ["commit", "-m", "add second cycle fixture file"]);
     await createRatifiedSpec(repo, "S-001");
     const planPath = await writePlan(repo, {
       tasks: [
         task("T-ONE", { depends_on: ["T-TWO"] }),
-        task("T-TWO", { depends_on: ["T-ONE"] })
+        task("T-TWO", { depends_on: ["T-ONE"], draft_scope: draftScope(["SECOND.md"]) })
       ],
       execution_groups: [group("G-1", "sequence", ["T-ONE", "T-TWO"])]
     });
@@ -933,6 +973,25 @@ test("plan lint rejects generative skeleton-trap acceptance while preserving val
     await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
     const behavioralLint = await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
     assert.equal(JSON.parse(behavioralLint.stdout).lint_status, "passed");
+
+    const reviewerJudgesPlan = await writePlan(
+      repo,
+      {
+        tasks: [
+          task("T-GEN-REVIEW", {
+            task_type: "generative",
+            acceptance_criterion: "Reviewer judges from the rendered page that the result is clear and reports any deviation as a specific defect.",
+            required_tests: ["manual rendered-page review"]
+          })
+        ],
+        execution_groups: [group("G-1", "parallel", ["T-GEN-REVIEW"])]
+      },
+      "generative-reviewer-judges.json"
+    );
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--propose", reviewerJudgesPlan], { cwd: repo, windowsHide: true });
+    await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--ground"], { cwd: repo, windowsHide: true });
+    const reviewerJudgesLint = await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--lint"], { cwd: repo, windowsHide: true });
+    assert.equal(JSON.parse(reviewerJudgesLint.stdout).lint_status, "passed");
 
     const deterministicCheckPlan = await writePlan(
       repo,
@@ -1232,7 +1291,7 @@ function task(
   };
 }
 
-function contractForTask(taskId: string, baseCommit: string): Record<string, unknown> {
+function contractForTask(taskId: string, baseCommit: string, allowedFile = "README.md"): Record<string, unknown> {
   return {
     task_id: taskId,
     title: `Task ${taskId}`,
@@ -1240,8 +1299,8 @@ function contractForTask(taskId: string, baseCommit: string): Record<string, unk
     routing_task_type: "other",
     base_commit: baseCommit,
     acceptance_criterion: "One binary acceptance check passes.",
-    allowed_files: ["README.md"],
-    allowed_file_intents: { "README.md": "modify" },
+    allowed_files: [allowedFile],
+    allowed_file_intents: { [allowedFile]: "modify" },
     read_only_files: [],
     forbidden_files: [],
     allowed_symbols: [],

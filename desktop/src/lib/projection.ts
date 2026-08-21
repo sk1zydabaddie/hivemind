@@ -420,6 +420,8 @@ export function applyEventMessage(
     case "adoption.completed":
       projection.integration.status = "merged";
       projection.integration.lastEvent = event;
+      projection.selectedTaskId = null;
+      projection.selectedOutput = [];
       break;
     case "adoption.failed":
     case "adoption.indeterminate":

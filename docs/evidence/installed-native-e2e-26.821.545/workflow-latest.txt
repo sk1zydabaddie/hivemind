@@ -1,0 +1,131 @@
+Hivemind
+Work
+Agents
+Project
+Live
+Hivemind Installed E2E Final 26.821.453
+⌘K
+Confirm this exact change set
+2
+tasks ·
+5
+files
+· into main
+·
+verified provider · contract-authored checks · integrated set
+See every line
+Ship it
+WHAT YOU ASKED FOR
+Priority dimension and priority filter for the release readiness board
+All the work is done, with something to decide
+1 thing needs you
+View plan
+Checks
+Interruptions
+3/3
+tasks done
+5 files open
+took 33m 26s
+75%
+SCOPE 3 file claims approved
+WRITE 3 edits approved
+NEXT STEP 5 decisions approved
+Add required check priority, priority counts, and priority filtering across domain, tests, and board UI
+READY
+Queued
+Editing
+Checked
+Ready
+4 files
+Document the priority levels, priority filter, and priority counts in the README
+READY
+Queued
+Editing
+Checked
+Ready
+1 file
+Review the running board against the priority acceptance criteria
+READY
+Queued
+Editing
+Checked
+Ready
+YOU
+04:57 AM
+
+Add a useful priority view to this release-readiness board. Each check must have a Critical, High, or Normal priority; let users filter by All, Critical, High, or Normal; show accurate priority counts; preserve the existing status summary and status styling; add deterministic tests for normalization, priority counts, and filtering; and update the README to explain the feature. Keep implementation and its tests in one code task when they touch the same files.
+
+Planner prepared a response
+46s
+HIVEMIND
+04:58 AM
+
+I've prepared this direction: Every release check carries a required priority of Critical, High, or Normal, and the board offers a priority filter (All / Critical / High / Normal) plus accurate per-priority counts, while the existing status summary line and status-based styling keep working unchanged. Normalization, priority counting, and priority filtering are covered by deterministic tests under `npm test`, and the README explains the feature.
+
+You approved a 3-step plan
+2 stages
+05:01 AM
+See the plan
+05:01 AM
+Add required check priority, priority counts, and priority filtering across domain, tests, and board UI started working
+05:03 AM
+Add required check priority, priority counts, and priority filtering across domain, tests, and board UI finished its work2m 43s
+05:04 AM
+Everything passed the project checks and is ready to ship
+05:04 AM
+Document the priority levels, priority filter, and priority counts in the README started working
+05:05 AM
+Document the priority levels, priority filter, and priority counts in the README finished its work1m 9s
+05:32 AM
+Everything passed the project checks and is ready to ship
+05:32 AM
+Review the running board against the priority acceptance criteria started working
+05:34 AM
+Review the running board against the priority acceptance criteria finished its work2m 10s
+Agents
+
+Shipped 2 tasks to main.
+
+Typing describes work. Nothing runs until Hivemind has a plan it can check.
+⌘↵
+7 calls
+710.4K + 0 held / 3M
+CURRENT WORK
+3
+SCOPE 3 file claims approved
+WRITE 3 edits approved
+NEXT STEP 5 decisions approved
+FINISHED
+3
+Add required check priority, priority counts, and priority filtering across domain, tests, and board UI
+Ready to ship
+READY
+3/4
+editing 4 files
+Document the priority levels, priority filter, and priority counts in the README
+Ready to ship
+READY
+3/4
+editing 1 file
+Review the running board against the priority acceptance criteria
+Ready to ship
+READY
+3/4
+Add required check priority, priority counts, and priority filtering across domain, tests, and board UI
+worker-grok-build
+
+Checks passed, ready to ship
+
+LIVE OUTPUT
+Highlights
+Everything
+No readable worker message yet. Full output contains the provider details.
+FILES BEING EDITED
+4
+index.html
+src/app.js
+src/release-board.js
+test/release-board.test.js
+Commands
+
+Jump to a section or open a project

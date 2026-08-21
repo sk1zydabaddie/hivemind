@@ -137,6 +137,23 @@ test("validateWriteIntent rejects malformed intent shapes", () => {
   );
 });
 
+test("empty intent is valid only when the contract boundary explicitly allows read-only work", () => {
+  assert.deepEqual(validateWriteIntent({ task_id: "T-REVIEW", intended_files: [] }, "T-REVIEW"), {
+    ok: false,
+    reason: "intended_files must be a non-empty array"
+  });
+  assert.deepEqual(validateWriteIntent({ task_id: "T-REVIEW", intended_files: [] }, "T-REVIEW", true), {
+    ok: true,
+    value: {
+      task_id: "T-REVIEW",
+      intended_files: [],
+      intended_symbols: [],
+      possible_risks: [],
+      will_not_change: []
+    }
+  });
+});
+
 test("CLI intent prints pass JSON for in-lease intent", async () => {
   await withTempRepo(async ({ repo }) => {
     await requestLease(repo, "T-001", ["README.md"]);

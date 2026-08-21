@@ -393,7 +393,10 @@ export async function generateIdeationRound(
   const prompt = buildIdeationGenerationPrompt(loaded.value, spec.value.markdown, steering);
   const processResult = await runAdapterProcess(repoRoot, profileResult.profile, repoRoot, prompt, {
     outputLogPath: adapterRunLogPath(repoRoot, `ideation-${specId}`),
-    usageRunId: specId
+    usageRunId: specId,
+    ...(profileResult.profile.usage_parser === "claude-json"
+      ? { structuredOutputSchema: ideationRoundJsonSchema }
+      : {})
   });
   if (!processResult.ok) {
     return processResult;
@@ -558,6 +561,18 @@ function buildIdeationGenerationPrompt(state: IdeationState, markdown: string, s
     markdown
   ].join("\n");
 }
+
+const ideationRoundJsonSchema: Record<string, unknown> = {
+  type: "object",
+  properties: {
+    alternatives: { type: "array", minItems: 2, items: { type: "object" } },
+    self_critique: { type: "object" },
+    spec_updates: { type: "object" },
+    substantive_change: { type: "boolean" }
+  },
+  required: ["alternatives", "self_critique", "spec_updates", "substantive_change"],
+  additionalProperties: false
+};
 
 function parseGeneratedRound(stdout: string, firstRound: boolean): SpecResult<IdeationRoundInput> {
   const extracted = extractJsonObject(stdout, "ideation generator");

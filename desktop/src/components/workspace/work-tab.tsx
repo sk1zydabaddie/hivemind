@@ -247,6 +247,7 @@ export function WorkTab({
   const [rolePickerError, setRolePickerError] = useState("");
   const [feedback, setFeedback] = useState("");
   const [busy, setBusy] = useState(false);
+  const [promptStartedAt, setPromptStartedAt] = useState<number | null>(null);
   const [amendment, setAmendment] = useState<{
     kind: "add_task" | "edit_task";
     draft: AmendmentDraft;
@@ -280,7 +281,7 @@ export function WorkTab({
      when this surface disconnects from a project; otherwise a newly selected
      empty folder could inherit the previous project's bottom placement. */
   useEffect(() => {
-    if (connectionState !== "connected") setComposerHasMoved(false);
+    if (connectionState !== "live") setComposerHasMoved(false);
   }, [connectionState]);
 
   useEffect(() => {
@@ -500,6 +501,7 @@ export function WorkTab({
             .join("\n")}`;
     setComposerHasMoved(true);
     setBusy(true);
+    setPromptStartedAt(Date.now());
     setFeedback("");
     /* Sending moves the message into the durable conversation trail. Keeping
        the same text in the composer made a submitted request look unsent for
@@ -541,6 +543,7 @@ export function WorkTab({
           : "That request stopped before a plan was ready. See the conversation above for details."
       );
     } finally {
+      setPromptStartedAt(null);
       setBusy(false);
     }
   };
@@ -907,6 +910,7 @@ export function WorkTab({
               integrationStatus={projection.integration.status}
               spanMs={runSpanMs(projection.recentEvents)}
               planAvailable={displayedPlan !== null}
+              promptStartedAt={promptStartedAt}
               runActive={runActive}
               stopBusy={stopBusy}
               tasks={tasks}
@@ -1586,6 +1590,7 @@ function RunHeader({
   spanMs,
   runActive,
   planAvailable,
+  promptStartedAt,
   integrationStatus,
   configuredLevel,
   busy,
@@ -1602,6 +1607,7 @@ function RunHeader({
   spanMs: number | null;
   runActive: boolean;
   planAvailable: boolean;
+  promptStartedAt: number | null;
   integrationStatus: string;
   configuredLevel: AutonomyLevel;
   busy: boolean;
@@ -1672,6 +1678,11 @@ function RunHeader({
           )}
           <h2 className="m-0 flex flex-wrap items-baseline gap-x-2.5 text-[15px] leading-tight font-semibold tracking-tight text-ink">
             {headline}
+            {tasks.length === 0 && promptStartedAt !== null ? (
+              <span className="font-mono text-[12px] font-medium text-muted-foreground">
+                <LiveElapsed startedAt={new Date(promptStartedAt).toISOString()} />
+              </span>
+            ) : null}
             {attentionCount > 0 ? (
               <span className="text-[12px] font-medium text-amber">
                 {attentionCount === 1 ? "1 thing needs you" : `${attentionCount} things need you`}
@@ -3918,10 +3929,9 @@ function formatClock(value: string): string {
     : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-/* Derived presentation of two durable timestamps, not client-held state: it
-   rebuilds identically from the replayed trail. Only spans that ended are shown
-   — a live elapsed counter would need a ticking clock, and a stale one that only
-   moves when an unrelated event arrives would be worse than none. */
+/* Derived presentation of durable timestamps. Seconds remain visible even
+   after an hour because this formatter also drives functional liveness: a
+   minute-rounded live stage can look frozen for 59 seconds. */
 function formatDuration(ms: number): string {
   const seconds = Math.round(ms / 1000);
   if (seconds < 60) return `${seconds}s`;
@@ -3929,7 +3939,7 @@ function formatDuration(ms: number): string {
   const rest = seconds % 60;
   if (minutes < 60) return rest === 0 ? `${minutes}m` : `${minutes}m ${rest}s`;
   const hours = Math.floor(minutes / 60);
-  return `${hours}h ${minutes % 60}m`;
+  return `${hours}h ${minutes % 60}m ${rest}s`;
 }
 
 function formatCompact(value: number): string {

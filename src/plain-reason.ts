@@ -36,9 +36,19 @@ interface PlainMapping {
    skeleton-trap case is above the generic plan case for that reason. */
 const MAPPINGS: PlainMapping[] = [
   {
-    match: /SKELETON_TRAP_ACCEPTANCE|deterministic_validity_check must be independent/iu,
+    match: /deterministic_validity_check must be independent/iu,
     plain:
       "The proposed plan was stopped because its contract check duplicated a test the worker would write itself. No work started. Prepare a plan again to get an independent check."
+  },
+  {
+    match: /SKELETON_TRAP_ACCEPTANCE[^\n]*generative[^\n]*(?:BEHAVIORAL|human-judged)/iu,
+    plain:
+      "The proposed plan was stopped because a judgment-based review did not clearly require a person to judge it. No work started. Prepare the plan again with that review boundary stated explicitly."
+  },
+  {
+    match: /SKELETON_TRAP_ACCEPTANCE/iu,
+    plain:
+      "The proposed plan was stopped because one acceptance check could not independently prove the behavior it named. No work started. Prepare the plan again with a specific independent check."
   },
   {
     match: /has started and its contract is immutable/iu,

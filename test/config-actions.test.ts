@@ -47,13 +47,7 @@ test("project.init leaves a project that is not in its most expensive shape", as
   }
 });
 
-/**
- * `initProject` writes default profiles so a first prompt has something to
- * resolve. They are declarations: nothing has run them, so nothing knows
- * whether their flags take effect. `config.inspect` must say so rather than
- * showing them as working, which is the whole distinction this build adds.
- */
-test("profiles init wrote are reported as installed but never as verified", async () => {
+test("an unconnected project reports empty roles without inventing installed agents", async () => {
   const repo = await repoWithProject();
   try {
     await initProjectForDesktop(repo);
@@ -63,18 +57,12 @@ test("profiles init wrote are reported as installed but never as verified", asyn
           adapters: Array<{ role: string; installed: boolean; connected_at: string | null; capabilities: unknown[] }>;
         })
       : null;
-    /* Three roles, but FIVE profiles: `initProject` writes a three-member
-       worker pool so the tier floor has somewhere to land -- `worker` (strong),
-       `worker-standard` and `worker-cheap`. Reporting one row per role hid two
-       thirds of what routing would actually pick from. */
     assert.deepEqual(
       view!.adapters.map((entry) => entry.role),
-      ["planner", "manager", "worker", "worker", "worker"]
+      ["planner", "manager", "worker"]
     );
-    const pool = view!.adapters.filter((entry) => entry.role === "worker");
-    assert.equal(pool.length, 3, "the default worker pool is what makes tier routing reachable");
     for (const adapter of view!.adapters) {
-      assert.equal(adapter.installed, true);
+      assert.equal(adapter.installed, false);
       assert.equal(adapter.connected_at, null, `${adapter.role} was never probed, so it cannot claim a check`);
       assert.deepEqual(adapter.capabilities, []);
     }
@@ -364,13 +352,13 @@ test("provider sign-in launches only the catalogue-owned command and returns no 
   }
 });
 
-test("Grok receives its prompt as the value of the final --single flag", () => {
+test("Grok receives long worker prompts through its file-input flag", () => {
   const grok = findCatalogueAgent("grok-build");
   assert.ok(grok);
   const profile = buildProfileForAgent(grok, "worker");
   assert.ok(profile);
-  assert.equal(profile.prompt_arg, "arg");
-  assert.equal(profile.invoke.at(-1), "--single");
+  assert.equal(profile.prompt_arg, "file");
+  assert.deepEqual(profile.invoke.slice(-2), ["--prompt-file", "{prompt_file}"]);
   assert.equal(profile.invoke.includes("grok-code-fast-1"), false);
   assert.equal(profile.invoke.includes("grok-4.6"), true);
 });
@@ -385,10 +373,9 @@ test("every catalogue model carries the actual slug passed to its CLI", () => {
   for (const model of models) {
     assert.ok(!/balanced|cheaper|strongest/iu.test(model.label), model.label);
   }
-  /* Claude's invocation has always passed `--model sonnet`; presenting it as
-     "whatever the harness chooses" hid a real pin from both pickers. */
+  /* Both Claude choices pass an exact `--model` slug. */
   const claude = catalogueModels("claude");
-  assert.deepEqual(claude.map((model) => model.slug), ["sonnet"]);
+  assert.deepEqual(claude.map((model) => model.slug), ["sonnet", "opus"]);
 });
 
 test("a detected model has a reversible durable id and conservative unknown metadata", () => {
@@ -508,19 +495,36 @@ test("a recommendation is advice with a reason, and suggests one worker", () => 
      suggesting a three-model pool up front turns a first run into five probes
      before a line of code is written. */
   assert.equal(ROLE_RECOMMENDATIONS.filter((entry) => entry.role === "worker").length, 1);
+  assert.deepEqual(
+    Object.fromEntries(ROLE_RECOMMENDATIONS.map((entry) => [entry.role, entry.agent_id])),
+    {
+      planner: "claude-opus",
+      manager: "claude-code",
+      worker: "grok-build"
+    },
+    "the reviewed mixed-provider setup must not fall back to a Codex model"
+  );
 });
 
-test("connecting a worker adds to the pool instead of replacing it", async () => {
+test("provider profiles stay operation-neutral; structured planner schemas are supplied per call", () => {
+  const opus = findCatalogueAgent("claude-opus")!;
+  const sonnet = findCatalogueAgent("claude-code")!;
+  const planner = buildProfileForAgent(opus, "planner")!;
+  const manager = buildProfileForAgent(sonnet, "manager")!;
+  const worker = buildProfileForAgent(sonnet, "worker")!;
+
+  assert.equal(planner.invoke.includes("--json-schema"), false);
+  assert.equal(manager.invoke.includes("--json-schema"), false);
+  assert.equal(worker.invoke.includes("--json-schema"), false);
+});
+
+test("worker connections use a provider-model identity instead of replacing one another", async () => {
   const repo = await repoWithProject();
   try {
     await initProjectForDesktop(repo);
     const before = await readdir(path.join(repo, ".hivemind", "adapters"));
     const workers = before.filter((entry) => /^worker.*\.profile\.json$/u.test(entry));
-    /* init writes a three-member pool so the tier floor has somewhere to land.
-       `adapter.connect` used to write `worker.profile.json` for every worker
-       connection, so exactly one of the three could ever be verified and the
-       other two kept routing work on profiles nobody probed. */
-    assert.equal(workers.length, 3, "the default pool");
+    assert.equal(workers.length, 0, "init does not invent a worker pool");
 
     const codex = findCatalogueAgent("codex-terra")!;
     assert.equal(buildProfileForAgent(codex, "worker")!.tool, "worker-codex-terra");

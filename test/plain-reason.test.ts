@@ -87,6 +87,19 @@ test("the refusal a first run actually hits names the step, not a path", () => {
   assert.notEqual(broken, null);
 });
 
+test("plan acceptance failures describe the rule that actually stopped the plan", () => {
+  const duplicate = plainReason(
+    "SKELETON_TRAP_ACCEPTANCE: task T-001 deterministic_validity_check must be independent of required_tests"
+  );
+  const humanBoundary = plainReason(
+    "SKELETON_TRAP_ACCEPTANCE: task T-004 is generative and requires a BEHAVIORAL human-judged acceptance_criterion or deterministic_validity_check"
+  );
+
+  assert.match(duplicate ?? "", /duplicated a test/iu);
+  assert.doesNotMatch(humanBoundary ?? "", /duplicated a test/iu);
+  assert.match(humanBoundary ?? "", /person to judge/iu);
+});
+
 test("every decision cause has a sentence a person can read", () => {
   for (const cause of ALL_CAUSES) {
     const sentence = plainDecisionReason(cause, { path: "src/ledger.js", op: "add" });

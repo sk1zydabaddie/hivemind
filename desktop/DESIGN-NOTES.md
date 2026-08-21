@@ -4375,3 +4375,29 @@ opens the first-message state at all three supported viewport sizes and proves
 functional liveness by requiring elapsed text to differ after three seconds.
 That brings reachability coverage to 30 surface/viewport combinations.
 
+### Installed history replay is an acceptance surface — 2026-08-21
+
+An executable version match does not prove that an upgrade installed the same
+Core that was bundled. Local installation therefore verifies three identities:
+the executable version, the shell manifest, and a generated Core build manifest.
+The Windows installer removes only its owned Core resource directory before
+copying the replacement, preventing deleted modules from surviving an upgrade.
+This keeps the CSP and packaging boundary closed instead of teaching the UI to
+tolerate a mixed install.
+
+Opening a completed project is also a materially different UI state from a cold
+or short replay. Durable history can arrive as a burst of thousands of records.
+Every record must update the deterministic projection, but React does not need a
+separate paint or a redundant state dispatch for each one. The workspace hook
+coalesces projection paints to one animation frame and changes transport-error
+state only when its value actually changes. Functional liveness remains elapsed
+text; reduced motion disables decorative entry/exit animation outright rather
+than running it for a nominal fraction of a millisecond.
+
+The installed native harness is now the guard for this class. It uses the real
+Tauri shell and installed resources, exercises project selection and history
+replay, and fails on blocked resources, severe console output, React runtime
+errors, or a shell that stops responding. Build **26.821.647** reopened the
+completed real project with no browser errors. This complements, rather than
+replaces, the 30 viewport reachability checks.
+

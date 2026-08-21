@@ -22,7 +22,7 @@ import { appendEvent, readEvents } from "./events.js";
 import { matchesAny } from "./glob.js";
 import { integratedTaskIdsFromEvents } from "./integration-state.js";
 import { extractJsonObject } from "./json.js";
-import { buildPlanningGenerationPrompt } from "./planning-prompt.js";
+import { buildPlanningGenerationPrompt, tentativePlanJsonSchema } from "./planning-prompt.js";
 import { assertNoKnownFailedScopeRepeat, evaluateThrashForPlan, type ReplanEvaluationResult } from "./replan.js";
 import { findGitRoot } from "./repo.js";
 import { isRoutingTaskType, type RoutingTaskType, routingTaskTypeExpectation } from "./routing-task-type.js";
@@ -383,7 +383,10 @@ async function generateTentativePlanWithSession(
   const processResult = await runAdapterProcess(repoRoot, profileResult.profile, repoRoot, prompt.value, {
     outputLogPath: adapterRunLogPath(repoRoot, `planning-${specId}`),
     usageSessionId,
-    usageRunId: usageSessionId ?? specId
+    usageRunId: usageSessionId ?? specId,
+    ...(profileResult.profile.usage_parser === "claude-json"
+      ? { structuredOutputSchema: tentativePlanJsonSchema }
+      : {})
   });
   if (!processResult.ok) {
     return processResult;
@@ -1028,6 +1031,37 @@ export async function ratifyPlan(
   const autonomy = await readProjectAutonomyLevel(repoRoot);
   if (!autonomy.ok) return autonomy;
   return ratifyPlanWithSource(repoRoot, specId, expectedHash, "human", autonomy.value);
+}
+
+/**
+ * The workspace UI may ratify only a plan produced by its durable preparation
+ * flow. The CLI's lower-level plan commands deliberately remain usable for
+ * manual contract work, but those plans have no metered planning-session
+ * identity and therefore cannot start a workspace run.
+ */
+export async function ratifyPreparedWorkspacePlan(
+  repoRoot: string,
+  specId: string,
+  expectedHash: string
+): Promise<SpecResult<PlanRatificationResult>> {
+  const reviewed = await reviewPlanForRatification(repoRoot, specId);
+  if (!reviewed.ok) return reviewed;
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return events;
+  const prepared = events.value.some((event) =>
+    event.type === "plan.prepared" &&
+    event.data.spec_id === specId &&
+    event.data.plan_hash === expectedHash &&
+    event.data.plan_path === reviewed.value.plan_path &&
+    typeof event.data.usage_session_id === "string"
+  );
+  if (!prepared) {
+    return {
+      ok: false,
+      reason: "workspace plan ratification requires a durable prepared-plan record"
+    };
+  }
+  return ratifyPlan(repoRoot, specId, expectedHash);
 }
 
 async function ratifyPlanWithSource(
@@ -1902,7 +1936,7 @@ function uniqueSorted(values: string[]): string[] {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right));
 }
 
-const planLintRuleCount = 8;
+const planLintRuleCount = 9;
 
 function runPlanLintRules(plan: TentativePlan, head: string, criticalGlobs: string[]): SpecResult<void> {
   const rules: Array<() => SpecResult<void>> = [
@@ -1910,6 +1944,7 @@ function runPlanLintRules(plan: TentativePlan, head: string, criticalGlobs: stri
     () => lintGroundingFreshness(plan, head),
     () => lintParallelSafety(plan),
     () => lintParallelScopeOverlap(plan),
+    () => lintLeaseLifetimeScopeOverlap(plan),
     () => lintDependencyCycle(plan),
     () => lintCriticalApproval(plan, criticalGlobs),
     () => lintRightSizingAcceptance(plan),
@@ -2060,6 +2095,24 @@ function lintParallelScopeOverlap(plan: TentativePlan): SpecResult<void> {
   return { ok: true, value: undefined };
 }
 
+function lintLeaseLifetimeScopeOverlap(plan: TentativePlan): SpecResult<void> {
+  const owners = new Map<string, string>();
+  for (const task of plan.tasks) {
+    if (task.mode !== "write") continue;
+    for (const file of task.grounded_scope?.allowed_files ?? []) {
+      const existing = owners.get(file);
+      if (existing !== undefined) {
+        return {
+          ok: false,
+          reason: `LEASE_LIFETIME_SCOPE_OVERLAP: tasks ${existing} and ${task.task_id} both allow ${file}; task leases remain held through verified-set adoption, so combine these edits into one task or make their write scopes disjoint`
+        };
+      }
+      owners.set(file, task.task_id);
+    }
+  }
+  return { ok: true, value: undefined };
+}
+
 function lintDependencyCycle(plan: TentativePlan): SpecResult<void> {
   const tasksById = new Map(plan.tasks.map((task) => [task.task_id, task]));
   const visited = new Set<string>();
@@ -2168,6 +2221,7 @@ function isBehavioralAcceptanceCriterion(criterion: string): boolean {
     normalized.includes("behavioral") ||
     normalized.includes("human-judged") ||
     normalized.includes("human judged") ||
+    normalized.includes("reviewer judges") ||
     normalized.includes("human reads") ||
     normalized.includes("human confirms") ||
     normalized.includes("human review")

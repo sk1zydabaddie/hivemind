@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -98,7 +98,7 @@ test("loadAdapterProfile accepts UTF-8 BOM prefixed JSON", async () => {
 test("validateAdapterProfile rejects missing volatile invocation data", () => {
   assert.deepEqual(validateAdapterProfile({ tool: "fake" }, "fake"), [
     "invoke must be a non-empty array of non-empty strings",
-    "prompt_arg must be stdin or arg",
+    "prompt_arg must be stdin, arg, or file",
     "verified_on is required",
     "context_window must be a positive integer"
   ]);
@@ -289,6 +289,26 @@ test("Claude stream-json exposes the final result as model output", () => {
     reasoning_tokens: null,
     total_tokens: 160
   });
+});
+
+test("Claude structured output crosses the adapter boundary as validated JSON", () => {
+  const structured = {
+    title: "Priority view",
+    goal: "Add honest priority filtering.",
+    acceptance: ["The deterministic test passes."]
+  };
+  const stdout = [
+    JSON.stringify({ type: "system", subtype: "init", session_id: "fixture" }),
+    JSON.stringify({
+      type: "result",
+      subtype: "success",
+      result: "",
+      structured_output: structured,
+      usage: { input_tokens: 10, output_tokens: 5 }
+    })
+  ].join("\n");
+
+  assert.deepEqual(JSON.parse(extractAdapterModelOutput("claude-json", stdout)), structured);
 });
 
 test("Grok and Kimi persisted-session usage is normalized without self-measured guesses", () => {
@@ -780,6 +800,97 @@ test("invokeAgent passes the prompt as an argument when the profile requests arg
     }
     assert.equal(result.value.exitCode, 0);
     assert.match(await readFile(result.value.logPath, "utf8"), /arg prompt ok/);
+  });
+});
+
+test("a structured orchestration call appends its exact schema to Claude only", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const argvPath = path.join(repo, "schema-argv.json");
+    const agentPath = path.join(repo, "schema-agent.mjs");
+    await writeFile(
+      agentPath,
+      [
+        "import { writeFileSync } from 'node:fs';",
+        `writeFileSync(${JSON.stringify(argvPath)}, JSON.stringify(process.argv.slice(2)));`,
+        "console.log(JSON.stringify({ type: 'result', subtype: 'success', structured_output: { title: 'ok' }, usage: { input_tokens: 1, output_tokens: 1 } }));"
+      ].join("\n")
+    );
+    const schema = {
+      type: "object",
+      properties: { title: { type: "string" } },
+      required: ["title"],
+      additionalProperties: false
+    };
+    const result = await runAdapterProcess(
+      repo,
+      {
+        tool: "fake-claude",
+        invoke: [process.execPath, agentPath],
+        prompt_arg: "stdin",
+        verified_on: "2026-08-21",
+        context_window: 1024,
+        usage_parser: "claude-json"
+      },
+      repo,
+      "fixture",
+      { structuredOutputSchema: schema }
+    );
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(JSON.parse(await readFile(argvPath, "utf8")), ["--json-schema", JSON.stringify(schema)]);
+    if (result.ok) assert.deepEqual(JSON.parse(result.value.modelOutput), { title: "ok" });
+
+    const refused = await runAdapterProcess(
+      repo,
+      {
+        tool: "plain",
+        invoke: [process.execPath, agentPath],
+        prompt_arg: "stdin",
+        verified_on: "2026-08-21",
+        context_window: 1024
+      },
+      repo,
+      "fixture",
+      { structuredOutputSchema: schema }
+    );
+    assert.equal(refused.ok, false);
+    if (!refused.ok) assert.match(refused.reason, /supported only by a measured Claude JSON adapter/u);
+  });
+});
+
+test("file prompt mode carries a Windows-sized contract without putting it on argv and cleans up", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const agent = path.join(repo, "fake-file-agent.mjs");
+    await writeFile(
+      agent,
+      "import { readFile } from 'node:fs/promises'; const prompt = await readFile(process.argv[2], 'utf8'); console.log(`prompt-length:${prompt.length}`);\n"
+    );
+    const prompt = `bounded worker contract\n${"scope and acceptance evidence\n".repeat(2_000)}`;
+    assert.ok(prompt.length > 32_767, "fixture must exceed the Windows command-line limit");
+
+    const result = await runAdapterProcess(
+      repo,
+      {
+        tool: "fake-file",
+        invoke: [process.execPath, agent, "{prompt_file}"],
+        prompt_arg: "file",
+        verified_on: "2026-08-21",
+        context_window: 100_000
+      },
+      repo,
+      prompt,
+      { usageSessionId: "file-prompt-session" }
+    );
+
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    if (!result.ok) return;
+    assert.equal(result.value.exitCode, 0);
+    assert.match(result.value.stdout, new RegExp(`prompt-length:${prompt.length}`));
+    assert.equal(
+      (await readdir(repo)).some((name) => name.startsWith(".hivemind-agent-prompt-")),
+      false,
+      "one-run prompt file must be removed before the adapter result returns"
+    );
   });
 });
 

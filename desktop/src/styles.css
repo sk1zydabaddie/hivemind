@@ -564,8 +564,12 @@
      stage and elapsed time carry liveness when motion is reduced. */
   .animate-in,
   .animate-out {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
+    /* Do not shorten Radix presence animations to a near-zero duration.
+       WebView2 emits animationend/animationcancel while Radix is changing its
+       presence state, and the 0.01ms cycle fed that event back into the state
+       machine until React stopped the nested updates. Decorative entry/exit
+       motion has no reduced-motion fallback to preserve, so remove it. */
+    animation: none !important;
   }
 
   .animate-spin {

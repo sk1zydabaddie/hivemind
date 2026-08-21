@@ -69,6 +69,7 @@ export function useWorkspace(): WorkspaceView {
   const [connectionDetail, setConnectionDetail] = useState("");
   const [inspection, setInspection] = useState<WorkspaceInspection | null>(null);
   const [actionError, setActionError] = useState("");
+  const actionErrorRef = useRef("");
   const [gitReadiness, setGitReadiness] = useState<GitReadiness | null>(null);
   const [initializing, setInitializing] = useState(false);
   const [revision, setRevision] = useState(0);
@@ -80,6 +81,7 @@ export function useWorkspace(): WorkspaceView {
   const inspectionTimerRef = useRef<number | null>(null);
   const inspectionPollRef = useRef<number | null>(null);
   const inspectionInFlightRef = useRef(false);
+  const renderFrameRef = useRef<number | null>(null);
 
   const closeStreams = useCallback(() => {
     eventSourceRef.current?.close();
@@ -90,11 +92,38 @@ export function useWorkspace(): WorkspaceView {
       window.clearInterval(inspectionPollRef.current);
       inspectionPollRef.current = null;
     }
+    if (renderFrameRef.current !== null) {
+      window.cancelAnimationFrame(renderFrameRef.current);
+      renderFrameRef.current = null;
+    }
   }, []);
 
   const render = useCallback(() => {
-    setRevision((value) => value + 1);
+    /* Opening a project replays its durable event history as fast as the
+       loopback stream can deliver it. Rendering once per historical record
+       eventually trips React's nested-update guard on a completed real run.
+       The projection still applies every event synchronously; only paint is
+       coalesced to one update per frame, so the next paint is the full state. */
+    if (renderFrameRef.current !== null) return;
+    renderFrameRef.current = window.requestAnimationFrame(() => {
+      renderFrameRef.current = null;
+      setRevision((value) => value + 1);
+    });
   }, []);
+
+  const recordActionError = useCallback((next: string) => {
+    /* History and output streams replay hundreds or thousands of records on
+       open. Most arrive while there is no transport error to clear. Dispatching
+       the same empty state for every record filled React's nested update queue;
+       the next Radix animation event was merely where React detected it. */
+    if (actionErrorRef.current === next) return;
+    actionErrorRef.current = next;
+    setActionError(next);
+  }, []);
+
+  const clearTransportErrorAfterProgress = useCallback(() => {
+    recordActionError(actionErrorAfterDurableProgress(actionErrorRef.current));
+  }, [recordActionError]);
 
   const refreshInspection = useCallback(async () => {
     const currentConnection = connectionRef.current;
@@ -108,16 +137,16 @@ export function useWorkspace(): WorkspaceView {
       );
       if (isCurrentProject()) {
         setInspection(value);
-        setActionError("");
+        recordActionError("");
       }
     } catch (error) {
       if (isCurrentProject()) {
-        setActionError(error instanceof Error ? error.message : String(error));
+        recordActionError(error instanceof Error ? error.message : String(error));
       }
     } finally {
       inspectionInFlightRef.current = false;
     }
-  }, []);
+  }, [recordActionError]);
 
   const scheduleInspection = useCallback(() => {
     if (inspectionTimerRef.current !== null) {
@@ -149,14 +178,14 @@ export function useWorkspace(): WorkspaceView {
         }
         const message = parseMessage<OutputMessage>(event.data);
         if (message) {
-          setActionError(actionErrorAfterDurableProgress);
+          clearTransportErrorAfterProgress();
           applyOutputMessage(projectionRef.current, message);
           render();
         }
       };
       render();
     },
-    [render]
+    [clearTransportErrorAfterProgress, render]
   );
 
   const connectEventStream = useCallback(
@@ -169,7 +198,7 @@ export function useWorkspace(): WorkspaceView {
       eventSourceRef.current = source;
       source.onopen = () => {
         if (isCurrentProject()) {
-          setActionError(actionErrorAfterDurableProgress);
+          clearTransportErrorAfterProgress();
           setConnectionState("live");
           void refreshInspection();
           if (inspectionPollRef.current !== null) window.clearInterval(inspectionPollRef.current);
@@ -189,7 +218,7 @@ export function useWorkspace(): WorkspaceView {
         if (!message) {
           return;
         }
-        setActionError(actionErrorAfterDurableProgress);
+        clearTransportErrorAfterProgress();
         applyEventMessage(projectionRef.current, message);
         scheduleInspection();
         if (
@@ -208,7 +237,7 @@ export function useWorkspace(): WorkspaceView {
       };
       render();
     },
-    [openOutputStream, refreshInspection, render, scheduleInspection]
+    [clearTransportErrorAfterProgress, openOutputStream, refreshInspection, render, scheduleInspection]
   );
 
   /* Set while a recovery is in flight, so a mismatch reported again by the
@@ -255,7 +284,7 @@ export function useWorkspace(): WorkspaceView {
           connectionRef.current = null;
           setConnection(null);
           setInspection(null);
-          setActionError("");
+          recordActionError("");
           setGitReadiness(null);
           projectionRef.current = createBoardProjection();
           setConnectionState("selecting project");
@@ -300,7 +329,7 @@ export function useWorkspace(): WorkspaceView {
           }
         }
       }),
-    [closeStreams, connectEventStream, render]
+    [closeStreams, connectEventStream, recordActionError, render]
   );
 
   sessionRef.current = session;
@@ -383,16 +412,16 @@ export function useWorkspace(): WorkspaceView {
 
   const initializeGit = useCallback(async () => {
     setInitializing(true);
-    setActionError("");
+    recordActionError("");
     try {
       await invoke("initialize_git", { projectPath });
       await session.switchProject(projectPath);
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : String(error));
+      recordActionError(error instanceof Error ? error.message : String(error));
     } finally {
       setInitializing(false);
     }
-  }, [session, projectPath]);
+  }, [recordActionError, session, projectPath]);
 
   /* The shell owns this decision. React only asks for and renders its answer.
      Without this call, the setup screen offered an action that the shell was
@@ -411,13 +440,13 @@ export function useWorkspace(): WorkspaceView {
       })
       .catch((error) => {
         if (!abandoned) {
-          setActionError(error instanceof Error ? error.message : String(error));
+          recordActionError(error instanceof Error ? error.message : String(error));
         }
       });
     return () => {
       abandoned = true;
     };
-  }, [connectionCode, projectPath]);
+  }, [connectionCode, projectPath, recordActionError]);
 
   useEffect(() => {
     let abandoned = false;
@@ -462,7 +491,7 @@ export function useWorkspace(): WorkspaceView {
       if (!currentConnection) {
         throw new Error("Connect to a project before taking an action.");
       }
-      setActionError("");
+      recordActionError("");
       try {
         const result = await invokeWorkspaceAction<T>(
           currentConnection.project_root,
@@ -472,12 +501,12 @@ export function useWorkspace(): WorkspaceView {
         return result;
       } catch (error) {
         const normalized = error instanceof Error ? error : new Error(String(error));
-        setActionError(normalized.message);
+        recordActionError(normalized.message);
         await refreshInspection().catch(() => undefined);
         throw normalized;
       }
     },
-    [refreshInspection]
+    [recordActionError, refreshInspection]
   );
 
   return {

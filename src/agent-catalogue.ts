@@ -34,7 +34,7 @@ export interface CatalogueAgent {
   timeout_ms: number;
   usage_parser: "codex-jsonl" | "codex-text" | "claude-json" | "opencode-json" | "grok-json" | "kimi-wire" | null;
   /** Whether the task prompt is written to stdin or appended to argv. */
-  prompt_arg: "stdin" | "arg";
+  prompt_arg: "stdin" | "arg" | "file";
   /** Whether the desktop may offer a probe that can presently be admitted. */
   connectable: boolean;
   /**
@@ -284,9 +284,12 @@ function grokInvoke(model = "grok-4.6"): string[] {
     "streaming-json",
     "--session-id",
     "{session_id}",
-    /* `--single` takes the prompt as its value. It must be the final template
-       argument so Adapter appends the prompt immediately after it. */
-    "--single"
+    /* Windows limits the full command line to roughly 32K characters, while a
+       scoped worker contract can legitimately exceed that. Grok owns this
+       non-interactive file-input flag, and Adapter creates then removes the
+       one-run file inside the confined worktree. */
+    "--prompt-file",
+    "{prompt_file}"
   ];
   return process.platform === "win32"
     ? ["cmd.exe", "/d", "/s", "/c", "grok.cmd", ...args]
@@ -412,6 +415,31 @@ export const agentCatalogue: CatalogueAgent[] = [
     invoke: claudeInvoke()
   },
   {
+    id: "claude-opus",
+    label: "Claude Code · opus",
+    harness: "claude",
+    subscription: "Claude Pro or Max",
+    status: "unverified",
+    caveat:
+      "A live Claude Code 2.1.233 probe verified all nine capability checks, including its model, file-only tool set, endpoint, per-model token reporting, no helper agents, and an unchanged branch. Hivemind still labels it unverified because no whole piece of work has been built, checked, and shipped through this harness. Safe mode also switches off your hooks, CLAUDE.md, skills, plugins, MCP servers, and custom agents inside a Hivemind worker; that loss is deliberate because hooks are shell commands and can replace a prompt before the model reads it.",
+    model: "opus",
+    routing_tier: "strong",
+    cost_rank: 20,
+    context_window: 200_000,
+    timeout_ms: 900_000,
+    usage_parser: "claude-json",
+    prompt_arg: "stdin",
+    connectable: true,
+    readback: "claude-init",
+    shell_denial: {
+      mechanism: "tool-allowlist",
+      confirmed_by: "runtime-readback",
+      detail:
+        "`--tools` is a positive allowlist of built-in tools, so the shell is absent rather than denied. Confirmed by the tools array the run reports at startup -- which is why this cannot be claimed until one real run has been read."
+    },
+    invoke: claudeInvoke("opus")
+  },
+  {
     id: "opencode",
     label: "OpenCode · opencode/deepseek-v4-flash-free",
     harness: "opencode",
@@ -454,7 +482,7 @@ export const agentCatalogue: CatalogueAgent[] = [
        2026-08-17 verified all nine capabilities and reported 15,112 tokens;
        absence of a usage record still fails the probe closed. */
     usage_parser: "grok-json",
-    prompt_arg: "arg",
+    prompt_arg: "file",
     connectable: true,
     readback: "grok-session",
     shell_denial: {
@@ -714,15 +742,15 @@ export interface RoleRecommendation {
 export const ROLE_RECOMMENDATIONS: RoleRecommendation[] = [
   {
     role: "planner",
-    agent_id: "codex-sol",
+    agent_id: "claude-opus",
     why: "Planning is where a weaker model costs the most: every task inherits the plan's mistakes, and a bad split is paid for again by each worker under it.",
-    reviewed: "2026-08-14"
+    reviewed: "2026-08-21"
   },
   {
     role: "manager",
-    agent_id: "codex-terra",
+    agent_id: "claude-code",
     why: "The manager decides what to do when something unexpected happens. It reasons over a small, well-described situation, which is the shape a mid-tier model handles well.",
-    reviewed: "2026-08-14"
+    reviewed: "2026-08-21"
   },
   /* ONE worker, deliberately. Tier routing only does something with a pool of
      more than one, so there is a real argument for suggesting three up front.
@@ -731,9 +759,9 @@ export const ROLE_RECOMMENDATIONS: RoleRecommendation[] = [
      is written. Build the pool once somebody has seen a run finish. */
   {
     role: "worker",
-    agent_id: "codex-terra",
+    agent_id: "grok-build",
     why: "Writing the code for one scoped task with the files named in advance. Start with one worker; add a cheaper model for routine work once you have seen a run finish.",
-    reviewed: "2026-08-14"
+    reviewed: "2026-08-21"
   }
 ];
 

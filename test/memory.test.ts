@@ -180,7 +180,7 @@ test("planning prompt assembly is structurally canon-only and MCP exposes no pro
   const canonSource = await readFile(path.join(sourceDir, "memory-canon.ts"), "utf8");
   assert.doesNotMatch(canonSource, /writeFile|writeJsonAtomic|appendFile|rm\(/u);
   const planSource = await readFile(path.join(sourceDir, "plan.ts"), "utf8");
-  assert.match(planSource, /import \{ buildPlanningGenerationPrompt \} from "\.\/planning-prompt\.js"/u);
+  assert.match(planSource, /import \{[^}]*buildPlanningGenerationPrompt[^}]*\} from "\.\/planning-prompt\.js"/u);
   assert.doesNotMatch(planSource, /Human-reviewed project canon:/u);
   const canonWriters = [...sourceByName]
     .filter(([, source]) =>
@@ -214,6 +214,8 @@ test("planning prompt requires independent validity evidence and forbids invente
     if (!prompt.ok) return;
     assert.match(prompt.value, /MUST NOT be copied into required_tests or be identical/u);
     assert.match(prompt.value, /Do not invent tools such as ts-node, tsx, Jest, or Vitest/u);
+    assert.match(prompt.value, /verified immediately after its own patch is applied/u);
+    assert.match(prompt.value, /coupled implementation and compatibility updates in the SAME task/u);
     assert.match(prompt.value, /Configured command evidence:\nStack: typescript-node\nFull test command: npm test/u);
   });
 });

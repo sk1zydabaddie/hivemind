@@ -531,6 +531,16 @@ function buildWorkspaceTasks(
       }
     }
   }
+  for (const [taskId, planned] of planTasks) {
+    if (planned.mode !== "read_only") continue;
+    const state = latestTaskRunState(events, taskId);
+    if (state.state !== "completed" || state.completed.data.changed_files !== 0) continue;
+    const task = observed.get(taskId);
+    if (task === undefined || task.state === "merged") continue;
+    task.state = "verified";
+    task.integration = "review completed";
+    task.issue = null;
+  }
   return orderedIds.map((taskId) => observed.get(taskId)!).filter(Boolean);
 }
 
@@ -1000,10 +1010,17 @@ async function inspectPlans(
   if (tentative.ok) {
     const reviewed = await reviewPlanForRatification(repoRoot, specId);
     if (reviewed.ok) {
+      const wasPrepared = events.some((event) =>
+        event.type === "plan.prepared" &&
+        event.data.spec_id === specId &&
+        event.data.plan_hash === reviewed.value.plan_hash &&
+        event.data.plan_path === reviewed.value.plan_path &&
+        typeof event.data.usage_session_id === "string"
+      );
       const alreadyRatified = events.some((event) =>
         event.type === "plan.ratified" && event.data.spec_id === specId && event.data.plan_hash === reviewed.value.plan_hash
       );
-      if (!alreadyRatified) review = presentPlan(reviewed.value, config);
+      if (wasPrepared && !alreadyRatified) review = presentPlan(reviewed.value, config);
     } else if (
       !hasFailureCode(reviewed, "plan_not_currently_lint_passed") &&
       !tentativePlanWasFullyAdopted(tentative.value, events)
@@ -1017,12 +1034,20 @@ async function inspectPlans(
   if (!ratified.ok && !ratified.reason.endsWith("requires an explicitly ratified plan")) {
     return ratified;
   }
-  const current = review ?? (ratified.ok ? presentStoredPlan(specId, ratified.value, config, events) : null);
+  const ratifiedEvent = [...events].reverse().find((event) =>
+    event.type === "plan.ratified" && event.data.spec_id === specId
+  );
+  const ratifiedWasPrepared = ratifiedEvent !== undefined && events.some((event) =>
+    event.type === "plan.prepared" &&
+    event.data.spec_id === specId &&
+    event.data.plan_hash === ratifiedEvent.data.plan_hash &&
+    typeof event.data.usage_session_id === "string"
+  );
+  const current = review ?? (ratified.ok && ratifiedWasPrepared ? presentStoredPlan(specId, ratified.value, config, events) : null);
   return { ok: true, review, current };
 }
 
 function tentativePlanWasFullyAdopted(plan: TentativePlan, events: HivemindEvent[]): boolean {
-  const plannedTaskIds = plan.tasks.map((task) => task.task_id);
   return events.some((event) => {
     if (event.type !== "adoption.completed" || event.data.pre_adoption_ref !== plan.base_commit) return false;
     const adoptedTaskIds = new Set(
@@ -1030,7 +1055,21 @@ function tentativePlanWasFullyAdopted(plan: TentativePlan, events: HivemindEvent
         ? event.data.task_ids.filter((taskId): taskId is string => typeof taskId === "string")
         : []
     );
-    return plannedTaskIds.length > 0 && plannedTaskIds.every((taskId) => adoptedTaskIds.has(taskId));
+    const writes = plan.tasks.filter((task) => task.mode !== "read_only");
+    if (plan.tasks.length === 0 || !writes.every((task) => adoptedTaskIds.has(task.task_id))) return false;
+
+    /* An adoption manifest contains artifacts, so it names write tasks only.
+       Read-only reviewer/scout tasks are part of the ratified plan but have no
+       patch to adopt. The adoption gate proves them separately from the event
+       trail; inspection must use the same definition or a successful ship
+       advances HEAD and then makes its own completed plan look stale forever. */
+    const throughAdoption = events.filter((candidate) => candidate.ts <= event.ts);
+    return plan.tasks
+      .filter((task) => task.mode === "read_only")
+      .every((task) => {
+        const state = latestTaskRunState(throughAdoption, task.task_id);
+        return state.state === "completed" && state.completed.data.changed_files === 0;
+      });
   });
 }
 
@@ -1153,6 +1192,22 @@ async function buildQueues(
         type: "manager.retry_blocked",
         payload: { session_id: session.session_id }
       }
+    });
+  }
+  if (
+    session?.blocked_action_type !== null &&
+    session?.blocked_action_type !== undefined &&
+    session.blocked_action_type !== "integrate_shadow" &&
+    session.blocked_reason !== null
+  ) {
+    needsYou.push({
+      id: `manager-blocked:${session.session_id}:${session.blocked_action_type}`,
+      kind: "run_stalled",
+      title: "A project step was refused",
+      detail: `${session.blocked_reason} Retry only after the underlying problem has been corrected.`,
+      created_at: session.last_activity_at,
+      task_id: null,
+      action: { type: "manager.retry_blocked", payload: { session_id: session.session_id } }
     });
   }
   needsYou.push(...await inspectRunStalls(repoRoot, events, planReview, currentPlan, session, options));

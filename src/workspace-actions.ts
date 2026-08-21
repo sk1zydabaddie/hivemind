@@ -10,7 +10,7 @@ import { generateCharacterizationCandidate } from "./characterization-generator.
 import { generateDraftRefine } from "./draft-refine.js";
 import { recordHumanGuidance } from "./human-guidance.js";
 import { approvePendingManagerAction, cancelManagerRun, continueAutonomousManagerLoop, retryBlockedManagerAction, startWorkspaceManagerSession } from "./manager.js";
-import { authorizeManualTask, prepareWorkspaceTentativePlan, queuePlanAmendment, ratifyPlan, reviewManualTaskForAuthorization, reviewPlanForRatification } from "./plan.js";
+import { authorizeManualTask, prepareWorkspaceTentativePlan, queuePlanAmendment, ratifyPreparedWorkspacePlan, reviewManualTaskForAuthorization, reviewPlanForRatification } from "./plan.js";
 import { cancelQualityRun } from "./quality-control.js";
 import { reverifyQueuedPatchSet } from "./reverify.js";
 import { readCheckOutput } from "./check-output.js";
@@ -178,7 +178,7 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
   }
   if (raw.type === "plan.ratify") {
     const parsed = exactStrings(payload, ["spec_id", "expected_plan_hash"]);
-    return parsed.ok ? ratifyPlan(repoRoot, parsed.value.spec_id, parsed.value.expected_plan_hash) : parsed;
+    return parsed.ok ? ratifyPreparedWorkspacePlan(repoRoot, parsed.value.spec_id, parsed.value.expected_plan_hash) : parsed;
   }
   if (raw.type === "manual_task.review") {
     const parsed = exactStrings(payload, ["spec_id", "task_id"]);

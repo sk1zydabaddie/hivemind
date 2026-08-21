@@ -22,6 +22,8 @@ import {
   type StoredVerificationSet,
   type VerificationSetManifest
 } from "./verification-set.js";
+import { loadRatifiedPlanByIdentity } from "./plan.js";
+import { latestTaskRunState } from "./run-state.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -118,6 +120,17 @@ export async function inspectLatestAdoptionReadiness(repoRoot: string): Promise<
   }
   const state = await deriveAdoptionState(repoRoot, verificationId);
   if (!state.ok) return { ok: true, value: failedReadiness(latest, verificationId, taskIds, state) };
+  const planCoverage = await validateRatifiedPlanCoverage(repoRoot, state.value.stored.manifest);
+  if (!planCoverage.ok) {
+    return {
+      ok: true,
+      value: {
+        ...emptyReadiness(),
+        reason: planCoverage.reason,
+        verified_at: latest.ts
+      }
+    };
+  }
   const ownership = await validateAdoptionOwnership(repoRoot, state.value.stored.manifest);
   if (!ownership.ok) return { ok: true, value: failedReadiness(latest, verificationId, taskIds, ownership) };
   const canonical = await requireCleanCanonicalBase(
@@ -368,6 +381,8 @@ async function validateAdoptionPreconditions(repoRoot: string, manifest: Verific
 }
 
 async function validateAdoptionOwnership(repoRoot: string, manifest: VerificationSetManifest): Promise<AdoptionResult<TaskLeaseRequirement[]>> {
+  const planCoverage = await validateRatifiedPlanCoverage(repoRoot, manifest);
+  if (!planCoverage.ok) return planCoverage;
   if (manifest.oracle.decision === "block") return codedFailure("adoption_oracle_block", "oracle floor blocked this verification set");
   if (manifest.oracle.coverage_configured && manifest.oracle.binding && manifest.oracle.status !== "strong") {
     return codedFailure("adoption_oracle_block", `oracle floor refuses ${manifest.oracle.task_tier} adoption with ${manifest.oracle.status} coverage evidence`);
@@ -387,6 +402,55 @@ async function validateAdoptionOwnership(repoRoot: string, manifest: Verificatio
     leaseRequirements.push({ task_id: input.task_id, files: lease.files });
   }
   return { ok: true, value: leaseRequirements };
+}
+
+/**
+ * A shadow verification may cover one execution wave while later tasks from
+ * the same ratified plan are still running. That evidence is useful for
+ * dependency authoring, but it is not a shippable plan result. If a durable
+ * ratified plan exists, adoption therefore requires the verification manifest
+ * to name every task in that exact plan. Projects created before ratified plans
+ * existed retain the standalone verified-set path.
+ */
+async function validateRatifiedPlanCoverage(
+  repoRoot: string,
+  manifest: VerificationSetManifest
+): Promise<AdoptionResult<true>> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return events;
+  const ratification = [...events.value].reverse().find((event) => event.type === "plan.ratified");
+  if (ratification === undefined) return { ok: true, value: true };
+  const specId = ratification.data.spec_id;
+  if (typeof specId !== "string") {
+    return codedFailure("adoption_inputs_changed", "adoption refused: the active ratified plan has invalid durable identity");
+  }
+  const plan = await loadRatifiedPlanByIdentity(
+    repoRoot,
+    specId,
+    ratification.data.plan_path,
+    ratification.data.plan_hash,
+    "adoption plan coverage"
+  );
+  if (!plan.ok) return codedFailure("adoption_inputs_changed", plan.reason);
+  const planned = plan.value.tasks.filter((task) => task.mode !== "read_only").map((task) => task.task_id).sort();
+  const verified = [...manifest.task_ids].sort();
+  if (!sameStrings(planned, verified)) {
+    const missing = planned.filter((taskId) => !verified.includes(taskId));
+    return codedFailure(
+      "adoption_inputs_changed",
+      `The approved plan is still running. Shipping requires all ${planned.length} write tasks in one verified set; this set covers ${verified.length}${missing.length === 0 ? "" : ` and still needs ${missing.join(", ")}`}.`
+    );
+  }
+  for (const task of plan.value.tasks.filter((candidate) => candidate.mode === "read_only")) {
+    const state = latestTaskRunState(events.value, task.task_id);
+    if (state.state !== "completed" || state.completed.data.changed_files !== 0) {
+      return codedFailure(
+        "adoption_inputs_changed",
+        `The approved plan is still running. Read-only task ${task.task_id} must finish successfully without changing files before shipping.`
+      );
+    }
+  }
+  return { ok: true, value: true };
 }
 
 function emptyReadiness(): AdoptionReadiness {

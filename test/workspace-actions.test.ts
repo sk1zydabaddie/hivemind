@@ -17,7 +17,7 @@ import { proposeMemoryLesson } from "../src/memory-log.js";
 import { executeWorkspaceAction, workspaceActionTypes } from "../src/workspace-actions.js";
 import { loadAdmittedValueQualityRun } from "../src/value-quality.js";
 import { runAdapterProcess, type AdapterProfile } from "../src/adapter.js";
-import { createTentativePlan, groundTentativePlan, lintTentativePlan } from "../src/plan.js";
+import { createTentativePlan, groundTentativePlan, lintTentativePlan, reviewPlanForRatification } from "../src/plan.js";
 import { readQuotaLedger, reserveMeteredCall } from "../src/resource-ledger.js";
 import { getStatus } from "../src/status.js";
 import { inspectWorkspace } from "../src/workspace-inspection.js";
@@ -507,7 +507,7 @@ test("workspace inspection publishes one concurrent task projection with actual 
     })).ok, true);
     const reserved = await reserveMeteredCall(repo, {
       provider: "fixture-worker",
-      session_id: session.value.session_id,
+      session_id: "11111111-1111-4111-8111-111111111111",
       run_id: "R-T-001",
       task_id: "T-001",
       daemon_instance_id: "fixture-daemon",
@@ -550,7 +550,31 @@ test("workspace inspection remains current after the exact ratified plan is adop
     const preAdoptionRef = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: repo, windowsHide: true })).stdout.trim();
     await createRatifiedSpec(repo, "S-001");
     await setTierGlobs(repo);
-    await writeWorkspacePlanningAdapter(repo, "fixture-planner", workspacePlanFixture());
+    const plan = workspacePlanFixture();
+    plan.tasks.push({
+      task_id: "T-003",
+      title: "Review the adopted behavior without changing files",
+      task_type: "generative",
+      routing_task_type: "testing",
+      mode: "read_only",
+      agent_role: "reviewer",
+      draft_scope: {
+        allowed_files: [],
+        allowed_file_intents: {},
+        read_only_files: ["README.md", "src/app.ts", "test/app.test.ts"],
+        forbidden_files: ["README.md", "src/app.ts", "test/app.test.ts"],
+        must_not_change: ["README.md", "src/app.ts", "test/app.test.ts"]
+      },
+      depends_on: ["T-002"],
+      parallel_safe: false,
+      acceptance_criterion: "BEHAVIORAL, human-judged: reviewer judges the adopted behavior and names each pass or failure.",
+      deterministic_validity_check: "node -e \"process.exit(0)\"",
+      required_tests: ["Named review check: reviewer judges the adopted behavior"],
+      patch_requirements: ["Produce no file changes; report only a verdict."],
+      critical_path_approved: false
+    });
+    plan.execution_groups[0] = { group_id: "G-1", mode: "sequence", task_ids: ["T-001", "T-002", "T-003"] };
+    await writeWorkspacePlanningAdapter(repo, "fixture-planner", plan);
 
     const prepared = await executeWorkspaceAction(repo, {
       type: "plan.prepare",
@@ -565,6 +589,17 @@ test("workspace inspection remains current after the exact ratified plan is adop
     });
     assert.equal(ratified.ok, true, ratified.ok ? undefined : ratified.reason);
 
+    await appendEvent(repo, {
+      type: "task.started",
+      task_id: "T-003",
+      data: { tool: "fixture-reviewer" }
+    });
+    await appendEvent(repo, {
+      type: "task.completed",
+      task_id: "T-003",
+      data: { changed_files: 0 }
+    });
+
     await writeFile(path.join(repo, "adopted.txt"), "adopted\n");
     await execFileAsync("git", ["add", "adopted.txt"], { cwd: repo, windowsHide: true });
     await execFileAsync("git", ["commit", "-m", "adopt exact plan"], { cwd: repo, windowsHide: true });
@@ -577,6 +612,8 @@ test("workspace inspection remains current after the exact ratified plan is adop
         verification_id: "V-inspection",
         pre_adoption_ref: preAdoptionRef,
         adopted_ref: adoptedRef,
+        /* Adoption manifests name patch-bearing tasks only. T-003 is proven by
+           its zero-change completion event above. */
         task_ids: ["T-001", "T-002"]
       }
     });
@@ -623,6 +660,44 @@ test("workspace planning surfaces skeleton-trap lint failure without preparing o
     }
     const stored = JSON.parse(await readFile(path.join(repo, ".hivemind", "plans", "S-001.tentative.json"), "utf8")) as { lint_status?: string };
     assert.equal(stored.lint_status, undefined);
+  });
+});
+
+test("workspace inspection and ratification hide a linted plan with no durable preparation record", async () => {
+  await withRepo(async (repo) => {
+    await mkdir(path.join(repo, "src"), { recursive: true });
+    await mkdir(path.join(repo, "test"), { recursive: true });
+    await writeFile(path.join(repo, "src", "app.ts"), "export const value = 1;\n");
+    await writeFile(path.join(repo, "test", "app.test.ts"), "export const covered = true;\n");
+    await execFileAsync("git", ["add", "src/app.ts", "test/app.test.ts"], { cwd: repo, windowsHide: true });
+    await execFileAsync("git", ["commit", "-m", "add planning fixture"], { cwd: repo, windowsHide: true });
+    await createRatifiedSpec(repo, "S-001");
+    const created = await createTentativePlan(repo, "S-001", workspacePlanFixture());
+    assert.equal(created.ok, true, created.ok ? undefined : created.reason);
+    const grounded = await groundTentativePlan(repo, "S-001");
+    assert.equal(grounded.ok, true, grounded.ok ? undefined : grounded.reason);
+    const linted = await lintTentativePlan(repo, "S-001");
+    assert.equal(linted.ok, true, linted.ok ? undefined : linted.reason);
+
+    const inspected = await executeWorkspaceAction(repo, { type: "status.inspect", payload: {} });
+    assert.equal(inspected.ok, true, inspected.ok ? undefined : inspected.reason);
+    if (!inspected.ok) return;
+    const view = inspected.value as { plan_review: unknown; current_plan: unknown };
+    assert.equal(view.plan_review, null);
+    assert.equal(view.current_plan, null);
+
+    const reviewed = await reviewPlanForRatification(repo, "S-001");
+    assert.equal(reviewed.ok, true, reviewed.ok ? undefined : reviewed.reason);
+    if (!reviewed.ok) return;
+    const ratified = await executeWorkspaceAction(repo, {
+      type: "plan.ratify",
+      payload: { spec_id: "S-001", expected_plan_hash: reviewed.value.plan_hash }
+    });
+    assert.equal(ratified.ok, false);
+    if (!ratified.ok) assert.match(ratified.reason, /durable prepared-plan record/u);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (events.ok) assert.equal(events.value.some((event) => event.type === "plan.ratified"), false);
   });
 });
 
@@ -942,6 +1017,10 @@ test("workspace inspection presents authoritative plan detail and daemon-derived
     assert.equal((await createTentativePlan(repo, "S-001", proposal)).ok, true);
     assert.equal((await groundTentativePlan(repo, "S-001")).ok, true);
     assert.equal((await lintTentativePlan(repo, "S-001")).ok, true);
+    const review = await reviewPlanForRatification(repo, "S-001");
+    assert.equal(review.ok, true, review.ok ? undefined : review.reason);
+    if (!review.ok) return;
+    await recordFixturePlanPrepared(repo, review.value.plan_hash);
     const session = await startManagerSession(repo, "Inspect the workspace fixture.", {
       proposedAction: {
         type: "proposed_actions",
@@ -1053,7 +1132,7 @@ test("workspace inspection presents authoritative plan detail and daemon-derived
     const view = result.value as {
       plan_review: { plan_hash: string; tasks: Array<Record<string, unknown>> };
       current_plan: { plan_hash: string };
-      needs_you: Array<{ kind: string; detail: string }>;
+      needs_you: Array<{ kind: string; detail: string; action: { type: string } | null }>;
       later: Array<{ kind: string }>;
       spend: { calls: number; effective_tokens: number; session_ceiling_tokens: number };
       swarm: { characterizations: Array<{ candidate_id: string; task_id: string; classification: string; check_id: string; base_outcome: string; post_change_outcome: string }> };
@@ -1085,6 +1164,7 @@ test("workspace inspection presents authoritative plan detail and daemon-derived
     });
     assert.deepEqual(view.needs_you.map((item) => item.kind).sort(), ["plan_review", "reverification_required", "task_attention"]);
     assert.match(view.needs_you.find((item) => item.kind === "reverification_required")?.detail ?? "", /^Critical change, line 42 untested\./u);
+    assert.equal(view.needs_you.find((item) => item.kind === "task_attention")?.action, null);
     assert.deepEqual(view.later.map((item) => item.kind), ["memory_review", "memory_review"]);
     assert.equal(view.spend.calls, 0);
     assert.equal(view.spend.effective_tokens, 0);
@@ -1140,9 +1220,11 @@ test("History stays active until every ratified task is durably verified, then b
     const review = await executeWorkspaceAction(repo, { type: "plan.review", payload: { spec_id: "S-001" } });
     assert.equal(review.ok, true, review.ok ? undefined : review.reason);
     if (!review.ok) return;
+    const planHash = (review.value as { plan_hash: string }).plan_hash;
+    await recordFixturePlanPrepared(repo, planHash);
     const ratified = await executeWorkspaceAction(repo, {
       type: "plan.ratify",
-      payload: { spec_id: "S-001", expected_plan_hash: (review.value as { plan_hash: string }).plan_hash }
+      payload: { spec_id: "S-001", expected_plan_hash: planHash }
     });
     assert.equal(ratified.ok, true, ratified.ok ? undefined : ratified.reason);
     const session = await startManagerSession(repo, "Keep the session locally active while durable verification finishes.", {
@@ -1355,9 +1437,11 @@ test("workspace inspection surfaces a durable integration refusal in plain langu
     const review = await executeWorkspaceAction(repo, { type: "plan.review", payload: { spec_id: "S-001" } });
     assert.equal(review.ok, true, review.ok ? undefined : review.reason);
     if (!review.ok) return;
+    const planHash = (review.value as { plan_hash: string }).plan_hash;
+    await recordFixturePlanPrepared(repo, planHash);
     const ratified = await executeWorkspaceAction(repo, {
       type: "plan.ratify",
-      payload: { spec_id: "S-001", expected_plan_hash: (review.value as { plan_hash: string }).plan_hash }
+      payload: { spec_id: "S-001", expected_plan_hash: planHash }
     });
     assert.equal(ratified.ok, true, ratified.ok ? undefined : ratified.reason);
     await writeContract(repo, "T-001", ["README.md"]);
@@ -1532,9 +1616,11 @@ test("rewording plan and integration failures leaves workspace decisions unchang
       const review = await executeWorkspaceAction(repo, { type: "plan.review", payload: { spec_id: "S-001" } });
       assert.equal(review.ok, true, review.ok ? undefined : review.reason);
       if (!review.ok) return;
+      const planHash = (review.value as { plan_hash: string }).plan_hash;
+      await recordFixturePlanPrepared(repo, planHash);
       const ratified = await executeWorkspaceAction(repo, {
         type: "plan.ratify",
-        payload: { spec_id: "S-001", expected_plan_hash: (review.value as { plan_hash: string }).plan_hash }
+        payload: { spec_id: "S-001", expected_plan_hash: planHash }
       });
       assert.equal(ratified.ok, true, ratified.ok ? undefined : ratified.reason);
       await writeContract(repo, "T-001", ["README.md"]);
@@ -1659,7 +1745,7 @@ test("Work tab drives configured interruption policy through typed actions and k
   assert.doesNotMatch(source, /type: "plan\.ratify"[\s\S]{0,220}(composer|message)/u);
 
   const hookSource = await readFile(path.resolve("desktop/src/hooks/use-workspace.ts"), "utf8");
-  assert.match(hookSource, /catch \(error\)[\s\S]*setActionError\(normalized\.message\);[\s\S]*refreshInspection\(\)\.catch/u);
+  assert.match(hookSource, /catch \(error\)[\s\S]*recordActionError\(normalized\.message\);[\s\S]*refreshInspection\(\)\.catch/u);
 
   const daemonSource = await readFile(path.resolve("src/daemon.ts"), "utf8");
   assert.match(daemonSource, /isQueueInterrupt[\s\S]*quality\.cancel[\s\S]*task\.stop/u);
@@ -1759,9 +1845,11 @@ async function prepareRatifiedWorkspacePlan(repo: string): Promise<void> {
   const review = await executeWorkspaceAction(repo, { type: "plan.review", payload: { spec_id: "S-001" } });
   assert.equal(review.ok, true, review.ok ? undefined : review.reason);
   if (!review.ok) return;
+  const planHash = (review.value as { plan_hash: string }).plan_hash;
+  await recordFixturePlanPrepared(repo, planHash);
   const ratified = await executeWorkspaceAction(repo, {
     type: "plan.ratify",
-    payload: { spec_id: "S-001", expected_plan_hash: (review.value as { plan_hash: string }).plan_hash }
+    payload: { spec_id: "S-001", expected_plan_hash: planHash }
   });
   assert.equal(ratified.ok, true, ratified.ok ? undefined : ratified.reason);
 }
@@ -1807,8 +1895,28 @@ async function prepareConcurrentWorkspacePlan(repo: string): Promise<void> {
   const review = await executeWorkspaceAction(repo, { type: "plan.review", payload: { spec_id: "S-001" } });
   assert.equal(review.ok, true, review.ok ? undefined : review.reason);
   if (!review.ok) return;
-  const ratified = await executeWorkspaceAction(repo, { type: "plan.ratify", payload: { spec_id: "S-001", expected_plan_hash: (review.value as { plan_hash: string }).plan_hash } });
+  const planHash = (review.value as { plan_hash: string }).plan_hash;
+  await recordFixturePlanPrepared(repo, planHash);
+  const ratified = await executeWorkspaceAction(repo, { type: "plan.ratify", payload: { spec_id: "S-001", expected_plan_hash: planHash } });
   assert.equal(ratified.ok, true, ratified.ok ? undefined : ratified.reason);
+}
+
+async function recordFixturePlanPrepared(repo: string, planHash: string): Promise<void> {
+  const recorded = await appendEvent(repo, {
+    type: "plan.prepared",
+    task_id: null,
+    data: {
+      version: 1,
+      spec_id: "S-001",
+      plan_hash: planHash,
+      plan_path: ".hivemind/plans/S-001.tentative.json",
+      proposal_path: "workspace-action-fixture.json",
+      usage_session_id: "11111111-1111-4111-8111-111111111111",
+      status: "awaiting_ratification",
+      authorization_effect: "none"
+    }
+  });
+  assert.equal(recorded.ok, true, recorded.ok ? undefined : recorded.reason);
 }
 
 function workspacePlanFixture(): { tasks: Array<Record<string, unknown>>; execution_groups: Array<Record<string, unknown>> } {

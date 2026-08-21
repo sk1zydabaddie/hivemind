@@ -8,6 +8,7 @@ import { findGitRoot } from "./repo.js";
 import { validateRequestedTaskId, validateTaskId } from "./task-id.js";
 import { checkFormatVersion, formatVersions } from "./format-version.js";
 import { codedFailure, type FailureCode } from "./failure-code.js";
+import { loadAndValidateContract } from "./contract.js";
 
 export interface WriteIntent {
   task_id: string;
@@ -65,7 +66,8 @@ export async function checkWriteIntent(repoRoot: string, taskId: string, rawInte
     return taskIdResult;
   }
 
-  const validation = validateWriteIntent(rawIntent, taskId);
+  const contract = await loadAndValidateContract(repoRoot, taskId);
+  const validation = validateWriteIntent(rawIntent, taskId, contract.ok && contract.contract.allowed_files.length === 0);
   if (!validation.ok) {
     return validation;
   }
@@ -166,7 +168,8 @@ export async function requirePassedWriteIntent(repoRoot: string, taskId: string)
     throw error;
   }
 
-  const parsed = validateStoredWriteIntent(raw, taskId);
+  const contract = await loadAndValidateContract(repoRoot, taskId);
+  const parsed = validateStoredWriteIntent(raw, taskId, contract.ok && contract.contract.allowed_files.length === 0);
   if (!parsed.ok) {
     return parsed;
   }
@@ -190,7 +193,7 @@ export async function requirePassedWriteIntent(repoRoot: string, taskId: string)
   return parsed;
 }
 
-export function validateWriteIntent(raw: unknown, expectedTaskId: string): IntentResult<WriteIntent> {
+export function validateWriteIntent(raw: unknown, expectedTaskId: string, allowEmptyFiles = false): IntentResult<WriteIntent> {
   const problems: string[] = [];
   if (!isRecord(raw)) {
     return { ok: false, reason: "intent must be a JSON object" };
@@ -208,7 +211,7 @@ export function validateWriteIntent(raw: unknown, expectedTaskId: string): Inten
     }
   }
 
-  if (!Array.isArray(raw.intended_files) || raw.intended_files.length === 0) {
+  if (!Array.isArray(raw.intended_files) || (raw.intended_files.length === 0 && !allowEmptyFiles)) {
     problems.push("intended_files must be a non-empty array");
   } else if (!raw.intended_files.every((entry) => typeof entry === "string")) {
     problems.push("intended_files must be an array of strings");
@@ -255,7 +258,7 @@ function normalizeStringArray(value: unknown): string[] {
   return isStringArray(value) ? value : [];
 }
 
-function validateStoredWriteIntent(raw: unknown, expectedTaskId: string): IntentResult<StoredWriteIntentPass> {
+function validateStoredWriteIntent(raw: unknown, expectedTaskId: string, allowEmptyFiles: boolean): IntentResult<StoredWriteIntentPass> {
   if (!isRecord(raw)) {
     return { ok: false, reason: `passed write intent for ${expectedTaskId} must be a JSON object` };
   }
@@ -269,7 +272,7 @@ function validateStoredWriteIntent(raw: unknown, expectedTaskId: string): Intent
   if (raw.verdict !== "pass") {
     return { ok: false, reason: `passed write intent for ${expectedTaskId} must have verdict pass` };
   }
-  if (!Array.isArray(raw.intended_files) || raw.intended_files.length === 0 || !raw.intended_files.every((entry) => typeof entry === "string")) {
+  if (!Array.isArray(raw.intended_files) || (raw.intended_files.length === 0 && !allowEmptyFiles) || !raw.intended_files.every((entry) => typeof entry === "string")) {
     return { ok: false, reason: `passed write intent for ${expectedTaskId} must include intended_files` };
   }
   if (typeof raw.approved_at !== "string" || Number.isNaN(Date.parse(raw.approved_at))) {

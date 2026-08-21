@@ -2,7 +2,7 @@ import { versionStanding } from "./verification-standing.js";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { explainMissingAdapterProgram, resolveAdapterInvocation } from "./adapter-command.js";
@@ -32,7 +32,7 @@ import {
   type ProviderUsageCapture
 } from "./resource-ledger.js";
 
-export type PromptArgMode = "stdin" | "arg";
+export type PromptArgMode = "stdin" | "arg" | "file";
 export type ProviderRoutingTier = "local" | "cheap" | "standard" | "strong";
 export type AdapterUsageParser = "codex-jsonl" | "codex-text" | "claude-json" | "opencode-json" | "grok-json" | "kimi-wire";
 
@@ -176,6 +176,10 @@ export interface AdapterProcessOptions {
      directory variable. Built by `accountEnvironment` and re-checked at the
      spawn -- see src/provider-accounts.ts. */
   accountEnv?: Record<string, string>;
+  /* A provider-native response contract for JSON-producing orchestration
+     calls. It is appended only to a measured Claude invocation; exact Core
+     validation still runs after the provider returns. */
+  structuredOutputSchema?: Record<string, unknown>;
 }
 
 export type AdapterProcessFailure = {
@@ -358,8 +362,15 @@ export function validateAdapterProfile(raw: unknown, expectedTool?: string): str
     problems.push("invoke must be a non-empty array of non-empty strings");
   }
 
-  if (raw.prompt_arg !== "stdin" && raw.prompt_arg !== "arg") {
-    problems.push("prompt_arg must be stdin or arg");
+  if (raw.prompt_arg !== "stdin" && raw.prompt_arg !== "arg" && raw.prompt_arg !== "file") {
+    problems.push("prompt_arg must be stdin, arg, or file");
+  }
+  if (
+    raw.prompt_arg === "file" &&
+    Array.isArray(raw.invoke) &&
+    raw.invoke.filter((entry) => entry === "{prompt_file}").length !== 1
+  ) {
+    problems.push("file prompt mode requires exactly one {prompt_file} invocation placeholder");
   }
 
   if (typeof raw.verified_on !== "string" || raw.verified_on.trim() === "") {
@@ -476,6 +487,9 @@ export async function runAdapterProcess(
   prompt: string,
   options: AdapterProcessOptions = {}
 ): Promise<AdapterProcessExecutionResult> {
+  if (options.structuredOutputSchema !== undefined && profile.usage_parser !== "claude-json") {
+    return { ok: false, reason: "structured output is supported only by a measured Claude JSON adapter" };
+  }
   const refusedModes = findRefusedAdapterModes(profile, process.env);
   if (refusedModes.length > 0) {
     return {
@@ -496,6 +510,13 @@ export async function runAdapterProcess(
     if (!boundary.ok) return boundary;
   }
   const usageSessionId = options.usageSessionId ?? `standalone-${randomUUID()}`;
+  const providerSessionId = randomUUID();
+  const promptFilePath = profile.prompt_arg === "file"
+    ? path.join(cwd, `.hivemind-agent-prompt-${providerSessionId}.txt`)
+    : null;
+  if (promptFilePath !== null) {
+    await writeFileAtomic(promptFilePath, prompt);
+  }
   const reservationResult = await reserveMeteredCall(repoRoot, {
     provider: profile.tool,
     session_id: usageSessionId,
@@ -504,17 +525,26 @@ export async function runAdapterProcess(
     daemon_instance_id: currentMeteringRuntimeInstanceId(),
     estimated_input_tokens: estimateTokens(prompt)
   });
-  if (!reservationResult.ok) return reservationResult;
+  if (!reservationResult.ok) {
+    if (promptFilePath !== null) await unlink(promptFilePath).catch(() => undefined);
+    return reservationResult;
+  }
   const reservation = reservationResult.value.reservation;
   const startedAt = Date.now();
   return new Promise((resolve) => {
     /* HIVEMIND_<AGENT>_PATH, applied here rather than at profile load, so the
        profile on disk stays the platform-correct thing the probe verified and
        the override stays a property of where the app was started from. */
-    const providerSessionId = randomUUID();
     const [command, ...templateArgs] = resolveAdapterInvocation(profile.invoke);
-    const baseArgs = templateArgs.map((arg) => arg === "{session_id}" ? providerSessionId : arg);
-    const args = profile.prompt_arg === "arg" ? [...baseArgs, prompt] : baseArgs;
+    const baseArgs = templateArgs.map((arg) => {
+      if (arg === "{session_id}") return providerSessionId;
+      if (arg === "{prompt_file}" && promptFilePath !== null) return promptFilePath;
+      return arg;
+    });
+    const structuredArgs = options.structuredOutputSchema === undefined
+      ? baseArgs
+      : [...baseArgs, "--json-schema", JSON.stringify(options.structuredOutputSchema)];
+    const args = profile.prompt_arg === "arg" ? [...structuredArgs, prompt] : structuredArgs;
     // `detached` on POSIX calls setsid(), so the worker leads its own process
     // group and `kill(-pgid)` reaches the agent CLI's own children. Without it
     // there is no group to signal and only the named process dies.
@@ -630,6 +660,7 @@ export async function runAdapterProcess(
       }
       if (cancellationPoll) clearTimeout(cancellationPoll);
       void (async () => {
+        if (promptFilePath !== null) await unlink(promptFilePath).catch(() => undefined);
         const release = reservation === null
           ? { ok: true as const }
           : await releaseMeteredCallAfterSpawnFailure(repoRoot, reservation.reservation_id);
@@ -646,6 +677,7 @@ export async function runAdapterProcess(
       }
       if (cancellationPoll) clearTimeout(cancellationPoll);
       void (async () => {
+        if (promptFilePath !== null) await unlink(promptFilePath).catch(() => undefined);
         const identityRecorded = await processStart;
         const capturedStderr = Buffer.concat(stderr).toString("utf8");
         const rawStdout = Buffer.concat(stdout).toString("utf8");
@@ -1570,7 +1602,16 @@ export function extractAdapterModelOutput(parser: AdapterUsageParser, stdout: st
        reads. Keep output and usage normalization on the same record so a
        valid streamed reply cannot be metered and then silently discarded. */
     const parsed = parseJsonObject(stdout) ?? findResultRecord(stdout);
-    return parsed !== null && typeof parsed.result === "string" ? parsed.result : "";
+    if (parsed === null) return "";
+    /* Claude's structured-output contract puts the validated value beside the
+       ordinary result text. Planner profiles request an object schema so a
+       syntactically broken JSON reply is repaired inside the same provider
+       invocation instead of reaching Hivemind's deterministic parser or
+       requiring a second paid call. The exact spec/plan shape remains owned
+       and validated by Core; this serialization only preserves the provider's
+       already-validated JSON value across the adapter boundary. */
+    if (isRecord(parsed.structured_output)) return JSON.stringify(parsed.structured_output);
+    return typeof parsed.result === "string" ? parsed.result : "";
   }
 
   const messages: string[] = [];

@@ -33,9 +33,15 @@ if (process.platform !== "win32") {
 /* What the build stamped. Written by `prepare-bundle.mjs` at build time, so a
    missing file means no build has run — which is itself the failure mode. */
 const versionFile = path.join(desktopRoot, "src-tauri", "gen", "app-version.txt");
+const expectedCoreBuildFile = path.join(desktopRoot, "src-tauri", "gen", "core-build-id.txt");
+const expectedShellBuildFile = path.join(desktopRoot, "src-tauri", "gen", "shell-build-id.txt");
 let expected;
+let expectedCoreBuild;
+let expectedShellBuild;
 try {
   expected = (await readFile(versionFile, "utf8")).trim();
+  expectedCoreBuild = (await readFile(expectedCoreBuildFile, "utf8")).trim();
+  expectedShellBuild = (await readFile(expectedShellBuildFile, "utf8")).trim();
 } catch {
   console.error(
     "No build to install: src-tauri/gen/app-version.txt is missing.\nRun `npm run tauri:build` first — that is the step that stamps a version."
@@ -106,4 +112,45 @@ if (installed !== expected) {
   process.exit(1);
 }
 
-console.log(`installed ${installed} — verified against the binary on disk`);
+/* The executable version alone cannot see stale bundled resources. NSIS used
+   to copy `core/` over the previous installation, leaving removed JavaScript
+   modules behind. The executable was current while the Core it launched was
+   not. Ask the CLI that is ACTUALLY installed for both identities and compare
+   them with the manifests produced immediately before this installer. */
+const installedCli = path.join(
+  process.env.LOCALAPPDATA ?? "",
+  "Hivemind AI",
+  "core",
+  "dist",
+  "src",
+  "cli.js"
+);
+const installedCoreBuild = execFileSync(process.execPath, [installedCli, "build-id"], {
+  cwd: desktopRoot,
+  encoding: "utf8",
+  windowsHide: true
+}).trim();
+const installedShellBuild = (
+  await readFile(
+    path.join(process.env.LOCALAPPDATA ?? "", "Hivemind AI", "core", "shell-build-id.txt"),
+    "utf8"
+  )
+).trim();
+
+if (installedCoreBuild !== expectedCoreBuild || installedShellBuild !== expectedShellBuild) {
+  console.error(
+    [
+      "",
+      "INSTALLED RUNTIME DID NOT MATCH THE BUNDLE.",
+      `  Core built:       ${expectedCoreBuild}`,
+      `  Core installed:   ${installedCoreBuild}`,
+      `  shell built:      ${expectedShellBuild}`,
+      `  shell installed:  ${installedShellBuild}`,
+      "",
+      "The executable version landed, but its bundled runtime did not."
+    ].join("\n")
+  );
+  process.exit(1);
+}
+
+console.log(`installed ${installed} — executable, Core, and shell identities verified on disk`);

@@ -738,6 +738,7 @@ describe("React workspace boundary", () => {
     /* Drafting has no honest total. Its separate textual elapsed indicator is
        functional liveness for reduced-motion users, not task progress. */
     expect(work).toMatch(/function LiveElapsed[\s\S]*setInterval[\s\S]*elapsed/u);
+    expect(work).toMatch(/setPromptStartedAt\(Date\.now\(\)\)[\s\S]*LiveElapsed startedAt/u);
     expect(styles).toMatch(/animation:\s*artifact-advance/u);
     expect(styles).toMatch(/prefers-reduced-motion[\s\S]*\.artifact-marker\s*\{\s*display:\s*none/u);
   });

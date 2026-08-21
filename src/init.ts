@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { writeJsonAtomic } from "./atomic.js";
@@ -10,11 +10,7 @@ import {
   type HivemindConfig
 } from "./config.js";
 import {
-  DEFAULT_TIER_WORKERS,
-  defaultTierWorkerProfile,
-  REQUIRED_ADAPTER_TOOLS,
   TIER_GLOB_KEYS,
-  defaultAdapterProfile,
   defaultTierGlobs
 } from "./project-defaults.js";
 import { writeIgnoreRules } from "./project-sharing.js";
@@ -44,7 +40,7 @@ export async function initProject(cwd: string): Promise<number> {
       console.error(`error: ${globs.reason}`);
       return 1;
     }
-    await ensureRequiredAdapterProfiles(hivemindRoot);
+    await removeLegacyDefaultAdapterProfiles(hivemindRoot);
     /* Converge an already-initialised project onto the rules as well, so a
        project set up before the split stops sharing its machine evidence the
        next time init runs. */
@@ -84,7 +80,7 @@ export async function initProject(cwd: string): Promise<number> {
   };
 
   await writeJsonAtomic(configPath, config);
-  await ensureRequiredAdapterProfiles(hivemindRoot);
+  await removeLegacyDefaultAdapterProfiles(hivemindRoot);
   console.log("initialized hivemind project");
   return 0;
 }
@@ -116,27 +112,25 @@ async function ensureTierGlobsRecorded(configPath: string): Promise<{ ok: true }
   return { ok: true };
 }
 
-/**
- * Two are resolved by name on a first prompt; the third is the worker routing
- * has to be able to find, since `run_worker` names no tool. A profile that
- * already exists is a choice made in setup, so it is never rewritten.
- */
-async function ensureRequiredAdapterProfiles(hivemindRoot: string): Promise<void> {
+/** Remove only the exact class of profiles older init versions invented.
+ * Provider selection is an explicit paid capability check, so setup cannot
+ * claim Codex—or any provider—without running that check. A profile written by
+ * a real connection has a measured timestamp and is left alone. */
+async function removeLegacyDefaultAdapterProfiles(hivemindRoot: string): Promise<void> {
   const adaptersDir = path.join(hivemindRoot, "adapters");
   await mkdir(adaptersDir, { recursive: true });
-  for (const tool of REQUIRED_ADAPTER_TOOLS) {
-    const profilePath = path.join(adaptersDir, `${tool}.profile.json`);
-    if (await exists(profilePath)) {
+  const names = await readdir(adaptersDir);
+  for (const name of names.filter((entry) => entry.endsWith(".profile.json"))) {
+    const profilePath = path.join(adaptersDir, name);
+    let profile: unknown;
+    try {
+      profile = JSON.parse(await readFile(profilePath, "utf8"));
+    } catch {
       continue;
     }
-    await writeJsonAtomic(profilePath, defaultAdapterProfile(tool));
-  }
-  /* The tier ladder. Without these the routing floor computes the right tier and
-     has nowhere to fall, so every task runs on the flagship. */
-  for (const entry of DEFAULT_TIER_WORKERS) {
-    const profilePath = path.join(adaptersDir, `${entry.tool}.profile.json`);
-    if (await exists(profilePath)) continue;
-    await writeJsonAtomic(profilePath, defaultTierWorkerProfile(entry));
+    if (isRecord(profile) && profile.verified_on === "configured-by-init") {
+      await rm(profilePath);
+    }
   }
 }
 
