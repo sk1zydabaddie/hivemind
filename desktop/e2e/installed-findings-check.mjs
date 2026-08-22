@@ -76,6 +76,14 @@ try {
   await mkdir(path.join(projectB, "node_modules"), { recursive: true });
   await writeFile(path.join(projectB, "node_modules", "dep.js"), "generated\n", "utf8");
 
+  /* Consecutive walks race the previous run's teardown: the driver kills the
+     app, its daemons die a moment later, and a walk that opens the same
+     project in that moment meets an alive-pid dead-HTTP daemon -- which the
+     shell correctly refuses to write past. Waiting is the honest fix;
+     killing someone else's pid is not (this machine has already handed a
+     dead daemon's pid to a web browser). */
+  await waitForPriorDaemonsToSettle([projectA, brickedProjectPath()].filter(Boolean));
+
   tauriDriver = spawn("tauri-driver", [], {
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"]
@@ -90,6 +98,76 @@ try {
   capabilities.setLoggingPrefs({ browser: "ALL" });
   driver = await new Builder().usingServer(driverUrl).withCapabilities(capabilities).build();
   await waitForBody();
+  await driver.executeScript(
+    `window.__HIVEMIND_ERRORS__ = [];
+     window.__HIVEMIND_TIMELINE__ = [];
+     const record = (entry) => {
+       window.__HIVEMIND_TIMELINE__.push({ t: Math.round(performance.now()), ...entry });
+       window.__HIVEMIND_TIMELINE__ = window.__HIVEMIND_TIMELINE__.slice(-80);
+     };
+     new MutationObserver(() => {
+       record({ kind: "flag", replaying: document.documentElement.hasAttribute("data-replaying-history") });
+     }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-replaying-history"] });
+     for (const type of ["animationstart", "animationend", "animationcancel"]) {
+       window.addEventListener(type, (event) => {
+         record({ kind: type, name: event.animationName, cls: String(event.target?.className ?? "").slice(0, 90) });
+       }, true);
+     }
+     window.addEventListener("error", (event) => {
+       window.__HIVEMIND_ERRORS__.push({
+         t: Math.round(performance.now()),
+         message: String(event.error?.message ?? event.message ?? ""),
+         stack: String(event.error?.stack ?? ""),
+         replayingAttributePresent: document.documentElement.hasAttribute("data-replaying-history")
+       });
+       window.__HIVEMIND_ERRORS__ = window.__HIVEMIND_ERRORS__.slice(-10);
+     }, true);`
+  );
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  {
+    const drained = await driver.manage().logs().get(logging.Type.BROWSER);
+    const severeHere = drained.filter((entry) => entry.level?.name === "SEVERE");
+    assert.deepEqual(
+      severeHere,
+      [],
+      `the cold open logged errors before any step ran: ${JSON.stringify(severeHere)}`
+    );
+  }
+
+  /* ── A-37: a bricked project heals on its own machinery ────────────── */
+  const brickedProject = brickedProjectPath();
+  if (existsSync(brickedProject)) {
+    /* The completed acceptance project, naturally bricked by A-37: its
+       read-only review task's worktree survived shipping, so the old
+       artefact-counting idleness proof read it as permanently busy and every
+       recovery path refused. Opening it on this build must (a) not read the
+       leftover as work, and (b) remove it when the fresh daemon starts. */
+    const leftover = path.join(brickedProject, ".hivemind", "worktrees", "T-003");
+    const hadLeftover = existsSync(leftover);
+    await openProject(brickedProject);
+    await driver.wait(
+      async () => !existsSync(leftover),
+      20_000,
+      "the leftover read-only worktree was not reconciled at daemon start"
+    );
+    await capture("a37-bricked-project-heals");
+    console.log(
+      `A-37 installed: the completed project opened to its work surface${hadLeftover ? " and the leftover worktree was removed" : " (already reconciled by an earlier run)"}`
+    );
+    {
+      const drained = await driver.manage().logs().get(logging.Type.BROWSER);
+      const severeHere = drained.filter((entry) => entry.level?.name === "SEVERE");
+      const captured = await driver.executeScript("return window.__HIVEMIND_ERRORS__ ?? []");
+      const timeline = await driver.executeScript("return window.__HIVEMIND_TIMELINE__ ?? []");
+      assert.deepEqual(
+        severeHere,
+        [],
+        `the completed-project reopen logged errors: ${JSON.stringify(severeHere)}\nCAPTURED STACKS:\n${JSON.stringify(captured, null, 2)}\nTIMELINE:\n${JSON.stringify(timeline)}`
+      );
+    }
+  } else {
+    console.log("A-37 installed: skipped — the completed acceptance project is not on this machine");
+  }
 
   /* ── A-04: setup spend is on the meter ─────────────────────────────── */
   await openProject(projectA);
@@ -207,7 +285,13 @@ try {
   /* No severe browser output anywhere in the walk. */
   const logs = await driver.manage().logs().get(logging.Type.BROWSER);
   const severe = logs.filter((entry) => entry.level?.name === "SEVERE");
-  assert.deepEqual(severe, [], `the installed WebView logged errors: ${JSON.stringify(severe)}`);
+  const finalErrors = await driver.executeScript("return window.__HIVEMIND_ERRORS__ ?? []");
+  const finalTimeline = await driver.executeScript("return window.__HIVEMIND_TIMELINE__ ?? []");
+  assert.deepEqual(
+    severe,
+    [],
+    `the installed WebView logged errors: ${JSON.stringify(severe)}\nCAPTURED:\n${JSON.stringify(finalErrors, null, 1)}\nTIMELINE TAIL:\n${JSON.stringify(finalTimeline.slice(-25))}`
+  );
 
   await writeFile(
     path.join(evidenceDir, "findings-check.json"),
@@ -224,6 +308,53 @@ try {
   await writeFile(path.join(evidenceDir, "driver.log"), transport.join(""), "utf8").catch(
     () => undefined
   );
+}
+
+function brickedProjectPath() {
+  return process.env.HIVEMIND_E2E_BRICKED
+    ? path.resolve(process.env.HIVEMIND_E2E_BRICKED)
+    : "D:\\Projects\\Hivemind Installed E2E Final 26.821.453";
+}
+
+async function waitForPriorDaemonsToSettle(projects) {
+  for (const projectPath of projects) {
+    const recordPath = path.join(projectPath, ".hivemind", "daemon.json");
+    if (!existsSync(recordPath)) continue;
+    let record;
+    try {
+      record = JSON.parse(await readFile(recordPath, "utf8"));
+    } catch {
+      continue;
+    }
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline) {
+      const alive = await pidAlive(record.pid);
+      if (!alive) break;
+      const healthy = await fetch(`${record.url}/health`, { signal: AbortSignal.timeout(1_000) })
+        .then((response) => response.ok)
+        .catch(() => false);
+      /* A healthy live daemon is a daemon to attach to, not to wait out. */
+      if (healthy) break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+}
+
+async function pidAlive(pid) {
+  if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0) return false;
+  /* tasklist, not process.kill(pid, 0): node's signal-0 reports ESRCH for
+     measured live children on Windows (recorded in the Core test rig). */
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const run = promisify(execFile);
+  try {
+    const { stdout } = await run("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+      windowsHide: true
+    });
+    return stdout.includes(`"${pid}"`);
+  } catch {
+    return true;
+  }
 }
 
 function displayTail(projectPath) {

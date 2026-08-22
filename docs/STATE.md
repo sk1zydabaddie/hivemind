@@ -1939,3 +1939,46 @@ Evidence: `docs/evidence/findings-installed-26.821.1251/`. Final verification
 on the fresh clean installs passed Core **835/837** with two intentional
 Windows skips, Desktop **312/312**, and Rust **38/38**. No paid provider,
 capability, or model call was made anywhere in this pass.
+
+### The idleness proof is ownership-based — 2026-08-22
+
+A-37 closed as a class, not a third instance. The proof had been defeated
+twice by two different orphans — a dead daemon's reservation (F-4), then a
+finished read-only task's worktree — because it counted artefacts. The rule
+now, judged entirely off durable records: **an artefact is work only while
+something that can still finish it is alive.** A trail-closed task's worktree
+is a named leftover, never work; a worker the trail started and never stopped
+is judged by its real pid whatever the daemon's state, because workers are
+spawned detached and can outlive it; PL-1 governs every ambiguity, an
+unaccounted worktree is a run that is ahead, and an unreadable trail is
+Unknown. A first design that asked the live daemon over a new HTTP route was
+withdrawn before shipping: the daemon this proof most often judges is the one
+an update left behind, and a route added today is absent from every daemon
+old enough to matter — the reason was already recorded in `identity.test.ts`.
+Recovery is mechanical: leftovers are disregarded and named, and adoption
+completion plus daemon startup run a plan-grounded reconciliation that
+removes exactly the finished-clean read-only class. Four mutations proved
+both directions, including the dangerous one — a live worker's worktree never
+reads as stale, and a zero-change write task's worktree is never
+reconciliation's to remove.
+
+Verified installed on **26.822.1349**: the acceptance project, naturally
+bricked since 2026-08-21, opened straight to its work surface and the fresh
+daemon's startup reconciliation removed the leftover `T-003` worktree
+(`docs/evidence/findings-installed-26.822.1349/`). All four walk checks
+(A-37, A-04, A-08, A-07) pass on that build.
+
+The walk's severe-log gate then earned itself twice more, and both findings
+are recorded rather than absorbed. A-38: burst re-renders around project
+switching can chain past React's nested-update limit — two instances fixed
+(including the discovery that the reduced-motion animation suppression had
+never matched Radix's variant-classed surfaces at all), one intermittent
+instance open with its stack captured; the gate stays strict and is the guard.
+A-39: the shell's daemon liveness is pid-only, and Windows handed a dead
+daemon's pid to a web browser, reading as an unhealthy live daemon that
+correctly refuses attach forever; `started_at` is on disk and unconsulted.
+
+Final verification: Core **837/839** with two intentional Windows skips,
+Desktop **314/314**, Rust **45/45**, 30/30 reachability on every ship, and
+matching on-disk identities for installed **26.822.1349**. No paid provider,
+capability, or model call was made anywhere in this pass.

@@ -189,4 +189,35 @@ describe("seam: trail event names, Core's emissions to the client projection", (
       "the projection waits for events Core never writes; that branch is dead"
     ).toEqual([]);
   });
+
+  /**
+   * The shell's idleness proof scans the trail for worker process events, so
+   * the Rust side of that seam carries two event names as string literals no
+   * compiler checks. A rename in Core would silently blind the scan -- and a
+   * blinded scan reads a live worker's worktree as stale, which is the
+   * dangerous direction. Each name is held against Core's closed event union.
+   */
+  test("every trail event the shell's worker scan matches on is one Core writes", async () => {
+    const shell = (
+      await readFile(path.join(desktopRoot, "src-tauri", "src", "project.rs"), "utf8")
+    )
+      .replace(/\/\*[\s\S]*?\*\//gu, "")
+      .replace(/^\s*\/\/.*$/gmu, "");
+    /* Any dotted task.* literal, not the two names this was written for: a
+       pattern anchored on the expected names cannot see a rename, because the
+       renamed literal falls out of the scan instead of failing it. That is
+       exactly how the first draft of this test proved unable to bite. */
+    const matched = [...shell.matchAll(/"(task\.[a-z_.]+)"/gu)].map((match) => match[1]);
+    expect(matched.length, "the shell's worker scan failed to parse").toBeGreaterThanOrEqual(2);
+
+    const union = await readFile(path.join(coreRoot, "events.ts"), "utf8");
+    const declared = new Set(
+      [...union.matchAll(/"([a-z_]+\.[a-z_.]+)"/gu)].map((match) => match[1])
+    );
+    const unknown = matched.filter((name) => !declared.has(name));
+    expect(
+      unknown,
+      "the shell scans for events Core never writes; the worker scan is blind"
+    ).toEqual([]);
+  });
 });

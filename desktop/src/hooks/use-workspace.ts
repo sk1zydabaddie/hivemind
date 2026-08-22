@@ -86,6 +86,8 @@ export function useWorkspace(): WorkspaceView {
   const inspectionTimerRef = useRef<number | null>(null);
   const inspectionPollRef = useRef<number | null>(null);
   const inspectionInFlightRef = useRef(false);
+  const replaySettleTimer = useRef<number | null>(null);
+  const replayDeadlineRef = useRef(0);
   const renderFrameRef = useRef<number | null>(null);
 
   const closeStreams = useCallback(() => {
@@ -93,6 +95,12 @@ export function useWorkspace(): WorkspaceView {
     eventSourceRef.current = null;
     outputSourceRef.current?.close();
     outputSourceRef.current = null;
+    if (replaySettleTimer.current !== null) {
+      window.clearTimeout(replaySettleTimer.current);
+      replaySettleTimer.current = null;
+    }
+    replayDeadlineRef.current = 0;
+    document.documentElement.removeAttribute("data-replaying-history");
     if (inspectionPollRef.current !== null) {
       window.clearInterval(inspectionPollRef.current);
       inspectionPollRef.current = null;
@@ -124,6 +132,37 @@ export function useWorkspace(): WorkspaceView {
     if (actionErrorRef.current === next) return;
     actionErrorRef.current = next;
     setActionError(next);
+  }, []);
+
+  /* Replayed history must not animate -- the recorded rule ("reading an old
+     run should not celebrate"), now mechanical for entry/exit animations too.
+     A completed project's replay walks the projection through every transient
+     state its run ever had, so animated surfaces mount and unmount in a burst;
+     each Radix exit animation's end-handler then flushes state inside an
+     animation frame, and enough of them nested is React error 185 -- caught
+     twice by the installed walk, the second time with the stack captured
+     ending in handleAnimationEnd. While history-source messages are arriving
+     (plus a short settle window), the root carries an attribute under which
+     entry/exit animations are `none` -- removed, not shortened, because the
+     reduced-motion block records that a near-zero Radix presence cycle feeds
+     the same loop. A presentation flag only: nothing branches on it. */
+  const markHistoryReplay = useCallback((holdMs = 400) => {
+    /* Deadlines only ever extend. The window is anchored to lifecycle moments
+       with generous holds rather than trailing the last history message by a
+       hair: the walk measured the message-trailing window expiring at
+       t=4742ms and the project dialog starting its exit at t=4744ms -- on a
+       fast attach the whole replay lands while the dialog is still open, and
+       the dialog closes (and animates out) only after the switch resolves. */
+    const deadline = performance.now() + holdMs;
+    if (deadline <= replayDeadlineRef.current) return;
+    replayDeadlineRef.current = deadline;
+    document.documentElement.setAttribute("data-replaying-history", "true");
+    if (replaySettleTimer.current !== null) window.clearTimeout(replaySettleTimer.current);
+    replaySettleTimer.current = window.setTimeout(() => {
+      replaySettleTimer.current = null;
+      replayDeadlineRef.current = 0;
+      document.documentElement.removeAttribute("data-replaying-history");
+    }, holdMs);
   }, []);
 
   const clearTransportErrorAfterProgress = useCallback(() => {
@@ -203,6 +242,10 @@ export function useWorkspace(): WorkspaceView {
       eventSourceRef.current = source;
       source.onopen = () => {
         if (isCurrentProject()) {
+          /* The project dialog closes -- and animates out -- only after the
+             switch resolves, which follows this open almost immediately. The
+             hold must outlive that exit plus the replay burst behind it. */
+          markHistoryReplay(1200);
           clearTransportErrorAfterProgress();
           setConnectionState("live");
           void refreshInspection();
@@ -223,6 +266,7 @@ export function useWorkspace(): WorkspaceView {
         if (!message) {
           return;
         }
+        if (message.source === "history") markHistoryReplay();
         clearTransportErrorAfterProgress();
         applyEventMessage(projectionRef.current, message);
         scheduleInspection();
@@ -242,7 +286,7 @@ export function useWorkspace(): WorkspaceView {
       };
       render();
     },
-    [clearTransportErrorAfterProgress, openOutputStream, refreshInspection, render, scheduleInspection]
+    [clearTransportErrorAfterProgress, markHistoryReplay, openOutputStream, refreshInspection, render, scheduleInspection]
   );
 
   /* Set while a recovery is in flight, so a mismatch reported again by the
@@ -296,6 +340,12 @@ export function useWorkspace(): WorkspaceView {
           setConnectionState("selecting project");
           setConnectionCode(PROJECT_FAULT.noProjectSelected);
           setConnectionDetail("");
+          /* AFTER closeStreams (which clears the attribute): the suppression
+             window opens at the switch itself, not at the first history
+             message. The installed walk proved the storm starts here -- the
+             switcher menu and the project dialog were both mid-exit-animation
+             at the moment of the crash, before any replay message arrived. */
+          markHistoryReplay(2000);
           render();
         },
         onConnected: (nextConnection) => {
@@ -326,8 +376,8 @@ export function useWorkspace(): WorkspaceView {
           /* A build mismatch after an update is recoverable, and asking a
              person to press a button about it is asking them a question the
              machine can answer. The Rust side only restarts when it can PROVE
-             nothing is in flight — reading the resource ledger and the worktree
-             directory off disk — and refuses otherwise, so this cannot orphan a
+             nothing is in flight â€” reading the resource ledger and the worktree
+             directory off disk â€” and refuses otherwise, so this cannot orphan a
              worker. If it refuses, its reason replaces this one and the button
              is still there. */
           if (fault.code === PROJECT_FAULT.daemonBuildMismatch) {
@@ -367,7 +417,7 @@ export function useWorkspace(): WorkspaceView {
    *
    * The Rust side refuses unless it can PROVE nothing is in flight, reading the
    * resource ledger and the worktree directory off disk rather than asking the
-   * old daemon about itself — the old daemon being the thing under suspicion.
+   * old daemon about itself â€” the old daemon being the thing under suspicion.
    */
   const restartDaemon = useCallback(async () => {
     setInitializing(true);

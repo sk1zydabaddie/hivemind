@@ -14,6 +14,7 @@ import {
   type TaskLeaseRequirement
 } from "./lease.js";
 import { removeTaskWorktree } from "./worktree.js";
+import { reconcileLeftoverWorktrees } from "./worktree-standing.js";
 import { codedFailure, type CodedFailure, type FailureCode } from "./failure-code.js";
 import {
   hashJson,
@@ -250,7 +251,16 @@ export async function adoptVerifiedSet(
     const exact = await requireExactCandidate(repoRoot, candidate.value.commit, candidate.value.tree);
     if (!exact.ok) return exact;
     const cleanup = await cleanupAdoptedTasks(repoRoot, manifest.task_ids);
-    return cleanup.ok ? { ok: true as const, value: true } : cleanup;
+    if (!cleanup.ok) return cleanup;
+    /* The manifest names only write tasks, so the plan's completed read-only
+       tasks never reached the cleanup above -- their worktrees survived
+       shipping and permanently closed the idleness proof (A-37). The same
+       plan-grounded reconciliation the daemon runs at startup closes them
+       here, at the moment the run they belonged to is over. */
+    const readOnlyCleanup = await reconcileLeftoverWorktrees(repoRoot);
+    return readOnlyCleanup.ok
+      ? { ok: true as const, value: true }
+      : { ok: false, reason: `adopted base is exact but read-only cleanup failed: ${readOnlyCleanup.reason}` };
   });
   if (!guarded.ok) {
     const head = await git(repoRoot, ["rev-parse", "HEAD"]);

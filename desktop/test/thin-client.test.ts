@@ -602,6 +602,46 @@ describe("React workspace boundary", () => {
   });
 
   /**
+   * Replayed history must not animate. A completed project's replay walks the
+   * projection through every transient state its run ever had; animated
+   * surfaces mount and unmount in a burst, and each Radix exit animation's
+   * end-handler flushes state inside the flood -- React error 185, caught
+   * twice by the installed walk (stack ending in handleAnimationEnd). The
+   * suppression is `animation: none`, never a near-zero duration, because the
+   * reduced-motion block already records that a 0.01ms Radix presence cycle
+   * feeds the same loop.
+   */
+  test("replayed history suppresses entry and exit animation", async () => {
+    const hook = (
+      await readFile(path.join(desktopRoot, "src", "hooks", "use-workspace.ts"), "utf8")
+    ).replace(/\/\*[\s\S]*?\*\//gu, "");
+    /* Keyed on the stream's own history/live marker, never on a heuristic. */
+    expect(hook).toMatch(/message\.source === "history"\) markHistoryReplay\(\)/u);
+    expect(hook).toMatch(/setAttribute\("data-replaying-history"/u);
+    expect(hook).toMatch(/removeAttribute\("data-replaying-history"\)/u);
+    /* And the window opens at the SWITCH, not at the first history message:
+       the walk caught the storm starting while the switcher menu and project
+       dialog were still exiting, before any replay message arrived. */
+    expect(hook).toMatch(/onSwitchStart[\s\S]{0,1100}markHistoryReplay\(/u);
+    /* Both anchors: the stream open precedes the dialog close that follows a
+       resolved switch, so its hold is what outlives the exit animation. */
+    expect(hook).toMatch(/onopen[\s\S]{0,400}markHistoryReplay\(/u);
+
+    const styles = (
+      await readFile(path.join(desktopRoot, "src", "styles.css"), "utf8")
+    ).replace(/\/\*[\s\S]*?\*\//gu, "");
+    /* Substring selectors, never bare classes: Radix entry/exit animation
+       arrives as Tailwind variant classes (`data-[state=closed]:animate-out`),
+       which a bare `.animate-out` selector never matches -- the first draft of
+       this suppression shipped exactly that and the installed walk still
+       caught the crash. */
+    expect(styles).toMatch(
+      /\[data-replaying-history\] \[class\*="animate-in"\],\s*\[data-replaying-history\] \[class\*="animate-out"\] \{\s*animation: none !important;/u
+    );
+    expect(styles).not.toMatch(/\[data-replaying-history\] \.animate/u);
+  });
+
+  /**
    * A-08: switching projects visibly showed the PREVIOUS project's worker
    * state in Settings with the controls enabled, because the dialog's one
    * load effect was keyed to `open` alone and nothing ever cleared `view`.

@@ -548,6 +548,25 @@
   }
 }
 
+/* Replayed history must not animate. Reading an old run should not celebrate,
+   and it also must not crash: a completed project's replay walks the
+   projection through every transient state its run ever had, so animated
+   surfaces mount and unmount in a burst, and each Radix exit animation's
+   end-handler flushes state inside the flood -- React error 185, caught twice
+   by the installed walk with the stack ending in handleAnimationEnd. While
+   history-source stream messages are arriving, `use-workspace` holds this
+   attribute on the root. `animation: none`, never a near-zero duration: the
+   reduced-motion block below records why 0.01ms feeds the same loop. */
+/* Substring selectors, not bare classes: Radix surfaces carry their entry and
+   exit animation as Tailwind VARIANT classes -- the literal class token is
+   `data-[state=closed]:animate-out`, which `.animate-out` never matches. The
+   built stylesheet proved it: the bare-class rule existed and the walk still
+   caught the crash, because nothing the crash rode was matched by it. */
+[data-replaying-history] [class*="animate-in"],
+[data-replaying-history] [class*="animate-out"] {
+  animation: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -562,13 +581,19 @@
      accessible reduced-motion presentation of their own. The update spinner
      is deliberately still here for no-preference users, while its adjacent
      stage and elapsed time carry liveness when motion is reduced. */
-  .animate-in,
-  .animate-out {
+  [class*="animate-in"],
+  [class*="animate-out"] {
     /* Do not shorten Radix presence animations to a near-zero duration.
        WebView2 emits animationend/animationcancel while Radix is changing its
        presence state, and the 0.01ms cycle fed that event back into the state
        machine until React stopped the nested updates. Decorative entry/exit
-       motion has no reduced-motion fallback to preserve, so remove it. */
+       motion has no reduced-motion fallback to preserve, so remove it.
+
+       Substring selectors, because the bare `.animate-in`/`.animate-out`
+       classes this matched before never matched the Radix surfaces at all:
+       their animation arrives as Tailwind variant classes whose literal token
+       is `data-[state=closed]:animate-out`. The replay-suppression rule above
+       hit the same gap and the installed walk caught it. */
     animation: none !important;
   }
 

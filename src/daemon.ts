@@ -31,6 +31,7 @@ import { validateRequestedTaskId } from "./task-id.js";
 import { reconcileTaskRunsOnStartup } from "./task-control.js";
 import { admitValueQuality } from "./value-quality.js";
 import { createTaskWorktree, removeTaskWorktree } from "./worktree.js";
+import { reconcileLeftoverWorktrees } from "./worktree-standing.js";
 import { withPlainReason } from "./plain-reason.js";
 import { executeWorkspaceAction } from "./workspace-actions.js";
 
@@ -80,6 +81,16 @@ export async function daemonCommand(cwd: string, args: string[]): Promise<number
   const reconcileResult = await reconcileTaskRunsOnStartup(repoRoot, { probeLiveness: startupLiveness });
   if (!reconcileResult.ok) {
     console.error(`error: ${reconcileResult.reason}`);
+    return 1;
+  }
+  /* The one leftover class the reconcilers above do not cover: a read-only
+     plan task that finished clean keeps its worktree forever, and a worktree
+     nothing owns closes the idleness proof permanently (A-37). Startup is the
+     provably safe moment to remove them -- this process is the project's only
+     writer, and the classification is grounded in the ratified plan. */
+  const worktreeReconcile = await reconcileLeftoverWorktrees(repoRoot);
+  if (!worktreeReconcile.ok) {
+    console.error(`error: ${worktreeReconcile.reason}`);
     return 1;
   }
   if (!qualityPreflight.value.blocked) {
