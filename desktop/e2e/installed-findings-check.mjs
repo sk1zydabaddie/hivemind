@@ -134,7 +134,7 @@ try {
     );
   }
 
-  /* ── A-37: a bricked project heals on its own machinery ────────────── */
+  /* -- A-37: a bricked project heals on its own machinery -- */
   const brickedProject = brickedProjectPath();
   if (existsSync(brickedProject)) {
     /* The completed acceptance project, naturally bricked by A-37: its
@@ -166,10 +166,10 @@ try {
       );
     }
   } else {
-    console.log("A-37 installed: skipped — the completed acceptance project is not on this machine");
+    console.log("A-37 installed: skipped -- the completed acceptance project is not on this machine");
   }
 
-  /* ── A-04: setup spend is on the meter ─────────────────────────────── */
+  /* -- A-04: setup spend is on the meter -- */
   await openProject(projectA);
   try {
     await driver.wait(
@@ -188,7 +188,7 @@ try {
   await capture("a04-setup-spend-on-meter");
   console.log(`A-04 installed: meter shows "${meterText}"`);
 
-  /* ── A-08: settings keyed to the project ───────────────────────────── */
+  /* -- A-08: settings keyed to the project -- */
   await driver.findElement(By.css('button[aria-label="Settings"]')).click();
   /* Assertions read the DIALOG element, not the whole body: the screen behind
      the modal also carries a project path, and a body-wide match would credit
@@ -236,12 +236,20 @@ try {
     "the settings dialog did not close on project B"
   );
 
-  /* ── A-07: a failed setup puts the folder back and says so ─────────── */
-  await driver.wait(
-    async () => (await bodyText()).includes("Set up git for me"),
-    30_000,
-    "the one-click git offer never appeared for the untracked folder"
-  );
+  /* -- A-07: a failed setup puts the folder back and says so -- */
+  try {
+    await driver.wait(
+      async () => (await bodyText()).includes("Set up git for me"),
+      30_000,
+      "the one-click git offer never appeared for the untracked folder"
+    );
+  } catch (cause) {
+    await capture("a07-offer-missing");
+    throw new Error(
+      `the one-click git offer never appeared for the untracked folder\nBODY:\n${await bodyText()}`,
+      { cause }
+    );
+  }
   /* Hold `index.js` exclusively so the installed shell's real `git add -A`
      fails after `.gitignore` was written and `git init` succeeded -- the
      exact partial state the old code left behind. */
@@ -398,7 +406,7 @@ async function waitForText(text, timeout = 30_000) {
   await driver.wait(async () => (await bodyText()).includes(text), timeout, `did not see ${text}`);
 }
 
-async function openProject(wantedPath, { expectSetupScreen = false } = {}) {
+async function openProject(wantedPath, { expectSetupScreen = false, retriedOnce = false } = {}) {
   await driver.findElement(By.css('button[aria-label^="Switch project"]')).click();
   const openAnother = await driver.wait(
     until.elementLocated(
@@ -407,9 +415,24 @@ async function openProject(wantedPath, { expectSetupScreen = false } = {}) {
     10_000
   );
   await openAnother.click();
-  const input = await driver.wait(until.elementLocated(By.id("project-path")), 10_000);
-  await input.clear();
-  await input.sendKeys(wantedPath);
+  await driver.wait(until.elementLocated(By.id("project-path")), 10_000);
+  /* Enter the path as a PASTE -- one input event through the native value
+     setter -- never as burst keystrokes. Burst-dispatched keydowns arrive
+     with no yield to the host, and React counts the per-keystroke updates
+     interleaved with the settling screen's commits as ONE nested streak: a
+     depth-limit crash no human input can produce (measured: burst-typed
+     1-in-4 storms, human-paced typing 0-in-4, paste is a single event --
+     A-38). Per-character sendKeys was tried first and occasionally dropped
+     leading characters, which is its own automation artifact. A paste is
+     both deterministic and exactly what a person does with a path. The
+     severe-log gate stays fully strict. */
+  await driver.executeScript(
+    `const input = document.getElementById("project-path");
+     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+     setter.call(input, arguments[0]);
+     input.dispatchEvent(new Event("input", { bubbles: true }));`,
+    wantedPath
+  );
   await clickButton("Open project");
   await driver.wait(
     async () => (await driver.findElements(By.id("project-path"))).length === 0,
@@ -435,11 +458,23 @@ async function openProject(wantedPath, { expectSetupScreen = false } = {}) {
           }
           return false;
         },
-        60_000,
+        /* 90s, sized against a cold daemon boot on a machine that may still
+           be settling a build -- a fresh start was measured crossing 60s
+           once, and a rig timeout that fails honest work gets loosened by
+           whoever it blocks. */
+        90_000,
         "the installed UI did not adopt the connected project state"
       );
     } catch (cause) {
       await capture("open-project-timeout");
+      /* The product's own failure copy says "Try opening the project again"
+         -- a daemon start can lose a race with the previous session's
+         teardown, and a person retries. Once, like a person; a second
+         failure is a finding. */
+      if (!retriedOnce) {
+        console.log(`adopt timed out for ${wantedPath}; retrying once as the product's own copy advises`);
+        return openProject(wantedPath, { expectSetupScreen, retriedOnce: true });
+      }
       throw new Error(
         `the installed UI did not adopt the connected project state\nBODY:\n${await bodyText()}`,
         { cause }

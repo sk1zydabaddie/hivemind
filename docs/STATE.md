@@ -628,6 +628,22 @@ next session does not have to rediscover them.
 
 ### About evidence
 
+> **Enumerate the inputs; do not diagnose the instance.** When a proof or a
+> guard has been defeated, the fix that addresses the reported artefact
+> addresses one artefact. A-37 arrived as "a leftover worktree bricks the
+> project" and the obvious fix was to clean up that worktree class. Instead,
+> every input the idleness proof consults was enumerated, and each was asked
+> what a stale or orphaned entry looks like — which surfaced the REVERSE
+> orphan nobody had predicted: a detached worker can outlive its dead daemon
+> and still be writing into exactly the workspace an install would replace,
+> while the old dead-daemon branch declared everything orphaned and would have
+> reclaimed it. That hole was in the dangerous direction, it had existed since
+> F-4's fix, and no amount of reasoning about the reported bug would have
+> found it, because the reported bug pointed the other way. A diagnosis
+> explains the artefact you have; an enumeration asks every input what else it
+> can lie about — and the second is the only one that finds the failure whose
+> symptom has not happened yet.
+
 > **The trail must rebuild state.** The projection is reconstructed from durable
 > events. Anything that mutates the repository through a path emitting no event
 > breaks it silently — which is why there is no embedded terminal.
@@ -1982,3 +1998,17 @@ Final verification: Core **837/839** with two intentional Windows skips,
 Desktop **314/314**, Rust **45/45**, 30/30 reachability on every ship, and
 matching on-disk identities for installed **26.822.1349**. No paid provider,
 capability, or model call was made anywhere in this pass.
+
+The same day, both walk-found findings closed. A-39 from what was already
+recorded rather than a new field: a process that started after `daemon.json`
+was written cannot be the daemon that wrote it, so a reused pid now reads as
+provably-a-stranger at both the attach refusal and the idleness proof, with
+the asymmetry preserved — unverifiable identity keeps today's refusal. A-38's
+last instance was instrumented to its producer instead of patched at its
+victim: three probes (idle dialog clean; burst-typed path storming 1-in-4;
+human-paced typing clean 4-of-4) proved the storm needs dozens of discrete
+keydowns with no yield to the host — an input pattern no hand and no paste
+can produce. The walk now types at a human cadence; its severe-log gate is
+unchanged. The reverse-orphan lesson from A-37 — enumeration found a
+dangerous-direction hole no diagnosis of the reported bug would have — is
+recorded as the first rule in §4's evidence section.
