@@ -709,6 +709,7 @@ function ConnectStep({
                 : (authenticationStandings.get(multiplier.id) ?? null);
             })()}
             onAction={onAction}
+            onSignInStarted={watchForCompletion}
             onReload={onReload}
           />
 

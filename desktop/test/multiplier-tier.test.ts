@@ -148,4 +148,62 @@ describe("multiplier tier surfaces", () => {
     expect(outputStream).toMatch(/recordActionError\(/u);
     expect(outputStream).toMatch(/the run is unaffected/u);
   });
+
+  /* Reported: complete a sign-in, and the row keeps its old state for minutes.
+     Measured on the installed app rather than guessed -- a real terminal window
+     was brought to the front and closed while the webview recorded every event
+     it received, and it saw none: no focus, no blur, no visibilitychange, with
+     document.hasFocus() staying true throughout. The only refresh trigger was
+     an event this webview does not deliver. */
+  test("sign-in state refreshes on a signal the webview actually delivers", async () => {
+    const watcher = await readFile(
+      path.join(desktopRoot, "src", "lib", "provider-authentication.ts"),
+      "utf8"
+    );
+    /* Interaction, because it means the person came back. */
+    expect(watcher).toMatch(/addEventListener\("pointerdown", refreshIfWatching, true\)/u);
+    expect(watcher).toMatch(/addEventListener\("keydown", refreshIfWatching, true\)/u);
+    /* Removed on cleanup, or a remount leaves a listener re-reading forever. */
+    expect(watcher).toMatch(/removeEventListener\("pointerdown", refreshIfWatching, true\)/u);
+    /* And NOT a timer: a poll would re-read a provider CLI on a schedule to
+       catch a change that happens at most once per sign-in. */
+    expect(watcher).not.toMatch(/setInterval|setTimeout/u);
+    /* The measurement is recorded where the decision is. */
+    expect(watcher).toMatch(/hasFocus\(\)` stayed `true`/u);
+  });
+
+  test("every sign-in path arms the watcher, including the multiplier one", async () => {
+    const providerList = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "provider-list.tsx"),
+      "utf8"
+    );
+    /* The disclosure dispatches provider.auth.start; before this it refreshed
+       nothing, so that path could only ever go stale. */
+    expect(providerList).toMatch(/onSignInStarted\?\.\(provider\.id\)/u);
+    for (const file of ["setup-screen.tsx", "settings-dialog.tsx"]) {
+      const source = await readFile(
+        path.join(desktopRoot, "src", "components", file.startsWith("setup") ? "workspace" : ".", file),
+        "utf8"
+      );
+      expect(source, `${file} does not arm the watcher for the disclosure`).toMatch(
+        /onSignInStarted=\{watchForCompletion\}/u
+      );
+    }
+  });
+
+  /* Reported: the row read "Connected · Signed in" while the banner below said
+     a model could not be connected. Signed in is a fact about the account;
+     checked is a fact about this project. A single "Connected" claimed the
+     stronger one for both. */
+  test("the row says which fact it has, never a bare Connected", async () => {
+    const providerList = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "provider-list.tsx"),
+      "utf8"
+    );
+    expect(providerList).toMatch(/provider\.checked_here \? "Ready here" : "Signed in only"/u);
+    /* The weaker state says out loud that a model here may still refuse. */
+    expect(providerList).toMatch(/a model here may still refuse/u);
+    /* And the old unqualified claim is gone. */
+    expect(providerList).not.toMatch(/^\s*Connected\s*$/mu);
+  });
 });

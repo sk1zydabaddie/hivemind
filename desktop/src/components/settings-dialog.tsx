@@ -464,6 +464,7 @@ function AgentSection({
                   provider={multiplier}
                   standing={multiplier === null ? null : authenticationStandings.get(multiplier.id) ?? null}
                   onAction={onAction}
+                  onSignInStarted={watchForCompletion}
                   onReload={async () => onRefreshModels()}
                 />
               );

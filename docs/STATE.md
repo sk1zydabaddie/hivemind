@@ -2354,3 +2354,61 @@ rendered as a status line. Rust **47/47**, Core **859/861** with the two
 intentional Windows skips, Desktop **322/322**, 30/30 reachability, installed
 walk green against Skybound. No paid call.
 
+## Luna unblocked: the notify refusal was guarding an unmeasured claim — 2026-08-23
+
+Three things from real use, and the first was blocking the cheap tier on every
+project.
+
+**The `-c` form is per key, and `notify` is a key that WORKS.** The refusal
+added earlier rested on two unmeasured beliefs, both now settled by one turn
+(21,137 input / 5 output tokens): a canary passed through `-c notify` fired and
+received codex's own `agent-turn-complete` payload, while the user's two-program
+chain did not run. So notify DOES fire on the `codex exec` path -- the inference
+that "a worker executed two external programs per turn", read off a config file
+and never observed, was correct -- and `-c notify=[...]` DOES override it. That
+makes three measured keys: `sandbox_mode` works, `notify` works,
+`model_reasoning_effort` is inert. `codex doctor` reports notify nowhere (checked
+against its `--json`), so no readback exists and behaviour was the only route.
+
+So the refusal is gone and the setting is neutralised per spawn with
+`notify=[]`, leaving the user's config untouched. The refusal was the wrong
+shape twice over: it blocked every Codex model on every project for a
+machine-wide value, and its remedy was hand-editing a file on the one flow
+that exists so nobody needs a terminal. **A refusal is right when nothing can be
+done; "we could not confirm the override" is not the same claim as "the override
+does not work".** The first is a reason to measure. `HOSTILE_HARNESS_SETTINGS`
+survives empty, with that lesson recorded in it, for settings that genuinely
+cannot be forced.
+
+The blanket "no `-c` in any invocation" test became a per-key allowlist where
+each key carries the measurement that admitted it, so adding an override now
+requires measuring it rather than arguing for it.
+
+**Sign-in did not update the row because the event it waited for never
+arrives.** Measured on the installed app: a real terminal window -- the same
+thing the sign-in launcher opens -- was brought to the front and closed while
+the webview recorded everything it received. It saw nothing: no `focus`, no
+`blur`, no `visibilitychange`, and `document.hasFocus()` stayed `true` the whole
+time another window was in front. The only refresh trigger was an event this
+webview does not deliver, so a row could only go stale. It now refreshes on the
+signal that does exist -- the person coming back and interacting (`pointerdown`,
+`keydown`) -- and NOT on a timer, which would re-read a provider CLI forever to
+catch a change that happens once per sign-in. The multiplier sign-in path armed
+nothing at all and now arms the same watcher.
+
+**A row that says connected while a model is refused was a false claim.**
+"Connected" was shown for two different facts: signed in (about the account) and
+checked here (about this project). It now says which one it has -- **"Ready
+here"** or **"Signed in only"** -- and the weaker state says out loud that a
+model here may still refuse.
+
+Verified by doing it on **26.823.1622**: `codex-luna` connected as a worker
+through the real flow, 7 of 9 capabilities verified (the two known gaps are
+Codex's unsupported per-model attribution and unverifiable nested-agent
+reporting), 42,711 effective tokens for the probe, connection record on disk.
+The settings rows read "Codex · Ready here · Checked here" beside "Sign in ·
+Ready to check" for the rest. Rust **47/47**, Core **861/863** with the two
+intentional Windows skips, Desktop **324/324**, 30/30 reachability, installed
+walk green against Skybound. Two paid turns total: the notify probe and Luna's
+capability probe.
+

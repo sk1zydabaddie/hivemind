@@ -89,6 +89,20 @@ export interface CatalogueAgent {
  * the request, so comparing them would manufacture a "verified" verdict for a
  * setting nothing has confirmed.
  *
+ * MEASURED 2026-08-23, and it settles the per-key question this comment used to
+ * leave open: `-c notify=[...]` DOES override the user's config on this path.
+ * A canary program was passed through `-c notify` and it fired, receiving
+ * codex's own `agent-turn-complete` payload, while the user's two-program chain
+ * did not run. The same turn also proved the other half of the inference this
+ * project had only ever read off a config file: notify DOES fire on
+ * `codex exec`, so a worker really was executing two external programs per
+ * turn. One turn, 21,137 input / 5 output tokens.
+ *
+ * So the `-c` form is per-key and now has three measured entries rather than
+ * two: `sandbox_mode` works, `notify` works, `model_reasoning_effort` is inert.
+ * That is why `notify=[]` is passed below and effort is not, and why the test
+ * that forbids `-c` is written per key instead of as a blanket ban.
+ *
  * What replaces each one:
  *
  * - EFFORT: nothing. `codex exec` has no effort flag (checked against the
@@ -110,13 +124,22 @@ export interface CatalogueAgent {
  *   a prompt, and the boundary that actually holds is `--sandbox
  *   workspace-write`, which is proved behaviourally by a canary write rather
  *   than by anyone's report.
- * - NOTIFY: a refusal instead of a fake prevention. `notify` is a program path
- *   Codex runs on turn events, and on the machine this was measured on it held
- *   two chained entries, one written by OpenAI's own installer -- so a worker
- *   with no shell caused two external programs to execute per turn. The old
- *   comment already labelled the override unconfirmed and named this exact
- *   risk; it was right. Since it cannot be forced off, `HOSTILE_HARNESS_SETTINGS`
- *   below declares it, and connect refuses before spawning while it is set.
+ * - NOTIFY: neutralised per spawn, which is what the measurement licenses.
+ *   `notify` is a program path Codex runs on turn events; on this machine it
+ *   held two chained entries, one written by OpenAI's own installer. Hivemind
+ *   passes `notify=[]` so a worker runs neither, and does NOT touch the user's
+ *   config to do it.
+ *
+ *   This replaced a connect-time REFUSAL, which was the wrong shape twice
+ *   over: it blocked every Codex model on every project for a machine-wide
+ *   setting, and the remedy it offered was hand-editing a file on the one flow
+ *   that is supposed to need no terminal. A refusal is right when nothing can
+ *   be done; here something could.
+ *
+ *   The residual, stated: what was observed is that OUR value replaces theirs.
+ *   An empty array is the same mechanism carrying nothing, which is a short
+ *   inference rather than a second observation -- there is no artifact to watch
+ *   for when the correct behaviour is that no program runs.
  */
 function codexInvoke(model: string): string[] {
   const args = [
@@ -125,6 +148,9 @@ function codexInvoke(model: string): string[] {
     model,
     "--sandbox",
     "workspace-write",
+    /* Measured to apply, unlike the effort key: see the comment above. */
+    "-c",
+    "notify=[]",
     "--ephemeral",
     "--json",
     "-"
@@ -1638,25 +1664,19 @@ export interface HostileHarnessSetting {
 }
 
 export const HOSTILE_HARNESS_SETTINGS: Record<string, readonly HostileHarnessSetting[]> = {
-  /* Codex's `notify` is a program path it runs on turn events. Two chained
-     entries were found on the machine this was measured on, one of them
-     written by the vendor's own installer rather than by a person -- so a
-     worker with no shell still caused two external programs to execute per
-     turn. `notify=[]` was passed for weeks and never applied. */
-  "codex-cli": [
-    {
-      file: "config.toml",
-      /* Written as "assigned something non-empty" rather than "not assigned
-         an empty array". The lookahead form was tried first and was WRONG:
-         `\s*` before it can give back the space it consumed, so the engine
-         retries at a position where the lookahead cannot see the `[]` and the
-         safe value matches as hostile. Caught by the test that asserts
-         `notify = []` connects. */
-      pattern: /^\s*notify\s*=\s*(?:\[\s*[^\s\]]|"|'|[A-Za-z0-9])/mu,
-      why: "Codex runs the programs in `notify` every turn, outside the tool boundary Hivemind checks.",
-      remedy: "Set `notify = []` in your Codex config, or remove the line, then connect again."
-    }
-  ]
+  /* EMPTY, deliberately, and the mechanism stays.
+
+     Its first and only entry was Codex's `notify`, declared here when the
+     override for it was unverified. It has since been MEASURED to apply (see
+     `codexInvoke`), so the setting is neutralised per spawn instead: a
+     machine-wide value no longer refuses every model on every project, and
+     nobody is sent to a text editor.
+
+     The lesson is worth more than the entry, and it is why this table survives
+     with nothing in it: a refusal is the right answer only when nothing can be
+     done, and "we could not confirm the override" is not the same claim as
+     "the override does not work". The first is a reason to measure; only the
+     second licenses a refusal. Anything genuinely unforceable belongs here. */
 };
 
 /**

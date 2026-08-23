@@ -99,14 +99,28 @@ export function ProviderListRow({
           {provider.subscription}
         </span>
         {connected ? (
+          /* Two different facts, and a bare "Connected" claimed the stronger
+             one for both. A provider can be SIGNED IN while nothing has been
+             checked in this project, which is how a row came to read
+             "Connected · Signed in" over a banner saying a model could not be
+             connected. Signed in is about the account; checked is about this
+             project. The chip now says which one it has. */
           <span
-            aria-label={`${provider.label} connected`}
-            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-sm border border-navy/35 bg-navy-wash px-2 text-[11px] font-medium text-navy"
+            aria-label={`${provider.label} ${provider.checked_here ? "checked in this project" : "signed in, not yet checked here"}`}
+            className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-sm border px-2 text-[11px] font-medium ${
+              provider.checked_here
+                ? "border-navy/35 bg-navy-wash text-navy"
+                : "border-rule bg-canvas text-muted-foreground"
+            }`}
             role="status"
-            title={provider.checked_here ? "Connected and checked in this project" : "The provider CLI reports an active sign-in"}
+            title={
+              provider.checked_here
+                ? "A capability check passed for this project, so this provider can run work here."
+                : "The provider CLI reports an active sign-in. Nothing has been checked in this project yet, so a model here may still refuse."
+            }
           >
             <Check aria-hidden="true" className="size-3.5" />
-            Connected
+            {provider.checked_here ? "Ready here" : "Signed in only"}
           </span>
         ) : (
           <Button
@@ -219,7 +233,8 @@ export function MultiplierDisclosure({
   standing = null,
   busy = false,
   onAction = null,
-  onReload = null
+  onReload = null,
+  onSignInStarted = null
 }: {
   /** The multiplier row (OpenCode), when the catalogue carries one. */
   provider?: CatalogueProvider | null;
@@ -227,6 +242,9 @@ export function MultiplierDisclosure({
   busy?: boolean;
   onAction?: (<T>(action: WorkspaceAction) => Promise<T>) | null;
   onReload?: (() => Promise<void>) | null;
+  /* Arms the same sign-in watcher the provider rows use. Without it this path
+     dispatched a sign-in and nothing ever re-read the standing. */
+  onSignInStarted?: ((providerId: string) => void) | null;
 }): React.JSX.Element {
   const [signInBusy, setSignInBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
@@ -251,6 +269,7 @@ export function MultiplierDisclosure({
     setSignInBusy(inner.id);
     setFailure("");
     setNotice("");
+    onSignInStarted?.(provider.id);
     try {
       await onAction({
         type: "provider.auth.start",
