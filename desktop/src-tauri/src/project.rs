@@ -2657,7 +2657,17 @@ pub async fn initialize_git(project_path: String) -> Result<GitReadiness, GitSet
 
     let root = std::path::Path::new(&project_path);
     let run = |args: &[&str]| -> Result<(), String> {
-        let output = std::process::Command::new("git")
+        /* `hidden_command`, not `Command::new`. This was the one production
+           spawn in the shell that bypassed it, and `perform_git_setup` makes
+           four to six of them -- `--version`, `init`, a `check-ignore` per
+           generated directory, `add -A`, `commit` -- so a person pressing one
+           button watched several console windows open and close. The helper
+           was hardened for the swap process by measuring GetConsoleWindow()
+           inside it; nothing carried that to here, because nothing failed. A
+           flashing window is not an error, which is exactly why it survived.
+           `spawn_hygiene_tests` now refuses a raw spawn structurally instead
+           of relying on the next person to notice. */
+        let output = hidden_command("git")
             .args(args)
             .current_dir(root)
             .output()
@@ -2688,6 +2698,85 @@ pub async fn initialize_git(project_path: String) -> Result<GitReadiness, GitSet
         ),
         remaining: vec![".git".to_string()],
     })
+}
+
+#[cfg(test)]
+mod spawn_hygiene_tests {
+    /* Nothing this app starts may show a console window.
+     *
+     * The rule existed and was applied one process at a time, which is how
+     * `initialize_git` came to spawn git five times with a visible window per
+     * call: the helper was right there, and using it was a choice each new
+     * call site had to remember. A structural check does not need remembering.
+     *
+     * Comments and test modules are excluded, so explaining the platform
+     * detail stays possible and fixtures that spawn `sleep` stay legal. */
+    #[test]
+    fn no_production_spawn_bypasses_the_hidden_command_helper() {
+        let mut offenders: Vec<String> = Vec::new();
+        for (name, source) in [
+            ("project.rs", include_str!("project.rs")),
+            ("selfbuild.rs", include_str!("selfbuild.rs")),
+            ("main.rs", include_str!("main.rs")),
+        ] {
+            let mut in_test_module = false;
+            let mut brace_depth: i32 = 0;
+            for (index, line) in source.lines().enumerate() {
+                let trimmed = line.trim_start();
+                if trimmed.starts_with("#[cfg(test)]") {
+                    in_test_module = true;
+                    brace_depth = 0;
+                }
+                if in_test_module {
+                    brace_depth += line.matches('{').count() as i32;
+                    brace_depth -= line.matches('}').count() as i32;
+                    if brace_depth <= 0 && line.contains('}') {
+                        in_test_module = false;
+                    }
+                    continue;
+                }
+                if trimmed.starts_with("//") || trimmed.starts_with("/*") || trimmed.starts_with('*') {
+                    continue;
+                }
+                if !line.contains("Command::new") {
+                    continue;
+                }
+                /* The helper itself, and the sibling that re-exports it, are
+                   where the flag is applied. */
+                if line.contains("let mut command = Command::new(program)") {
+                    continue;
+                }
+                /* A spawn that sets its own creation flags nearby is already
+                   hardened -- selfbuild does this for the swap helper and npm
+                   because it needs a different flag combination. */
+                let window: String = source
+                    .lines()
+                    .skip(index)
+                    .take(14)
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if window.contains("creation_flags") {
+                    continue;
+                }
+                /* A console window is a Windows concept, so a spawn inside a
+                   non-Windows branch has nothing to hide. Caught by this test
+                   on its first run: `npm_command` hardens the Windows arm and
+                   plainly spawns `npm` on the other, which is correct. */
+                let all: Vec<&str> = source.lines().collect();
+                let from = index.saturating_sub(6);
+                let preceding = all[from..index].join("
+");
+                if preceding.contains("cfg(not(windows))") {
+                    continue;
+                }
+                offenders.push(format!("{name}:{}", index + 1));
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "these spawns can flash a console window; use hidden_command: {offenders:?}"
+        );
+    }
 }
 
 #[cfg(test)]

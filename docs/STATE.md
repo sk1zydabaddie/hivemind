@@ -2300,3 +2300,57 @@ Core **859/861** with the two intentional Windows skips, Desktop **322/322**,
 30/30 reachability, shipped and installed **26.823.1406**, installed walk green
 against Skybound. No paid call.
 
+## The git-setup button that looked like it reverted — 2026-08-23
+
+Reported from the installed app: point at a folder with no git, press the
+button, terminal windows flash, the button changes for a split second and then
+reads "Set up this folder" again. Reproduced on the installed binary rather
+than reasoned about (`desktop/e2e/git-init-repro.mjs`, kept), and the answer is
+that **nothing reverted and nothing failed**.
+
+What the reproduction measured, in the order the diagnosis was asked for:
+
+1. **It worked.** `.git` exists and the first commit is on disk
+   (`Start tracking this project`, three items: README.md, package.json, src).
+   The action was never the bug.
+2. **The re-read agrees.** `inspect_git_readiness` afterwards returns
+   `is_repo: true, refusal: null, would_commit: []`. No two-sources
+   divergence -- both sources said the same thing.
+3. **It was a race, but the opposite of the one suspected.** Not an early read
+   reverting a correct state: `onSwitchStart` reset `connectionCode` to
+   `no_project_selected` for the length of the reconnect, and that code renders
+   the CHOOSER. Sampled at 120ms: "Setting up git..." at t=7685, **"Choose a
+   folder" at t=9249**, the project's real next step at t=9727. A transient
+   blank state sat between two correct ones.
+4. **The refusal did not fire.** `refusal: null` before and after, so this was
+   not a silent refusal for this shape.
+
+What made a correct step forward read as an undo: the settled screen offers
+**"Set up this folder"** while the button pressed was **"Set up git for me"** --
+close enough to be read as the same control -- and nothing anywhere said git had
+worked. So two fixes. Opening a project is no longer reported as nothing being
+selected (the session now passes the path it is opening, and only a genuinely
+empty path sets the chooser code). And a successful setup says so, naming what
+the first commit tracks, captured BEFORE the action because afterwards
+`would_commit` is empty and the panel is gone. The confirmation is keyed by
+project (the A-08 shape) so it cannot appear over a different folder, and it
+ends with "the next step below is a different one".
+
+**The terminal windows were a separate, real defect with one cause.**
+`initialize_git` called `std::process::Command::new("git")` directly -- the only
+production spawn in the shell that bypassed `hidden_command`, which exists for
+exactly this and sets CREATE_NO_WINDOW. `perform_git_setup` makes four to six
+git calls (`--version`, `init`, a `check-ignore` per generated directory,
+`add -A`, `commit`), so one button produced several flashing consoles. The rule
+existed and was applied one process at a time; a flashing window is not an
+error, which is why it survived. `spawn_hygiene_tests` now refuses a raw spawn
+structurally, excluding comments, test modules, spawns that set their own
+creation flags, and non-Windows branches -- and it found a second candidate on
+its first run (`npm_command`'s non-Windows arm) which is correctly plain.
+
+Verified by doing it on **26.823.1456**: `.git` and the commit present, the
+"Choose a folder" frame gone from the sampled timeline, and the confirmation
+rendered as a status line. Rust **47/47**, Core **859/861** with the two
+intentional Windows skips, Desktop **322/322**, 30/30 reachability, installed
+walk green against Skybound. No paid call.
+

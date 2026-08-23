@@ -495,6 +495,7 @@ export default function App(): React.JSX.Element {
             actionError={workspace.actionError}
             gitReadiness={workspace.gitReadiness}
             gitSetupFailure={workspace.gitSetupFailure}
+            gitSetupDone={workspace.gitSetupDone}
             initializing={workspace.initializing}
             live={false}
             projectPath={visibleProjectPath}
@@ -518,6 +519,7 @@ export default function App(): React.JSX.Element {
             actionError={workspace.actionError}
             gitReadiness={workspace.gitReadiness}
             gitSetupFailure={workspace.gitSetupFailure}
+            gitSetupDone={workspace.gitSetupDone}
             initializing={workspace.initializing}
             live
             projectPath={visibleProjectPath}

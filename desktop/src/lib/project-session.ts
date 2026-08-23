@@ -117,7 +117,7 @@ interface ProjectSessionOptions {
   /* Sets a folder up and opens it. Same flow as selecting one; only the shell
      command differs, so the two share every generation and error rule. */
   initializeProject: (projectPath: string) => Promise<unknown>;
-  onSwitchStart: () => void;
+  onSwitchStart: (selectedPath: string) => void;
   onConnected: (connection: ProjectConnection) => void;
   onError: (fault: ProjectFault) => void;
 }
@@ -145,7 +145,12 @@ export function createProjectSession({
   ): Promise<OpenResult> {
       const selectedPath = String(projectPath ?? "").trim();
       const currentGeneration = ++generation;
-      onSwitchStart();
+      /* The path travels with the signal. Without it the hook could only reset
+         to "no project selected", so every switch rendered the chooser for as
+         long as the connect took -- including the switch that FOLLOWS a
+         successful action, which made a correct step forward look like the
+         action being undone. */
+      onSwitchStart(selectedPath);
       if (selectedPath === "") {
         const fault: ProjectFault = {
           code: PROJECT_FAULT.noProjectSelected,
@@ -181,7 +186,9 @@ export function createProjectSession({
        the process that was just stopped are ignored rather than reconnected. */
     adopt(connection: ProjectConnection) {
       generation += 1;
-      onSwitchStart();
+      /* An adopted connection already names its project, so this is an
+         opening rather than a deselection for the same reason `open` is. */
+      onSwitchStart(connection.project_root);
       onConnected(connection);
     }
   };

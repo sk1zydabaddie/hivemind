@@ -484,4 +484,53 @@ describe("positioning, before the first click", () => {
     const body = block.slice(0, block.indexOf("function WhatThisIs"));
     expect(body).not.toMatch(/useDismissed/u);
   });
+
+  /* Reported as "the button reverted": pointing at an untracked folder,
+     pressing the git button, and watching the state advance then go back.
+     Reproduced on the installed app, and it was neither a failure nor a
+     revert -- git init and the first commit landed, the shell agreed
+     (`is_repo: true`), and the settled screen showed the NEXT step. What made
+     it read as undone was a transient "Choose a folder" between the two,
+     sampled at t=9249 on a click at t=7685, plus no acknowledgement anywhere
+     that git had worked. */
+  test("a switch that knows its project never claims nothing is selected", async () => {
+    const session = await readFile(
+      path.join(desktopRoot, "src", "lib", "project-session.ts"),
+      "utf8"
+    );
+    /* The path travels with the signal, so the hook can tell opening from
+       nothing-chosen. */
+    expect(session).toMatch(/onSwitchStart\(selectedPath\)/u);
+    expect(session).toMatch(/onSwitchStart: \(selectedPath: string\) => void/u);
+    /* An adopted connection names its project too. */
+    expect(session).toMatch(/onSwitchStart\(connection\.project_root\)/u);
+
+    const hook = await readFile(path.join(desktopRoot, "src", "hooks", "use-workspace.ts"), "utf8");
+    const reset = hook.slice(hook.indexOf("onSwitchStart:"), hook.indexOf("onSwitchStart:") + 1400);
+    /* The chooser code is set only when there is genuinely no path. */
+    expect(reset).toMatch(/const opening = selectedPath !== ""/u);
+    expect(reset).toMatch(/setConnectionCode\(opening \? "" : PROJECT_FAULT\.noProjectSelected\)/u);
+  });
+
+  test("a successful git setup says so, and says it about the right folder", async () => {
+    const hook = await readFile(path.join(desktopRoot, "src", "hooks", "use-workspace.ts"), "utf8");
+    /* Captured BEFORE the action: afterwards `would_commit` is empty and the
+       panel is gone, so there is nothing left to report. */
+    expect(hook).toMatch(/const wouldCommit = gitReadiness\?\.would_commit \?\? \[\]/u);
+    expect(hook).toMatch(/setGitSetupDone\(\{ forProject: projectPath, files: wouldCommit \}\)/u);
+    /* A failure must not leave a success claim standing. */
+    expect(hook).toMatch(/setGitSetupDone\(null\);[\s\S]{0,40}?setGitSetupFailure\(failure\)/u);
+
+    const setup = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
+      "utf8"
+    );
+    /* Named by project, the A-08 shape: a confirmation for one folder must
+       never appear over another. */
+    expect(setup).toMatch(/gitSetupDone\.forProject === projectPath/u);
+    expect(setup).toMatch(/Git is set up\./u);
+    /* And it says the next step is a different one, because the two button
+       labels overlap enough to be read as the same button. */
+    expect(setup).toMatch(/next step below is a different one/u);
+  });
 });

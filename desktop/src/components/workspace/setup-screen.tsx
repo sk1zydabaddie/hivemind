@@ -55,6 +55,7 @@ export function SetupScreen({
   actionError,
   gitReadiness,
   gitSetupFailure,
+  gitSetupDone,
   live,
   view,
   onChooseProject,
@@ -73,6 +74,11 @@ export function SetupScreen({
   actionError: string;
   gitReadiness: GitReadiness | null;
   gitSetupFailure: GitSetupFailure | null;
+  /* Set once git setup succeeded for the open project, with the files its
+     first commit contains. A success used to leave nothing on screen: the
+     panel it was about disappears, so the only evidence was the absence of
+     the button, which reads as the action having been undone. */
+  gitSetupDone: { forProject: string; files: string[] } | null;
   /** True once the daemon is answering: the project is set up and live. */
   live: boolean;
   /** The project's own configuration, or null until it has been read. */
@@ -132,6 +138,19 @@ export function SetupScreen({
                 you already pay for. Four steps, in order — and a fifth once
                 there is an agent to tune.
               </p>
+
+              {gitSetupDone !== null && gitSetupDone.forProject === projectPath ? (
+                <p
+                  className="mt-4 mb-0 rounded-sm border border-navy/25 border-l-2 border-l-navy bg-navy-wash px-3 py-2 text-[12px] leading-relaxed text-ink"
+                  role="status"
+                >
+                  <strong className="font-medium">Git is set up.</strong>{" "}
+                  {gitSetupDone.files.length === 0
+                    ? "The first commit is in place."
+                    : `The first commit tracks ${gitSetupDone.files.length} item${gitSetupDone.files.length === 1 ? "" : "s"}: ${gitSetupDone.files.slice(0, 6).join(", ")}${gitSetupDone.files.length > 6 ? ", and more" : ""}.`}{" "}
+                  The next step below is a different one.
+                </p>
+              ) : null}
 
               <NotAnEditor />
 

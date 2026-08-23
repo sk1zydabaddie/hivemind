@@ -42,6 +42,8 @@ interface WorkspaceView {
   gitReadiness: GitReadiness | null;
   /** How the last one-click git setup failed, typed. Null when it has not. */
   gitSetupFailure: GitSetupFailure | null;
+  /** Set once git setup succeeded for THIS project, with what it committed. */
+  gitSetupDone: { forProject: string; files: string[] } | null;
   switchProject: (projectPath: string) => Promise<void>;
   initializeProject: () => Promise<void>;
   initializeGit: () => Promise<void>;
@@ -72,6 +74,11 @@ export function useWorkspace(): WorkspaceView {
   );
   const [connectionDetail, setConnectionDetail] = useState("");
   const [inspection, setInspection] = useState<WorkspaceInspection | null>(null);
+  /* Named by project rather than cleared on switch -- the A-08 shape. A
+     confirmation that belongs to one folder must not appear over another. */
+  const [gitSetupDone, setGitSetupDone] = useState<{ forProject: string; files: string[] } | null>(
+    null
+  );
   const [actionError, setActionError] = useState("");
   const actionErrorRef = useRef("");
   const [gitReadiness, setGitReadiness] = useState<GitReadiness | null>(null);
@@ -341,7 +348,7 @@ export function useWorkspace(): WorkspaceView {
           invoke("select_project", { projectPath: selectedPath }),
         initializeProject: (selectedPath) =>
           invoke("initialize_project", { projectPath: selectedPath }),
-        onSwitchStart: () => {
+        onSwitchStart: (selectedPath: string) => {
           streamGuardRef.current.advance();
           closeStreams();
           connectionRef.current = null;
@@ -351,8 +358,17 @@ export function useWorkspace(): WorkspaceView {
           setGitReadiness(null);
           setGitSetupFailure(null);
           projectionRef.current = createBoardProjection();
-          setConnectionState("selecting project");
-          setConnectionCode(PROJECT_FAULT.noProjectSelected);
+          /* OPENING is not the same claim as NOTHING CHOSEN, and it used to
+             be reported as one. `noProjectSelected` renders the chooser, so a
+             switch that already knows its destination flashed "Choose a
+             folder" for the length of the connect. Measured on the installed
+             app: pressing "Set up git for me" showed "Setting up git..." at
+             t=7685, "Choose a folder" at t=9249, then the project's real next
+             step at t=9727 -- git had succeeded and the screen looked like it
+             had been undone. */
+          const opening = selectedPath !== "";
+          setConnectionState(opening ? "connecting" : "selecting project");
+          setConnectionCode(opening ? "" : PROJECT_FAULT.noProjectSelected);
           setConnectionDetail("");
           /* AFTER closeStreams (which clears the attribute): the suppression
              window opens at the switch itself, not at the first history
@@ -484,8 +500,15 @@ export function useWorkspace(): WorkspaceView {
     setInitializing(true);
     recordActionError("");
     setGitSetupFailure(null);
+    /* What the shell said it WOULD commit, captured before the action, because
+       afterwards there is nothing left to report: a successful setup leaves
+       `would_commit` empty and the git panel disappears entirely. Without this
+       the only evidence a person had that anything worked was the absence of
+       the button they pressed. */
+    const wouldCommit = gitReadiness?.would_commit ?? [];
     try {
       await invoke("initialize_git", { projectPath });
+      setGitSetupDone({ forProject: projectPath, files: wouldCommit });
       await session.switchProject(projectPath);
     } catch (error) {
       /* The shell's answer, typed. The screen's "Nothing changed." claim is
@@ -493,12 +516,13 @@ export function useWorkspace(): WorkspaceView {
          unrecognizable decodes as partial_state, the claim that promises
          less. */
       const failure = gitSetupFailureFrom(error);
+      setGitSetupDone(null);
       setGitSetupFailure(failure);
       recordActionError(failure.message);
     } finally {
       setInitializing(false);
     }
-  }, [recordActionError, session, projectPath]);
+  }, [gitReadiness, recordActionError, session, projectPath]);
 
   /* The shell owns this decision. React only asks for and renders its answer.
      Without this call, the setup screen offered an action that the shell was
@@ -597,6 +621,7 @@ export function useWorkspace(): WorkspaceView {
     actionError,
     gitReadiness,
     gitSetupFailure,
+    gitSetupDone,
     switchProject,
     initializeProject,
     initializeGit,
