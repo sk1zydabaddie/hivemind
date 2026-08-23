@@ -62,9 +62,41 @@ const taskTierRank: Record<TaskTier, number> = {
   critical: 3
 };
 
+/**
+ * The cheapest PROVIDER TIER each task tier may run on. This is the table to
+ * change if you disagree with what routine work costs, and the reasoning is
+ * here rather than in a commit message because that is where somebody looking
+ * to change it will stand.
+ *
+ * Measured 2026-08-23, and it inverted the assumption this table was built on:
+ *
+ * - MODEL CHOICE is the whole cost lever. Effective measured rate spans 3.9x
+ *   across the ladder, and codex-terra runs 5.1x codex-luna at equal effort.
+ * - REASONING EFFORT is not a cost lever in either direction: it spans ~1.04x
+ *   total cost, because reasoning is 0.4-2.5% of a call whose bulk is cached
+ *   input. It changes depth substantially and price negligibly, so it is
+ *   pinned high everywhere and never traded for money.
+ *
+ * `medium` used to floor at `standard`, which made every cheap-tier provider
+ * structurally ineligible for the tier ORDINARY SOURCE CHANGES land in. The
+ * effect was paying roughly five times over on routine work for no measured
+ * quality reason -- not a tuning opportunity, a defect. It now floors at
+ * `cheap`, which is a deliberate line and not simply "as low as possible":
+ * `local` stays reserved for Low, because a local model on a real source
+ * change is unmeasured here, while a cheap FRONTIER model is the same family
+ * as the standard one and is measured.
+ *
+ * Why lowering it is safe rather than optimistic: this is a FLOOR, not a pin.
+ * High and Critical still force `strong`, risk globs put dangerous paths in
+ * those tiers, and `compareCandidates` only prefers cheap for low/medium.
+ * A cheap attempt that fails costs itself plus the retry -- about 1.26x one
+ * expensive attempt -- so the floor stays profitable until a cheap model fails
+ * roughly three routine tasks in four, and deterministic verification is what
+ * catches those failures rather than a person noticing later.
+ */
 const minimumProviderRank: Record<TaskTier, number> = {
   low: providerTierRank.local,
-  medium: providerTierRank.standard,
+  medium: providerTierRank.cheap,
   high: providerTierRank.strong,
   critical: providerTierRank.strong
 };

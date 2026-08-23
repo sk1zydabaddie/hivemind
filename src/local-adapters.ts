@@ -31,8 +31,14 @@ export function corpusInvoke(model: string): string[] {
     model,
     "--sandbox",
     "workspace-write",
-    "--config",
-    'model_reasoning_effort="high"',
+    /* The `-c model_reasoning_effort` override that used to sit here was
+       measured inert on 2026-08-23 -- accepted, self-reported as applied, and
+       echoed in the event stream while having no effect. Every corpus number
+       taken while it was here, the 212K call included, was therefore measured
+       at Codex's own default effort rather than at "pinned high". Removed
+       rather than replaced: see codexInvoke in agent-catalogue.ts for the
+       mechanism that would actually apply it and why it waits for behavioural
+       proof. */
     "--ephemeral",
     "--json",
     "-"

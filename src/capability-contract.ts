@@ -19,6 +19,30 @@
  * read-only sandbox, and a model pin silently ignored for months. A profile
  * that says `"sandbox": "workspace-write"` is a claim about a flag, not
  * evidence about a run.
+ *
+ * ## The second half of that rule, earned 2026-08-23
+ *
+ * **A readback confirms what the harness BELIEVES it resolved, not what it
+ * applied. Behaviour is the only ground truth.** One harness accepted
+ * `-c model_reasoning_effort=low` in argv, reported it as applied through its
+ * own doctor command, and echoed `"low"` in its JSON event stream -- while
+ * producing 30x the reasoning tokens of the form that genuinely applies.
+ * THREE independent readbacks agreed with each other and all three were wrong.
+ *
+ * That is why `CapabilityEvidence` separates `readback` from `observation`
+ * rather than treating both as proof, and why the distinction now has to be
+ * VISIBLE wherever a verdict is rendered: `verified` by readback and
+ * `verified` by observation are different strengths of claim, and a surface
+ * that draws them identically overstates the weaker one. The two capabilities
+ * resting on readback alone -- `pins_one_model` and `no_nested_agents` -- are
+ * exactly the two this failure mode reaches, and neither has behavioural
+ * backing today.
+ *
+ * The trap it also teaches: when a readback ECHOES the request rather than
+ * reporting the resolution, comparing the two manufactures agreement. Adding
+ * such a readback makes a verdict look stronger while proving nothing, so the
+ * honest response to an echoing channel is to leave the capability unverified
+ * and say why.
  */
 
 /* ── The four states, and why "three" was one short ─────────────────────── */

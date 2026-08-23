@@ -29,7 +29,7 @@ import {
   type ModelDiscoveryRunner,
   type ModelDiscoveryView
 } from "./model-discovery.js";
-import { configStanding, harnessConfigDigest } from "./harness-config-digest.js";
+import { configStanding, findHostileHarnessSettings, harnessConfigDigest } from "./harness-config-digest.js";
 import { ensureHarnessProjectConfig } from "./harness-project-config.js";
 import {
   DEFAULT_MAX_CONCURRENT_WORKERS,
@@ -855,6 +855,24 @@ async function connectCatalogueAgent(
   const innerProvider = judgeInnerProvider(agent.harness, agent.model);
   if (innerProvider.refusal !== null) {
     return { ok: false, reason: innerProvider.refusal };
+  }
+
+  /* Hostile settings in the harness's OWN config, refused before the probe.
+     This replaces a `-c` override that was measured inert: passing a flag the
+     harness accepts, self-reports as applied and echoes in its stream is not a
+     prevention when behaviour disagrees. What cannot be forced off is detected
+     and refused instead, which is a boundary that holds because nothing runs
+     until the person changes it. Costs nothing: no file written, no call made. */
+  const hostile = await findHostileHarnessSettings(
+    agent.harness,
+    selectedAccount(await readAccounts(repoRoot), agent.harness)?.home_dir ?? null
+  );
+  if (hostile.length > 0) {
+    const first = hostile[0]!;
+    return {
+      ok: false,
+      reason: `${agent.label} cannot be connected while its own ${first.file} carries a setting Hivemind cannot switch off. ${first.why} ${first.remedy}`
+    };
   }
 
   const profile = buildProfileForAgent(agent, role);

@@ -1,3 +1,4 @@
+import { mkdtempSync } from "node:fs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -72,6 +73,17 @@ test("Kimi readback verifies only the exact Hivemind-bounded tool snapshot", asy
   const unsafe = stdout.replace("mcp__hivemind_files__read_file", "Read");
   assert.equal((await readKimiSession(unsafe))?.sandbox, null);
 });
+
+/* A clean harness home for the whole file.
+ *
+ * `connectAdapter` refuses when the harness's own config carries a setting
+ * Hivemind cannot force off -- `notify`, which runs programs every turn. That
+ * refusal is the product working, but it made these fixtures depend on
+ * whatever the developer happens to have in `~/.codex/config.toml`: on the
+ * machine this was written on, two chained notify programs, one of them
+ * installed by the vendor. Pointing the home at an empty directory makes the
+ * fixture measure the code rather than the author's laptop. */
+process.env.CODEX_HOME = mkdtempSync(path.join(tmpdir(), "hivemind-clean-codex-home-"));
 
 async function scratch(): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), "hivemind-probe-test-"));

@@ -772,7 +772,17 @@ function capabilityProfileProblem(profile: AdapterProfile, spec: CorpusProfileSp
   if (profile.invoke.includes("--ignore-user-config") || profile.invoke.includes("--ignore-rules")) return "profile must not discard user config or policy rules";
   if (argumentAfter(profile.invoke, "--model") !== spec.model) return `model must be explicitly pinned to ${spec.model}`;
   if (argumentAfter(profile.invoke, "--sandbox") !== "workspace-write") return "sandbox must be explicitly workspace-write";
-  if (argumentAfter(profile.invoke, "--config") !== "model_reasoning_effort=\"high\"") return "reasoning effort must be explicitly pinned to high";
+  /* This line used to REQUIRE `-c model_reasoning_effort="high"`, on the
+     belief that passing it pinned effort. Measured 2026-08-23: that override
+     form is inert -- accepted by argv, reported as applied by `codex doctor`,
+     echoed in the JSON stream, and without effect. So the requirement is
+     inverted rather than dropped: a corpus profile may carry NO `-c` override
+     at all, because a corpus that believes it measured "high effort" while
+     running at the default measures something nobody can name. Every earlier
+     corpus number, the 212K call included, was taken under the old line. */
+  if (profile.invoke.includes("--config") || profile.invoke.includes("-c")) {
+    return "profile must carry no -c config override: the form is measured inert, so it states a setting it does not apply";
+  }
   if (!profile.invoke.includes("--ephemeral")) return "profile must be ephemeral";
   if (!profile.invoke.includes("--json") || profile.usage_parser !== "codex-jsonl") return "profile must expose Codex JSONL usage";
   const commandIndex = profile.invoke.findIndex((entry) => /(^|[\\/])codex(?:\.cmd|\.exe)?$/iu.test(entry));

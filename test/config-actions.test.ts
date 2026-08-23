@@ -1,3 +1,4 @@
+import { mkdtempSync } from "node:fs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -16,6 +17,17 @@ import { buildProfileForAgent, connectAdapter, connectDiscoveredAdapter, initPro
 import { executeWorkspaceAction } from "../src/workspace-actions.js";
 
 const run = promisify(execFile);
+
+/* A clean harness home for the whole file.
+ *
+ * `connectAdapter` refuses when the harness's own config carries a setting
+ * Hivemind cannot force off -- `notify`, which runs programs every turn. That
+ * refusal is the product working, but it made these fixtures depend on
+ * whatever the developer happens to have in `~/.codex/config.toml`: on the
+ * machine this was written on, two chained notify programs, one of them
+ * installed by the vendor. Pointing the home at an empty directory makes the
+ * fixture measure the code rather than the author's laptop. */
+process.env.CODEX_HOME = mkdtempSync(path.join(tmpdir(), "hivemind-clean-codex-home-"));
 
 async function repoWithProject(): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), "hivemind-config-test-"));

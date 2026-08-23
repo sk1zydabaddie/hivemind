@@ -34,11 +34,78 @@ Discovery pass, 2026-08-12, updated the same day after the free installs.
 >   readback anywhere the permission-table print reaches; under the
 >   multiplier claim it would be requested-not-confirmed, same as the pin.
 >
-> The one measured cost pair: a corpus call estimated at 40–55K from a
-> low-effort preflight ran 212K at pinned high — roughly 4–5× in effective
-> tokens on one call class, compounding through extra turns re-feeding
-> context, not just longer thinking. One pair, no quality data; the decision
-> needs the corpus rerun at split efforts before anything is built.
+> **SUPERSEDED the same day.** The paragraph that stood here read a single
+> estimate-vs-measurement pair (40–55K estimated from a low-effort preflight,
+> 212K at “pinned high”) as “roughly 4–5× in effective tokens” and deferred
+> the decision. Both halves were wrong: the 212K call was not at high effort
+> at all (the `-c` override was inert — see the next entry), and effort is not
+> a cost lever. The measured reading below replaces it.
+>
+> **THE FINAL READING ON EFFORT, 2026-08-23.** Effort changes reasoning depth
+> substantially and total cost negligibly. Reasoning is **0.4–2.5% of a call
+> whose bulk is cached input**, so a 30× swing in reasoning tokens moves total
+> cost by ~1.04×. High effort is therefore nearly free and materially better,
+> and the conclusion is to **pin it high everywhere and stop treating it as a
+> cost decision.** It is not a cost lever in either direction.
+>
+> Recorded with the correction, because the correction is worth more than the
+> finding: this question was framed twice and wrong both times, in opposite
+> directions. First as “plausibly the largest unexploited cost lever we have,
+> larger than tier routing” — which made a 30× reasoning-token difference look
+> like a 30× money difference. Then, when totals came back flat at 96–105%, as
+> “effort barely matters” — which threw away a real quality lever because its
+> price signal was flat. The truth is a third shape neither framing allowed for:
+> **large depth effect, negligible price effect**, and flat cost with 30×
+> reasoning variance is arithmetic rather than an anomaly once you know
+> reasoning is under 3% of the call. The lesson generalises: a ratio measured on
+> one token class says nothing about total cost until you know that class’s
+> share, and “no effect on the number I watched” is not “no effect.”
+>
+> What IS the cost lever, measured the same day: **model choice.** Effective
+> rate spans 3.9× across the ladder and codex-terra runs 5.1× codex-luna at
+> equal effort — which turned the Medium tier floor into a live defect, since
+> it forced every cheap-tier provider out of the tier ordinary source changes
+> land in. Fixed in `routing.ts`; the reasoning lives at the table someone
+> would change.
+
+> **2026-08-23: the `-c` override form is INERT, and three readbacks agreed
+> with each other about a setting that was not in effect.**
+>
+> Measured, and it is the most dangerous shape a setting can have:
+> `-c model_reasoning_effort=low` was (1) accepted by argv, (2) reported as
+> applied by `codex doctor`, and (3) echoed as `"low"` in the JSON event
+> stream — while producing **30× the reasoning tokens** of the form that
+> genuinely applies (`--profile`, which layers
+> `$CODEX_HOME/<name>.config.toml`). Three independent readbacks agreed on a
+> lie. The profile-scoped form visibly changed what the model produced: 6 lines
+> at low against 51 lines with tests at high, same prompt.
+>
+> **The rule this earns, and it is a second half to “capabilities are measured,
+> never declared”: a readback confirms what the harness BELIEVES it resolved,
+> not what it applied. Behaviour is the only ground truth.** A corollary that
+> bites immediately: the honest response is NOT to add an effort readback,
+> because this rollout echoes the request — comparing them would manufacture a
+> “verified” verdict for a setting nothing has confirmed. The proof that would
+> count is a monotonic reasoning-token gradient across low/medium/high, which
+> the `-c` path does not produce.
+>
+> Fixed rather than noted: all three `-c` overrides are gone from
+> `codexInvoke` (effort, `approval_policy`, `notify=[]`) and from the corpus
+> ladder in `local-adapters.ts`, and a structural test refuses the form in any
+> invocation. Effort is now unset by Hivemind and honestly labelled so; the
+> approval override lost nothing real (in a non-interactive `exec` run there is
+> nobody to prompt, and the boundary that holds is `--sandbox workspace-write`,
+> proved by a canary write); and `notify` — which cannot be forced off, and
+> which held two chained programs on this machine, one written by the vendor's
+> own installer — became a REFUSAL: `HOSTILE_HARNESS_SETTINGS` declares it and
+> connect refuses before spawning while it is set. A fake prevention was
+> replaced with a real boundary.
+>
+> Two corollaries worth carrying: every past measurement labelled “pinned
+> high”, the 212K corpus call included, was actually taken at Codex's own
+> default effort; and `--profile` layering is a config source neither the
+> config digest nor the endpoint read enumerates today, which is a completeness
+> gap in `known_endpoint` rather than a hypothetical.
 
 > **2026-08-22: the multiplier tier, and two corrections that changed decisions.**
 >

@@ -2117,3 +2117,65 @@ connecting through the same `adapter.connect_model` door as everything else.
 
 Core **849/851**, Desktop **321/321**, shipped and installed **26.823.159**,
 installed walk green against Skybound. No paid call.
+
+## Two defects from the effort work, and the rule that outlives both — 2026-08-23
+
+**The Medium tier floor was a cost defect.** `minimumProviderRank` forced
+Medium — the tier ordinary source changes land in — onto a `standard` provider,
+which made every cheap-tier provider structurally ineligible for routine work.
+Measured the same day: model choice spans 3.9× effective rate and codex-terra
+runs 5.1× codex-luna at equal effort, while effort spans ~1.04×. So this was
+paying roughly five times over on routine work for no measured quality reason.
+The floor is now `cheap` for Medium, deliberately not `local` (a local model on
+a real source change is unmeasured here; a cheap frontier model is the same
+family as the standard one and is measured). High and Critical still force
+`strong`, so the change lowers a floor without touching a ceiling. The
+reasoning lives at the table someone would change, with the retry arithmetic:
+a failed cheap attempt costs ~1.26× one expensive attempt, so the floor stays
+profitable until a cheap model fails roughly three routine tasks in four.
+
+**The `-c` override form was inert, and it was trusted.** `-c
+model_reasoning_effort=low` was accepted by argv, reported as applied by
+`codex doctor`, and echoed as `"low"` in the JSON stream — while producing 30×
+the reasoning tokens of the form that genuinely applies. Three independent
+readbacks agreed on a setting that was not in effect. **The rule, now in the
+capability contract's own header: a readback confirms what the harness BELIEVES
+it resolved, not what it applied. Behaviour is the only ground truth.** All
+three `-c` overrides are gone (effort, `approval_policy`, `notify=[]`), from the
+catalogue and the corpus ladder, with a structural test refusing the form
+anywhere. Effort is now unset and labelled so rather than replaced with a second
+unverified mechanism — and deliberately gets NO readback, because this rollout
+echoes the request, so comparing them would manufacture a verdict. `notify`
+became a real boundary instead of a fake one: `HOSTILE_HARNESS_SETTINGS`
+declares what cannot be forced off, and connect refuses before spawning while
+it is set.
+
+**Effort itself: both earlier framings were wrong, in opposite directions.**
+Not "the largest unexploited cost lever" (a 30× reasoning-token difference is
+not a 30× money difference) and not "effort barely matters" (flat totals threw
+away a real quality lever). The measured shape is a third one: large depth
+effect, negligible price effect, because reasoning is 0.4–2.5% of a call whose
+bulk is cached input. High effort is nearly free and materially better, so it
+is pinned high everywhere and is not a cost decision in either direction. The
+generalisable lesson, which is worth more than the finding: a ratio measured on
+one token class says nothing about total cost until you know that class's share.
+
+Open and named rather than quietly carried: `pins_one_model` and
+`no_nested_agents` rest on readback alone, which is precisely the evidence class
+this failure discredited, and the provider board renders them identically to the
+capabilities with behaviour behind them. `--profile` layering is also a config
+source neither the config digest nor the endpoint read enumerates.
+
+Two fixture defects surfaced while closing these, both real rather than
+incidental: the corpus admission check REQUIRED the inert `-c` effort pin, so
+it refused every profile once the pin was removed (inverted to require no `-c`
+override at all, which is the true invariant); and two test files depended on
+whatever `~/.codex/config.toml` the developer happened to have, which the new
+refusal exposed by firing against this machine's real two-program `notify`.
+The hostile-settings reader also had to learn the harness's own home variable
+before its answer meant anything -- a check that reads a different directory
+from the one the harness reads is a check of nothing.
+
+Core **852/854** with the two intentional Windows skips, Desktop **321/321**,
+30/30 reachability, shipped and installed **26.823.1246**, installed walk green
+against Skybound. No paid call.

@@ -75,7 +75,13 @@ test("the generated Codex ladder is explicit, confined tier pins and preserves r
     assert.equal(critical.ok, true, critical.ok ? undefined : critical.reason);
     if (low.ok && medium.ok && high.ok && critical.ok) {
       assert.equal(low.value.tool, "codex-luna");
-      assert.equal(medium.value.tool, "codex-terra");
+      /* Was `codex-terra` until 2026-08-23, when the Medium floor moved from
+         `standard` to `cheap`. Updated deliberately rather than preserved: the
+         old expectation encoded a floor that was measured to cost about five
+         times over on the tier ordinary source changes land in, while effort
+         -- the thing the pin was protecting -- spans only ~1.04x. The floors
+         that matter are asserted immediately below and are unchanged. */
+      assert.equal(medium.value.tool, "codex-luna");
       assert.equal(high.value.tool, "codex");
       assert.equal(critical.value.tool, "codex");
     }
@@ -185,7 +191,9 @@ test("fake Codex corpus uses the real disposer and exposes cost per successful t
     assert.equal(highRoute.ok, true, highRoute.ok ? undefined : highRoute.reason);
     if (lowRoute.ok && mediumRoute.ok && highRoute.ok) {
       assert.equal(lowRoute.value.tool, "codex-luna");
-      assert.equal(mediumRoute.value.tool, "codex-terra");
+      /* Same floor change as above: Medium may now run on the cheap tier, and
+         a learned policy still cannot promote past the High floor. */
+      assert.equal(mediumRoute.value.tool, "codex-luna");
       assert.equal(highRoute.value.tool, "codex");
       assert.equal(lowRoute.value.learned_policy?.status, "applied");
       assert.equal(mediumRoute.value.learned_policy?.status, "applied");

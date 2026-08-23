@@ -69,6 +69,55 @@ export interface CatalogueAgent {
 
 /* Windows spawns the CLI through cmd.exe because the installed entry points are
    .cmd shims; POSIX invokes the binary directly. */
+/**
+ * WHY THERE ARE NO `-c` OVERRIDES HERE ANY MORE. Measured 2026-08-23.
+ *
+ * This function used to carry three: `model_reasoning_effort="high"`,
+ * `approval_policy="never"` and `notify=[]`. All three are gone, because the
+ * `-c` form was measured INERT for this binary, and the way it failed is the
+ * most dangerous shape a setting can have:
+ *
+ *   `-c model_reasoning_effort=low` was accepted by argv, reported as applied
+ *   by `codex doctor`, and echoed as "low" in the JSON stream -- while
+ *   producing 30x the reasoning tokens of the form that genuinely applies.
+ *   Three independent readbacks agreed on a setting that was not in effect.
+ *
+ * So the rule this file already stated for flags now has a second half: a
+ * readback confirms what the harness BELIEVES it resolved, not what it
+ * applied. Behaviour is the only ground truth. Note what that costs us here:
+ * we deliberately do NOT add an effort readback, because this rollout echoes
+ * the request, so comparing them would manufacture a "verified" verdict for a
+ * setting nothing has confirmed.
+ *
+ * What replaces each one:
+ *
+ * - EFFORT: nothing. `codex exec` has no effort flag (checked against the
+ *   shipped 0.147.0 help: only `-c` and `--profile`), so a Hivemind worker
+ *   runs at whatever effort Codex resolves for itself. This costs nothing
+ *   measurable -- effort spans ~1.04x total cost because reasoning is 0.4-2.5%
+ *   of a cached-input-dominated call -- but it does mean the depth of a worker
+ *   turn is not ours to choose yet. The candidate mechanism is the form that
+ *   was measured to work: `--profile <name>`, which layers
+ *   `$CODEX_HOME/<name>.config.toml`. It is deliberately unimplemented until a
+ *   monotonic reasoning-token gradient across low/medium/high proves it,
+ *   because implementing it on this evidence would repeat exactly the mistake
+ *   above. Corollary worth knowing: every past measurement labelled "pinned
+ *   high", the 212K corpus call included, was actually taken at Codex's own
+ *   default.
+ * - APPROVAL POLICY: nothing, and nothing real is lost. The claim rested on
+ *   `codex doctor` reporting `OnRequest` for an override -- the discredited
+ *   evidence class. In a non-interactive `exec` run there is nobody to answer
+ *   a prompt, and the boundary that actually holds is `--sandbox
+ *   workspace-write`, which is proved behaviourally by a canary write rather
+ *   than by anyone's report.
+ * - NOTIFY: a refusal instead of a fake prevention. `notify` is a program path
+ *   Codex runs on turn events, and on the machine this was measured on it held
+ *   two chained entries, one written by OpenAI's own installer -- so a worker
+ *   with no shell caused two external programs to execute per turn. The old
+ *   comment already labelled the override unconfirmed and named this exact
+ *   risk; it was right. Since it cannot be forced off, `HOSTILE_HARNESS_SETTINGS`
+ *   below declares it, and connect refuses before spawning while it is set.
+ */
 function codexInvoke(model: string): string[] {
   const args = [
     "exec",
@@ -76,30 +125,6 @@ function codexInvoke(model: string): string[] {
     model,
     "--sandbox",
     "workspace-write",
-    "--config",
-    'model_reasoning_effort="high"',
-    /* Stated rather than inherited. `~/.codex/config.toml` on the machine this
-       was measured on carries `approval_policy = "never"`, and `codex doctor`
-       confirms it resolves -- so the policy a Hivemind worker ran under was
-       whatever the person happened to have set. `never` is also the only
-       workable value for a non-interactive `exec` run, since there is nobody to
-       answer a prompt; what changes here is that it is Hivemind's choice and
-       cannot move underneath us. Verified overridable:
-       `codex doctor -c approval_policy='"on-request"'` reports `OnRequest`. */
-    "--config",
-    'approval_policy="never"',
-    /* `notify` is a program path in user config that Codex runs on turn events.
-       On this machine it holds two, chained -- one of them written by OpenAI's
-       own installer rather than by a person -- so a worker with no shell caused
-       two external programs to execute per turn.
-
-       HONESTLY LABELLED: the override parses and is accepted, and its effect
-       was NOT observed, because confirming it needs a real paid turn. That is
-       the same "flag accepted without being applied" shape this project has
-       shipped twice, so it is written down rather than assumed. The probe does
-       not read `notify` back and nothing here claims it does. */
-    "--config",
-    "notify=[]",
     "--ephemeral",
     "--json",
     "-"
@@ -1537,6 +1562,58 @@ export const HARNESS_CONFIG_INPUTS: Record<string, { home: string[]; project: st
     home: ["config.toml", "mcp.json"],
     project: [".hivemind/kimi-agent.md"]
   }
+};
+
+/**
+ * Settings in a harness's own config that Hivemind cannot force off, and will
+ * not run beside.
+ *
+ * This exists because of a measured failure, not a theory. The pattern it
+ * replaces was: pass an override that turns the dangerous thing off, watch the
+ * harness accept it, and treat acceptance as protection. On 2026-08-23 the
+ * `-c` override form for one harness was shown to be accepted, self-reported
+ * as applied, and echoed in its own event stream while having no effect. A
+ * prevention that cannot be confirmed BEHAVIOURALLY is not a prevention.
+ *
+ * So where a hostile setting cannot be forced off, it is declared here and
+ * connect REFUSES while it is present. That is a real boundary: the person is
+ * told what to change and nothing runs until they change it. Refusing costs
+ * nothing -- it happens before any provider call.
+ *
+ * `pattern` is matched against the file's text with comment lines removed, so
+ * a documented-but-inactive example does not refuse a connection.
+ */
+export interface HostileHarnessSetting {
+  /** Relative to the harness's own home directory. */
+  file: string;
+  /** Matches the setting only when it is actually assigned a value. */
+  pattern: RegExp;
+  /** What it does, in the words the person is shown. */
+  why: string;
+  /** What they can do about it. */
+  remedy: string;
+}
+
+export const HOSTILE_HARNESS_SETTINGS: Record<string, readonly HostileHarnessSetting[]> = {
+  /* Codex's `notify` is a program path it runs on turn events. Two chained
+     entries were found on the machine this was measured on, one of them
+     written by the vendor's own installer rather than by a person -- so a
+     worker with no shell still caused two external programs to execute per
+     turn. `notify=[]` was passed for weeks and never applied. */
+  "codex-cli": [
+    {
+      file: "config.toml",
+      /* Written as "assigned something non-empty" rather than "not assigned
+         an empty array". The lookahead form was tried first and was WRONG:
+         `\s*` before it can give back the space it consumed, so the engine
+         retries at a position where the lookahead cannot see the `[]` and the
+         safe value matches as hostile. Caught by the test that asserts
+         `notify = []` connects. */
+      pattern: /^\s*notify\s*=\s*(?:\[\s*[^\s\]]|"|'|[A-Za-z0-9])/mu,
+      why: "Codex runs the programs in `notify` every turn, outside the tool boundary Hivemind checks.",
+      remedy: "Set `notify = []` in your Codex config, or remove the line, then connect again."
+    }
+  ]
 };
 
 /**

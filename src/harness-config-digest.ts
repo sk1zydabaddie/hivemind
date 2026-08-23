@@ -3,8 +3,10 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
+  ACCOUNT_HOME_VARIABLES,
   HARNESS_CONFIG_INPUTS,
   HARNESS_DEFAULT_HOME,
+  HOSTILE_HARNESS_SETTINGS,
   SHARED_INSTRUCTION_SOURCES
 } from "./agent-catalogue.js";
 
@@ -153,4 +155,58 @@ export function configStanding(
 
 function homeDirectory(): string {
   return process.env.HOME ?? process.env.USERPROFILE ?? "";
+}
+
+/**
+ * Hostile settings in a harness's own config, found before anything spawns.
+ *
+ * The mechanism half of `HOSTILE_HARNESS_SETTINGS`: this module already opens
+ * exactly these files for the digest, so detection costs one more read and no
+ * provider call. It names no harness -- the spec does that -- and it reports
+ * findings rather than deciding, so the refusal stays with the connect path
+ * that owns every other refusal.
+ *
+ * Comment lines are stripped before matching, so a setting written down as an
+ * example and left commented out does not refuse a connection. Absence of a
+ * file is not a finding: a harness with no config has nothing hostile in it.
+ */
+export async function findHostileHarnessSettings(
+  harness: string,
+  homeDir: string | null
+): Promise<Array<{ file: string; why: string; remedy: string }>> {
+  const declared = HOSTILE_HARNESS_SETTINGS[harness];
+  if (declared === undefined || declared.length === 0) return [];
+  /* Three sources, in the order the HARNESS itself resolves them: the account
+     home Hivemind will point it at, then that harness's own home variable if
+     the environment already sets one, then its default. The middle one is not
+     optional -- a check that reads a different directory from the one the
+     harness will read is a check of nothing, and `adapter-probe` already
+     resolves the rollout path the same way. */
+  const variable = ACCOUNT_HOME_VARIABLES[harness];
+  const fromEnvironment =
+    variable === undefined ? undefined : process.env[variable]?.trim() || undefined;
+  const defaultHome = HARNESS_DEFAULT_HOME[harness];
+  const home =
+    homeDir ??
+    fromEnvironment ??
+    (defaultHome === undefined ? null : path.join(homeDirectory(), defaultHome));
+  if (home === null) return [];
+
+  const found: Array<{ file: string; why: string; remedy: string }> = [];
+  for (const setting of declared) {
+    let text: string;
+    try {
+      text = await readFile(path.join(home, setting.file), "utf8");
+    } catch {
+      continue;
+    }
+    const active = text
+      .split(/\r?\n/u)
+      .filter((line) => !/^\s*(?:#|\/\/)/u.test(line))
+      .join("\n");
+    if (setting.pattern.test(active)) {
+      found.push({ file: setting.file, why: setting.why, remedy: setting.remedy });
+    }
+  }
+  return found;
 }
