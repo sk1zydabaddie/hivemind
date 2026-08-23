@@ -64,7 +64,7 @@ import {
 import { list } from "@/lib/durable";
 import { taskPhase } from "@/lib/phases";
 import { REQUIRED_ROLES } from "@/lib/providers";
-import type { ProjectConfigView } from "@/lib/workspace-actions";
+import { verificationResolved, type ProjectConfigView } from "@/lib/workspace-actions";
 
 /* Codes that mean "you have not finished setting this up", not "something
    went wrong". The distinction is the whole difference between a first run
@@ -188,22 +188,32 @@ export default function App(): React.JSX.Element {
      setup is a claim no probe has checked. The screen used to disappear at
      `live`, which dropped a person into a composer whose first submission
      failed on a missing file they had been told not to think about. */
-  const [configView, setConfigView] = useState<ProjectConfigView | null>(null);
+  /* Stored answers name the project they were fetched for, and the rendered
+     value is DERIVED -- the same shape as the settings dialog (A-08), for the
+     same reason: "leave the last answer standing" is right for a failed poll
+     of the SAME project and wrong across a switch, where the previous
+     project's config decided `runnable` for the new one. */
+  const [loadedConfig, setLoadedConfig] = useState<{
+    forProject: string;
+    view: ProjectConfigView;
+  } | null>(null);
+  const configView =
+    loadedConfig !== null && loadedConfig.forProject === projectPath ? loadedConfig.view : null;
   const refreshConfig = useCallback(async (): Promise<void> => {
     if (!live) {
-      setConfigView(null);
       return;
     }
+    const requested = projectPath;
     try {
-      setConfigView(
-        await workspace.performAction<ProjectConfigView>({
-          type: "config.inspect",
-          payload: {}
-        })
-      );
+      const view = await workspace.performAction<ProjectConfigView>({
+        type: "config.inspect",
+        payload: {}
+      });
+      setLoadedConfig({ forProject: requested, view });
     } catch {
       /* Leave the last answer standing rather than claiming nothing is
-         connected: a failed read is not evidence of an empty project. */
+         connected: a failed read is not evidence of an empty project. The
+         derived read above keeps that grace within one project only. */
     }
     /* Deliberately keyed on `live` and the path rather than on `inspection`,
        which is replaced by a poll every five seconds. */
@@ -216,6 +226,12 @@ export default function App(): React.JSX.Element {
   const runnable =
     live &&
     configView !== null &&
+    /* Setup cannot read complete while a value integration will later
+       require is absent (A-03): either a verification command exists, or the
+       person has recorded that this project has no tests. Without this term,
+       Work was enabled and integration rejected the project after planning
+       and worker calls were paid for. */
+    verificationResolved(configView.config) &&
     REQUIRED_ROLES.every((role) =>
       list(configView.adapters).some(
         (adapter) =>
@@ -234,6 +250,21 @@ export default function App(): React.JSX.Element {
      on a setup checklist while work is running is the app arguing with what is
      on screen. Found by a replayed trail at peak concurrency opening on Set up. */
   const hasWork = (workspace.inspection?.tasks ?? []).length > 0;
+  /* A switch resets the landing. `section` is app state and survived project
+     changes, so arriving from a project that lived on Work opened the NEXT
+     project on Work too -- past a setup screen that still had a question
+     (A-03's ask was on screen for a cold open and invisible after a switch).
+     Reset to setup and let the promotion below move it forward the moment
+     the new project proves runnable or already working. Declared BEFORE the
+     promotion effect deliberately: when both fire in one pass, reset must
+     lose to promotion -- the reversed order netted the promotion's own dep
+     values unchanged and deadlocked replayed runs on the setup screen. A
+     deep link still wins, and navigation within one project is untouched. */
+  useEffect(() => {
+    if (requestedSection !== null) return;
+    setSection("setup");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPath]);
   useEffect(() => {
     /* An explicit `?section=` is somebody asking for that surface, so it is not
        something a default may overrule. This quietly redirected the deep link

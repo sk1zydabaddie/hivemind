@@ -161,8 +161,18 @@ export async function integrateShadow(
       };
     }
   }
-  if (configResult.config.test_command.trim() === "") {
-    return { ok: false, reason: "config.test_command must not be empty for shadow integration" };
+  if (configResult.config.test_command.trim() === "" && configResult.config.no_tests_declared !== true) {
+    /* A-03's rejection point: this used to fire AFTER planning and worker
+       calls were paid for, on a project setup had happily called complete.
+       Setup now refuses to complete in that state, so reaching here without
+       a command means either an old project that predates the gate or a
+       hand-edited config -- refused either way. An empty command passes only
+       on the user's recorded declaration that this project has no tests. */
+    return {
+      ok: false,
+      reason:
+        "config.test_command is empty and this project has not declared that it has no tests; set a verification command in setup, or state the absence there explicitly"
+    };
   }
 
   const baseBranch = configResult.config.base_branch?.trim();

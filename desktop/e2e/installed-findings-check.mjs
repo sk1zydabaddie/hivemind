@@ -169,8 +169,44 @@ try {
     console.log("A-37 installed: skipped -- the completed acceptance project is not on this machine");
   }
 
-  /* -- A-04: setup spend is on the meter -- */
+  /* -- A-03: the verification question is asked, never guessed past -- */
   await openProject(projectA);
+  /* Skybound has no test script, so setup used to read complete with an
+     empty test_command and integration rejected the project after money was
+     spent. Now: on a project where the question is unanswered, setup stays
+     and asks; declaring "no tests" is an explicit, recorded decision that
+     completes it. Idempotent across runs -- once declared, the ask is gone
+     and setup reads complete immediately. */
+  {
+    /* Wait for the checks step to RESOLVE, never sample it: the ask renders
+       once the project's config has loaded, and a one-shot body read lands
+       before it. Either the ask is on screen (first run -- the question is
+       being asked), or setup already read complete and the app promoted
+       itself to Work (a previous run declared). */
+    await driver.wait(
+      async () => {
+        const body = await bodyText();
+        return body.includes("This project has no tests") || /setup \d+ calls?/u.test(body);
+      },
+      30_000,
+      "neither the verification ask nor the completed Work surface appeared"
+    );
+    const body = await bodyText();
+    if (body.includes("This project has no tests")) {
+      await capture("a03-setup-asks");
+      console.log("A-03 installed: setup asks how the project is checked instead of guessing past it");
+      await clickButton("This project has no tests");
+      await driver.wait(
+        async () => !(await bodyText()).includes("This project has no tests"),
+        20_000,
+        "the no-tests declaration was not recorded"
+      );
+      await capture("a03-declared");
+      console.log("A-03 installed: the absence was declared, recorded, and setup completed");
+    } else {
+      console.log("A-03 installed: already declared on a previous run; setup reads complete");
+    }
+  }
   try {
     await driver.wait(
       async () => /setup \d+ calls?/u.test(await bodyText()),

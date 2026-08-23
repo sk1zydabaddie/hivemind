@@ -22,6 +22,19 @@ export interface HivemindConfig {
   repo_root: string;
   base_branch?: string;
   test_command: string;
+  /**
+   * The user's recorded decision that this project has no tests (A-03).
+   *
+   * An empty `test_command` alone is an unnoticed default: setup used to read
+   * complete with it, and integration then rejected the project after money
+   * had been spent on planning and workers. Setup now refuses to read
+   * complete until either a verification command exists or the person states
+   * the absence explicitly -- the same shape as a spec's "there is nothing
+   * this should leave alone". Downstream, integration accepts an empty
+   * command only when this is true, and verification records the declared
+   * absence instead of running a suite that is not there.
+   */
+  no_tests_declared?: boolean;
   allowed_globs: string[];
   forbidden_globs: string[];
   low_globs?: string[];
@@ -143,6 +156,11 @@ export function validateConfig(raw: unknown): string[] {
     problems.push("base_branch must be a non-empty string when configured");
   }
   requireString(raw, "test_command", problems);
+  if ("no_tests_declared" in raw && raw.no_tests_declared !== true) {
+    /* The declaration is a recorded decision; a value that is present but not
+       exactly true is ambiguous, and un-declaring is removing the key. */
+    problems.push("no_tests_declared must be exactly true when present");
+  }
   requireStringArray(raw, "allowed_globs", problems);
   requireStringArray(raw, "forbidden_globs", problems);
   for (const field of ["low_globs", "medium_globs", "high_globs", "critical_globs"] as const) {
@@ -198,6 +216,7 @@ const KNOWN_CONFIG_KEYS = new Set([
   "repo_root",
   "base_branch",
   "test_command",
+  "no_tests_declared",
   "allowed_globs",
   "forbidden_globs",
   "low_globs",
@@ -222,6 +241,9 @@ export function normalizeConfig(raw: unknown): HivemindConfig {
     repo_root: String(raw.repo_root),
     ...(typeof raw.base_branch === "string" ? { base_branch: raw.base_branch.trim() } : {}),
     test_command: String(raw.test_command),
+    /* Only a literal true survives: the declaration is a recorded decision,
+       and anything less explicit stays absent. */
+    ...(raw.no_tests_declared === true ? { no_tests_declared: true } : {}),
     allowed_globs: normalizeStringArray(raw.allowed_globs),
     forbidden_globs: normalizeStringArray(raw.forbidden_globs),
     ...("low_globs" in raw ? { low_globs: normalizeStringArray(raw.low_globs) } : {}),

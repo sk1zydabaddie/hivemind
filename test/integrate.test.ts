@@ -579,7 +579,25 @@ test("integrateShadow fails closed for malformed queue inputs and empty test com
     if (emptyTest.ok) {
       return;
     }
-    assert.match(emptyTest.reason, /config\.test_command must not be empty/);
+    /* A-03: the refusal names both exits -- set a command, or state the
+       absence -- because by the time this gate fires, money is already
+       spent; setup and the drafting gate are where it is normally caught. */
+    assert.match(emptyTest.reason, /has not declared that it has no tests/);
+
+    /* The recorded declaration opens THIS gate: with no_tests_declared the
+       same empty command proceeds past it, and the run fails later on the
+       fixture's genuinely missing patch evidence instead. */
+    const configPath = path.join(repo, ".hivemind", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    config.no_tests_declared = true;
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+    const declared = await integrateShadow(repo);
+    assert.equal(declared.ok, false, "the fixture still has no patches to integrate");
+    if (declared.ok) {
+      return;
+    }
+    assert.doesNotMatch(declared.reason, /has not declared that it has no tests/);
+    assert.doesNotMatch(declared.reason, /test_command/);
   });
 });
 

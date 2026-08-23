@@ -416,11 +416,31 @@ export interface ModelDiscoveryView {
   providers: ProviderModelDiscovery[];
 }
 
+/**
+ * Whether the question "how is this project checked" has an answer (A-03).
+ *
+ * True when a verification command exists, or when the person has recorded
+ * that this project has no tests. Setup must not read complete while this is
+ * false: integration requires the answer, and the old behavior was to enable
+ * Work and let integration reject the project after planning and worker
+ * calls were already paid for.
+ */
+export function verificationResolved(
+  config: ProjectConfigView["config"] | null | undefined
+): boolean {
+  if (!config) return false;
+  return config.test_command.trim() !== "" || config.no_tests_declared === true;
+}
+
 export interface ProjectConfigView {
   initialized: boolean;
   config_problem: string | null;
   config: {
     test_command: string;
+    /* The recorded decision that this project has no tests (A-03). Optional:
+       a daemon older than the field is a permanent input, and absence means
+       "not declared", never a declaration. */
+    no_tests_declared?: boolean;
     base_branch: string | null;
     allowed_globs: string[];
     forbidden_globs: string[];

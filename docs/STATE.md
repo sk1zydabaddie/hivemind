@@ -1999,6 +1999,39 @@ Desktop **314/314**, Rust **45/45**, 30/30 reachability on every ship, and
 matching on-disk identities for installed **26.822.1349**. No paid provider,
 capability, or model call was made anywhere in this pass.
 
+### Setup asks the verification question instead of guessing past it — 2026-08-22
+
+A-03 closed — the one register finding that stopped a normal user. Setup read
+complete with an empty `test_command`, Work was enabled, and integration
+rejected the project after planning and worker calls were paid for. The
+invariant now held at every layer: **setup cannot read complete while a value
+integration will later require is absent.** Detection was widened to the
+manifests that guarantee a runner (cargo, go; pytest only on evidence it is
+configured, because it fails on a project with nothing to collect). Where
+nothing is found, setup asks — a command input, or the explicit "This project
+has no tests", recorded as `no_tests_declared: true` through the audited
+config door and removed automatically when a real command is set. Downstream
+gates understand the declaration: integration accepts it, verification's
+audit names it, the planner prompt states it and forbids inventing a command,
+and Core refuses the first paid call while the question is unanswered — a
+refusal that costs nothing, covering Work's deliberate reachability.
+
+Closing it surfaced two switch-inherited staleness gaps in the same family,
+both fixed: the config deciding `runnable` now names its project and is
+derived (the A-08 shape), and `section` resets on switch so the ask is on
+screen after a switch exactly as on a cold open — with the reset declared
+before the promotion effect, because the reversed order deadlocked replayed
+runs on the setup screen (found when reachability caught three surfaces
+losing their run thread, diagnosed live against the dev replay).
+
+Verified installed on **26.822.2049** against Skybound — the audit's original
+repro: the ask appeared, the declaration was pressed and landed durably, setup
+completed to Work, and a second run read complete immediately
+(`docs/evidence/findings-installed-26.822.2049/`). Regressions proven to
+bite, including the money gate by drafter call-count. Final verification:
+Core **840/842** with two intentional Windows skips, Desktop **315/315**,
+30/30 reachability, matching on-disk identities. No paid call.
+
 The same day, both walk-found findings closed. A-39 from what was already
 recorded rather than a new field: a process that started after `daemon.json`
 was written cannot be the daemon that wrote it, so a reused pid now reads as

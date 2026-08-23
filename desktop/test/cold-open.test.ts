@@ -110,6 +110,56 @@ describe("cold open", () => {
     expect(gitSetupFailureFrom({ code: "surprise", message: "x" }).code).toBe("partial_state");
   });
 
+  /**
+   * A-03, the one register finding that stopped a normal user: setup read
+   * complete with an empty test_command, Work was enabled, and integration
+   * rejected the project after planning and worker calls were paid for.
+   *
+   * The invariant: setup cannot read complete while a value integration will
+   * later require is absent. Either a command exists, or the person supplies
+   * one, or the person records that this project has no tests -- and the
+   * recorded absence is a typed config field downstream gates understand,
+   * never an unnoticed empty string.
+   */
+  test("setup cannot read complete while the verification question is unanswered", async () => {
+    const app = (await readFile(path.join(desktopRoot, "src", "App.tsx"), "utf8")).replace(
+      /\/\*[\s\S]*?\*\//gu,
+      ""
+    );
+    /* `runnable` -- what hides the Set up tab and auto-navigates to Work --
+       carries the verification term. Losing it re-opens the exact defect. */
+    expect(app).toMatch(/verificationResolved\(configView\.config\) &&/u);
+    /* The config that decides `runnable` names the project it was fetched
+       for and is derived -- "leave the last answer standing" must not leave
+       the PREVIOUS project's answer deciding the new one. */
+    expect(app).toMatch(/loadedConfig\.forProject === projectPath \? loadedConfig\.view : null/u);
+    /* And a switch resets the landing to setup, so the ask is on screen
+       after a switch exactly as it is on a cold open; the promotion effect
+       moves it forward the moment the project proves runnable or working. */
+    expect(app).toMatch(/setSection\("setup"\);[\s\S]{0,120}\[selectedPath\]\);/u);
+
+    const screen = (
+      await readFile(
+        path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
+        "utf8"
+      )
+    ).replace(/\/\*[\s\S]*?\*\//gu, "");
+    expect(screen).toMatch(/How this project is checked/u);
+    /* The ask offers both answers: a command, or the explicit declaration --
+       and the declaration dispatches the typed field through the audited
+       config door, never a sentinel string. */
+    expect(screen).toMatch(/submit\(\{ test_command: command\.trim\(\) \}\)/u);
+    expect(screen).toMatch(/submit\(\{ no_tests_declared: true \}\)/u);
+    expect(screen).toMatch(/This project has no tests/u);
+
+    const actions = (
+      await readFile(path.join(desktopRoot, "src", "lib", "workspace-actions.ts"), "utf8")
+    ).replace(/\/\*[\s\S]*?\*\//gu, "");
+    expect(actions).toMatch(
+      /config\.test_command\.trim\(\) !== "" \|\| config\.no_tests_declared === true/u
+    );
+  });
+
   test("each failure a person can act on offers its action", () => {
     expect(plainConnectionProblem(PROJECT_FAULT.noProjectSelected, "")?.action).toBe("choose");
     expect(plainConnectionProblem(PROJECT_FAULT.notInitialized, "")?.action).toBe("initialize");

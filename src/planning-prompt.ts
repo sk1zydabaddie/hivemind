@@ -168,7 +168,9 @@ export async function buildPlanningGenerationPrompt(input: PlanningPromptInput):
       "",
       "Configured command evidence:",
       `Stack: ${config.config.stack}`,
-      `Full test command: ${config.config.test_command}`,
+      config.config.test_command.trim() === "" && config.config.no_tests_declared === true
+        ? "Full test command: (none -- the user declared this project has no tests; do not invent one, and prefer deterministic validity checks per task)"
+        : `Full test command: ${config.config.test_command}`,
       "Any other executable used by a validity check must be directly supported by repository content in the context; otherwise use the configured runtime and standard library only.",
       "",
       "Human-reviewed project canon:",

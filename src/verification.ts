@@ -325,6 +325,25 @@ function fullSuiteAudit(
   reason: string,
   structuralOracle: StructuralOracleMeasurement
 ): VerificationAudit {
+  /* A declared-no-tests project (A-03) runs zero checks, and the audit says
+     so in its reason rather than carrying an empty command a runner would
+     choke on. The pass this produces is vacuous BY THE USER'S OWN RECORDED
+     DECISION -- the declaration lives in config, the reason names it here,
+     and the provenance surface already renders what the audit recorded. */
+  if (config.test_command.trim() === "" && config.no_tests_declared === true) {
+    return {
+      mode: "full",
+      reason: `${reason}; the user declared this project has no tests, so no suite exists to run`,
+      changed_files: changedFiles,
+      impact_set: changedFiles,
+      selected_checks: [],
+      skipped_checks: [],
+      graph_fingerprint: null,
+      canon_ids: [],
+      contract_validity_checks: [],
+      structural_oracle: structuralOracle
+    };
+  }
   return {
     mode: "full",
     reason,

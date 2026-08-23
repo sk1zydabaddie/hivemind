@@ -194,6 +194,46 @@ async function resolveCurrentBranch(
  * because that is a project with nothing to detect rather than a broken one.
  */
 async function detectTestCommand(repoRoot: string): Promise<string> {
+  const fromPackageJson = await detectNodeTestCommand(repoRoot);
+  if (fromPackageJson !== "") return fromPackageJson;
+
+  /* The obvious equivalents in other ecosystems, each keyed on the manifest
+     that guarantees its standard runner exists. A manifest is evidence the
+     TOOLCHAIN is present, not that tests are -- a Rust crate with zero tests
+     still runs `cargo test` green, which is the honest vacuous answer. What
+     this must never do is guess: a detection here becomes the command
+     verification actually runs, so every entry names a file that ships with
+     the runner it implies. Where nothing matches, setup asks the person
+     rather than proceeding (A-03) -- an empty answer here no longer reads as
+     setup-complete. */
+  const manifests: Array<{ files: string[]; command: string }> = [
+    /* Both runners exit 0 on a project with zero tests, so a manifest alone
+       is a safe detection. */
+    { files: ["Cargo.toml"], command: "cargo test" },
+    { files: ["go.mod"], command: "go test ./..." }
+  ];
+  for (const manifest of manifests) {
+    for (const file of manifest.files) {
+      if (await exists(path.join(repoRoot, file))) {
+        return manifest.command;
+      }
+    }
+  }
+  /* pytest exits 5 when it collects nothing, so its detection needs evidence
+     pytest is actually configured, not merely that the project is Python. */
+  if (await exists(path.join(repoRoot, "pytest.ini")) || await exists(path.join(repoRoot, "tox.ini"))) {
+    return "pytest";
+  }
+  try {
+    const pyproject = await readFile(path.join(repoRoot, "pyproject.toml"), "utf8");
+    if (pyproject.includes("[tool.pytest")) return "pytest";
+  } catch (error: unknown) {
+    if (!isFileMissing(error)) throw error;
+  }
+  return "";
+}
+
+async function detectNodeTestCommand(repoRoot: string): Promise<string> {
   const packageJsonPath = path.join(repoRoot, "package.json");
   let contents: string;
   try {

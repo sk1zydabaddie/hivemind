@@ -373,6 +373,7 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
 function publicConfig(config: HivemindConfig): Record<string, unknown> {
   return {
     test_command: config.test_command,
+    no_tests_declared: config.no_tests_declared === true,
     base_branch: config.base_branch ?? null,
     allowed_globs: config.allowed_globs,
     forbidden_globs: config.forbidden_globs,
@@ -403,6 +404,10 @@ const WRITABLE_KEYS = [
   "high_globs",
   "critical_globs",
   "test_command",
+  /* The recorded decision that this project has no tests (A-03). Setting a
+     real test_command through this same door removes it, so the two cannot
+     contradict each other in the durable record. */
+  "no_tests_declared",
   "run_ceiling_tokens",
   "session_ceiling_tokens",
   "max_concurrent_workers",
@@ -456,6 +461,15 @@ export async function setProjectConfig(
         return { ok: false, reason: "test_command must be a non-empty string" };
       }
       next[key] = value.trim();
+      /* A real command supersedes a recorded absence. */
+      delete next.no_tests_declared;
+      continue;
+    }
+    if (key === "no_tests_declared") {
+      if (value !== true) {
+        return { ok: false, reason: "no_tests_declared can only be set to exactly true; supply a test_command to replace it" };
+      }
+      next[key] = true;
       continue;
     }
     if (!Number.isSafeInteger(value) || Number(value) < 1) {

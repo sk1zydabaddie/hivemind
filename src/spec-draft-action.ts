@@ -29,14 +29,14 @@ import {
  * One adapter call turns what somebody typed into a short-form spec, opens its
  * ideation session, and records the drafter's own alternatives and self-critique
  * as the orchestrator's round. What comes out is a drafted, orchestrator-signed
- * spec that `plan.prepare` can plan from — and nothing more. The person's
+ * spec that `plan.prepare` can plan from â€” and nothing more. The person's
  * signature is not here and cannot be: `convergence.user` is reachable only
  * through the challenge-bound human act in src/spec-convergence.ts, and this
  * module never touches it.
  *
  * The round is the drafter's real material rather than a stub assembled to pass
  * the gate. If a prompt is too thin for two honest alternatives, the drafter is
- * told to say so in an open question — which blocks ratification — instead of
+ * told to say so in an open question â€” which blocks ratification â€” instead of
  * inventing a second one.
  */
 
@@ -71,6 +71,19 @@ export async function draftSpecFromPrompt(
 
   const config = await loadConfig(repoRoot);
   if (!config.ok) return config;
+  /* A-03's money gate, at the FIRST paid call rather than the last check.
+     Integration refuses an undeclared empty test_command -- but by the time
+     integration runs, planning and worker calls are already spent. Setup no
+     longer reads complete in this state; this refusal covers the side door
+     (Work stays reachable by design), and it costs nothing because it fires
+     before any provider process starts. */
+  if (config.config.test_command.trim() === "" && config.config.no_tests_declared !== true) {
+    return {
+      ok: false,
+      reason:
+        "this project has no verification command and has not declared that it has no tests; finish setup first -- set the command there, or state the absence explicitly"
+    };
+  }
   const head = await currentHead(repoRoot);
   if (!head.ok) return head;
   const tracked = await trackedFilesAtBase(repoRoot, head.value);

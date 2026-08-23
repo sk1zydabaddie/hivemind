@@ -13,6 +13,7 @@ import {
   type GitReadiness,
   type GitSetupFailure
 } from "@/lib/project-session";
+import { plainActionError } from "@/lib/plain-language";
 import { useProviderAuthentication } from "@/lib/provider-authentication";
 import { REQUIRED_ROLES } from "@/lib/providers";
 import type {
@@ -128,7 +129,7 @@ export function SetupScreen({
               </h2>
               <p className="mt-2.5 mb-0 max-w-[520px] text-[13px] leading-relaxed text-muted-foreground">
                 Hivemind builds inside one project folder, using the coding agent
-                you already pay for. Three steps, in order — and a fourth once
+                you already pay for. Four steps, in order — and a fifth once
                 there is an agent to tune.
               </p>
 
@@ -287,6 +288,7 @@ export function SetupScreen({
                   index={2}
                   title="Set up the folder"
                 />
+                <ChecksStep enabled={live} view={view} onAction={onAction} onReload={onReload} />
                 <ConnectStep
                   enabled={live}
                   view={view}
@@ -606,7 +608,7 @@ function ConnectStep({
   return (
     <li className="grid gap-3 bg-panel/82 shadow-[var(--glass-edge)] px-4 py-3">
       <div className="flex items-center gap-3">
-        <StepMark done={done} index={3} />
+        <StepMark done={done} index={4} />
         <div className="min-w-0 flex-1">
           <strong className="block text-[13px] font-medium text-ink">
             Which providers do you have?
@@ -775,7 +777,7 @@ function ModelStep({
   return (
     <div className="grid gap-2.5 border-t border-rule pt-3">
       <div className="flex items-center gap-3">
-        <StepMark done={false} index={4} />
+        <StepMark done={false} index={5} />
         <div className="min-w-0 flex-1">
           <strong className="block text-[13px] font-medium text-ink">
             Which model runs which role
@@ -883,6 +885,119 @@ function formatChecked(iso: string): string {
     year: "numeric",
     timeZone: "UTC"
   });
+}
+
+/**
+ * A-03, the one register finding that stopped a normal user: setup read
+ * complete with an empty `test_command`, Work was enabled, and integration
+ * rejected the project after planning and worker calls were already paid
+ * for. First hour, ordinary projects, fail-open in a fail-closed product.
+ *
+ * The invariant this step carries: setup cannot read complete while a value
+ * integration will later require is absent. Either detection found a
+ * command, or the person supplies one, or the person states explicitly that
+ * this project has no tests -- the same shape as a spec's "there is nothing
+ * this should leave alone", so the absence is a recorded decision rather
+ * than an unnoticed default. Core enforces the same rule at the first paid
+ * call; this step is where the question gets asked, because a question here
+ * is cheaper than a guess that costs real tokens before it fails.
+ */
+function ChecksStep({
+  enabled,
+  view,
+  onAction,
+  onReload
+}: {
+  enabled: boolean;
+  view: ProjectConfigView | null;
+  onAction: <T>(action: WorkspaceAction) => Promise<T>;
+  onReload: () => void;
+}): React.JSX.Element {
+  const [command, setCommand] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const config = view?.config ?? null;
+  const commandPresent = (config?.test_command ?? "").trim() !== "";
+  const declared = config?.no_tests_declared === true;
+  const done = enabled && config !== null && (commandPresent || declared);
+
+  const submit = async (payload: Record<string, unknown>): Promise<void> => {
+    setBusy(true);
+    setError("");
+    try {
+      await onAction({ type: "config.set", payload });
+      onReload();
+    } catch (cause) {
+      setError(plainActionError(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <li className="grid gap-3 bg-panel px-4 py-3">
+      <div className="flex items-center gap-3">
+        <StepMark done={done} index={3} />
+        <div className="min-w-0 flex-1">
+          <strong className="block text-[13px] font-medium text-ink">
+            How this project is checked
+          </strong>
+          <span className="mt-0.5 block text-[12px] leading-relaxed break-words text-muted-foreground">
+            {!enabled || config === null
+              ? "Waiting on step 2 — the check command lives in the project's settings."
+              : commandPresent
+                ? `Every change runs ${config.test_command} before it can ship.`
+                : declared
+                  ? "You said this project has no tests. Every ship's record says so. Adding a command in Settings replaces the declaration."
+                  : "Hivemind found no test command, and it will not guess: every change is checked before it ships, so say how — or say there is nothing to run."}
+          </span>
+        </div>
+      </div>
+
+      {enabled && config !== null && !done ? (
+        <div className="grid gap-2 pl-8">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              aria-label="Test command"
+              className="h-8 min-w-[200px] flex-1 rounded-sm border border-input bg-canvas px-2 font-mono text-[12px] text-ink focus-visible:border-navy/55"
+              placeholder="npm test"
+              spellCheck={false}
+              value={command}
+              onChange={(event) => setCommand(event.target.value)}
+            />
+            <Button
+              disabled={busy || command.trim() === ""}
+              size="sm"
+              type="button"
+              onClick={() => void submit({ test_command: command.trim() })}
+            >
+              Use this command
+            </Button>
+          </div>
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <Button
+              disabled={busy}
+              size="sm"
+              type="button"
+              variant="outline"
+              onClick={() => void submit({ no_tests_declared: true })}
+            >
+              This project has no tests
+            </Button>
+            <span className="text-[11px] leading-relaxed text-muted-foreground">
+              Recorded as your decision: runs will ship with nothing to verify
+              them, and every ship's record names this declaration.
+            </span>
+          </div>
+          {error === "" ? null : (
+            <p className="m-0 text-[12px] break-words text-clay" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+      ) : null}
+    </li>
+  );
 }
 
 function StepMark({ index, done }: { index: number; done: boolean }): React.JSX.Element {
