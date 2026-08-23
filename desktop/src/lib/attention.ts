@@ -66,6 +66,10 @@ const INTERRUPTS: Record<string, string> = {
   run_stalled: "Work has stopped",
   quality_cancel_failed: "A cancellation did not take",
   plan_amendment: "The plan changed and needs you",
+  /* Both are Later items, not attention: a waiting note is not a question,
+     and a note that expired needs reading rather than answering. */
+  guidance_pending: "A note is waiting to be read",
+  guidance_expired: "A note was never read",
   adoption_ready: "Ready to adopt",
   /* The two that were missing entirely. A run that ends without shipping, and
      one whose outcome is unknown, are the clearest cases of "work stopped and a

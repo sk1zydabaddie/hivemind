@@ -3,6 +3,7 @@ import path from "node:path";
 import { DEFAULT_AUTONOMY_LEVEL, isAutonomyLevel, type AutonomyLevel } from "./autonomy-level.js";
 import { loadConfig, type HivemindConfig } from "./config.js";
 import { readEvents, type HivemindEvent } from "./events.js";
+import { readHumanGuidanceStanding } from "./human-guidance.js";
 import { integratedTaskIdsFromEvents } from "./integration-state.js";
 import {
   inspectLatestManagerSession,
@@ -38,7 +39,7 @@ import { hasFailureCode } from "./failure-code.js";
 
 export interface WorkspaceQueueItem {
   id: string;
-  kind: "plan_review" | "manager_approval" | "verification_blocked" | "reverification_required" | "run_stalled" | "task_attention" | "quality_cancel_failed" | "memory_review" | "quality_review" | "plan_amendment" | "adoption_ready" | "adoption_failed" | "adoption_indeterminate";
+  kind: "plan_review" | "manager_approval" | "verification_blocked" | "reverification_required" | "run_stalled" | "task_attention" | "quality_cancel_failed" | "memory_review" | "quality_review" | "plan_amendment" | "guidance_pending" | "guidance_expired" | "adoption_ready" | "adoption_failed" | "adoption_indeterminate";
   title: string;
   detail: string;
   created_at: string;
@@ -1335,6 +1336,40 @@ async function buildQueues(
     }
     if (event.type === "plan.amendment_queued") {
       later.push(queueEvent(event, "plan_amendment", "A plan change is queued", "It will take effect only after the updated plan is reviewed and approved."));
+    }
+  }
+
+  /* Guidance that is waiting, and guidance that waited too long.
+     
+     Both were previously invisible. Typed guidance said "saved for the next
+     step" and then depended on a judgment turn that a deterministic run may
+     never take, so it could sit unread for an entire run with nothing on
+     screen. Saying WHAT it waits for is the difference between a queue and a
+     void. */
+  const guidance = await readHumanGuidanceStanding(repoRoot);
+  if (guidance.ok) {
+    for (const entry of guidance.value.pending) {
+      later.push({
+        id: entry.guidance_id,
+        kind: "guidance_pending",
+        title: "Your note is waiting for the next decision point",
+        detail:
+          "It is advice, not an instruction, and it is read the next time the agent asks itself what to do. A run that finishes without needing a decision will not read it.",
+        created_at: entry.recorded_at,
+        task_id: null,
+        action: null
+      });
+    }
+    for (const entry of guidance.value.stale) {
+      later.push({
+        id: entry.guidance_id,
+        kind: "guidance_expired",
+        title: "A note from an earlier run was never read",
+        detail: entry.why,
+        created_at: entry.recorded_at,
+        task_id: null,
+        action: null
+      });
     }
   }
   return {

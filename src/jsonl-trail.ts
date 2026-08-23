@@ -1,4 +1,5 @@
-import { copyFile, mkdir, open, readFile, truncate } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { copyFile, mkdir, open, readFile, stat, truncate } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -125,6 +126,96 @@ export async function appendTrailLine(
  * Never skips a record. A skipped record is a lost guarantee, so anything that
  * cannot be parsed stops the read and is described instead.
  */
+/**
+ * What has already been parsed from a trail, so the next read does not do it
+ * again.
+ *
+ * WHY THIS EXISTS. The event trail is read whole on every projection and every
+ * inspection -- 79 call sites -- and it is the one file in a project that grows
+ * without bound: 9.4MB after 33 tasks, re-read and re-validated from byte zero
+ * every time. Daily use on one project makes that the dominant cost of merely
+ * looking at the screen.
+ *
+ * WHY NOT A CAP. Capping or rotating means deciding which records a
+ * reconstruction no longer needs, and this trail is the thing state is rebuilt
+ * FROM: spend totals, consumed guidance, integrated task ids, run history and
+ * memory evidence are all derived by reading across the whole file. There is no
+ * safe general answer to "which of these is disposable", and guessing would
+ * trade a performance problem for a correctness one. The expensive part was
+ * never storage; it was re-parsing.
+ *
+ * SO: parse each record once. A trail is append-only under a lock, so bytes
+ * already consumed cannot change -- only new bytes arrive. The cache holds the
+ * records, how many bytes produced them, and a hash of the last 4KB of those
+ * bytes. A read then stats the file and does one of three things:
+ *
+ *   - same size, boundary matches  -> return the cached records, reading nothing
+ *   - grown, boundary matches      -> parse ONLY the new bytes and append
+ *   - anything else                -> full read, and reseed
+ *
+ * The third case is the whole safety argument. A shrink or a changed boundary
+ * means an assumption failed -- a repair truncated a partial line, the file was
+ * replaced, a clone arrived -- and the answer is to re-read rather than to
+ * reason about it. Damage always goes through the full path too, so the line
+ * number and byte offset in a diagnosis stay exactly what they were.
+ *
+ * The returned array is a copy. Callers own their result and several sort it in
+ * place; handing out the cached array would let one caller reorder every later
+ * reader's history.
+ */
+interface TrailCacheEntry<T> {
+  consumedBytes: number;
+  boundaryHash: string;
+  records: T[];
+}
+
+const trailCache = new Map<string, TrailCacheEntry<unknown>>();
+/* Bounded because the test suite creates thousands of temporary repositories in
+   one process. Small because a daemon serves one project at a time. */
+const trailCacheLimit = 8;
+const boundaryWindowBytes = 4096;
+
+function rememberTrail<T>(trailPath: string, entry: TrailCacheEntry<T>): void {
+  if (!trailCache.has(trailPath) && trailCache.size >= trailCacheLimit) {
+    const oldest = trailCache.keys().next();
+    if (!oldest.done) trailCache.delete(oldest.value);
+  }
+  trailCache.set(trailPath, entry as TrailCacheEntry<unknown>);
+}
+
+async function boundaryHashAt(trailPath: string, consumedBytes: number): Promise<string | null> {
+  if (consumedBytes === 0) return "empty";
+  const length = Math.min(boundaryWindowBytes, consumedBytes);
+  const buffer = Buffer.alloc(length);
+  const handle = await open(trailPath, "r");
+  try {
+    const { bytesRead } = await handle.read(buffer, 0, length, consumedBytes - length);
+    if (bytesRead !== length) return null;
+  } finally {
+    await handle.close();
+  }
+  return createHash("sha256").update(buffer).digest("hex");
+}
+
+/** The appended bytes only, or null when the fast path cannot be taken. */
+async function readAppendedBytes(
+  trailPath: string,
+  from: number,
+  to: number
+): Promise<string | null> {
+  const length = to - from;
+  if (length <= 0) return null;
+  const buffer = Buffer.alloc(length);
+  const handle = await open(trailPath, "r");
+  try {
+    const { bytesRead } = await handle.read(buffer, 0, length, from);
+    if (bytesRead !== length) return null;
+  } finally {
+    await handle.close();
+  }
+  return buffer.toString("utf8");
+}
+
 export async function readTrail<T>(
   repoRoot: string,
   trailPath: string,
@@ -132,19 +223,36 @@ export async function readTrail<T>(
   validate: (value: unknown) => { ok: true } | { ok: false; reason: string },
   repairCommand: string
 ): Promise<{ ok: true; value: T[] } | TrailReadFailure> {
+  const cached = trailCache.get(trailPath) as TrailCacheEntry<T> | undefined;
+  if (cached !== undefined) {
+    const served = await serveFromCache<T>(trailPath, cached, validate);
+    if (served !== null) return { ok: true, value: served };
+  }
+
   for (let attempt = 0; ; attempt += 1) {
     let content: string;
     try {
       content = await readFile(trailPath, "utf8");
     } catch (error: unknown) {
       if (isNodeError(error, "ENOENT")) {
+        trailCache.delete(trailPath);
         return { ok: true, value: [] };
       }
       throw error;
     }
 
     const parsed = parseTrail<T>(content, relativePath, validate, repairCommand);
-    if (parsed.ok || parsed.damage?.kind !== "incomplete_trailing_line") {
+    if (parsed.ok) {
+      const consumedBytes = Buffer.byteLength(content, "utf8");
+      const boundaryHash = await boundaryHashAt(trailPath, consumedBytes).catch(() => null);
+      if (boundaryHash !== null) {
+        rememberTrail<T>(trailPath, { consumedBytes, boundaryHash, records: [...parsed.value] });
+      }
+      return parsed;
+    }
+    /* Never cache a damaged read: the next call has to see the damage too. */
+    trailCache.delete(trailPath);
+    if (parsed.damage?.kind !== "incomplete_trailing_line") {
       return parsed;
     }
     if (attempt >= trailingPartialRetries) {
@@ -152,6 +260,65 @@ export async function readTrail<T>(
     }
     await sleep(trailingPartialRetryMs);
   }
+}
+
+/** The cached records plus whatever was appended, or null to read it all. */
+async function serveFromCache<T>(
+  trailPath: string,
+  cached: TrailCacheEntry<T>,
+  validate: (value: unknown) => { ok: true } | { ok: false; reason: string }
+): Promise<T[] | null> {
+  let size: number;
+  try {
+    size = (await stat(trailPath)).size;
+  } catch {
+    trailCache.delete(trailPath);
+    return null;
+  }
+  if (size < cached.consumedBytes) {
+    trailCache.delete(trailPath);
+    return null;
+  }
+  const boundary = await boundaryHashAt(trailPath, cached.consumedBytes).catch(() => null);
+  if (boundary === null || boundary !== cached.boundaryHash) {
+    trailCache.delete(trailPath);
+    return null;
+  }
+  if (size === cached.consumedBytes) return [...cached.records];
+
+  const appended = await readAppendedBytes(trailPath, cached.consumedBytes, size).catch(() => null);
+  /* A tail with no closing newline is an append in flight. The full path owns
+     that case: it has the retry and the damage report. */
+  if (appended === null || !appended.endsWith("\n")) return null;
+
+  const added: T[] = [];
+  for (const line of appended.split("\n")) {
+    const raw = line.replace(/\r$/u, "");
+    if (raw.length === 0) continue;
+    let value: unknown;
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      /* Damaged. Hand it to the full path so the diagnosis carries the real
+         line number and byte offset rather than tail-relative ones. */
+      trailCache.delete(trailPath);
+      return null;
+    }
+    if (!validate(value).ok) {
+      trailCache.delete(trailPath);
+      return null;
+    }
+    added.push(value as T);
+  }
+
+  const records = [...cached.records, ...added];
+  const boundaryHash = await boundaryHashAt(trailPath, size).catch(() => null);
+  if (boundaryHash === null) {
+    trailCache.delete(trailPath);
+    return null;
+  }
+  rememberTrail<T>(trailPath, { consumedBytes: size, boundaryHash, records });
+  return [...records];
 }
 
 function parseTrail<T>(

@@ -29,7 +29,7 @@ import {
 import { checkWriteIntent, type WriteIntentPass } from "./intent.js";
 import { requirePassedWriteIntent } from "./intent.js";
 import { extractJsonObject } from "./json.js";
-import { markHumanGuidanceConsumed, readPendingHumanGuidance } from "./human-guidance.js";
+import { markHumanGuidanceConsumed, readHumanGuidanceStanding } from "./human-guidance.js";
 import { applyOrchestratorContextBudget } from "./orchestrator-context.js";
 import { requestLeaseForContract, type LeaseGrantResult } from "./lease.js";
 import { evaluatePlanThrash, loadCurrentRatifiedPlan, loadTentativePlan, readRatifiedWorkspacePlanSession, type TentativePlan, type TentativePlanTask } from "./plan.js";
@@ -466,10 +466,16 @@ export async function generateManagerProposal(
     resolvedSpecId = activeSpec.value.spec_id;
   }
 
-  const guidance = await readPendingHumanGuidance(repoRoot);
-  if (!guidance.ok) {
-    return guidance;
+  /* Only guidance from THIS run. A note written before the current run started
+     was written against a state that is gone, and handing it to a judgment turn
+     hours later presents old advice as current intent. It stays in the record
+     and the surface reports it as never read; what it no longer does is steer a
+     decision it was not written for. */
+  const guidanceStanding = await readHumanGuidanceStanding(repoRoot);
+  if (!guidanceStanding.ok) {
+    return guidanceStanding;
   }
+  const guidance = { ok: true as const, value: guidanceStanding.value.pending };
   const guidedMessage = guidance.value.length === 0
     ? message
     : [
@@ -584,9 +590,11 @@ async function deriveOrGenerateManagerProposal(
       usageSessionId
     );
   }
-  const guidance = await readPendingHumanGuidance(repoRoot);
-  if (!guidance.ok) return guidance;
-  if (guidance.value.length > 0) {
+  /* Same rule on the deterministic path: stale guidance must not be the reason
+     a happy path escalates to a paid judgment turn. */
+  const guidanceForPath = await readHumanGuidanceStanding(repoRoot);
+  if (!guidanceForPath.ok) return guidanceForPath;
+  if (guidanceForPath.value.pending.length > 0) {
     return generateManagerProposal(repoRoot, judgmentMessage, tool, specId, usageSessionId);
   }
 
@@ -2438,8 +2446,15 @@ export async function continueAutonomousManagerLoop(
     } else {
       let nextProposal: ManagerProposedAction;
       if (session.value.proposal_state?.status === "pending") {
+        /* Fresh guidance only, for the same reason as the other two readers:
+           a note from a previous run must not divert this one. */
         const guidance = session.value.execution_mode === "deterministic_happy_path" && session.value.proposed_action.source === "deterministic"
-          ? await readPendingHumanGuidance(repoRoot)
+          ? await (async () => {
+              const standing = await readHumanGuidanceStanding(repoRoot);
+              return standing.ok
+                ? { ok: true as const, value: standing.value.pending }
+                : standing;
+            })()
           : { ok: true as const, value: [] };
         if (!guidance.ok) return guidance;
         if (guidance.value.length > 0) {

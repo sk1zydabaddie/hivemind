@@ -15,6 +15,9 @@ import {
   runAdapterProcess
 } from "./adapter.js";
 import { canonicalizeIntentPath } from "./canonicalize.js";
+import { buildLeaseIndex } from "./lease-index.js";
+import { readActiveLeases } from "./lease.js";
+import { pathCaseBehaviour } from "./path-identity.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { loadConfig } from "./config.js";
 import { normalizeAllowedFileIntents, type AgentRole, type AllowedFileIntent, type TaskContract } from "./contract.js";
@@ -1275,6 +1278,35 @@ export async function queuePlanAmendment(
   if (!parsed.ok) {
     return { ok: false, reason: `plan amendment refused: ${parsed.reason}` };
   }
+  /* A live worker already holds files, and an amendment that overlaps them is
+     not something to queue quietly. Queueing it would leave a task waiting for
+     a scope it can never be granted, which surfaces later as a lane that never
+     starts and no reason anywhere. The lease store is the authority on who
+     holds what right now -- the same store the worker had to win to run -- so
+     the refusal names the file and the holder.
+     
+     Only `allowed_files` is checked: those are the writes. A read-only or
+     forbidden entry overlapping somebody else's write scope is exactly the
+     bounded read the contract is supposed to allow. */
+  const amendedTask = parsed.value.tasks.find((task) => task.task_id === taskIdValue);
+  const writes = amendedTask?.draft_scope.allowed_files ?? [];
+  if (writes.length > 0) {
+    const leases = await readActiveLeases(repoRoot);
+    if (!leases.ok) {
+      return { ok: false, reason: `plan amendment refused because the lease store is unreadable: ${leases.reason}` };
+    }
+    const index = buildLeaseIndex(leases.store, await pathCaseBehaviour(repoRoot));
+    for (const file of writes) {
+      const holder = index.holderOf(file);
+      if (holder !== undefined && holder !== taskIdValue) {
+        return {
+          ok: false,
+          reason: `plan amendment refused: ${file} is currently held by ${holder}. Wait for that task to finish, or narrow this one to files it does not hold -- queueing it would leave the new task waiting for a scope it cannot be granted.`
+        };
+      }
+    }
+  }
+
   const amendmentId = `A-${randomUUID()}`;
   const appended = await appendEvent(repoRoot, {
     type: "plan.amendment_queued",

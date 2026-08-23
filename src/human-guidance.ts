@@ -81,6 +81,79 @@ export async function readPendingHumanGuidance(repoRoot: string): Promise<Guidan
   return { ok: true, value: pending };
 }
 
+/**
+ * Pending guidance, split into what a judgment turn may still read and what has
+ * gone stale -- and WHY, in both directions.
+ *
+ * Guidance is advisory and consumed on the next judgment turn. Two things
+ * follow that nothing used to say out loud. A run on the deterministic happy
+ * path may have no judgment turn at all, so guidance can sit unread for the
+ * whole run while the composer's own reply said "saved for the next step". And
+ * guidance written against one run's state is not advice about the next one:
+ * landing it hours later, against a plan it was never written for, is worse
+ * than dropping it, because it reads as current intent.
+ *
+ * The boundary is trail ORDER, not the clock: guidance recorded before the most
+ * recent run start is stale. Order is the authority the trail actually
+ * guarantees -- timestamps come from whichever machine wrote them, and this
+ * project has already had one verdict travel between machines.
+ *
+ * Nothing here mutates the trail. Staleness is a READING of durable evidence,
+ * so a stale entry stays in the record and can still be read by a person; what
+ * changes is that a judgment turn is not handed it and the surface says which
+ * bucket each entry is in.
+ */
+export interface GuidanceStanding {
+  /** Recorded during this run, not yet consumed. A judgment turn may read it. */
+  pending: HumanGuidance[];
+  /** Recorded before this run started and never consumed. */
+  stale: Array<HumanGuidance & { why: string }>;
+}
+
+export async function readHumanGuidanceStanding(
+  repoRoot: string
+): Promise<GuidanceResult<GuidanceStanding>> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return events;
+  const all = await readPendingHumanGuidance(repoRoot);
+  if (!all.ok) return all;
+
+  /* The last run start in trail order. `autonomy.decision_recorded` with
+     `decision: "run_started"` is what `manager.start` writes, so this needs no
+     new event type -- the boundary was already being recorded. */
+  let latestRunStartIndex = -1;
+  events.value.forEach((event, index) => {
+    if (event.type === "autonomy.decision_recorded" && event.data.decision === "run_started") {
+      latestRunStartIndex = index;
+    }
+  });
+  if (latestRunStartIndex < 0) {
+    return { ok: true, value: { pending: all.value, stale: [] } };
+  }
+
+  const recordedIndex = new Map<string, number>();
+  events.value.forEach((event, index) => {
+    if (event.type !== "human.guidance_recorded") return;
+    const id = event.data.guidance_id;
+    if (typeof id === "string" && !recordedIndex.has(id)) recordedIndex.set(id, index);
+  });
+
+  const pending: HumanGuidance[] = [];
+  const stale: Array<HumanGuidance & { why: string }> = [];
+  for (const entry of all.value) {
+    const at = recordedIndex.get(entry.guidance_id);
+    if (at !== undefined && at < latestRunStartIndex) {
+      stale.push({
+        ...entry,
+        why: "recorded before this run started, and no judgment turn read it. It is kept in the record but will not be given to the agent, because advice written for the previous state reads as current intent when it lands later."
+      });
+      continue;
+    }
+    pending.push(entry);
+  }
+  return { ok: true, value: { pending, stale } };
+}
+
 export async function markHumanGuidanceConsumed(
   repoRoot: string,
   guidanceIds: string[],

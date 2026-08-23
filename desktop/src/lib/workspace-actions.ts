@@ -16,6 +16,8 @@ export interface WorkspaceQueueItem {
     | "memory_review"
     | "quality_review"
     | "plan_amendment"
+    | "guidance_pending"
+    | "guidance_expired"
     | "adoption_ready"
     /* A ship that failed, and a ship nobody can confirm either way. Core has
        emitted both since adoption was built; the client's union omitted them,

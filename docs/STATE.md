@@ -2234,3 +2234,69 @@ Core **855/857** with the two intentional Windows skips, Desktop **322/322**,
 against Skybound on a retry after msedgedriver crashed the first attempt --
 the second rig fault of the day, same family as the leaked browser and already
 flagged as its own task. No paid call.
+
+## Mid-run requests reachable, and the trail parsed once — 2026-08-23
+
+**A typed feature request during a run is now a question, not a silent
+filing.** The composer filed `guidance.record` unconditionally whenever a run
+was active and answered "Saved for the next step" — while guidance is advisory,
+is read only at a judgment turn, and a deterministic run may never take one. So
+the feature most wanted was the one that looked absent: the amendment capability
+existed and was audited, and nothing in the composer could reach it.
+
+Typing something while work runs now offers the two things a person can mean,
+explicitly: **add it as a task to this run**, or **file it as guidance for the
+next decision** (plus put it back in the box). Which one is never inferred from
+the wording — that would be control flow depending on message text, recorded
+four times in §4 as the rule that keeps breaking. "Add as a task" opens the
+amendment form pre-filled from the sentence, which is the audited door: it
+revalidates the whole plan, so a new task's files must be disjoint from every
+other task's.
+
+**Two honest limits, both on screen rather than discovered.** An amendment
+joins the run only after the plan change is approved — it does not start on its
+own, because ratification is the gate every task passes and bypassing it for
+one task would make the plan a suggestion. And guidance says what it waits for.
+
+**A queued amendment can no longer collide with a live worker.**
+`queuePlanAmendment` now reads the lease store before queuing and refuses by
+name — "`src/x.ts` is currently held by T-002" — rather than queuing a task
+whose scope can never be granted, which would have surfaced later as a lane
+that never starts with no reason anywhere.
+
+**Stale guidance expires with a reason, and pending guidance says what it is
+waiting for.** The boundary is trail ORDER, not the clock: guidance recorded
+before the most recent run start is stale, because advice written against a
+state that is gone reads as current intent when it lands hours later. Stale
+entries stay in the record and are shown as never read; what changes is that no
+judgment turn is handed them — all three manager readers now take fresh
+guidance only. Pending entries appear in Later with the honest sentence that a
+run finishing without a decision point will not read them.
+
+**The trail is parsed once instead of on every read.** 9.4MB after 33 tasks,
+read whole by 79 call sites on every projection and inspection. Chosen fix:
+incremental reading, NOT a cap. Capping means deciding which records a
+reconstruction no longer needs, and this trail is what state is rebuilt from —
+spend totals, consumed guidance, integrated task ids, run history, memory
+evidence all read across the whole file — so pruning would trade a performance
+problem for a correctness one. The expensive part was never storage; it was
+re-parsing.
+
+The reader now keeps the records it parsed, the byte count they came from, and a
+hash of the last 4KB of those bytes. Same size and matching boundary returns the
+cached records reading nothing; grown and matching parses only the new bytes;
+anything else — a shrink, a changed boundary, a same-length rewrite — falls back
+to a full read and reseeds. Damage always goes through the full path, so a
+diagnosis keeps its real line number and byte offset. Results are copies,
+because several callers sort in place.
+
+Both safety properties are proven to bite: removing the boundary hash lets a
+same-length rewrite serve stale records, and returning the cached array lets one
+caller reverse every later reader's history. The second test had to be
+strengthened first — it was mutating the seed path's result, which is already a
+copy, so it proved nothing about the path it named.
+
+Core **859/861** with the two intentional Windows skips, Desktop **322/322**,
+30/30 reachability, shipped and installed **26.823.1406**, installed walk green
+against Skybound. No paid call.
+

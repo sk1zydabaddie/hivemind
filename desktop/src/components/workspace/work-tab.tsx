@@ -247,6 +247,12 @@ export function WorkTab({
   const [roleChanging, setRoleChanging] = useState<string | null>(null);
   const [rolePickerError, setRolePickerError] = useState("");
   const [feedback, setFeedback] = useState("");
+  /* Text typed while a run is in flight, held until the person says which of
+     the two things they meant. Never inferred from the wording: deciding
+     between "add a task" and "file a note" by pattern-matching prose is
+     control flow depending on message text, which this project has recorded
+     four separate times as the thing that keeps breaking. */
+  const [midRunRequest, setMidRunRequest] = useState("");
   const [busy, setBusy] = useState(false);
   const [promptStartedAt, setPromptStartedAt] = useState<number | null>(null);
   const [amendment, setAmendment] = useState<{
@@ -511,11 +517,13 @@ export function WorkTab({
     setAttachments([]);
     try {
       if (runActive) {
-        await onAction({
-          type: "guidance.record",
-          payload: { target: "orchestrator", message }
-        });
-        setFeedback("Saved for the next step. Work already in progress was not changed.");
+        /* Two different things a person can mean while work is running, and
+           only they know which. Filing guidance unconditionally -- what this
+           did before -- meant a typed feature request became advice that a
+           deterministic run may never read, under a message that said it had
+           been saved. */
+        setMidRunRequest(message);
+        setFeedback("");
       } else if (plan !== null) {
         /* A plan you do not want is not a dead end: the text becomes the start of
            a different plan instead of being thrown away. */
@@ -790,6 +798,44 @@ export function WorkTab({
       busy={busy}
       composerRef={composerRef}
       continuationAvailable={continuationAvailable}
+      midRunRequest={midRunRequest}
+      onAddAsTask={(message) => {
+        /* Into the amendment form, which is the audited door: it revalidates
+           the whole plan, so the new task's files must be disjoint from every
+           other task's, and Core refuses outright when a running worker
+           already holds one of them. */
+        setAmendment({
+          kind: "add_task",
+          draft: { ...emptyAmendment(), title: message, acceptance: message }
+        });
+        setMidRunRequest("");
+        setFeedback(
+          "Name the files it may write and how it is checked. It joins this run once you approve the change - it does not start on its own."
+        );
+      }}
+      onFileGuidance={(message) => {
+        setMidRunRequest("");
+        void (async () => {
+          setBusy(true);
+          try {
+            await onAction({
+              type: "guidance.record",
+              payload: { target: "orchestrator", message }
+            });
+            setFeedback(
+              "Filed as advice. It is read at the next decision point, and a run that finishes without needing one will not read it - the Later list shows it waiting."
+            );
+          } catch (error) {
+            setFeedback(plainActionError(error));
+          } finally {
+            setBusy(false);
+          }
+        })();
+      }}
+      onReturnRequest={(message) => {
+        setComposer(message);
+        setMidRunRequest("");
+      }}
       centered={composerCentered}
       feedback={feedback || plainActionError(actionError)}
       idle={idle}
@@ -2648,6 +2694,10 @@ function PromptDock({
   managerStartAvailable,
   busy,
   feedback,
+  midRunRequest,
+  onAddAsTask,
+  onFileGuidance,
+  onReturnRequest,
   rolePickerOpen,
   rolePickerView,
   rolePickerModels,
@@ -2676,6 +2726,12 @@ function PromptDock({
   managerStartAvailable: boolean;
   busy: boolean;
   feedback: string;
+  /* Text typed while work is running, waiting for the person to say which of
+     the two things they meant. Empty when there is nothing to ask about. */
+  midRunRequest: string;
+  onAddAsTask: (message: string) => void;
+  onFileGuidance: (message: string) => void;
+  onReturnRequest: (message: string) => void;
   rolePickerOpen: boolean;
   rolePickerView: ProjectConfigView | null;
   rolePickerModels: ModelDiscoveryView | null;
@@ -2823,6 +2879,44 @@ function PromptDock({
           {attachmentError}
         </p>
       ) : null}
+      {midRunRequest === "" ? null : (
+        <div className="m-0 grid gap-2 rounded-sm border border-rule bg-canvas px-2.5 py-2">
+          <p className="m-0 text-[12px] leading-snug text-ink">
+            Work is running. What did you mean by this?
+          </p>
+          <p className="m-0 font-mono text-[11px] leading-snug break-words text-muted-foreground">
+            {midRunRequest}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            <Button
+              disabled={busy}
+              size="xs"
+              type="button"
+              onClick={() => onAddAsTask(midRunRequest)}
+            >
+              Add it as a task to this run
+            </Button>
+            <Button
+              disabled={busy}
+              size="xs"
+              type="button"
+              variant="outline"
+              onClick={() => onFileGuidance(midRunRequest)}
+            >
+              File it as guidance for the next decision
+            </Button>
+            <Button
+              disabled={busy}
+              size="xs"
+              type="button"
+              variant="ghost"
+              onClick={() => onReturnRequest(midRunRequest)}
+            >
+              Put it back in the box
+            </Button>
+          </div>
+        </div>
+      )}
       {feedback ? (
         <p
           className="m-0 rounded-sm border-l-2 border-navy bg-navy-wash px-2.5 py-1.5 text-[12px] leading-snug break-words text-navy"
@@ -3833,6 +3927,8 @@ const QUEUE_FALLBACK: Record<WorkspaceQueueItem["kind"], string> = {
   memory_review: "There is something here for you to review outside the app.",
   quality_review: "A second attempt is ready for you to compare.",
   plan_amendment: "A change to the plan is queued for review.",
+  guidance_pending: "Your note is waiting for the next decision point.",
+  guidance_expired: "A note from an earlier run was never read.",
   adoption_ready: "The checks passed. This is ready to go to your branch.",
   /* Surfaced by widening the union to match Core: this exhaustive map was
      silently short by two, and TypeScript said so the moment the type was made
