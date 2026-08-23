@@ -657,7 +657,18 @@ function ConnectStep({
             </div>
           )}
 
-          <MultiplierDisclosure />
+          <MultiplierDisclosure
+            busy={busy !== null || authBusy !== null}
+            provider={providers.find((entry) => entry.support_tier === "multiplier") ?? null}
+            standing={(() => {
+              const multiplier = providers.find((entry) => entry.support_tier === "multiplier");
+              return multiplier === undefined
+                ? null
+                : (authenticationStandings.get(multiplier.id) ?? null);
+            })()}
+            onAction={onAction}
+            onReload={onReload}
+          />
 
           <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
             <Button

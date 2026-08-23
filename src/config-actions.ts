@@ -16,6 +16,7 @@ import {
   harnessForAgentId,
   judgeInnerProvider,
   providerAuthentication,
+  providerAuthenticationForInner,
   supportTierForHarness,
   type AdapterRoleName,
   type CatalogueAgent,
@@ -736,16 +737,32 @@ export function buildProfileForAgent(agent: CatalogueAgent, role: AdapterRoleNam
 export async function startProviderAuthentication(
   repoRoot: string,
   providerId: string,
-  options: { launcher?: AuthenticationLauncher } = {}
+  options: { launcher?: AuthenticationLauncher; innerProviderId?: string } = {}
 ): Promise<ActionResult> {
   const authentication = providerAuthentication(providerId);
   if (authentication === null) {
     return { ok: false, reason: `unknown provider sign-in: ${providerId}` };
   }
+  /* A multiplier sign-in may preselect WHICH provider the harness logs into.
+     The composition lives in the catalogue (fixed base argv + `-p <registry
+     id>` from the sanction allowlist), and it refuses — prohibited by name,
+     unknown as unknown — BEFORE anything launches, so the refusal costs
+     nothing and no terminal opens for a combination the product will not
+     connect anyway. */
+  let command = authentication.command;
+  let experience = authentication.experience;
+  let detail = authentication.detail;
+  if (options.innerProviderId !== undefined) {
+    const inner = providerAuthenticationForInner(providerId, options.innerProviderId);
+    if (!inner.ok) return { ok: false, reason: inner.reason };
+    command = inner.command;
+    experience = inner.experience;
+    detail = inner.detail;
+  }
   const accounts = await readAccounts(repoRoot);
   const selected = selectedAccount(accounts, providerId);
   try {
-    await (options.launcher ?? launchAuthentication)(authentication.command, {
+    await (options.launcher ?? launchAuthentication)(command, {
       cwd: repoRoot,
       env: spawnEnvironment(process.env, accountEnvironment(selected))
     });
@@ -759,8 +776,8 @@ export async function startProviderAuthentication(
     ok: true,
     value: {
       provider_id: providerId,
-      experience: authentication.experience,
-      detail: authentication.detail
+      experience,
+      detail
     }
   };
 }

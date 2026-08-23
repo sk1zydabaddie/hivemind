@@ -2091,3 +2091,29 @@ actually kills the browser) is flagged as its own task.
 Core **846/848** with the two intentional Windows skips, Desktop **320/320**,
 30/30 reachability, shipped and installed **26.823.24** with identities
 verified, installed walk green against Skybound. No paid call.
+
+## The multiplier connect flow, automated to its two honest limits — 2026-08-23
+
+"Don't see your provider?" went from documented workaround to working answer.
+The disclosure is now live where the daemon can carry it: a typed
+`installed` flag on the auth standing (ENOENT proves absence; every other
+failure leaves a CLI that exists) decides whether the vendor's install
+command is offered — OFFERED, with a copy button and the docs page it was
+read from, never run, per the provenance rule. Sign-in is preselectable:
+measured on opencode 1.18.15, `auth login -p <provider>` skips only the
+provider menu (undocumented — the documented surface has now lower-bounded
+the shipped one a fourth time), so `provider.auth.start` accepts an
+`inner_provider_id` that composes the fixed base command plus `-p <registry
+id>` from the sanction allowlist and nothing else. Prohibited refuses by
+name before any terminal opens (proven to bite by a counting launcher);
+unknown ids refuse toward the harness's own interactive picker. Key-based
+providers are handed to OpenCode's own window with the instruction saying
+where the key goes and where it never does; three desktop guardrails
+(no daemon-shape at call sites, no credential vocabulary on the sign-in
+surfaces, no raw buttons) all fired on the first draft and were satisfied
+rather than widened. The model step is a searchable picker over
+`opencode models`, prohibited disabled, unchecked labelled before the pick,
+connecting through the same `adapter.connect_model` door as everything else.
+
+Core **849/851**, Desktop **321/321**, shipped and installed **26.823.159**,
+installed walk green against Skybound. No paid call.

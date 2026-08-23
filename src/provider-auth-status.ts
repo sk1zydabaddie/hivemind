@@ -22,6 +22,13 @@ export interface ProviderAuthenticationStanding {
   status: "signed_in" | "signed_out" | "unknown";
   detail: string;
   /**
+   * Whether the provider CLI is present on this machine at all — typed,
+   * because a surface deciding "offer the install command" must branch on a
+   * code, never on the detail sentence. Absent when nothing could tell
+   * (no status command exists for this provider, or an older daemon).
+   */
+  installed?: boolean;
+  /**
    * For a multiplier harness that lists its own sign-ins: which vendors those
    * sign-ins reach, with each vendor's recorded sanction. Only names matching
    * Hivemind's own registry cross this boundary — anything user-configured
@@ -40,6 +47,8 @@ interface AuthenticationStatusProcessResult {
   stdout: string;
   stderr: string;
   reason: string | null;
+  /** True exactly when the executable could not be found (ENOENT). */
+  notInstalled?: boolean;
 }
 
 export type AuthenticationStatusRunner = (
@@ -76,22 +85,24 @@ export async function inspectProviderAuthentication(
       if (!result.ok) {
         const combined = `${result.stdout}\n${result.stderr}`;
         if (/not logged in|not authenticated|signed out/iu.test(combined)) {
-          return signedOut(provider.id);
+          return { ...signedOut(provider.id), installed: true };
         }
         return {
           provider_id: provider.id,
           status: "unknown",
-          detail: result.reason ?? "The provider CLI did not report its login status."
+          detail: result.reason ?? "The provider CLI did not report its login status.",
+          /* ENOENT is the one failure that PROVES absence; every other
+             failure leaves a CLI that exists and misbehaved. */
+          installed: result.notInstalled === true ? false : true
         };
       }
       /* Codex on Windows writes its successful `login status` sentence to
          stderr through the .cmd wrapper. Both streams are provider-owned
          status output and neither crosses this boundary, so parse both. */
-      return parseAuthenticationStatus(
-        provider.id,
-        spec.kind,
-        `${result.stdout}\n${result.stderr}`
-      );
+      return {
+        ...parseAuthenticationStatus(provider.id, spec.kind, `${result.stdout}\n${result.stderr}`),
+        installed: true
+      };
     })
   );
   return { providers };
@@ -193,6 +204,7 @@ function runAuthenticationStatusProcess(
           ok: error === null,
           stdout,
           stderr,
+          notInstalled: error !== null && error.message.includes("ENOENT"),
           reason:
             error === null
               ? null

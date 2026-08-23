@@ -338,6 +338,9 @@ export interface InnerProviderStanding {
   sanction: "blessed" | "prohibited" | "unchecked";
   why: string;
   checked: string;
+  /** How the vendor's sign-in works: browser OAuth, or an API key pasted into
+      the HARNESS's own terminal — never into Hivemind. Absent on older daemons. */
+  access?: "oauth" | "api_key" | "unknown";
 }
 
 /** A harness and the subscription that pays for it. Not a harness-and-model. */
@@ -352,6 +355,12 @@ export interface CatalogueProvider {
   /** Absent only when talking to an older daemon. */
   support_tier?: SupportTier;
   tier_claim?: string;
+  /** The vendor's documented install command — offered with its source URL,
+      never run by Hivemind. Absent on older daemons and unrecorded vendors. */
+  install?: { url: string; command: string; detail: string; checked: string } | null;
+  /** For a multiplier: every inner provider it is known to reach, prohibited
+      entries included, each with its recorded sanction. */
+  reachable_providers?: InnerProviderStanding[];
   authentication: {
     experience: "browser" | "interactive" | "device_code";
     detail: string;
@@ -367,6 +376,9 @@ export interface ProviderAuthenticationStanding {
   /** Which vendors this harness's own sign-ins reach; unrecognised entries are
       counted, never carried. Absent on older daemons and on integrated harnesses. */
   reaches?: { providers: InnerProviderStanding[]; unrecognised: number } | null;
+  /** Whether the provider CLI exists on this machine. Typed so surfaces branch
+      on a code, never on the detail sentence. Absent when nothing could tell. */
+  installed?: boolean;
 }
 
 export interface ProviderAuthenticationStatusView {

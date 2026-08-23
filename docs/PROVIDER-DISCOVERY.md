@@ -3,6 +3,43 @@
 Discovery pass, 2026-08-12, updated the same day after the free installs.
 **No paid calls were made.**
 
+> **2026-08-23: effort and speed controls, measured from the shipped binaries.**
+> Research for a scoping decision, not a build. Read from the installed
+> binaries — the documented surface has now lower-bounded the shipped one a
+> fourth time (`opencode auth login -p` was the third, found the same night).
+>
+> - **Codex** (exe strings): config keys `model_reasoning_effort`,
+>   `plan_mode_reasoning_effort`, `default_subagent_reasoning_effort`,
+>   `model_verbosity`, `service_tier`; effort enum
+>   `minimal|low|medium|high|xhigh|max|ultra`. **The prior readback finding
+>   is stale**: `struct TurnContextItem with 20 elements` now includes
+>   `effort` — the turn context that reaches the rollout carries the resolved
+>   effort in this binary, so a pin is plausibly VERIFIABLE. Needs one live
+>   run to confirm the field is populated.
+> - **Claude Code** (exe strings + `--help`): `--effort <level>` taking
+>   `low|medium|high|max` **or an integer**, an `auto` state ("Effort level:
+>   auto (currently …)"), and org-side restriction ("effort levels are
+>   restricted by your organization"). Whether the stream-json init echoes it
+>   is unmeasured.
+> - **Grok** (decoded .br binary + `--help`): `--reasoning-effort` (alias
+>   `--effort`); the wire vocabulary carries `reasoning_effort` values and a
+>   per-model `reasoning_efforts` list — same readback family as its session
+>   summary, so verification looks reachable.
+> - **Kimi** (dist/main.mjs): no flag; a thinking-effort CONFIG system
+>   (`efforts`, `default_effort`, documented at the kimi-code configuration
+>   pages), and the bundle states "Non-Kimi providers receive effort strings
+>   without client-side mapping".
+> - **OpenCode** (`run --help`): `--variant` — "provider-specific reasoning
+>   effort, e.g., high, max, minimal" — a per-run flag, pass-through, with no
+>   readback anywhere the permission-table print reaches; under the
+>   multiplier claim it would be requested-not-confirmed, same as the pin.
+>
+> The one measured cost pair: a corpus call estimated at 40–55K from a
+> low-effort preflight ran 212K at pinned high — roughly 4–5× in effective
+> tokens on one call class, compounding through extra turns re-feeding
+> context, not just longer thinking. One pair, no quality data; the decision
+> needs the corpus rerun at split efforts before anything is built.
+
 > **2026-08-22: the multiplier tier, and two corrections that changed decisions.**
 >
 > Nesting (a provider behind OpenCode, e.g. a Codex subscription signed into

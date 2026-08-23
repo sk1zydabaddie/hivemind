@@ -454,7 +454,20 @@ function AgentSection({
           </div>
 
           <div className="mt-2">
-            <MultiplierDisclosure />
+            {(() => {
+              /* The multiplier row is found by its TIER, never by name — the
+                 client does not know providers; Core's catalogue does. */
+              const multiplier = providers.find((entry) => entry.support_tier === "multiplier") ?? null;
+              return (
+                <MultiplierDisclosure
+                  busy={connecting !== null || authBusy !== null}
+                  provider={multiplier}
+                  standing={multiplier === null ? null : authenticationStandings.get(multiplier.id) ?? null}
+                  onAction={onAction}
+                  onReload={async () => onRefreshModels()}
+                />
+              );
+            })()}
           </div>
 
           {notice === "" ? null : (

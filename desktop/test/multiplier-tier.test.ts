@@ -66,9 +66,37 @@ describe("multiplier tier surfaces", () => {
     ]) {
       const source = await readFile(file, "utf8");
       expect(source, `${path.basename(file)} does not render the disclosure`).toMatch(
-        /<MultiplierDisclosure \/>/u
+        /<MultiplierDisclosure/u
       );
+      /* The multiplier row is selected by its TIER. Selecting it by name would
+         put provider knowledge in the client, which is Core's to own. */
+      expect(source).toMatch(/support_tier === "multiplier"/u);
     }
+  });
+
+  test("the automated flow stops exactly at the two lines the rules draw", async () => {
+    const providerList = await readFile(
+      path.join(desktopRoot, "src", "components", "workspace", "provider-list.tsx"),
+      "utf8"
+    );
+    /* The vendor's install command goes to the CLIPBOARD and nowhere else:
+       no action dispatch, no shell, nothing executed. The only computed use
+       of `install.command` in the component is the writeText call. */
+    expect(providerList).toMatch(/navigator\.clipboard\.writeText\(provider\.install!\.command\)/u);
+    const dispatches = providerList.match(/onAction[<(][^)]*\{[\s\S]{0,200}?type: "([a-z_.]+)"/gu) ?? [];
+    for (const dispatch of dispatches) {
+      expect(dispatch).not.toMatch(/install/u);
+    }
+    /* Sign-in preselection sends exactly a provider id through the fixed
+       command; the API-key instruction names where the key goes and where it
+       never does. */
+    expect(providerList).toMatch(/type: "provider\.auth\.start",\s*payload: \{ provider_id: provider\.id, inner_provider_id: inner\.id \}/u);
+    expect(providerList).toMatch(/paste it there, never into Hivemind/u);
+    /* The picker connects through the same audited door as every connect. */
+    expect(providerList).toMatch(/type: "adapter\.connect_model",\s*payload: \{ role: "worker", provider_id: provider\.id, model_slug: slug \}/u);
+    /* Prohibited chips and models are disabled from typed sanction, never text. */
+    expect(providerList).toMatch(/inner\.sanction === "prohibited" \|\| signInBusy/u);
+    expect(providerList).toMatch(/disabled=\{model\.selectable === false/u);
   });
 
   test("pickers refuse a prohibited slug and tag an unchecked one before the pick", async () => {

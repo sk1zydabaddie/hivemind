@@ -659,6 +659,14 @@ export interface CatalogueProvider {
   support_tier: SupportTier;
   /** The claim itself, one sentence, written once here rather than per surface. */
   tier_claim: string;
+  /** The vendor's documented install command, offered — never run. Null when unrecorded. */
+  install: ProviderInstallGuidance | null;
+  /**
+   * For a multiplier: every inner provider it is known to reach, with each
+   * one's recorded sanction — prohibited entries included, rendered as the
+   * refusals they are. Empty on integrated harnesses.
+   */
+  reachable_providers: InnerProviderStanding[];
   /**
    * The provider-owned sign-in flow Hivemind may launch.
    *
@@ -897,6 +905,105 @@ export function providerAuthentication(providerId: string): ProviderAuthenticati
   return PROVIDER_AUTHENTICATION[providerId] ?? null;
 }
 
+/**
+ * The vendor's own documented install command, offered — never run.
+ *
+ * The provenance rule, applied: Hivemind does not download or execute another
+ * vendor's installer. It shows the command the vendor documents, with the
+ * page it was read from and the date, and the person runs it themselves in
+ * their own terminal. The kimi-code npm wrapper is why a bare registry name
+ * is not enough: the command below is the one OpenCode's own docs publish.
+ */
+export interface ProviderInstallGuidance {
+  /** The vendor's documentation page the command was read from. */
+  url: string;
+  /** The documented command, verbatim, for the person to run themselves. */
+  command: string;
+  detail: string;
+  checked: string;
+}
+
+const PROVIDER_INSTALL: Record<string, ProviderInstallGuidance> = {
+  opencode: {
+    url: "https://opencode.ai/docs",
+    command: "npm install -g opencode-ai",
+    detail:
+      "OpenCode's own documented install command (their package, their docs). Run it yourself in a terminal — Hivemind does not install other vendors' software — then come back here.",
+    checked: "2026-08-23"
+  }
+};
+
+export function providerInstallGuidance(providerId: string): ProviderInstallGuidance | null {
+  return PROVIDER_INSTALL[providerId] ?? null;
+}
+
+/**
+ * Every inner provider a multiplier harness is known to reach, prohibited
+ * ones included — a refusal that is hidden is indistinguishable from an
+ * omission, and the surface renders it AS a refusal, by name.
+ */
+export function reachableInnerProviders(harness: string): InnerProviderStanding[] {
+  return MULTIPLIER_HARNESSES.has(harness) ? [...INNER_PROVIDER_SANCTIONS] : [];
+}
+
+export interface InnerAuthentication {
+  ok: true;
+  command: readonly [string, ...string[]];
+  standing: InnerProviderStanding;
+  experience: ProviderAuthentication["experience"];
+  detail: string;
+}
+
+/**
+ * The provider-preselected sign-in for a multiplier harness.
+ *
+ * Measured on opencode 1.18.15: `auth login -p <provider>` skips the provider
+ * selection while every prompt — method choice, browser consent, any key
+ * paste — stays inside the harness's own terminal. The composed argv is the
+ * fixed base command plus `-p <registry id>`: the id comes from the sanction
+ * registry allowlist, never from caller text, so this cannot become a
+ * general argument channel. Prohibited refuses by name; an id the registry
+ * does not know refuses too — the person can still use the harness's own
+ * interactive picker, which is the honest fallback for a provider Hivemind
+ * cannot vouch for either way.
+ */
+export function providerAuthenticationForInner(
+  providerId: string,
+  innerProviderId: string
+): InnerAuthentication | { ok: false; reason: string } {
+  if (!MULTIPLIER_HARNESSES.has(providerId)) {
+    return { ok: false, reason: `${PROVIDER_LABELS[providerId] ?? providerId} is not a multiplier harness, so it has no inner provider to sign in to` };
+  }
+  const base = PROVIDER_AUTHENTICATION[providerId];
+  if (base === undefined) {
+    return { ok: false, reason: `${providerId} has no sign-in flow Hivemind may launch` };
+  }
+  const standing = innerProviderStanding(innerProviderId);
+  const recorded = INNER_PROVIDER_SANCTIONS.some((entry) => entry.id === standing.id);
+  if (!recorded) {
+    return {
+      ok: false,
+      reason: `Hivemind does not know the provider "${innerProviderId}", so it will not preselect it. Use the provider list inside ${PROVIDER_LABELS[providerId] ?? providerId}'s own sign-in instead.`
+    };
+  }
+  if (standing.sanction === "prohibited") {
+    return {
+      ok: false,
+      reason: `${standing.label} cannot be reached through ${PROVIDER_LABELS[providerId] ?? providerId}: ${standing.why}`
+    };
+  }
+  return {
+    ok: true,
+    command: [...base.command, "-p", standing.id] as unknown as readonly [string, ...string[]],
+    standing,
+    experience: standing.access === "oauth" ? "browser" : base.experience,
+    detail:
+      standing.access === "api_key"
+        ? `${standing.label} uses an API key. ${PROVIDER_LABELS[providerId] ?? providerId} asks for it in its own window — paste it there, never into Hivemind.`
+        : `${PROVIDER_LABELS[providerId] ?? providerId} opens ${standing.label}'s own sign-in. Finish there, then return to Hivemind.`
+  };
+}
+
 function providerAuthenticationPresentation(
   providerId: string
 ): CatalogueProvider["authentication"] {
@@ -966,6 +1073,13 @@ export interface InnerProviderStanding {
   why: string;
   /** When the sanction was last checked against the vendor's own words. */
   checked: string;
+  /**
+   * How the vendor's sign-in reaches the multiplier: an OAuth flow that
+   * finishes in a browser, or an API key pasted into the HARNESS's own
+   * terminal. Decides the instruction a person is shown, never a mechanism —
+   * either way the credential stays with the harness and its vendor.
+   */
+  access: "oauth" | "api_key" | "unknown";
 }
 
 /**
@@ -983,70 +1097,82 @@ const INNER_PROVIDER_SANCTIONS: readonly InnerProviderStanding[] = [
     label: "OpenCode Zen",
     sanction: "blessed",
     why: "OpenCode's own hosted models, on OpenCode's own service and terms.",
-    checked: "2026-08-22"
+    checked: "2026-08-22",
+    /* Measured from OpenCode's own docs: /connect issues a key at
+       opencode.ai/auth that is pasted into OpenCode's terminal. */
+    access: "api_key"
   },
   {
     id: "openai",
     label: "OpenAI",
     sanction: "blessed",
     why: "OpenAI's Codex lead has said on the record, twice in 2026, that using a ChatGPT subscription through OSS clients — OpenCode named — is supported; the line they enforce is reselling subscription traffic as API access, which this is not.",
-    checked: "2026-08-22"
+    checked: "2026-08-22",
+    access: "oauth"
   },
   {
     id: "xai",
     label: "xAI",
     sanction: "blessed",
     why: "xAI ships a device-code OAuth flow with its own consent screen for third-party clients, and documents headless operation of its own CLI.",
-    checked: "2026-08-22"
+    checked: "2026-08-22",
+    access: "oauth"
   },
   {
     id: "moonshot",
     label: "Moonshot AI",
     sanction: "blessed",
     why: "Kimi subscriptions issue API keys expressly for third-party tools, with named setup guides; the one stated violation is tampering with a client's identity, which running the real harness cannot do.",
-    checked: "2026-08-22"
+    checked: "2026-08-22",
+    access: "api_key"
   },
   {
     id: "anthropic",
     label: "Anthropic",
     sanction: "prohibited",
     why: "Anthropic prohibits routing Claude subscription credentials through third-party apps, and OpenCode removed that sign-in under Anthropic's legal request in March 2026. Claude Code is a first-class integration here — connect it directly instead.",
-    checked: "2026-08-22"
+    checked: "2026-08-22",
+    access: "api_key"
   },
   {
     id: "openrouter",
     label: "OpenRouter",
     sanction: "unchecked",
     why: "An API-key marketplace, so no subscription is at stake — but its terms have not been read here.",
-    checked: "2026-08-22"
+    checked: "2026-08-22",
+    access: "api_key"
   },
   {
     id: "github-copilot",
     label: "GitHub Copilot",
     sanction: "unchecked",
     why: "Documented by OpenCode as a sign-in it supports; GitHub's own terms for that path have not been verified here.",
-    checked: "2026-08-22"
+    checked: "2026-08-22",
+    access: "oauth"
   },
   {
     id: "gitlab",
     label: "GitLab Duo",
     sanction: "unchecked",
     why: "Documented by OpenCode as a sign-in it supports; GitLab's own terms for that path have not been verified here.",
-    checked: "2026-08-22"
+    checked: "2026-08-22",
+    access: "unknown"
   },
   {
     id: "zai",
     label: "Z.AI",
     sanction: "unchecked",
     why: "Documented by OpenCode as a supported plan; Z.AI's own terms for that path have not been verified here.",
-    checked: "2026-08-22"
+    checked: "2026-08-22",
+    access: "api_key"
   },
   {
     id: "digitalocean",
     label: "DigitalOcean",
     sanction: "unchecked",
     why: "Documented by OpenCode as a sign-in it supports; DigitalOcean's own terms for that path have not been verified here.",
-    checked: "2026-08-22"
+    checked: "2026-08-22",
+    access: "oauth"
   }
 ];
 
@@ -1086,7 +1212,8 @@ export function innerProviderStanding(id: string): InnerProviderStanding {
     label: id.trim(),
     sanction: "unchecked",
     why: "A provider configured in the harness that Hivemind has never checked. Its own terms decide whether this path is allowed.",
-    checked: "2026-08-22"
+    checked: "2026-08-22",
+    access: "unknown"
   };
 }
 
@@ -1151,6 +1278,8 @@ export function catalogueProviders(): CatalogueProvider[] {
         connectable: agent.connectable,
         support_tier: supportTierForHarness(agent.harness),
         tier_claim: TIER_CLAIMS[supportTierForHarness(agent.harness)],
+        install: providerInstallGuidance(agent.harness),
+        reachable_providers: reachableInnerProviders(agent.harness),
         authentication: providerAuthenticationPresentation(agent.harness)
       });
       continue;

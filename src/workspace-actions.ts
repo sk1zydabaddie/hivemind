@@ -349,9 +349,15 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
     return initProjectForDesktop(repoRoot);
   }
   if (raw.type === "provider.auth.start") {
-    const parsed = exactStrings(payload, ["provider_id"]);
+    /* `inner_provider_id` preselects which provider a MULTIPLIER harness logs
+       into. It is validated against the sanction registry inside Core —
+       prohibited refuses by name, unknown refuses as unknown — and composes
+       only a fixed `-p <registry id>`; it can never carry an argument. */
+    const parsed = exactStrings(payload, ["provider_id", "inner_provider_id"], ["inner_provider_id"]);
     return parsed.ok
-      ? startProviderAuthentication(repoRoot, parsed.value.provider_id)
+      ? startProviderAuthentication(repoRoot, parsed.value.provider_id, {
+          innerProviderId: parsed.value.inner_provider_id
+        })
       : parsed;
   }
   if (raw.type === "provider.auth.inspect") {

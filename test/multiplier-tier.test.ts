@@ -12,11 +12,19 @@ import {
   innerProviderIdForModelSlug,
   innerProviderStanding,
   judgeInnerProvider,
+  providerAuthenticationForInner,
   supportTierForHarness
 } from "../src/agent-catalogue.js";
-import { connectDiscoveredAdapter, initProjectForDesktop } from "../src/config-actions.js";
+import {
+  connectDiscoveredAdapter,
+  initProjectForDesktop,
+  startProviderAuthentication
+} from "../src/config-actions.js";
 import { discoverProviderModels } from "../src/model-discovery.js";
-import { parseAuthenticationStatus } from "../src/provider-auth-status.js";
+import {
+  inspectProviderAuthentication,
+  parseAuthenticationStatus
+} from "../src/provider-auth-status.js";
 
 const run = promisify(execFile);
 
@@ -225,4 +233,110 @@ test("auth-list reaches: registry names cross with their sanction, the rest are 
   const none = parseAuthenticationStatus("opencode", "credential-count", "—  0 credentials");
   assert.equal(none.status, "signed_out");
   assert.equal(none.reaches, undefined);
+});
+
+/* ── The preselected sign-in: fixed argv plus one allowlisted id ─────────── */
+
+test("a multiplier sign-in may preselect only a registry provider, and refusals launch nothing", async () => {
+  const repo = await repoWithProject();
+  try {
+    const launched: string[][] = [];
+    const launcher = async (command: readonly string[]) => {
+      launched.push([...command]);
+    };
+
+    /* Prohibited: refused by name, and the terminal never opens. Proven to
+       bite the same way as the connect gate — with the refusal removed, the
+       launcher records a call and the length assertion fails. */
+    const anthropic = await startProviderAuthentication(repo, "opencode", {
+      launcher,
+      innerProviderId: "anthropic"
+    });
+    assert.equal(anthropic.ok, false);
+    assert.match(anthropic.ok ? "" : anthropic.reason, /Claude Code is a first-class integration/u);
+
+    /* Unknown: refused as unknown, pointing at the harness's own picker. */
+    const unknown = await startProviderAuthentication(repo, "opencode", {
+      launcher,
+      innerProviderId: "audn"
+    });
+    assert.equal(unknown.ok, false);
+    assert.match(unknown.ok ? "" : unknown.reason, /own sign-in/u);
+
+    /* An integrated harness has no inner provider to preselect. */
+    const integrated = await startProviderAuthentication(repo, "codex-cli", {
+      launcher,
+      innerProviderId: "openai"
+    });
+    assert.equal(integrated.ok, false);
+    assert.equal(launched.length, 0, "a refused preselection must never open a terminal");
+
+    /* Blessed OAuth: the fixed base command plus exactly `-p <registry id>`. */
+    const openai = await startProviderAuthentication(repo, "opencode", {
+      launcher,
+      innerProviderId: "openai"
+    });
+    assert.equal(openai.ok, true, openai.ok ? undefined : openai.reason);
+    assert.equal(launched.length, 1);
+    assert.deepEqual(launched[0]!.slice(-2), ["-p", "openai"]);
+
+    /* API-key access: the instruction says where the key goes — and where it
+       never does. The paste happens in the harness's own window. */
+    const moonshot = await startProviderAuthentication(repo, "opencode", {
+      launcher,
+      innerProviderId: "moonshot"
+    });
+    assert.equal(moonshot.ok, true);
+    const detail = moonshot.ok
+      ? (moonshot.value as { detail: string }).detail
+      : "";
+    assert.match(detail, /paste it there, never into Hivemind/u);
+
+    /* Alias spellings collapse before composition, so the argv carries the
+       registry id, not the caller's spelling. */
+    const aliased = providerAuthenticationForInner("opencode", "moonshotai");
+    assert.equal(aliased.ok, true);
+    assert.deepEqual(aliased.ok ? aliased.command.slice(-2) : [], ["-p", "moonshot"]);
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("the provider row carries the vendor's install command and the reachable providers, refusals included", () => {
+  const opencode = catalogueProviders().find((provider) => provider.id === "opencode");
+  assert.ok(opencode);
+  /* Offered, never run: the vendor's own documented command with the page it
+     was read from, so a person can check it against the source. */
+  assert.match(opencode!.install?.url ?? "", /^https:\/\/opencode\.ai\//u);
+  assert.match(opencode!.install?.command ?? "", /opencode-ai/u);
+  assert.match(opencode!.install?.detail ?? "", /does not install/u);
+  /* The reachable list includes the prohibited entry — a hidden refusal is
+     indistinguishable from an omission. */
+  const anthropic = opencode!.reachable_providers.find((entry) => entry.id === "anthropic");
+  assert.equal(anthropic?.sanction, "prohibited");
+  assert.ok(opencode!.reachable_providers.some((entry) => entry.sanction === "blessed"));
+  /* Integrated harnesses carry neither. */
+  const codex = catalogueProviders().find((provider) => provider.id === "codex-cli");
+  assert.deepEqual(codex?.reachable_providers, []);
+});
+
+test("installed is a typed fact: ENOENT proves absence, anything else leaves a CLI that exists", async () => {
+  const repo = await repoWithProject();
+  try {
+    const view = await inspectProviderAuthentication(repo, {
+      runner: async (spec) => {
+        if (spec.kind === "credential-count") {
+          return { ok: false, stdout: "", stderr: "", reason: "The provider CLI is not installed or is not on PATH.", notInstalled: true };
+        }
+        return { ok: true, stdout: spec.kind === "login-text" ? "Logged in\n" : '{"loggedIn":true}', stderr: "", reason: null };
+      }
+    });
+    const byId = new Map(view.providers.map((provider) => [provider.provider_id, provider]));
+    assert.equal(byId.get("opencode")?.installed, false);
+    assert.equal(byId.get("codex-cli")?.installed, true);
+    /* A provider with no status command at all says nothing either way. */
+    assert.equal(byId.get("grok")?.installed, undefined);
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
 });
