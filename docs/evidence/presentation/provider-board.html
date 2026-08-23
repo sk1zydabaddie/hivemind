@@ -242,14 +242,14 @@
 <div class="sheet">
 
   <header class="masthead">
-    <p class="eyebrow">Hivemind · provider verification · 12 August 2026</p>
+    <p class="eyebrow">Hivemind · provider verification · 22 August 2026</p>
     <h1>Verified, not claimed</h1>
     <p class="standfirst">
-      Five coding agents were put through one capability contract. Four are
-      adaptable and one is refused with a reason. The interesting result is that
-      <strong>the two verdicts disagree</strong>: the only harness proven on real
-      end-to-end work is the one that can never confirm the guarantee the product
-      is built on.
+      Five coding agents, one nine-capability contract, every verdict measured
+      by a live probe rather than declared. Three harnesses have passed all
+      nine. The interesting result is still that <strong>the two verdicts can
+      disagree</strong>: the harness with the longest record of shipped work is
+      the one that can never confirm the guarantee the product is built on.
     </p>
   </header>
 
@@ -277,6 +277,7 @@
             <th>Says which model<br>spent what</th>
             <th>No agents<br>of its own</th>
             <th>Leaves the change<br>for you</th>
+            <th>Where your<br>code goes</th>
             <th class="verdict">Contract</th>
             <th class="verdict">Integration</th>
           </tr>
@@ -292,7 +293,8 @@
             <td><span class="mark x"></span></td>
             <td><span class="mark u"></span></td>
             <td><span class="mark v"></span></td>
-            <td class="verdict"><span class="mark u">6 / 8</span></td>
+            <td><span class="mark u"></span></td>
+            <td class="verdict"><span class="mark u">6 / 9</span></td>
             <td class="verdict"><span class="mark v">proven</span></td>
           </tr>
           <tr class="disagree">
@@ -305,8 +307,23 @@
             <td><span class="mark v"></span></td>
             <td><span class="mark v"></span></td>
             <td><span class="mark v"></span></td>
-            <td class="verdict"><span class="mark v">8 / 8</span></td>
-            <td class="verdict"><span class="mark u">probe only</span></td>
+            <td><span class="mark v"></span></td>
+            <td class="verdict"><span class="mark v">9 / 9</span></td>
+            <td class="verdict"><span class="mark v">planned + managed a shipped run</span></td>
+          </tr>
+          <tr>
+            <th>Grok Build</th>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td class="verdict"><span class="mark v">9 / 9 · paid probe</span></td>
+            <td class="verdict"><span class="mark v">worker on a shipped run</span></td>
           </tr>
           <tr>
             <th>OpenCode</th>
@@ -318,33 +335,22 @@
             <td><span class="mark x"></span></td>
             <td><span class="mark v"></span></td>
             <td><span class="mark v"></span></td>
-            <td class="verdict"><span class="mark u">6 / 8</span></td>
+            <td><span class="mark v"></span></td>
+            <td class="verdict"><span class="mark u">7 / 9</span></td>
             <td class="verdict"><span class="mark u">probe only</span></td>
           </tr>
           <tr>
-            <th>Grok Build</th>
-            <td><span class="mark n"></span></td>
-            <td><span class="mark n"></span></td>
-            <td><span class="mark n"></span></td>
-            <td><span class="mark n"></span></td>
-            <td><span class="mark n"></span></td>
-            <td><span class="mark n"></span></td>
-            <td><span class="mark n"></span></td>
-            <td><span class="mark n"></span></td>
-            <td class="verdict"><span class="mark n">pending key</span></td>
-            <td class="verdict"><span class="mark n">—</span></td>
-          </tr>
-          <tr>
             <th>Kimi Code</th>
-            <td><span class="mark n"></span></td>
-            <td><span class="mark n"></span></td>
-            <td><span class="mark n"></span></td>
-            <td><span class="mark n"></span></td>
-            <td><span class="mark n"></span></td>
-            <td><span class="mark n"></span></td>
-            <td><span class="mark n"></span></td>
-            <td><span class="mark n"></span></td>
-            <td class="verdict"><span class="mark n">pending key</span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td><span class="mark v"></span></td>
+            <td class="verdict"><span class="mark u">9 / 9 · local provider only</span></td>
             <td class="verdict"><span class="mark n">—</span></td>
           </tr>
         </tbody>
@@ -365,6 +371,7 @@
           <tr><th>Says which model spent what</th><td>A total cannot tell you whether a cheap task ran on the cheap model.</td></tr>
           <tr><th>No agents of its own</th><td>Nothing runs underneath that nobody counted.</td></tr>
           <tr><th>Leaves the change for you</th><td>It did not commit — measured, not promised.</td></tr>
+          <tr><th>Where your code goes</th><td>The endpoint it ships your files to is configured and named. A base-URL override redirects everything while all eight other capabilities still read verified — which is why this is the ninth.</td></tr>
           <tr><th class="verdict">Contract</th><td>Can this agent's boundaries be confirmed? Decided by a probe, per run.</td></tr>
           <tr><th class="verdict">Integration</th><td>Has real work been built and shipped through it? Decided by history.</td></tr>
         </tbody>
@@ -373,27 +380,34 @@
 
     <h3>The story in the table</h3>
     <p>
-      Codex is the only harness with proven end-to-end runs — three tiers, real
-      shipped commits, everything else measured against it. It is also the only
-      one that can <em class="tag">never</em> confirm that it starts no agents of
-      its own: it reports that the capability exists and reports nothing about
-      whether it is switched off. No probe can close that, because there is
-      nothing on the other side to read.
+      Codex has the longest record of shipped work — three tiers, real
+      commits, everything else first measured against it. It is also the only
+      harness that can <em class="tag">never</em> confirm that it starts no
+      agents of its own: it reports that the capability exists and reports
+      nothing about whether it is switched off. No probe can close that,
+      because there is nothing on the other side to read.
     </p>
     <p>
       Claude Code closes it. Its startup record names the exact tool set the
       session loaded, the agent-dispatch tool is absent, and absence in a list
-      that was read is evidence rather than silence. It scores <em class="tag">8
-      of 8, nothing degraded</em> — and has never shipped a line of real work.
+      that was read is evidence rather than silence. It scores <em class="tag">9
+      of 9, nothing degraded</em> — and on 21 August it planned and managed a
+      real run through the installed app that shipped five files to a real
+      repository, with Grok 4.6 as the confined worker. Grok's own paid probe
+      passed all nine the same week: exact model and tool readback, workspace
+      confinement, a named endpoint, and per-model attribution, in 4.5 seconds.
     </p>
     <p class="note">
-      So a person who specifically needs the no-unaccounted-agents guarantee has
-      a checkable reason to prefer Claude Code, and a person who needs proven
-      throughput has a reason to prefer Codex. That is the honest slide: two
-      columns, one table, no winner. Codex's last full probe predates two of
-      these capabilities; its <em>says which model spent what</em> is determinable
-      from its output format without a run, and its <em>leaves the change for
-      you</em> follows from the same worktree discipline every shipped run used.
+      Kimi is the un-refusal worth telling: its first verdict was withdrawn for
+      having been measured against the wrong distribution, and the real binary
+      now passes all nine — against a <em>local</em> provider, with Hivemind
+      replacing its escaping file tools with five deterministic project-bounded
+      operations. Hosted authentication and quota remain unmeasured, and the
+      board says so instead of rounding up. Codex's last full probe predates
+      three of the nine; the two determinable-without-a-run marks are noted,
+      and <em>where your code goes</em> stays unverified there until a probe
+      runs. Two verdict columns, one table, still no winner — that is the
+      honest slide.
     </p>
   </section>
 
