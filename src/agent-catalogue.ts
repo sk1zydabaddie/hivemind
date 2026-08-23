@@ -649,6 +649,17 @@ export interface CatalogueProvider {
   /** Whether at least one catalogue entry has a complete, probeable argv. */
   connectable: boolean;
   /**
+   * Which of the two support claims this harness may make. They are different
+   * claims and the screen must not blur them: `integrated` is "probed here,
+   * with routing and spend economics driven by its own answers"; `multiplier`
+   * is "the gates hold and spending limits hold in tokens, while tier
+   * routing, cost prediction and model provenance are honestly off, because
+   * the model behind it cannot be confirmed."
+   */
+  support_tier: SupportTier;
+  /** The claim itself, one sentence, written once here rather than per surface. */
+  tier_claim: string;
+  /**
    * The provider-owned sign-in flow Hivemind may launch.
    *
    * This deliberately carries no credential location. The provider CLI and
@@ -711,6 +722,12 @@ export interface CatalogueModel {
   label: string;
   routing_tier: CatalogueAgent["routing_tier"];
   context_window: number;
+  /**
+   * For a multiplier harness, whose service this slug's requests go to, and
+   * whether that vendor sanctions being reached this way. Null on integrated
+   * harnesses, where the harness and the vendor are the same party.
+   */
+  inner_provider: InnerProviderStanding | null;
 }
 
 /**
@@ -902,6 +919,216 @@ const MODEL_LABELS: Record<string, string> = {
   "gpt-5.6-luna": "GPT-5.6 Luna"
 };
 
+/* ── The multiplier tier ─────────────────────────────────────────────────
+ *
+ * Two support claims, kept apart on purpose. An INTEGRATED harness was probed
+ * here and its economics work: routing, spend and attribution are driven by
+ * its own answers. A MULTIPLIER harness is a verified cage around providers
+ * Hivemind never integrated -- OpenCode reaches whatever its user signed it
+ * into -- so the gates hold and token ceilings hold, while tier routing, cost
+ * prediction and model provenance are honestly off, because nothing reports
+ * which model actually answered (`readOpenCodePermissions` records the pin as
+ * unverified for exactly that reason).
+ *
+ * The inner-provider table below is the compliance half of that claim. It
+ * records, per vendor a multiplier can front, whether that vendor sanctions
+ * being reached through a third-party harness -- with the source and the date
+ * it was checked, because these positions have changed inside a year and a
+ * sanction nobody dated is a sanction nobody can re-check. `unchecked` is the
+ * honest default: it means "documented by the harness, never verified by us",
+ * and the surface says so before anyone picks it.
+ */
+
+export type SupportTier = "integrated" | "multiplier";
+
+export const TIER_CLAIMS: Record<SupportTier, string> = {
+  integrated:
+    "Integrated: probed here, and its economics work — routing, spending limits and per-model attribution are driven by the harness's own answers.",
+  multiplier:
+    "Supported via multiplier: the gates hold — confined writes, no shell, nothing committed, spending limits in tokens — while tier routing, cost prediction and model provenance are off, because the model behind it cannot be confirmed."
+};
+
+/** The harnesses whose job is reaching providers Hivemind never integrated. */
+const MULTIPLIER_HARNESSES: ReadonlySet<string> = new Set(["opencode"]);
+
+export function supportTierForHarness(harness: string): SupportTier {
+  return MULTIPLIER_HARNESSES.has(harness) ? "multiplier" : "integrated";
+}
+
+export type InnerProviderSanction = "blessed" | "prohibited" | "unchecked";
+
+export interface InnerProviderStanding {
+  /** The slug's first path segment, lowercased: `openai/gpt-x` -> `openai`. */
+  id: string;
+  label: string;
+  sanction: InnerProviderSanction;
+  /** The evidence, with its primary source, written for a person. */
+  why: string;
+  /** When the sanction was last checked against the vendor's own words. */
+  checked: string;
+}
+
+/**
+ * What each vendor says about being reached through a third-party harness.
+ *
+ * Measured against primary sources on 2026-08-22 (see
+ * docs/PROVIDER-DISCOVERY.md for the full compliance read). The slug grammar
+ * matters: `openrouter/anthropic/claude-*` is OPENROUTER's API-key credential
+ * reselling Anthropic models under OpenRouter's own commercial terms -- the
+ * inner provider is the first segment, never the model's author.
+ */
+const INNER_PROVIDER_SANCTIONS: readonly InnerProviderStanding[] = [
+  {
+    id: "opencode",
+    label: "OpenCode Zen",
+    sanction: "blessed",
+    why: "OpenCode's own hosted models, on OpenCode's own service and terms.",
+    checked: "2026-08-22"
+  },
+  {
+    id: "openai",
+    label: "OpenAI",
+    sanction: "blessed",
+    why: "OpenAI's Codex lead has said on the record, twice in 2026, that using a ChatGPT subscription through OSS clients — OpenCode named — is supported; the line they enforce is reselling subscription traffic as API access, which this is not.",
+    checked: "2026-08-22"
+  },
+  {
+    id: "xai",
+    label: "xAI",
+    sanction: "blessed",
+    why: "xAI ships a device-code OAuth flow with its own consent screen for third-party clients, and documents headless operation of its own CLI.",
+    checked: "2026-08-22"
+  },
+  {
+    id: "moonshot",
+    label: "Moonshot AI",
+    sanction: "blessed",
+    why: "Kimi subscriptions issue API keys expressly for third-party tools, with named setup guides; the one stated violation is tampering with a client's identity, which running the real harness cannot do.",
+    checked: "2026-08-22"
+  },
+  {
+    id: "anthropic",
+    label: "Anthropic",
+    sanction: "prohibited",
+    why: "Anthropic prohibits routing Claude subscription credentials through third-party apps, and OpenCode removed that sign-in under Anthropic's legal request in March 2026. Claude Code is a first-class integration here — connect it directly instead.",
+    checked: "2026-08-22"
+  },
+  {
+    id: "openrouter",
+    label: "OpenRouter",
+    sanction: "unchecked",
+    why: "An API-key marketplace, so no subscription is at stake — but its terms have not been read here.",
+    checked: "2026-08-22"
+  },
+  {
+    id: "github-copilot",
+    label: "GitHub Copilot",
+    sanction: "unchecked",
+    why: "Documented by OpenCode as a sign-in it supports; GitHub's own terms for that path have not been verified here.",
+    checked: "2026-08-22"
+  },
+  {
+    id: "gitlab",
+    label: "GitLab Duo",
+    sanction: "unchecked",
+    why: "Documented by OpenCode as a sign-in it supports; GitLab's own terms for that path have not been verified here.",
+    checked: "2026-08-22"
+  },
+  {
+    id: "zai",
+    label: "Z.AI",
+    sanction: "unchecked",
+    why: "Documented by OpenCode as a supported plan; Z.AI's own terms for that path have not been verified here.",
+    checked: "2026-08-22"
+  },
+  {
+    id: "digitalocean",
+    label: "DigitalOcean",
+    sanction: "unchecked",
+    why: "Documented by OpenCode as a sign-in it supports; DigitalOcean's own terms for that path have not been verified here.",
+    checked: "2026-08-22"
+  }
+];
+
+/* Auth-list and slug spellings that differ from the registry id. */
+const INNER_PROVIDER_ALIASES: Record<string, string> = {
+  "moonshotai": "moonshot",
+  "z-ai": "zai",
+  "github": "github-copilot",
+  "githubcopilot": "github-copilot",
+  "gitlabduo": "gitlab"
+};
+
+function normalisedInnerProviderId(raw: string): string {
+  const lowered = raw.trim().toLowerCase().replaceAll(/\s+/gu, "-");
+  return INNER_PROVIDER_ALIASES[lowered.replaceAll("-", "")] ?? INNER_PROVIDER_ALIASES[lowered] ?? lowered;
+}
+
+/** `openai/gpt-x` -> `openai`; a slug with no `/` names no inner provider. */
+export function innerProviderIdForModelSlug(slug: string | null): string | null {
+  if (slug === null) return null;
+  const at = slug.indexOf("/");
+  if (at <= 0) return null;
+  return normalisedInnerProviderId(slug.slice(0, at));
+}
+
+/**
+ * The standing for an inner provider id. Unknown ids come back `unchecked`
+ * rather than being invented into either verdict — same direction as every
+ * other unsure state here.
+ */
+export function innerProviderStanding(id: string): InnerProviderStanding {
+  const normal = normalisedInnerProviderId(id);
+  const known = INNER_PROVIDER_SANCTIONS.find((entry) => entry.id === normal);
+  if (known !== undefined) return known;
+  return {
+    id: normal,
+    label: id.trim(),
+    sanction: "unchecked",
+    why: "A provider configured in the harness that Hivemind has never checked. Its own terms decide whether this path is allowed.",
+    checked: "2026-08-22"
+  };
+}
+
+/**
+ * Match a provider NAME from a harness's own auth listing against the
+ * registry. Returns null for anything unrecognised, so raw user-configured
+ * strings never cross the auth-status boundary — callers count those instead.
+ */
+export function innerProviderStandingForAuthName(name: string): InnerProviderStanding | null {
+  const normal = normalisedInnerProviderId(name);
+  return INNER_PROVIDER_SANCTIONS.find((entry) => entry.id === normal) ?? null;
+}
+
+export interface InnerProviderJudgement {
+  /** Null on an integrated harness, or when the slug names no provider. */
+  standing: InnerProviderStanding | null;
+  /** Non-null exactly when the connection must not be offered or made. */
+  refusal: string | null;
+}
+
+/**
+ * The one admission decision for a (harness, model) pair's inner provider.
+ *
+ * Control flow branches on the typed sanction, never on message text, and the
+ * refusal is decided here so `adapter.connect` and every picker surface share
+ * one verdict instead of three copies of it.
+ */
+export function judgeInnerProvider(
+  harness: string,
+  modelSlug: string | null
+): InnerProviderJudgement {
+  if (!MULTIPLIER_HARNESSES.has(harness)) return { standing: null, refusal: null };
+  const providerId = innerProviderIdForModelSlug(modelSlug);
+  if (providerId === null) return { standing: null, refusal: null };
+  const standing = innerProviderStanding(providerId);
+  if (standing.sanction !== "prohibited") return { standing, refusal: null };
+  return {
+    standing,
+    refusal: `${standing.label} cannot be reached through ${PROVIDER_LABELS[harness] ?? harness}: ${standing.why}`
+  };
+}
+
 function bestStatus(left: AgentStatus, right: AgentStatus): AgentStatus {
   const rank = (status: AgentStatus): number =>
     status === "supported" ? 0 : status === "unverified" ? 1 : 2;
@@ -922,6 +1149,8 @@ export function catalogueProviders(): CatalogueProvider[] {
         caveat: agent.caveat,
         pins_model: agent.model !== null,
         connectable: agent.connectable,
+        support_tier: supportTierForHarness(agent.harness),
+        tier_claim: TIER_CLAIMS[supportTierForHarness(agent.harness)],
         authentication: providerAuthenticationPresentation(agent.harness)
       });
       continue;
@@ -958,7 +1187,8 @@ export function catalogueModels(providerId?: string): CatalogueModel[] {
           ? "Whatever the harness chooses"
           : (MODEL_LABELS[agent.model] ?? agent.model),
       routing_tier: agent.routing_tier,
-      context_window: agent.context_window
+      context_window: agent.context_window,
+      inner_provider: judgeInnerProvider(agent.harness, agent.model).standing
     }))
     .sort((left, right) => tierOrder[left.routing_tier] - tierOrder[right.routing_tier]);
 }

@@ -73,7 +73,9 @@ test("discovery reports empty and failed providers without inventing fallback mo
     });
     assert.deepEqual(
       result.providers.find((entry) => entry.provider_id === "codex-cli")?.models,
-      [{ slug: "gpt-a", label: "GPT A" }]
+      /* An integrated harness's models carry no inner-provider judgement and
+         are always selectable — the multiplier fields exist but say nothing. */
+      [{ slug: "gpt-a", label: "GPT A", inner_provider: null, selectable: true }]
     );
     assert.equal(result.providers.find((entry) => entry.provider_id === "grok")?.status, "unavailable");
     assert.equal(result.providers.find((entry) => entry.provider_id === "kimi")?.status, "empty");

@@ -13,9 +13,14 @@ import {
   catalogueProviders,
   catalogueAgentForDiscoveredModel,
   findCatalogueAgent,
+  harnessForAgentId,
+  judgeInnerProvider,
   providerAuthentication,
+  supportTierForHarness,
   type AdapterRoleName,
-  type CatalogueAgent
+  type CatalogueAgent,
+  type InnerProviderStanding,
+  type SupportTier
 } from "./agent-catalogue.js";
 import { probeAdapter, type AdapterProbeResult, type ProbeOptions } from "./adapter-probe.js";
 import {
@@ -39,7 +44,7 @@ import { parseTaskTypePreferences } from "./routing-preferences.js";
 import { accountEnvironment, harnessForRole } from "./provider-accounts.js";
 import { readAccounts, selectedAccount } from "./provider-accounts.js";
 import { priceAgeDays, priceForModel, priceIsStale } from "./model-prices.js";
-import { ROLE_RECOMMENDATIONS, modelChoiceRefusal } from "./role-recommendations.js";
+import { ROLE_RECOMMENDATIONS, modelChoiceAllowed, modelChoiceRefusal } from "./role-recommendations.js";
 import {
   currentMachine,
   machineStanding,
@@ -169,6 +174,21 @@ export interface InspectedAdapter {
    * for exactly that reason.
    */
   model_choice_refusal: string | null;
+  /**
+   * Whether `model` is a CONFIRMED fact or only what was asked for. Derived
+   * from the recorded probe by the same rule as `modelChoiceAllowed`: only a
+   * verified pin makes the model a statement rather than a request. The label
+   * a person reads must not assert what the probe recorded as unverified.
+   */
+  model_standing: "confirmed" | "requested" | null;
+  /** Which support claim this connection's harness may make. Null when nothing identifies a harness. */
+  support_tier: SupportTier | null;
+  /**
+   * For a multiplier connection, whose service the requests go to and whether
+   * that vendor sanctions the path — as recorded at connect time, so a later
+   * registry change does not silently rewrite what somebody was told.
+   */
+  inner_provider: InnerProviderStanding | null;
 }
 
 /**
@@ -244,7 +264,10 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
         capabilities: [],
         /* "Nothing installed" and "nothing choosable" are different sentences,
            and Core owns both. */
-        model_choice_refusal: modelChoiceRefusal({ capabilities: [], connected_at: null })
+        model_choice_refusal: modelChoiceRefusal({ capabilities: [], connected_at: null }),
+        model_standing: null,
+        support_tier: null,
+        inner_provider: null
       });
       continue;
     }
@@ -304,7 +327,24 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
       model_choice_refusal: modelChoiceRefusal({
         capabilities: record?.capabilities ?? [],
         connected_at: record?.connected_at ?? null
-      })
+      }),
+      /* Requested vs confirmed, by the same recorded-probe rule as the model
+         picker. A model with no verified pin renders as what was ASKED FOR,
+         never as an assertion the probe declined to make. */
+      model_standing:
+        modelFromInvoke(invoke) === null
+          ? null
+          : modelChoiceAllowed({ capabilities: record?.capabilities ?? [] })
+            ? "confirmed"
+            : "requested",
+      support_tier: (() => {
+        const harness = harnessForAgentId(record?.agent_id ?? null);
+        return harness === null ? null : supportTierForHarness(harness);
+      })(),
+      /* From the RECORD, not re-judged: what somebody was told at connect
+         time is the durable fact; the current registry is only the source for
+         new connections. */
+      inner_provider: record?.inner_provider ?? null
     });
   }
 
@@ -561,6 +601,12 @@ interface ConnectionRecord {
      pretending they match. */
   machine?: MachineIdentity;
   capabilities: AdapterProbeResult["capabilities"];
+  /* For a multiplier harness: whose service the requests go to and whether
+     that vendor sanctioned the path, AS JUDGED AT CONNECT TIME. Recorded so
+     the person's screen keeps saying what they were actually told, even if
+     the registry later changes its mind. Optional: records written before
+     the field exists report nothing rather than a guess. */
+  inner_provider?: InnerProviderStanding | null;
 }
 
 /* Keyed by the PROFILE name, not the role: a worker pool has several profiles
@@ -784,6 +830,16 @@ async function connectCatalogueAgent(
     };
   }
 
+  /* The inner-provider gate, FIRST — before the project config write and
+     before the probe — so a prohibited combination is refused while it still
+     costs nothing: no file touched, no provider call made. Judged from the
+     typed sanction, and it covers both connect doors, because the discovered
+     path funnels through here too. */
+  const innerProvider = judgeInnerProvider(agent.harness, agent.model);
+  if (innerProvider.refusal !== null) {
+    return { ok: false, reason: innerProvider.refusal };
+  }
+
   const profile = buildProfileForAgent(agent, role);
   if (profile === null) return { ok: false, reason: `${agent.label} has no usable profile shape` };
 
@@ -842,6 +898,8 @@ async function connectCatalogueAgent(
       selectedAccount(accountsFileForDigest, harness)?.home_dir ?? null
     ),
     capabilities: probe.capabilities,
+    /* The standing the person was shown when they connected. */
+    inner_provider: innerProvider.standing,
     /* A fresh probe is a fresh verification, so whatever made the previous one
        stale is answered by having run this one. */
     capabilities_stale: null

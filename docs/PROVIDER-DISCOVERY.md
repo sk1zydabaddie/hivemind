@@ -3,6 +3,44 @@
 Discovery pass, 2026-08-12, updated the same day after the free installs.
 **No paid calls were made.**
 
+> **2026-08-22: the multiplier tier, and two corrections that changed decisions.**
+>
+> Nesting (a provider behind OpenCode, e.g. a Codex subscription signed into
+> OpenCode, driven by Hivemind) is now a deliberate architecture rather than an
+> accident: one well-probed flexible harness multiplies over the long tail of
+> providers, and the marginal cost of a provider drops from a subscription plus
+> bespoke discovery to a compliance row. The two support claims are kept apart
+> everywhere they render: **integrated** means probed here with working
+> economics; **supported via multiplier** means the gates hold — confined
+> writes, no shell, nothing committed, spending limits in tokens — while tier
+> routing, cost prediction and model provenance are honestly off. Mechanisms:
+> the inner-provider sanction registry and `judgeInnerProvider` in
+> `agent-catalogue.ts` (blessed / prohibited / unchecked, each dated and
+> sourced), a zero-cost refusal of prohibited combinations in
+> `adapter.connect` (Anthropic-behind-OpenCode is refused by name — Anthropic
+> prohibits subscription-credential routing and OpenCode removed that sign-in
+> under legal request; Claude Code is first-class here), requested-vs-confirmed
+> model labels driven by the recorded pin, and the "Don't see your provider?"
+> disclosure on setup and settings. The slug grammar matters and is pinned by
+> test: `openrouter/anthropic/claude-*` is OPENROUTER's API-key credential —
+> the inner provider is the first segment, never the model's author.
+>
+> **Correction one: spend ceilings hold under nesting.** The earlier read was
+> that budget went dark with the model. Wrong: `reports_usage` is VERIFIED for
+> OpenCode — every `step_finish` carries its own token block — so token
+> ceilings hold even when the model behind it is unknowable. A total counts
+> every model whether or not it names them; what dies is dollar prediction,
+> not the ceiling. The multiplier tier is safer than it was first described.
+>
+> **Correction two: ACP makes reach cheaper and verification WORSE.** The
+> Agent Client Protocol was twice pushed as the answer to per-provider cost,
+> and that was wrong. Read against its schema: no model identity by design,
+> no token-level usage (an optional session-level Cost only), permissions
+> reactive per call rather than resolvable up front. Adopting it as the
+> capability surface would cost the ceilings nesting currently preserves.
+> It is plumbing convenience for the long tail, not a capability solution;
+> readback must keep coming from each harness's own side channels.
+
 > **Update.** Grok Build 1.0.3 and Kimi Code 1.49.0 were installed into a
 > temporary directory and dry-run, so their rows are now CLI rather than DOCS.
 > Kimi's verdict moved from *refused as documented* to **refused as measured**,

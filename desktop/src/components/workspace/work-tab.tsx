@@ -97,6 +97,7 @@ import {
 import { attentionHeadline, summarizeWorkerOutput } from "@/lib/work-presentation";
 import { containsInternalVocabulary } from "@/lib/vocabulary";
 import { list } from "@/lib/durable";
+import { adapterModelText } from "@/lib/workspace-actions";
 import type {
   AdapterConnectResult,
   AutonomyLevel,
@@ -2959,7 +2960,7 @@ function ComposerRolePicker({
                 adapter.model !== null
             );
             const currentModels = current
-              .map((adapter) => adapter.model)
+              .map((adapter) => adapterModelText(adapter))
               .filter((model): model is string => model !== null);
             const summary = currentModels.length === 0
               ? "Not selected"
@@ -2971,7 +2972,11 @@ function ComposerRolePicker({
                 ? []
                 : discovery.models.map((model) => ({
                     providerId: discovery.provider_id,
-                    modelSlug: model.slug
+                    modelSlug: model.slug,
+                    /* Whose service a multiplier slug reaches, said before the
+                       pick; a prohibited one is not offered at all. */
+                    inner: model.inner_provider ?? null,
+                    selectable: model.selectable !== false
                   }))
             );
             return (
@@ -3005,13 +3010,27 @@ function ComposerRolePicker({
                             );
                             return (
                               <DropdownMenuItem
-                                disabled={selected || changingRole !== null}
+                                disabled={selected || !option.selectable || changingRole !== null}
                                 key={`${role}:${option.providerId}:${option.modelSlug}`}
+                                title={
+                                  option.inner != null && option.inner.sanction !== "blessed"
+                                    ? `${option.inner.label} is ${option.inner.sanction}: ${option.inner.why}`
+                                    : undefined
+                                }
                                 onSelect={() => void onChoose(role, option.providerId, option.modelSlug)}
                               >
                                 <span className="min-w-0 flex-1 break-all font-mono text-[11px]">
                                   {option.modelSlug}
                                 </span>
+                                {option.inner?.sanction === "prohibited" ? (
+                                  <span className="shrink-0 text-[9px] font-medium tracking-label text-clay uppercase">
+                                    Not allowed
+                                  </span>
+                                ) : option.inner?.sanction === "unchecked" ? (
+                                  <span className="shrink-0 text-[9px] font-medium tracking-label text-amber uppercase">
+                                    Unchecked
+                                  </span>
+                                ) : null}
                                 {selected ? <Check aria-label="Selected" className="text-navy" /> : null}
                               </DropdownMenuItem>
                             );

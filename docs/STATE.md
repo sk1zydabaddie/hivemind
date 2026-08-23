@@ -2045,3 +2045,49 @@ can produce. The walk now types at a human cadence; its severe-log gate is
 unchanged. The reverse-orphan lesson from A-37 — enumeration found a
 dangerous-direction hole no diagnosis of the reported bug would have — is
 recorded as the first rule in §4's evidence section.
+
+## The multiplier tier, built deliberately — 2026-08-23
+
+Nesting — a provider signed into OpenCode, OpenCode driven by Hivemind — is
+now an architecture with names, not an accident. Two support claims render
+apart everywhere: **integrated** (probed here, economics driven by the
+harness's own answers) and **supported via multiplier** (gates hold, token
+ceilings hold, tier routing / cost prediction / model provenance honestly
+off). The claim sentences live once, in Core (`TIER_CLAIMS`).
+
+Mechanisms, each with a regression proven to bite: the inner-provider
+sanction registry and `judgeInnerProvider` in `agent-catalogue.ts` — blessed
+/ prohibited / unchecked, dated and sourced, keyed on the slug's FIRST
+segment because `openrouter/anthropic/*` is OpenRouter's credential, not
+Anthropic's; a zero-cost refusal in `adapter.connect` ahead of the config
+write and the probe (bitten: gate off → the counting probe stub fired), which
+also covers forged discovered-ids because they decode back through the same
+door; Anthropic-behind-OpenCode refused by name with the refusal pointing at
+the first-class Claude Code integration; requested-vs-confirmed model labels
+(`model_standing` from the recorded pin, `adapterModelText` in the client —
+"asked for X" is not "X"); the connect-time standing recorded on the
+connection so a later registry change cannot rewrite what somebody was told;
+discovery models carrying `inner_provider` + `selectable` so pickers disable
+prohibited and tag unchecked BEFORE the pick; `opencode auth list` parsed
+into a reaches line where only registry-recognised names cross the boundary
+and everything else is counted; and the "Don't see your provider?"
+disclosure on setup and settings, honest about both halves.
+
+Two corrections recorded prominently in docs/PROVIDER-DISCOVERY.md because
+both changed decisions: spend ceilings HOLD under nesting (OpenCode's
+`reports_usage` is verified; what dies is dollar prediction, not the
+ceiling), and ACP makes reach cheaper but verification WORSE (no model
+identity, no token-level usage, per-call permissions) — plumbing, not a
+capability surface.
+
+The rig found a real fault of its own twice tonight: the managed headless
+browser leaks on EVERY exit (clean passes included), so any rig run that
+starts while a leaked browser holds CDP 9444 adopts the orphan and hangs
+silently — two multi-decade-minute wedges before the pattern was clear. Runs
+now pre-kill leaked `hivemind-reachable` browsers; the durable fix (refuse or
+reclaim a stale occupant inside `ensureHarness`, plus an exit path that
+actually kills the browser) is flagged as its own task.
+
+Core **846/848** with the two intentional Windows skips, Desktop **320/320**,
+30/30 reachability, shipped and installed **26.823.24** with identities
+verified, installed walk green against Skybound. No paid call.

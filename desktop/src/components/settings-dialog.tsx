@@ -12,11 +12,12 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SelectionControl } from "@/components/ui/selection-control";
-import { ProviderListRow, ProviderMark, providerRank } from "@/components/workspace/provider-list";
+import { MultiplierDisclosure, ProviderListRow, ProviderMark, providerRank } from "@/components/workspace/provider-list";
 import { list } from "@/lib/durable";
 import { plainActionError } from "@/lib/plain-language";
 import { displayProjectPath } from "@/lib/project-session";
 import { useProviderAuthentication } from "@/lib/provider-authentication";
+import { adapterModelText } from "@/lib/workspace-actions";
 import type {
   AdapterConnectResult,
   AutonomyLevel,
@@ -364,7 +365,7 @@ function AgentSection({
     const provider = view?.providers?.find((entry) => entry.id === providerId);
     setConnecting({
       role,
-      label: `${provider?.label ?? providerId} Ã‚Â· ${modelSlug}`,
+      label: `${provider?.label ?? providerId} · ${modelSlug}`,
       startedAt: Date.now()
     });
     setProbe(null);
@@ -439,6 +440,7 @@ function AgentSection({
                 checksBusy={connecting !== null}
                 expanded={opened === provider.id}
                 key={provider.id}
+                reaches={authenticationStandings.get(provider.id)?.reaches ?? null}
                 leading={
                   <span className="grid size-5 shrink-0 place-items-center" title={provider.checked_here ? "Checked in this project" : "Not checked in this project"}>
                     <StatusMark state={provider.checked_here ? "ok" : provider.connectable ? "unverified" : "none"} />
@@ -449,6 +451,10 @@ function AgentSection({
                 onExpand={() => setOpened(opened === provider.id ? null : provider.id)}
               />
             ))}
+          </div>
+
+          <div className="mt-2">
+            <MultiplierDisclosure />
           </div>
 
           {notice === "" ? null : (
@@ -474,7 +480,7 @@ function AgentSection({
             {connecting === null ? null : (
               <p className="mb-2.5 flex items-center gap-1.5 rounded-sm border-l-2 border-navy bg-navy-wash px-2.5 py-1.5 text-[11px] text-ink" role="status">
                 <Loader aria-hidden="true" className="size-3 animate-spin" />
-                Checking {connecting.label} for {connecting.role} Ã‚Â· {elapsedSeconds}s
+                Checking {connecting.label} for {connecting.role} · {elapsedSeconds}s
               </p>
             )}
             <div className="grid gap-px overflow-hidden rounded-sm border border-rule bg-rule">
@@ -582,7 +588,11 @@ function RoleModelRow({
       ? []
       : discovery.models.map((model) => ({
           providerId: discovery.provider_id,
-          slug: model.slug
+          slug: model.slug,
+          /* Carried so the choice can say, BEFORE it is picked, whose service
+             a multiplier slug reaches and whether that vendor sanctions it. */
+          inner: model.inner_provider ?? null,
+          selectable: model.selectable !== false
         }))
   );
   const candidateCurrentKey =
@@ -625,7 +635,18 @@ function RoleModelRow({
             {current.map((adapter) => (
               <span className="inline-flex max-w-full items-center gap-1 rounded-sm border border-rule bg-canvas px-1.5 py-0.5" key={adapter.tool ?? `${adapter.role}:${adapter.model}`}>
                 {adapter.provider_id == null ? null : <ProviderMark provider={adapter.provider_id} />}
-                <code className="truncate font-mono text-[10px] text-ink">{adapter.model}</code>
+                {/* Requested vs confirmed: an unverified pin renders as what
+                    was ASKED FOR, never as a fact the probe declined to state. */}
+                <code
+                  className={`truncate font-mono text-[10px] ${adapter.model_standing === "requested" ? "text-amber" : "text-ink"}`}
+                  title={
+                    adapter.model_standing === "requested"
+                      ? "Requested, not confirmed: this agent does not report which model it loaded."
+                      : undefined
+                  }
+                >
+                  {adapterModelText(adapter)}
+                </code>
               </span>
             ))}
           </div>
@@ -643,8 +664,17 @@ function RoleModelRow({
             return providerOptions.length === 0 ? null : (
               <optgroup key={provider.id} label={provider.label}>
                 {providerOptions.map((option) => (
-                  <option key={choiceKey(option.providerId, option.slug)} value={choiceKey(option.providerId, option.slug)}>
+                  <option
+                    disabled={!option.selectable}
+                    key={choiceKey(option.providerId, option.slug)}
+                    value={choiceKey(option.providerId, option.slug)}
+                  >
                     {option.slug}
+                    {option.inner?.sanction === "prohibited"
+                      ? " — not allowed here"
+                      : option.inner?.sanction === "unchecked"
+                        ? " — unchecked"
+                        : ""}
                   </option>
                 ))}
               </optgroup>
@@ -656,6 +686,21 @@ function RoleModelRow({
             {primary.model_choice_refusal}
           </span>
         )}
+        {(() => {
+          /* Said before the connect button is pressed, not after: an unchecked
+             inner provider is a decision the person is making, and the reason
+             it is unchecked belongs on screen while they can still not pick it. */
+          const chosen = parsed === null
+            ? null
+            : options.find(
+                (option) => option.providerId === parsed.providerId && option.slug === parsed.modelSlug
+              );
+          return chosen?.inner == null || chosen.inner.sanction === "blessed" ? null : (
+            <span className="mt-1 block text-[10px] leading-relaxed text-amber">
+              {chosen.inner.label} is {chosen.inner.sanction}: {chosen.inner.why}
+            </span>
+          );
+        })()}
       </div>
       <div className="flex items-center gap-2 sm:flex-col sm:items-end">
         <Button
@@ -667,10 +712,10 @@ function RoleModelRow({
           }}
         >
           {working ? <Loader aria-hidden="true" className="animate-spin" /> : <Plug aria-hidden="true" />}
-          {working ? `Checking Ã‚Â· ${elapsedSeconds}s` : role === "worker" ? "Add and check" : "Check and use"}
+          {working ? `Checking · ${elapsedSeconds}s` : role === "worker" ? "Add and check" : "Check and use"}
         </Button>
         <span className="text-right text-[10px] leading-snug text-muted-foreground">
-          One real check Ã‚Â· about 40K tokens
+          One real check · about 40K tokens
         </span>
       </div>
     </div>
@@ -726,7 +771,7 @@ function ProbeReport({
               <span className="text-[12px] font-medium text-ink">{entry.label}</span>
               {entry.requested === null && entry.reported === null ? null : (
                 <span className="ml-2 font-mono text-[11px] text-muted-foreground">
-                  asked {entry.requested ?? "Ã¢â‚¬â€"} Ã‚Â· got {entry.reported ?? "no answer"}
+                  asked {entry.requested ?? "Ã¢â‚¬â€"} · got {entry.reported ?? "no answer"}
                 </span>
               )}
               <span className="mt-0.5 block text-[11px] leading-relaxed break-words text-muted-foreground">
@@ -1155,7 +1200,7 @@ function TaskTypeRouting({
               {choosable.map((adapter) => (
                 <option key={adapter.tool ?? adapter.role} value={adapter.tool ?? ""}>
                   {adapter.role}
-                  {adapter.model === null ? "" : ` Ã‚Â· ${adapter.model}`}
+                  {adapter.model === null ? "" : ` · ${adapterModelText(adapter)}`}
                 </option>
               ))}
             </select>

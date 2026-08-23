@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/pressable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SelectionControl } from "@/components/ui/selection-control";
-import { ProviderListRow, providerRank } from "@/components/workspace/provider-list";
+import { MultiplierDisclosure, ProviderListRow, providerRank } from "@/components/workspace/provider-list";
 import { useDismissed } from "@/lib/dismissible";
 import {
   displayProjectPath,
@@ -639,6 +639,7 @@ function ConnectStep({
                   checksBusy={busy !== null}
                   expanded={opened === provider.id}
                   key={provider.id}
+                  reaches={authenticationStandings.get(provider.id)?.reaches ?? null}
                   leading={
                     <Checkbox
                       aria-label={`Use ${provider.label}`}
@@ -655,6 +656,8 @@ function ConnectStep({
               ))}
             </div>
           )}
+
+          <MultiplierDisclosure />
 
           <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
             <Button
@@ -844,6 +847,16 @@ function ModelStep({
                         {advice?.agent_id === model.agent_id ? (
                           <span className="text-[10px] font-medium tracking-label text-navy uppercase">
                             Suggested
+                          </span>
+                        ) : null}
+                        {/* On a multiplier, whose service this slug reaches is
+                            part of the choice — said before it is picked. */}
+                        {model.inner_provider != null && model.inner_provider.sanction !== "blessed" ? (
+                          <span
+                            className={`text-[10px] font-medium tracking-label uppercase ${model.inner_provider.sanction === "prohibited" ? "text-clay" : "text-amber"}`}
+                            title={model.inner_provider.why}
+                          >
+                            {model.inner_provider.sanction}
                           </span>
                         ) : null}
                       </span>

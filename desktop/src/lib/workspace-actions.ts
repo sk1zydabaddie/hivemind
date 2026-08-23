@@ -320,6 +320,26 @@ export interface AdapterProbeResult {
   readback_source: string | null;
 }
 
+/**
+ * The two support claims a harness can make, kept apart on screen: an
+ * integrated harness's economics work; a multiplier harness is a verified
+ * cage around providers Hivemind never integrated. Sentences come from Core.
+ */
+export type SupportTier = "integrated" | "multiplier";
+
+/**
+ * For a multiplier harness: whose service requests go to and whether that
+ * vendor sanctions the path. `unchecked` means "documented by the harness,
+ * never verified by us" — and the surface says so before anything is picked.
+ */
+export interface InnerProviderStanding {
+  id: string;
+  label: string;
+  sanction: "blessed" | "prohibited" | "unchecked";
+  why: string;
+  checked: string;
+}
+
 /** A harness and the subscription that pays for it. Not a harness-and-model. */
 export interface CatalogueProvider {
   id: string;
@@ -329,6 +349,9 @@ export interface CatalogueProvider {
   caveat: string | null;
   pins_model: boolean;
   connectable: boolean;
+  /** Absent only when talking to an older daemon. */
+  support_tier?: SupportTier;
+  tier_claim?: string;
   authentication: {
     experience: "browser" | "interactive" | "device_code";
     detail: string;
@@ -341,6 +364,9 @@ export interface ProviderAuthenticationStanding {
   provider_id: string;
   status: "signed_in" | "signed_out" | "unknown";
   detail: string;
+  /** Which vendors this harness's own sign-ins reach; unrecognised entries are
+      counted, never carried. Absent on older daemons and on integrated harnesses. */
+  reaches?: { providers: InnerProviderStanding[]; unrecognised: number } | null;
 }
 
 export interface ProviderAuthenticationStatusView {
@@ -367,6 +393,8 @@ export interface CatalogueModelView {
   price: ModelPrice | null;
   price_stale: boolean | null;
   price_age_days: number | null;
+  /** Whose service this slug reaches, on a multiplier harness. Absent on older daemons. */
+  inner_provider?: InnerProviderStanding | null;
 }
 
 export interface RoleRecommendation {
@@ -397,11 +425,37 @@ export interface InspectedAdapter {
      Computed by Core: the client cannot import it, and a second copy of a
      capability-contract rule is how two surfaces come to disagree. */
   model_choice_refusal?: string | null;
+  /** Whether `model` is a confirmed fact or only what was asked for.
+      Absent on older daemons, which must render the same as "requested"
+      NOT being asserted — see `adapterModelText`. */
+  model_standing?: "confirmed" | "requested" | null;
+  /** Which support claim this connection's harness may make. */
+  support_tier?: SupportTier | null;
+  /** Recorded at connect time for multiplier connections. */
+  inner_provider?: InnerProviderStanding | null;
+}
+
+/**
+ * The model text a connection label may honestly carry. A verified pin reads
+ * as the model; anything else reads as a request — "asked for X" — because
+ * the probe recorded the pin as unverified and the label must not assert
+ * what the record declines to. An older daemon that sends no standing gets
+ * the plain text it always had, which asserts nothing new.
+ */
+export function adapterModelText(
+  adapter: Pick<InspectedAdapter, "model" | "model_standing">
+): string | null {
+  if (adapter.model === null) return null;
+  return adapter.model_standing === "requested" ? `asked for ${adapter.model}` : adapter.model;
 }
 
 export interface DiscoveredModel {
   slug: string;
   label: string;
+  /** Whose service this slug reaches, on a multiplier harness. Absent on older daemons. */
+  inner_provider?: InnerProviderStanding | null;
+  /** False when the inner provider is prohibited; the picker must not offer it. */
+  selectable?: boolean;
 }
 
 export interface ProviderModelDiscovery {

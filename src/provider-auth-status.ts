@@ -3,6 +3,8 @@ import { execFile } from "node:child_process";
 import {
   PROVIDER_AUTHENTICATION_STATUS_SPECS,
   catalogueProviders,
+  innerProviderStandingForAuthName,
+  type InnerProviderStanding,
   type ProviderAuthenticationStatusSpec
 } from "./agent-catalogue.js";
 import {
@@ -19,6 +21,14 @@ export interface ProviderAuthenticationStanding {
   provider_id: string;
   status: "signed_in" | "signed_out" | "unknown";
   detail: string;
+  /**
+   * For a multiplier harness that lists its own sign-ins: which vendors those
+   * sign-ins reach, with each vendor's recorded sanction. Only names matching
+   * Hivemind's own registry cross this boundary — anything user-configured
+   * and unrecognised is COUNTED, never carried, so account names and raw
+   * provider output still never leave this module.
+   */
+  reaches?: { providers: InnerProviderStanding[]; unrecognised: number } | null;
 }
 
 export interface ProviderAuthenticationStatusView {
@@ -111,7 +121,26 @@ export function parseAuthenticationStatus(
   const plain = output.replaceAll(/\u001b\[[0-9;]*m/gu, "");
   const match = /\b(\d+) credentials?\b/iu.exec(plain);
   if (match === null) return unknown(providerId);
-  return Number(match[1]) > 0 ? signedIn(providerId) : signedOut(providerId);
+  const standing = Number(match[1]) > 0 ? signedIn(providerId) : signedOut(providerId);
+  /* Environment-variable entries are sign-ins too — a key in the environment
+     reaches its vendor exactly as a stored credential does — so both sections'
+     bullet lines are read. Measured against `opencode auth list` on 1.18.x:
+     each entry is one bullet line, name first, kind or variable name last. */
+  const reached = new Map<string, InnerProviderStanding>();
+  let unrecognised = 0;
+  for (const line of plain.split(/\r?\n/u)) {
+    const entry = /^[^\p{L}\p{N}]*[•·]\s+(.+)$/u.exec(line.trim());
+    if (entry === null) continue;
+    const words = entry[1]!.trim().split(/\s+/u);
+    const name = (words.length > 1 ? words.slice(0, -1) : words).join(" ");
+    if (name === "") continue;
+    const known = innerProviderStandingForAuthName(name);
+    if (known === null) unrecognised += 1;
+    else reached.set(known.id, known);
+  }
+  return reached.size === 0 && unrecognised === 0
+    ? standing
+    : { ...standing, reaches: { providers: [...reached.values()], unrecognised } };
 }
 
 function signedIn(providerId: string): ProviderAuthenticationStanding {

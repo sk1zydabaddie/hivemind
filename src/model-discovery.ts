@@ -3,7 +3,9 @@ import { spawn } from "node:child_process";
 import {
   MODEL_DISCOVERY_SPECS,
   catalogueProviders,
+  judgeInnerProvider,
   validDiscoveredModelSlug,
+  type InnerProviderStanding,
   type ModelDiscoverySpec
 } from "./agent-catalogue.js";
 import {
@@ -20,6 +22,17 @@ const MAX_DISCOVERY_OUTPUT_BYTES = 1_000_000;
 export interface DiscoveredModel {
   slug: string;
   label: string;
+  /**
+   * For a multiplier harness, whose service this slug's requests go to and
+   * whether that vendor sanctions the path. Null on integrated harnesses.
+   */
+  inner_provider: InnerProviderStanding | null;
+  /**
+   * False exactly when the inner provider is prohibited. The picker must not
+   * offer it, and `adapter.connect` refuses it independently — the flag is
+   * presentation, the gate is the mechanism.
+   */
+  selectable: boolean;
 }
 
 export interface ProviderModelDiscovery {
@@ -88,7 +101,18 @@ export async function discoverProviderModels(
       }
       let models: DiscoveredModel[];
       try {
-        models = parseDiscoveryOutput(spec.kind, result.stdout);
+        models = parseDiscoveryOutput(spec.kind, result.stdout).map((model) => {
+          /* Judged per slug so the picker can say, before anything is picked,
+             whose service a model reaches and whether that vendor sanctions
+             the path. `selectable: false` is presentation only — the connect
+             action re-judges and refuses on its own. */
+          const judgement = judgeInnerProvider(provider.id, model.slug);
+          return {
+            ...model,
+            inner_provider: judgement.standing,
+            selectable: judgement.refusal === null
+          };
+        });
       } catch (cause) {
         return {
           provider_id: provider.id,
@@ -123,8 +147,8 @@ export async function discoverProviderModels(
 export function parseDiscoveryOutput(
   kind: ModelDiscoverySpec["kind"],
   output: string
-): DiscoveredModel[] {
-  const models: DiscoveredModel[] = [];
+): Array<Pick<DiscoveredModel, "slug" | "label">> {
+  const models: Array<Pick<DiscoveredModel, "slug" | "label">> = [];
   if (kind === "app-server") {
     const parsed: unknown = JSON.parse(output);
     const data = isRecord(parsed) && Array.isArray(parsed.data) ? parsed.data : [];
@@ -170,8 +194,10 @@ export function parseDiscoveryOutput(
   return uniqueValidModels(models);
 }
 
-function uniqueValidModels(models: DiscoveredModel[]): DiscoveredModel[] {
-  const unique = new Map<string, DiscoveredModel>();
+function uniqueValidModels(
+  models: Array<Pick<DiscoveredModel, "slug" | "label">>
+): Array<Pick<DiscoveredModel, "slug" | "label">> {
+  const unique = new Map<string, Pick<DiscoveredModel, "slug" | "label">>();
   for (const model of models) {
     if (!validDiscoveredModelSlug(model.slug) || unique.has(model.slug)) continue;
     unique.set(model.slug, model);
