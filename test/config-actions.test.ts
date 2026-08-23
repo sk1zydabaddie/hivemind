@@ -503,18 +503,38 @@ test("a recommendation is advice with a reason, and suggests one worker", () => 
     assert.match(advice!.reviewed, /^\d{4}-\d{2}-\d{2}$/u);
     assert.ok(findCatalogueAgent(advice!.agent_id), "it names a real agent");
   }
-  /* One worker on a first run: each connection runs the agent once for real, so
-     suggesting a three-model pool up front turns a first run into five probes
-     before a line of code is written. */
-  assert.equal(ROLE_RECOMMENDATIONS.filter((entry) => entry.role === "worker").length, 1);
-  assert.deepEqual(
-    Object.fromEntries(ROLE_RECOMMENDATIONS.map((entry) => [entry.role, entry.agent_id])),
-    {
-      planner: "claude-opus",
-      manager: "claude-code",
-      worker: "grok-build"
-    },
-    "the reviewed mixed-provider setup must not fall back to a Codex model"
+  /* This used to pin ONE worker and the exact triple
+     planner/manager/worker = claude-opus/claude-code/grok-build, on the
+     argument that extra pool members cost probes on a first run. The probe
+     argument was true and the conclusion was wrong: the tier floor REFUSES
+     rather than downgrades, and `grok-build` is standard-tier, so the pinned
+     advice could not run a task touching `package.json` -- it returned "no
+     eligible provider available" and stopped the run. See the comment in
+     agent-catalogue.ts.
+     
+     So the assertions now pin the INVARIANTS that made the old triple right,
+     rather than the triple itself: the pool must span the tiers the default
+     globs can produce, and the setup must stay mixed-provider rather than
+     collapsing onto one vendor. A future change that keeps both is fine; one
+     that breaks either fails here. */
+  const workers = ROLE_RECOMMENDATIONS.filter((entry) => entry.role === "worker");
+  const workerTiers = new Set(
+    workers.map((entry) => findCatalogueAgent(entry.agent_id)?.routing_tier)
+  );
+  assert.ok(
+    workerTiers.has("cheap") || workerTiers.has("local"),
+    "a pool with no cheap member pays the standard rate for routine work"
+  );
+  assert.ok(
+    workerTiers.has("strong"),
+    "a pool with no strong member cannot run a High or Critical task at all"
+  );
+  const harnesses = new Set(
+    ROLE_RECOMMENDATIONS.map((entry) => findCatalogueAgent(entry.agent_id)?.harness)
+  );
+  assert.ok(
+    harnesses.size > 1,
+    "the reviewed setup is mixed-provider and must not collapse onto one vendor"
   );
 });
 

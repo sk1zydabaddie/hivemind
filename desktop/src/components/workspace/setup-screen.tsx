@@ -410,12 +410,35 @@ export function planProviderConnections(input: {
   const agentForProvider = (providerId: string): string | null =>
     input.models.find((model) => model.provider_id === providerId)?.agent_id ?? null;
 
+  /* Every recommendation for the role, not just the first.
+     
+     The worker role is a POOL and the tier floor REFUSES rather than
+     downgrades, so a pool that does not span the tiers cannot run a High or
+     Critical task at all -- and Core now recommends a cheap member and a
+     strong member for exactly that reason. Taking only the first
+     recommendation would connect half the advice and leave the other half
+     invisible, which is how the suggested setup came to be one that could not
+     add a dependency. Costs one extra probe per additional member, which the
+     button already prices. */
   const roleConnections = input.remainingRoles.flatMap((role) => {
-    const agentId = agentForRole(role);
-    const model = input.models.find((entry) => entry.agent_id === agentId);
-    return agentId === null || model === undefined
-      ? []
-      : [{ role, agentId, providerId: model.provider_id }];
+    const recommended = input.recommendations
+      .filter((entry) => entry.role === role)
+      .map((entry) => entry.agent_id)
+      .filter((agentId) =>
+        input.models.some(
+          (model) =>
+            model.agent_id === agentId &&
+            input.chosen.has(model.provider_id) &&
+            runnableProviders.has(model.provider_id)
+        )
+      );
+    const agentIds = recommended.length > 0 ? recommended : [agentForRole(role)];
+    return agentIds.flatMap((agentId) => {
+      const model = input.models.find((entry) => entry.agent_id === agentId);
+      return agentId === null || model === undefined
+        ? []
+        : [{ role, agentId, providerId: model.provider_id }];
+    });
   });
   const covered = new Set(roleConnections.map((entry) => entry.providerId));
   const providerConnections = input.providers.flatMap((provider) => {

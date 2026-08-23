@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 
-import { agentCatalogue } from "../src/agent-catalogue.js";
+import { ROLE_RECOMMENDATIONS, agentCatalogue, findCatalogueAgent } from "../src/agent-catalogue.js";
 import { connectAdapter, initProjectForDesktop } from "../src/config-actions.js";
 import { corpusInvoke } from "../src/local-adapters.js";
 import { findHostileHarnessSettings } from "../src/harness-config-digest.js";
@@ -219,5 +219,75 @@ test("a hostile harness setting refuses the connection before any provider call"
     else process.env.CODEX_HOME = previous;
     await rm(repo, { recursive: true, force: true });
     await rm(home, { recursive: true, force: true });
+  }
+});
+
+/* ── The advice has to be runnable ────────────────────────────────────────
+ *
+ * The tier floor REFUSES rather than downgrades, so a recommended worker pool
+ * that does not span the tiers produces a setup that cannot run an ordinary
+ * task. That is what shipped until 2026-08-23: one standard-tier worker, while
+ * `initProject` puts `package.json` in High and anything uncovered falls back
+ * to High. Adding a dependency stopped the run.
+ *
+ * Proven to bite: drop the strong member from ROLE_RECOMMENDATIONS and the
+ * High and Critical assertions fail with "no eligible provider available". */
+test("following the worker recommendations produces a pool that can run every tier", async () => {
+  const repo = await repoWithProject();
+  try {
+    await initProjectForDesktop(repo);
+    const loaded = await loadConfig(repo);
+    assert.equal(loaded.ok, true);
+    const config = (loaded.ok ? loaded.config : null) as HivemindConfig;
+
+    const recommended = ROLE_RECOMMENDATIONS.filter((entry) => entry.role === "worker");
+    assert.ok(recommended.length >= 2, "a single-member pool cannot span the tiers");
+    for (const entry of recommended) {
+      const agent = findCatalogueAgent(entry.agent_id);
+      assert.ok(agent, `${entry.agent_id} is recommended but not in the catalogue`);
+      await writeProfile(repo, entry.agent_id, agent!.routing_tier, agent!.cost_rank);
+    }
+
+    /* The four tiers the DEFAULT globs can produce, including the fallback:
+       `package.json` is High out of the box and an uncovered path is High too,
+       which is what made the old single-worker advice unrunnable. */
+    for (const [file, tier] of [
+      ["README.md", "low"],
+      ["src/thing.ts", "medium"],
+      ["package.json", "high"],
+      [".github/workflows/ci.yml", "critical"]
+    ] as const) {
+      const routed = await routeTaskProvider(repo, contractFor({ allowed_files: [file] }), config);
+      assert.equal(routed.ok, true, `${tier} (${file}): ${routed.ok ? "" : routed.reason}`);
+      if (routed.ok) assert.equal(routed.value.task_tier, tier);
+    }
+
+    /* And the cheap member is what routine work actually lands on, which is
+       the whole point of pairing it with a strong one. */
+    const medium = await routeTaskProvider(repo, contractFor({ allowed_files: ["src/thing.ts"] }), config);
+    assert.equal(medium.ok, true);
+    if (medium.ok) {
+      const chosen = findCatalogueAgent(medium.value.tool);
+      assert.equal(chosen?.routing_tier, "cheap");
+    }
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+/* The failure the pairing prevents, stated as its own case so it cannot be
+   lost if the recommendations change again. */
+test("a pool of one standard worker cannot run a task that touches package.json", async () => {
+  const repo = await repoWithProject();
+  try {
+    await initProjectForDesktop(repo);
+    const loaded = await loadConfig(repo);
+    const config = (loaded.ok ? loaded.config : null) as HivemindConfig;
+    await writeProfile(repo, "only-standard", "standard", 10);
+    const routed = await routeTaskProvider(repo, contractFor({ allowed_files: ["package.json"] }), config);
+    assert.equal(routed.ok, false);
+    assert.match(routed.ok ? "" : routed.reason, /no eligible provider|floor/u);
+  } finally {
+    await rm(repo, { recursive: true, force: true });
   }
 });

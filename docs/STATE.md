@@ -2179,3 +2179,58 @@ from the one the harness reads is a check of nothing.
 Core **852/854** with the two intentional Windows skips, Desktop **321/321**,
 30/30 reachability, shipped and installed **26.823.1246**, installed walk green
 against Skybound. No paid call.
+
+## Readiness pass before real use, and the run-stopper it found — 2026-08-23
+
+Register work stopped. One pass over the open register ranked by a single
+question -- would this bite a real multi-task project this week -- and the
+answer was that almost nothing in the register would, while something not in
+the register would stop the first run that touched `package.json`.
+
+**The recommended setup could not run a High or Critical task.** The tier floor
+REFUSES rather than downgrades; `initProject`'s default globs put
+`package.json`, `tsconfig.json` and dot-config files in High, CI/infra/auth
+directories in Critical, and anything no glob covers falls back to High. The
+recommended worker pool was ONE member, `grok-build`, which is standard-tier.
+So following the product's own advice produced a setup that answered "no
+eligible provider for high task tier" on an ordinary dependency change. The
+old note defending one worker argued from first-run probe cost, which was true
+and led to the wrong conclusion: probes are cheap and a stopped run is not.
+
+The pool now spans the tiers: `codex-luna` (cheap) for Low and Medium,
+`claude-opus` (strong) for High and Critical. `claude-opus` rather than
+`codex-sol` on purpose -- it keeps the reviewed MIXED-PROVIDER shape and needs
+no subscription the planner recommendation does not already assume, at the
+stated cost that Claude Code has not yet had whole work shipped through it as a
+worker. `grok-build` remains the standard-tier alternative and a sound third
+member for quota redundancy; it adds no tier coverage, which is what the floor
+demands. `planProviderConnections` now connects EVERY recommended worker rather
+than the first, or half the advice would have stayed invisible.
+
+The test that pinned the old triple was replaced with the invariants that made
+it right -- the pool spans the tiers, and the setup stays mixed-provider -- so
+a future change that keeps both passes and one that breaks either fails.
+Bite proven: dropping the strong member reproduces the original refusal.
+
+**A-10 fixed, the one register item that bites a long run.** The event stream
+had an `onerror`; the per-task OUTPUT stream had none, so a failed task stream
+froze the live pane silently while the app still reported live -- on a
+multi-hour run, indistinguishable from a worker that has hung. It now reports
+through the same primitive the next message clears.
+
+Everything else in the register went below the line for this week and is
+recorded there rather than re-argued: observability gaps (A-05), swallowed
+convenience-path errors (A-15 to A-20), lint and unused-code debt (A-30 to
+A-36), and one narrow degraded-recovery window with an on-screen manual
+fallback (A-21).
+
+Also confirmed while answering, and worth having written down: `run_ceiling`
+(300K) is PER CALL, not per run -- sized above the measured worst single call
+of 152,229 -- and `session_ceiling` (3M) is the cumulative wall for a
+multi-task session. Concurrency defaults to 2 with a hard maximum of 4.
+
+Core **855/857** with the two intentional Windows skips, Desktop **322/322**,
+30/30 reachability, shipped and installed **26.823.1324**, installed walk green
+against Skybound on a retry after msedgedriver crashed the first attempt --
+the second rig fault of the day, same family as the leaked browser and already
+flagged as its own task. No paid call.

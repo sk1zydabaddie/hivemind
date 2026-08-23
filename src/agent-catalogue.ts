@@ -802,16 +802,59 @@ export const ROLE_RECOMMENDATIONS: RoleRecommendation[] = [
     why: "The manager decides what to do when something unexpected happens. It reasons over a small, well-described situation, which is the shape a mid-tier model handles well.",
     reviewed: "2026-08-21"
   },
-  /* ONE worker, deliberately. Tier routing only does something with a pool of
-     more than one, so there is a real argument for suggesting three up front.
-     It loses to what that costs: each connection runs the agent once, so a
-     three-model pool turns a first run into five probes before a line of code
-     is written. Build the pool once somebody has seen a run finish. */
+  /* TWO workers, and the reason the previous ONE was wrong is a run-stopper
+     rather than a preference.
+     
+     The old note here argued for a single worker to keep first-run probe cost
+     down, and left the pool to be grown later. What it missed: the tier floor
+     REFUSES rather than downgrades. `initProject`'s default globs put
+     `package.json`, `tsconfig.json` and any dot-config file in High, and the
+     CI, infra and auth directories in Critical, and anything no glob covers
+     falls back to High -- and High and Critical both require a `strong`
+     provider. (Written without the glob syntax on purpose: the patterns
+     contain the sequence that ends a block comment, which silently truncated
+     this comment into code the first time.) The
+     single recommended worker was `grok-build`, which is `standard`. So the
+     setup the product itself suggested could not run a task that touched
+     `package.json`: routing returned "no eligible provider available" and the
+     run stopped. Adding a dependency is not an exotic task.
+     
+     So the recommended pool now SPANS the tiers, which is also what makes the
+     Medium floor fix worth anything -- routing can only choose cheap when a
+     cheap member exists:
+     
+       - Low and Medium  -> codex-luna (cheap, cost_rank 4)
+       - High and Critical -> codex-sol (strong, cost_rank 20)
+     
+     Measured 2026-08-23: model choice spans 3.9x effective rate (codex-terra
+     runs 5.1x codex-luna at equal effort) while reasoning effort spans ~1.04x,
+     so WHICH model serves a tier is the whole cost decision and effort is not
+     part of it.
+     
+     The strong member is `claude-opus` rather than `codex-sol`, deliberately
+     and for two reasons. It keeps this a MIXED-PROVIDER setup, which the
+     previous single-worker line was reviewed as and which a Codex-only pool
+     would have quietly ended. And it needs no subscription the advice does not
+     already assume: `claude-opus` is the planner recommendation, while
+     `codex-sol` would have added a ChatGPT Pro or Business requirement that
+     nothing else here needs. State the cost honestly: Claude Code has not yet
+     had a whole piece of work shipped through it AS A WORKER, so the strong
+     member is the less-proven half of this pair. `grok-build` -- proven as a
+     worker on a shipped run -- is the standard-tier alternative and a sound
+     third member for redundancy when one provider hits a quota wall; it is not
+     included here because it adds no tier COVERAGE, and coverage is what the
+     floor demands. */
   {
     role: "worker",
-    agent_id: "grok-build",
-    why: "Writing the code for one scoped task with the files named in advance. Start with one worker; add a cheaper model for routine work once you have seen a run finish.",
-    reviewed: "2026-08-21"
+    agent_id: "claude-opus",
+    why: "The worker for High and Critical work -- config files, CI, anything touching auth -- because those tiers require a strong provider and refuse rather than downgrade, so a pool without one cannot run them at all.",
+    reviewed: "2026-08-23"
+  },
+  {
+    role: "worker",
+    agent_id: "codex-luna",
+    why: "The worker for routine source and docs work, which is most of a project. Measured at about a fifth the effective rate of the standard model for the same reasoning effort, and the tier floor keeps it away from risky paths.",
+    reviewed: "2026-08-23"
   }
 ];
 

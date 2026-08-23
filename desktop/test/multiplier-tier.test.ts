@@ -132,4 +132,20 @@ describe("multiplier tier surfaces", () => {
     expect(providerList).toMatch(/Its sign-ins reach:/u);
     expect(providerList).toMatch(/does not recognise/u);
   });
+
+  /* A-10, the one open register item that bites a multi-hour run: the output
+     stream had no error handler, so a failed task stream froze the live pane
+     silently while the app still reported "live". */
+  test("the live output stream reports its own interruption", async () => {
+    const hook = await readFile(path.join(desktopRoot, "src", "hooks", "use-workspace.ts"), "utf8");
+    const outputStream = hook.slice(
+      hook.indexOf("/output/stream"),
+      hook.indexOf("const connectEventStream")
+    );
+    expect(outputStream).toMatch(/source\.onerror =/u);
+    /* Reported through the same primitive the next message clears, so a
+       recovered stream stops complaining on its own. */
+    expect(outputStream).toMatch(/recordActionError\(/u);
+    expect(outputStream).toMatch(/the run is unaffected/u);
+  });
 });

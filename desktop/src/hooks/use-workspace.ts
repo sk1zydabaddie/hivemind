@@ -216,6 +216,20 @@ export function useWorkspace(): WorkspaceView {
         `${currentConnection.daemon_url}/tasks/${encodeURIComponent(taskId)}/output/stream`
       );
       outputSourceRef.current = source;
+      /* A-10. The event stream has always had this; the OUTPUT stream did not,
+         and the asymmetry is the whole bug: when a task's output stream fails,
+         EventSource retries silently forever. The live-output pane simply stops
+         updating while the app still reports "live", because the event stream
+         underneath it is fine. On a run measured in hours that reads as a
+         worker that has gone quiet, which is indistinguishable from one that
+         has hung -- the same confusion `non_interactive` exists to refuse.
+         Reported rather than repaired: a transport state a person can see beats
+         a reconnect they cannot, and the next message clears it. */
+      source.onerror = () => {
+        if (isCurrentProject()) {
+          recordActionError("Live output for this task was interrupted. It will reconnect on its own; the run is unaffected.");
+        }
+      };
       source.onmessage = (event) => {
         if (!isCurrentProject()) {
           return;
@@ -229,7 +243,7 @@ export function useWorkspace(): WorkspaceView {
       };
       render();
     },
-    [clearTransportErrorAfterProgress, render]
+    [clearTransportErrorAfterProgress, recordActionError, render]
   );
 
   const connectEventStream = useCallback(
