@@ -71,6 +71,13 @@ describe("shared UI primitives stay visually authoritative", () => {
     const rawButtons: string[] = [];
     for (const file of files) {
       if (file.endsWith(path.join("ui", "selection-control.tsx"))) continue;
+      /* Window controls are WINDOW chrome, not app controls. Their contract
+         belongs to the operating system -- full-height 46px hit targets, square
+         glyphs, a red close -- and routing them through the branded Button
+         primitive would either fight that contract or need exactly the
+         overrides the sibling test in this file exists to forbid. Excluded
+         deliberately, in the same shape as the primitive above. */
+      if (file.endsWith(path.join("components", "window-controls.tsx"))) continue;
       const source = await readFile(file, "utf8");
       if (/<button\b/u.test(source)) {
         rawButtons.push(path.relative(sourceRoot, file).replaceAll("\\", "/"));

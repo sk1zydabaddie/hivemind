@@ -111,7 +111,12 @@ const ALIGNMENT_EXCEPTIONS: Record<string, string> = {
      outlives the markup it was granted for is how a registry stops meaning
      anything, so the test fails on a stale one rather than tolerating it. */
   "components/workspace/project-tab.tsx: ml-[136px]":
-    "aligns a run's detail block under the run's own metadata column"
+    "aligns a run's detail block under the run's own metadata column",
+  /* Not a design measurement at all: macOS draws its traffic lights over our
+     content at the window's top left, and this is the room they take. The
+     number belongs to the platform, so it cannot be expressed as a step on our
+     scale without pretending it is our decision. */
+  "App.tsx: pl-[78px]": "clears the macOS traffic lights the system draws over the header"
 };
 
 interface Offence {

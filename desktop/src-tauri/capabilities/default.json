@@ -1,13 +1,21 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Hivemind grants notification access and one read-only app-version command so the installed build can identify itself. Update discovery and installation are custom Rust commands; every updater plugin IPC command is explicitly denied so the webview cannot bypass the on-disk idleness gate.",
+  "description": "Hivemind grants notification access, one read-only app-version command, and the six window commands its own title bar needs. Update discovery and installation are custom Rust commands; every updater plugin IPC command is explicitly denied so the webview cannot bypass the on-disk idleness gate. The window permissions were added when `decorations: false` made this app draw its own caption: without them the webview could not move, maximise or close its own window, which was measured -- every call answered \"not allowed by ACL\" and the window was unmovable. They are the narrowest set that makes a title bar work and reach nothing outside the window itself: no filesystem, no shell, no other window.",
   "windows": [
     "main"
   ],
   "permissions": [
     "notification:default",
     "core:app:allow-version",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-is-maximized",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "updater:deny-check",
     "updater:deny-download",
     "updater:deny-install",

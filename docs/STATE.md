@@ -2412,3 +2412,73 @@ intentional Windows skips, Desktop **324/324**, 30/30 reachability, installed
 walk green against Skybound. Two paid turns total: the notify probe and Luna's
 capability probe.
 
+## The window's own title bar — 2026-08-23
+
+A white system caption above a dark app read as two stacked programs. Two
+approaches were reported before building; the chosen one was neither of them
+exactly -- it is what Claude's own desktop app does, which is the expensive
+approach (`decorations: false`, our own controls) rather than recolouring the
+native caption. Worth recording why the report's pricing was wrong: in Electron
+that approach is nearly free because Chromium implements the non-client
+behaviours. In Tauri some of them are ours.
+
+**What Tauri 2.11 actually gives, read from its own drag script rather than
+assumed:** dragging by the header, DOUBLE-CLICK to maximise
+(`e.detail === 2` -> `internal_toggle_maximize`, with the macOS cancel-on-move
+variant), drag-to-edge snapping via `start_dragging`, and Win+Arrow keyboard
+management. Crucially it also solves the detail that makes custom title bars
+feel broken: its `isClickableElement` blocks dragging for `BUTTON`, anything
+with `tabindex`, and `role` in {button, link, menuitem, tab, ...}. Radix
+`TabsTrigger` renders `<button role="tab">`, so a tab is excluded twice over.
+The drag attribute is BARE rather than `deep`, which is the second half of the
+same guarantee: only direct clicks on the header itself start a drag.
+
+**What remains ours and is deliberately not built:** the Windows 11 Snap
+Layouts flyout on hovering the maximise button, which needs `WM_NCHITTEST` to
+answer `HTMAXBUTTON` and therefore window subclassing; and the caption
+right-click system menu. Dragging to an edge and Win+Arrow both still snap --
+"snapping" is three mechanisms and only one is missing.
+
+**Two things the verification caught that reasoning had not.** The reachability
+check went red with "setup — connect a provider never rendered": the replay
+harness DEFINES `__TAURI_INTERNALS__` with an invoke stub that throws for
+unknown commands, so "the bridge exists" is not evidence of a window, and
+`getCurrentWindow()` threw during render and blanked every replayed surface.
+The question is now asked as CAN I ADDRESS A WINDOW -- a label, inside a
+try/catch -- and outside the shell the controls render nothing. Then the
+installed check answered "Command plugin:window|... not allowed by ACL" for
+every window call: this app's capability list was deliberately minimal, so with
+the system caption gone the window could not be moved, maximised or closed, and
+Tauri's own drag script was blocked on the same gate. Strictly worse than the
+white bar it replaced, and invisible to every test that does not run the real
+binary.
+
+Six window permissions and two event permissions are now granted, pinned by a
+test that also refuses `core:window:default` (the whole plugin surface for a
+title bar) and any `emit` grant. The reason is recorded in the capability file's
+own description. The harness needed the window RECTANGLE to prove a tab click
+does not drag; that is measured from outside with user32 rather than by granting
+`outer_position`, because the ACL is the product's security surface and not the
+harness's convenience.
+
+Per platform: **Windows** gets the merged bar and our controls on the right;
+**Linux** gets the same code path, which is a gain rather than a degradation
+since WebKitGTK had no caption to match; **macOS** keeps its native traffic
+lights over our content (`titleBarStyle: Overlay`, `hiddenTitle: true`) and the
+header reserves 78px on the left for them -- a layout difference, recorded as a
+deliberate exception in the spacing scale because the number belongs to the
+platform rather than to our design system. Window controls are also the one
+place exempted from the branded-button rule: their contract is the OS's.
+
+Verified by looking at it on **26.823.1831** at 1440x900: header at y=0 with
+background `rgb(13, 25, 35)` (`--panel`), three controls right-aligned at
+x=1302/1348/1394, a tab mousedown leaving the window rect at (130,130)
+unchanged, double-click maximising to the full screen and a second one
+restoring, and `start_dragging` accepted with no error. Screenshots kept in
+`hivemind-window-chrome`. Honest limit on the drag evidence: the driver cannot
+move a real mouse, so what is proven is that the drag is permitted and starts,
+not that pixels followed a pointer.
+
+Desktop **333/333**, 30/30 reachability, installed walk green against Skybound.
+Core untouched this pass (**861/863** from the run before it). No paid call.
+

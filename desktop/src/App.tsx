@@ -20,6 +20,7 @@ import { SetupScreen } from "@/components/workspace/setup-screen";
 import { SharingBar } from "@/components/workspace/sharing-bar";
 import { UpdateBar } from "@/components/workspace/update-bar";
 import { useAttention } from "@/hooks/use-attention";
+import { WindowControls, trafficLightInset } from "@/components/window-controls";
 import { ProjectTab } from "@/components/workspace/project-tab";
 import { WorkTab } from "@/components/workspace/work-tab";
 import { Button } from "@/components/ui/button";
@@ -298,8 +299,31 @@ export default function App(): React.JSX.Element {
         onValueChange={setSection}
       >
         {/* Chrome, not a widget tray. It uses the first raised surface step,
-            ruled off from the darker workbench below. */}
-        <header className="flex h-11 shrink-0 items-stretch gap-4 border-b border-rule bg-panel shadow-[var(--glass-edge-far)] pr-2.5 pl-3">
+            ruled off from the darker workbench below.
+
+            It is also the window's title bar now: `decorations: false` removes
+            the system caption that was painted in the system's colour above a
+            dark app, and this row runs to the window edge instead.
+
+            `data-tauri-drag-region` is bare rather than "deep" ON PURPOSE. Bare
+            means only direct clicks on the header itself begin a drag, so every
+            child -- tabs, buttons, the project switcher -- is untouched. Tauri's
+            own rule already excludes clickable elements and `role="tab"`, and
+            this is the second half of the same guarantee: dragging cannot
+            activate a tab because a tab is not this element, and clicking a tab
+            cannot drag because a tab is clickable. Double-click to maximise
+            comes from the same script.
+
+            The left inset is macOS only: its traffic lights are drawn by the
+            system over our content, at the top left, so the brand mark starts
+            to their right. Windows and Linux put the controls on the right,
+            where this app renders them. */}
+        <header
+          className={`flex h-11 shrink-0 items-stretch gap-4 border-b border-rule bg-panel shadow-[var(--glass-edge-far)] pr-2.5 ${
+            trafficLightInset() ? "pl-[78px]" : "pl-3"
+          }`}
+          data-tauri-drag-region
+        >
           <div className="flex shrink-0 items-center gap-2">
             <BrandMark />
             <span className="text-[13px] leading-none font-semibold tracking-tight text-ink">
@@ -455,6 +479,7 @@ export default function App(): React.JSX.Element {
               <TooltipContent side="bottom">Settings</TooltipContent>
             </Tooltip>
           </div>
+          <WindowControls />
         </header>
 
         {/* The build bar was a second answer to the one question the update bar
