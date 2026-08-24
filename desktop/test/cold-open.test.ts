@@ -144,7 +144,16 @@ describe("cold open", () => {
         "utf8"
       )
     ).replace(/\/\*[\s\S]*?\*\//gu, "");
-    expect(screen).toMatch(/How this project is checked/u);
+    /* This pinned the exact heading "How this project is checked", which was a
+       proxy for the guarantee and became wrong when the step learned to REPORT
+       a detected command instead of asking about it. The guarantee is what is
+       pinned now: the step asks in plain language when nothing was found, and
+       says what it found when something was. */
+    expect(screen).toMatch(/How do you check your code works\?/u);
+    expect(screen).toMatch(/Found in your project and being used/u);
+    /* And it still refuses to guess, which is the whole of A-03: a wrong
+       command fails every change rather than checking it. */
+    expect(screen).toMatch(/will not guess/u);
     /* The ask offers both answers: a command, or the explicit declaration --
        and the declaration dispatches the typed field through the audited
        config door, never a sentinel string. */

@@ -278,7 +278,19 @@ class ReplayEventSource {
     if (command === "recent_projects") {
       return [{ path: "D:\\Projects\\trimr-replay", opened_at: "0" }];
     }
+    /* The LAUNCH question, which is a different one from "what is in the list".
+       The app asks this so a deleted last project can be reported rather than
+       silently replaced by an older one; the harness models the shell, so it
+       answers it too. Its absence left the replay with no project open and
+       every scenario rendering the setup screen -- caught by the reachability
+       check, which is the same failure mode the comment above records. */
+    if (command === "last_project") {
+      return { path: "D:\\Projects\\trimr-replay", opened_at: "0", missing: false };
+    }
     if (command === "remember_project") return null;
+    /* Removing an entry is shell state the replay has none of, and answering
+       is closer to the truth than throwing: there is nothing to forget. */
+    if (command === "forget_project") return null;
     /* Without a stub this threw, the bar rendered its genuinely-broken clay
        state, and EVERY design capture carried a red "could not check for
        updates" alarm that was about the harness rather than the app. A fixture

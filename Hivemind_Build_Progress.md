@@ -447,6 +447,79 @@ The written M0-M7 implementation plan is closed, the M8 Workspace UI milestone i
   completed, so the provider emitted no final usage total. No Kimi paid or
   hosted call was made.
 
+## 2026-08-23 setup pass — machine-scoped verdicts, faster checks, recents
+
+Seven items from a real setup session, all verified on the installed app by
+walking a fresh project end to end (`desktop/e2e/fresh-project-walk.mjs`)
+rather than by reading source.
+
+- **Connections are once per machine, not once per project.** A new
+  `src/verdict-cache.ts` stores each measured verdict in the user's own state
+  directory (`HIVEMIND_STATE_DIR`, else `%LOCALAPPDATA%/Hivemind`, XDG, or macOS
+  Application Support), keyed on agent + harness + provider version + harness
+  config digest + machine identity, and re-compares the stored machine identity
+  on read. `connectCatalogueAgent` consults it after the refusal gates and
+  before the probe, and records `verdict_source: {kind, measured_at}` so an
+  adopted verdict never reads as a fresh one.
+  **How this stays apart from a repo-committed verdict:** the cache is not in a
+  working tree at all. A connection record is gitignored because a stranger's
+  measurement must never arrive by clone; this file is outside every repository,
+  so a clone cannot carry it, and even a forged entry under this machine's key
+  is rejected because the identity inside it is compared rather than trusted.
+  Both properties are pinned in `test/verdict-cache.test.ts`, including the
+  forgery case, and the adoption test was proven to bite (removing the lookup
+  moved the second project's probe count 0 to 1).
+- **The checks are faster and now concurrent.** Connects are grouped by provider
+  and the groups run together, serial only within a provider. Measured on the
+  installed app: the adopted path settled in 9s wall clock against 21s for the
+  same plan when it had to measure, and 6.5s of that 9s is fixed padding in the
+  walk's settle helper, so the adopted work itself is about 2.5s. Every record
+  in the second project read `machine_cache`, and one verdict measured at
+  02:19:50 was still being adopted at 02:27 in a different project after an app
+  restart -- which is the durable evidence, not the timing.
+- **Reopening lands on the last project**, and says so when it is gone: a new
+  `last_project` command returns the entry with a `missing` flag rather than
+  silently falling back to an older one.
+- **A project entry can be removed.** `forget_project` removes the entry only.
+  The walk asserts the folder and its `.hivemind/config.json` are still on disk
+  afterwards, because that is the whole promise of the control.
+- **The check command is detected harder and reported, not asked.** Manifests,
+  evidence-gated ecosystem commands, wrapper scripts, Makefile targets, and
+  package.json `test`/`check`/`verify` with the lockfile's package manager. The
+  walk's fresh project recorded `npm test` from detection, displayed "Found in
+  your project and being used", and never asked. The question survives for when
+  nothing is detectable, in plain language, and the no-tests option stays.
+- **The setup screen always offers a way out.** The decision is now a typed
+  value (`setupExitState`) with four kinds: hidden, ready, blocked with the
+  unmet terms named, and the honest disagreement case when every visible step is
+  satisfied and Core still says no. The walk proved the strongest path --
+  setup finished and promoted straight to the work surface unasked -- and
+  `desktop/test/setup-exit.test.ts` pins the stuck branches a healthy machine
+  cannot reach, proven to bite.
+- **The command badge is not stretched:** measured at 18px tall, 29px wide on
+  the installed app, and pinned by the walk (a stretched badge filled the
+  button's cross axis).
+
+- **Two corrections to my own verification, recorded because both were the
+  failure mode this project keeps relearning.** The walk's first settle
+  condition was already true when it was evaluated, so it reported a 0s connect
+  while the screen still said "Checking Grok Build, Codex" -- a number nobody
+  waited for is worse than a timeout. And its item-6 assertion looked only for a
+  button, so it failed the app for succeeding: setup had promoted to the work
+  surface, which is a better exit than the button it was looking for.
+- **The replay harness needed the new commands stubbed.** `last_project` threw,
+  which the launch route caught, so every replay scenario rendered the setup
+  screen and `verify:reachable` lost the work surfaces. Caught by the
+  reachability check, which is the second time that comment in `replay.tsx` has
+  been earned.
+- **Validation before commit:** Core 867 pass, 0 fail, 2 intentional Windows
+  skips. Desktop 339/339. `verify:reachable` green on every surface at every
+  size. `npm run ship` built, installed and verified **26.823.1916**, and the
+  fresh-project walk passed end to end on that installed build.
+- **Paid calls:** the walk's first project measured its recommended agents for
+  real (planner, manager and two workers across Codex and Grok); every
+  subsequent project and run adopted from the machine cache and paid nothing.
+
 ## Update Rules
 
 - Update this file after each committed Hivemind subtask.

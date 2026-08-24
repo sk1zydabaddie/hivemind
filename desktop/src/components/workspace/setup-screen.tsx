@@ -16,6 +16,7 @@ import {
 import { plainActionError } from "@/lib/plain-language";
 import { useProviderAuthentication } from "@/lib/provider-authentication";
 import { REQUIRED_ROLES } from "@/lib/providers";
+import { verificationResolved } from "@/lib/workspace-actions";
 import type {
   CatalogueModelView,
   CatalogueProvider,
@@ -64,7 +65,9 @@ export function SetupScreen({
   onRestartDaemon,
   onAction,
   onReload,
-  initializing
+  initializing,
+  runnable,
+  onStartWorking
 }: {
   projectPath: string;
   /** Why the project is not open, as a CODE. Never matched as prose. */
@@ -95,6 +98,11 @@ export function SetupScreen({
   onAction: <T>(action: WorkspaceAction) => Promise<T>;
   onReload: () => Promise<void>;
   initializing: boolean;
+  /* Whether Core would actually let work start. The steps above can all read
+     complete while this is false -- a missing check command is the case that
+     shipped -- and a screen that cannot say which term is unmet is a dead end. */
+  runnable: boolean;
+  onStartWorking: () => void;
 }): React.JSX.Element {
   const connecting =
     connectionState === "connecting" ||
@@ -315,6 +323,13 @@ export function SetupScreen({
                   onReload={onReload}
                 />
               </ol>
+
+              <SetupExit
+                live={live}
+                runnable={runnable}
+                view={view}
+                onStartWorking={onStartWorking}
+              />
             </>
           )}
         </div>
@@ -348,6 +363,126 @@ export function SetupScreen({
  * already learned that a boxed repeat of a fact reads as a disclaimer rather
  * than as information.
  */
+/**
+ * What the last screen of onboarding offers, as a value rather than as JSX.
+ *
+ * Split out because the branch that matters is the one nobody sees in a happy
+ * walk: every step ticked, `runnable` false, and -- before this existed --
+ * nothing rendered at all. An end-to-end walk cannot reach it reliably, because
+ * a healthy machine promotes straight to the work surface, so the branch is
+ * pinned here instead and the walk proves the promotion.
+ *
+ * A typed kind rather than a message: the caller switches on the code and the
+ * words live in one place, per the rule against deciding anything from text.
+ */
+export type SetupExitState =
+  | { kind: "hidden" }
+  | { kind: "ready" }
+  | { kind: "blocked"; missing: string[] }
+  | { kind: "disagreement" };
+
+export function setupExitState(input: {
+  live: boolean;
+  runnable: boolean;
+  adapters: readonly { role: string; connected_at: string | null; problems: readonly unknown[] }[];
+  checkResolved: boolean;
+}): SetupExitState {
+  if (!input.live) return { kind: "hidden" };
+  if (input.runnable) return { kind: "ready" };
+
+  /* Which term is missing, computed from the same values `runnable` is built
+     from so the two cannot disagree. Reported in the order somebody would fix
+     them. */
+  const connectedRoles = new Set(
+    input.adapters
+      .filter((adapter) => adapter.connected_at !== null && adapter.problems.length === 0)
+      .map((adapter) => adapter.role)
+  );
+  const rolesLeft = REQUIRED_ROLES.filter((role) => !connectedRoles.has(role.tool));
+  if (rolesLeft.length === 0 && input.checkResolved) return { kind: "disagreement" };
+  return {
+    kind: "blocked",
+    missing: [
+      ...(rolesLeft.length > 0
+        ? [
+            `${rolesLeft.map((role) => role.tool).join(" and ")} still ${
+              rolesLeft.length === 1 ? "needs" : "need"
+            } an agent`
+          ]
+        : []),
+      ...(input.checkResolved ? [] : ["how this project is checked is unanswered"])
+    ]
+  };
+}
+
+/**
+ * The way out of the last screen of onboarding.
+ *
+ * There was none. With every step checked, the connect step hides its own
+ * Continue button (it has nothing left to connect) and nothing else offered an
+ * exit, so a finished setup stood still. Automatic promotion covers the case
+ * where Core agrees work can start; this covers the two cases it does not:
+ *
+ *  - it CAN start, and a person is still standing here -- give them the door
+ *    rather than relying on an effect having fired.
+ *  - it LOOKS finished and cannot start, which is the shape that shipped: every
+ *    step ticked while `runnable` was false. Then the honest thing is to name
+ *    the unmet term rather than render nothing.
+ */
+function SetupExit({
+  live,
+  runnable,
+  view,
+  onStartWorking
+}: {
+  live: boolean;
+  runnable: boolean;
+  view: ProjectConfigView | null;
+  onStartWorking: () => void;
+}): React.JSX.Element | null {
+  const state = setupExitState({
+    live,
+    runnable,
+    adapters: view?.adapters ?? [],
+    checkResolved: verificationResolved(view?.config)
+  });
+
+  if (state.kind === "hidden") return null;
+
+  if (state.kind === "ready") {
+    return (
+      <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <Button type="button" onClick={onStartWorking}>
+          Start working
+          <ArrowRight aria-hidden="true" />
+        </Button>
+        <span className="text-[12px] text-muted-foreground">
+          Everything this project needs is checked.
+        </span>
+      </div>
+    );
+  }
+
+  if (state.kind === "blocked") {
+    return (
+      <p className="mt-4 mb-0 rounded-sm border-l-2 border-amber bg-amber-wash px-2.5 py-1.5 text-[12px] leading-relaxed text-ink">
+        Work cannot start yet: {state.missing.join(", and ")}. The step above is
+        where that is answered.
+      </p>
+    );
+  }
+
+  /* Everything this screen can see is satisfied and Core still says no. Saying
+     so beats a blank space, and it is the state to report if it ever appears. */
+  return (
+    <p className="mt-4 mb-0 rounded-sm border-l-2 border-amber bg-amber-wash px-2.5 py-1.5 text-[12px] leading-relaxed text-ink">
+      Every step here is complete, but this project is not reporting itself as
+      ready to work. Reopening it re-reads its settings; if this persists it is
+      worth reporting, because the steps and the project disagree.
+    </p>
+  );
+}
+
 function NotAnEditor(): React.JSX.Element {
   return (
     <p className="mt-3 mb-0 max-w-[520px] text-[13px] leading-relaxed text-muted-foreground">
@@ -597,30 +732,75 @@ function ConnectStep({
       return;
     }
     const startedAt = Date.now();
-    for (const [index, connection] of plan.entries()) {
-      const providerLabel = providers.find((entry) => entry.id === connection.providerId)?.label;
-      setBusy({
-        key: connection.role,
-        label: providerLabel ?? connection.role,
-        index: index + 1,
-        total: plan.length,
-        startedAt
-      });
-      try {
-        await onAction({
-          type: "adapter.connect",
-          payload: { role: connection.role, agent_id: connection.agentId }
-        });
-        /* Each completed probe becomes visible immediately. Waiting until the
-           entire sequence ends made a real success look frozen behind the
-           next provider's spinner. */
-        await onReload();
-      } catch (cause) {
-        setFailure(`${providerLabel ?? connection.role}: ${cause instanceof Error ? cause.message : String(cause)}`);
-        setOpened(connection.providerId);
-        break;
-      }
+    const labelFor = (connection: PlannedProviderConnection): string =>
+      providers.find((entry) => entry.id === connection.providerId)?.label ?? connection.role;
+
+    /* CONCURRENT, grouped by harness.
+     *
+     * Serially this was one probe after another -- "Checking Codex — 2 of 3 ·
+     * 11s" three times over, which is slow enough to read as broken. Each probe
+     * is an independent provider process writing its own profile and its own
+     * connection record, so different HARNESSES have nothing to contend over
+     * and run together.
+     *
+     * Grouped rather than fully parallel because two connects for the SAME
+     * harness are not independent: `ensureHarnessProjectConfig` writes that
+     * harness's project file, and the worker pool's own retirement pass reads
+     * and deletes profiles. Same harness stays in order; that is where the
+     * unsafe overlap would be, and it is also the case a machine-scoped cached
+     * verdict now usually answers without a call at all. */
+    const byHarness = new Map<string, PlannedProviderConnection[]>();
+    for (const connection of plan) {
+      const existing = byHarness.get(connection.providerId);
+      if (existing === undefined) byHarness.set(connection.providerId, [connection]);
+      else existing.push(connection);
     }
+
+    let finished = 0;
+    const failures: string[] = [];
+    setBusy({
+      key: "all",
+      label: [...byHarness.keys()]
+        .map((id) => providers.find((entry) => entry.id === id)?.label ?? id)
+        .join(", "),
+      index: 0,
+      total: plan.length,
+      startedAt
+    });
+
+    await Promise.all(
+      [...byHarness.values()].map(async (group) => {
+        for (const connection of group) {
+          try {
+            await onAction({
+              type: "adapter.connect",
+              payload: { role: connection.role, agent_id: connection.agentId }
+            });
+          } catch (cause) {
+            failures.push(
+              `${labelFor(connection)}: ${cause instanceof Error ? cause.message : String(cause)}`
+            );
+            setOpened(connection.providerId);
+            /* Its own harness stops; the others are independent and keep
+               going, so one missing subscription does not cost the run. */
+            return;
+          }
+          finished += 1;
+          setBusy({
+            key: "all",
+            label: labelFor(connection),
+            index: finished,
+            total: plan.length,
+            startedAt
+          });
+          /* Each completed probe becomes visible immediately. Waiting until the
+             entire sequence ends made a real success look frozen behind the
+             next provider's spinner. */
+          await onReload();
+        }
+      })
+    );
+    if (failures.length > 0) setFailure(failures.join(" · "));
     setBusy(null);
   };
 
@@ -726,7 +906,9 @@ function ConnectStep({
               )}
               {busy === null
                 ? "Continue"
-                : `Checking ${busy.label} — ${busy.index} of ${busy.total} · ${elapsedSeconds}s`}
+                : busy.index === 0
+                  ? `Checking ${busy.label} · ${elapsedSeconds}s`
+                  : `Checked ${busy.index} of ${busy.total} — ${busy.label} · ${elapsedSeconds}s`}
             </Button>
             <span className="text-[11px] text-muted-foreground">
               Runs every selected provider at least once and fills the empty roles — about{" "}
@@ -1006,17 +1188,27 @@ function ChecksStep({
       <div className="flex items-center gap-3">
         <StepMark done={done} index={3} />
         <div className="min-w-0 flex-1">
+          {/* The heading changes with the state, because the two states are
+              different sentences: when a command was found this step REPORTS,
+              and only when nothing was found does it ASK. It used to ask in
+              both, in the product's own vocabulary ("how this project is
+              checked"), which put a configuration question in front of someone
+              whose project already answered it. */}
           <strong className="block text-[13px] font-medium text-ink">
-            How this project is checked
+            {commandPresent
+              ? "How your code gets checked"
+              : declared
+                ? "You said there is nothing to run"
+                : "How do you check your code works?"}
           </strong>
           <span className="mt-0.5 block text-[12px] leading-relaxed break-words text-muted-foreground">
             {!enabled || config === null
               ? "Waiting on step 2 — the check command lives in the project's settings."
               : commandPresent
-                ? `Every change runs ${config.test_command} before it can ship.`
+                ? `Found in your project and being used: ${config.test_command}. Every change runs it before it can ship. Change it in Settings whenever you like.`
                 : declared
-                  ? "You said this project has no tests. Every ship's record says so. Adding a command in Settings replaces the declaration."
-                  : "Hivemind found no test command, and it will not guess: every change is checked before it ships, so say how — or say there is nothing to run."}
+                  ? "Every ship's record says so. Adding a command in Settings replaces the declaration."
+                  : "Hivemind looked for one and found nothing, and it will not guess — a wrong command fails every change instead of checking it. Type the command you run yourself, or say there is nothing to run."}
           </span>
         </div>
       </div>

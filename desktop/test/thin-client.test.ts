@@ -483,11 +483,21 @@ describe("React workspace boundary", () => {
     expect(core).not.toMatch(/auth status|login status|credentials\.json/iu);
 
     /* The spinner may be frozen by reduced motion. Provider name, sequence
-       position and elapsed seconds must still change without relying on it. */
-    expect(setup).toMatch(/index: index \+ 1/u);
+       position and elapsed seconds must still change without relying on it.
+       These pinned the SERIAL loop's expressions (`index: index + 1`) until the
+       connects were grouped by harness and run concurrently; what they are
+       protecting is that progress is reported as changing TEXT, so they now pin
+       the count, the total, the name and the clock rather than the loop that
+       happened to produce them. */
+    expect(setup).toMatch(/index: finished/u);
     expect(setup).toMatch(/total: plan\.length/u);
     expect(setup).toMatch(/setElapsedSeconds/u);
-    expect(setup).toMatch(/Checking \$\{busy\.label\} — \$\{busy\.index\} of \$\{busy\.total\}/u);
+    expect(setup).toMatch(/Checked \$\{busy\.index\} of \$\{busy\.total\} — \$\{busy\.label\}/u);
+    /* Concurrency is by harness, never within one: two connects for the same
+       harness write that harness's project file and the worker pool's own
+       retirement pass reads profiles. */
+    expect(setup).toMatch(/byHarness/u);
+    expect(setup).toMatch(/same harness stays in order/iu);
   });
 
   /**
@@ -1078,7 +1088,15 @@ describe("React workspace boundary", () => {
     expect(app).toMatch(/recent_projects/u);
     expect(app).toMatch(/aria-label=\{`Switch project, currently \$\{projectName\}`\}/u);
     expect(app).toMatch(/<DropdownMenuLabel>Projects<\/DropdownMenuLabel>/u);
-    expect(app).toMatch(/recentProjects\.map[\s\S]{0,500}workspace\.switchProject\(entry\.path\)/u);
+    /* Widened from 500 when each row gained a remove control and the comment
+       explaining that it forgets the ENTRY rather than the folder. The rule is
+       "picking a recent entry switches to it", not "the two tokens sit close
+       together"; the distance is only how far the check will look. */
+    expect(app).toMatch(/recentProjects\.map[\s\S]{0,900}workspace\.switchProject\(entry\.path\)/u);
+    /* And the remove control removes the entry only -- the folder, its history
+       and its .hivemind are the person's work. */
+    expect(app).toMatch(/forget_project/u);
+    expect(app).toMatch(/Nothing in\s+it is deleted/u);
     expect(app).toMatch(/Open another project…/u);
   });
 

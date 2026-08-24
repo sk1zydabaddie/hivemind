@@ -1,15 +1,4 @@
-import {
-  Check,
-  ChevronDown,
-  FolderGit2,
-  LayoutList,
-  Library,
-  Plug,
-  Workflow,
-  Search,
-  Settings,
-  Terminal
-} from "lucide-react";
+import { Check, ChevronDown, FolderGit2, LayoutList, Library, Plug, Search, Settings, Terminal, Workflow, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 
 import markDark from "@/assets/mark-dark.png";
@@ -421,21 +410,50 @@ export default function App(): React.JSX.Element {
                   <>
                     <DropdownMenuSeparator />
                     {recentProjects.map((entry) => (
-                      <DropdownMenuItem
-                        key={entry.path}
-                        onSelect={() => void workspace.switchProject(entry.path)}
-                      >
-                        <FolderGit2 aria-hidden="true" />
-                        <span className="min-w-0">
-                          <span className="block font-medium text-ink">
-                            {projectNameFromPath(entry.path)}
+                      /* The row opens; the X only removes the ENTRY. Deleting
+                         nothing of the person's own is the whole point, so the
+                         label says which of the two things it does rather than
+                         leaving "remove" to be guessed at. */
+                      <div className="flex items-stretch gap-1" key={entry.path}>
+                        <DropdownMenuItem
+                          className="min-w-0 flex-1"
+                          onSelect={() => void workspace.switchProject(entry.path)}
+                        >
+                          <FolderGit2 aria-hidden="true" />
+                          <span className="min-w-0">
+                            <span className="block font-medium text-ink">
+                              {projectNameFromPath(entry.path)}
+                            </span>
+                            <span className="block break-all font-mono text-[11px] text-muted-foreground">
+                              {displayProjectPath(entry.path)}
+                            </span>
                           </span>
-                          <span className="block break-all font-mono text-[11px] text-muted-foreground">
-                            {displayProjectPath(entry.path)}
-                          </span>
-                        </span>
-                      </DropdownMenuItem>
+                        </DropdownMenuItem>
+                        <Button
+                          aria-label={`Remove ${projectNameFromPath(entry.path)} from this list`}
+                          className="self-center"
+                          size="icon-xs"
+                          title="Remove from this list. The folder and its history are not touched."
+                          type="button"
+                          variant="ghost"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            void invoke("forget_project", { projectPath: entry.path })
+                              .then(() => invoke<{ path: string; opened_at: string }[]>("recent_projects"))
+                              .then(setRecents)
+                              .catch(() => undefined);
+                          }}
+                        >
+                          <X aria-hidden="true" />
+                        </Button>
+                      </div>
                     ))}
+                    <p className="m-0 px-2.5 py-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                      Removing an entry forgets the folder here only. Nothing in
+                      it is deleted — its plans, history and settings stay where
+                      they are, and opening it again brings it back.
+                    </p>
                   </>
                 )}
                 <DropdownMenuSeparator />
@@ -457,7 +475,11 @@ export default function App(): React.JSX.Element {
                   onClick={() => setPaletteOpen(true)}
                 >
                   <Search aria-hidden="true" />
-                  <kbd className="rounded-sm border border-rule px-1 font-mono text-[11px] text-muted-foreground">
+                  {/* `inline-flex` with its own line-height and a fixed
+                      height: as a bare inline `kbd` inside a flex button it was
+                      stretched to the button's cross-axis, which distorted the
+                      glyph and the K rather than fitting them in a box. */}
+                  <kbd className="inline-flex h-[18px] shrink-0 items-center rounded-sm border border-rule px-1 font-mono text-[11px] leading-none text-muted-foreground">
                     ⌘K
                   </kbd>
                 </Button>
@@ -531,6 +553,14 @@ export default function App(): React.JSX.Element {
             onInitializeProject={() => void workspace.initializeProject()}
             onRestartDaemon={() => void workspace.restartDaemon()}
             onReload={refreshConfig}
+            /* The last screen of onboarding used to have no way forward: with
+               every step checked, the connect step hid its own Continue button
+               and nothing else offered an exit. Auto-promotion covers the case
+               where `runnable` is true, but when a step LOOKS done and runnable
+               is false the screen simply stood still. Both get an answer now:
+               a button when it can be taken, and a reason when it cannot. */
+            runnable={runnable}
+            onStartWorking={() => setSection("work")}
           />
         )}
 
@@ -555,6 +585,14 @@ export default function App(): React.JSX.Element {
             onInitializeProject={() => void workspace.initializeProject()}
             onRestartDaemon={() => void workspace.restartDaemon()}
             onReload={refreshConfig}
+            /* The last screen of onboarding used to have no way forward: with
+               every step checked, the connect step hid its own Continue button
+               and nothing else offered an exit. Auto-promotion covers the case
+               where `runnable` is true, but when a step LOOKS done and runnable
+               is false the screen simply stood still. Both get an answer now:
+               a button when it can be taken, and a reason when it cannot. */
+            runnable={runnable}
+            onStartWorking={() => setSection("work")}
           />
         </TabsContent>
         {/* One component renders both stages, which is what keeps the single

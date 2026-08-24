@@ -24,6 +24,8 @@ import {
   type SupportTier
 } from "./agent-catalogue.js";
 import { probeAdapter, type AdapterProbeResult, type ProbeOptions } from "./adapter-probe.js";
+import { readAdapterVersion } from "./adapter-version.js";
+import { readCachedVerdict, writeCachedVerdict } from "./verdict-cache.js";
 import {
   discoverProviderModels,
   type ModelDiscoveryRunner,
@@ -608,6 +610,16 @@ interface ConnectionRecord {
      the registry later changes its mind. Optional: records written before
      the field exists report nothing rather than a guess. */
   inner_provider?: InnerProviderStanding | null;
+  /* Where this verdict came from. Absent means what it always meant: this
+     project ran the probe itself. `machine_cache` means the same binary,
+     account, version and configuration were measured on THIS machine for
+     another project and the measurement was adopted rather than repeated --
+     which is a different claim from "this project paid for a probe", so it is
+     recorded rather than blurred. */
+  verdict_source?: {
+    kind: "machine_cache";
+    measured_at: string;
+  };
 }
 
 /* Keyed by the PROFILE name, not the role: a worker pool has several profiles
@@ -895,9 +907,91 @@ async function connectCatalogueAgent(
      authoritative. Without this, the UI could select one account and verify a
      different default login. */
   const accountsForProbe = await readAccounts(repoRoot);
+  const accountForProbe = selectedAccount(accountsForProbe, agent.harness);
+
+  /* A verdict this machine already measured, for this exact binary, account,
+     version and harness configuration.
+
+     A probe measures one binary, one account, one machine -- never a project --
+     so re-probing those same three for a second project pays a real provider
+     call to learn what is already known. That was the worst friction in the
+     product: three providers on a new project meant three paid calls and about
+     a minute of waiting, per project.
+
+     Every input that could change the answer is part of the key, so a new
+     binary version, a switched account or a changed instruction file misses and
+     pays for a fresh probe. See `verdict-cache.ts` for why this cannot become a
+     verdict inherited from somebody else's machine: it lives outside every
+     repository and carries the machine identity that adoption re-checks.
+
+     The version read is free -- `--version` on the installed binary, no model
+     call -- which is what makes the lookup possible before deciding to probe. */
+  const machine = currentMachine(accountForProbe?.home_dir ?? null);
+  const configDigestNow = await harnessConfigDigest(repoRoot, (harness) =>
+    selectedAccount(accountsForProbe, harness)?.home_dir ?? null
+  );
+  const versionNow =
+    agent.invoke === null
+      ? null
+      : await readAdapterVersion(agent.invoke, repoRoot).catch(() => null);
+  const cacheInputs = {
+    agentId: agent.id,
+    harness: agent.harness,
+    providerVersion: versionNow,
+    configDigest: configDigestNow,
+    machine
+  };
+  /* A caller that supplies its own probe runner is testing the probe; adopting
+     a cached verdict would silently skip the thing under test. */
+  const mayUseCache = options.runner === undefined && options.readback === undefined;
+  const cached = mayUseCache ? await readCachedVerdict(cacheInputs) : null;
+  if (cached !== null) {
+    const dir = path.join(repoRoot, ".hivemind", "adapters");
+    await mkdir(dir, { recursive: true });
+    await writeJsonAtomic(path.join(dir, `${profile.tool}.profile.json`), profile);
+    if (role === "worker") await retireSupersededDefaultWorker(repoRoot, agent, profile.tool);
+    const adopted: ConnectionRecord = {
+      agent_id: agent.id,
+      connected_at: new Date().toISOString(),
+      effective_tokens: cached.effective_tokens,
+      readback_source: cached.readback_source,
+      provider_version: cached.provider_version,
+      machine,
+      config_digest: configDigestNow,
+      capabilities: cached.capabilities,
+      inner_provider: innerProvider.standing,
+      capabilities_stale: null,
+      verdict_source: { kind: "machine_cache", measured_at: cached.measured_at }
+    };
+    await writeJsonAtomic(connectionRecordPath(repoRoot, profile.tool), adopted);
+    const inspectedFromCache = await inspectProjectConfig(repoRoot);
+    return inspectedFromCache.ok
+      ? {
+          ok: true,
+          value: {
+            probe: {
+              agent_id: agent.id,
+              tool: profile.tool,
+              ok: true,
+              refusal: null,
+              capabilities: cached.capabilities,
+              effective_tokens: 0,
+              wall_time_ms: 0,
+              readback_source: cached.readback_source,
+              /* Zero tokens because this connection spent none. The figure the
+                 measurement cost is on the record, not on this result. */
+              adopted_from_machine_cache: cached.measured_at
+            },
+            config: inspectedFromCache.value,
+            project_config: projectConfig
+          }
+        }
+      : inspectedFromCache;
+  }
+
   const probe = await probeAdapter(repoRoot, agent, profile, {
     ...options,
-    accountEnv: accountEnvironment(selectedAccount(accountsForProbe, agent.harness))
+    accountEnv: accountEnvironment(accountForProbe)
   });
   if (!probe.ok) {
     return {
@@ -944,6 +1038,22 @@ async function connectCatalogueAgent(
      account lookup search for `worker-<agent>.connection.json` while connect
      silently writes `worker.connection.json`, making a passed probe invisible. */
   await writeJsonAtomic(connectionRecordPath(repoRoot, profile.tool), record);
+
+  /* Remembered for this machine, so the next project does not pay for it
+     again. Written after the record, so a cache write that fails leaves a
+     project that is correctly connected rather than a connection that failed
+     for a caching reason. */
+  if (mayUseCache) {
+    await writeCachedVerdict(cacheInputs, {
+      capabilities: probe.capabilities,
+      effective_tokens: probe.effective_tokens,
+      readback_source: probe.readback_source,
+      provider_version: probe.provider_version,
+      measured_at: record.connected_at,
+      machine,
+      config_digest: configDigestNow
+    });
+  }
 
   const inspected = await inspectProjectConfig(repoRoot);
   /* The write travels with the result. Putting a file into somebody's project

@@ -565,16 +565,34 @@ export function useWorkspace(): WorkspaceView {
         await session.switchProject(requestedPath);
         return;
       }
-      /* Outside the shell (the replay harness) this rejects, which is the same
+      /* THE LAST project, not the most recent surviving one.
+
+         `recent_projects` drops entries whose folder is gone, which is right
+         for a list somebody picks from and wrong here: reopening then landed
+         on an OLDER project with nothing said about the missing one, which is
+         the "closing and reopening lands me in an old project" report. The
+         shell now answers the launch question directly and includes whether
+         the folder is still there.
+
+         Outside the shell (the replay harness) this rejects, which is the same
          answer as an empty list: open nothing and show the chooser. */
-      const recents = await invoke<{ path: string }[]>("recent_projects").catch(
-        () => [] as { path: string }[]
+      const last = await invoke<{ path: string; missing: boolean } | null>("last_project").catch(
+        () => null
       );
       if (abandoned) return;
-      const mostRecent = recents[0]?.path;
-      if (mostRecent === undefined || mostRecent.trim() === "") return;
-      setProjectPath(mostRecent);
-      await session.switchProject(mostRecent);
+      if (last === null || last.path.trim() === "") return;
+      if (last.missing) {
+        /* Say it rather than quietly opening something else. The chooser is
+           already the screen for "no project open"; what was missing was the
+           reason it is showing. */
+        setProjectPath("");
+        recordActionError(
+          `The last project you had open is no longer there: ${last.path}. Choose a folder, or remove it from the list.`
+        );
+        return;
+      }
+      setProjectPath(last.path);
+      await session.switchProject(last.path);
     };
     void openSomething();
     return () => {
@@ -584,7 +602,7 @@ export function useWorkspace(): WorkspaceView {
         window.clearTimeout(inspectionTimerRef.current);
       }
     };
-  }, [closeStreams, requestedPath, session]);
+  }, [closeStreams, recordActionError, requestedPath, session]);
 
   const performAction = useCallback(
     async <T,>(action: WorkspaceAction): Promise<T> => {

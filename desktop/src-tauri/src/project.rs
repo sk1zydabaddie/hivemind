@@ -1551,6 +1551,58 @@ pub async fn recent_projects(app: tauri::AppHandle) -> Result<Vec<RecentProject>
         .collect())
 }
 
+/// The project to reopen, and whether it is still there.
+///
+/// `recent_projects` DROPS entries whose folder is gone, which is right for a
+/// list somebody picks from and wrong for the launch decision: the app reopened
+/// the most recent SURVIVING project, so a deleted or moved folder silently
+/// landed the person in an older one with no indication that their last project
+/// was missing. This reports the head of the list either way and lets the
+/// caller say so.
+#[derive(serde::Serialize)]
+pub struct LastProject {
+    pub path: String,
+    pub opened_at: String,
+    /// True when the recorded folder is no longer a directory.
+    pub missing: bool,
+}
+
+#[tauri::command]
+pub async fn last_project(app: tauri::AppHandle) -> Result<Option<LastProject>, String> {
+    Ok(read_recents(&app).into_iter().next().map(|entry| LastProject {
+        missing: !std::path::Path::new(&entry.path).is_dir(),
+        path: entry.path,
+        opened_at: entry.opened_at,
+    }))
+}
+
+/// Remove one project from the recent list, and nothing else.
+///
+/// Explicitly NOT a delete: the folder, its contents and its `.hivemind`
+/// directory -- plans, trail, connection records, every run's history -- are the
+/// person's work and are not touched. This edits one file in the app's own
+/// config directory, which is the list this app keeps of folders it has opened.
+/// Reopening the folder puts it back, with its history intact.
+#[tauri::command]
+pub async fn forget_project(app: tauri::AppHandle, project_path: String) -> Result<(), String> {
+    // Compared both as given and canonicalized, because `remember_project`
+    // stores the canonical form and a caller holding the pre-canonical string
+    // would otherwise fail to match its own entry.
+    let canonical = std::fs::canonicalize(&project_path)
+        .map(|path| path.to_string_lossy().to_string())
+        .unwrap_or_else(|_| project_path.clone());
+    let before = read_recents(&app);
+    let after: Vec<RecentProject> = before
+        .into_iter()
+        .filter(|entry| entry.path != project_path && entry.path != canonical)
+        .collect();
+    let file = recents_file(&app)?;
+    let text = serde_json::to_string_pretty(&after)
+        .map_err(|error| format!("could not rewrite the recent project list: {error}"))?;
+    std::fs::write(&file, text)
+        .map_err(|error| format!("could not write the recent project list: {error}"))
+}
+
 #[tauri::command]
 pub async fn remember_project(app: tauri::AppHandle, project_path: String) -> Result<(), String> {
     let normalized = std::fs::canonicalize(&project_path)

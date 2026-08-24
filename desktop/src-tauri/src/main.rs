@@ -8,7 +8,8 @@ use newer_version::{newer_version, take_newer_version};
 use project::{
     choose_project_attachment_folder, choose_project_files, choose_project_folder, dismiss_hint,
     dismissed_hints, initialize_git, initialize_project, inspect_daemon_work,
-    inspect_git_readiness, recent_projects, remember_project, restart_daemon, select_project,
+    forget_project, inspect_git_readiness, last_project, recent_projects, remember_project,
+    restart_daemon, select_project,
     workspace_action,
 };
 
@@ -54,6 +55,8 @@ fn main() {
             restart_daemon,
             recent_projects,
             remember_project,
+            last_project,
+            forget_project,
             select_project,
             workspace_action
         ])

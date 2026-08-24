@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -26,11 +26,21 @@ const run = promisify(execFile);
  * nothing, not at integration, where it costs a whole run.
  */
 
-async function scratchRepo(files: Record<string, string>): Promise<string> {
+async function scratchRepo(
+  files: Record<string, string>,
+  /* Directories, because half of the detections are EVIDENCE-GATED: a manifest
+     proves the toolchain and a `src/test` or `spec` proves there is something
+     to run. A fixture that cannot express the difference cannot test the gate. */
+  dirs: string[] = []
+): Promise<string> {
   const repo = await mkdtemp(path.join(tmpdir(), "hivemind-verification-absence-"));
   await run("git", ["init"], { cwd: repo });
   await run("git", ["config", "user.email", "t@example.test"], { cwd: repo });
   await run("git", ["config", "user.name", "t"], { cwd: repo });
+  for (const relative of dirs) {
+    await mkdir(path.join(repo, relative), { recursive: true });
+    await writeFile(path.join(repo, relative, ".keep"), "\n", "utf8");
+  }
   for (const [name, contents] of Object.entries(files)) {
     await writeFile(path.join(repo, name), contents, "utf8");
   }
@@ -194,3 +204,92 @@ async function callCount(counter: string): Promise<number> {
     return 0;
   }
 }
+
+/* ── Detection reaches further, and still refuses to guess ────────────────
+ *
+ * The check question was the most-complained-about screen in setup, and the
+ * complaint was not that it exists -- it exists because setup used to read
+ * complete and integration then rejected the project after a plan and workers
+ * had been paid for. The complaint was being ASKED when the project already
+ * answers. So detection reaches into more ecosystems, and every new entry is
+ * EVIDENCE-GATED: a manifest proves the toolchain, not that there is anything
+ * to run, and these runners do not all exit 0 on an empty project. A guessed
+ * command fails every change instead of checking it, which is worse than the
+ * question. */
+test("detection reads the project's own package manager and its own script name", async () => {
+  const cases: Array<{ files: Record<string, string>; expected: string }> = [
+    /* The convention, with the default runner. */
+    { files: { "package.json": '{"scripts":{"test":"node --test"}}' }, expected: "npm test" },
+    /* The project's own package manager, from its lockfile: `npm test` in a
+       pnpm workspace works often enough to look fine and fails where
+       workspace resolution matters. */
+    {
+      files: { "package.json": '{"scripts":{"test":"vitest"}}', "pnpm-lock.yaml": "lockfileVersion: 9\n" },
+      expected: "pnpm test"
+    },
+    {
+      files: { "package.json": '{"scripts":{"test":"jest"}}', "yarn.lock": "# yarn\n" },
+      expected: "yarn test"
+    },
+    /* The author's own word for checking, when "test" is not the script they
+       wrote. `run` for the runners that want it. */
+    {
+      files: { "package.json": '{"scripts":{"check":"tsc && vitest run"}}' },
+      expected: "npm run check"
+    },
+    {
+      files: { "package.json": '{"scripts":{"verify":"make ci"}}', "yarn.lock": "# yarn\n" },
+      expected: "yarn verify"
+    },
+    /* A script that is neither test, check nor verify is not guessed at. */
+    { files: { "package.json": '{"scripts":{"lint":"eslint ."}}' }, expected: "" }
+  ];
+  for (const entry of cases) {
+    const repo = await scratchRepo(entry.files);
+    try {
+      const loaded = await loadConfig(repo);
+      assert.equal(loaded.ok, true);
+      assert.equal(
+        loaded.ok ? loaded.config.test_command : "<unreadable>",
+        entry.expected,
+        `files ${Object.keys(entry.files).join(", ")}`
+      );
+    } finally {
+      await rm(repo, { recursive: true, force: true });
+    }
+  }
+});
+
+test("a manifest alone never answers for a runner that fails on an empty project", async () => {
+  const cases: Array<{ files: Record<string, string>; dirs?: string[]; expected: string }> = [
+    /* Gradle, Maven, mix, deno, rspec: manifest WITHOUT the evidence answers
+       nothing, so setup asks rather than recording a red command. */
+    { files: { "build.gradle": "plugins { id 'java' }\n" }, expected: "" },
+    { files: { "pom.xml": "<project/>\n" }, expected: "" },
+    { files: { "mix.exs": "defmodule X do\nend\n" }, expected: "" },
+    { files: { "Gemfile": "source 'https://rubygems.org'\n" }, expected: "" },
+    /* And WITH it, the standard runner for that ecosystem. */
+    { files: { "build.gradle": "plugins { id 'java' }\n" }, dirs: ["src/test"], expected: "gradle test" },
+    { files: { "pom.xml": "<project/>\n" }, dirs: ["src/test"], expected: "mvn -q test" },
+    { files: { "mix.exs": "defmodule X do\nend\n" }, dirs: ["test"], expected: "mix test" },
+    { files: { "Gemfile": "source 'x'\n" }, dirs: ["spec"], expected: "bundle exec rspec" },
+    /* A Makefile target is the author saying it outright. */
+    { files: { Makefile: "build:\n\tcc x.c\n\ntest:\n\t./run-tests\n" }, expected: "make test" },
+    /* A Makefile without one is not a detection. */
+    { files: { Makefile: "build:\n\tcc x.c\n" }, expected: "" }
+  ];
+  for (const entry of cases) {
+    const repo = await scratchRepo(entry.files, entry.dirs ?? []);
+    try {
+      const loaded = await loadConfig(repo);
+      assert.equal(loaded.ok, true);
+      assert.equal(
+        loaded.ok ? loaded.config.test_command : "<unreadable>",
+        entry.expected,
+        `${Object.keys(entry.files).join(", ")} + [${(entry.dirs ?? []).join(", ")}]`
+      );
+    } finally {
+      await rm(repo, { recursive: true, force: true });
+    }
+  }
+});

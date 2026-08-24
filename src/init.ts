@@ -230,7 +230,91 @@ async function detectTestCommand(repoRoot: string): Promise<string> {
   } catch (error: unknown) {
     if (!isFileMissing(error)) throw error;
   }
+
+  /* EVIDENCE-GATED detections: a manifest here proves the toolchain, not that
+     there is anything to run, and these runners do NOT all exit 0 on an empty
+     project. So each pairs its manifest with something that only exists when
+     tests do -- a directory, a target, a declared script. The gate is the
+     point: a guessed command becomes the command verification runs, and a
+     guaranteed-red check is worse than asking.
+
+     Ordered from most to least specific so a polyglot repository answers with
+     the runner that owns its root. */
+  const gated: Array<{ manifest: string; evidence: string[]; command: string }> = [
+    /* Gradle and Maven both fail a build with no test sources configured, so
+       the source directory is the evidence. */
+    { manifest: "build.gradle", evidence: ["src/test"], command: "gradle test" },
+    { manifest: "build.gradle.kts", evidence: ["src/test"], command: "gradle test" },
+    { manifest: "pom.xml", evidence: ["src/test"], command: "mvn -q test" },
+    /* `mix test` needs the test directory to exist. */
+    { manifest: "mix.exs", evidence: ["test"], command: "mix test" },
+    /* `deno test` with no files exits non-zero. */
+    { manifest: "deno.json", evidence: ["test", "tests"], command: "deno test -A" },
+    { manifest: "deno.jsonc", evidence: ["test", "tests"], command: "deno test -A" },
+    /* rspec is the near-universal Ruby answer, and `spec/` is its evidence. */
+    { manifest: "Gemfile", evidence: ["spec"], command: "bundle exec rspec" }
+  ];
+  for (const entry of gated) {
+    if (!(await exists(path.join(repoRoot, entry.manifest)))) continue;
+    for (const evidence of entry.evidence) {
+      if (await exists(path.join(repoRoot, evidence))) return entry.command;
+    }
+  }
+
+  /* A wrapper script is stronger evidence than the manifest it wraps, because
+     somebody committed it deliberately. Checked after the manifests so the
+     wrapper form wins only when it is actually present. */
+  for (const [wrapper, command] of [
+    ["gradlew.bat", "gradlew test"],
+    ["gradlew", "./gradlew test"],
+    ["mvnw.cmd", "mvnw -q test"],
+    ["mvnw", "./mvnw -q test"]
+  ] as const) {
+    if ((await exists(path.join(repoRoot, wrapper))) && (await exists(path.join(repoRoot, "src/test")))) {
+      return command;
+    }
+  }
+
+  /* A Makefile with a `test:` target is an explicit statement by the author
+     that this is how the project is checked. Parsed rather than guessed: the
+     target must start a line, which is what make itself requires. */
+  try {
+    const makefile = await readFile(path.join(repoRoot, "Makefile"), "utf8");
+    if (/^test\s*:/mu.test(makefile)) return "make test";
+  } catch (error: unknown) {
+    if (!isFileMissing(error)) throw error;
+  }
+
+  /* .NET: `dotnet test` needs a test project, and a solution with none exits
+     non-zero. A `*Tests*` project file is the evidence. */
+  if (await exists(path.join(repoRoot, "global.json"))) {
+    if (await hasTestProject(repoRoot)) return "dotnet test";
+  }
+  for (const solutionish of await listShallow(repoRoot)) {
+    if (!/\.(sln|slnx)$/iu.test(solutionish)) continue;
+    if (await hasTestProject(repoRoot)) return "dotnet test";
+    break;
+  }
+
   return "";
+}
+
+/** A `*Tests.csproj` / `*.Tests/` anywhere shallow, which is what `dotnet test` needs. */
+async function hasTestProject(repoRoot: string): Promise<boolean> {
+  for (const entry of await listShallow(repoRoot)) {
+    if (/tests?$/iu.test(entry) || /tests?\.(cs|fs|vb)proj$/iu.test(entry)) return true;
+  }
+  return false;
+}
+
+/** Entry names one level down, or an empty list when the folder cannot be read. */
+async function listShallow(repoRoot: string): Promise<string[]> {
+  try {
+    return await readdir(repoRoot);
+  } catch (error: unknown) {
+    if (isFileMissing(error)) return [];
+    throw error;
+  }
 }
 
 async function detectNodeTestCommand(repoRoot: string): Promise<string> {
@@ -249,7 +333,28 @@ async function detectNodeTestCommand(repoRoot: string): Promise<string> {
     const parsed = JSON.parse(contents.replace(/^﻿/u, "")) as {
       scripts?: Record<string, unknown>;
     };
-    return typeof parsed.scripts?.test === "string" ? "npm test" : "";
+    const scripts = parsed.scripts ?? {};
+    /* `test` first because it is the convention, then the two names projects
+       use when "test" would be misleading -- a `check` script that runs types
+       and tests together is a better answer than nothing, and it is the
+       author's own word for how the project is checked. Anything else is not
+       guessed at. */
+    const script = ["test", "check", "verify"].find((name) => typeof scripts[name] === "string");
+    if (script === undefined) return "";
+    /* The project's own package manager, from its lockfile. `npm test` in a
+       pnpm workspace works often enough to look fine and fails in exactly the
+       repositories where workspace resolution matters. */
+    const runner = (await exists(path.join(repoRoot, "pnpm-lock.yaml")))
+      ? "pnpm"
+      : (await exists(path.join(repoRoot, "yarn.lock")))
+        ? "yarn"
+        : (await exists(path.join(repoRoot, "bun.lockb"))) || (await exists(path.join(repoRoot, "bun.lock")))
+          ? "bun"
+          : "npm";
+    /* `yarn test` and `pnpm test` take the bare script name; npm and bun are
+       happiest with `run` for anything that is not literally `test`. */
+    if (script === "test") return `${runner} test`;
+    return runner === "yarn" || runner === "pnpm" ? `${runner} ${script}` : `${runner} run ${script}`;
   } catch {
     console.error(
       "warning: package.json could not be read, so no test command was recorded. " +
