@@ -34,7 +34,8 @@ import {
   inspectProviderAccounts,
   invalidateVerificationForHarness,
   startProviderAuthentication,
-  setProjectConfig
+  setProjectConfig,
+  tryProjectCheck
 } from "./config-actions.js";
 import { inspectProviderAuthentication } from "./provider-auth-status.js";
 import { adoptSpec, readSpecForReview } from "./spec-review.js";
@@ -80,6 +81,11 @@ export const workspaceActionTypes = [
      check before a listed slug can reach a paid capability probe. */
   "config.inspect",
   "config.set",
+  /* `checks.try` runs one candidate check command in the project and decides,
+     from what it did, whether it may be stored -- see `tryProjectCheck`. The
+     decision is Core's because a client that ignored the outcome could
+     otherwise store a command that never ran. */
+  "checks.try",
   "project.init",
   "provider.auth.inspect",
   "provider.auth.start",
@@ -344,6 +350,21 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
     return inspectProjectConfig(repoRoot);
   }
   if (raw.type === "config.set") return setProjectConfig(repoRoot, payload);
+  if (raw.type === "checks.try") {
+    const command = payload.command;
+    if (typeof command !== "string" || command.trim() === "") {
+      return { ok: false, reason: "checks.try needs a command" };
+    }
+    /* Exactly true, like every other recorded decision in this file: an
+       accidental truthy value must not be able to store a red command. */
+    const accept = payload.accept_failing;
+    if (accept !== undefined && accept !== true) {
+      return { ok: false, reason: "accept_failing can only be omitted or exactly true" };
+    }
+    const extra = Object.keys(payload).filter((key) => key !== "command" && key !== "accept_failing");
+    if (extra.length > 0) return { ok: false, reason: `checks.try cannot take: ${extra.join(", ")}` };
+    return tryProjectCheck(repoRoot, command, { acceptFailing: accept === true });
+  }
   if (raw.type === "project.init") {
     if (Object.keys(payload).length > 0) return { ok: false, reason: "project.init takes no fields" };
     return initProjectForDesktop(repoRoot);

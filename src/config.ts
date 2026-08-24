@@ -35,6 +35,24 @@ export interface HivemindConfig {
    * absence instead of running a suite that is not there.
    */
   no_tests_declared?: boolean;
+  /**
+   * What happened the one time Hivemind ran this project's check command.
+   *
+   * Recorded because the complaint it answers is about WHEN a bad command is
+   * discovered: a string nobody ever ran looks identical to a proven one until
+   * the last gate, by which point the planning and worker money is spent. Only
+   * the code that ran the command writes this (`checks.try`), so a passing
+   * trial cannot be claimed by a caller, and `command` is stored alongside the
+   * outcome so a later edit is visibly untried rather than silently inheriting
+   * an older command's result.
+   */
+  test_command_trial?: {
+    command: string;
+    outcome: "passed" | "failed";
+    exit_code: number;
+    at: string;
+    duration_ms: number;
+  };
   allowed_globs: string[];
   forbidden_globs: string[];
   low_globs?: string[];
@@ -161,6 +179,26 @@ export function validateConfig(raw: unknown): string[] {
        exactly true is ambiguous, and un-declaring is removing the key. */
     problems.push("no_tests_declared must be exactly true when present");
   }
+  if ("test_command_trial" in raw) {
+    const trial = raw.test_command_trial;
+    if (!isRecord(trial)) problems.push("test_command_trial must be an object when present");
+    else {
+      if (typeof trial.command !== "string" || trial.command.trim() === "") {
+        problems.push("test_command_trial.command must be a non-empty string");
+      }
+      /* Exactly the two outcomes that are storable. `not_runnable` and
+         `timed_out` are refusals, so finding one here means something wrote a
+         record for a command it had no business storing. */
+      if (trial.outcome !== "passed" && trial.outcome !== "failed") {
+        problems.push("test_command_trial.outcome must be passed or failed");
+      }
+      if (typeof trial.exit_code !== "number") problems.push("test_command_trial.exit_code must be a number");
+      if (typeof trial.duration_ms !== "number") problems.push("test_command_trial.duration_ms must be a number");
+      if (typeof trial.at !== "string" || trial.at.trim() === "") {
+        problems.push("test_command_trial.at must be a timestamp");
+      }
+    }
+  }
   requireStringArray(raw, "allowed_globs", problems);
   requireStringArray(raw, "forbidden_globs", problems);
   for (const field of ["low_globs", "medium_globs", "high_globs", "critical_globs"] as const) {
@@ -217,6 +255,7 @@ const KNOWN_CONFIG_KEYS = new Set([
   "base_branch",
   "test_command",
   "no_tests_declared",
+  "test_command_trial",
   "allowed_globs",
   "forbidden_globs",
   "low_globs",
@@ -244,6 +283,17 @@ export function normalizeConfig(raw: unknown): HivemindConfig {
     /* Only a literal true survives: the declaration is a recorded decision,
        and anything less explicit stays absent. */
     ...(raw.no_tests_declared === true ? { no_tests_declared: true } : {}),
+    ...(isRecord(raw.test_command_trial)
+      ? {
+          test_command_trial: {
+            command: String(raw.test_command_trial.command),
+            outcome: raw.test_command_trial.outcome === "passed" ? ("passed" as const) : ("failed" as const),
+            exit_code: Number(raw.test_command_trial.exit_code),
+            at: String(raw.test_command_trial.at),
+            duration_ms: Number(raw.test_command_trial.duration_ms)
+          }
+        }
+      : {}),
     allowed_globs: normalizeStringArray(raw.allowed_globs),
     forbidden_globs: normalizeStringArray(raw.forbidden_globs),
     ...("low_globs" in raw ? { low_globs: normalizeStringArray(raw.low_globs) } : {}),

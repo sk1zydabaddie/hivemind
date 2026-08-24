@@ -520,6 +520,94 @@ rather than by reading source.
   real (planner, manager and two workers across Codex and Grok); every
   subsequent project and run adopted from the machine cache and paid nothing.
 
+## 2026-08-23 the check command — validated, and broadened
+
+The report: `npm test` was typed into the setup field purely to make the
+Continue button appear, in a project with no tests. That is a defect in the
+flow, not a mistake by the person -- a field that blocks progress gets filled
+with whatever unblocks it -- and the result is worse than the declared absence
+that was available in one press, because a check that always fails fails every
+integration AFTER the planning and worker money is spent.
+
+Three fixes, verified on installed 26.823.2023 by walking a project that has no
+tests, not by reading source.
+
+- **What is entered is run once, and Core decides whether it may be stored.**
+  New `src/check-trial.ts` classifies the run into four outcomes, and
+  `checks.try` (`tryProjectCheck`) is the only door that can write the result:
+  `passed` stores the command with its trial; `failed` records the trial and
+  stores the command only under an explicit `accept_failing`; `not_runnable`
+  and `timed_out` store nothing under any confirmation, because a string that
+  does not run is not a check and an unfinished run is not a pass. The decision
+  lives in Core rather than the client so no surface can store a command by
+  ignoring what the run said, and the trial can only be written by the code
+  that watched it happen.
+  The trial is durable (`test_command_trial` in config, with the command it
+  ran) so an edit through Settings is visibly untried rather than silently
+  inheriting an older result.
+  It runs through `runNamedCheck` -- the SAME executor the verification gate
+  uses -- because a setup check that passed under different rules than the gate
+  would be worse than no check at all. That function gained an optional
+  timeout for this path only; the gate stays unbounded, where a long suite is
+  the suite doing its job.
+- **The honest answer is a peer.** "There is nothing to run" is now the same
+  size, in the same list, one press, with a one-clause consequence instead of a
+  paragraph to read past. It used to sit below the field as a lesser-styled
+  escape hatch, which made lying to the field the path of least resistance.
+- **Tests are not the only check.** New `src/check-candidates.ts` owns what
+  counts as one, and offers a typecheck or a build when no test command was
+  detectable: package.json `typecheck`/`type-check`/`tsc` and `build`/`compile`
+  through the project's own package manager, `npx tsc --noEmit` when a
+  tsconfig.json exists, `cargo build` / `go build ./...` behind their
+  manifests. Each suggestion carries its KIND and its source, because accepting
+  a build believing it ran tests is the same class of mistake as accepting a
+  command that never ran. Suggested rather than auto-recorded: the difference
+  between "your tests pass" and "it compiles" is one a person should choose
+  knowingly. `detectTestCommand` moved into the same file, so the command
+  `project.init` records and the candidates setup offers cannot drift apart.
+
+**Walked on the installed app**, project with a build script, a tsconfig and no
+tests: the step asked in plain language; offered `npm run build` ("builds the
+project -- the build script in package.json") and `npx tsc --noEmit` ("checks
+the types -- this project has a tsconfig.json"); typing `npm test` and pressing
+Run it once produced "npm test - Nothing ran - this command does not exist in
+this project. Fix the command or pick one above; a command that does not run is
+not a check, so it has not been saved.", with npm's own `Missing script: "test"`
+output shown, NO accept path offered, and `test_command` still empty on disk
+with no trial recorded. Accepting the build offer then ran it for real (521ms)
+and stored it with `outcome: passed` against that exact command.
+
+- **Two guardrails fired and were satisfied rather than widened.** A component
+  declaring the shape of a daemon answer (the `checks.try` response type moved
+  to `lib/workspace-actions.ts`), and the routing audit requiring every action
+  to be documented (`docs/m8-action-routing-audit.md` gained the `checks.try`
+  entry naming exactly what it may write and why).
+- **One test assertion updated deliberately.** `cold-open` pinned the sentences
+  "Found in your project and being used" and "will not guess". Both were
+  proxies for guarantees, and this pass makes the second one structural: the
+  screen can no longer store a command at all, so what is pinned now is the
+  absence of the old door (no `test_command` payload dispatched from the setup
+  screen) plus the three kinds being named. That is a stronger property than the
+  sentence it replaced.
+- **Also measured, and left open.** The machine verdict cache from the previous
+  pass works -- the second project adopted all four records, and a direct
+  lookup with the live key, digest, provider version and machine identity hits
+  -- but the FIRST project in each run still probes once per distinct agent
+  (2 of 4 records), and no cause was found: install does not clear the cache
+  directory, nothing sets `HIVEMIND_STATE_DIR`, and the digest for a fresh
+  project matches the stored entries exactly. Recorded as an open question with
+  its evidence rather than guessed at; the leading suspects are the new
+  concurrent connect grouping racing the same key before either write lands,
+  and the first version read after an app launch.
+- **Validation before commit:** Core 877 pass, 0 fail, 2 intentional Windows
+  skips (879 total). Desktop 343/343. `verify:reachable` green on every surface
+  at every size. `npm run ship` built, installed and verified **26.823.2023**,
+  and the fresh-project walk passed end to end on that build.
+- **Paid calls:** the walk's first project measured its recommended agents
+  (2 probes, one per distinct agent); the second adopted all four from the
+  machine cache. The check-command project made no provider calls at all --
+  running `npm run build` and `npm test` costs nothing but local time.
+
 ## Update Rules
 
 - Update this file after each committed Hivemind subtask.

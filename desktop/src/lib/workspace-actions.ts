@@ -500,6 +500,59 @@ export function verificationResolved(
   return config.test_command.trim() !== "" || config.no_tests_declared === true;
 }
 
+/** What a check proves. Not interchangeable, so the surface names which it is. */
+export type CheckKind = "tests" | "typecheck" | "build";
+
+export interface CheckCandidate {
+  command: string;
+  kind: CheckKind;
+  source: string;
+}
+
+/**
+ * What one real run of a candidate command did.
+ *
+ * `not_runnable` and `timed_out` are outcomes the surface REPORTS and Core
+ * refuses to store; `stored` says which way it went, because a red command that
+ * was not adopted and a red command somebody accepted look identical otherwise.
+ */
+export interface CheckTrialView {
+  command: string;
+  outcome: "passed" | "failed" | "not_runnable" | "timed_out";
+  exit_code: number;
+  duration_ms: number;
+  output_tail: string;
+  detail: string;
+  stored: boolean;
+}
+
+/**
+ * What `checks.try` answers with: the refreshed project view, plus what the run
+ * did. Declared here rather than at the call site because a component that
+ * writes out the shape of a daemon answer is how two surfaces end up believing
+ * different things about the same response.
+ */
+export interface CheckTryResult extends ProjectConfigView {
+  trial?: CheckTrialView;
+}
+
+/**
+ * What a person can do next about a trial, as a typed code.
+ *
+ * The one that must never be reachable is an accept path for a command that
+ * never ran. A red suite is a state a project can really be in, so accepting it
+ * is a real choice; a string that does not run is not a check under any
+ * confirmation, and Core refuses to store it either way. This exists so that
+ * refusal is also visible on screen rather than only enforced underneath.
+ */
+export type TrialAffordance = "settled" | "accept_or_replace" | "replace_only";
+
+export function trialAffordance(trial: CheckTrialView): TrialAffordance {
+  if (trial.stored) return "settled";
+  if (trial.outcome === "failed") return "accept_or_replace";
+  return "replace_only";
+}
+
 export interface ProjectConfigView {
   initialized: boolean;
   config_problem: string | null;
@@ -509,6 +562,18 @@ export interface ProjectConfigView {
        a daemon older than the field is a permanent input, and absence means
        "not declared", never a declaration. */
     no_tests_declared?: boolean;
+    /* What happened the one time Hivemind ran the check command, and for WHICH
+       command. Optional: a daemon older than the field is a permanent input,
+       and absence means nobody has run it -- never that it passed. Compare
+       `command` against `test_command` before showing it, because an edit
+       through Settings leaves this pointing at the older string. */
+    test_command_trial?: {
+      command: string;
+      outcome: "passed" | "failed";
+      exit_code: number;
+      at: string;
+      duration_ms: number;
+    } | null;
     base_branch: string | null;
     allowed_globs: string[];
     forbidden_globs: string[];
@@ -529,6 +594,11 @@ export interface ProjectConfigView {
   providers?: CatalogueProvider[];
   models?: CatalogueModelView[];
   recommendations?: RoleRecommendation[];
+  /* What this project could be checked with, computed by Core only while the
+     question is open. A build or a typecheck is a legitimate check, so `kind`
+     travels with each one -- accepting a build thinking it ran tests would be
+     the same class of mistake as typing a command that never runs. */
+  check_candidates?: CheckCandidate[];
   limits: {
     max_concurrent_workers_hard_max: number;
     max_concurrent_workers_default: number;
@@ -571,6 +641,10 @@ export type WorkspaceAction = {
     | "adoption.execute"
     | "config.inspect"
     | "config.set"
+    /* Run one candidate check command and let Core decide, from what it did,
+       whether it may be stored. The client renders the typed outcome; it does
+       not get to store a command the run refused. */
+    | "checks.try"
     | "project.init"
     | "provider.auth.inspect"
     | "provider.auth.start"

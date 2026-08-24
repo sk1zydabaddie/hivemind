@@ -149,6 +149,32 @@ async function makeProject(name) {
   return dir;
 }
 
+/**
+ * A project with NO tests: a build script, a tsconfig, and nothing to run.
+ *
+ * This is the folder the reported defect happened in. The field asked for a
+ * check command, the Continue button waited on it, so `npm test` went in to
+ * unblock the screen -- and `npm test` does not exist here.
+ */
+async function makeUntestedProject(name) {
+  const dir = path.join(os.tmpdir(), name);
+  await rm(dir, { recursive: true, force: true, maxRetries: 5 });
+  await mkdir(path.join(dir, "src"), { recursive: true });
+  await writeFile(
+    path.join(dir, "package.json"),
+    '{\n  "name": "' + name + '",\n  "scripts": { "build": "node -e \\"\\"" }\n}\n',
+    "utf8"
+  );
+  await writeFile(path.join(dir, "tsconfig.json"), '{ "compilerOptions": { "strict": true } }\n', "utf8");
+  await writeFile(path.join(dir, "src", "index.js"), "export const answer = 42;\n", "utf8");
+  await run("git", ["init", "-q"], { cwd: dir });
+  await run("git", ["config", "user.email", "t@example.test"], { cwd: dir });
+  await run("git", ["config", "user.name", "t"], { cwd: dir });
+  await run("git", ["add", "-A"], { cwd: dir });
+  await run("git", ["commit", "-qm", "base"], { cwd: dir });
+  return dir;
+}
+
 async function main() {
   assert.ok(existsSync(installed), `no installed binary at ${installed}`);
   await rm(evidence, { recursive: true, force: true, maxRetries: 5 });
@@ -194,12 +220,12 @@ async function main() {
   await driver.wait(async () => existsSync(path.join(projectA, ".hivemind")), 60_000);
   await new Promise((resolve) => setTimeout(resolve, 6000));
   const afterSetup = await body();
-  note(`5. detection text present: ${/Found in your project and being used/u.test(afterSetup)}`);
+  note(`5. detection reported, not asked: ${/run before any change can ship/u.test(afterSetup)}`);
   note(`5. asked instead: ${/How do you check your code works\?/u.test(afterSetup)}`);
   const config = JSON.parse(await readFile(path.join(projectA, ".hivemind", "config.json"), "utf8"));
   note(`5. recorded test_command: ${JSON.stringify(config.test_command)}`);
   assert.equal(config.test_command, "npm test", "detection did not find the package.json script");
-  assert.match(afterSetup, /Found in your project and being used/u);
+  assert.match(afterSetup, /run before any change can ship/u);
   await shot("1-detected");
 
   /* ── 1 + 2. connect, timed ── */
@@ -263,6 +289,82 @@ async function main() {
     adopted.every((entry) => entry.source === "machine_cache"),
     "a second project on the same machine re-probed instead of adopting"
   );
+
+  /* ── 8. the check command: validated, and the honest answer is a peer ──
+   *
+   * The reported defect, walked: a project with no tests, `npm test` typed in
+   * to make the button appear. It has to be caught HERE, by running it, rather
+   * than at the last gate after the planning and worker money is spent. */
+  const projectC = await makeUntestedProject("hivemind-fresh-c");
+  note(`8. project C (no tests): ${projectC}`);
+  await openProject(projectC);
+  await click("Set it up");
+  await driver.wait(async () => existsSync(path.join(projectC, ".hivemind")), 60_000);
+  await new Promise((resolve) => setTimeout(resolve, 6000));
+
+  const asked = await body();
+  note(`8. asks in plain language: ${/How do you check your code works\?/u.test(asked)}`);
+  assert.match(asked, /How do you check your code works\?/u);
+  /* Tests are not implied to be the only option, and the offers name their kind. */
+  const offers = (await buttons()).map((entry) => entry.label).filter((label) => label.startsWith("Use "));
+  note(`8. offered: ${JSON.stringify(offers)}`);
+  note(`8. kinds named: ${JSON.stringify(["runs your tests", "checks the types", "builds the project"].filter((kind) => asked.includes(kind)))}`);
+  assert.ok(
+    offers.some((label) => /build/u.test(label)) || offers.some((label) => /tsc/u.test(label)),
+    "a project with no tests was offered neither its build nor a typecheck"
+  );
+  /* The honest answer is a peer of the others, not an escape hatch below them. */
+  assert.ok(
+    (await buttons()).some((entry) => entry.label === "There is nothing to run"),
+    "the no-tests answer is not offered as a peer"
+  );
+  await shot("4-asks-and-offers");
+
+  /* Now the exact thing that happened: type the string that unblocks the
+     screen, and watch it be refused because it does not run here. */
+  await driver.executeScript(
+    `const input = [...document.querySelectorAll("input")].find(
+       (element) => (element.getAttribute("aria-label") || "") === "Check command"
+     );
+     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+     setter.call(input, "npm test");
+     input.dispatchEvent(new Event("input", { bubbles: true }));`
+  );
+  await click("Run it once");
+  await driver.wait(async () => /Nothing ran|Ran clean|Ran and failed|Still running/u.test(await body()), 240_000);
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  const refused = await body();
+  note(`8. what it said about npm test: ${JSON.stringify((refused.match(/npm test — [^\n]*/u) || [])[0] ?? null)}`);
+  assert.match(refused, /Nothing ran/u);
+  /* No accept path for a command that never ran. */
+  assert.ok(
+    !(await buttons()).some((entry) => entry.label === "Use it anyway"),
+    "a command that never ran was offered an accept path"
+  );
+  /* And nothing was stored, which is the guarantee -- the record is on disk. */
+  const cConfigPath = path.join(projectC, ".hivemind", "config.json");
+  const afterRefusal = JSON.parse(await readFile(cConfigPath, "utf8"));
+  note(`8. stored after refusal: ${JSON.stringify(afterRefusal.test_command)}`);
+  assert.equal(afterRefusal.test_command, "", "an unrunnable command was stored as the check");
+  assert.equal(afterRefusal.test_command_trial ?? null, null);
+  await shot("5-npm-test-refused");
+
+  /* Then the offer that does exist, which must run for real and be adopted. */
+  const buildOffer = (await buttons()).map((entry) => entry.label).find((label) => /^Use .*build/u.test(label));
+  assert.ok(buildOffer, "no build offer to accept");
+  await click(buildOffer);
+  await driver.wait(async () => existsSync(cConfigPath) && JSON.parse(await readFile(cConfigPath, "utf8")).test_command !== "", 240_000);
+  const adoptedCheck = JSON.parse(await readFile(cConfigPath, "utf8"));
+  note(`8. adopted: ${JSON.stringify(adoptedCheck.test_command)} trial=${JSON.stringify(adoptedCheck.test_command_trial)}`);
+  assert.equal(adoptedCheck.test_command, buildOffer.replace(/^Use /u, ""));
+  /* Recorded as measured, against the command it measured. */
+  assert.equal(adoptedCheck.test_command_trial?.outcome, "passed");
+  assert.equal(adoptedCheck.test_command_trial?.command, adoptedCheck.test_command);
+  await shot("6-build-adopted");
+
+  /* Back to B so the last-project assertions below still describe the walk. */
+  await openProject(projectB);
+  await new Promise((resolve) => setTimeout(resolve, 3000));
 
   /* ── 3 + 4. recents: the last project, and removing an entry ── */
   const lastProject = await driver.executeScript(

@@ -42,6 +42,8 @@ import {
   type HivemindConfig
 } from "./config.js";
 import { initProject } from "./init.js";
+import { detectCheckCandidates } from "./check-candidates.js";
+import { tryCheckCommand } from "./check-trial.js";
 import { ACCOUNT_HOME_VARIABLES } from "./agent-catalogue.js";
 import { parseTaskTypePreferences } from "./routing-preferences.js";
 import { accountEnvironment, harnessForRole } from "./provider-accounts.js";
@@ -400,6 +402,18 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
         };
       }),
       recommendations: ROLE_RECOMMENDATIONS,
+      /* What this project could be checked with, for the surface that has to
+         ask. Computed only while the question is still open, because a
+         suggestion for a settled question is noise -- and because it reads the
+         filesystem, which an inspect on every reload should not do for nothing.
+
+         Tests are not the only entry: a typecheck or a build catches real
+         breakage and is what most projects arriving here actually have. Each
+         carries its kind, so nobody accepts one thinking it is another. */
+      check_candidates:
+        config !== null && config.test_command.trim() === "" && config.no_tests_declared !== true
+          ? await detectCheckCandidates(repoRoot)
+          : [],
       limits: {
         max_concurrent_workers_hard_max: HARD_MAX_CONCURRENT_WORKERS,
         max_concurrent_workers_default: DEFAULT_MAX_CONCURRENT_WORKERS,
@@ -417,6 +431,10 @@ function publicConfig(config: HivemindConfig): Record<string, unknown> {
   return {
     test_command: config.test_command,
     no_tests_declared: config.no_tests_declared === true,
+    /* What happened the one time it was run, and for WHICH command -- a later
+       edit through Settings leaves this pointing at the older string, which is
+       how a surface can tell a proven command from a typed one. */
+    test_command_trial: config.test_command_trial ?? null,
     base_branch: config.base_branch ?? null,
     allowed_globs: config.allowed_globs,
     forbidden_globs: config.forbidden_globs,
@@ -541,6 +559,85 @@ export async function setProjectConfig(
   if (problems.length > 0) return { ok: false, reason: problems.join("; ") };
   await writeJsonAtomic(configPath, normalizeConfig(next));
   return inspectProjectConfig(repoRoot);
+}
+
+/**
+ * `checks.try` — run a candidate check command once, and store it only if it
+ * earned that.
+ *
+ * The setup field used to accept any string, so a field that blocked progress
+ * got filled with whatever unblocked it: `npm test` typed into a project with
+ * no tests, which then fails every integration after the planning and worker
+ * money is spent. A declared absence is strictly better than that, and it was
+ * the harder answer to give.
+ *
+ * The decision to store lives HERE rather than in the client, so no surface can
+ * store a command by ignoring what the run said, and the recorded trial can
+ * only be written by the code that watched it happen:
+ *
+ *   passed        -- stored, with the trial, and a recorded absence removed.
+ *   failed        -- reported, and stored only when `accept_failing` is exactly
+ *                    true, which is a second decision a person makes after
+ *                    seeing the output. The trial is recorded either way, so
+ *                    the same command typed again is visibly known-red.
+ *   not_runnable  -- nothing stored, and no confirmation can change that: a
+ *                    string that does not run is not a check.
+ *   timed_out     -- nothing stored; an unknown outcome is not a pass.
+ */
+export async function tryProjectCheck(
+  repoRoot: string,
+  command: string,
+  options: { acceptFailing?: boolean } = {}
+): Promise<ActionResult> {
+  if (command.trim() === "") return { ok: false, reason: "give a command to try" };
+  const configPath = path.join(repoRoot, ".hivemind", "config.json");
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(configPath, "utf8"));
+  } catch {
+    return { ok: false, reason: "this project has no readable .hivemind/config.json" };
+  }
+  if (!isRecord(raw)) return { ok: false, reason: "this project's config is not a JSON object" };
+
+  const trial = await tryCheckCommand(repoRoot, command);
+  const storable = trial.outcome === "passed" || trial.outcome === "failed";
+  const stored = trial.outcome === "passed" || (trial.outcome === "failed" && options.acceptFailing === true);
+
+  if (storable) {
+    const next: Record<string, unknown> = {
+      ...raw,
+      test_command_trial: {
+        command: trial.command,
+        outcome: trial.outcome,
+        exit_code: trial.exit_code,
+        at: new Date().toISOString(),
+        duration_ms: trial.duration_ms
+      }
+    };
+    if (stored) {
+      next.test_command = trial.command;
+      /* A real command supersedes a recorded absence, exactly as `config.set`
+         does -- the two must not be able to disagree in the durable record. */
+      delete next.no_tests_declared;
+    }
+    const problems = validateConfig(next);
+    if (problems.length > 0) return { ok: false, reason: problems.join("; ") };
+    await writeJsonAtomic(configPath, normalizeConfig(next));
+  }
+
+  /* The refreshed view plus what the run did, so the surface that asked never
+     has to infer the outcome from the config it got back. `stored` is reported
+     rather than implied: a red command that was not adopted and a red command
+     the person accepted look identical in the trial alone. */
+  const inspected = await inspectProjectConfig(repoRoot);
+  if (!inspected.ok) return inspected;
+  return {
+    ok: true,
+    value: {
+      ...(isRecord(inspected.value) ? inspected.value : {}),
+      trial: { ...trial, stored }
+    }
+  };
 }
 
 /**

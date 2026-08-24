@@ -113,6 +113,32 @@ connection actions write only what a probe confirmed.
   this action cannot express cannot be reached through it. It cannot lower a
   routing floor: the floors are derived from tier, and only the glob lists that
   *assign* a tier are writable.
+- `checks.try` — `tryProjectCheck()`. Runs ONE candidate check command in the
+  project, through `runNamedCheck` — the same executor the verification gate
+  uses, so a command cannot pass validation under different rules than the ones
+  that will later decide whether a change ships. It takes `command` and an
+  optional `accept_failing` that must be exactly `true`, and refuses any other
+  field.
+
+  The routing-relevant property is what it may WRITE. The decision lives in
+  Core, not in the caller, because a client that ignored the outcome could
+  otherwise store a command that never ran: `passed` stores the command with its
+  trial and clears a recorded absence; `failed` records the trial and stores the
+  command only under `accept_failing`; `not_runnable` and `timed_out` store
+  nothing at all, under any confirmation, because a string that does not run is
+  not a check and an unfinished run is not a pass. The trial can only be written
+  by the code that watched the run, so a passing trial cannot be claimed. Every
+  write goes through the same `validateConfig` and atomic write as `config.set`,
+  and the key list it can reach is narrower — `test_command`,
+  `test_command_trial`, and the removal of `no_tests_declared` — so it cannot
+  reach a gate or a routing floor.
+
+  Why it exists: an empty verification command is refused by integration, so the
+  setup field that answers it blocked progress, and a field that blocks progress
+  gets filled with whatever unblocks it. `npm test` typed into a project with no
+  test script was accepted as that project's check and then failed every
+  integration AFTER the planning and worker calls were paid for — strictly worse
+  than the declared absence (A-03) the person could have chosen instead.
 - `project.init` — `initProjectForDesktop()`. Wraps `initProject` and then
   writes default tier globs, because a project with no globs infers High for
   every path and routes all work to the most expensive provider. It deliberately

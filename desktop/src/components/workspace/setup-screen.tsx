@@ -16,7 +16,8 @@ import {
 import { plainActionError } from "@/lib/plain-language";
 import { useProviderAuthentication } from "@/lib/provider-authentication";
 import { REQUIRED_ROLES } from "@/lib/providers";
-import { verificationResolved } from "@/lib/workspace-actions";
+import { trialAffordance, verificationResolved } from "@/lib/workspace-actions";
+import type { CheckKind, CheckTrialView, CheckTryResult } from "@/lib/workspace-actions";
 import type {
   CatalogueModelView,
   CatalogueProvider,
@@ -1151,6 +1152,30 @@ function formatChecked(iso: string): string {
  * call; this step is where the question gets asked, because a question here
  * is cheaper than a guess that costs real tokens before it fails.
  */
+/**
+ * How this project gets checked — three peer answers, none of them a trap.
+ *
+ * The defect this replaces: one text field, and a Continue button that only
+ * appeared once something was in it. So the field got filled with whatever
+ * unblocked it — `npm test` typed into a project with no tests — which then
+ * failed every integration after the planning and worker money was spent. Two
+ * things were wrong with that, and both are fixed here rather than explained:
+ *
+ *  - Nothing was VALIDATED. Any string was accepted, and the first time anybody
+ *    found out it did not run was the last gate. Now the command is run once,
+ *    here, and Core decides from what it did whether it can be stored. A string
+ *    that never runs cannot be stored at all.
+ *  - The honest answer was the HARDER answer. "No tests" sat below the field as
+ *    a lesser-styled escape hatch under a paragraph about consequences, so the
+ *    path of least resistance was to lie to the field. The three answers are now
+ *    the same size, in the same list, and picking any of them finishes the step.
+ *
+ * And tests are not the only legitimate check. A typecheck or a build catches
+ * real breakage and is what most projects arriving here actually have, so they
+ * are offered by name, with the kind attached — accepting a build believing it
+ * ran tests would be the same class of mistake as accepting a command that
+ * never ran.
+ */
 function ChecksStep({
   enabled,
   view,
@@ -1163,23 +1188,53 @@ function ChecksStep({
   onReload: () => void;
 }): React.JSX.Element {
   const [command, setCommand] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [trial, setTrial] = useState<CheckTrialView | null>(null);
   const config = view?.config ?? null;
   const commandPresent = (config?.test_command ?? "").trim() !== "";
   const declared = config?.no_tests_declared === true;
   const done = enabled && config !== null && (commandPresent || declared);
+  const candidates = view?.check_candidates ?? [];
 
-  const submit = async (payload: Record<string, unknown>): Promise<void> => {
-    setBusy(true);
+  /* The recorded trial belongs to the command it ran. A later edit through
+     Settings leaves it pointing at the older string, and reporting it against
+     the new one would be a claim nobody measured. */
+  const recorded = config?.test_command_trial ?? null;
+  const recordedIsCurrent = recorded !== null && recorded.command === config?.test_command;
+
+  /* Running a check means running the project's own suite, which can take
+     minutes. The label says which command is running so a slow one does not
+     look like a hung screen. */
+  const tryCommand = async (candidate: string, acceptFailing: boolean): Promise<void> => {
+    setBusy(candidate);
     setError("");
     try {
-      await onAction({ type: "config.set", payload });
+      const result = await onAction<CheckTryResult>({
+        type: "checks.try",
+        payload: acceptFailing ? { command: candidate, accept_failing: true } : { command: candidate }
+      });
+      setTrial(result?.trial ?? null);
+      /* Core may have stored it, so the view has to be re-read either way. */
       onReload();
     } catch (cause) {
       setError(plainActionError(cause));
     } finally {
-      setBusy(false);
+      setBusy(null);
+    }
+  };
+
+  const declareAbsence = async (): Promise<void> => {
+    setBusy("none");
+    setError("");
+    setTrial(null);
+    try {
+      await onAction({ type: "config.set", payload: { no_tests_declared: true } });
+      onReload();
+    } catch (cause) {
+      setError(plainActionError(cause));
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -1205,49 +1260,88 @@ function ChecksStep({
             {!enabled || config === null
               ? "Waiting on step 2 — the check command lives in the project's settings."
               : commandPresent
-                ? `Found in your project and being used: ${config.test_command}. Every change runs it before it can ship. Change it in Settings whenever you like.`
+                ? `${config.test_command} — run before any change can ship.${
+                    recordedIsCurrent
+                      ? recorded.outcome === "passed"
+                        ? ` It ran clean here in ${(recorded.duration_ms / 1000).toFixed(1)}s.`
+                        : ` It was failing when you set this up (exit ${recorded.exit_code}), and every change will be held until it passes.`
+                      : " Nobody has run it yet, so whether it works here is unknown."
+                  } Change it in Settings whenever you like.`
                 : declared
-                  ? "Every ship's record says so. Adding a command in Settings replaces the declaration."
-                  : "Hivemind looked for one and found nothing, and it will not guess — a wrong command fails every change instead of checking it. Type the command you run yourself, or say there is nothing to run."}
+                  ? "Every ship's record says so. Picking a command in Settings replaces the declaration."
+                  : "A test suite, a typecheck or a build — any of them catch real breakage. Hivemind runs whatever you pick once, right now, so a command that does not work here is caught before it can block your work."}
           </span>
         </div>
       </div>
 
       {enabled && config !== null && !done ? (
-        <div className="grid gap-2 pl-8">
+        <div className="grid gap-2.5 pl-8">
+          {/* Suggestions first, because a one-press answer that came from the
+              project itself beats anything typed. Each names its kind: a build
+              passing is not tests passing. */}
+          {candidates.length === 0 ? null : (
+            <div className="grid gap-1.5">
+              {candidates.map((candidate) => (
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1" key={candidate.command}>
+                  <Button
+                    disabled={busy !== null}
+                    size="sm"
+                    type="button"
+                    onClick={() => void tryCommand(candidate.command, false)}
+                  >
+                    {busy === candidate.command ? "Running it…" : `Use ${candidate.command}`}
+                  </Button>
+                  <span className="text-[11px] leading-relaxed text-muted-foreground">
+                    {CHECK_KIND_LABELS[candidate.kind]} — {candidate.source}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-2">
             <input
-              aria-label="Test command"
+              aria-label="Check command"
               className="h-8 min-w-[200px] flex-1 rounded-sm border border-input bg-canvas px-2 font-mono text-[12px] text-ink focus-visible:border-navy/55"
-              placeholder="npm test"
+              /* Not the first suggestion, which is already a button above -- a
+                 placeholder repeating it reads as pre-filled. This field is for
+                 the answer the project could not offer. */
+              placeholder={candidates.length === 0 ? "npm test" : "or type another command"}
               spellCheck={false}
               value={command}
               onChange={(event) => setCommand(event.target.value)}
             />
             <Button
-              disabled={busy || command.trim() === ""}
+              disabled={busy !== null || command.trim() === ""}
               size="sm"
               type="button"
-              onClick={() => void submit({ test_command: command.trim() })}
+              variant={candidates.length === 0 ? "default" : "outline"}
+              onClick={() => void tryCommand(command.trim(), false)}
             >
-              Use this command
+              {busy === command.trim() ? "Running it…" : "Run it once"}
             </Button>
           </div>
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+
+          {/* A peer, not an escape hatch: same size, same list, one press, and
+              no paragraph of consequences to read past. The consequence is one
+              clause, because it is real and short. */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <Button
-              disabled={busy}
+              disabled={busy !== null}
               size="sm"
               type="button"
               variant="outline"
-              onClick={() => void submit({ no_tests_declared: true })}
+              onClick={() => void declareAbsence()}
             >
-              This project has no tests
+              There is nothing to run
             </Button>
             <span className="text-[11px] leading-relaxed text-muted-foreground">
-              Recorded as your decision: runs will ship with nothing to verify
-              them, and every ship's record names this declaration.
+              Recorded as your decision, and named in every ship&rsquo;s record.
             </span>
           </div>
+
+          {trial === null ? null : <TrialReport trial={trial} onAccept={() => void tryCommand(trial.command, true)} busy={busy !== null} />}
+
           {error === "" ? null : (
             <p className="m-0 text-[12px] break-words text-clay" role="alert">
               {error}
@@ -1256,6 +1350,66 @@ function ChecksStep({
         </div>
       ) : null}
     </li>
+  );
+}
+
+/** What each kind actually proves, in the words a person would use. */
+const CHECK_KIND_LABELS: Record<CheckKind, string> = {
+  tests: "runs your tests",
+  typecheck: "checks the types",
+  build: "builds the project"
+};
+
+/**
+ * What the one run did, and what is still open.
+ *
+ * Switched on the typed outcome rather than on anything in the text, and the
+ * four branches are genuinely different situations: two of them offer a next
+ * press, and two of them are a refusal with nothing to accept.
+ */
+function TrialReport({
+  trial,
+  onAccept,
+  busy
+}: {
+  trial: CheckTrialView;
+  onAccept: () => void;
+  busy: boolean;
+}): React.JSX.Element {
+  const tone =
+    trial.outcome === "passed"
+      ? "border-moss bg-moss-wash"
+      : trial.outcome === "failed"
+        ? "border-amber bg-amber-wash"
+        : "border-clay bg-clay-wash";
+  return (
+    <div className={`grid gap-2 rounded-sm border-l-2 px-2.5 py-2 ${tone}`} role="status">
+      <p className="m-0 text-[12px] leading-relaxed text-ink">
+        <span className="font-mono">{trial.command}</span> — {trial.detail}
+        {trial.outcome === "not_runnable"
+          ? " Fix the command or pick one above; a command that does not run is not a check, so it has not been saved."
+          : trial.outcome === "timed_out"
+            ? " It has not been saved, because an unfinished run is not a pass."
+            : trial.outcome === "failed" && !trial.stored
+              ? " Saved nothing yet: a check that is red now will hold every change until it passes."
+              : ""}
+      </p>
+      {trial.output_tail === "" ? null : (
+        <pre className="m-0 max-h-32 overflow-auto rounded-xs bg-canvas px-2 py-1.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
+          {trial.output_tail}
+        </pre>
+      )}
+      {trialAffordance(trial) === "accept_or_replace" ? (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <Button disabled={busy} size="sm" type="button" variant="outline" onClick={onAccept}>
+            Use it anyway
+          </Button>
+          <span className="text-[11px] leading-relaxed text-muted-foreground">
+            It runs again once, so what it does is on the record.
+          </span>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

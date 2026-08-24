@@ -150,16 +150,39 @@ describe("cold open", () => {
        pinned now: the step asks in plain language when nothing was found, and
        says what it found when something was. */
     expect(screen).toMatch(/How do you check your code works\?/u);
-    expect(screen).toMatch(/Found in your project and being used/u);
-    /* And it still refuses to guess, which is the whole of A-03: a wrong
-       command fails every change rather than checking it. */
-    expect(screen).toMatch(/will not guess/u);
-    /* The ask offers both answers: a command, or the explicit declaration --
-       and the declaration dispatches the typed field through the audited
+    /* Was "Found in your project and being used", which pinned a sentence
+       rather than a property and stopped being true when the step learned to
+       report the trial as well. What has to hold is that a settled question is
+       REPORTED with the command it settled on, not asked again. */
+    expect(screen).toMatch(/run before any change can ship/u);
+
+    /* Was "will not guess", a sentence standing in for A-03. The refusal is now
+       structural and stronger than a sentence could be: the screen cannot store
+       a command at all -- it asks Core to RUN one, and Core decides from the
+       outcome whether it may be stored. So what is pinned is the absence of the
+       old door. A `test_command` payload dispatched from this screen would mean
+       an unrun string could once again become the command every integration
+       depends on, which is the defect this replaced: a field that blocks
+       progress gets filled with whatever unblocks it. */
+    expect(screen).toMatch(/type: "checks\.try"/u);
+    expect(screen).not.toMatch(/payload: \{[^}]*test_command/u);
+    /* And the run is visible as a run, because a person who is about to spend
+       a minute of their time should be told that is what the button does. */
+    expect(screen).toMatch(/Run it once/u);
+
+    /* The declaration still dispatches the typed field through the audited
        config door, never a sentinel string. */
-    expect(screen).toMatch(/submit\(\{ test_command: command\.trim\(\) \}\)/u);
-    expect(screen).toMatch(/submit\(\{ no_tests_declared: true \}\)/u);
-    expect(screen).toMatch(/This project has no tests/u);
+    expect(screen).toMatch(/payload: \{ no_tests_declared: true \}/u);
+    /* And it is a PEER of the other answers rather than an escape hatch below
+       them: the honest answer being the harder one is what produced a field
+       filled with `npm test` in a project that has none. */
+    expect(screen).toMatch(/There is nothing to run/u);
+    /* Tests are not the only legitimate check, and each offer names which kind
+       it is -- accepting a build believing it ran tests is the same class of
+       mistake as accepting a command that never ran. */
+    for (const kind of ["runs your tests", "checks the types", "builds the project"]) {
+      expect(screen).toContain(kind);
+    }
 
     const actions = (
       await readFile(path.join(desktopRoot, "src", "lib", "workspace-actions.ts"), "utf8")
