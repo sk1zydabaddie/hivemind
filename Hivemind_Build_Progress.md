@@ -695,6 +695,53 @@ because they are what makes a later proposing phase worth having.
 - **Paid calls:** none. Phase A makes no model calls, and the walk reused a
   project whose agents were already connected.
 
+## 2026-08-24 cache economics, and a line of work closed
+
+Measurement pass on WORKER calls, plus two records. Figures live in
+`docs/CACHE-ECONOMICS.md` so they are quotable; the summary:
+
+- **The quotable number is uncached input tokens per completed task: 17,604**
+  (median 15,640), measured across 60 real worker attempts. A hit rate is a
+  ratio with a denominator you control, and our own calls prove the trap: the
+  band at or over 88% cached has 2.1x the input and 13% MORE uncached tokens
+  than the band under 85%. Reporting 97% at our uncached volume would require a
+  587,000-token call.
+- **Hivemind's worker prompt is 1.07% of a worker call** (1,239 tokens of
+  116,061) and 7.0% of the uncached portion, corroborated by direct assembly and
+  by the runtime's own `self_measured_tokens`. So the worker gap is NOT
+  addressable by prompt ordering -- the inverse of the manager, whose prompt was
+  roughly the whole of its uncached portion. Provider choice moves the number
+  about 4x (grok-build: 38.8% cached, 67,616 uncached per call), which is larger
+  than any ordering change available.
+- **The shared-cited-files optimisation is closed on SIZE, not absence.** It was
+  worth checking and the target is real -- 2,496 B duplicated across a four-task
+  run, 1,650 B across a three-task run -- but that is 624 tokens against 70,416
+  uncached for the same run, or 0.9%. Recorded with the two details that would
+  otherwise be re-derived: the duplicated blocks come from the fallback path
+  (no project on this machine has ever written a context-pack file, so
+  `loadContextPackForContract` returns null and `taskContextReadPaths` supplies
+  the contents), and the blocks sit after the per-task contract section, so a
+  prefix cache cannot reach them regardless.
+- **A correction carried into the record.** This pass was asked to record that
+  the context pack "is 1,058 bytes and cites no file contents". That is not what
+  is on disk: no context pack exists in any run here, and the fallback path does
+  embed full file contents, byte-identical across tasks. Closing the line of work
+  is still right -- for the size measured above, not for absence of a target.
+  The distinction is kept because "there is nothing there" would send the next
+  reader looking for a bug when they find the blocks.
+
+- **Deferred, not taken: harness-side substrate injection.** Passing the worker
+  its own substrate through a provider flag (the `--include-directory` shape)
+  would target the part of the uncached portion Hivemind does not assemble,
+  which is the largest remaining share. It is deferred because it is per-harness
+  argv fragmentation -- the fragility this project has been reducing -- and it
+  would land on one provider only, on a mechanism nothing here has measured. The
+  share it would recover has NOT been measured on this machine and should not be
+  quoted until it is. Reachable if a cheaper structural change disappoints.
+- **Validation:** documentation and comments only; no code changed. Core
+  agents-file tests 14/14 on the preceding commit.
+- **Paid calls:** none.
+
 ## Update Rules
 
 - Update this file after each committed Hivemind subtask.
