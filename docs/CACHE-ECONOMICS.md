@@ -71,6 +71,68 @@ Per-provider, same corpus and ledgers:
 Provider choice moves this number roughly 4x. No prompt-ordering change comes
 close to that.
 
+## Where the uncached tokens actually go (measured, 4 paid worker calls)
+
+Captured 2026-08-24 by running four real Hivemind worker prompts through the
+shipped invocation with only `--ephemeral` dropped, so codex would persist a
+rollout. `--ephemeral` means "run without persisting session files to disk"; the
+API request is identical either way, so this changes what is *observable*, not
+what is sent.
+
+| call | turns | Hivemind prompt | turn 1 uncached | turns 2+ | total uncached | mid-call misses |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 5 | 2,630 B | 11,868 | 7,557 | 19,425 | 0 |
+| 2 | 9 | 2,851 B | 11,902 | 24,502 | 36,404 | 0 |
+| 3 | 7 | 2,806 B | 21,887 | 5,743 | 27,630 | 0 |
+| 4 | 6 | 3,159 B | 22,041 | 28,974 | 51,015 | 1 |
+
+Average: **33,618 uncached per call**, of which **turn 1 is 16,924 (50%)**.
+Hivemind's own prompt averages 2,861 B (715 tokens) — **2.1% of the uncached
+total**.
+
+The initial context of one call, byte for byte, in the order codex assembles it:
+
+| block | bytes | whose |
+|---|---:|---|
+| session_meta | 18,535 | codex |
+| **developer** (its own instructions) | **33,832** | codex |
+| user `<recommended_plugins>` | 12,076 | codex |
+| world_state | 22,645 | codex |
+| turn_context | 2,591 | codex |
+| **user — the Hivemind worker prompt** | **2,967** | **Hivemind** |
+
+So roughly **92,600 bytes of harness-injected context against 2,967 bytes of
+Hivemind's**, or 3.2%.
+
+### What that makes addressable, and what it does not
+
+- **Not addressable: the harness's own injection.** It is the bulk of turn 1, but
+  the large blocks are codex's own instructions, its plugin list and its world
+  state. No flag Hivemind passes removes them, and they already cache in part
+  (turn 1 showed 9,984 of 21,852 already cached). This measurement is the reason
+  `--include-directory` was NOT adopted: the injected bulk is not project
+  directories that Hivemind could supply more cheaply, so the flag would add a
+  per-harness argv branch without targeting the mass.
+- **Not addressable: what the worker reads next.** Half the uncached total is
+  turns 2+, which is the agent's own tool calls, their outputs (one single tool
+  output was 10,891 B) and its reasoning. What it reads at turn N+1 depends on
+  what it found at turn N, so it is unpredictable by construction and cannot be
+  pre-cached.
+- **Not addressable: mid-call cache misses.** 1 in 27 turns here; 2 in 12 turns
+  in an older rollout, where they accounted for 17% of that sample's uncached
+  total. They do not correlate with idle time (an 8.1 s gap missed while a 9.8 s
+  gap hit) or with content, and on every miss exactly the same small prefix
+  stayed cached. Provider-side.
+- **Addressable: turn count.** Uncached scales with turns — 5 turns cost 19,425
+  and 9 turns cost 36,404, roughly 2,000–3,500 per additional turn. Tighter task
+  scope means fewer turns, and that is a contract-design lever rather than a
+  cache lever. It is the only one of these with real headroom.
+- **Addressable: instrumentation.** Hivemind records only aggregate usage per
+  call, and `--ephemeral` suppresses the rollout, so per-turn cache behaviour is
+  invisible in every shipped run. Everything in this section had to be bought
+  with paid calls for that reason. Capturing per-turn counts would make it free
+  from then on.
+
 ## A line of work that is closed
 
 **Shared cited-file contents across tasks.** The idea: two tasks whose scopes
