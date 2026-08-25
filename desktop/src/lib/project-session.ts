@@ -8,12 +8,43 @@ export interface ProjectConnection {
 }
 
 /** The shell's read-only answer about whether it is safe to create a first commit. */
+/**
+ * What the shell saw at the chosen path.
+ *
+ * One classification, computed before anything else, from which the heading,
+ * the step tick, the git offer and the commit preview all derive. Before this
+ * each of those assumed a project, so a missing path, a file and a folder of
+ * holiday photos all got the same "Set up this project" screen with step one
+ * ticked above a heading about git.
+ *
+ * `exists` and `is_directory` are optional because a shell older than the field
+ * is a permanent input; absent means "not reported", never "false".
+ */
 export interface GitReadiness {
+  exists?: boolean;
+  is_directory?: boolean;
   is_repo: boolean;
+  /** What the folder appears to hold. */
+  content?: "empty" | "source" | "documents" | "media" | "built" | "unrecognised";
+  /** Examples of what led to that reading, so a refusal can name them. */
+  saw?: string[];
   starts_empty: boolean;
   would_commit: string[];
   would_ignore: string[];
   refusal: string | null;
+}
+
+/**
+ * Whether the chosen path is a folder Hivemind could work in at all.
+ *
+ * The step-one tick used to mean "a path was typed", which is why it showed a
+ * green check for a folder that did not exist and for a file. It means "the
+ * shell looked and found a usable folder" now, and an unreported classification
+ * falls back to the old behaviour rather than un-ticking every project.
+ */
+export function pathIsUsableFolder(readiness: GitReadiness | null): boolean {
+  if (readiness === null) return true;
+  return readiness.exists !== false && readiness.is_directory !== false;
 }
 
 /**

@@ -11,8 +11,7 @@ import {
   displayProjectPath,
   PROJECT_FAULT,
   type GitReadiness,
-  type GitSetupFailure
-} from "@/lib/project-session";
+  type GitSetupFailure, pathIsUsableFolder } from "@/lib/project-session";
 import { plainActionError } from "@/lib/plain-language";
 import { useProviderAuthentication } from "@/lib/provider-authentication";
 import { REQUIRED_ROLES } from "@/lib/providers";
@@ -110,8 +109,14 @@ export function SetupScreen({
     connectionState === "daemon started" ||
     connectionState === "daemon found";
   const visiblePath = displayProjectPath(projectPath);
-  const chosen = visiblePath !== "" && visiblePath !== ".";
-  const problem = connecting ? null : plainConnectionProblem(connectionCode, connectionDetail);
+  /* A path was typed. Not the same as a folder Hivemind can work in, which is
+     what the tick used to claim. */
+  const named = visiblePath !== "" && visiblePath !== ".";
+  const usable = pathIsUsableFolder(gitReadiness);
+  const chosen = named && usable;
+  const problem = connecting
+    ? null
+    : plainConnectionProblem(connectionCode, connectionDetail, gitReadiness);
   const checkingGit = problem?.action === "git" && gitReadiness === null && actionError === "";
   const gitRefusal = problem?.action === "git" ? gitReadiness?.refusal ?? null : null;
   const generatedIgnores = gitReadiness?.would_ignore ?? [];
@@ -285,19 +290,21 @@ export function SetupScreen({
                     have edited. It does not write an agent profile. */}
                 <SetupStep
                   action={
-                    live ? null : (
+                    /* Either it is an action or it is text.
+                       This was a disabled button reading "Waiting on git",
+                       sitting directly below the control that would satisfy it
+                       -- a label naming a state, styled as something to press.
+                       When the step cannot run yet, the step's own detail line
+                       says why and no control is offered at all. */
+                    live || gitBlocksSetup ? null : (
                       <Button
-                        disabled={!chosen || initializing || gitBlocksSetup}
+                        disabled={!chosen || initializing}
                         size="sm"
                         type="button"
                         variant="outline"
                         onClick={onInitializeProject}
                       >
-                        {initializing
-                          ? "Setting up…"
-                          : gitBlocksSetup
-                            ? "Waiting on git"
-                            : "Set it up"}
+                        {initializing ? "Setting up…" : "Set it up"}
                       </Button>
                     )
                   }
@@ -1468,7 +1475,10 @@ function SetupStep({
  */
 export function plainConnectionProblem(
   code: string,
-  detail: string
+  detail: string,
+  /* What the shell saw at the path. Optional so an older caller keeps the
+     previous behaviour rather than losing its heading. */
+  readiness?: { exists?: boolean; is_directory?: boolean } | null
 ): { title: string; detail: string; action?: "initialize" | "git" | "choose" | "restart_daemon" } | null {
   if (code === "") return null;
   if (code === PROJECT_FAULT.noProjectSelected) {
@@ -1490,7 +1500,28 @@ export function plainConnectionProblem(
     /* This used to explain the requirement and stop, which is a dead end for
        the most ordinary first-run case there is: somebody who has been editing
        a folder without git. Explaining a requirement is not the same as
-       offering the step. */
+       offering the step.
+
+       The heading now derives from what the shell SAW at the path. It announced
+       "This folder is not tracked by git yet" about a folder that did not exist
+       and about a file, with the real answer in red underneath -- naming the
+       wrong problem in the largest text on the screen. */
+    if (readiness?.exists === false) {
+      return {
+        title: "There is nothing at that path",
+        detail:
+          "Hivemind looked and found no folder there. Check the path, or choose a folder.",
+        action: "choose"
+      };
+    }
+    if (readiness?.is_directory === false) {
+      return {
+        title: "That is a file, not a folder",
+        detail:
+          "Hivemind works inside a project folder, so that it can keep an agent's work separate from yours. Choose the folder this file lives in.",
+        action: "choose"
+      };
+    }
     return {
       title: "This folder is not tracked by git yet",
       detail:

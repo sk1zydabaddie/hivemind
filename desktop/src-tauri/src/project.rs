@@ -2337,7 +2337,20 @@ fn chrono_now() -> String {
 
 #[derive(serde::Serialize)]
 pub struct GitReadiness {
+    /// Whether the path is there at all.
+    ///
+    /// Reported rather than thrown. A missing path used to come back as an
+    /// error, so the surface fell through to its git branch and announced "This
+    /// folder is not tracked by git yet" about a folder that did not exist,
+    /// with the real answer in red underneath and step one ticked above.
+    pub exists: bool,
+    /// Whether it is a directory. A file is not a project.
+    pub is_directory: bool,
     pub is_repo: bool,
+    /// What the folder appears to hold.
+    pub content: FolderContent,
+    /// Examples of what led to that reading, so a refusal can name them.
+    pub saw: Vec<String>,
     /// The folder has no files yet, so the first commit must be empty.
     pub starts_empty: bool,
     /// Files that would be committed, so the offer can name them.
@@ -2392,11 +2405,30 @@ const BINARY_EXTENSIONS: [&str; 16] = [
 /// with even one recognised source file passes. Being wrong in the permissive
 /// direction costs a refusal that should not have happened; being wrong in the
 /// other direction commits somebody's build output forever.
-const SOURCE_EXTENSIONS: [&str; 42] = [
+const SOURCE_EXTENSIONS: [&str; 40] = [
     "ts", "tsx", "js", "jsx", "mjs", "cjs", "rs", "py", "rb", "go", "java", "kt", "swift", "c",
     "h", "cc", "cpp", "hpp", "cs", "php", "ex", "exs", "scala", "clj", "hs", "ml", "lua", "sh",
-    "ps1", "sql", "html", "css", "scss", "vue", "svelte", "md", "json", "toml", "yaml", "yml",
-    "txt", "gradle",
+    "ps1", "sql", "html", "css", "scss", "vue", "svelte", "json", "toml", "yaml", "yml",
+    "gradle",
+];
+
+/// Prose and documents. Authored, but not code.
+///
+/// `txt` and `md` used to sit in SOURCE_EXTENSIONS, and `txt` is why a folder of
+/// holiday photos with a shopping list in it read as a project and was offered a
+/// first commit. A folder of documents may still be a real project -- a docs
+/// repository is a project -- so this is not a refusal on its own. It is a fact
+/// the surface has to be able to state.
+const DOCUMENT_EXTENSIONS: [&str; 6] = ["md", "txt", "rst", "adoc", "pdf", "docx"];
+
+/// Photos, video and audio. Not authored code under any reading.
+///
+/// Absent entirely before, so `holiday.jpg` was not merely allowed -- it was
+/// invisible. A folder whose recognised content is media, with no code in it,
+/// is not a project to work on, and the refusal can now name what it saw.
+const MEDIA_EXTENSIONS: [&str; 16] = [
+    "jpg", "jpeg", "png", "gif", "bmp", "tif", "tiff", "heic", "webp", "mp4", "mov", "avi", "mkv",
+    "mp3", "wav", "flac",
 ];
 
 /// Whether this folder has the SHAPE of a project somebody means to start
@@ -2413,15 +2445,38 @@ const SOURCE_EXTENSIONS: [&str; 42] = [
 /// what it IS rather than as a rule number. Known generated directories are
 /// handled separately as a mechanical preparation, not flattened into this
 /// human-judgment path.
-fn shape_refusal(root: &Path, entries: &[String]) -> Option<String> {
-    // A truly empty directory is a valid greenfield project. There is nothing
-    // ambiguous to inspect or accidentally commit, and Git supports an
-    // explicit empty base commit for exactly this case.
+/// What this folder appears to hold. Reported, not inferred at the call site.
+#[derive(serde::Serialize, PartialEq, Eq, Debug, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum FolderContent {
+    /// Nothing at all. A valid greenfield project.
+    Empty,
+    /// Code somebody wrote.
+    Source,
+    /// Prose and documents, and no code.
+    Documents,
+    /// Photos, video or audio, and no code.
+    Media,
+    /// Built programs: an install directory or a build output.
+    Built,
+    /// Files, but nothing recognised.
+    Unrecognised,
+}
+
+/// What the folder holds, and examples of what was seen.
+///
+/// One classification, computed once, from which the heading, the step tick, the
+/// git offer and the commit preview are all derived. Before this each of those
+/// assumed a project: a missing path, a file and a folder of photos all got the
+/// same "Set up this project" screen with step one ticked.
+fn classify_content(root: &Path, entries: &[String]) -> (FolderContent, Vec<String>) {
     if entries.is_empty() {
-        return None;
+        return (FolderContent::Empty, Vec::new());
     }
 
-    let mut binaries: Vec<&str> = Vec::new();
+    let mut binaries: Vec<String> = Vec::new();
+    let mut media: Vec<String> = Vec::new();
+    let mut documents: Vec<String> = Vec::new();
     let mut has_source = false;
 
     for name in entries {
@@ -2438,39 +2493,114 @@ fn shape_refusal(root: &Path, entries: &[String]) -> Option<String> {
             .map(|value| value.to_string_lossy().to_lowercase())
             .unwrap_or_default();
         if BINARY_EXTENSIONS.iter().any(|needle| extension == *needle) {
-            binaries.push(name);
+            binaries.push(name.clone());
+        } else if MEDIA_EXTENSIONS.iter().any(|needle| extension == *needle) {
+            media.push(name.clone());
+        } else if DOCUMENT_EXTENSIONS.iter().any(|needle| extension == *needle) {
+            documents.push(name.clone());
         }
         if SOURCE_EXTENSIONS.iter().any(|needle| extension == *needle) {
             has_source = true;
         }
     }
 
-    if !binaries.is_empty() {
-        binaries.sort_unstable();
-        binaries.truncate(4);
-        return Some(format!(
-            "This folder holds built programs rather than source ({}). That looks like an installed application or a build output directory, not a project to work on. Choose the folder your source code lives in.",
-            binaries.join(", ")
-        ));
+    // Source wins over everything: a real project with a few images and a
+    // README is a project, and refusing it would be the costly direction.
+    if has_source {
+        return (FolderContent::Source, Vec::new());
     }
-    if !has_source {
-        return Some(
+    let examples = |mut names: Vec<String>| -> Vec<String> {
+        names.sort();
+        names.truncate(4);
+        names
+    };
+    if !binaries.is_empty() {
+        return (FolderContent::Built, examples(binaries));
+    }
+    if !media.is_empty() {
+        return (FolderContent::Media, examples(media));
+    }
+    if !documents.is_empty() {
+        return (FolderContent::Documents, examples(documents));
+    }
+    (FolderContent::Unrecognised, Vec::new())
+}
+
+/// Why Hivemind will not initialise this folder, when it will not.
+///
+/// Says what it SAW. A refusal that names nothing leaves a person guessing at
+/// which of their files caused it.
+fn shape_refusal(content: FolderContent, saw: &[String]) -> Option<String> {
+    match content {
+        // A truly empty directory is a valid greenfield project. There is
+        // nothing ambiguous to inspect or accidentally commit, and Git supports
+        // an explicit empty base commit for exactly this case.
+        FolderContent::Empty | FolderContent::Source => None,
+        // Documents with no code may still be a real project -- a documentation
+        // repository is one -- so this is stated rather than refused.
+        FolderContent::Documents => None,
+        FolderContent::Built => Some(format!(
+            "This folder holds built programs rather than source ({}). That looks like an installed application or a build output directory, not a project to work on. Choose the folder your source code lives in.",
+            saw.join(", ")
+        )),
+        FolderContent::Media => Some(format!(
+            "This folder holds pictures, video or audio ({}) and no source code. Hivemind would have to make a first commit of these files, and a first commit cannot be un-made without rewriting history. Choose the folder your source code lives in.",
+            saw.join(", ")
+        )),
+        FolderContent::Unrecognised => Some(
             "This folder has no source files in it, so there is nothing for Hivemind to work on yet. Choose the folder your project lives in."
                 .to_string(),
-        );
+        ),
     }
-    None
 }
 
 #[tauri::command]
 pub async fn inspect_git_readiness(project_path: String) -> Result<GitReadiness, String> {
     let root = std::path::Path::new(&project_path);
+
+    // Classify first, and report it. Everything the surface says downstream --
+    // the heading, the step tick, whether git is offered, what a commit would
+    // include -- derives from this rather than assuming a project.
+    if !root.exists() {
+        return Ok(GitReadiness {
+            exists: false,
+            is_directory: false,
+            is_repo: false,
+            content: FolderContent::Empty,
+            saw: Vec::new(),
+            starts_empty: false,
+            would_commit: Vec::new(),
+            would_ignore: Vec::new(),
+            refusal: Some(
+                "There is nothing at that path. Check it, or choose a folder.".to_string(),
+            ),
+        });
+    }
     if !root.is_dir() {
-        return Err("that folder does not exist".to_string());
+        return Ok(GitReadiness {
+            exists: true,
+            is_directory: false,
+            is_repo: false,
+            content: FolderContent::Unrecognised,
+            saw: root
+                .file_name()
+                .map(|name| vec![name.to_string_lossy().to_string()])
+                .unwrap_or_default(),
+            starts_empty: false,
+            would_commit: Vec::new(),
+            would_ignore: Vec::new(),
+            refusal: Some(
+                "That is a file, not a folder. Hivemind works inside a project folder -- choose the folder this file lives in.".to_string(),
+            ),
+        });
     }
     if root.join(".git").exists() {
         return Ok(GitReadiness {
+            exists: true,
+            is_directory: true,
             is_repo: true,
+            content: FolderContent::Source,
+            saw: Vec::new(),
             starts_empty: false,
             would_commit: Vec::new(),
             would_ignore: Vec::new(),
@@ -2514,6 +2644,7 @@ pub async fn inspect_git_readiness(project_path: String) -> Result<GitReadiness,
     //
     // Named secrets first, because that refusal names the actual file and is
     // the more useful sentence when both apply.
+    let (content, saw) = classify_content(root, &present);
     let refusal = if !dangerous.is_empty() {
         dangerous.sort();
         Some(format!(
@@ -2521,11 +2652,15 @@ pub async fn inspect_git_readiness(project_path: String) -> Result<GitReadiness,
             dangerous.join(", ")
         ))
     } else {
-        shape_refusal(root, &present)
+        shape_refusal(content, &saw)
     };
 
     Ok(GitReadiness {
+        exists: true,
+        is_directory: true,
         is_repo: false,
+        content,
+        saw,
         starts_empty: present.is_empty(),
         would_commit,
         would_ignore,
@@ -2886,6 +3021,118 @@ mod git_readiness_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /* The folder that slipped through.
+     *
+     * Two holiday photos and a shopping list read as a project and were offered
+     * a first commit, because `txt` sat in SOURCE_EXTENSIONS and image
+     * extensions were in no list at all. A first commit cannot be un-made
+     * without rewriting history, which is exactly what somebody who has never
+     * used git cannot be asked to do.
+     *
+     * Proven to bite: put "txt" back in SOURCE_EXTENSIONS and this fails.
+     */
+    #[test]
+    fn a_folder_of_photos_and_a_shopping_list_is_refused_by_name() {
+        let dir = temp_dir("photos");
+        std::fs::write(dir.join("holiday.jpg"), "not really a jpeg").expect("photo");
+        std::fs::write(dir.join("beach.png"), "not really a png").expect("photo");
+        std::fs::write(dir.join("notes.txt"), "milk, eggs
+").expect("list");
+
+        let readiness = tauri::async_runtime::block_on(inspect_git_readiness(
+            dir.to_string_lossy().to_string(),
+        ))
+        .expect("readiness");
+
+        assert!(readiness.exists);
+        assert!(readiness.is_directory);
+        let refusal = readiness.refusal.expect("a folder of photos must be refused");
+        // It says what it SAW rather than refusing without naming anything.
+        assert!(refusal.contains("beach.png"), "{refusal}");
+        assert!(refusal.contains("holiday.jpg"), "{refusal}");
+        assert!(refusal.contains("cannot be un-made"), "{refusal}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /* And the costly direction stays open: a real project with assets beside
+       the code is a project, and refusing one would be worse than the bug. */
+    #[test]
+    fn source_with_images_beside_it_is_still_a_project() {
+        let dir = temp_dir("source-with-assets");
+        std::fs::write(dir.join("index.ts"), "export default 1;
+").expect("source");
+        std::fs::write(dir.join("logo.png"), "not really a png").expect("asset");
+        std::fs::write(dir.join("README.md"), "# hi
+").expect("doc");
+
+        let readiness = tauri::async_runtime::block_on(inspect_git_readiness(
+            dir.to_string_lossy().to_string(),
+        ))
+        .expect("readiness");
+        assert_eq!(readiness.refusal, None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /* A documentation repository is a real project, so documents are stated
+       rather than refused. */
+    #[test]
+    fn a_folder_of_documents_is_not_refused() {
+        let dir = temp_dir("docs-only");
+        std::fs::write(dir.join("README.md"), "# guide
+").expect("doc");
+        std::fs::write(dir.join("guide.txt"), "how to
+").expect("doc");
+
+        let readiness = tauri::async_runtime::block_on(inspect_git_readiness(
+            dir.to_string_lossy().to_string(),
+        ))
+        .expect("readiness");
+        assert_eq!(readiness.refusal, None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /* A missing path and a file used to come back as errors, so the surface
+       fell through to its git branch and announced that a folder which did not
+       exist was untracked, with step one ticked above it. They are
+       classifications now, and they do not mention git. */
+    #[test]
+    fn a_missing_path_is_classified_rather_than_thrown() {
+        let missing = std::env::temp_dir().join("hivemind-no-such-path-anywhere-xyz");
+        let _ = std::fs::remove_dir_all(&missing);
+
+        let readiness = tauri::async_runtime::block_on(inspect_git_readiness(
+            missing.to_string_lossy().to_string(),
+        ))
+        .expect("a missing path must classify, not error");
+
+        assert!(!readiness.exists);
+        assert!(!readiness.is_directory);
+        let refusal = readiness.refusal.expect("a missing path must say so");
+        assert!(refusal.contains("nothing at that path"), "{refusal}");
+        assert!(!refusal.contains("git"), "{refusal}");
+    }
+
+    #[test]
+    fn a_file_is_classified_as_a_file_not_a_missing_folder() {
+        let dir = temp_dir("a-file");
+        let file = dir.join("index.js");
+        std::fs::write(&file, "console.log(1);
+").expect("source");
+
+        let readiness = tauri::async_runtime::block_on(inspect_git_readiness(
+            file.to_string_lossy().to_string(),
+        ))
+        .expect("a file must classify, not error");
+
+        // The file exists. Saying "that folder does not exist" about a real
+        // file names the wrong problem.
+        assert!(readiness.exists);
+        assert!(!readiness.is_directory);
+        let refusal = readiness.refusal.expect("a file must say so");
+        assert!(refusal.contains("file, not a folder"), "{refusal}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn generated_dependencies_are_offered_with_ignore_entries() {
         let dir = temp_dir("deps-only");
@@ -2948,7 +3195,17 @@ mod git_readiness_tests {
         let refusal = readiness
             .refusal
             .expect("an ambiguous non-empty folder is refused");
-        assert!(refusal.contains("no source files"), "{refusal}");
+        /* This asserted the generic "no source files" sentence. A lone photo is
+           now recognised AS a photo and the refusal names it, which is the more
+           useful answer -- and the reason this test kept passing while the real
+           bug shipped: adding a `notes.txt` beside the photo flipped
+           `has_source` to true, because `txt` was in SOURCE_EXTENSIONS. The
+           guarantee is that it refuses and says what it saw. */
+        assert!(refusal.contains("holiday.jpg"), "{refusal}");
+        assert!(
+            refusal.contains("pictures, video or audio"),
+            "{refusal}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

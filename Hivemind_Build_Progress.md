@@ -788,6 +788,54 @@ about is #7, because it was fixed as a class.
   **26.825.709**.
 - **Paid calls:** none this pass.
 
+## 2026-08-25 the first-run screen now knows what it is looking at
+
+Eight reported symptoms, one defect: the setup screen assumed a project. A
+missing path, a file and a folder of holiday photos all got the same "Set up
+this project" screen with step one ticked and a heading about git.
+
+`inspect_git_readiness` classifies first and reports it -- exists, is a
+directory, is a repo, and what the folder holds -- and the heading, the tick,
+the git offer and the commit preview all derive from that answer.
+
+- **The irreversible one first.** A folder of two photos and a shopping list was
+  offered a first commit. The shape refusal existed and did not fire because
+  `txt` was in SOURCE_EXTENSIONS, so `notes.txt` set `has_source` and the
+  folder read as a project; image extensions were in no list at all, so
+  `holiday.jpg` was invisible rather than merely allowed. `txt` and `md` are
+  documents now, media is recognised, and the refusal NAMES what it saw and why
+  it matters: a first commit cannot be un-made without rewriting history.
+  An existing test had asserted exactly this case with a lone `holiday.jpg` and
+  passed -- the photo alone was refused. Adding a text file beside it was what
+  flipped the answer, which is why the test never caught the bug it was written
+  for.
+- Source still wins over everything: a project with assets and a README beside
+  the code is a project, and refusing one would be worse than the bug.
+- **A missing path and a file are classifications, not errors.** They came back
+  as `Err`, so the surface fell through to its git branch and announced that a
+  folder which did not exist was untracked, with the real answer in red
+  underneath ("Nothing changed. that folder does not exist") and step one
+  ticked above. They now say "There is nothing at that path" and "That is a
+  file, not a folder", neither of which mentions git, and both offer the one
+  action that helps.
+- **The tick means what it says.** `done` was "a path was typed"; it is "the
+  shell looked and found a usable folder" now, and an unreported classification
+  falls back rather than un-ticking every project.
+- **#6, separately:** the disabled button reading "Waiting on git" is gone. A
+  label naming a state, styled as something to press, sitting below the control
+  that would satisfy it -- either it is an action or it is text, so the step's
+  detail line says why and no control is offered.
+
+- **Two assertions updated deliberately**, both pinning wording rather than the
+  guarantee: the generic "no source files" sentence (now names the file), and
+  the suppression assertion (now asserts no control at all rather than a
+  disabled one). The second gained a comment-strip, because an absence
+  assertion was otherwise satisfied by prose about the thing.
+- **Validation:** Core 921 pass, 0 fail, 2 skips. Desktop 347/347. Rust 52/52
+  including five new classification tests. `npm run ship` installed and
+  verified **26.825.1458**, and all four bad paths were re-walked on it.
+- **Paid calls:** none.
+
 ## Update Rules
 
 - Update this file after each committed Hivemind subtask.

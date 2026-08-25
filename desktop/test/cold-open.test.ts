@@ -50,18 +50,30 @@ describe("cold open", () => {
 
   test("the shell's first-commit refusal is visible and suppresses the action", async () => {
     const hook = await readFile(path.join(desktopRoot, "src", "hooks", "use-workspace.ts"), "utf8");
-    const screen = await readFile(
-      path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
-      "utf8"
-    );
+    /* Comments stripped: an absence assertion below would otherwise be
+       satisfied or defeated by prose ABOUT the thing rather than the thing --
+       the house rule this project has for source scans. */
+    const screen = (
+      await readFile(
+        path.join(desktopRoot, "src", "components", "workspace", "setup-screen.tsx"),
+        "utf8"
+      )
+    ).replace(/\/\*[\s\S]*?\*\//gu, "");
     expect(hook).toMatch(/invoke<GitReadiness>\("inspect_git_readiness"/u);
     expect(screen).toMatch(/gitReadiness !== null && gitRefusal === null/u);
     expect(screen).toMatch(/gitRefusal \?\? \(startsEmpty/u);
     expect(screen).toMatch(/create a Git repository and an empty first commit/u);
     expect(screen).toMatch(/Set up git for me/u);
     expect(screen).toMatch(/generatedIgnores\.join/u);
-    expect(screen).toMatch(/disabled=\{!chosen \|\| initializing \|\| gitBlocksSetup\}/u);
-    expect(screen).toMatch(/Waiting on git/u);
+    /* The guarantee is that a git refusal SUPPRESSES the setup action, and it
+       still holds -- more plainly than before. It used to be a disabled button
+       reading "Waiting on git", a label naming a state styled as something to
+       press, directly below the control that would satisfy it. Now no control
+       is offered at all while git blocks the step, and the step's detail line
+       says why. */
+    expect(screen).toMatch(/live \|\| gitBlocksSetup \? null :/u);
+    expect(screen).not.toMatch(/Waiting on git/u);
+    expect(screen).toMatch(/Resolve the git issue above before setting up Hivemind/u);
   });
 
   /**
