@@ -77,6 +77,10 @@ export interface WorkspacePlanReview {
 
 export interface WorkspaceInspection {
   tasks: TaskProjection[];
+  /* Rounds Core has judged no longer reporting. Optional: a daemon older than
+     the field is a permanent input, and absence means nothing was reconciled --
+     never that everything is running. */
+  silent_rounds?: string[];
   execution_groups: Array<{
     group_id: string;
     mode: "parallel" | "sequence";

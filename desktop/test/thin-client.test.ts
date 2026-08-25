@@ -262,7 +262,12 @@ describe("React workspace boundary", () => {
       "Paused for capacity",
       "Worker stopped",
       "Needs you",
-      "Guidance is read on the next step",
+      /* Was "Guidance is read on the next step". The composer serves three
+         purposes now -- a question, a change, and a message into a running run
+         -- and a footer describing only the third was the invitation that made
+         a greeting look unsupported. What has to hold is that the footer names
+         what will happen, in plain words. */
+      "Hivemind will ask whether this is guidance for it or a new piece of work",
       "Approve and start"
     ]) {
       expect(visibleSource).toContain(label);
@@ -333,7 +338,12 @@ describe("React workspace boundary", () => {
     expect(work).toMatch(/if \(!item\.action\) return;[\s\S]*await onAction<[^>]+>\(item\.action\)/u);
     expect(work).toMatch(/item\.action\.type === "manager\.retry_blocked"[\s\S]*type: "manager\.continue"/u);
     expect(audit).toContain("`manager.approve_pending`");
-    expect(work).toMatch(/Guidance is read on the next step and does not change work already in progress/u);
+    /* Was the guidance-only footer. What has to hold is that a message sent
+       while work is running says so BEFORE it is typed, and says the choice is
+       coming -- a different button label on an identical box did not carry it. */
+    expect(work).toMatch(/Work is running/u);
+    expect(work).toMatch(/What you send goes to this run, not to a new one/u);
+    expect(work).toMatch(/whether this is guidance for it or a new piece of work/u);
     expect(work).toMatch(/Nothing starts until you review and approve this exact plan/u);
     expect(work).not.toMatch(/title="Later"|<h2>Routing<\/h2>|<h2>Draft comparisons<\/h2>/u);
     expect(work).toMatch(/change_set\??\.changed_files\.map/u);
@@ -701,7 +711,12 @@ describe("React workspace boundary", () => {
     const thread = await readFile(path.join(desktopRoot, "src", "lib", "work-thread.ts"), "utf8");
 
     // The thread renders the replayed event history, so it survives a reload.
-    expect(work).toMatch(/buildRunThread\(events, taskTitles\)/u);
+    // The third argument is Core's reconciliation of rounds nothing is
+    // reporting on -- an INPUT from the daemon, not client memory, which is
+    // what this test is about. The client must not decide staleness itself.
+    expect(work).toMatch(/buildRunThread\(events, taskTitles, new Set\(silentRounds\)\)/u);
+    expect(work).toMatch(/silentRounds=\{inspection\?\.silent_rounds \?\? \[\]\}/u);
+    expect(work).not.toMatch(/ROUND_SILENCE_BOUND|openRounds\(/u);
     expect(work).toMatch(/events=\{projection\.recentEvents\}/u);
     expect(thread).not.toMatch(/localStorage|sessionStorage|useState|fetch\(/u);
 

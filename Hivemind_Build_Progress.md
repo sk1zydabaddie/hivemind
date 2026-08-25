@@ -742,6 +742,52 @@ Measurement pass on WORKER calls, plus two records. Figures live in
   agents-file tests 14/14 on the preceding commit.
 - **Paid calls:** none.
 
+## 2026-08-25 nine surface defects, and a reconciler for the class behind one
+
+All nine from the previous pass, in the ranked order. The one worth reading
+about is #7, because it was fixed as a class.
+
+- **An artefact outliving its owner with nothing asking.** `spec.draft_started`
+  with no terminal event rendered as a live round forever -- "Planner is reading
+  your request, 5m 20s elapsed" was still counting minutes after the process was
+  killed. New `src/open-rounds.ts` asks the question of EVERY
+  started-with-no-terminal pair in the vocabulary, not the one that was
+  reported: ten round shapes, and a test that enumerates the event catalogue and
+  fails on any started-shaped type without a shape. That test found
+  `verification.rerun_started` on its first run.
+  It reports and never repairs: a fabricated terminal event would claim an
+  outcome nobody observed. Two signals, strongest first -- a provably dead pid
+  (rounds now record their process identity), else silence past a bound. The
+  weaker answer says so: a round past the bound is "no longer reporting", never
+  "failed", and the clock stops counting rather than counting with confidence.
+  Reconciliation lives in Core and arrives on the inspection, because the client
+  is not the authority on what a stale round is.
+- **The Agents tab said you had none** while four were connected: the name
+  promises a roster and the surface was only ever a live-run view. With nothing
+  running it now answers the question its name asks.
+- **`Ctrl+K` on Windows.** `⌘K` and `⌘↵` were hardcoded while the handler
+  accepted either modifier, so the chrome named a key this keyboard does not
+  have, on every screen. One `shortcutLabel` reads the platform.
+- **The composer does three things and said one.** It takes a question, a change
+  request, and a message into a running run. Placeholders and footer name all
+  three; the send button's label matches the box at every moment ("Send" /
+  "Send to this run") and states its reason when disabled. Mid-run got a
+  visibly different affordance rather than the same box with a different button
+  label, because the message genuinely goes somewhere else.
+- Also: the chrome's project-scoped controls no longer sit enabled over an
+  empty window, and the header stopped saying "Connecting" while the body said
+  "Opening" -- one event, one word.
+
+- **Three test assertions updated deliberately**, each pinning copy or a
+  distance rather than a guarantee: the guidance-only footer (twice) and the
+  thread-construction call, which now takes Core's reconciliation as a third
+  argument. The new assertion is stronger: the client must NOT compute staleness
+  itself (`expect(work).not.toMatch(/openRounds\(/)`).
+- **Validation:** Core 921 pass, 0 fail, 2 intentional Windows skips. Desktop
+  347/347. `verify:reachable` green. `npm run ship` installed and verified
+  **26.825.709**.
+- **Paid calls:** none this pass.
+
 ## Update Rules
 
 - Update this file after each committed Hivemind subtask.

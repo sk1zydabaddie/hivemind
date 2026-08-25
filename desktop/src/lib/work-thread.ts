@@ -26,7 +26,12 @@ export interface ThreadDraft {
   id: string;
   at: string;
   specId: string;
-  state: "live" | "done" | "failed";
+  /* "silent" is not a failure. Nobody observed one -- the round simply stopped
+     being reported on, because the process that opened it is gone or nothing has
+     said anything for longer than a call can plausibly take. Rendering it as
+     failed would claim an outcome; rendering it as live is what left a clock
+     counting for minutes after the app was killed. */
+  state: "live" | "done" | "failed" | "silent";
   durationMs: number | null;
 }
 
@@ -233,9 +238,19 @@ export function runSpanMs(events: HivemindEvent[]): number | null {
   return span >= 1000 ? span : null;
 }
 
+/**
+ * Rounds that opened and never closed are reconciled here rather than believed.
+ *
+ * The reconciliation itself lives in Core (`src/open-rounds.ts`) and asks the
+ * same question of every started-with-no-terminal event, not just drafting.
+ * This applies its answer to what the thread draws.
+ */
 export function buildRunThread(
   eventsNewestFirst: HivemindEvent[],
-  taskTitles: Record<string, string>
+  taskTitles: Record<string, string>,
+  /* Rounds Core has judged no longer reporting, keyed by their id. Absent means
+     nothing was reconciled, which is how an older shell behaves. */
+  silentRounds: ReadonlySet<string> = new Set()
 ): ThreadEntry[] {
   const entries: ThreadEntry[] = [];
   const appliedGuidance = new Set<string>();
@@ -272,7 +287,9 @@ export function buildRunThread(
           id,
           at: event.ts,
           specId,
-          state: "live",
+          /* A round Core says nothing is reporting on must not be drawn as
+             work in progress, however faithfully the trail says it started. */
+          state: silentRounds.has(specId) ? "silent" : "live",
           durationMs: null
         });
       }

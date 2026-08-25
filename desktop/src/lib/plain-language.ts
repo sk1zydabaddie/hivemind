@@ -35,3 +35,28 @@ export function plainActionError(error: unknown): string {
   }
   return text;
 }
+
+/**
+ * The modifier this keyboard actually has.
+ *
+ * `⌘K` was hardcoded and shown on Windows, where there is no Command key --
+ * the badge named a key the person could not press, on every screen, while the
+ * handler accepted either modifier. A label that names the wrong key is worse
+ * than no label: it teaches a shortcut that does nothing.
+ *
+ * Read from the platform rather than passed in, because every surface that
+ * draws a shortcut needs the same answer and a second source would drift.
+ */
+export function modifierKeyLabel(): string {
+  const platform =
+    typeof navigator === "undefined"
+      ? ""
+      : `${navigator.platform ?? ""} ${navigator.userAgent ?? ""}`;
+  return /Mac|iPhone|iPad/u.test(platform) ? "⌘" : "Ctrl";
+}
+
+/** `Ctrl+K` on Windows and Linux, `⌘K` on macOS. */
+export function shortcutLabel(key: string): string {
+  const modifier = modifierKeyLabel();
+  return modifier === "Ctrl" ? `Ctrl+${key}` : `${modifier}${key}`;
+}

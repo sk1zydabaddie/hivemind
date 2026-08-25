@@ -1,3 +1,5 @@
+import { createCachedProcessLivenessProbe } from "./process-liveness.js";
+import { openRounds, roundIsReporting } from "./open-rounds.js";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_AUTONOMY_LEVEL, isAutonomyLevel, type AutonomyLevel } from "./autonomy-level.js";
@@ -90,6 +92,16 @@ export interface WorkspaceInspection {
   tasks: WorkspaceTaskProjection[];
   execution_groups: WorkspaceExecutionGroupProjection[];
   task_titles: Record<string, string>;
+  /**
+   * Rounds that opened and never closed, which nothing is reporting on.
+   *
+   * Computed here rather than in a surface because it is a judgement about the
+   * durable record, and because the same question has to be asked of every
+   * started-with-no-terminal event rather than of the one somebody noticed --
+   * see src/open-rounds.ts. Ids only: a surface needs to know which rounds to
+   * stop drawing as work, not why, and the reason is in the round itself.
+   */
+  silent_rounds: string[];
   active_spec_id: string | null;
   active_spec_title: string | null;
   manager_session: ManagerWorkspaceSession | null;
@@ -417,6 +429,13 @@ export async function inspectWorkspace(
       tasks,
       execution_groups: executionGroups,
       task_titles: taskTitles,
+      silent_rounds: openRounds(events.value, {
+        now: Date.now(),
+        probeLiveness: createCachedProcessLivenessProbe()
+      })
+        .filter((round) => !roundIsReporting(round))
+        .map((round) => round.id)
+        .filter((id): id is string => id !== null),
       active_spec_id: specId,
       active_spec_title: specTitle,
       manager_session: session.value,

@@ -51,11 +51,14 @@ export function AgentGraph({
   projection,
   inspection,
   selectedTaskId,
+  connected,
   onSelectTask
 }: {
   projection: BoardProjection;
   inspection: WorkspaceInspection | null;
   selectedTaskId: string | null;
+  /** Who is connected, for the state where nothing is running yet. */
+  connected: Array<{ role: string; agent: string | null; model: string | null }>;
   onSelectTask: (taskId: string) => void;
 }): React.JSX.Element {
   const tree = buildSwarmTree(projection, inspection);
@@ -81,12 +84,45 @@ export function AgentGraph({
   const titles = inspection?.task_titles ?? {};
 
   if (tree.groups.length === 0) {
+    /* A tab called "Agents" that says you have none, while four are connected,
+       describes the wrong thing: the name promises a roster and the surface was
+       only ever a live-run view. So with nothing running it answers the
+       question the name asks -- who is connected -- and says plainly that the
+       live picture appears when work starts. */
     return (
       <div className="min-h-0 overflow-auto px-6 py-7">
-        <p className="m-0 max-w-[440px] text-[13px] leading-relaxed text-muted-foreground">
-          No agents are working yet. When the run starts, every agent appears
-          here with what it is doing.
-        </p>
+        {connected.length === 0 ? (
+          <p className="m-0 max-w-[440px] text-[13px] leading-relaxed text-muted-foreground">
+            No coding agent is connected for this project yet. Open Set up to
+            connect one.
+          </p>
+        ) : (
+          <div className="grid max-w-[560px] gap-3">
+            <h3 className="m-0 text-[13px] font-medium text-ink">
+              Connected for this project
+            </h3>
+            <ul className="m-0 grid list-none gap-1.5 p-0">
+              {connected.map((entry) => (
+                <li
+                  className="flex flex-wrap items-baseline gap-x-2 rounded-md border border-rule bg-panel px-3 py-2"
+                  key={`${entry.role}:${entry.agent ?? "none"}`}
+                >
+                  <span className="text-[12px] font-medium text-ink">{entry.role}</span>
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    {entry.agent ?? "not connected"}
+                  </span>
+                  {entry.model === null ? null : (
+                    <span className="font-mono text-[11px] text-muted-foreground">{entry.model}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <p className="m-0 text-[12px] leading-relaxed text-muted-foreground">
+              When a run starts, this becomes the live picture of what each one
+              is doing.
+            </p>
+          </div>
+        )}
       </div>
     );
   }

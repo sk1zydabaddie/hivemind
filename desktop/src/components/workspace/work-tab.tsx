@@ -79,7 +79,7 @@ import {
   type NonGoalEntry
 } from "@/components/workspace/spec-review";
 import { ANONYMOUS_TASK, taskTitleOrNull } from "@/lib/identifiers";
-import { plainActionError } from "@/lib/plain-language";
+import { plainActionError, shortcutLabel } from "@/lib/plain-language";
 import {
   RECENT_EVENT_LIMIT,
   type BoardProjection,
@@ -310,6 +310,36 @@ export function WorkTab({
      asks installed CLIs for their published model slugs. Choosing a different
      slug is deliberately separate and runs the normal capability check before
      Core replaces a role profile. */
+  /* Who is connected, for the Agents tab when nothing is running. Read once
+     through the audited read-only action; the tab is named after these and used
+     to claim there were none. */
+  const [connectedAgents, setConnectedAgents] = useState<
+    Array<{ role: string; agent: string | null; model: string | null }>
+  >([]);
+  useEffect(() => {
+    let cancelled = false;
+    void onAction<ProjectConfigView>({ type: "config.inspect", payload: {} })
+      .then((view) => {
+        if (cancelled) return;
+        setConnectedAgents(
+          (view.adapters ?? [])
+            .filter((adapter) => adapter.connected_at !== null)
+            .map((adapter) => ({
+              role: adapter.role,
+              agent: adapter.agent_id ?? adapter.tool ?? null,
+              model: adapter.model ?? null
+            }))
+        );
+      })
+      .catch(() => {
+        /* The roster simply does not appear. A tab that renders an error where
+           a list belongs is worse than one that renders the live picture. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [onAction]);
+
   const loadRolePicker = async (): Promise<void> => {
     setRolePickerBusy(true);
     setRolePickerError("");
@@ -1020,6 +1050,7 @@ export function WorkTab({
                    drawings of one thing competing for the same column. */
             stage === "graph" ? (
               <AgentGraph
+                connected={connectedAgents}
                 inspection={inspection}
                 projection={projection}
                 selectedTaskId={projection.selectedTaskId}
@@ -1042,6 +1073,7 @@ export function WorkTab({
                 ) : null}
                 <RunThread
                   draftText={draftStream?.text ?? null}
+                  silentRounds={inspection?.silent_rounds ?? []}
                   endRef={activityEndRef}
                   events={projection.recentEvents}
                   plan={displayedPlan}
@@ -2357,6 +2389,7 @@ function RunThread({
   plan,
   endRef,
   draftText,
+  silentRounds,
   onOpenPlan
 }: {
   events: BoardProjection["recentEvents"];
@@ -2364,11 +2397,20 @@ function RunThread({
   plan: WorkspacePlanReview | null;
   endRef: React.RefObject<HTMLDivElement | null>;
   draftText: string | null;
+  /** Round ids Core says nothing is reporting on. */
+  silentRounds: string[];
   onOpenPlan: () => void;
 }): React.JSX.Element {
+  /* Which open rounds nothing is reporting on any more.
+   *
+   * Computed in CORE and delivered on the inspection -- `openRounds` there asks
+   * the question of every started-with-no-terminal event, not just drafting, and
+   * the client is not the authority on what a stale round is. It re-reads on the
+   * inspection refresh, so a round that crosses the bound while nobody touches
+   * anything still stops counting. */
   const entries = useMemo(
-    () => buildRunThread(events, taskTitles),
-    [events, taskTitles]
+    () => buildRunThread(events, taskTitles, new Set(silentRounds)),
+    [events, taskTitles, silentRounds]
   );
   return (
     <ScrollArea aria-label="What has happened in this run" className="min-h-0">
@@ -2464,7 +2506,9 @@ function ThreadRow({
         ? "Planner is reading your request"
         : entry.state === "done"
           ? "Planner prepared a response"
-          : "Planner could not prepare a response";
+          : entry.state === "silent"
+            ? "No longer reporting"
+            : "Planner could not prepare a response";
     return (
       <article className="max-w-[720px] text-[13px] text-muted-foreground">
         <div className="flex items-center gap-2.5">
@@ -2475,6 +2519,14 @@ function ThreadRow({
         <span className="font-mono text-[11px]">
           {entry.state === "live" ? (
             <LiveElapsed startedAt={entry.at} />
+          ) : entry.state === "silent" ? (
+            /* Deliberately not a running clock. Counting up implies something
+               is still happening, and the whole point of this state is that
+               nothing has said so -- "5m 20s elapsed" was on screen for minutes
+               after the process was gone. */
+            <span title="Nothing has reported on this since it started. It was probably interrupted.">
+              started {formatClock(entry.at)}
+            </span>
           ) : entry.durationMs === null ? null : (
             formatDuration(entry.durationMs)
           )}
@@ -2834,12 +2886,24 @@ function PromptDock({
       {roleMenu}
     </div>
   );
+  /* What the button will do, in the same words as the box.
+   *
+   * It said "Send guidance" mid-run while the box invited a change, and "Send
+   * request" otherwise while the box now also takes questions. And it offered
+   * no reason when disabled, which is the first control a person meets. */
+  const sendLabel = runActive ? "Send to this run" : "Send";
+  const sendReason =
+    busy
+      ? "Hivemind is still working on your last message"
+      : value.trim() === ""
+        ? "Type something first"
+        : sendLabel;
   const sendButton = (
     <Button
-      aria-label={runActive ? "Send guidance" : "Send request"}
+      aria-label={sendLabel}
       disabled={busy || value.trim() === ""}
       size="icon-round"
-      title={runActive ? "Send guidance" : "Send request"}
+      title={sendReason}
       type="submit"
     >
       <ArrowUp aria-hidden="true" className="size-4" />
@@ -2850,6 +2914,20 @@ function PromptDock({
       className={centered ? "grid w-full max-w-[680px] gap-2" : "grid gap-2"}
       onSubmit={(event) => void onSubmit(event)}
     >
+      {/* Mid-run the box means something genuinely different: the message lands
+          against work already in progress, and Hivemind has to ask which kind
+          it is. A different button label on an identical box was not enough to
+          carry that -- the affordance says so before anything is typed. */}
+      {runActive ? (
+        <div className="flex items-center gap-2 rounded-sm border-l-2 border-navy bg-navy-wash px-2.5 py-1.5">
+          <span className="text-[11px] font-medium tracking-label text-navy uppercase">
+            Work is running
+          </span>
+          <span className="min-w-0 text-[11px] leading-snug break-words text-muted-foreground">
+            What you send goes to this run, not to a new one.
+          </span>
+        </div>
+      ) : null}
       <div
         className={`grid gap-2 rounded-3xl border border-input bg-panel transition-colors focus-within:border-navy/55 focus-within:ring-1 focus-within:ring-navy/20 ${
           centered ? "grid-cols-[minmax(0,1fr)]" : "grid-cols-[auto_minmax(0,1fr)_auto] items-end"
@@ -2889,10 +2967,10 @@ function PromptDock({
           id="work-composer"
           placeholder={
             runActive
-              ? "Add guidance for the next step…"
+              ? "Send this to the run in progress…"
               : idle
-                ? "Describe what you want built…"
-                : "Describe the next change you want…"
+                ? "Ask a question, or describe what you want built…"
+                : "Ask a question, or describe the next change…"
           }
           ref={composerRef}
           rows={centered ? 3 : 2}
@@ -2978,12 +3056,17 @@ function PromptDock({
       ) : (
         <div className="flex items-center gap-2.5 px-1">
           <span className="min-w-0 flex-1 text-[11px] leading-snug break-words text-muted-foreground">
+            {/* The box does three things, so this says all three rather than the
+                one it used to. "Typing describes work" was true of one of them
+                and was the invitation that made a greeting look like a
+                supported thing to type -- which it now is, but the invitation
+                still had to catch up. */}
             {runActive
-              ? "Guidance is read on the next step and does not change work already in progress."
-              : "Typing describes work. Nothing runs until Hivemind has a plan it can check."}
+              ? "Work is running, so Hivemind will ask whether this is guidance for it or a new piece of work."
+              : "Ask anything, or describe a change. A question is answered here; a change becomes a plan you approve before anything runs."}
           </span>
           <kbd className="shrink-0 rounded-sm border border-rule bg-panel px-1 font-mono text-[11px] text-muted-foreground">
-            ⌘↵
+            {shortcutLabel("↵")}
           </kbd>
           {managerStartAvailable ? (
             <Button

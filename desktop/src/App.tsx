@@ -1,3 +1,4 @@
+import { shortcutLabel } from "@/lib/plain-language";
 import { Check, ChevronDown, FolderGit2, LayoutList, Library, Plug, Search, Settings, Terminal, Workflow, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -168,6 +169,11 @@ export default function App(): React.JSX.Element {
       displayProjectPath(entry.path).toLocaleLowerCase() !== visibleProjectPath.toLocaleLowerCase()
   );
   const shellUpdateRequired = workspace.connectionState === "update required";
+  /* Whether the chrome's project-scoped controls can do anything yet. */
+  const projectReady =
+    workspace.connectionState !== "connecting" &&
+    workspace.connectionState !== "daemon started" &&
+    workspace.connectionState !== "daemon found";
   /* Only the daemon answering with real project state counts as live. Until
      then this is a setup problem, not an empty workspace. */
   const live = workspace.inspection !== null;
@@ -467,9 +473,16 @@ export default function App(): React.JSX.Element {
                 chrome is the cheapest way to teach a shortcut. */}
             <Tooltip>
               <TooltipTrigger asChild>
+                {/* Both of these act on a project, so neither is offered
+                    before one is open. They used to be pressable over an empty
+                    window reading "Opening C:\…", where the palette listed
+                    sections that were not there and Settings had nothing to
+                    show. A control that cannot do anything yet says so. */}
                 <Button
                   aria-label="Commands"
+                  disabled={!projectReady}
                   size="sm"
+                  title={projectReady ? "Commands" : "Opens once the project is open"}
                   type="button"
                   variant="ghost"
                   onClick={() => setPaletteOpen(true)}
@@ -480,7 +493,7 @@ export default function App(): React.JSX.Element {
                       stretched to the button's cross-axis, which distorted the
                       glyph and the K rather than fitting them in a box. */}
                   <kbd className="inline-flex h-[18px] shrink-0 items-center rounded-sm border border-rule px-1 font-mono text-[11px] leading-none text-muted-foreground">
-                    ⌘K
+                    {shortcutLabel("K")}
                   </kbd>
                 </Button>
               </TooltipTrigger>
@@ -490,7 +503,9 @@ export default function App(): React.JSX.Element {
               <TooltipTrigger asChild>
                 <Button
                   aria-label="Settings"
+                  disabled={!projectReady}
                   size="icon-sm"
+                  title={projectReady ? "Settings" : "Opens once the project is open"}
                   type="button"
                   variant="ghost"
                   onClick={() => setSettingsOpen(true)}
@@ -821,6 +836,14 @@ function ConnectionReadout({
   const live = state === "live";
   const broken = state === "connection error" || state === "update required";
   const dot = live ? "bg-navy" : broken ? "bg-clay" : "bg-amber";
+  /* One event, one word. The chrome said "Connecting" while the body underneath
+     said "Opening <path>…" -- two vocabularies for the same moment, which reads
+     as two things happening. The body's word wins because it is the one with
+     the project name next to it. */
+  const shown =
+    state === "connecting" || state === "daemon started" || state === "daemon found"
+      ? "opening"
+      : state;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -829,7 +852,7 @@ function ConnectionReadout({
           className="flex cursor-default items-center gap-1.5 px-1 text-[12px] text-muted-foreground"
         >
           <span aria-hidden="true" className={`size-1.5 rounded-xs ${dot}`} />
-          <span className="font-medium text-ink first-letter:uppercase">{state}</span>
+          <span className="font-medium text-ink first-letter:uppercase">{shown}</span>
         </span>
       </TooltipTrigger>
       <TooltipContent side="bottom">

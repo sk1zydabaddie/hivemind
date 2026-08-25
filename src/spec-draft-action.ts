@@ -132,7 +132,15 @@ export async function draftSpecFromPrompt(
   const started = await appendEvent(repoRoot, {
     type: "spec.draft_started",
     task_id: null,
-    data: { spec_id: specId.value, tool, message_id: turnId }
+    /* Whose round this is. Recorded so a reader can ask whether anything is
+       still doing it: without a pid, an abandoned round is indistinguishable
+       from a slow one until a timeout expires. See src/open-rounds.ts. */
+    data: {
+      spec_id: specId.value,
+      tool,
+      message_id: turnId,
+      process_identity: { pid: process.pid, process_instance_id: turnId }
+    }
   });
   if (!started.ok) return started;
 
