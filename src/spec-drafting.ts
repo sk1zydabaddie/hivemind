@@ -21,6 +21,31 @@ export interface DraftedAlternative {
   tradeoffs: string[];
 }
 
+/**
+ * What the drafter answers when the message was not a build request.
+ *
+ * The composer looks like a chat, so people type into it what they would type
+ * into a chat: greetings, questions, half-formed ideas. Routing all of that
+ * into spec drafting produced a gate refusal ("first ideation round must
+ * include at least two alternatives") for the word "hello", which is the
+ * interface lying about what it is.
+ *
+ * The DRAFTER decides, in the call that was already being made, and it answers
+ * with a typed kind. Nothing here reads the person's words to route them: the
+ * client cannot see the text and Core branches on the code, which is the rule
+ * this project has recorded four times.
+ *
+ * A reply carries no authority. It writes one conversation event, allocates no
+ * spec, opens no ideation round, and cannot ratify, approve or start anything.
+ * Talking is talking; approving is still a button.
+ */
+export interface DraftedReply {
+  kind: "reply";
+  reply: string;
+}
+
+export type DraftedAnswer = ({ kind: "spec" } & DraftedSpecProposal) | DraftedReply;
+
 export interface DraftedSpecProposal {
   title: string;
   goal: string;
@@ -41,6 +66,10 @@ export interface DraftedSpecProposal {
 export const draftedSpecJsonSchema: Record<string, unknown> = {
   type: "object",
   properties: {
+    /* The discriminator. Constrained to the two words the parser switches on,
+       so a provider that enforces the schema cannot answer with a third. */
+    kind: { type: "string", enum: ["spec", "reply"] },
+    reply: { type: "string" },
     title: { type: "string" },
     goal: { type: "string" },
     non_goals: { type: "array", items: { type: "string" } },
@@ -70,7 +99,10 @@ export const draftedSpecJsonSchema: Record<string, unknown> = {
       additionalProperties: false
     }
   },
-  required: ["title", "goal", "non_goals", "acceptance", "assumptions", "open_questions", "alternatives", "self_critique"],
+  /* Only the discriminator is always required: a reply carries `reply` and a
+     spec carries the rest, and the parser enforces which. Requiring the spec
+     fields here would make the reply shape unrepresentable. */
+  required: ["kind"],
   additionalProperties: false
 };
 
@@ -81,11 +113,35 @@ export function buildSpecDraftingPrompt(input: {
 }): string {
   const sample = input.trackedFiles.slice(0, 200);
   return [
-    "You are drafting a short specification from one sentence a person typed into a build tool.",
+    "A person typed something into a build tool. Decide first what it is, then answer.",
     "You are not planning the work, choosing files, or writing code.",
     "",
-    "Return exactly one JSON object and no markdown fences or commentary:",
+    "TWO KINDS OF ANSWER. Choose one.",
+    "",
+    "1. The message asks for something to be BUILT or CHANGED in this project.",
+    "   Draft a short specification for it, using \"kind\": \"spec\".",
+    "",
+    "2. Anything else -- a greeting, a question about this project or about how",
+    "   this tool works, a remark, or a message too vague to build from. Answer",
+    "   it in your own words, using \"kind\": \"reply\".",
+    "",
+    "   Reply plainly and briefly, the way a colleague would. You may answer",
+    "   questions about this project from the file list below. If the message",
+    "   seems to WANT something built but is too thin to draft from, say what",
+    "   you would need to know -- do not draft from a guess, and do not refuse:",
+    "   ask.",
+    "",
+    "   A reply starts no work, approves nothing, and changes no file. Never say",
+    "   in a reply that you have started, approved, planned or built anything.",
+    "",
+    "Return exactly one JSON object and no markdown fences or commentary.",
+    "",
+    "For a reply:",
+    '{ "kind": "reply", "reply": "what you want to say back" }',
+    "",
+    "For a specification:",
     "{",
+    '  "kind": "spec",',
     '  "title": "short noun phrase naming the change",',
     '  "goal": "one or two sentences: what should be true when this is done",',
     '  "non_goals": ["what this deliberately will NOT do"],',
@@ -148,6 +204,33 @@ export function buildSpecDraftingPrompt(input: {
     `Files in this project (${input.trackedFiles.length} total${sample.length < input.trackedFiles.length ? ", first 200 shown" : ""}):`,
     ...sample.map((file) => `  ${file}`)
   ].join("\n");
+}
+
+/**
+ * What the drafter answered: a specification, or a message back.
+ *
+ * Switches on `kind` and nothing else -- never on the person's words. An answer
+ * that omits the field is read as a spec, so a provider that drops it behaves
+ * exactly as it did before this existed: the old failure mode, not a new one.
+ */
+export function parseDraftedAnswer(modelOutput: string): SpecResult<DraftedAnswer> {
+  const extracted = extractJsonObject(modelOutput, "spec drafter");
+  if (!extracted.ok) return extracted;
+  let value: Record<string, unknown>;
+  try {
+    value = JSON.parse(extracted.value) as Record<string, unknown>;
+  } catch (error: unknown) {
+    return { ok: false, reason: `spec drafter returned invalid JSON: ${String(error)}` };
+  }
+  if (value.kind === "reply") {
+    const reply = readText(value.reply);
+    if (reply === null) {
+      return { ok: false, reason: "the drafter chose to reply but returned no message" };
+    }
+    return { ok: true, value: { kind: "reply", reply } };
+  }
+  const spec = parseDraftedSpec(modelOutput);
+  return spec.ok ? { ok: true, value: { kind: "spec", ...spec.value } } : spec;
 }
 
 export function parseDraftedSpec(modelOutput: string): SpecResult<DraftedSpecProposal> {

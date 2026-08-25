@@ -130,7 +130,19 @@ test("unreadable output is not retried and its conversation failure is durable",
       events.value.slice(-3).map((event) => event.type),
       ["conversation.message_recorded", "spec.draft_started", "spec.draft_failed"]
     );
-    assert.equal(events.value.at(-1)?.data.message, "I couldn't finish preparing a plan. No project source files were changed.");
+    /* Was the fixed sentence "I couldn't finish preparing a plan. No project
+       source files were changed." -- shown for EVERY drafting failure, next to
+       a technical detail describing something else. Two unrelated statements
+       about one event, and the second reassuring about a risk drafting never
+       runs, since it does not touch project source at all. The message now
+       comes from the reason, so it describes what actually failed. */
+    assert.equal(
+      events.value.at(-1)?.data.message,
+      "The planner's answer came back in a form Hivemind could not read. Nothing was created. Sending the request again usually resolves it."
+    );
+    /* And the machine detail is preserved unchanged beside it, because other
+       code matches on it. */
+    assert.match(String(events.value.at(-1)?.data.detail ?? ""), /planner's reply/u);
   } finally {
     await rm(repo, { recursive: true, force: true });
   }
@@ -172,6 +184,11 @@ test("a blocking question is a successful draft and is never retried away", asyn
     const result = await draftSpecFromPrompt(repo, "Add a thing.", "planner");
     assert.equal(result.ok, true, result.ok ? undefined : result.reason);
     if (!result.ok) return;
+    /* `spec.draft` now answers with a discriminated outcome: a draft, or a
+       reply when the message was not a build request. Narrowing here asserts
+       the drafting path was taken at all, which the old shape could not. */
+    assert.equal(result.value.status, "draft");
+    if (result.value.status !== "draft") return;
     assert.deepEqual(result.value.open_questions, [
       "Which of the three services should this live in?"
     ]);

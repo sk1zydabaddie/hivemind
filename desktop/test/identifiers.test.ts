@@ -80,6 +80,9 @@ function renderWork(scenario: Scenario, stage: "thread" | "graph"): string {
       actionError: "",
       connectionDetail: "",
       connectionState: "connected",
+      /* Nothing streaming: this renders finished states, and a live draft would
+         be a different scenario. */
+      draftStream: null,
       inspection: scenario.inspection ?? null,
       projectRoot: "D:\\Projects\\example",
       projection: projectionFor(scenario),

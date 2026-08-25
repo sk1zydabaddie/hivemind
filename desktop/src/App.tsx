@@ -605,6 +605,7 @@ export default function App(): React.JSX.Element {
             actionError={workspace.actionError}
             connectionDetail={workspace.connectionDetail}
             connectionState={workspace.connectionState}
+            draftStream={workspace.draftStream}
             inspection={workspace.inspection}
             projectRoot={workspace.connection?.project_root ?? workspace.projectPath}
             projection={workspace.projection}

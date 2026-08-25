@@ -59,17 +59,26 @@ const MAPPINGS: PlainMapping[] = [
     match: /no unhandled rejected write-intent/iu,
     plain: "The worker is not waiting at a safe correction point yet."
   },
+  /* "The plan changed" is a specific claim, and `plan hash` alone also matches
+     failures where it did not -- an unreadable plan file, a request naming a
+     plan that never existed. Kept for the mismatch case, which is the one that
+     means what the sentence says. */
   {
-    match: /current lint-passed tentative plan|plan hash|re-ratification/iu,
+    match: /plan hash (?:mismatch|does not match)|current lint-passed tentative plan|re-ratification/iu,
     plain: "The plan changed. Review the latest version before approving it."
   },
+  /* "yet" promised that waiting would help, which is not what the reason says
+     -- it says nothing was found under that identifier. */
   {
     match: /change not found/iu,
-    plain: "No submitted change is available for this task yet."
+    plain: "Hivemind has no submitted change recorded for this task."
   },
+  /* Said "already finished" for a task that may have failed or been cancelled,
+     and "cannot be stopped again" for actions that were not stops. Both were
+     claims the reason does not make. */
   {
     match: /already terminal/iu,
-    plain: "This task has already finished and cannot be stopped again."
+    plain: "This task has already reached its final state, so it cannot change again."
   },
   {
     match: /quality run is already cancelled/iu,
@@ -79,8 +88,14 @@ const MAPPINGS: PlainMapping[] = [
     match: /no unique admitted run/iu,
     plain: "This draft run is not active or cannot be identified safely."
   },
+  /* This asserted "The stop was recorded" for any reason containing the word
+     cleanup, liveness or termination -- including failures where nothing was
+     stopped at all. A sentence that names an event that did not happen is
+     worse than the raw reason, because the reader believes it. Narrowed to the
+     case it was written for: a stop that was recorded and whose cleanup could
+     not be proven. */
   {
-    match: /cleanup|worker death|liveness|termination/iu,
+    match: /stop recorded[^\n]*cleanup|cleanup could not be (?:proven|confirmed)|worker death could not be confirmed/iu,
     plain:
       "The stop was recorded, but cleanup could not be proven complete. Ownership stays held so other work cannot collide with it."
   },
@@ -117,6 +132,27 @@ const MAPPINGS: PlainMapping[] = [
      and the first submission fails on the one step nothing asked them to take.
      Connecting is what writes this file -- deliberately, because a profile
      written by setup is a claim no probe has checked. */
+  /* Drafting failures. The reported bug: every one of them rendered the same
+     fixed pair -- "I couldn't finish preparing a plan. No project source files
+     were changed." -- next to a technical detail describing something else
+     entirely ("first ideation round must include at least two alternatives").
+     Two unrelated sentences about one event, the second one reassurance about a
+     risk that never applied, since drafting does not touch source at all. */
+  {
+    match: /ideation round must include at least two alternatives|ideation must include at least two alternatives/iu,
+    plain:
+      "Hivemind could not find two genuinely different ways to build that, which it needs before planning. Say a little more about what you want and send it again."
+  },
+  {
+    match: /ideation generator must include at least two alternatives/iu,
+    plain:
+      "The planner did not offer two real options to choose between. Sending the request again usually resolves it."
+  },
+  {
+    match: /spec drafter returned invalid JSON|couldn't read the planner's reply|drafted spec is missing|drafted spec must/iu,
+    plain:
+      "The planner's answer came back in a form Hivemind could not read. Nothing was created. Sending the request again usually resolves it."
+  },
   {
     match: /adapter profile not found/iu,
     plain:

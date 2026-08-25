@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import type { DraftStreamView } from "@/lib/workspace-actions";
 import {
   applyEventMessage,
   applyOutputMessage,
@@ -31,6 +32,8 @@ import {
 
 interface WorkspaceView {
   projection: BoardProjection;
+  /** The planner's answer as it arrives, or null when nothing is drafting. */
+  draftStream: DraftStreamView | null;
   projectPath: string;
   connection: ProjectConnection | null;
   connectionState: string;
@@ -88,6 +91,16 @@ export function useWorkspace(): WorkspaceView {
   const projectionRef = useRef(createBoardProjection());
   const eventSourceRef = useRef<EventSource | null>(null);
   const outputSourceRef = useRef<EventSource | null>(null);
+  /* The planner's answer as it arrives.
+   *
+   * Drafting emits a stream and the app used to discard it: thirteen seconds of
+   * "Preparing your response" with nothing on screen, then a finished answer.
+   * It gets its own EventSource rather than reusing the task output channel,
+   * because that channel selects a task and drives the task panes -- a draft is
+   * not a task, and borrowing the mechanism would put a spec id in a list of
+   * work. */
+  const draftSourceRef = useRef<EventSource | null>(null);
+  const [draftStream, setDraftStream] = useState<DraftStreamView | null>(null);
   const streamGuardRef = useRef(createProjectStreamGuard());
   const connectionRef = useRef<ProjectConnection | null>(null);
   const inspectionTimerRef = useRef<number | null>(null);
@@ -291,6 +304,48 @@ export function useWorkspace(): WorkspaceView {
         clearTransportErrorAfterProgress();
         applyEventMessage(projectionRef.current, message);
         scheduleInspection();
+
+        /* The draft's own text, opened when Core says a draft started and
+           closed when it ends either way. History replay must not reopen it:
+           a finished draft streaming again would be a spinner for something
+           that already happened. */
+        const draftEvent = message.event;
+        if (draftEvent !== undefined && message.source !== "history") {
+          const specId =
+            typeof draftEvent.data?.spec_id === "string" ? draftEvent.data.spec_id : null;
+          if (draftEvent.type === "spec.draft_started" && specId !== null) {
+            draftSourceRef.current?.close();
+            setDraftStream({ specId, text: "" });
+            const draftSource = new EventSource(
+              `${nextConnection.daemon_url}/tasks/${encodeURIComponent(specId)}/output/stream`
+            );
+            draftSourceRef.current = draftSource;
+            /* No error banner here. A draft that streams nothing still finishes
+               and still renders its answer, so an interrupted transcript is
+               cosmetic -- and a transport warning about a cosmetic stream is
+               the false-alarm shape this project keeps removing. */
+            draftSource.onerror = () => undefined;
+            draftSource.onmessage = (chunk) => {
+              if (!isCurrentProject()) return;
+              const record = parseMessage<{ text?: unknown }>(chunk.data);
+              const text = typeof record?.text === "string" ? record.text : "";
+              if (text === "") return;
+              setDraftStream((previous) =>
+                previous === null || previous.specId !== specId
+                  ? previous
+                  : { specId, text: previous.text + text }
+              );
+            };
+          }
+          if (
+            (draftEvent.type === "spec.draft_completed" || draftEvent.type === "spec.draft_failed") &&
+            specId !== null
+          ) {
+            draftSourceRef.current?.close();
+            draftSourceRef.current = null;
+            setDraftStream((previous) => (previous?.specId === specId ? null : previous));
+          }
+        }
         if (
           projectionRef.current.selectedTaskId === null &&
           outputSourceRef.current === null
@@ -646,6 +701,7 @@ export function useWorkspace(): WorkspaceView {
     restartDaemon,
     initializing,
     selectTaskOutput: openOutputStream,
+    draftStream,
     performAction
   };
 }

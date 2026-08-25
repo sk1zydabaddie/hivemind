@@ -36,7 +36,9 @@ export interface ThreadAssistant {
   at: string;
   text: string;
   questions: string[];
-  tone: "neutral" | "danger";
+  /* "reply" is a message the planner wrote back to the person. It is rendered
+     verbatim, unlike a drafted direction, which the surface introduces. */
+  tone: "neutral" | "danger" | "reply";
   detail: string | null;
 }
 
@@ -272,6 +274,35 @@ export function buildRunThread(
           specId,
           state: "live",
           durationMs: null
+        });
+      }
+      continue;
+    }
+
+    /* Kept for trails written before a reply stopped opening a draft round at
+       all: those carry a started-and-failed pair around an answer, and showing
+       a failure for a message that was answered would describe the wrong
+       event. Switched on the typed `outcome`, never on the sentence. */
+    if (event.type === "spec.draft_failed" && event.data.outcome === "answered") {
+      const specId = readString(event.data.spec_id);
+      const index = entries.findIndex(
+        (entry) => entry.kind === "draft" && entry.specId === specId
+      );
+      if (index !== -1) entries.splice(index, 1);
+      continue;
+    }
+
+    if (event.type === "conversation.reply_recorded") {
+      const text = readString(event.data.text);
+      if (text !== null) {
+        entries.push({
+          kind: "assistant",
+          id,
+          at: event.ts,
+          text,
+          questions: [],
+          tone: "reply",
+          detail: null
         });
       }
       continue;

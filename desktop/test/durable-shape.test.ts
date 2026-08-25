@@ -91,7 +91,12 @@ describe("collections off a daemon answer", () => {
         const name = match[1];
         if (declared.has(name)) {
           offenders.push(`${path.relative(desktopRoot, file)} declares ${name}`);
-        } else if (!new RegExp(`^export interface ${name}\\b`, "mu").test(owner)) {
+          /* `export type` counts as well as `export interface`. The guarantee is
+             that the shape lives in the owner module, and a discriminated union
+             -- which is how a typed OUTCOME is expressed, and cannot be written
+             as an interface -- was failing a check that pinned the keyword
+             rather than the property. */
+        } else if (!new RegExp(`^export (?:interface|type) ${name}\\b`, "mu").test(owner)) {
           offenders.push(`${path.relative(desktopRoot, file)}: ${name} is not in workspace-actions.ts`);
         }
       }

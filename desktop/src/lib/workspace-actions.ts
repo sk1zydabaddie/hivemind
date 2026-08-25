@@ -579,6 +579,24 @@ export interface AgentsFileProposalView {
   };
 }
 
+/**
+ * What `spec.draft` answers with.
+ *
+ * `status` is the code the client switches on. "replied" means the drafter
+ * judged the message not to be a build request and answered it instead: no spec
+ * was created and nothing was authorised, so the caller must not continue to
+ * `plan.prepare`.
+ */
+/** The planner's answer as it arrives, keyed to the draft it belongs to. */
+export interface DraftStreamView {
+  specId: string;
+  text: string;
+}
+
+export type DraftOutcome =
+  | { status: "draft"; spec_id: string; title: string }
+  | { status: "replied"; reply: string };
+
 export interface ProjectConfigView {
   initialized: boolean;
   config_problem: string | null;

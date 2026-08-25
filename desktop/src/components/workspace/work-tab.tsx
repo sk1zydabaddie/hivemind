@@ -99,6 +99,8 @@ import { containsInternalVocabulary } from "@/lib/vocabulary";
 import { list } from "@/lib/durable";
 import { adapterModelText } from "@/lib/workspace-actions";
 import type {
+  DraftOutcome,
+  DraftStreamView,
   AdapterConnectResult,
   AutonomyLevel,
   ModelDiscoveryView,
@@ -127,6 +129,8 @@ interface WorkTabProps {
      a toggle in this header asked "which of these two do you want?" about two
      things a person cannot choose between before they have seen either. */
   stage: "thread" | "graph";
+  /** The planner's answer as it streams in, or null when nothing is drafting. */
+  draftStream: DraftStreamView | null;
   onReconnect: () => Promise<void>;
   onSelectTask: (taskId: string) => void;
   onAction: <T>(action: WorkspaceAction) => Promise<T>;
@@ -208,6 +212,7 @@ export function WorkTab({
   connectionState,
   connectionDetail,
   stage,
+  draftStream,
   onReconnect,
   onSelectTask,
   onAction
@@ -477,7 +482,20 @@ export function WorkTab({
        there is nothing to plan against yet. The drafted spec carries the
        orchestrator's signature only -- the person's comes at the review. */
     if (inspection?.active_spec_id === null || inspection?.active_spec_id === undefined) {
-      await onAction({ type: "spec.draft", payload: { prompt: message, tool: "planner" } });
+      /* The drafter decides, in the call it was making anyway, whether this was
+         a build request at all -- and says so with a typed status rather than
+         leaving the client to read the words. "Hello" used to be drafted from,
+         fail the ideation gate, and come back as a refusal; now it comes back
+         as an answer and the thread shows it. Nothing was authorised either
+         way: a reply cannot start work, and starting work is still a button. */
+      const drafted = await onAction<DraftOutcome>({
+        type: "spec.draft",
+        payload: { prompt: message, tool: "planner" }
+      });
+      if (drafted?.status === "replied") {
+        setFeedback("");
+        return;
+      }
     }
     const prepared = await onAction<PreparedPlan>({
       type: "plan.prepare",
@@ -1023,6 +1041,7 @@ export function WorkTab({
                   />
                 ) : null}
                 <RunThread
+                  draftText={draftStream?.text ?? null}
                   endRef={activityEndRef}
                   events={projection.recentEvents}
                   plan={displayedPlan}
@@ -2337,12 +2356,14 @@ function RunThread({
   taskTitles,
   plan,
   endRef,
+  draftText,
   onOpenPlan
 }: {
   events: BoardProjection["recentEvents"];
   taskTitles: Record<string, string>;
   plan: WorkspacePlanReview | null;
   endRef: React.RefObject<HTMLDivElement | null>;
+  draftText: string | null;
   onOpenPlan: () => void;
 }): React.JSX.Element {
   const entries = useMemo(
@@ -2365,6 +2386,7 @@ function RunThread({
         ) : null}
         {entries.map((entry) => (
           <ThreadRow
+            draftText={draftText}
             entry={entry}
             key={entry.id}
             plan={plan}
@@ -2396,11 +2418,14 @@ function ThreadRow({
   entry,
   plan,
   taskTitles,
+  draftText,
   onOpenPlan
 }: {
   entry: ThreadEntry;
   plan: WorkspacePlanReview | null;
   taskTitles: Record<string, string>;
+  /** The planner's answer as it arrives, for the draft still in flight. */
+  draftText: string | null;
   onOpenPlan: () => void;
 }): React.JSX.Element {
   if (entry.kind === "request" || entry.kind === "guidance") {
@@ -2430,6 +2455,10 @@ function ThreadRow({
   }
 
   if (entry.kind === "draft") {
+    /* The planner's text as it arrives. Before this the surface showed a label
+       and a running clock for thirteen seconds and nothing else, which is the
+       shape of a spinner that cannot tell you whether anything is happening. */
+    const streaming = entry.state === "live" && draftText !== null && draftText.trim() !== "";
     const label =
       entry.state === "live"
         ? "Planner is reading your request"
@@ -2437,7 +2466,8 @@ function ThreadRow({
           ? "Planner prepared a response"
           : "Planner could not prepare a response";
     return (
-      <article className="flex max-w-[720px] items-center gap-2.5 text-[13px] text-muted-foreground">
+      <article className="max-w-[720px] text-[13px] text-muted-foreground">
+        <div className="flex items-center gap-2.5">
         <span aria-hidden="true" className="grid size-7 shrink-0 place-items-center rounded-full border border-rule bg-surface text-navy">
           <Sparkles className="size-3.5" />
         </span>
@@ -2449,6 +2479,12 @@ function ThreadRow({
             formatDuration(entry.durationMs)
           )}
         </span>
+        </div>
+        {streaming ? (
+          <p className="mt-1.5 mb-0 max-w-[720px] pl-9 text-[13px] leading-relaxed break-words whitespace-pre-wrap text-muted-foreground">
+            {draftText}
+          </p>
+        ) : null}
       </article>
     );
   }
@@ -2461,6 +2497,10 @@ function ThreadRow({
           <time className="font-mono text-[11px] text-muted-foreground">{formatClock(entry.at)}</time>
         </div>
         <p className="mt-1.5 mb-0 text-[14px] leading-relaxed break-words text-ink">
+          {/* Only a DRAFTED direction is introduced as one. A reply is what the
+              planner said back, and prefixing it with "I've prepared this
+              direction:" would describe a different event than the one that
+              happened -- the same class of bug as the drafting failure message. */}
           {entry.tone === "neutral" ? `I've prepared this direction: ${entry.text}` : entry.text}
         </p>
         {entry.questions.length === 0 ? null : (

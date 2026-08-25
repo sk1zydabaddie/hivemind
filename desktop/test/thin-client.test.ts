@@ -427,9 +427,14 @@ describe("React workspace boundary", () => {
     expect(work).toMatch(/setReplanText\(message\);\s*setReplanOpen\(true\);/u);
     expect(work).toMatch(/Start over with a different plan/u);
     expect(work).toMatch(/onStartOver/u);
-    /* A first prompt drafts a spec before it plans, so the window is wider. Both
-       calls are asserted, in order. */
-    expect(work).toMatch(/const preparePlan[\s\S]{0,700}type: "spec\.draft"[\s\S]{0,400}type: "plan\.prepare"/u);
+    /* A first prompt drafts a spec before it plans. Both calls are asserted, in
+       order; the windows are distances rather than guarantees and were widened
+       when drafting learned to answer a message that was not a build request,
+       which added the branch that stops before planning. */
+    expect(work).toMatch(/const preparePlan[\s\S]{0,1400}type: "spec\.draft"[\s\S]{0,700}type: "plan\.prepare"/u);
+    /* And that branch is the guarantee worth pinning: a reply must not fall
+       through into preparing a plan nobody asked for. */
+    expect(work).toMatch(/status === "replied"[\s\S]{0,120}return;/u);
 
     // Nothing offers a control that cannot do anything.
     expect(work).toMatch(/if \(!canOpenAttention\(item\)\) return null;/u);

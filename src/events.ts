@@ -106,6 +106,10 @@ export const eventTypes = [
   "quota.low",
   "quota.exhausted",
   "conversation.message_recorded",
+  /* What the drafter said back when the message was not a build request. It
+     carries advisory_only/authorization_effect exactly as human guidance does,
+     because a reply is a message and never a permission. */
+  "conversation.reply_recorded",
   "spec.draft_started",
   "spec.draft_completed",
   "spec.draft_failed",
