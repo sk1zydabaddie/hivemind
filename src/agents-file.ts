@@ -22,6 +22,18 @@
  * sentence would change what Hivemind PERMITS by being present, it does not
  * belong, at any strength of phrasing.
  *
+ * ## A document that looks like enforcement and is not
+ *
+ * The general form of the rule above, worth stating on its own because it
+ * outlives this file: a document that LOOKS like enforcement and is not is
+ * worse than one that does not try. A boundary written in prose that no gate
+ * reads will be believed by the reader and ignored by the system, and the gap
+ * between the two is invisible until something crosses it. AGENTS.md therefore
+ * carries no boundaries at all -- not weakly-worded ones, not ones marked
+ * advisory. A boundary belongs where it is enforced: the lease, the contract,
+ * the gate. Anything that cannot be enforced is stated as knowledge or not at
+ * all.
+ *
  * ## The user's file
  *
  * Hivemind proposes; a person accepts. Nothing here writes unasked, nothing
@@ -46,11 +58,17 @@ import { detectCheckCandidates, packageScriptRunner, type CheckCandidate } from 
 /**
  * The size the generated block aims to stay under, and the size it refuses.
  *
- * A warm worker call bills cached input at about a tenth, so 8 KB (~2,000
- * tokens) costs on the order of 200 billed tokens per call -- cheap enough to
- * be worth real content. Past roughly 16 KB the file stops being read carefully
- * and starts being skimmed, and it is paid for on every task, so the generator
- * refuses rather than quietly shipping a wall of text into every prompt.
+ * Set by READABILITY, not by token arithmetic. The arithmetic does not bind:
+ * this sits in the worker prompt's stable prefix, so a 4 KB file costs roughly
+ * 350 uncached tokens once and about 35 per call after that. At those numbers
+ * cost would justify a far larger file than is good for anyone.
+ *
+ * What binds is attention. Every additional line makes the important lines
+ * easier to skip, and a worker that skims past "tests live in test/" because it
+ * is buried on page three has been given less than a shorter file would have
+ * given it. So the ceiling is the point past which a person -- or a model --
+ * stops reading carefully, and the generator refuses beyond it rather than
+ * quietly shipping a wall of text into every task.
  */
 export const SIZE_TARGET_BYTES = 8 * 1024;
 export const SIZE_REFUSAL_BYTES = 16 * 1024;
