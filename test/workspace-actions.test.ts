@@ -1739,7 +1739,13 @@ test("Work tab drives configured interruption policy through typed actions and k
   // control is desktop copy and is asserted in the desktop suite.
   assert.match(source, /managerStartAvailable \? \([\s\S]{0,400}onStartManager\(\)/u);
   assert.match(source, /managerStartAvailable[\s\S]*type: "manager\.start"/u);
-  assert.match(source, /Typed guidance cannot approve it/u);
+  /* Was "Typed guidance cannot approve it", said in response to a message typed
+     while a plan waited -- which treated a question as an attempt to approve and
+     stopped the conversation to say so. What has to hold is the property, not
+     the sentence: typing cannot approve a plan, and only the button does. The
+     conversation continues in the mode that answers and never drafts. */
+  assert.match(source, /answer_only: true/u);
+  assert.match(source, /Approve and start/u);
   assert.match(source, /type: "autonomy\.set"/u);
   assert.match(source, /type: "run\.stop"/u);
   assert.doesNotMatch(source, /type: "plan\.ratify"[\s\S]{0,220}(composer|message)/u);

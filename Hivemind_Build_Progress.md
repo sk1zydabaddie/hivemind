@@ -901,6 +901,54 @@ The six findings from behind the git gate, in the ranked order.
   went back to asking.
 - **Paid calls:** none.
 
+## 2026-08-25 nine surface changes from ten seconds of real use
+
+- **A new conversation exists, and says what it keeps.** The thread was the
+  project's whole history with no way to begin again. `conversation.new` appends
+  one boundary event and removes nothing: the trail keeps every message, a
+  prepared plan is untouched and still waiting -- discarding one silently would
+  throw away work nobody has looked at -- and the active spec is unchanged, so a
+  follow-up build request still lands against it. All that moves is where the
+  thread starts reading, and the control and the confirmation both say so.
+- **A message typed while a plan waits no longer stops the conversation.** It
+  captured the message, opened a modal offering to replace the plan, and
+  answered "Typed guidance cannot approve it" -- treating a question as an
+  attempt to approve. The message now goes through the same conversation in a
+  mode that answers and never drafts: `answer_only` refuses the spec branch in
+  Core, so a model that ignores the instruction still cannot replace a plan.
+  Only "Start over" replaces one; only a button approves one.
+- **One drawing of one fact.** The lanes drew every running task above the
+  thread while the rail drew the same tasks beside it.
+- **No "You", no clock** on a person's own messages.
+- **The composer is the reading column** (760px), not the window.
+- **The footer is one dial per working agent**, model and context, appearing and
+  disappearing with the work -- derived from the same open-round reconciliation
+  that decides whether a spinner keeps spinning, so a dial cannot outlive what
+  it describes. The call counts and token ceilings it replaced live on the
+  Project tab, where a person goes to ask about money. `SpendMeter` was removed
+  rather than left unused.
+- **Enter sends**, Shift+Enter is a newline, Ctrl/Cmd+Enter still works, and an
+  IME mid-composition is not a send.
+- **The worker's own output is in the thread** while it works, the way the
+  planner's already was. Nothing new is fetched: the shell already streamed it
+  and there was nowhere in the thread to see it.
+- **The hexagons are regular.** A pointy-top hexagon is TALLER than wide
+  (h = w x 2/sqrt 3); they were 10x9, 15x13 and 17x15 -- the ratio inverted. The
+  path was always right and only the box was wrong.
+
+- **Two process notes.** A patch script asserted its second anchor after making
+  its first replacement, so the copy landed and the behaviour did not -- the
+  second time this pass shape has cost something, and both were caught by using
+  the app rather than by the suites. And two verification predicates were wrong
+  in the same way: one waited on a label's absence, which was true before it
+  appeared, and one split on the question text, which a reply can quote.
+- **Five assertions updated deliberately**, each pinning copy or a layout
+  distance rather than a guarantee.
+- **Validation:** Core 923 pass, 0 fail, 2 skips. Desktop 351/351 including four
+  new hexagon-geometry tests. `npm run ship` installed and verified
+  **26.825.1641**, screenshotted at 1440x900.
+- **Paid calls:** four planner calls across the verification walks.
+
 ## Update Rules
 
 - Update this file after each committed Hivemind subtask.

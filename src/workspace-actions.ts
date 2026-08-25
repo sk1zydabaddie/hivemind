@@ -24,7 +24,7 @@ import { requestTaskStop } from "./task-control.js";
 import { inspectWorkspace } from "./workspace-inspection.js";
 
 import { resumeTask } from "./task-resume.js";
-import { draftSpecFromPrompt } from "./spec-draft-action.js";
+import { startNewConversation, draftSpecFromPrompt } from "./spec-draft-action.js";
 import { adapterRoleNames, isAdapterRoleName } from "./agent-catalogue.js";
 import { discoverProviderModels } from "./model-discovery.js";
 import {
@@ -87,6 +87,10 @@ export const workspaceActionTypes = [
      decision is Core's because a client that ignored the outcome could
      otherwise store a command that never ran. */
   "checks.try",
+  /* Begin a new conversation. Appends one boundary event: the trail keeps every
+     earlier message and a prepared plan is untouched -- see
+     `startNewConversation` for what it does and does not move. */
+  "conversation.new",
   /* AGENTS.md: `agents.propose` reads the repository and returns a diff;
      `agents.apply` writes only what Core itself re-derived, and only when the
      hashes the client was shown still match. The client never supplies file
@@ -150,8 +154,20 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
   }
   /* Drafts a spec from a prompt and signs only the orchestrator's half. */
   if (raw.type === "spec.draft") {
-    const parsed = exactStrings(payload, ["prompt", "tool"]);
-    return parsed.ok ? draftSpecFromPrompt(repoRoot, parsed.value.prompt, parsed.value.tool) : parsed;
+    /* `answer_only` is set when a plan is already prepared: the conversation
+       continues, but nothing drafts behind a plan the person has not seen.
+       Exactly true, like every other recorded decision here. */
+    const answerOnly = payload.answer_only;
+    if (answerOnly !== undefined && answerOnly !== true) {
+      return { ok: false, reason: "answer_only can only be omitted or exactly true" };
+    }
+    const { answer_only: _ignored, ...rest } = payload;
+    const parsed = exactStrings(rest, ["prompt", "tool"]);
+    return parsed.ok
+      ? draftSpecFromPrompt(repoRoot, parsed.value.prompt, parsed.value.tool, {
+          answerOnly: answerOnly === true
+        })
+      : parsed;
   }
   if (raw.type === "spec.review") {
     const parsed = exactStrings(payload, ["spec_id"]);
@@ -373,6 +389,10 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
     const extra = Object.keys(payload).filter((key) => key !== "proposed_sha" && key !== "existing_sha");
     if (extra.length > 0) return { ok: false, reason: `agents.apply cannot take: ${extra.join(", ")}` };
     return applyAgentsFileAction(repoRoot, existingSha ?? null, proposedSha);
+  }
+  if (raw.type === "conversation.new") {
+    if (Object.keys(payload).length > 0) return { ok: false, reason: "conversation.new takes no fields" };
+    return startNewConversation(repoRoot);
   }
   if (raw.type === "checks.try") {
     const command = payload.command;

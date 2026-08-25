@@ -2,6 +2,8 @@ import {
   AlertTriangle,
   ArrowRight,
   ArrowUp,
+  Loader,
+  MessageSquarePlus,
   Check,
   ChevronDown,
   ChevronRight,
@@ -99,6 +101,7 @@ import { containsInternalVocabulary } from "@/lib/vocabulary";
 import { list } from "@/lib/durable";
 import { adapterModelText } from "@/lib/workspace-actions";
 import type {
+  ActiveAgentView,
   DraftOutcome,
   DraftStreamView,
   AdapterConnectResult,
@@ -573,13 +576,19 @@ export function WorkTab({
         setMidRunRequest(message);
         setFeedback("");
       } else if (plan !== null) {
-        /* A plan you do not want is not a dead end: the text becomes the start of
-           a different plan instead of being thrown away. */
-        setReplanText(message);
-        setReplanOpen(true);
-        setFeedback(
-          "Review the prepared plan first. Typed guidance cannot approve it — start over below if you want a different plan."
-        );
+        /* A plan waiting is not a reason to stop talking.
+         *
+         * This used to capture the message, open a modal offering to replace
+         * the plan, and answer "Review the prepared plan first" -- treating a
+         * question as though it were an attempt to approve. It is not: only a
+         * button approves, and only "Start over" replaces. So the message goes
+         * through the same conversation the rest of the surface uses, in the
+         * mode that answers and never drafts, and the plan is untouched. */
+        await onAction<DraftOutcome>({
+          type: "spec.draft",
+          payload: { prompt: message, tool: "planner", answer_only: true }
+        });
+        setFeedback("");
         return;
       } else if (!planHasWorkLeft) {
         await preparePlan(message);
@@ -602,6 +611,29 @@ export function WorkTab({
     } finally {
       setPromptStartedAt(null);
       setBusy(false);
+    }
+  };
+
+  /* Begin a fresh thread.
+   *
+   * Core appends one boundary event and removes nothing: the trail keeps every
+   * earlier message, a prepared plan is untouched and still waiting, and the
+   * active spec is unchanged so a follow-up build request still lands against
+   * it. All that moves is where the thread starts reading. */
+  const [newConversationBusy, setNewConversationBusy] = useState(false);
+  const startNewConversation = async (): Promise<void> => {
+    setNewConversationBusy(true);
+    try {
+      await onAction({ type: "conversation.new", payload: {} });
+      setFeedback(
+        plan === null
+          ? "New conversation. Everything before it is still in the project's history."
+          : "New conversation. Everything before it is still in the project's history, and the plan waiting for you is untouched."
+      );
+    } catch (error) {
+      setFeedback(plainActionError(error));
+    } finally {
+      setNewConversationBusy(false);
     }
   };
 
@@ -838,8 +870,33 @@ export function WorkTab({
      the rail below still lists every one of them. */
   const laneTasks = tasks.slice(0, 6);
 
+  /* The running agent's own output.
+   *
+   * The shell already opens an output stream for the running task and keeps its
+   * records; nothing new is fetched here. What was missing was anywhere in the
+   * THREAD to see it -- it existed only in the rail, and only for a task you had
+   * selected. Trimmed to the tail, because this is a live view and not a log:
+   * the whole record is on the Project tab. */
+  const streamingTask = tasks.find(
+    (task) => task.task_id === projection.selectedTaskId && task.state === "running"
+  );
+  const workerStream =
+    streamingTask === undefined || projection.selectedOutput.length === 0
+      ? null
+      : {
+          taskId: streamingTask.task_id,
+          title: inspection?.task_titles?.[streamingTask.task_id] ?? streamingTask.task_id,
+          text: projection.selectedOutput
+            .slice(-40)
+            .map((record) => record.text)
+            .join("")
+            .slice(-1800)
+            .trimStart()
+        };
+
   const promptDock = (
     <PromptDock
+      activeAgents={inspection?.active_agents ?? []}
       attachmentBusy={attachmentBusy}
       attachmentError={attachmentError}
       attachments={attachments}
@@ -998,6 +1055,8 @@ export function WorkTab({
           >
             <RunHeader
               advancing={projection.artifactMovements.at(-1)?.id ?? null}
+              newConversationBusy={newConversationBusy}
+              onNewConversation={() => void startNewConversation()}
               attentionCount={openQueue.length}
               configuredLevel={inspection?.autonomy.configured_level ?? "auto"}
               busy={busy}
@@ -1057,22 +1116,15 @@ export function WorkTab({
                 onSelectTask={onSelectTask}
               />
             ) : (
-              /* The lanes take the canvas while work is in flight, and give it
-                 back when it is not. The timeline and the composer stay exactly
-                 where they were; what changes is that during the one moment
-                 this product's claim is strongest, the claim is the thing you
-                 are looking at rather than a 2px tick in the rail. */
-              <div className={`grid min-h-0 overflow-hidden ${tasks.length > 0 ? "grid-rows-[auto_minmax(0,1fr)]" : "grid-rows-[minmax(0,1fr)]"}`}>
-                {tasks.length > 0 ? (
-                  <LaneCanvas
-                    gates={passedGates(projection)}
-                    selectedTaskId={projection.selectedTaskId}
-                    tasks={laneTasks}
-                    onSelectTask={onSelectTask}
-                  />
-                ) : null}
+              /* One drawing of one fact. The lanes drew every running task
+                 above the thread while the right rail drew the same tasks
+                 beside it -- the same card twice, competing for the same
+                 glance. The rail is where current work lives, so the thread
+                 takes the canvas alone. */
+              <div className="grid min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden">
                 <RunThread
                   draftText={draftStream?.text ?? null}
+                  workerStream={workerStream}
                   silentRounds={inspection?.silent_rounds ?? []}
                   endRef={activityEndRef}
                   events={projection.recentEvents}
@@ -1695,6 +1747,8 @@ function RunHeader({
   stopBusy,
   advancing,
   onOpenChecks,
+  onNewConversation,
+  newConversationBusy,
   onOpenPlan,
   onStop,
   onLevelChange
@@ -1712,6 +1766,9 @@ function RunHeader({
   stopBusy: boolean;
   advancing: string | null;
   onOpenChecks: () => void;
+  /** Begin a fresh thread. Keeps the trail and any prepared plan. */
+  onNewConversation: () => void;
+  newConversationBusy: boolean;
   onOpenPlan: () => void;
   onStop: () => void;
   onLevelChange: (level: AutonomyLevel) => Promise<void>;
@@ -1808,6 +1865,26 @@ function RunHeader({
           <Button size="sm" type="button" variant="ghost" onClick={onOpenChecks}>
             <ClipboardList aria-hidden="true" />
             Checks
+          </Button>
+          {/* The thread was the project's entire history with no way to begin
+              again. What this does and does not do is stated on the control,
+              because "new conversation" is a phrase that could mean throwing
+              work away and here it does not: the trail keeps everything, and a
+              prepared plan is still waiting afterwards. */}
+          <Button
+            disabled={newConversationBusy}
+            size="sm"
+            title={
+              planAvailable
+                ? "Start a fresh thread. Everything so far stays in the project's history, and the plan waiting for you is untouched."
+                : "Start a fresh thread. Everything so far stays in the project's history."
+            }
+            type="button"
+            variant="ghost"
+            onClick={onNewConversation}
+          >
+            <MessageSquarePlus aria-hidden="true" />
+            {newConversationBusy ? "Starting…" : "New conversation"}
           </Button>
           {runActive ? (
             <Button
@@ -2390,6 +2467,7 @@ function RunThread({
   endRef,
   draftText,
   silentRounds,
+  workerStream,
   onOpenPlan
 }: {
   events: BoardProjection["recentEvents"];
@@ -2399,6 +2477,8 @@ function RunThread({
   draftText: string | null;
   /** Round ids Core says nothing is reporting on. */
   silentRounds: string[];
+  /** The running agent's output as it arrives, or null when none is. */
+  workerStream: { taskId: string; title: string; text: string } | null;
   onOpenPlan: () => void;
 }): React.JSX.Element {
   /* Which open rounds nothing is reporting on any more.
@@ -2436,6 +2516,27 @@ function RunThread({
             onOpenPlan={onOpenPlan}
           />
         ))}
+        {/* The agent, working, in its own words.
+            A worker was a spinner and a phase gauge: true, and no answer to
+            "what is it doing". The planner already streams; this is the same
+            thing for the agent that is actually changing the code. It sits at
+            the foot of the thread because that is where the present is. */}
+        {workerStream === null ? null : (
+          <article className="max-w-[720px] text-[13px] text-muted-foreground">
+            <div className="flex items-center gap-2.5">
+              <span
+                aria-hidden="true"
+                className="grid size-7 shrink-0 place-items-center rounded-full border border-rule bg-surface text-navy"
+              >
+                <Loader className="size-3.5 animate-spin" />
+              </span>
+              <span>{workerStream.title} is working</span>
+            </div>
+            <pre className="mt-1.5 mb-0 max-h-44 overflow-auto pl-9 font-mono text-[11.5px] leading-relaxed break-words whitespace-pre-wrap text-muted-foreground">
+              {workerStream.text}
+            </pre>
+          </article>
+        )}
         <div ref={endRef} />
       </div>
     </ScrollArea>
@@ -2475,13 +2576,16 @@ function ThreadRow({
     return (
       <div className="flex justify-end">
       <article className="max-w-[min(720px,82%)] rounded-2xl rounded-br-md border border-navy/25 bg-navy-wash px-4 py-3">
-        <div className="flex items-baseline justify-end gap-2">
-          <span className="text-[11px] font-medium tracking-label text-navy uppercase">
-            {guidance ? "Guidance" : "You"}
-          </span>
-          <time className="font-mono text-[11px] text-muted-foreground">
-            {formatClock(entry.at)}
-          </time>
+        {/* No "You", no clock. The bubble is on the right in the person's own
+            colour; naming the speaker and stamping the minute is chrome for a
+            fact they already have. Guidance keeps its label, because that one
+            says which CHANNEL the message went down, which is not obvious. */}
+        <div className="flex items-baseline justify-end gap-2 empty:hidden">
+          {guidance ? (
+            <span className="text-[11px] font-medium tracking-label text-navy uppercase">
+              Guidance
+            </span>
+          ) : null}
           {guidance ? (
             <span className="text-[11px] text-muted-foreground">
               {entry.applied ? "used on the next step" : "will be used on the next step"}
@@ -2797,6 +2901,7 @@ function PromptDock({
   rolePickerError,
   roleChanging,
   spend,
+  activeAgents,
   onAddAttachments,
   onChange,
   onChooseRoleModel,
@@ -2831,6 +2936,8 @@ function PromptDock({
   rolePickerError: string;
   roleChanging: string | null;
   spend: WorkspaceInspection["spend"] | null;
+  /** One entry per agent currently working, for the dials. */
+  activeAgents: ActiveAgentView[];
   onAddAttachments: (kind: PromptAttachment["kind"]) => Promise<void>;
   onChange: (value: string) => void;
   onChooseRoleModel: (role: string, providerId: string, modelSlug: string) => Promise<void>;
@@ -2911,7 +3018,14 @@ function PromptDock({
   );
   const form = (
     <form
-      className={centered ? "grid w-full max-w-[680px] gap-2" : "grid gap-2"}
+      /* The reading column, not the window. It spanned the full width while
+         every message in the thread above it stopped at 720px, so the box a
+         person types into was wider than anything they had ever read in it. */
+      className={
+        centered
+          ? "grid w-full max-w-[680px] gap-2"
+          : "grid w-full max-w-[760px] gap-2 justify-self-center"
+      }
       onSubmit={(event) => void onSubmit(event)}
     >
       {/* Mid-run the box means something genuinely different: the message lands
@@ -2977,10 +3091,17 @@ function PromptDock({
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-              event.preventDefault();
-              event.currentTarget.form?.requestSubmit();
-            }
+            /* Enter sends. It inserted a newline, which is the behaviour of a
+               form field and not of a chat -- and this reads as a chat in every
+               other respect. Shift+Enter is the newline; Ctrl/Cmd+Enter keeps
+               working for the hands already trained on it.
+
+               `isComposing` guards an IME: mid-composition Enter commits the
+               candidate and must not also send. */
+            if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+            if (event.shiftKey) return;
+            event.preventDefault();
+            event.currentTarget.form?.requestSubmit();
           }}
         />
         {centered ? (
@@ -3048,11 +3169,9 @@ function PromptDock({
            a first setup pays for its capability probes before any run exists
            (A-04), and the person lands exactly here afterwards. The meter
            appears only when there is a figure to report. */
-        spend !== null && (spend.calls > 0 || (spend.setup_calls ?? 0) > 0) ? (
-          <div className="flex items-center justify-end px-1">
-            <SpendMeter spend={spend} />
-          </div>
-        ) : null
+        /* The idle canvas stays quiet. Spend belongs on the Project tab, which
+           is where a person goes to ask what this has cost. */
+        null
       ) : (
         <div className="flex items-center gap-2.5 px-1">
           <span className="min-w-0 flex-1 text-[11px] leading-snug break-words text-muted-foreground">
@@ -3065,9 +3184,6 @@ function PromptDock({
               ? "Work is running, so Hivemind will ask whether this is guidance for it or a new piece of work."
               : "Ask anything, or describe a change. A question is answered here; a change becomes a plan you approve before anything runs."}
           </span>
-          <kbd className="shrink-0 rounded-sm border border-rule bg-panel px-1 font-mono text-[11px] text-muted-foreground">
-            {shortcutLabel("↵")}
-          </kbd>
           {managerStartAvailable ? (
             <Button
               disabled={busy}
@@ -3084,7 +3200,15 @@ function PromptDock({
               Keep going
             </Button>
           ) : null}
-          <SpendMeter spend={spend} />
+          {/* One dial per working agent, and nothing else.
+              This line read "Ctrl+↵ · 2 calls · 47.3K + 0 held / 3M · setup 6
+              calls 202.9K" -- call counts and token ceilings, which answer a
+              budget question nobody asks while watching work happen and say
+              nothing about what any agent is doing. The spend figures did not
+              disappear: they live on the Project tab, where a person goes to
+              ask about money. The keyboard hint went too: Enter sends now, and
+              a hint for the obvious is the same noise in a smaller font. */}
+          <AgentDials agents={activeAgents} />
         </div>
       )}
     </form>
@@ -3271,50 +3395,6 @@ function ComposerRolePicker({
   );
 }
 
-function SpendMeter({
-  spend
-}: {
-  spend: WorkspaceInspection["spend"] | null;
-}): React.JSX.Element {
-  if (!spend) {
-    return <span className="shrink-0 text-[11px] text-muted-foreground">no spend yet</span>;
-  }
-  const ratio =
-    spend.session_ceiling_tokens > 0
-      ? Math.min(100, (spend.committed_tokens / spend.session_ceiling_tokens) * 100)
-      : 0;
-  return (
-    <span
-      className={`flex shrink-0 items-center gap-2 rounded-sm px-1.5 py-0.5 font-mono text-[11px] ${
-        spend.near_session_ceiling ? "bg-amber-wash text-amber" : "text-muted-foreground"
-      }`}
-      title={`${spend.run_ceiling_tokens.toLocaleString()} tokens maximum per call`}
-    >
-      <span>{spend.calls} calls</span>
-      {/* A meter, not a capsule: a square bar reads as a gauge on an
-          instrument, and it is the same 2px language as the phase spine. */}
-      <span className="block h-[3px] w-[52px] overflow-hidden bg-rule">
-        <span
-          className={`block h-[3px] ${spend.near_session_ceiling ? "bg-amber" : "bg-navy"}`}
-          style={{ width: `${ratio}%` }}
-        />
-      </span>
-      <span>
-        {formatCompact(spend.effective_tokens)} + {formatCompact(spend.reserved_tokens)} held /{" "}
-        {formatCompact(spend.session_ceiling_tokens)}
-      </span>
-      {/* Setup spend is real money paid before any run exists (A-04: three
-          probes, 122,977 tokens, and the meter read "0 calls"). Its own
-          figure, because the run/session ceilings do not bind it. */}
-      {(spend.setup_calls ?? 0) > 0 ? (
-        <span>
-          · setup {spend.setup_calls} {spend.setup_calls === 1 ? "call" : "calls"}{" "}
-          {formatCompact((spend.setup_tokens ?? 0) + (spend.setup_reserved_tokens ?? 0))}
-        </span>
-      ) : null}
-    </span>
-  );
-}
 
 /* ── Plan review ─────────────────────────────────────────────────────────── */
 
@@ -4204,4 +4284,56 @@ function formatCompact(value: number): string {
     notation: "compact",
     maximumFractionDigits: 1
   }).format(value);
+}
+
+
+/**
+ * One dial per working agent: what it is, what it runs on, and how full it is.
+ *
+ * Appears and disappears with the work. The agents come from Core's open-round
+ * reconciliation, so a dial cannot outlive the thing it describes -- an agent
+ * that stopped, or that stopped reporting, stops having one.
+ *
+ * A dial with no numbers behind it still names the agent and its model, and
+ * simply draws no gauge: a gauge drawn from a figure nobody recorded is a
+ * picture of a guess.
+ */
+function AgentDials({ agents }: { agents: ActiveAgentView[] }): React.JSX.Element | null {
+  if (agents.length === 0) return null;
+  return (
+    <span className="flex shrink-0 items-center gap-3">
+      {agents.map((agent) => {
+        const used = agent.context_used_tokens;
+        const window = agent.context_window_tokens;
+        const ratio =
+          used !== null && window !== null && window > 0
+            ? Math.min(100, Math.round((used / window) * 100))
+            : null;
+        return (
+          <span
+            className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground"
+            key={`${agent.label}:${agent.role}`}
+            title={
+              ratio === null
+                ? `${agent.label}${agent.model === null ? "" : ` · ${agent.model}`}`
+                : `${agent.label}${agent.model === null ? "" : ` · ${agent.model}`} · ${used?.toLocaleString()} of ${window?.toLocaleString()} tokens of context`
+            }
+          >
+            <span className="text-ink">{agent.model ?? agent.label}</span>
+            {ratio === null ? null : (
+              <>
+                <span className="block h-[3px] w-[34px] overflow-hidden bg-rule">
+                  <span
+                    className={`block h-[3px] ${ratio >= 80 ? "bg-amber" : "bg-navy"}`}
+                    style={{ width: `${ratio}%` }}
+                  />
+                </span>
+                <span>{ratio}%</span>
+              </>
+            )}
+          </span>
+        );
+      })}
+    </span>
+  );
 }

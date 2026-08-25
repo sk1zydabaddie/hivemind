@@ -87,6 +87,19 @@ export interface WorkspacePlanReview {
   execution_groups: TentativePlan["execution_groups"];
 }
 
+export interface ActiveAgentView {
+  /** planner, manager, or the task this worker holds. */
+  role: string;
+  /** What to call it on screen. */
+  label: string;
+  /** The model actually running, when a profile records one. */
+  model: string | null;
+  /** Tokens in that agent's most recent call, or null when nothing is recorded. */
+  context_used_tokens: number | null;
+  /** The model's window, or null when the catalogue does not know it. */
+  context_window_tokens: number | null;
+}
+
 export interface WorkspaceInspection {
   status: HivemindStatus;
   tasks: WorkspaceTaskProjection[];
@@ -102,6 +115,20 @@ export interface WorkspaceInspection {
    * stop drawing as work, not why, and the reason is in the round itself.
    */
   silent_rounds: string[];
+  /**
+   * One entry per agent currently doing something, with how full its context is.
+   *
+   * The composer's footer read "2 calls · 47.3K + 0 held / 3M · setup 6 calls
+   * 202.9K" -- call counts and token ceilings, which answer a question about
+   * budget that nobody asks while watching work happen, and answer nothing
+   * about what any agent is doing. This is the other thing: who is working, on
+   * what model, and how much room each has left.
+   *
+   * Derived from the SAME open-round reconciliation that decides whether a
+   * round is still reporting, so a dial cannot outlive the work it describes --
+   * an agent that stopped stops having a dial.
+   */
+  active_agents: ActiveAgentView[];
   active_spec_id: string | null;
   active_spec_title: string | null;
   manager_session: ManagerWorkspaceSession | null;
@@ -422,6 +449,16 @@ export async function inspectWorkspace(
   const tasks = buildWorkspaceTasks(status.value, events.value, planState.current ?? planState.review, queues.value.needsYou, integrated);
   const executionGroups = buildWorkspaceExecutionGroups(tasks, planState.current ?? planState.review, events.value);
   const taskTitles = Object.fromEntries(tasks.map((task) => [task.task_id, task.title]));
+  const reconciledRounds = openRounds(events.value, {
+    now: Date.now(),
+    probeLiveness: createCachedProcessLivenessProbe()
+  });
+  const activeAgents = await buildActiveAgents(
+    repoRoot,
+    reconciledRounds,
+    events.value,
+    ledger.ok ? ledger.value.providers : {}
+  );
   return {
     ok: true,
     value: {
@@ -429,13 +466,11 @@ export async function inspectWorkspace(
       tasks,
       execution_groups: executionGroups,
       task_titles: taskTitles,
-      silent_rounds: openRounds(events.value, {
-        now: Date.now(),
-        probeLiveness: createCachedProcessLivenessProbe()
-      })
+      silent_rounds: reconciledRounds
         .filter((round) => !roundIsReporting(round))
         .map((round) => round.id)
         .filter((id): id is string => id !== null),
+      active_agents: activeAgents,
       active_spec_id: specId,
       active_spec_title: specTitle,
       manager_session: session.value,
@@ -1726,4 +1761,68 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNodeError(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
+
+/**
+ * Who is working right now, and how full each one's context is.
+ *
+ * Reads the rounds that are still reporting -- the same reconciliation that
+ * decides whether a spinner keeps spinning -- so an agent that stopped, or that
+ * stopped reporting, stops having a dial. Anything it cannot determine comes
+ * back null and the surface omits that part, because a dial drawn from a number
+ * nobody recorded would be a picture of a guess.
+ */
+async function buildActiveAgents(
+  repoRoot: string,
+  rounds: ReturnType<typeof openRounds>,
+  events: HivemindEvent[],
+  ledger: QuotaLedger
+): Promise<ActiveAgentView[]> {
+  const running = rounds.filter((round) => roundIsReporting(round));
+  if (running.length === 0) return [];
+
+  /* Which tool opened each round, from the event that opened it. */
+  const toolFor = new Map<string, string>();
+  for (const event of events) {
+    const tool = typeof event.data.tool === "string" ? event.data.tool : null;
+    if (tool === null) continue;
+    const key = `${event.type}:${event.task_id ?? ""}:${
+      typeof event.data.spec_id === "string" ? event.data.spec_id : ""
+    }`;
+    toolFor.set(key, tool);
+  }
+
+  const agents: ActiveAgentView[] = [];
+  const seen = new Set<string>();
+  for (const round of running) {
+    const key = `${round.type}:${round.id ?? ""}:${round.id ?? ""}`;
+    const tool =
+      toolFor.get(key) ??
+      toolFor.get(`${round.type}:${round.id ?? ""}:`) ??
+      toolFor.get(`${round.type}::${round.id ?? ""}`) ??
+      null;
+    if (tool === null || seen.has(tool)) continue;
+    seen.add(tool);
+
+    const profile = await loadAdapterProfile(repoRoot, tool);
+    /* A profile records the tool and its window; the MODEL lives in the
+       invocation, which is where the catalogue put it. Read rather than
+       assumed, and null when nothing names one. */
+    const invoke = profile.ok ? profile.profile.invoke : [];
+    const modelFlag = invoke.indexOf("--model");
+    const model = modelFlag !== -1 && modelFlag + 1 < invoke.length ? invoke[modelFlag + 1]! : null;
+    const window = profile.ok ? profile.profile.context_window ?? null : null;
+    const entry = ledger[tool];
+    const used = entry?.last_request?.provider_reported_tokens ?? entry?.last_request?.effective_tokens ?? null;
+
+    agents.push({
+      role: round.id ?? tool,
+      label: tool,
+      model,
+      context_used_tokens: typeof used === "number" ? used : null,
+      context_window_tokens: typeof window === "number" && window > 0 ? window : null
+    });
+  }
+  return agents;
 }

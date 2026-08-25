@@ -160,6 +160,14 @@ connection actions write only what a probe confirmed.
   must produce identical gates, leases and checks. A lesson that would change
   what Hivemind PLANS belongs in canon instead, behind its human door; this
   action cannot reach canon and canon cannot reach this file.
+- `conversation.new` — `startNewConversation()`. Appends one boundary event and
+  removes nothing. The trail keeps every earlier message, plan, run and check; a
+  prepared plan is untouched and still waiting, because discarding one silently
+  would throw away work nobody has looked at; and the active spec is untouched,
+  so a follow-up that is a build request still lands against the same spec. All
+  it moves is where the thread starts reading. Takes no fields, and carries
+  `advisory_only`/`authorization_effect: none` -- moving where a view begins
+  must never read as permission.
 - `project.init` — `initProjectForDesktop()`. Wraps `initProject` and then
   writes default tier globs, because a project with no globs infers High for
   every path and routes all work to the most expensive provider. It deliberately

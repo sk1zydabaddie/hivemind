@@ -110,6 +110,10 @@ export const eventTypes = [
      carries advisory_only/authorization_effect exactly as human guidance does,
      because a reply is a message and never a permission. */
   "conversation.reply_recorded",
+  /* A person asked to start talking again. It moves where the THREAD begins and
+     nothing else: the trail keeps every earlier message, and a prepared plan is
+     untouched. See `startNewConversation`. */
+  "conversation.started",
   "spec.draft_started",
   "spec.draft_completed",
   "spec.draft_failed",

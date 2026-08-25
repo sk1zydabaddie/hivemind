@@ -75,12 +75,25 @@ export interface WorkspacePlanReview {
   }>;
 }
 
+/** An agent that is working, and how full its context is. */
+export interface ActiveAgentView {
+  role: string;
+  label: string;
+  model: string | null;
+  context_used_tokens: number | null;
+  context_window_tokens: number | null;
+}
+
 export interface WorkspaceInspection {
   tasks: TaskProjection[];
   /* Rounds Core has judged no longer reporting. Optional: a daemon older than
      the field is a permanent input, and absence means nothing was reconciled --
      never that everything is running. */
   silent_rounds?: string[];
+  /* One entry per agent currently working. Optional: a daemon older than the
+     field is a permanent input, and absence means "not reported", never "none
+     are working". */
+  active_agents?: ActiveAgentView[];
   execution_groups: Array<{
     group_id: string;
     mode: "parallel" | "sequence";
@@ -701,6 +714,9 @@ export type WorkspaceAction = {
        whether it may be stored. The client renders the typed outcome; it does
        not get to store a command the run refused. */
     | "checks.try"
+    /* Begin a fresh thread. Appends one boundary event: the trail keeps every
+       earlier message and a prepared plan is untouched. */
+    | "conversation.new"
     /* AGENTS.md. `agents.propose` reads and returns a diff; `agents.apply`
        writes what CORE re-derived, taking only the hashes this client was
        shown -- the client never supplies file content. */

@@ -252,21 +252,31 @@ export function buildRunThread(
      nothing was reconciled, which is how an older shell behaves. */
   silentRounds: ReadonlySet<string> = new Set()
 ): ThreadEntry[] {
+  /* A new conversation moves where the thread BEGINS and nothing else. The
+     trail still holds every earlier message -- the Project tab shows the whole
+     history -- and a prepared plan is untouched and still waiting. Events are
+     newest-first here, so the boundary is the first one found. */
+  const boundaryIndex = eventsNewestFirst.findIndex(
+    (event) => event.type === "conversation.started"
+  );
+  const visibleEvents =
+    boundaryIndex === -1 ? eventsNewestFirst : eventsNewestFirst.slice(0, boundaryIndex);
+
   const entries: ThreadEntry[] = [];
   const appliedGuidance = new Set<string>();
   const startedAt = new Map<string, string>();
   /* The oldest event this thread holds. Two real timestamps, subtracted once at
      render -- not a clock that counts up on screen. */
-  const threadOpenedAt = eventsNewestFirst.at(-1)?.ts ?? null;
+  const threadOpenedAt = visibleEvents.at(-1)?.ts ?? null;
 
-  for (const event of eventsNewestFirst) {
+  for (const event of visibleEvents) {
     if (event.type !== "human.guidance_consumed") continue;
     for (const id of readStringArray(event.data.guidance_ids) ?? []) {
       appliedGuidance.add(id);
     }
   }
 
-  const ordered = [...eventsNewestFirst].reverse();
+  const ordered = [...visibleEvents].reverse();
   for (const [index, event] of ordered.entries()) {
     if (SUPPRESSED.has(event.type) || event.type.startsWith("quality.")) continue;
     const id = `${event.ts}-${event.type}-${index}`;

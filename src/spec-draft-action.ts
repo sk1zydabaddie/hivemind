@@ -70,10 +70,49 @@ export interface DraftSpecResult {
   alternatives: number;
 }
 
+/**
+ * Begin a new conversation in this project.
+ *
+ * What it does to durable state, stated because the answer is not obvious:
+ *
+ *  - The TRAIL is untouched. Every earlier message, plan, run and check stays
+ *    exactly where it was; this appends one event and removes nothing. The
+ *    Project tab still shows the whole history, and a reconstruction still
+ *    rebuilds every earlier state.
+ *  - A PREPARED PLAN is untouched and still waiting. Discarding one silently
+ *    would throw away work a person has not looked at yet, and replacing a plan
+ *    is an explicit act with its own control.
+ *  - The active spec is untouched, so a follow-up that IS a build request still
+ *    lands against the same spec rather than starting a second one by surprise.
+ *
+ * All it moves is where the thread starts reading.
+ */
+export async function startNewConversation(repoRoot: string): Promise<SpecResult<{ started_at: string }>> {
+  const startedAt = new Date().toISOString();
+  const recorded = await appendEvent(repoRoot, {
+    type: "conversation.started",
+    task_id: null,
+    data: {
+      version: 1,
+      /* Advisory and authority-free, in the same shape as guidance: moving
+         where a thread begins is a view decision and must never read as one
+         that permits anything. */
+      advisory_only: true,
+      authorization_effect: "none"
+    }
+  });
+  return recorded.ok ? { ok: true, value: { started_at: startedAt } } : recorded;
+}
+
 export async function draftSpecFromPrompt(
   repoRoot: string,
   prompt: string,
-  tool: string
+  tool: string,
+  /* `answerOnly` means a plan is already prepared and waiting. A question is not
+     an approval, so the conversation continues -- but drafting a second spec
+     behind a plan nobody has looked at would replace their work by surprise. So
+     the drafter answers and never drafts, and says what is waiting. */
+  options: { answerOnly?: boolean } = {}
 ): Promise<SpecResult<DraftSpecOutcome>> {
   if (prompt.trim() === "") {
     return { ok: false, reason: "describe what you want built before drafting a spec" };
@@ -147,7 +186,8 @@ export async function draftSpecFromPrompt(
   const drafting = buildSpecDraftingPrompt({
     prompt,
     trackedFiles: tracked.value,
-    testCommand: config.config.test_command ?? null
+    testCommand: config.config.test_command ?? null,
+    answerOnly: options.answerOnly === true
   });
   const drafted = await draftOnce(repoRoot, profile.profile, tool, turnId, drafting);
   if (!drafted.ok) {
@@ -193,6 +233,42 @@ export async function draftSpecFromPrompt(
     });
     if (!closed.ok) return closed;
     return { ok: true, value: { status: "replied", reply: drafted.value.reply } };
+  }
+
+  if (options.answerOnly === true) {
+    /* The drafter was told to answer; if it drafted anyway, the answer is still
+       an answer and no spec is written. A model that ignores an instruction
+       must not be able to replace a prepared plan. */
+    const answered = await appendEvent(repoRoot, {
+      type: "conversation.reply_recorded",
+      task_id: null,
+      data: {
+        version: 1,
+        message_id: turnId,
+        text: "There is already a plan prepared and waiting for you. I have not changed it. Look at it when you are ready, or start over if you want a different one.",
+        tool,
+        advisory_only: true,
+        authorization_effect: "none"
+      }
+    });
+    if (!answered.ok) return answered;
+    await appendEvent(repoRoot, {
+      type: "spec.draft_failed",
+      task_id: null,
+      data: {
+        spec_id: specId.value,
+        outcome: "answered",
+        reason: "a plan is already prepared, so the message was answered rather than drafted from"
+      }
+    });
+    return {
+      ok: true,
+      value: {
+        status: "replied",
+        reply:
+          "There is already a plan prepared and waiting for you. I have not changed it. Look at it when you are ready, or start over if you want a different one."
+      }
+    };
   }
 
   const proposal = { ok: true as const, value: drafted.value };

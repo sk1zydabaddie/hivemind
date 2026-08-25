@@ -110,9 +110,22 @@ export function buildSpecDraftingPrompt(input: {
   prompt: string;
   trackedFiles: string[];
   testCommand: string | null;
+  /** A plan is already prepared and waiting, so answer rather than draft. */
+  answerOnly?: boolean;
 }): string {
   const sample = input.trackedFiles.slice(0, 200);
   return [
+    ...(input.answerOnly === true
+      ? [
+          "A plan is ALREADY PREPARED for this project and is waiting for the person to look at it.",
+          "",
+          "So do not draft a specification, whatever the message says. Answer it.",
+          "Use \"kind\": \"reply\" every time. If the message describes work, say that a plan",
+          "is already waiting and that they can look at it or start over -- and do not",
+          "describe the new work as though it were being planned, because it is not.",
+          ""
+        ]
+      : []),
     "A person typed something into a build tool. Decide first what it is, then answer.",
     "You are not planning the work, choosing files, or writing code.",
     "",

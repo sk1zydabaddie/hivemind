@@ -307,6 +307,9 @@ describe("React workspace boundary", () => {
       "autonomy.set",
       "change.inspect",
       "config.inspect",
+      // Begin a fresh thread. Appends one boundary event; the trail keeps every
+      // earlier message and a prepared plan is untouched.
+      "conversation.new",
       "guidance.record",
       "manager.continue",
       "manager.start",
@@ -403,8 +406,14 @@ describe("React workspace boundary", () => {
     /* Once a durable conversation exists, the body is the thread even before
        tasks exist. The old idle blank branch was the reported empty canvas. */
     expect(work).not.toMatch(/\) : idle \? \(\s*<div className="min-h-0" \/>/u);
-    expect(work).toMatch(/tasks\.length > 0 \? \([\s\S]{0,420}<LaneCanvas/u);
-    expect(work).toMatch(/tasks\.length > 0[\s\S]{0,900}<RunThread/u);
+    /* The lanes are gone from above the thread: they drew every running task
+       there while the right rail drew the same tasks beside it, so the same
+       card appeared twice, competing for one glance. The rail is where current
+       work lives, and the thread takes the canvas alone. */
+    expect(work).not.toMatch(/<LaneCanvas/u);
+    /* The thread is the canvas now, whether or not tasks are running — the
+       lanes that used to sit above it drew the same cards as the rail. */
+    expect(work).toMatch(/<RunThread/u);
     expect(work).toMatch(/subject === null && tasks\.length === 0 && !runActive[\s\S]{0,140}absolute inset-0 flex items-center justify-center/u);
     expect(work).not.toMatch(/Try one of these|EXAMPLE_ASKS/u);
     // The interruption row is always rendered, even when empty, so the grid keeps
@@ -434,7 +443,13 @@ describe("React workspace boundary", () => {
 
     // A plan the person does not want is not a dead end: their text becomes the
     // start of a different plan instead of being refused.
-    expect(work).toMatch(/setReplanText\(message\);\s*setReplanOpen\(true\);/u);
+    /* A plan waiting no longer captures the next message. It used to open a
+       modal offering to replace the plan and answer "Review the prepared plan
+       first", treating a question as an attempt to approve. The conversation
+       continues in the mode that answers and never drafts; only "Start over"
+       replaces a plan, and only a button approves one. */
+    expect(work).toMatch(/answer_only: true/u);
+    expect(work).toMatch(/Start over with a different plan/u);
     expect(work).toMatch(/Start over with a different plan/u);
     expect(work).toMatch(/onStartOver/u);
     /* A first prompt drafts a spec before it plans. Both calls are asserted, in

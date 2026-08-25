@@ -20,10 +20,21 @@ import type { PhaseStanding } from "@/lib/phases";
  * read as two different shapes at this size.
  */
 
+/* A regular pointy-top hexagon is TALLER than it is wide: with circumradius R
+   the height is 2R and the width is R√3, so h = w × 2/√3 ≈ 1.1547w. These were
+   10×9, 15×13 and 17×15 -- wider than tall, which is the ratio inverted, so
+   every phase marker was a squashed hexagon rather than the shape in the mark.
+   The path itself was right (the flat sides sit at h/4 and 3h/4, which is
+   correct for a regular hexagon); only the box it was drawn into was wrong.
+
+   Width is preserved and height derived from it, because the horizontal rhythm
+   of pips along a lane and cells across the comb is what a person reads. */
+const RATIO = 2 / Math.sqrt(3);
+
 const GEOMETRY = {
-  pip: { w: 10, h: 9, stroke: 1.8 },
-  node: { w: 15, h: 13, stroke: 2 },
-  cell: { w: 17, h: 15, stroke: 2.1 }
+  pip: { w: 10, h: 10 * RATIO, stroke: 1.8 },
+  node: { w: 15, h: 15 * RATIO, stroke: 2 },
+  cell: { w: 17, h: 17 * RATIO, stroke: 2.1 }
 } as const;
 
 export type HexSize = keyof typeof GEOMETRY;
