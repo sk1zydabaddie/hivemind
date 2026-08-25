@@ -861,7 +861,12 @@ function ConnectStep({
               and open the project again.
             </span>
           ) : (
-            <div className="overflow-hidden rounded-sm border border-rule">
+            /* Bounded so the list scrolls inside itself rather than pushing the
+               primary action past the fold: at 1440x900 Continue was a sliver
+               at the bottom edge, reachable only by scrolling past every
+               provider. `auto` rather than `hidden` -- a container that hides
+               its overflow is the shape the reachability check refuses. */
+            <div className="max-h-[46vh] overflow-y-auto rounded-sm border border-rule">
               {providers.map((provider) => (
                 <ProviderListRow
                   authenticationBusy={authBusy === provider.id}
@@ -870,14 +875,35 @@ function ConnectStep({
                   expanded={opened === provider.id}
                   key={provider.id}
                   reaches={authenticationStandings.get(provider.id)?.reaches ?? null}
-                  leading={
-                    <Checkbox
-                      aria-label={`Use ${provider.label}`}
-                      checked={chosen.has(provider.id)}
-                      disabled={!provider.connectable}
-                      onCheckedChange={() => toggle(provider.id)}
-                    />
-                  }
+                  leading={(() => {
+                    /* The tick cannot disagree with the row's own button.
+                       A provider could be ticked while its row still offered
+                       "Sign in", and connecting runs the CLI -- which cannot
+                       run without a session -- so the tick was a promise the
+                       row itself contradicted, and the failure surfaced later
+                       at connect. Signing in is the first step, so it is the
+                       only thing the row offers until it is done. */
+                    const signedIn =
+                      authenticationStandings.get(provider.id)?.status === "signed_in" ||
+                      provider.checked_here;
+                    return (
+                      <Checkbox
+                        /* "Use X" promised the thing and delivered an
+                           intention: it selects the provider for a connect that
+                           has not happened and may still refuse. The label says
+                           what pressing it does. */
+                        aria-label={`Include ${provider.label} when connecting`}
+                        checked={chosen.has(provider.id)}
+                        disabled={!provider.connectable || !signedIn}
+                        title={
+                          signedIn
+                            ? `Include ${provider.label} when connecting`
+                            : `Sign in to ${provider.label} first — connecting runs it once, and it cannot run without a session.`
+                        }
+                        onCheckedChange={() => toggle(provider.id)}
+                      />
+                    );
+                  })()}
                   provider={provider}
                   selected={chosen.has(provider.id)}
                   onExpand={() => setOpened(opened === provider.id ? null : provider.id)}
@@ -1201,8 +1227,40 @@ function ChecksStep({
   const config = view?.config ?? null;
   const commandPresent = (config?.test_command ?? "").trim() !== "";
   const declared = config?.no_tests_declared === true;
-  const done = enabled && config !== null && (commandPresent || declared);
+  /* Whether the recorded command has actually been run against this project.
+     A detected one had not been, which is how a command naming a program nobody
+     has installed reached the point where a plan and a worker call had already
+     been paid for. */
+  const tried = config?.test_command_trial?.command === (config?.test_command ?? "").trim();
+  const done = enabled && config !== null && ((commandPresent && tried) || declared);
   const candidates = view?.check_candidates ?? [];
+  /* A command detection recorded and nothing ran. Run it once, automatically:
+     a person did not choose it, and should not have to press a button to find
+     out whether the thing Hivemind picked for them works. Core removes it if it
+     cannot run, and this step goes back to asking. */
+  const untriedCommand =
+    enabled && config !== null && commandPresent && !tried ? config.test_command : null;
+  const [autoTried, setAutoTried] = useState<string | null>(null);
+  useEffect(() => {
+    if (untriedCommand === null || autoTried === untriedCommand) return;
+    setAutoTried(untriedCommand);
+    void (async () => {
+      setBusy(untriedCommand);
+      setError("");
+      try {
+        const result = await onAction<CheckTryResult>({
+          type: "checks.try",
+          payload: { command: untriedCommand }
+        });
+        setTrial(result?.trial ?? null);
+        onReload();
+      } catch (cause) {
+        setError(plainActionError(cause));
+      } finally {
+        setBusy(null);
+      }
+    })();
+  }, [untriedCommand, autoTried, onAction, onReload]);
 
   /* The recorded trial belongs to the command it ran. A later edit through
      Settings leaves it pointing at the older string, and reporting it against
@@ -1272,7 +1330,12 @@ function ChecksStep({
                       ? recorded.outcome === "passed"
                         ? ` It ran clean here in ${(recorded.duration_ms / 1000).toFixed(1)}s.`
                         : ` It was failing when you set this up (exit ${recorded.exit_code}), and every change will be held until it passes.`
-                      : " Nobody has run it yet, so whether it works here is unknown."
+                      : /* Not "nobody has run it yet" any more: something is
+                           running it now, and the step does not read complete
+                           until it has. A tick above a sentence admitting the
+                           step was unverified was the tick asserting what the
+                           sentence denied. */
+                        " Hivemind is running it once to check that it works here."
                   } Change it in Settings whenever you like.`
                 : declared
                   ? "Every ship's record says so. Picking a command in Settings replaces the declaration."

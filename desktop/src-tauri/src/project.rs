@@ -3021,6 +3021,24 @@ mod git_readiness_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /* ── An instrument failure of its own kind ─────────────────────────────
+     *
+     * A test for this exact scenario existed, asserted a folder containing only
+     * `holiday.jpg`, and passed -- because a lone photo WAS refused. The bug
+     * needed a second file: `notes.txt` beside it flipped `has_source` and the
+     * folder read as a project.
+     *
+     * Right scenario, wrong fixture. This is distinct from the failures this
+     * project has recorded before -- an assertion that cannot fail, or a test
+     * that cannot see the constraint. Here the assertion was capable and the
+     * scenario was correct; the SETUP could not produce the condition. A
+     * fixture is a claim about what the situation contains, and a fixture
+     * missing the one file that matters tests a situation nobody was worried
+     * about while reading as though it covered the one they were.
+     *
+     * The mitigation is in the fixtures below: the photo case now includes the
+     * innocuous file that broke it.
+     */
     /* The folder that slipped through.
      *
      * Two holiday photos and a shopping list read as a project and were offered

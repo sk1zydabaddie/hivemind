@@ -258,3 +258,60 @@ test("suggestions stop once the question is answered", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+/* ── A-03, reached by the other route ──────────────────────────────────────
+ *
+ * The trial was attached to the TYPED path, so detection walked past it:
+ * `project.init` recorded whatever it found without running it, and the DEFAULT
+ * route was the unvalidated one. A detected `npm test` whose script names a
+ * program nobody has installed then costs a plan and a worker call before it
+ * fails -- strictly worse than the declared absence a person could have chosen,
+ * because the declared absence is honest.
+ *
+ * The general form, and this project's fourth instance: a mitigation attached to
+ * the path where the problem was found leaves every other path unmitigated. So
+ * the check is attached to the COMMAND, and an unrunnable one is removed
+ * whichever route recorded it.
+ *
+ * Proven to bite: remove the clearing branch from `tryProjectCheck` and this
+ * fails with the detected command still recorded.
+ */
+test("a detected command that cannot run is removed, not left recorded", async () => {
+  /* A real script naming a program that does not exist -- what detection sees
+     is a `test` script, and it records `npm test` without running it. */
+  const dir = await project({ test: "this-command-does-not-exist --run" });
+  try {
+    await initProjectForDesktop(dir);
+    /* Detection recorded it, unvalidated. That is the state this closes. */
+    assert.equal((await storedCommand(dir)).command, "npm test");
+
+    const trial = trialOf(await tryProjectCheck(dir, "npm test"));
+    assert.equal(trial.outcome, "not_runnable");
+    assert.equal(trial.stored, false);
+
+    const after = await storedCommand(dir);
+    assert.equal(after.command, "", "a detected command that cannot run stayed recorded");
+    assert.equal(after.trial, null);
+    /* And the absence is not silently declared on the person's behalf: they
+       still get asked, which is the honest state. */
+    assert.equal(after.declared, false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/* A detected command that DOES run is kept, and recorded as measured. */
+test("a detected command that runs is kept with its trial", async () => {
+  const dir = await project({ test: PASSES });
+  try {
+    await initProjectForDesktop(dir);
+    assert.equal((await storedCommand(dir)).command, "npm test");
+    const trial = trialOf(await tryProjectCheck(dir, "npm test"));
+    assert.equal(trial.outcome, "passed");
+    const after = await storedCommand(dir);
+    assert.equal(after.command, "npm test");
+    assert.equal(after.trial?.command, "npm test");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

@@ -603,6 +603,31 @@ export async function tryProjectCheck(
   const storable = trial.outcome === "passed" || trial.outcome === "failed";
   const stored = trial.outcome === "passed" || (trial.outcome === "failed" && options.acceptFailing === true);
 
+  /* An unrunnable command must not survive because something else put it there.
+   *
+   * The trial was attached to the TYPED path, so detection walked straight past
+   * it: `project.init` recorded whatever it found without running it, and the
+   * default route was the unvalidated one. A detected `npm test` whose script
+   * names a program nobody has installed then costs a plan and a worker call
+   * before it fails, which is strictly worse than the declared absence a person
+   * could have chosen -- the declared absence is honest.
+   *
+   * The general form, and this project's fourth instance of it: a mitigation
+   * attached to the path where the problem was found leaves every other path
+   * unmitigated. So this is attached to the COMMAND. Whatever recorded it, an
+   * unrunnable one is removed here, and setup goes back to asking.
+   */
+  if (!storable && typeof raw.test_command === "string" && raw.test_command.trim() === trial.command) {
+    const cleared: Record<string, unknown> = { ...raw };
+    delete cleared.test_command;
+    cleared.test_command = "";
+    delete cleared.test_command_trial;
+    const problems = validateConfig(cleared);
+    if (problems.length === 0) {
+      await writeJsonAtomic(configPath, normalizeConfig(cleared));
+    }
+  }
+
   if (storable) {
     const next: Record<string, unknown> = {
       ...raw,

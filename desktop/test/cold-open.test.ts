@@ -200,7 +200,11 @@ describe("cold open", () => {
       await readFile(path.join(desktopRoot, "src", "lib", "workspace-actions.ts"), "utf8")
     ).replace(/\/\*[\s\S]*?\*\//gu, "");
     expect(actions).toMatch(
-      /config\.test_command\.trim\(\) !== "" \|\| config\.no_tests_declared === true/u
+      /* Was: a recorded command was enough. It is not -- a DETECTED command
+         was never run, so setup could read complete on one that fails the
+         moment it matters, after a plan and a worker call. The trial must name
+         the same command, which is A-03 closed on the route detection took. */
+      /config\.test_command_trial\?\.command === command/u
     );
   });
 
@@ -278,9 +282,19 @@ describe("cold open", () => {
       "utf8"
     );
     expect(source).toMatch(/provider\.checked_here/u);
-    expect(source).toMatch(/Proven end to end/u);
-    expect(source).toMatch(/Ready to check/u);
-    expect(source).toMatch(/Cannot connect yet/u);
+    /* Was "Proven end to end". That is a claim about the provider IN GENERAL,
+       and it sat in a column otherwise reporting what is known on this
+       machine -- ranked among those phrases as though comparable. The
+       catalogue's claim keeps its own control, where it cannot be mistaken for
+       something measured here; what this test is about is that an unverified
+       agent does not look verified, which the caveat disclosure carries. */
+    expect(source).toMatch(/What is unverified about/u);
+    /* Was "Ready to check", one of four phrases on two axes in a single
+       column. The ranked vocabulary replaces it. */
+    expect(source).toMatch(/Not signed in/u);
+    /* Was "Cannot connect yet" -- the "yet" promised that waiting helps, which
+       is not what an unconnectable provider means. */
+    expect(source).toMatch(/Cannot connect/u);
     /* And the reason is shown rather than found by clicking. The per-provider
        caveats are the capability contract made visible and are the best thing
        on this screen; they survive every restructure. */

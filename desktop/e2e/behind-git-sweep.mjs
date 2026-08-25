@@ -119,7 +119,10 @@ async function main() {
 
   console.log("\n=== 2. set the folder up");
   await click("Set it up");
-  await new Promise((resolve) => setTimeout(resolve, 8000));
+  /* Long enough for the detected command to actually be run: the step runs it
+     once before setup can read complete, and `npm` takes a few seconds to
+     report that a script's program does not exist. */
+  await new Promise((resolve) => setTimeout(resolve, 30000));
   const afterSetup = await body();
   console.log(afterSetup.slice(0, 1400));
   await shot("2-after-setup");

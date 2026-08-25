@@ -836,6 +836,71 @@ the git offer and the commit preview all derive from that answer.
   verified **26.825.1458**, and all four bad paths were re-walked on it.
 - **Paid calls:** none.
 
+## 2026-08-25 A-03 on the other route, and the provider column made readable
+
+The six findings from behind the git gate, in the ranked order.
+
+- **A-03 reached by the route nobody walked.** The check trial validated a TYPED
+  command and detection bypassed it entirely, so the DEFAULT path was the
+  unvalidated one: `project.init` recorded whatever it found without running it.
+  A detected `npm test` whose script names a program nobody has installed then
+  costs a plan and a worker call before it fails -- strictly worse than the
+  declared absence a person could have chosen, because the declared absence is
+  honest.
+  The fix is attached to the COMMAND rather than to a path: whatever recorded
+  it, an unrunnable one is removed and setup goes back to asking. Setup no
+  longer reads complete on a command nothing has run, and the step runs a
+  detected command once, automatically, because a person did not choose it.
+  **The general form, and this project's fourth instance: a mitigation attached
+  to the path where the problem was found leaves every other path unmitigated.**
+- **The last lying tick.** A green check sat above "Nobody has run it yet, so
+  whether it works here is unknown" -- the tick asserting what the sentence
+  denied. It is honest now because the command has actually been run by the time
+  the step completes, and the sentence says what is happening while it runs.
+- **The provider column had four phrases on two axes**, two of them on one row
+  ("Signed in only" beside "Signed in" -- one fact, two vocabularies), with
+  "Proven end to end" (a claim about the provider in general) ranked among them
+  as though comparable. One ranked vocabulary now, on one axis, about this
+  machine: Checked here / Signed in / Not signed in / Cannot connect. The
+  catalogue's separate claim keeps its own control, where it cannot be mistaken
+  for something measured here.
+- **A row could be ticked while unsigned**, and connecting runs the CLI, which
+  cannot run without a session -- so the tick was a promise the row's own "Sign
+  in" button contradicted, and the failure surfaced later at connect. The tick
+  now requires a session, so it cannot disagree with the button beside it.
+- **"Use X" promised the thing and delivered an intention.** It selects a
+  provider for a connect that has not happened and may still refuse; the label
+  says so.
+- **Continue was a sliver at the bottom edge at 1440x900.** The provider list is
+  bounded and scrolls inside itself rather than pushing the primary action past
+  the fold -- `auto` rather than `hidden`, which is the shape the reachability
+  check refuses.
+
+- **An instrument failure of its own kind, recorded beside the fixture it is
+  about.** A test for the holiday-photo case existed, asserted a folder holding
+  only `holiday.jpg`, and passed -- a lone photo WAS refused. The bug needed a
+  second file: `notes.txt` beside it flipped `has_source`. Right scenario, wrong
+  fixture. Distinct from the failures recorded before, which were assertions
+  that could not fail or tests that could not see the constraint; here the
+  assertion was capable and the scenario correct, and the SETUP could not
+  produce the condition. A fixture is a claim about what a situation contains.
+- **One process note.** A patch script asserted its second anchor after its
+  first replacement and exited before writing, so a copy change landed while the
+  behaviour change silently did not -- the surface said "Hivemind is running it
+  once" while nothing ran. Caught by walking it rather than by the suites, which
+  had no way to see it.
+
+- **Not walked, deliberately.** A connect that fails mid-probe needs a provider
+  CLI installed but broken; a provider refused by name needs OpenCode signed in
+  with an Anthropic model selected. Both need real credentials or a deliberately
+  corrupted install on this machine, and neither is worth doing unilaterally.
+  They remain the only unwalked part of first run.
+- **Validation:** Core 923 pass, 0 fail, 2 skips. Desktop 347/347. Rust 52/52.
+  `npm run ship` installed and verified **26.825.1536**, and the behind-git walk
+  was re-run on it: the detected command was run, refused, removed, and the step
+  went back to asking.
+- **Paid calls:** none.
+
 ## Update Rules
 
 - Update this file after each committed Hivemind subtask.

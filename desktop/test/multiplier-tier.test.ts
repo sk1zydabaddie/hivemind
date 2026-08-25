@@ -200,7 +200,13 @@ describe("multiplier tier surfaces", () => {
       path.join(desktopRoot, "src", "components", "workspace", "provider-list.tsx"),
       "utf8"
     );
-    expect(providerList).toMatch(/provider\.checked_here \? "Ready here" : "Signed in only"/u);
+    /* Was the chip's own wording, which said the same fact as the standing
+       beside it in different words ("Ready here"/"Signed in only" against
+       "Checked here"/"Signed in"). One vocabulary now, and the guarantee is
+       unchanged: the row states which fact it has and never a bare
+       "Connected". */
+    expect(providerList).toMatch(/providerStanding\(provider, authenticationStatus\)/u);
+    expect(providerList).toMatch(/"Checked here", "Signed in", "Not signed in", "Cannot connect"/u);
     /* The weaker state says out loud that a model here may still refuse. */
     expect(providerList).toMatch(/a model here may still refuse/u);
     /* And the old unqualified claim is gone. */

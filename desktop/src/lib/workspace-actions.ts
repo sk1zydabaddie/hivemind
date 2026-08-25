@@ -501,7 +501,15 @@ export function verificationResolved(
   config: ProjectConfigView["config"] | null | undefined
 ): boolean {
   if (!config) return false;
-  return config.test_command.trim() !== "" || config.no_tests_declared === true;
+  if (config.no_tests_declared === true) return true;
+  const command = config.test_command.trim();
+  if (command === "") return false;
+  /* Recorded is not the same as working. A detected command was never run, so
+     setup could read complete on a command that fails the moment it matters --
+     after a plan and a worker call. It reads complete when the command has
+     actually been run against this project, and the trial says which command it
+     ran so a later edit cannot inherit an older answer. */
+  return config.test_command_trial?.command === command;
 }
 
 /** What a check proves. Not interchangeable, so the surface names which it is. */

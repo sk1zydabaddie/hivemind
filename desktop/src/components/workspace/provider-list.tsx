@@ -18,19 +18,50 @@ export function providerRank(status: CatalogueProvider["status"]): number {
   return status === "unverified" ? 1 : 2;
 }
 
+/**
+ * What is known about this provider ON THIS MACHINE, in one ranked vocabulary.
+ *
+ * The column carried four phrases on two different axes, and two of them landed
+ * on the same row: a chip reading "Signed in only" beside a standing reading
+ * "Signed in" (the same fact twice, in different words), and "Proven end to
+ * end" (a claim about the provider in general, not about this machine) ranked
+ * among them as though it were comparable. A person could not order them.
+ *
+ * One axis now, strongest first, and the catalogue's separate claim about the
+ * provider keeps its own control -- "What is unverified about X" -- where it
+ * cannot be mistaken for something measured here.
+ */
+export type ProviderStandingRank = 0 | 1 | 2 | 3;
+
+export function providerStandingRank(
+  provider: CatalogueProvider,
+  authenticationStatus: ProviderAuthenticationStanding["status"]
+): ProviderStandingRank {
+  if (provider.checked_here) return 0;
+  if (authenticationStatus === "signed_in") return 1;
+  return provider.connectable ? 2 : 3;
+}
+
 export function providerStanding(
   provider: CatalogueProvider,
   authenticationStatus: ProviderAuthenticationStanding["status"]
 ): string {
-  return provider.checked_here
-    ? "Checked here"
-    : authenticationStatus === "signed_in"
-      ? "Signed in"
-    : provider.status === "supported"
-      ? "Proven end to end"
-      : provider.connectable
-        ? "Ready to check"
-        : "Cannot connect yet";
+  return ["Checked here", "Signed in", "Not signed in", "Cannot connect"][
+    providerStandingRank(provider, authenticationStatus)
+  ]!;
+}
+
+/** Why that standing, for the control that carries it. */
+export function providerStandingDetail(
+  provider: CatalogueProvider,
+  authenticationStatus: ProviderAuthenticationStanding["status"]
+): string {
+  return [
+    "A capability check passed for this project, so this provider can run work here.",
+    "The provider CLI reports an active sign-in. Nothing has been checked in this project yet, so a model here may still refuse.",
+    "The provider CLI reports no sign-in. Sign in first -- connecting runs it once, and it cannot run without a session.",
+    "Hivemind cannot connect this provider yet."
+  ][providerStandingRank(provider, authenticationStatus)]!;
 }
 
 export function providerIsConnected(
@@ -113,14 +144,13 @@ export function ProviderListRow({
                 : "border-rule bg-canvas text-muted-foreground"
             }`}
             role="status"
-            title={
-              provider.checked_here
-                ? "A capability check passed for this project, so this provider can run work here."
-                : "The provider CLI reports an active sign-in. Nothing has been checked in this project yet, so a model here may still refuse."
-            }
+            title={providerStandingDetail(provider, authenticationStatus)}
           >
             <Check aria-hidden="true" className="size-3.5" />
-            {provider.checked_here ? "Ready here" : "Signed in only"}
+            {/* The same words the standing uses. This said "Ready here" and
+                "Signed in only" beside a standing saying "Checked here" and
+                "Signed in" -- one fact, two vocabularies, on one row. */}
+            {providerStanding(provider, authenticationStatus)}
           </span>
         ) : (
           <Button
