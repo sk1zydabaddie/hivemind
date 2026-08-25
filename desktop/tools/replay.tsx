@@ -346,6 +346,46 @@ class ReplayEventSource {
         if (settings === null) throw new Error("no captured settings state");
         return settings.config;
       }
+      /* The AGENTS.md proposal, shaped exactly as Core returns one.
+         A refusal here would render no card, and the card's controls would then
+         be checked by nothing -- the reachability run can only see what the
+         replay draws. So it answers with a proposal whose facts match the
+         replay project, which is a state a real project genuinely reaches.
+
+         The stub exists at all because without one the throw took the whole
+         surface down, which is the same failure the `last_project` comment
+         above records. */
+      if (action.type === "agents.propose") {
+        const body: string[] = [
+          "## What this project is",
+          "trimr — Node.js — ES modules.",
+          "",
+          "## Where things are",
+          "- Source lives in `src/`.",
+          "- Tests live in `test/`.",
+          "",
+          "## How this project is checked",
+          "- `npm test` runs the tests (found in this project)."
+        ];
+        return {
+          summary: "create AGENTS.md with a detected-facts section",
+          diff: ["--- a/AGENTS.md", "+++ b/AGENTS.md", "@@ -1,0 +1,11 @@", "+# trimr", "+", ...body.map((line) => `+${line}`)].join(String.fromCharCode(10)),
+          bytes: 402,
+          over_target: false,
+          size_target_bytes: 8192,
+          has_existing_file: false,
+          existing_sha: null,
+          proposed_sha: "replay000000",
+          facts: {
+            project_name: "trimr",
+            stack: "Node.js",
+            source_dirs: ["src"],
+            test_dirs: ["test"],
+            checks: [{ command: "npm test", kind: "tests", source: "found in this project" }]
+          }
+        };
+      }
+      if (action.type === "agents.apply") return { bytes: 402, path: "AGENTS.md" };
       if (action.type === "provider.auth.inspect") {
         if (settings === null) throw new Error("no captured settings state");
         const providers = (settings.config as { providers?: Array<{ id?: unknown }> }).providers ?? [];

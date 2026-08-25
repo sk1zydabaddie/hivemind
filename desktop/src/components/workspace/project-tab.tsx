@@ -2,6 +2,7 @@ import { Hex } from "@/components/workspace/hex";
 import { ChevronRight, Clock3, FileSearch, Lightbulb, ScrollText } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { AgentsFileCard } from "@/components/workspace/agents-file-card";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -171,7 +172,13 @@ export function ProjectTab({
       {bare ? (
         /* Nothing to show is not a reason to hold the whole viewport open. The
            panel hugs its one sentence and the canvas carries the rest. */
-        <section className="self-start rounded-lg border border-rule bg-panel py-12">
+        /* The card belongs here too, and this is where it matters most: a
+           project with no runs yet is exactly the project whose workers have
+           never had an AGENTS.md, and the bare branch used to omit the aside
+           entirely -- so the proposal was hidden precisely when it was worth
+           the most. Found by walking a fresh project on the installed app. */
+        <div className="grid gap-3 self-start">
+        <section className="rounded-lg border border-rule bg-panel py-12">
           <Empty className="mx-auto max-w-[520px] p-0 md:p-0">
             <EmptyHeader>
               <EmptyMedia variant="icon">
@@ -186,6 +193,10 @@ export function ProjectTab({
             </EmptyHeader>
           </Empty>
         </section>
+        <div className="mx-auto w-full max-w-[520px]">
+          <AgentsFileCard onAction={onAction} />
+        </div>
+        </div>
       ) : (
         /* Panels hug what they hold and the canvas carries the rest. Stretching
            two panels to the viewport over one run left ~60% of the surface as
@@ -216,16 +227,22 @@ export function ProjectTab({
             </ScrollArea>
           </Panel>
 
-          <aside className="grid max-h-full min-h-0 grid-rows-[auto_auto_minmax(0,auto)] gap-3 overflow-hidden">
+          {/* The last row holds a scroll area, so it takes the leftover space
+              rather than sizing to its content. As `minmax(0,auto)` it grew
+              with whatever was inside and the aside -- which hides its
+              overflow -- clipped the difference, putting content behind a
+              scrollbar nobody had. Caught by the reachability run at 358px
+              hidden the first time a tall card landed here. */}
+          <aside className="grid max-h-full min-h-0 auto-rows-min gap-3 overflow-y-auto">
             <AccountsPanel onAction={onAction} />
             <SpendPanel usage={usage} />
-            <Panel className="max-h-full">
+            <Panel>
               <PanelHeader>
                 <PanelLabel className="text-ink">What it has learned</PanelLabel>
                 <PanelCount>{learned.length}</PanelCount>
               </PanelHeader>
-              <ScrollArea className="min-h-0">
-                <div className="grid gap-2.5 px-3 py-3">
+              <div className="grid gap-2.5 px-3 py-3">
+                <div className="contents">
                   {learned.length === 0 && waiting.length === 0 ? (
                     <p className="m-0 text-[12px] leading-relaxed text-muted-foreground">
                       Nothing has been added to this project's standing guidance.
@@ -269,8 +286,15 @@ export function ProjectTab({
                       {waiting.map((item) => item.node)}
                     </>
                   ) : null}
+
+                  {/* Rendered outside the waiting list rather than inside it,
+                      because the card decides for itself whether it has
+                      anything to say -- counting an invisible proposal in
+                      "Waiting for you to look at" would be a number that does
+                      not match what is on screen. */}
+                  <AgentsFileCard onAction={onAction} />
                 </div>
-              </ScrollArea>
+              </div>
             </Panel>
           </aside>
         </div>

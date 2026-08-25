@@ -608,6 +608,93 @@ and stored it with `outcome: passed` against that exact command.
   machine cache. The check-command project made no provider calls at all --
   running `npm run build` and `npm test` costs nothing but local time.
 
+## 2026-08-24 AGENTS.md Phase A, and the evidence Phase B will need
+
+Hivemind now proposes a starter AGENTS.md from what the repository actually
+contains, and the two richest trail sources were made usable at the same time,
+because they are what makes a later proposing phase worth having.
+
+- **Phase A makes zero model calls.** `src/agents-file.ts` detects stack,
+  module kind, package manager, source and test directories, test-file naming,
+  entry point, tooling and check commands, and renders them. Every line traces
+  to a file on disk; where nothing was found it says nothing. A repository with
+  nothing detectable is REFUSED rather than given a plausible file, because a
+  detected fact beats a generated sentence and a file of guesses is worse than
+  no file.
+- **Propose, never write.** The card shows a unified diff. An existing file
+  written by somebody else is appended to, never replaced. A previously
+  accepted block that has been edited by hand is left alone and no proposal is
+  offered, because that edit is the person's decision. Applying refuses if the
+  file changed after the proposal was shown.
+- **The client cannot supply content.** `agents.apply` takes only the two
+  hashes the client was shown; Core re-derives the file and refuses if either
+  has moved. Without that, a surface would be a way to write arbitrary text into
+  something every harness reads verbatim.
+- **Knowledge, never authority, enforced rather than described.**
+  `findAuthorityLanguage` refuses permission verbs, gate waivers, approval
+  claims and lease-shaped file lists, on the generated content and on anything
+  a caller supplies. The property that holds it is stronger than the wording:
+  the same run with and without the file must produce identical gates, leases
+  and checks.
+- **Size.** The generated block targets 8 KB and is refused above 16 KB. It sits
+  at the top of the worker prompt's stable prefix, so a warm call bills it at
+  roughly a tenth -- measured: the shared prefix is 334 bytes with no AGENTS.md
+  and 7,050 bytes with a 6,981-byte one -- but it is injected into every worker
+  call, so nearly free is not free. The card states the byte count and what it
+  costs. A real starter file measured 429 bytes.
+
+**The enrichment, and the answer to whether it needed new fields: neither did.**
+
+- A rejection is a JOIN. `patch.rejected` records only `{verdict, reason,
+  plain_reason}` -- the structured payload quoted in the previous scoping report
+  was a test fixture, not what Hivemind writes, and that correction is the whole
+  reason the join has the shape it does. What it lacks is already durable under
+  the same task: the contract file carries the scope, the patch bundle's
+  `diff.patch` carries what was actually touched (`files_changed.json` exists in
+  every bundle and is zero bytes in all of them), and `write_intent.submitted`
+  carries what the worker declared. `src/convention-evidence.ts` joins them and
+  COMPUTES the overstep rather than asserting it.
+- A correction needed even less: `human.guidance_recorded` has always carried
+  its full `message`. What was missing was a reader.
+- So no durable format gains a field, nothing migrates, and trails written
+  months ago answer. On a real run the join turns a bare "rejected add
+  src/ledger.js" into: task "Initialize CLI package metadata", allowed
+  package.json and README.md, touched src/ledger.js and test/ledger.test.js,
+  out of scope both -- with citations in the `events.jsonl#L<n>` shape the
+  consolidation worker already uses.
+- **Infrastructure faults are excluded by TYPE**, not by asking a model to
+  judge: every recorded `task.failed` on this machine is a Hivemind or
+  environment fault ("The command line is too long"), and a proposer fed that
+  class produces a confident sentence with a real citation attached.
+- **Why canon never populated** is narrower than "nothing proposes":
+  `consolidatableEvidence` already accepts every event type. `consolidateMemory`
+  is reachable only from the CLI and refuses to run while the daemon is up,
+  which it always is in desktop use. Phase B needs a trigger and a surface, not
+  new inputs -- and an evidence floor, because across 39 real trails the trail
+  supports roughly one proposal today.
+
+- **Three defects found by walking it, not by reading it.** The replay harness
+  had no stub for `agents.propose`, so the throw took the whole project surface
+  down -- the same failure the `last_project` comment in replay.tsx already
+  records, now earned a third time. The project aside sized its last row to
+  content while hiding its overflow, so the first tall card clipped 358px of
+  unreachable content; it is a scrolling column now, which fixes the class
+  rather than the instance. And the bare "Nothing recorded yet" branch omitted
+  the aside entirely, hiding the proposal in exactly the projects that have
+  never had an AGENTS.md.
+- **One correction to my own walk:** it asserted "ES modules" and failed the
+  product for being right -- the project has no `"type": "module"` and CommonJS
+  was the correct reading.
+- **Validation before commit:** Core 900 pass, 0 fail, 2 intentional Windows
+  skips (902 total, 23 new). Desktop 347/347. `verify:reachable` green on every
+  surface at every size. `npm run ship` built, installed and verified
+  **26.824.1743**, and `desktop/e2e/agents-file-walk.mjs` passed on that build:
+  the card offered a diff, nothing was on disk before accepting, accepting wrote
+  429 bytes whose every line traces to the repository, and a hand edit was not
+  offered for overwrite afterwards.
+- **Paid calls:** none. Phase A makes no model calls, and the walk reused a
+  project whose agents were already connected.
+
 ## Update Rules
 
 - Update this file after each committed Hivemind subtask.

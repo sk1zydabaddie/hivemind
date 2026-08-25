@@ -139,6 +139,27 @@ connection actions write only what a probe confirmed.
   test script was accepted as that project's check and then failed every
   integration AFTER the planning and worker calls were paid for — strictly worse
   than the declared absence (A-03) the person could have chosen instead.
+- `agents.propose` — `proposeAgentsFileAction()`. Read-only. Detects what the
+  repository contains (stack, layout, check commands, tooling) with no model
+  call, renders a starter AGENTS.md section, and returns a unified diff plus the
+  hashes of the current file and the proposed one. Writes nothing. Refuses when
+  nothing was detected, because a file of guesses is worse than no file.
+- `agents.apply` — `applyAgentsFileAction()`. The only action that writes
+  AGENTS.md, and the routing-relevant property is what it will NOT accept: the
+  client sends back only `proposed_sha` and `existing_sha`, never file content.
+  Core re-derives the proposal from the repository and refuses if either hash
+  has moved, so a surface cannot use this door to write arbitrary text into a
+  file that every harness reads verbatim as untrusted context. It also refuses
+  content carrying permission or gate vocabulary (`findAuthorityLanguage`), and
+  anything over the 16 KB ceiling, since the file is injected into every worker
+  call.
+
+  AGENTS.md carries knowledge and never authority: nothing written through here
+  can widen a lease, narrow a gate, or change what is checked. The property that
+  holds it is stronger than the wording — the same run with and without the file
+  must produce identical gates, leases and checks. A lesson that would change
+  what Hivemind PLANS belongs in canon instead, behind its human door; this
+  action cannot reach canon and canon cannot reach this file.
 - `project.init` — `initProjectForDesktop()`. Wraps `initProject` and then
   writes default tier globs, because a project with no globs infers High for
   every path and routes all work to the most expensive provider. It deliberately

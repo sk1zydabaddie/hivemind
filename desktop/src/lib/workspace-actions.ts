@@ -553,6 +553,32 @@ export function trialAffordance(trial: CheckTrialView): TrialAffordance {
   return "replace_only";
 }
 
+/**
+ * A proposed AGENTS.md and the diff it would make.
+ *
+ * `diff` is what the person reviews; the two hashes are what the accept sends
+ * back so Core can prove nothing moved in between. There is deliberately no
+ * content field: a client that could supply the file body would be a way to
+ * write arbitrary text into something every harness reads.
+ */
+export interface AgentsFileProposalView {
+  summary: string;
+  diff: string;
+  bytes: number;
+  over_target: boolean;
+  size_target_bytes: number;
+  has_existing_file: boolean;
+  existing_sha: string | null;
+  proposed_sha: string;
+  facts: {
+    project_name: string | null;
+    stack: string | null;
+    source_dirs: string[];
+    test_dirs: string[];
+    checks: Array<{ command: string; kind: CheckKind; source: string }>;
+  };
+}
+
 export interface ProjectConfigView {
   initialized: boolean;
   config_problem: string | null;
@@ -645,6 +671,11 @@ export type WorkspaceAction = {
        whether it may be stored. The client renders the typed outcome; it does
        not get to store a command the run refused. */
     | "checks.try"
+    /* AGENTS.md. `agents.propose` reads and returns a diff; `agents.apply`
+       writes what CORE re-derived, taking only the hashes this client was
+       shown -- the client never supplies file content. */
+    | "agents.propose"
+    | "agents.apply"
     | "project.init"
     | "provider.auth.inspect"
     | "provider.auth.start"

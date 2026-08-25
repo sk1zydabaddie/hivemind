@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { applyAgentsFileAction, proposeAgentsFileAction } from "./agents-file.js";
 import { trackedMachineFiles, untrackMachineFiles } from "./project-sharing.js";
 import { generateBestOfN } from "./best-of-n.js";
 import { adoptVerifiedSet, reviewVerifiedSetAdoption } from "./adoption.js";
@@ -86,6 +87,12 @@ export const workspaceActionTypes = [
      decision is Core's because a client that ignored the outcome could
      otherwise store a command that never ran. */
   "checks.try",
+  /* AGENTS.md: `agents.propose` reads the repository and returns a diff;
+     `agents.apply` writes only what Core itself re-derived, and only when the
+     hashes the client was shown still match. The client never supplies file
+     content -- see src/agents-file.ts for why that door stays shut. */
+  "agents.propose",
+  "agents.apply",
   "project.init",
   "provider.auth.inspect",
   "provider.auth.start",
@@ -350,6 +357,23 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
     return inspectProjectConfig(repoRoot);
   }
   if (raw.type === "config.set") return setProjectConfig(repoRoot, payload);
+  if (raw.type === "agents.propose") {
+    if (Object.keys(payload).length > 0) return { ok: false, reason: "agents.propose takes no fields" };
+    return proposeAgentsFileAction(repoRoot);
+  }
+  if (raw.type === "agents.apply") {
+    const proposedSha = payload.proposed_sha;
+    if (typeof proposedSha !== "string" || proposedSha.trim() === "") {
+      return { ok: false, reason: "agents.apply needs the proposed_sha it was shown" };
+    }
+    const existingSha = payload.existing_sha;
+    if (existingSha !== null && typeof existingSha !== "string") {
+      return { ok: false, reason: "existing_sha must be a string or null" };
+    }
+    const extra = Object.keys(payload).filter((key) => key !== "proposed_sha" && key !== "existing_sha");
+    if (extra.length > 0) return { ok: false, reason: `agents.apply cannot take: ${extra.join(", ")}` };
+    return applyAgentsFileAction(repoRoot, existingSha ?? null, proposedSha);
+  }
   if (raw.type === "checks.try") {
     const command = payload.command;
     if (typeof command !== "string" || command.trim() === "") {
