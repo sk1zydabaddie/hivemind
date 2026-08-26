@@ -949,6 +949,56 @@ The six findings from behind the git gate, in the ranked order.
   **26.825.1641**, screenshotted at 1440x900.
 - **Paid calls:** four planner calls across the verification walks.
 
+## 2026-08-25 why the streaming verification lied, and what it hid
+
+- **The predicate could not fail.** The walk that reported streaming working took
+  `document.body.innerText` after the indicator's label and asked whether more
+  than 40 characters followed. Everything below the label in the DOM -- the
+  composer, the footer sentence, the rail -- always is. It would have passed
+  with the stream unplugged, which is what it did. **A predicate satisfiable
+  without the behaviour is not a weak test; it is not a test.**
+  This is the fourth thing this session reported working and not visible, and
+  every one of the four was found by using the app rather than by a suite.
+- **And the stream was unplugged.** `draftOnce` takes a parameter that was named
+  `specId` and, since the turn id was separated from the spec id, is handed
+  `turnId`. The writer keyed chunks on it while the client subscribed on
+  `spec_id` -- written to one id, read from another. Renaming the parameter to
+  what it holds is the fix that keeps it fixed.
+- **What is actually available, measured.** `codex exec --json` emits COMPLETED
+  items and no token deltas: a captured drafting call shows `thread.started` at
+  t+1.0s, `turn.started` at t+1.1s, then ONE `item.completed` carrying the whole
+  message at t+5.1s. There is no delta event and no flag that adds one. So
+  progressive TEXT is not something wiring can deliver, and a surface promising
+  it would be lying. What IS progressive is the items, and for a worker doing
+  real work there are many. `src/agent-activity.ts` turns them into an account a
+  person can read -- "Running npm test", "Editing src/index.js" -- computed in
+  Core, because knowing what a harness's output means is Core's knowledge.
+- **The indicator now appears the moment you send.** It waited for
+  `spec.draft_started` to arrive over the event stream, which does not reach the
+  client until the action returns -- measured as 8 seconds of silence against a
+  call that took 8 seconds. The client knows it submitted; that knowledge is
+  immediate and true. Verified by sampling the live region every 400ms through a
+  real call: the indicator is present and counting from t+0.4s to t+11.2s.
+- **Still not working, and not claimed:** the activity lines reach disk
+  (verified: "Starting" at t+0.9s, "Thinking" at t+1.0s in
+  `.hivemind/log/tasks/activity.output.jsonl`) but do not reach the surface. The
+  server replays and subscribes correctly and a missing file is not an error, so
+  the break is in the client subscription and is not yet found. Reported rather
+  than described as fixed.
+
+- **New conversation ends the run.** It cleared the thread and left the running
+  tasks, the pending plan and the rail -- correct about durable state and wrong
+  about meaning. To a person a new conversation is a clean slate, and a control
+  that leaves the old run running is the interface lying about what it does. It
+  now stops the run through the SAME `run.stop` path the Stop button uses,
+  clears the pending plan, and asks first when there is something to lose,
+  naming what is running. It still does not touch the durable trail: history
+  stays and only the present ends. The no-cost path is verified on the installed
+  app; the confirmation path needs a pending plan to trigger and was not.
+- **Validation:** Core 929 pass, 0 fail, 2 skips. Desktop 351/351.
+  `npm run ship` installed and verified **26.825.2052**.
+- **Paid calls:** five planner calls across the diagnosis and verification.
+
 ## Update Rules
 
 - Update this file after each committed Hivemind subtask.

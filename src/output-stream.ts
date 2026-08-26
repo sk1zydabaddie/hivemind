@@ -1,3 +1,4 @@
+import { activityLines } from "./agent-activity.js";
 import path from "node:path";
 import {
   appendTrailLine,
@@ -10,12 +11,30 @@ import { validateRequestedTaskId } from "./task-id.js";
 
 export type TaskOutputStream = "stdout" | "stderr";
 
+/**
+ * The channel for "what is happening right now" in this project.
+ *
+ * Not a task id: a fixed key a surface can subscribe to before it knows what is
+ * about to run. Its records carry timestamps, so a reader shows only the ones
+ * that belong to the wait it is in.
+ */
+export const ACTIVITY_STREAM_ID = "activity";
+
 export interface TaskOutputRecord {
   ts: string;
   task_id: string;
   tool: string;
   stream: TaskOutputStream;
   text: string;
+  /**
+   * What this line means, for a surface that shows an agent working.
+   *
+   * Computed here because it is knowledge of a harness's output shapes, and a
+   * client deciding what raw JSONL means would make it the authority on a
+   * provider's format. Absent when the line says nothing worth showing, which
+   * is most of them.
+   */
+  activity?: string;
 }
 
 export interface TaskOutputInput {
@@ -34,12 +53,16 @@ export async function appendTaskOutput(
     return validation;
   }
 
+  /* One chunk can carry several JSONL lines, so the readable account is the
+     lines it contains, joined. Absent when it contains nothing worth showing. */
+  const activity = activityLines([input.text]).join(" · ");
   const record: TaskOutputRecord = {
     ts: new Date().toISOString(),
     task_id: input.task_id,
     tool: input.tool,
     stream: input.stream,
-    text: input.text
+    text: input.text,
+    ...(activity === "" ? {} : { activity })
   };
 
   let line: string;

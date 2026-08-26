@@ -614,8 +614,10 @@ export interface AgentsFileProposalView {
  */
 /** The planner's answer as it arrives, keyed to the draft it belongs to. */
 export interface DraftStreamView {
-  specId: string;
-  text: string;
+  /* Each line with when it happened, so a surface can show only the ones that
+     belong to the wait it is in -- the channel replays history on subscribe,
+     and replayed history drawn as live is false progress. */
+  lines: Array<{ at: number; text: string }>;
 }
 
 export type DraftOutcome =

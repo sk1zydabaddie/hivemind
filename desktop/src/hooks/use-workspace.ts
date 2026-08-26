@@ -292,6 +292,30 @@ export function useWorkspace(): WorkspaceView {
           setConnectionState("connection interrupted");
         }
       };
+      /* One subscription for "what is happening right now", opened with the
+         project. Records carry timestamps and the surface shows only those
+         belonging to the wait it is in, so replayed history cannot look live. */
+      draftSourceRef.current?.close();
+      const activitySource = new EventSource(
+        `${nextConnection.daemon_url}/tasks/activity/output/stream`
+      );
+      draftSourceRef.current = activitySource;
+      activitySource.onerror = () => undefined;
+      activitySource.onmessage = (chunk) => {
+        if (!isCurrentProject()) return;
+        const record = parseMessage<{ record?: { activity?: unknown; ts?: unknown } }>(chunk.data);
+        const line = typeof record?.record?.activity === "string" ? record.record.activity : "";
+        const at = typeof record?.record?.ts === "string" ? Date.parse(record.record.ts) : NaN;
+        if (line === "") return;
+        setDraftStream((previous) => {
+          const lines = previous?.lines ?? [];
+          if (lines.at(-1)?.text === line) return previous;
+          return {
+            lines: [...lines, { at: Number.isFinite(at) ? at : Date.now(), text: line }].slice(-40)
+          };
+        });
+      };
+
       source.onmessage = (event) => {
         if (!isCurrentProject()) {
           return;
@@ -305,47 +329,22 @@ export function useWorkspace(): WorkspaceView {
         applyEventMessage(projectionRef.current, message);
         scheduleInspection();
 
-        /* The draft's own text, opened when Core says a draft started and
-           closed when it ends either way. History replay must not reopen it:
-           a finished draft streaming again would be a spinner for something
-           that already happened. */
+        /* The draft's own steps arrive on the project's activity channel,
+           which is subscribed when the project opens rather than when an event
+           says a draft began -- that event does not reach the client until the
+           action returns, so a per-turn subscription opened exactly when it had
+           nothing left to carry. Closing is still driven by the event, which is
+           the moment the work genuinely ended. */
         const draftEvent = message.event;
         if (draftEvent !== undefined && message.source !== "history") {
-          const specId =
-            typeof draftEvent.data?.spec_id === "string" ? draftEvent.data.spec_id : null;
-          if (draftEvent.type === "spec.draft_started" && specId !== null) {
-            draftSourceRef.current?.close();
-            setDraftStream({ specId, text: "" });
-            const draftSource = new EventSource(
-              `${nextConnection.daemon_url}/tasks/${encodeURIComponent(specId)}/output/stream`
-            );
-            draftSourceRef.current = draftSource;
-            /* No error banner here. A draft that streams nothing still finishes
-               and still renders its answer, so an interrupted transcript is
-               cosmetic -- and a transport warning about a cosmetic stream is
-               the false-alarm shape this project keeps removing. */
-            draftSource.onerror = () => undefined;
-            draftSource.onmessage = (chunk) => {
-              if (!isCurrentProject()) return;
-              const record = parseMessage<{ text?: unknown }>(chunk.data);
-              const text = typeof record?.text === "string" ? record.text : "";
-              if (text === "") return;
-              setDraftStream((previous) =>
-                previous === null || previous.specId !== specId
-                  ? previous
-                  : { specId, text: previous.text + text }
-              );
-            };
-          }
           if (
-            (draftEvent.type === "spec.draft_completed" || draftEvent.type === "spec.draft_failed") &&
-            specId !== null
+            draftEvent.type === "spec.draft_completed" ||
+            draftEvent.type === "spec.draft_failed"
           ) {
-            draftSourceRef.current?.close();
-            draftSourceRef.current = null;
-            setDraftStream((previous) => (previous?.specId === specId ? null : previous));
+            setDraftStream(null);
           }
         }
+
         if (
           projectionRef.current.selectedTaskId === null &&
           outputSourceRef.current === null

@@ -614,27 +614,67 @@ export function WorkTab({
     }
   };
 
-  /* Begin a fresh thread.
+  /* Begin a fresh thread, and end the run that was going.
    *
-   * Core appends one boundary event and removes nothing: the trail keeps every
-   * earlier message, a prepared plan is untouched and still waiting, and the
-   * active spec is unchanged so a follow-up build request still lands against
-   * it. All that moves is where the thread starts reading. */
+   * The first version cleared the thread and left everything else: the running
+   * tasks, the pending plan, the rail. That preserved durable state correctly
+   * and meant the wrong thing -- to a person "new conversation" is a clean
+   * slate, and a control that leaves the old run running is the interface
+   * lying about what it does.
+   *
+   * So it ends the run. What it does NOT do is touch the durable trail: history
+   * stays, and every earlier message, plan, run and check is still in the
+   * project's record. What it ends is the present.
+   *
+   * Stopping running work costs money already spent, so it asks first and names
+   * what is running -- and it stops through the SAME `run.stop` path the Stop
+   * button uses, rather than a second one that would have to be kept honest
+   * separately. */
   const [newConversationBusy, setNewConversationBusy] = useState(false);
+  const [newConversationAsk, setNewConversationAsk] = useState(false);
+
+  const runningNow = tasks.filter((task) => task.state === "running");
+  const newConversationCost =
+    runningNow.length > 0
+      ? `${runningNow.length} ${runningNow.length === 1 ? "agent is" : "agents are"} working right now. Starting a new conversation stops ${runningNow.length === 1 ? "it" : "them"}, and the tokens already spent are spent.`
+      : displayedPlan !== null
+        ? "The plan waiting for you will be cleared. Nothing has run from it, so nothing is lost but the planning call."
+        : null;
+
   const startNewConversation = async (): Promise<void> => {
     setNewConversationBusy(true);
+    setNewConversationAsk(false);
     try {
+      /* The existing stop path, not a second one. It cleans up every active
+         task on the way out, which is the behaviour a new conversation needs
+         and which has already been proven to do it. */
+      if (managerSession) {
+        await onAction({
+          type: "run.stop",
+          payload: { session_id: managerSession.session_id, reason: "Starting a new conversation" }
+        });
+      }
       await onAction({ type: "conversation.new", payload: {} });
+      setReplanOpen(false);
+      setReplanText("");
+      setMidRunRequest("");
       setFeedback(
-        plan === null
-          ? "New conversation. Everything before it is still in the project's history."
-          : "New conversation. Everything before it is still in the project's history, and the plan waiting for you is untouched."
+        "New conversation. The run has ended and the board is clear — everything that happened is still in this project's history."
       );
     } catch (error) {
       setFeedback(plainActionError(error));
     } finally {
       setNewConversationBusy(false);
     }
+  };
+
+  /* Asked before anything stops, and only when there is something to lose. */
+  const askNewConversation = (): void => {
+    if (newConversationCost === null) {
+      void startNewConversation();
+      return;
+    }
+    setNewConversationAsk(true);
   };
 
   const continueRun = async (): Promise<void> => {
@@ -886,12 +926,17 @@ export function WorkTab({
       : {
           taskId: streamingTask.task_id,
           title: inspection?.task_titles?.[streamingTask.task_id] ?? streamingTask.task_id,
+          /* What it is doing, not what its harness printed.
+             The raw stream is provider JSONL -- `{"type":"item.completed",...}`
+             -- which is noise on a surface, and codex emits no token deltas at
+             all, so there is no running text to show even if we wanted it. Core
+             turns each line into an account of the step that just finished, and
+             those arrive over the minutes a worker takes. */
           text: projection.selectedOutput
-            .slice(-40)
-            .map((record) => record.text)
-            .join("")
-            .slice(-1800)
-            .trimStart()
+            .map((record) => record.activity)
+            .filter((line): line is string => typeof line === "string" && line !== "")
+            .slice(-12)
+            .join(String.fromCharCode(10))
         };
 
   const promptDock = (
@@ -1056,7 +1101,7 @@ export function WorkTab({
             <RunHeader
               advancing={projection.artifactMovements.at(-1)?.id ?? null}
               newConversationBusy={newConversationBusy}
-              onNewConversation={() => void startNewConversation()}
+              onNewConversation={askNewConversation}
               attentionCount={openQueue.length}
               configuredLevel={inspection?.autonomy.configured_level ?? "auto"}
               busy={busy}
@@ -1123,7 +1168,8 @@ export function WorkTab({
                  takes the canvas alone. */
               <div className="grid min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden">
                 <RunThread
-                  draftText={draftStream?.text ?? null}
+                  draftText={draftLinesSince(draftStream, promptStartedAt)}
+                  pendingSince={promptStartedAt}
                   workerStream={workerStream}
                   silentRounds={inspection?.silent_rounds ?? []}
                   endRef={activityEndRef}
@@ -1342,6 +1388,41 @@ export function WorkTab({
           }
         }}
       />
+
+      {/* Asked before anything stops, and it names what stopping costs.
+          Starting a new conversation ends the run, and running work is money
+          already spent -- so the one thing this must not do is take that
+          decision quietly. */}
+      <Dialog open={newConversationAsk} onOpenChange={setNewConversationAsk}>
+        <DialogContent className="max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Start a new conversation?</DialogTitle>
+            <DialogDescription>{newConversationCost}</DialogDescription>
+          </DialogHeader>
+          <p className="m-0 text-[13px] leading-relaxed text-muted-foreground">
+            Everything that has happened stays in this project&rsquo;s history —
+            the Project tab still shows every run, change and check. What ends is
+            what is going on now.
+          </p>
+          <DialogFooter>
+            <Button
+              disabled={newConversationBusy}
+              type="button"
+              variant="outline"
+              onClick={() => setNewConversationAsk(false)}
+            >
+              Keep going
+            </Button>
+            <Button
+              disabled={newConversationBusy}
+              type="button"
+              onClick={() => void startNewConversation()}
+            >
+              {newConversationBusy ? "Ending…" : "End the run and start fresh"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={checksOpen} onOpenChange={setChecksOpen}>
         <DialogContent frame className="grid h-[min(720px,calc(100vh-40px))] w-[min(920px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)] sm:max-w-none">
@@ -2467,6 +2548,7 @@ function RunThread({
   endRef,
   draftText,
   silentRounds,
+  pendingSince,
   workerStream,
   onOpenPlan
 }: {
@@ -2477,6 +2559,8 @@ function RunThread({
   draftText: string | null;
   /** Round ids Core says nothing is reporting on. */
   silentRounds: string[];
+  /** When the client submitted and is still waiting, in epoch ms. */
+  pendingSince: number | null;
   /** The running agent's output as it arrives, or null when none is. */
   workerStream: { taskId: string; title: string; text: string } | null;
   onOpenPlan: () => void;
@@ -2516,6 +2600,34 @@ function RunThread({
             onOpenPlan={onOpenPlan}
           />
         ))}
+        {/* Working, from the moment you press send.
+            The indicator used to wait for `spec.draft_started` to arrive over
+            the event stream, so for the whole of a short call there was nothing
+            on screen at all -- measured at 8 seconds of silence against a call
+            that took 8 seconds. The client knows it submitted; that knowledge is
+            immediate and true, and the streamed steps fill in underneath as they
+            arrive. */}
+        {pendingSince === null ? null : (
+          <article className="max-w-[720px] text-[13px] text-muted-foreground">
+            <div className="flex items-center gap-2.5">
+              <span
+                aria-hidden="true"
+                className="grid size-7 shrink-0 place-items-center rounded-full border border-rule bg-surface text-navy"
+              >
+                <Loader className="size-3.5 animate-spin" />
+              </span>
+              <span>Planner is reading your request</span>
+              <span className="font-mono text-[11px]">
+                <LiveElapsed startedAt={new Date(pendingSince).toISOString()} />
+              </span>
+            </div>
+            {draftText === null || draftText.trim() === "" ? null : (
+              <pre className="mt-1.5 mb-0 max-h-40 overflow-auto pl-9 font-mono text-[11.5px] leading-relaxed break-words whitespace-pre-wrap text-muted-foreground">
+                {draftText}
+              </pre>
+            )}
+          </article>
+        )}
         {/* The agent, working, in its own words.
             A worker was a spinner and a phase gauge: true, and no answer to
             "what is it doing". The planner already streams; this is the same
@@ -4336,4 +4448,22 @@ function AgentDials({ agents }: { agents: ActiveAgentView[] }): React.JSX.Elemen
       })}
     </span>
   );
+}
+
+
+/**
+ * The activity lines that belong to the wait currently on screen.
+ *
+ * The channel is subscribed when the project opens, so it also replays what
+ * happened before -- and replayed history rendered as live is the "false
+ * progress" shape this surface has already been corrected for twice. Anything
+ * older than the moment this wait began is history and is not shown.
+ */
+function draftLinesSince(
+  stream: DraftStreamView | null,
+  pendingSince: number | null
+): string | null {
+  if (stream === null || pendingSince === null) return null;
+  const lines = stream.lines.filter((line) => line.at >= pendingSince).map((line) => line.text);
+  return lines.length === 0 ? null : lines.slice(-8).join(String.fromCharCode(10));
 }

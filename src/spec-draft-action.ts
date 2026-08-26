@@ -13,7 +13,7 @@ import {
 import { writeFileAtomic, writeJsonAtomic } from "./atomic.js";
 import { loadConfig } from "./config.js";
 import { plainReason } from "./plain-reason.js";
-import { appendTaskOutput } from "./output-stream.js";
+import { ACTIVITY_STREAM_ID, appendTaskOutput } from "./output-stream.js";
 import { appendEvent } from "./events.js";
 import { recordIdeationRound, startIdeationSession } from "./ideation.js";
 import { trackedFilesAtBase, currentHead } from "./plan.js";
@@ -377,7 +377,11 @@ async function draftOnce(
   repoRoot: string,
   profile: AdapterProfile,
   tool: string,
-  specId: string,
+  /* The TURN, not the spec. It was called `specId` and then handed `turnId`
+     when the two were separated, so the stream was written under one id and
+     read under the other and no text ever arrived. A parameter named for what
+     it is cannot drift that way twice. */
+  turnId: string,
   drafting: string
 ): Promise<SpecResult<DraftedAnswer>> {
   /* Stream it. The harness emits text as it thinks, and this threw it away:
@@ -390,13 +394,21 @@ async function draftOnce(
      transcript, and a transcript out of order is worse than no transcript. */
   let tail: Promise<unknown> = Promise.resolve();
   const process = await runAdapterProcess(repoRoot, profile, repoRoot, drafting, {
-    outputLogPath: adapterRunLogPath(repoRoot, `drafting-${specId}-1`),
-    usageSessionId: specId,
-    usageRunId: specId,
+    outputLogPath: adapterRunLogPath(repoRoot, `drafting-${turnId}-1`),
+    usageSessionId: turnId,
+    usageRunId: turnId,
     onStreamChunk: (chunk) => {
       tail = tail.then(() =>
         appendTaskOutput(repoRoot, {
-          task_id: specId,
+          /* One channel for "what is happening right now", rather than one per
+             turn. A per-turn key meant the surface could only subscribe once it
+             had been TOLD the turn id, and that arrives on the event stream --
+             which does not reach the client until the action returns, so the
+             stream opened exactly when it had nothing left to carry. A fixed
+             key is subscribable before anything starts. Records carry their
+             timestamp, so a surface shows only what belongs to the wait it is
+             currently in. */
+          task_id: ACTIVITY_STREAM_ID,
           tool,
           stream: chunk.stream,
           text: chunk.text
