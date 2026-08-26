@@ -165,7 +165,17 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
     const parsed = exactStrings(rest, ["prompt", "tool"]);
     return parsed.ok
       ? draftSpecFromPrompt(repoRoot, parsed.value.prompt, parsed.value.tool, {
-          answerOnly: answerOnly === true
+          answerOnly: answerOnly === true,
+          /* Re-enter the SAME audited dispatcher for every project-file read.
+             This is intentionally in-process: the outer daemon request already
+             owns the mutation queue, and calling its HTTP route again would
+             deadlock it. The nested action is read-only and still receives the
+             exact files.read payload validation and confinement checks. */
+          readProjectFile: (filePath) =>
+            executeWorkspaceAction(repoRoot, {
+              type: "files.read",
+              payload: { path: filePath }
+            })
         })
       : parsed;
   }

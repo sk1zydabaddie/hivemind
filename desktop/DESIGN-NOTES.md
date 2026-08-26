@@ -2868,8 +2868,10 @@ stops the guard firing — the guard does not relax to meet it.
 
 ### Actions with no way to reach them
 
-Four audited workspace actions have no control anywhere in the desktop. Not
-bugs, but a real product gap:
+Eight audited workspace actions have no control anywhere in the desktop. This
+was re-swept on 2026-08-26 against direct React action construction plus the
+Core-published queue actions consumed by Work. The exact set is asserted in
+`desktop/test/seams.test.ts`, so another action cannot silently join it:
 
 - `manual_task.review` / `manual_task.authorize` — manually authored tasks have
   no surface at all.
@@ -2877,9 +2879,18 @@ bugs, but a real product gap:
 - `quality.best_of_n` / `quality.draft_refine` — no way to start a second
   attempt from anywhere. `quality.cancel` used to be reachable from the tree
   tab, which was the wrong half to expose on its own; folding that tab in
-  removed it rather than pairing it, so this is now a clean gap in both
-  directions instead of a lopsided one. A second attempt shows on its task's
-  card in the map, so when a start control exists it has an obvious home.
+  removed it rather than pairing it. `quality.cancel` itself is now also
+  unreachable, including from the `quality_cancel_failed` item that says a
+  cancellation did not take.
+- `memory.review_handoff` — Project explicitly says "Review this in a
+  terminal", while Core already returns the bounded local handoff command and
+  no client caller asks for it.
+- `accounts.add` — Accounts can select a registered account but cannot register
+  the provider-owned account directory the action already validates.
+
+A second attempt still shows on its task's card in the graph, so when a start
+control exists it has an obvious home. These remain recorded gaps, not work
+silently folded into the conversation-content repair.
 
 ### Waiting on Core
 

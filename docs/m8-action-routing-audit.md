@@ -76,7 +76,15 @@ Two actions added for the single first-run review.
   its ideation session, and records the drafter's own alternatives and
   self-critique as the orchestrator's round. Writes `convergence.orchestrator`
   only; it has no path to `convergence.user`, asserted in
-  `test/spec-convergence.test.ts`.
+  `test/spec-convergence.test.ts`. Before that one call, Core assembles a
+  read-only project context through nested `files.read` actions sent back
+  through this same dispatcher in process. The snapshot prioritizes files named
+  in the question, root descriptors, entry points, then shallow source; it is
+  capped at 8 files, 12 KiB per file, and 48 KiB total. Larger projects keep the
+  remaining tracked names, and naming a file in a later question promotes it.
+  `.hivemind` and `.git` names and contents remain outside the project-file
+  surface. File contents are labelled untrusted evidence and cannot choose the
+  answer kind, authorize, ratify, approve, execute, or ship anything.
 - `task.resume` — continues a task that paused for capacity, reusing the
   contract, lease and worktree that survived the pause. Applies every gate a
   fresh run applies (ratified spec, task in the approved plan, lease still this

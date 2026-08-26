@@ -2482,3 +2482,75 @@ not that pixels followed a pointer.
 Desktop **333/333**, 30/30 reachability, installed walk green against Skybound.
 Core untouched this pass (**861/863** from the run before it). No paid call.
 
+## Conversation project context reaches the reader — 2026-08-26
+
+The conversational path had the recurring unreached-mechanism shape. Core's
+audited `files.list` / `files.read` surface was confined, tested, and used by
+the file viewer, while `spec.draft` gave its model only `trackedFilesAtBase`.
+The prompt explicitly invited project questions "from the file list below", so
+the installed answer that it could see names but not contents was the behavior
+the code requested.
+
+The chosen fix is a **bounded context snapshot assembled before the existing
+single drafting call**, rather than a second model call or a model-owned tool
+loop. That preserves one submitted message = one paid provider call and does
+not give conversational text a new action vocabulary. Core prioritizes files
+named in the question, root descriptors, entry points, then shallow source. It
+includes at most **8 files**, **12 KiB per file**, and **48 KiB total**. On a
+larger project the prompt says what was omitted; the remaining project files
+stay as names, and naming one in a later question promotes it into that turn's
+snapshot. Truncation is explicit.
+
+Every selected file is re-entered as a `files.read` action through the same
+`executeWorkspaceAction` dispatcher in process, so its exact payload,
+realpath-confinement, text-only, and refused-root rules still run. Both names
+and contents below `.hivemind` and `.git` are removed from conversation
+context. File contents are labelled untrusted evidence: they cannot choose the
+answer kind, authorize work, ratify a spec or plan, invoke an action, or ship.
+The existing typed `reply` event remains advisory-only and the human signature
+and adoption gates are untouched.
+
+The companion reachability sweep now counts direct client actions plus Core-
+published queue actions consumed by Work. It found **8** accepted actions with
+neither path: `accounts.add`, `manual_task.authorize`, `manual_task.review`,
+`memory.review_handoff`, `quality.best_of_n`, `quality.cancel`,
+`quality.draft_refine`, and `verify.characterize`. Five were already recorded;
+three had fallen out of the old count. `desktop/test/seams.test.ts` asserts the
+exact set so another cannot become silently unreachable. They remain open
+product gaps and were not folded into this bounded conversation repair.
+
+Installed verification used a fresh Git clone of the existing release-board
+fixture so no stale plan had to be cleared and the answer had known source to
+read. The first attempted send in the old fixture stopped locally on its stale
+plan-base gate and made no provider call. The fresh fixture then made exactly
+one Claude Opus call through the installed app. On installed build
+**26.826.1622**, the exact exchange was:
+
+> **Typed:** `describe what this project does`
+>
+> **Hivemind:** It's a small, dependency-free "Release Readiness Board" web
+> app — a single page that lists release checks and shows whether each one is
+> ready, pending, or blocked. The pieces: - `src/release-board.js` is the
+> domain module, with no DOM in it. It normalizes a check (trims title/owner,
+> lowercases status and priority) and rejects anything with a missing title or
+> owner or an unrecognized status (`ready`/`pending`/`blocked`) or priority
+> (`critical`/`high`/`normal`). It also exposes `summarizeChecks`,
+> `summarizeByPriority`, and `filterChecks`. - `src/app.js` holds a hardcoded
+> list of four sample checks and renders them into `index.html`. Two dropdowns
+> filter the list by status and by priority at once — a check shows only if it
+> matches both. Above the list are two summary lines: status counts and
+> priority counts, both computed over the whole board rather than the filtered
+> view. - `scripts/serve.mjs` is a tiny static file server on
+> `http://127.0.0.1:4178` (`npm start`). - `test/release-board.test.js` covers
+> the domain module with `node --test` (`npm test`): normalization, both
+> summaries, combined filtering, and the error cases. There's no persistence,
+> no backend, and no way to add or edit a check from the UI — the data lives in
+> that array in `src/app.js`.
+
+This is content-grounded: the reply names functions, validation behavior,
+sample-data location, combined filter semantics, server URL, test runner, and
+product limits that filenames alone do not contain. Final verification: Core
+**934 passed / 2 skipped / 936 total**, Desktop **352/352**, Rust **52/52**,
+targeted content/confinement regression **32/32**, and reachability **30/30**.
+`npm run ship` built, installed, and matched executable, bundled Core, and shell
+identities for 26.826.1622.

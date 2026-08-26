@@ -21,6 +21,7 @@ import {
   buildSpecDraftingPrompt,
   draftedSpecJsonSchema,
   parseDraftedAnswer,
+  type ConversationProjectContext,
   type DraftedAnswer
 } from "./spec-drafting.js";
 import {
@@ -71,6 +72,21 @@ export interface DraftSpecResult {
 }
 
 /**
+ * Conversation context is intentionally small. The drafter receives the files
+ * most likely to identify the project plus files named in the question, never
+ * the whole repository. On a larger project the remaining files stay names;
+ * naming one in a later question promotes it into the next bounded snapshot.
+ */
+export const CONVERSATION_CONTEXT_MAX_FILES = 8;
+export const CONVERSATION_CONTEXT_MAX_FILE_BYTES = 12 * 1024;
+export const CONVERSATION_CONTEXT_MAX_TOTAL_BYTES = 48 * 1024;
+const CONVERSATION_CONTEXT_MAX_READ_ATTEMPTS = 16;
+
+type ProjectFileReadAction = (
+  filePath: string
+) => Promise<{ ok: true; value: unknown } | { ok: false; reason: string }>;
+
+/**
  * Begin a new conversation in this project.
  *
  * What it does to durable state, stated because the answer is not obvious:
@@ -112,7 +128,7 @@ export async function draftSpecFromPrompt(
      an approval, so the conversation continues -- but drafting a second spec
      behind a plan nobody has looked at would replace their work by surprise. So
      the drafter answers and never drafts, and says what is waiting. */
-  options: { answerOnly?: boolean } = {}
+  options: { answerOnly?: boolean; readProjectFile: ProjectFileReadAction }
 ): Promise<SpecResult<DraftSpecOutcome>> {
   if (prompt.trim() === "") {
     return { ok: false, reason: "describe what you want built before drafting a spec" };
@@ -147,6 +163,17 @@ export async function draftSpecFromPrompt(
   if (!head.ok) return head;
   const tracked = await trackedFilesAtBase(repoRoot, head.value);
   if (!tracked.ok) return tracked;
+  /* `trackedFilesAtBase` is planning evidence and legitimately includes
+     Hivemind's own tracked records. Conversation context is the project-file
+     surface, whose contract refuses those roots entirely -- including names.
+     Use one filtered list for both the snapshot and the filename appendix so
+     the old list-only path cannot leak around the new reader's boundary. */
+  const visibleTrackedFiles = tracked.value.filter((filePath) => !isPrivateProjectRoot(filePath));
+  const projectContext = await buildConversationProjectContext(
+    prompt,
+    visibleTrackedFiles,
+    options.readProjectFile
+  );
 
   const specId = await nextSpecId(repoRoot);
   if (!specId.ok) return specId;
@@ -185,8 +212,9 @@ export async function draftSpecFromPrompt(
 
   const drafting = buildSpecDraftingPrompt({
     prompt,
-    trackedFiles: tracked.value,
+    trackedFiles: visibleTrackedFiles,
     testCommand: config.config.test_command ?? null,
+    projectContext,
     answerOnly: options.answerOnly === true
   });
   const drafted = await draftOnce(repoRoot, profile.profile, tool, turnId, drafting);
@@ -337,6 +365,124 @@ export async function draftSpecFromPrompt(
       alternatives: proposal.value.alternatives.length
     }
   };
+}
+
+const PROJECT_DESCRIPTOR_NAMES = new Set([
+  "readme",
+  "readme.md",
+  "readme.txt",
+  "package.json",
+  "cargo.toml",
+  "pyproject.toml",
+  "go.mod",
+  "pom.xml",
+  "build.gradle",
+  "build.gradle.kts",
+  "composer.json",
+  "gemfile",
+  "mix.exs",
+  "deno.json",
+  "deno.jsonc"
+]);
+
+const PROJECT_ENTRYPOINT = /(^|\/)(src\/)?(index|main|lib|app|server|cli)\.[a-z0-9]+$/iu;
+const PROJECT_SOURCE = /\.(?:[cm]?[jt]sx?|rs|py|go|java|kt|kts|cs|cpp|cc|c|h|hpp|rb|php|swift|ex|exs|vue|svelte)$/iu;
+
+/** Assemble one deterministic, bounded context pack through the supplied action. */
+async function buildConversationProjectContext(
+  prompt: string,
+  trackedFiles: string[],
+  readProjectFileAction: ProjectFileReadAction
+): Promise<ConversationProjectContext> {
+  const promptFolded = prompt.toLocaleLowerCase("en-US").replaceAll("\\", "/");
+  const candidates = trackedFiles
+    .filter((filePath) => !isPrivateProjectRoot(filePath))
+    .map((filePath, index) => ({
+      path: filePath,
+      index,
+      score: conversationFileScore(filePath, promptFolded)
+    }))
+    .filter((candidate) => candidate.score > 0)
+    .sort((left, right) => right.score - left.score || left.index - right.index || left.path.localeCompare(right.path));
+
+  const files: ConversationProjectContext["files"] = [];
+  let remaining = CONVERSATION_CONTEXT_MAX_TOTAL_BYTES;
+  for (const candidate of candidates.slice(0, CONVERSATION_CONTEXT_MAX_READ_ATTEMPTS)) {
+    if (remaining <= 0 || files.length >= CONVERSATION_CONTEXT_MAX_FILES) break;
+    const read = await readProjectFileAction(candidate.path);
+    if (!read.ok || !isProjectFileContent(read.value)) continue;
+    const allowed = Math.min(CONVERSATION_CONTEXT_MAX_FILE_BYTES, remaining);
+    const complete = Buffer.from(read.value.text, "utf8");
+    const text = utf8Prefix(complete, allowed);
+    const includedBytes = Buffer.byteLength(text, "utf8");
+    if (includedBytes === 0 && read.value.bytes > 0) continue;
+    files.push({
+      path: read.value.path,
+      text,
+      bytes: read.value.bytes,
+      included_bytes: includedBytes,
+      truncated: read.value.truncated || complete.length > includedBytes
+    });
+    remaining -= includedBytes;
+  }
+
+  return {
+    files,
+    tracked_files: trackedFiles.length,
+    candidate_files: candidates.length,
+    max_files: CONVERSATION_CONTEXT_MAX_FILES,
+    max_total_bytes: CONVERSATION_CONTEXT_MAX_TOTAL_BYTES
+  };
+}
+
+/** Return the longest complete UTF-8 prefix within `maxBytes`. */
+function utf8Prefix(value: Buffer, maxBytes: number): string {
+  if (value.length <= maxBytes) return value.toString("utf8");
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let end = maxBytes;
+  while (end > 0) {
+    try {
+      return decoder.decode(value.subarray(0, end));
+    } catch {
+      /* A UTF-8 code point occupies at most four bytes, so this retries no more
+         than three times for a buffer that originated from a JS string. */
+      end -= 1;
+    }
+  }
+  return "";
+}
+
+function conversationFileScore(filePath: string, promptFolded: string): number {
+  const normalized = filePath.replaceAll("\\", "/");
+  const folded = normalized.toLocaleLowerCase("en-US");
+  const basename = folded.split("/").at(-1) ?? folded;
+  const depth = folded.split("/").length - 1;
+  const explicitlyNamed = promptFolded.includes(folded) ||
+    (basename.length >= 4 && promptFolded.includes(basename));
+  if (explicitlyNamed) return 20_000 - depth;
+  if (depth === 0 && PROJECT_DESCRIPTOR_NAMES.has(basename)) return 15_000;
+  if (PROJECT_ENTRYPOINT.test(folded)) return 12_000 - depth;
+  if (PROJECT_SOURCE.test(folded)) return 1_000 - Math.min(depth, 100);
+  return 0;
+}
+
+function isPrivateProjectRoot(filePath: string): boolean {
+  const first = filePath.replaceAll("\\", "/").split("/")[0]?.toLocaleLowerCase("en-US");
+  return first === ".git" || first === ".hivemind";
+}
+
+function isProjectFileContent(value: unknown): value is {
+  path: string;
+  text: string;
+  bytes: number;
+  truncated: boolean;
+} {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const content = value as Record<string, unknown>;
+  return typeof content.path === "string" &&
+    typeof content.text === "string" &&
+    typeof content.bytes === "number" &&
+    typeof content.truncated === "boolean";
 }
 
 async function failDraft(

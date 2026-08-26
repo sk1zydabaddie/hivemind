@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
@@ -54,6 +54,16 @@ const literals = (fragment: string): string[] =>
     )
   ].sort();
 
+async function sourceFilesBelow(directory: string): Promise<string[]> {
+  const files: string[] = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const absolute = path.join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...await sourceFilesBelow(absolute));
+    else if (/\.tsx?$/u.test(entry.name)) files.push(absolute);
+  }
+  return files;
+}
+
 describe("seam: action ids, client union to Core's accepted list", () => {
   test("every action the client can send is one Core accepts", async () => {
     const client = literals(
@@ -80,6 +90,44 @@ describe("seam: action ids, client union to Core's accepted list", () => {
       unaccepted,
       "the client can dispatch these and Core rejects them; the button does nothing"
     ).toEqual([]);
+  });
+
+  test("Core actions with no production surface are an exact, reviewed set", async () => {
+    const core = literals(
+      between(
+        await readFile(path.join(coreRoot, "workspace-actions.ts"), "utf8"),
+        /const workspaceActionTypes/u,
+        /^\] as const;/mu
+      )
+    );
+    const constructed = new Set<string>();
+    for (const file of await sourceFilesBelow(path.join(desktopRoot, "src"))) {
+      const source = await readFile(file, "utf8");
+      for (const match of source.matchAll(/\btype:\s*"([a-z_]+(?:\.[a-z_]+)+)"/gu)) {
+        if (core.includes(match[1])) constructed.add(match[1]);
+      }
+    }
+
+    /* Queue actions are Core-published controls consumed through Work's generic
+       `approveQueueItem(item.action)` path. They are reachable even though no
+       client file constructs their literal payload. Count that seam explicitly
+       instead of declaring every dynamically published action dead. */
+    const queueSource = await readFile(path.join(coreRoot, "workspace-inspection.ts"), "utf8");
+    for (const match of queueSource.matchAll(/\btype:\s*"([a-z_]+(?:\.[a-z_]+)+)"/gu)) {
+      if (core.includes(match[1])) constructed.add(match[1]);
+    }
+
+    const unreachable = core.filter((action) => !constructed.has(action));
+    expect(unreachable).toEqual([
+      "accounts.add",
+      "manual_task.authorize",
+      "manual_task.review",
+      "memory.review_handoff",
+      "quality.best_of_n",
+      "quality.cancel",
+      "quality.draft_refine",
+      "verify.characterize"
+    ]);
   });
 });
 

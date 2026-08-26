@@ -10,6 +10,7 @@ import { setProjectConfig } from "../src/config-actions.js";
 import { loadConfig } from "../src/config.js";
 import { initProject } from "../src/init.js";
 import { draftSpecFromPrompt } from "../src/spec-draft-action.js";
+import { readProjectFile } from "../src/project-files.js";
 
 const run = promisify(execFile);
 
@@ -114,7 +115,9 @@ test("the money gate refuses before the first paid call, and the declaration ope
   const repo = await scratchRepo({});
   const counter = await installDrafter(repo);
 
-  const refused = await draftSpecFromPrompt(repo, "Add a thing.", "planner");
+  const refused = await draftSpecFromPrompt(repo, "Add a thing.", "planner", {
+    readProjectFile: (filePath) => readProjectFile(repo, filePath)
+  });
   assert.equal(refused.ok, false);
   if (!refused.ok) {
     assert.match(refused.reason, /has not declared that it has no tests/u);
@@ -128,7 +131,9 @@ test("the money gate refuses before the first paid call, and the declaration ope
   const declared = await setProjectConfig(repo, { no_tests_declared: true });
   assert.equal(declared.ok, true, declared.ok ? undefined : declared.reason);
 
-  const drafted = await draftSpecFromPrompt(repo, "Add a thing.", "planner");
+  const drafted = await draftSpecFromPrompt(repo, "Add a thing.", "planner", {
+    readProjectFile: (filePath) => readProjectFile(repo, filePath)
+  });
   assert.equal(drafted.ok, true, drafted.ok ? undefined : drafted.reason);
   assert.equal(await callCount(counter), 1);
 });
