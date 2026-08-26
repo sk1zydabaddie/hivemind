@@ -9,6 +9,7 @@ import { withInProcessDaemonTransport } from "./daemon-client.js";
 import { removeDaemonState, writeDaemonState } from "./daemon-state.js";
 import { formatErrorDetail } from "./error-detail.js";
 import type { FailureCode } from "./failure-code.js";
+import { setTaskOutputPublisher } from "./output-stream.js";
 import { EventBus } from "./event-bus.js";
 import { appendEvent, readEvents } from "./events.js";
 import { enqueueIntegrationPatch, integrateShadow } from "./integrate.js";
@@ -144,6 +145,11 @@ export async function daemonCommand(cwd: string, args: string[]): Promise<number
 export function createDaemonServer(repoRoot: string, buildId: string) {
   const queue = new SerializedQueue();
   const eventBus = new EventBus();
+  /* Every task-output writer publishes through this, registered once rather
+     than threaded per action -- see `setTaskOutputPublisher`. Without it a
+     writer reached disk and no subscriber, which is how the drafting stream
+     was invisible while its file was correct. */
+  setTaskOutputPublisher((record) => eventBus.publishTaskOutput(record));
   return createServer(async (request, response) => {
     try {
       if (request.method === "GET" && request.url === "/health") {
@@ -324,7 +330,9 @@ function routeHandler(repoRoot: string, method: string | undefined, url: string 
         allowDangerousAdapter: payload.allow_dangerous_adapter === true,
         ...(usageSessionId.value === undefined ? {} : { usageSessionId: usageSessionId.value }),
         onEvent: (event) => eventBus.publishEvent(event),
-        onOutput: (record) => eventBus.publishTaskOutput(record)
+        /* No publisher here: `appendTaskOutput` publishes for every writer
+           now, and calling it twice would deliver each line twice. */
+        onOutput: undefined
       });
     };
   }

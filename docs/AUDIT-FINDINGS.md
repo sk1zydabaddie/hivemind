@@ -15,6 +15,10 @@ current user can still block a plan the project has already committed to.
 | F-3 | Hivemind committed its own machine evidence by default | High (a clone inherited another machine's verdicts) | None | **Closed 2026-08-15** — fixed in the pass that found it |
 | F-4 | A crash left the project permanently unable to prove itself idle | High (both remedies were gated on the thing the crash broke) | None | **Closed 2026-08-15** — fixed in the pass that found it |
 | F-5 | This file's own "only finding" guard note became a false record | Medium (misdirects orientation) | Misled the 2026-08-21 orientation pass | **Closed 2026-08-21** — fixed in the pass that found it |
+| F-6 | Four verifications passed on the page around the thing they tested | High (it is why four features were reported working and were not) | Four false "working" reports to the user | **Closed 2026-08-26** — rule recorded in `AGENTS.md`, all four predicates rescoped |
+| F-7 | A rename that did not propagate, hidden because the test could not fail | Medium (no text ever reached the surface) | Streaming appeared dead for two sessions | **Closed 2026-08-26** — parameter renamed `turnId`, whole path audited |
+| F-8 | A publisher threaded through one action left every other writer silent | High (fourth instance of the mitigation-scoping shape) | Drafting activity written to disk, delivered to nobody | **Closed 2026-08-26** — publishing moved onto the write |
+| F-9 | The harness offers no token deltas, so word-by-word streaming is not buildable | Low (a settled ceiling, not a defect) | None — items stream instead | **Recorded 2026-08-26** — do not chase it again |
 
 > **The live open register is `docs/AUDIT-2026-08-17.md`, not this file.**
 > Every finding in this file is closed; what this file keeps is the reason each
@@ -349,3 +353,156 @@ it guards adds a place to be wrong without adding a place to be right.
 - the general correction, applied here and to `STATE.md` §1 in the same pass:
   **a record must not carry a hand-maintained summary of itself.** Anything
   that has to agree with the body belongs in the body, once.
+
+---
+
+## F-6 — Four verifications passed on the page rather than on the thing
+
+**Severity: High. Product impact: four features reported working to the user
+that the user then could not see.**
+**Status: closed 2026-08-26. The rule is in `AGENTS.md`; all four predicates
+are rescoped.**
+
+### The general form
+
+> **An assertion that reads a region larger than the thing it tests will pass
+> on the region.**
+
+### The four instances
+
+| Check | What it read | Why it could not fail |
+| --- | --- | --- |
+| Elapsed clock | The surrounding text, for a number | A number was always somewhere on the surface |
+| Connect time | A settle condition, once | It was already true when first evaluated — 0s |
+| Label absence | The whole page, for a word | The page had never contained that word |
+| Streaming | `body.innerText` after the indicator, >40 chars | The composer and footer always supply them |
+
+The streaming one is the clearest: it passed with the stream unplugged, and did
+— for two sessions. `appendTaskOutput` was writing records to
+`.hivemind/log/tasks/activity.output.jsonl` and publishing to nobody, so the
+surface was empty while the check reported success and the disk agreed with the
+check.
+
+### Why it is a finding and not four bugs
+
+Each one was written by the same reflex: *what should be true when this works?*
+— then asked of whatever was easy to read. The predicate ends up describing the
+screen at a moment rather than the behaviour over an interval, and a screen with
+a composer, a footer and a rail on it will satisfy almost any loose assertion.
+
+The correction is structural, not attentional:
+
+- scope every predicate to the **element under test**, never to `body`;
+- for anything that must happen **during** an operation, **sample while it
+  runs** and report what was on screen at each moment — do not ask afterwards
+  what the page contains;
+- state the negative case out loud before shipping the check: *what would make
+  this fail?* If the answer is "nothing I can construct," the check is
+  decoration.
+
+`desktop/e2e/streaming-check.mjs` is the worked example: it samples the live
+region every 400 ms from before the call until after it and prints what was
+there at each instant. It now reports 15 samples with text on screen between
+t+2.6 s and t+7.9 s, and it fails if that count is zero.
+
+**A check that cannot fail is worse than no check, because it is reported as
+evidence.**
+
+---
+
+## F-7 — A rename that did not propagate, invisible because the test could not fail
+
+**Severity: Medium. Product impact: no streamed text ever reached the surface.**
+**Status: closed 2026-08-26.**
+
+### What it was
+
+When the manager turn id was separated from the spec id, `draftOnce`s fourth
+parameter kept its old name — `specId` — and was handed the new `turnId`. Output
+chunks were therefore written under the turn id and read under the spec id: two
+different ids, one name, no arrival.
+
+Nothing caught it because F-6s streaming predicate was satisfied by the
+composer own text, so "the surface is empty" and "the surface is correct" looked
+identical from outside.
+
+### The audit that followed
+
+Every other `specId` on that path was checked, because **a parameter whose name
+lies about its contents will mislead the next reader too**:
+
+- `draftOnce` — the only liar. Now `turnId`, with a comment recording why.
+- `failDraft(repoRoot, specId, reason)` — genuinely receives a spec id.
+- all remaining `specId` uses in `spec-draft-action.ts`, `daemon.ts` and
+  `ideation.ts` — genuine spec ids.
+- a grep for call sites passing a turn id into a `specId` parameter — nothing.
+
+### Why it is a finding
+
+A rename is usually safe because the compiler follows it. This one was not: the
+value changed meaning while the name stayed, so both sides type-checked and
+disagreed about what the string identified. **A type that is `string` on both
+sides of a boundary cannot tell you the two strings are different things.** The
+durable protection is the name, which is why the audit was worth more than the
+one-line fix.
+
+---
+
+## F-8 — A publisher threaded through one action left every other writer silent
+
+**Severity: High. Product impact: drafting activity written to disk and
+delivered to no subscriber.**
+**Status: closed 2026-08-26.**
+
+### What it was
+
+`daemon.ts` passed `onOutput: (record) => eventBus.publishTaskOutput(record)`
+into the **run** path, which called it after appending. Worker output therefore
+reached subscribers. Everything else calling `appendTaskOutput` — drafting, and
+anything added later — wrote the file and told nobody. The records appeared on
+the *next* subscribe, as history, which is why the log looked right while the
+live surface stayed blank.
+
+### Fixed by
+
+Publishing moved onto the **write**: `output-stream.ts` owns a module-level
+publisher, registered once by the daemon, called after a successful append. The
+run path per-action publisher became `undefined` so nothing is delivered twice.
+`test/output-publish.test.ts` proves a non-run-path writer reaches a subscriber,
+proves each line arrives once, and proves an unregistered publisher is not an
+error — and was verified to bite: removing `publisher?.(record)` fails two of
+its three cases.
+
+### Why it is a finding
+
+**Fourth instance** of the shape this project keeps paying for: *a mitigation
+attached to the path where the problem was found leaves every other path
+unmitigated.* The earlier three were a check attached to one detection route
+(A-03), a guard attached to one entry point, and a classification attached to
+one caller. The remedy is the same every time — attach it to the **operation**,
+not to the **call site** — and the reason it recurs is that fixing the instance
+is always cheaper and always looks finished.
+
+---
+
+## F-9 — Word-by-word streaming is not available from the harness
+
+**Severity: Low — a settled ceiling, not a defect. Product impact: none.**
+**Status: recorded 2026-08-26 so nobody chases it again.**
+
+`codex exec --json` does not emit token deltas. It emits **completed items**:
+`thread.started`, `turn.started`, one `item.completed` carrying the entire
+message, then `turn.completed`. Measured on a real run: t+1.0 s, t+1.1 s,
+t+5.1 s, with no intermediate event. No flag adds deltas — checked against the
+CLI own help output rather than inferred.
+
+So "watch the words appear" cannot be wired, and a surface implying it would be
+the interface lying about what it is. What *is* progressive is the items: a
+planner answering a question produces one or two, so only the indicator can be
+honest about the wait; a worker doing real work produces many — a command run, a
+file read, a patch applied — each landing as it finishes over the minutes the
+work takes. That is what `src/agent-activity.ts` renders, and its header carries
+this note at the point of use.
+
+If a future harness gains deltas, that is a wiring change inside
+`agent-activity.ts` and nothing above it needs to know.

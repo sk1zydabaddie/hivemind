@@ -20,6 +20,29 @@ export type TaskOutputStream = "stdout" | "stderr";
  */
 export const ACTIVITY_STREAM_ID = "activity";
 
+/**
+ * Who to tell when a line is written.
+ *
+ * The publisher used to be threaded through one action: the daemon handed
+ * `onOutput` to the RUN path, which called it after appending. So worker output
+ * reached subscribers and everything else -- drafting, and anything added later
+ * -- wrote to disk and told nobody. The records were there on the next
+ * subscribe, as history, which is why the file looked right and the surface
+ * stayed empty.
+ *
+ * The same shape this project keeps recording: a mitigation attached to the
+ * path where it was needed leaves every other path without it. So it is
+ * attached to the WRITE. One registration, and every writer publishes.
+ */
+type TaskOutputPublisher = (record: TaskOutputRecord) => void;
+
+let publisher: TaskOutputPublisher | null = null;
+
+/** Registered once by whatever owns the subscribers. */
+export function setTaskOutputPublisher(next: TaskOutputPublisher | null): void {
+  publisher = next;
+}
+
 export interface TaskOutputRecord {
   ts: string;
   task_id: string;
@@ -79,6 +102,9 @@ export async function appendTaskOutput(
   if (!appended.ok) {
     return appended;
   }
+  /* Told once, here. A writer that appends without publishing is invisible to
+     every subscriber until the next reconnect, which is the bug this closes. */
+  publisher?.(record);
   return { ok: true, value: record };
 }
 

@@ -4,6 +4,8 @@ Before making significant implementation decisions, re-check the relevant source
 
 A figure you did not measure is not yours to act on, whoever hands it to you. A summary, a collaborator, or an earlier session can attribute numbers to you that were never measured, and they arrive carrying the authority of your own work. Before spending anything on a number -- money, a run, or a design decision -- check that it traces to a measurement you can point at. If it does not, say so and verify it first. Caught once when a summary attributed four figures to a report that contained none of them, one of which contradicted what was on disk.
 
+An assertion that reads a region larger than the thing it tests will pass on the region. This is the most expensive failure mode in this project's history: four separate verifications reported working behaviour that a person then could not see. The elapsed clock read the surrounding text and found a number that was always there. The connect-time check evaluated a settle condition that was already true. The label-absence check asked whether a word was missing from a page that had never contained it. The streaming check took `body.innerText` after the indicator and asked for forty characters, which the composer and footer always supply -- it would have passed with the stream unplugged, and did. So scope every predicate to the element under test and, for anything that is supposed to happen DURING an operation, sample while the operation runs rather than asking afterwards what the page contains. A check that cannot fail is worse than no check, because it is reported as evidence.
+
 Local Axiom defaults to:
 http://127.0.0.1:8765
 
