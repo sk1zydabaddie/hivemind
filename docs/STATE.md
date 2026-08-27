@@ -2640,3 +2640,59 @@ treating them as broader runtime proof.
 Phase 3 is the next authorized audit turn: conversation and orchestration under
 real use. Phase 1 and Phase 2 findings remain open until a later remediation
 program explicitly closes them.
+
+## Full audit Phase 3: conversation and orchestration under real use — 2026-08-26
+
+Phase 3 is complete as an audit-only pass. It adds **12 distinct open
+findings**, bringing the cumulative audit count to **48**. No product runtime
+code changed and no earlier finding was closed.
+
+The installed application was exercised at 1440x900 on build **26.826.1622**
+with a disposable Git project and deterministic local planner/manager/worker
+profiles. The probe made **zero provider/model calls**, stopped only its own
+daemon, restored the real recent-project registry byte-for-byte, and recorded
+seven installed-screen captures plus structured evidence under
+`docs/evidence/full-audit-phase3-26.826.1622/`. The reusable probe is
+`desktop/e2e/phase3-conversation-audit.mjs`.
+
+The central architectural finding is that the daemon's global serialized queue
+holds both new conversation events and read-only inspection behind the whole
+provider call. During a measured four-second deterministic answer, the person's
+message was already durable on disk but absent from the chat and live event
+stream; a concurrent `status.inspect` was blocked for 3.2 seconds. The fixed
+activity channel could show `Thinking`, proving the missing request was not a
+general render delay but the event-publication boundary.
+
+The more dangerous routing defect appears once any active spec exists. The
+client skips Core's typed conversation classifier and sends subsequent text
+directly to planning or manager continuation. The installed probe typed `What
+does this project do now?` after a plan failure left `S-001` active: the only
+adapter call was planning, no conversation event was written, the composer was
+cleared, and the question vanished. `New conversation` did not repair this;
+it hid the old thread while preserving `S-001`, so the first question in the
+blank conversation failed in the same way. A question can therefore acquire
+planning/run meaning from client lifecycle state despite the thin-client and
+authorization separation.
+
+Other confirmed real-use failures are a same-turn double submit producing two
+identical adapter calls and two durable messages; all failed sends discarding
+text and attachments; conversation context excluding untracked/current files;
+folder attachments supplying only an `@folder` label rather than descendant
+contents; and most orchestrator calls never wiring the stream callback that
+their process runner already exposes. The activity path is also Codex-only,
+drops a valid JSONL record when it is split across process chunks, discards all
+plain-text progress through an explicit always-null branch, and suppresses
+draft output-write failures.
+
+Full severities, deduplication, and evidence are in
+`docs/AUDIT-2026-08-26.md`. Failure/interruption findings noticed during the
+trace — cancellation semantics, open rounds, and partial recovery — remain
+unclassified until Phase 4 so the ledger does not count the same root cause
+twice.
+
+Phase 3 validation passed the installed finding probe and its scoped assertions,
+the Core suite (**934 passed, 2 skipped, 936 total**), Desktop (**352/352**),
+Rust (**52/52**), root and desktop production builds, and all **30/30**
+reachability predicates. The reachability checker again printed success without
+terminating; only its verified Node/headless-Edge process tree was stopped. No
+provider call was made. Phase 4 is the next authorized turn.

@@ -1,0 +1,85 @@
+{
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "installedVersion": "26.826.1622",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "paidProviderCalls": 0,
+  "firstQuestion": {
+    "typed": "Describe what this project does, in one sentence.",
+    "diskRecordedWhileCallRunning": true,
+    "visibleInThreadWhileCallRunning": false,
+    "workingIndicatorVisible": true,
+    "activityVisible": true,
+    "liveEventDeliveredWhileCallRunning": false,
+    "readOnlyStatusSettledWhileCallRunning": false,
+    "replied": "This fixture is a small status-reporting TypeScript project.",
+    "providerDurationMs": 4409,
+    "readOnlyStatusBlockedMs": 3209,
+    "liveMessageDeliveryDelayMs": 4285,
+    "visibleAfterCall": true,
+    "capturedPromptKind": "draft"
+  },
+  "doubleSubmit": {
+    "typed": "Give me the fixture name.",
+    "synchronousSubmitCount": 2,
+    "adapterCallsObserved": 2,
+    "identicalDraftPrompts": 2,
+    "durableMessageCountAtSecondCallStart": 2,
+    "workingIndicatorVisibleWhileSecondCallRuns": false,
+    "durableMessageCountAfterSettle": 2
+  },
+  "folderAttachmentContext": {
+    "submittedTextShape": "Summarize the attached project folder.\n\nProject references:\n- @notes",
+    "childFileNameListed": true,
+    "childFileContentIncluded": false
+  },
+  "activeSpecRouting": {
+    "planPrepareProgress": {
+      "genericWaitVisible": true,
+      "adapterActivityVisible": false
+    },
+    "buildRequest": "Build a tiny status label for this fixture.",
+    "activeSpecAfterPlanFailure": "S-001",
+    "planAfterFailure": null,
+    "typedQuestion": "What does this project do now?",
+    "adapterCallKinds": [
+      "plan"
+    ],
+    "reachedConversationClassifier": false,
+    "durableMessageAdded": false,
+    "composerClearedAfterFailure": true,
+    "visibleInThreadAfterFailure": false
+  },
+  "newConversation": {
+    "feedbackClaimedClearSlate": true,
+    "activeSpecStillPresent": "S-001",
+    "planStillPresent": null,
+    "firstAdapterCallKinds": [
+      "plan"
+    ],
+    "firstQuestionReachedConversationClassifier": false,
+    "firstQuestionRecorded": false
+  },
+  "contextAssembly": {
+    "trackedReadmeContentIncluded": true,
+    "trackedSourceContentIncluded": true,
+    "untrackedFileNameIncluded": false,
+    "untrackedFileContentIncluded": false
+  },
+  "activityDecoder": {
+    "wholeCodexRecord": [
+      "Thinking"
+    ],
+    "sameRecordSplitAcrossChunks": [],
+    "plainProgress": [],
+    "claudeStreamJson": []
+  },
+  "browserSevereLogs": [],
+  "recentProjects": {
+    "beforeSha256": "a3328357f4c39a68f1e9f087f6e170f9d0c67c076693124fbbc0db6235ee41b7",
+    "afterSha256": "a3328357f4c39a68f1e9f087f6e170f9d0c67c076693124fbbc0db6235ee41b7",
+    "restoredExactly": true
+  }
+}
