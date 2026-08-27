@@ -2586,3 +2586,57 @@ No paid provider calls were made. The root build and the targeted desktop seam,
 command-surface, and thin-client tests passed (44/44 targeted desktop tests).
 Phase 2 is the next authorized turn and will audit installed setup, provider,
 and project lifecycle behavior without treating Phase 1 findings as fixed.
+
+## Full audit Phase 2: installed setup, provider, and project lifecycle — 2026-08-26
+
+Phase 2 is complete as an audit-only pass. It adds **15 distinct open
+findings**, bringing the cumulative audit count to **36**. No runtime product
+code was changed and no finding was closed.
+
+The installed application itself was exercised at 1440x900 on build
+**26.826.1622** with isolated temporary repositories. The probe made no paid
+provider/model calls, stopped only fixture-owned daemons, and restored the real
+recent-project registry byte-for-byte. Structured output and seven captures are
+under `docs/evidence/full-audit-phase2-26.826.1622/`; the reusable probe is
+`desktop/e2e/phase2-lifecycle-audit.mjs`.
+
+The highest-risk findings are not cosmetic. Setup preselects Grok from its
+product support tier while its checkbox is disabled by unknown authentication;
+the installed Continue action remained enabled and disclosed about 160,000
+tokens. Kimi's checkbox is permanently disabled on the same primary path
+because Kimi has no safe status command and can never satisfy Setup's
+`signed_in` prerequisite. Unknown is nevertheless labelled `Not signed in`.
+Separately, the Windows `cmd.exe` wrapper makes missing Codex, Claude, and
+OpenCode executables report `installed: true`; this was reproduced against the
+installed Core with provider executables absent from `PATH`.
+
+Setup also executes a detected repository command without a Run click. A fake
+project's `npm test` wrote a marker immediately after `Set up this folder`.
+One-click Git's safety scan is shallow: the installed UI offered to commit a
+project containing `.env.production`, and a monorepo fixture's nested
+`node_modules` and `dist` files entered the first commit. A project whose only
+source was `src/index.js` was refused as having no source. The existing F1-21
+ordering defect was reproduced (`?? .hivemind/`) but not counted again.
+
+The remaining findings cover an invalid manually typed path closing and
+clearing its dialog, provider-auth inspection rejection being unhandled,
+installed E2E walks polluting the user's real recent-project list, non-atomic
+registry writes that parse-fail to empty, a cold-open removal instruction whose
+control is filtered out, Git completion reselecting an old project after a
+concurrent switch, malformed profile/connection/account files being presented
+as clean absence, and an incomplete `.git` marker producing a false-success
+setup loop. Full severities, evidence, and deduplication are in
+`docs/AUDIT-2026-08-26.md`.
+
+Phase 2 validation passed the root suite (**934 passed, 2 skipped, 936 total**),
+desktop suite (**352/352**), Rust suite (**52/52**), and both root and desktop
+production builds. `verify:reachable` reported `ok` for all **30/30** checked
+surface/viewport combinations, but its Node process did not terminate after
+printing success and left its test-owned headless Edge process running. Both
+were stopped after more than 75 seconds. That teardown defect remains open for
+the verification-tool audit; its scoped predicate results are recorded without
+treating them as broader runtime proof.
+
+Phase 3 is the next authorized audit turn: conversation and orchestration under
+real use. Phase 1 and Phase 2 findings remain open until a later remediation
+program explicitly closes them.

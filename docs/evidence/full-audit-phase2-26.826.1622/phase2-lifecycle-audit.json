@@ -1,0 +1,162 @@
+{
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "installedVersion": "26.826.1622",
+  "paidProviderCalls": 0,
+  "recentProjects": {
+    "beforeSha256": "a3328357f4c39a68f1e9f087f6e170f9d0c67c076693124fbbc0db6235ee41b7",
+    "entries": [
+      {
+        "path": "\\\\?\\D:\\Projects\\Hivemind Conversation Content E2E 26.826.1622",
+        "opened_at": "1787787561"
+      },
+      {
+        "path": "\\\\?\\D:\\Projects\\Hivemind Installed E2E Final 26.821.453",
+        "opened_at": "1787787363"
+      },
+      {
+        "path": "\\\\?\\D:\\Projects\\Hivemind AI",
+        "opened_at": "1787787248"
+      },
+      {
+        "path": "\\\\?\\C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-fresh-b",
+        "opened_at": "1787787229"
+      },
+      {
+        "path": "\\\\?\\D:\\Projects\\Volant Compute",
+        "opened_at": "1787705356"
+      },
+      {
+        "path": "\\\\?\\C:\\Users\\ethan\\AppData\\Local\\Temp\\behind-git-project",
+        "opened_at": "1787698732"
+      },
+      {
+        "path": "\\\\?\\C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-agents-walk",
+        "opened_at": "1787618201"
+      },
+      {
+        "path": "\\\\?\\C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-fresh-c",
+        "opened_at": "1787542009"
+      }
+    ],
+    "pathsThatLookLikeTestFixtures": [
+      "\\\\?\\D:\\Projects\\Hivemind Conversation Content E2E 26.826.1622",
+      "\\\\?\\D:\\Projects\\Hivemind Installed E2E Final 26.821.453",
+      "\\\\?\\C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-fresh-b",
+      "\\\\?\\C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-agents-walk",
+      "\\\\?\\C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-fresh-c"
+    ],
+    "afterSha256": "a3328357f4c39a68f1e9f087f6e170f9d0c67c076693124fbbc0db6235ee41b7",
+    "restoredExactly": true
+  },
+  "missingCliProbe": {
+    "providers": [
+      {
+        "provider_id": "codex-cli",
+        "status": "unknown",
+        "detail": "The provider CLI could not report its login status.",
+        "installed": true
+      },
+      {
+        "provider_id": "claude",
+        "status": "unknown",
+        "detail": "The provider CLI could not report its login status.",
+        "installed": true
+      },
+      {
+        "provider_id": "opencode",
+        "status": "unknown",
+        "detail": "The provider CLI could not report its login status.",
+        "installed": true
+      },
+      {
+        "provider_id": "grok",
+        "status": "unknown",
+        "detail": "This provider CLI does not publish a safe login-status command."
+      },
+      {
+        "provider_id": "kimi",
+        "status": "unknown",
+        "detail": "This provider CLI does not publish a safe login-status command."
+      }
+    ]
+  },
+  "manualInvalidPath": {
+    "attemptedPath": "C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase2-audit-f3wTuP\\does-not-exist",
+    "dialogStillOpen": false,
+    "displayedFailure": true
+  },
+  "nestedSource": {
+    "path": "C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase2-audit-f3wTuP\\nested-source-only",
+    "nestedFile": "C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase2-audit-f3wTuP\\nested-source-only\\src\\index.js",
+    "nestedFileExists": true,
+    "refusedAsNoSource": true,
+    "offeredGitSetup": false
+  },
+  "gitSafety": {
+    "secretVariant": {
+      "path": "C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase2-audit-f3wTuP\\secret-pattern\\.env.production",
+      "exists": true,
+      "gitSetupOffered": true
+    },
+    "nestedGeneratedDirectory": {
+      "trackedFiles": [
+        "package.json",
+        "packages/app/dist/bundle.js",
+        "packages/app/index.js",
+        "packages/app/node_modules/dep.js"
+      ],
+      "dependencyTracked": true,
+      "buildOutputTracked": true
+    }
+  },
+  "automaticCheck": {
+    "marker": "C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase2-audit-f3wTuP\\automatic-check\\auto-check-ran.txt",
+    "markerContents": "ran without a Run check click\n",
+    "userPressedRunCheck": false,
+    "ranDuringSetup": true
+  },
+  "providers": {
+    "continueDisabled": false,
+    "grok": {
+      "checked": "true",
+      "disabled": true,
+      "rowText": "Grok Build\nan X.AI plan or an XAI_API_KEY\nSign in\nNot signed in"
+    },
+    "kimi": {
+      "checked": "false",
+      "disabled": true,
+      "rowText": "Kimi Code\na Kimi account or a Moonshot API key\nSign in\nNot signed in"
+    },
+    "spendCopy": "Runs every selected provider at least once and fills the empty roles — about 160,000 tokens on your own subscription."
+  },
+  "gitSetup": {
+    "path": "C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase2-audit-f3wTuP\\one-click-git",
+    "gitStatus": [
+      "?? .hivemind/"
+    ],
+    "hivemindFactsTracked": false
+  },
+  "corruptArtifacts": {
+    "malformedProfileExists": true,
+    "malformedConnectionExists": true,
+    "reportedPlanner": {
+      "role": "planner",
+      "installed": false,
+      "tool": null,
+      "agent_id": null,
+      "provider_id": null,
+      "model": null,
+      "routing_tier": null,
+      "problems": [],
+      "connected_at": null,
+      "capabilities_stale": null,
+      "account": null,
+      "capabilities": [],
+      "model_choice_refusal": "Connect this first — until it has run once, nothing has reported which model it loads.",
+      "model_standing": null,
+      "support_tier": null,
+      "inner_provider": null
+    }
+  },
+  "browserSevereLogs": []
+}
