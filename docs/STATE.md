@@ -2554,3 +2554,35 @@ product limits that filenames alone do not contain. Final verification: Core
 targeted content/confinement regression **32/32**, and reachability **30/30**.
 `npm run ship` built, installed, and matched executable, bundled Core, and shell
 identities for 26.826.1622.
+
+## Full audit Phase 1: reachability and architecture — 2026-08-26
+
+`docs/AUDIT-2026-08-26.md` is the durable ledger for the requested seven-phase
+full-codebase audit. Phase 1 is complete as an evidence and classification pass;
+it intentionally changes no runtime behavior and closes no findings.
+
+Phase 1 confirmed **21 distinct findings** after deduplicating downstream
+symptoms by root cause. The highest-risk recurring shape is still a mechanism
+that exists but cannot be reached: of 50 audited Core actions, 42 have a direct
+desktop caller or a Core-published queued-action path and 8 have neither. The
+same pass confirmed three additional dormant production mechanisms (non-goal
+quality enforcement, convention-evidence collection, and provider-quota
+parsing), plus a `context.low` UI state with no producer. Of 97 declared event
+names, 8 have no production producer; the seven other than `context.low` are
+held as one contract-drift finding pending lifecycle classification.
+
+The other dominant failure shape is that client boundaries convert errors into
+absence or apparent success: the conversation activity stream can freeze
+silently, stream payloads are not shape-validated, and Settings, accounts,
+provenance, configuration/spend, and recent-project persistence suppress
+failures. Additional confirmed findings cover the internal token ceiling being
+labelled as provider-reported quota, missing durable provider-setup events,
+stale mismatch recovery after project switching, Settings mojibake, weak
+reachability/dead-code diagnostics, contradictory historical reachability
+counts in this file, and Git initialization committing before Hivemind writes
+its shared facts.
+
+No paid provider calls were made. The root build and the targeted desktop seam,
+command-surface, and thin-client tests passed (44/44 targeted desktop tests).
+Phase 2 is the next authorized turn and will audit installed setup, provider,
+and project lifecycle behavior without treating Phase 1 findings as fixed.
