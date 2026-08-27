@@ -4446,3 +4446,49 @@ would soften text without clarifying depth (see the depth comment in
 computes or asserts it against the current tokens. A figure that lives only in
 prose is a record of the palette it was measured on, dated by its section.
 
+### The declared minimum, the readable transcript, and the focus path are product contracts — 2026-08-26
+
+Phase 5 of the full audit tested installed build **26.826.1622** rather than
+inferring responsive or accessibility behavior from utilities. The shell
+declares an 800x620 minimum outer window, but the document declares an 820px
+minimum inner width. On Windows that outer window yielded a 790px client:
+Commands, Settings and the three window controls sat outside the viewport, the
+run headline overlapped its actions, and Project's full-record action clipped.
+Every main tab also acquired horizontal document scrolling. This supersedes
+the earlier prose that treated 820px as the supported minimum without checking
+the shell's outer-size contract.
+
+The existing reachability instrument is not evidence at this boundary. Its
+smallest emulated inner viewport is 1280x720, it flags only controls wholly
+beyond a horizontal edge, and it does not model the frame removed from a Tauri
+outer window. A future responsive correction is incomplete until the installed
+800x620 outer window is in the matrix and the assertion rejects partial
+clipping/overlap as well as total disappearance.
+
+Conversation accessibility is a data-path rule, not an ARIA cleanup pass. The
+installed thread had a useful accessible name but a generic non-live role; new
+planner status and replies therefore had no assistive-technology consumer. Its
+2,100-pair fixture produced a 296,062px scroll viewport with no tab stop, so a
+keyboard user could not enter the transcript to scroll it. Dialog focus showed
+the same ownership gap: Settings closed to `body`, every product dialog is
+controlled without a trigger/restoration target, and plan review explicitly
+cancels opening autofocus without selecting a replacement inside the approval
+surface.
+
+Long conversation rendering is not bounded merely because the projection
+array is. The installed fixture mounted 4,000 articles / 18,156 document nodes,
+took 7.070 seconds to reopen, and took 795ms to remount Work. The oldest content
+was honestly declared omitted, but there is no paging route; Project's full
+record ignores event `data` and therefore cannot show evicted request/reply
+text. A bounded implementation needs a paged durable read model plus virtual
+rendering, not a larger cap. Project history and the full-record dialog carry
+the same rule: archive size must not equal mounted DOM size.
+
+The 21st review was used for leads, not accepted wholesale. Its 97-file pass
+reported 9 errors, 34 warnings and 42 suggestions. Token definitions,
+bounded-overlay widths and the Vite config's `img` regex were false or
+non-actionable matches. The installed minimum-window result validated the
+responsive lead; source/runtime inspection validated provider-focus and
+disabled-pointer leads; the remaining generic notices did not override the
+established Hivemind component family or visual structure.
+

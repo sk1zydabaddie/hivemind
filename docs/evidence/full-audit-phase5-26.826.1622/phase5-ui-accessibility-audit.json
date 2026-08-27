@@ -1,0 +1,802 @@
+{
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "installedVersion": "26.826.1622",
+  "paidProviderCalls": 0,
+  "baseline": {
+    "viewport": {
+      "bodyScrollHeight": 900,
+      "bodyScrollWidth": 1440,
+      "documentClientHeight": 900,
+      "documentClientWidth": 1440,
+      "documentScrollHeight": 900,
+      "documentScrollWidth": 1440,
+      "horizontalOverflowPx": 0,
+      "innerHeight": 900,
+      "innerWidth": 1440,
+      "verticalOverflowPx": 0
+    },
+    "documentNodeCount": 147,
+    "projectOpenToComposerMs": 2062
+  },
+  "minimumWindow": {
+    "configuredSize": {
+      "width": 800,
+      "height": 620
+    },
+    "actualWindowRect": {
+      "height": 620,
+      "width": 800,
+      "x": -1636,
+      "y": 157
+    },
+    "surfaces": {
+      "Work": {
+        "bodyScrollHeight": 620,
+        "bodyScrollWidth": 820,
+        "clippedContainers": [
+          {
+            "className": "flex min-h-0 flex-col brand-canvas h-screen overflow-hidden",
+            "hiddenX": 231,
+            "hiddenY": 0,
+            "slot": "tabs",
+            "tag": "div"
+          }
+        ],
+        "documentClientHeight": 610,
+        "documentClientWidth": 790,
+        "documentScrollHeight": 620,
+        "documentScrollWidth": 820,
+        "horizontalOverflowPx": 30,
+        "innerHeight": 620,
+        "innerWidth": 800,
+        "offscreenControls": [
+          {
+            "bottom": 38,
+            "left": 761,
+            "name": "Commands",
+            "right": 855,
+            "top": 6
+          },
+          {
+            "bottom": 38,
+            "left": 861,
+            "name": "Settings",
+            "right": 893,
+            "top": 6
+          },
+          {
+            "bottom": 43,
+            "left": 913,
+            "name": "Minimise window",
+            "right": 959,
+            "top": 0
+          },
+          {
+            "bottom": 43,
+            "left": 959,
+            "name": "Maximise window",
+            "right": 1005,
+            "top": 0
+          },
+          {
+            "bottom": 43,
+            "left": 1005,
+            "name": "Close window",
+            "right": 1051,
+            "top": 0
+          }
+        ],
+        "verticalOverflowPx": 10
+      },
+      "Set up": {
+        "bodyScrollHeight": 620,
+        "bodyScrollWidth": 820,
+        "clippedContainers": [
+          {
+            "className": "flex min-h-0 flex-col brand-canvas h-screen overflow-hidden",
+            "hiddenX": 231,
+            "hiddenY": 0,
+            "slot": "tabs",
+            "tag": "div"
+          },
+          {
+            "className": "hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block",
+            "hiddenX": 54,
+            "hiddenY": 0,
+            "slot": null,
+            "tag": "span"
+          },
+          {
+            "className": "hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block",
+            "hiddenX": 4,
+            "hiddenY": 0,
+            "slot": null,
+            "tag": "span"
+          }
+        ],
+        "documentClientHeight": 610,
+        "documentClientWidth": 790,
+        "documentScrollHeight": 620,
+        "documentScrollWidth": 820,
+        "horizontalOverflowPx": 30,
+        "innerHeight": 620,
+        "innerWidth": 800,
+        "offscreenControls": [
+          {
+            "bottom": 38,
+            "left": 761,
+            "name": "Commands",
+            "right": 855,
+            "top": 6
+          },
+          {
+            "bottom": 38,
+            "left": 861,
+            "name": "Settings",
+            "right": 893,
+            "top": 6
+          },
+          {
+            "bottom": 43,
+            "left": 913,
+            "name": "Minimise window",
+            "right": 959,
+            "top": 0
+          },
+          {
+            "bottom": 43,
+            "left": 959,
+            "name": "Maximise window",
+            "right": 1005,
+            "top": 0
+          },
+          {
+            "bottom": 43,
+            "left": 1005,
+            "name": "Close window",
+            "right": 1051,
+            "top": 0
+          },
+          {
+            "bottom": 719,
+            "left": 52,
+            "name": "Include Codex when connecting",
+            "right": 70,
+            "top": 701
+          },
+          {
+            "bottom": 722,
+            "left": 496,
+            "name": "Open Codex sign-in",
+            "right": 564,
+            "top": 698
+          },
+          {
+            "bottom": 722,
+            "left": 652,
+            "name": "What is unverified about Codex",
+            "right": 676,
+            "top": 698
+          },
+          {
+            "bottom": 760,
+            "left": 52,
+            "name": "Include Grok Build when connecting",
+            "right": 70,
+            "top": 742
+          },
+          {
+            "bottom": 763,
+            "left": 496,
+            "name": "Open Grok Build sign-in",
+            "right": 564,
+            "top": 739
+          },
+          {
+            "bottom": 763,
+            "left": 652,
+            "name": "What is unverified about Grok Build",
+            "right": 676,
+            "top": 739
+          },
+          {
+            "bottom": 801,
+            "left": 52,
+            "name": "Include Claude Code when connecting",
+            "right": 70,
+            "top": 783
+          },
+          {
+            "bottom": 804,
+            "left": 496,
+            "name": "Open Claude Code sign-in",
+            "right": 564,
+            "top": 780
+          },
+          {
+            "bottom": 804,
+            "left": 652,
+            "name": "What is unverified about Claude Code",
+            "right": 676,
+            "top": 780
+          },
+          {
+            "bottom": 842,
+            "left": 52,
+            "name": "Include OpenCode when connecting",
+            "right": 70,
+            "top": 824
+          },
+          {
+            "bottom": 845,
+            "left": 496,
+            "name": "Open OpenCode sign-in",
+            "right": 564,
+            "top": 821
+          },
+          {
+            "bottom": 845,
+            "left": 652,
+            "name": "What is unverified about OpenCode",
+            "right": 676,
+            "top": 821
+          },
+          {
+            "bottom": 883,
+            "left": 52,
+            "name": "Include Kimi Code when connecting",
+            "right": 70,
+            "top": 865
+          },
+          {
+            "bottom": 886,
+            "left": 496,
+            "name": "Open Kimi Code sign-in",
+            "right": 564,
+            "top": 862
+          },
+          {
+            "bottom": 886,
+            "left": 652,
+            "name": "What is unverified about Kimi Code",
+            "right": 676,
+            "top": 862
+          },
+          {
+            "bottom": 1065,
+            "left": 52,
+            "name": "OpenCode Zen signs in with a key. OpenCode asks for it in its own window — paste it there, never into Hivemind.",
+            "right": 153,
+            "top": 1041
+          },
+          {
+            "bottom": 1065,
+            "left": 159,
+            "name": "OpenAI's Codex lead has said on the record, twice in 2026, that using a ChatGPT subscription through OSS clients — OpenCode named — is supported; the line they enforce is reselling subscription traffic as API access, which this is not.",
+            "right": 218,
+            "top": 1041
+          },
+          {
+            "bottom": 1065,
+            "left": 224,
+            "name": "xAI ships a device-code OAuth flow with its own consent screen for third-party clients, and documents headless operation of its own CLI.",
+            "right": 261,
+            "top": 1041
+          },
+          {
+            "bottom": 1065,
+            "left": 267,
+            "name": "Moonshot AI signs in with a key. OpenCode asks for it in its own window — paste it there, never into Hivemind.",
+            "right": 355,
+            "top": 1041
+          },
+          {
+            "bottom": 1065,
+            "left": 361,
+            "name": "Anthropic prohibits routing Claude subscription credentials through third-party apps, and OpenCode removed that sign-in under Anthropic's legal request in March 2026. Claude Code is a first-class integration here — connect it directly instead.",
+            "right": 507,
+            "top": 1041
+          },
+          {
+            "bottom": 1065,
+            "left": 513,
+            "name": "OpenRouter signs in with a key. OpenCode asks for it in its own window — paste it there, never into Hivemind.",
+            "right": 664,
+            "top": 1041
+          },
+          {
+            "bottom": 1095,
+            "left": 52,
+            "name": "Documented by OpenCode as a sign-in it supports; GitHub's own terms for that path have not been verified here.",
+            "right": 217,
+            "top": 1071
+          },
+          {
+            "bottom": 1095,
+            "left": 223,
+            "name": "GitLab Duo signs in with a key. OpenCode asks for it in its own window — paste it there, never into Hivemind.",
+            "right": 368,
+            "top": 1071
+          },
+          {
+            "bottom": 1095,
+            "left": 374,
+            "name": "Z.AI signs in with a key. OpenCode asks for it in its own window — paste it there, never into Hivemind.",
+            "right": 477,
+            "top": 1071
+          },
+          {
+            "bottom": 1095,
+            "left": 483,
+            "name": "Documented by OpenCode as a sign-in it supports; DigitalOcean's own terms for that path have not been verified here.",
+            "right": 638,
+            "top": 1071
+          },
+          {
+            "bottom": 1189,
+            "left": 52,
+            "name": "BUTTON",
+            "right": 266,
+            "top": 1165
+          },
+          {
+            "bottom": 991,
+            "left": 41,
+            "name": "Continue",
+            "right": 150,
+            "top": 955
+          }
+        ],
+        "verticalOverflowPx": 10
+      },
+      "Agents": {
+        "bodyScrollHeight": 620,
+        "bodyScrollWidth": 820,
+        "clippedContainers": [
+          {
+            "className": "flex min-h-0 flex-col brand-canvas h-screen overflow-hidden",
+            "hiddenX": 231,
+            "hiddenY": 0,
+            "slot": "tabs",
+            "tag": "div"
+          }
+        ],
+        "documentClientHeight": 610,
+        "documentClientWidth": 790,
+        "documentScrollHeight": 620,
+        "documentScrollWidth": 820,
+        "horizontalOverflowPx": 30,
+        "innerHeight": 620,
+        "innerWidth": 800,
+        "offscreenControls": [
+          {
+            "bottom": 38,
+            "left": 761,
+            "name": "Commands",
+            "right": 855,
+            "top": 6
+          },
+          {
+            "bottom": 38,
+            "left": 861,
+            "name": "Settings",
+            "right": 893,
+            "top": 6
+          },
+          {
+            "bottom": 43,
+            "left": 913,
+            "name": "Minimise window",
+            "right": 959,
+            "top": 0
+          },
+          {
+            "bottom": 43,
+            "left": 959,
+            "name": "Maximise window",
+            "right": 1005,
+            "top": 0
+          },
+          {
+            "bottom": 43,
+            "left": 1005,
+            "name": "Close window",
+            "right": 1051,
+            "top": 0
+          }
+        ],
+        "verticalOverflowPx": 10
+      },
+      "Project": {
+        "bodyScrollHeight": 620,
+        "bodyScrollWidth": 820,
+        "clippedContainers": [
+          {
+            "className": "flex min-h-0 flex-col brand-canvas h-screen overflow-hidden",
+            "hiddenX": 231,
+            "hiddenY": 0,
+            "slot": "tabs",
+            "tag": "div"
+          }
+        ],
+        "documentClientHeight": 610,
+        "documentClientWidth": 790,
+        "documentScrollHeight": 620,
+        "documentScrollWidth": 820,
+        "horizontalOverflowPx": 30,
+        "innerHeight": 620,
+        "innerWidth": 800,
+        "offscreenControls": [
+          {
+            "bottom": 38,
+            "left": 761,
+            "name": "Commands",
+            "right": 855,
+            "top": 6
+          },
+          {
+            "bottom": 38,
+            "left": 861,
+            "name": "Settings",
+            "right": 893,
+            "top": 6
+          },
+          {
+            "bottom": 43,
+            "left": 913,
+            "name": "Minimise window",
+            "right": 959,
+            "top": 0
+          },
+          {
+            "bottom": 43,
+            "left": 959,
+            "name": "Maximise window",
+            "right": 1005,
+            "top": 0
+          },
+          {
+            "bottom": 43,
+            "left": 1005,
+            "name": "Close window",
+            "right": 1051,
+            "top": 0
+          },
+          {
+            "bottom": 118,
+            "left": 637,
+            "name": "See the full record",
+            "right": 808,
+            "top": 82
+          }
+        ],
+        "verticalOverflowPx": 10
+      }
+    }
+  },
+  "keyboard": {
+    "tabArrowNavigation": {
+      "selectedAfterRight": "Agents",
+      "selectedAfterLeft": "Work"
+    },
+    "focusTrail": [
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0854079) 0px 0px 0px 1.02489px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "name": "Switch project, currently hivemind-manager-test-ndYfAn",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 877,
+        "y": 6
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.121737) 0px 0px 0px 1.46085px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "name": "Commands",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1150,
+        "y": 6
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "name": "Settings",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1250,
+        "y": 6
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "name": "Minimise window",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1302,
+        "y": 0
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "name": "Maximise window",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1348,
+        "y": 0
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "name": "Close window",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1394,
+        "y": 0
+      },
+      {
+        "boxShadow": "none",
+        "name": "Nothing running\nChecks\nNew conversation\nInterruptions\nAgents",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "div",
+        "x": 0,
+        "y": 44
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "name": "Checks",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1016,
+        "y": 69
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "name": "New conversation",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1110,
+        "y": 69
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0863178) 0px 0px 0px 1.03581px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "name": "How often Hivemind interrupts you",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1267,
+        "y": 69
+      },
+      {
+        "boxShadow": "none",
+        "name": "work-composer",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "textarea",
+        "x": 393,
+        "y": 434
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0445306) 0px 0px 0px 0.534367px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "name": "Add files or a folder",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 393,
+        "y": 531
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "name": "Choose planner, manager, and worker models",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 429,
+        "y": 531
+      },
+      {
+        "boxShadow": "none",
+        "name": "Hivemind\nSet up\nWork\nAgents\nProject\nLive\nhivemind-manager-test-ndYfAn\nCtrl+K\nNothing running\nChecks\nNew conversation\nInterruptions\nAgents\nCommands\n\nJump to a section or open a project",
+        "outlineStyle": "none",
+        "outlineWidth": "3px",
+        "tag": "body",
+        "x": 0,
+        "y": 0
+      },
+      {
+        "boxShadow": "none",
+        "name": "Work",
+        "outlineStyle": "solid",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 192,
+        "y": 0
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "name": "Switch project, currently hivemind-manager-test-ndYfAn",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 877,
+        "y": 6
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0854079) 0px 0px 0px 1.02489px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "name": "Commands",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1150,
+        "y": 6
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0854079) 0px 0px 0px 1.02489px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "name": "Settings",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1250,
+        "y": 6
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "name": "Minimise window",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1302,
+        "y": 0
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "name": "Maximise window",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1348,
+        "y": 0
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "name": "Close window",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1394,
+        "y": 0
+      },
+      {
+        "boxShadow": "none",
+        "name": "Nothing running\nChecks\nNew conversation\nInterruptions\nAgents",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "div",
+        "x": 0,
+        "y": 44
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0445306) 0px 0px 0px 0.534367px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "name": "Checks",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1016,
+        "y": 69
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "name": "New conversation",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1110,
+        "y": 69
+      }
+    ],
+    "focusTrailMissingVisibleOutline": [
+      {
+        "boxShadow": "none",
+        "name": "Nothing running\nChecks\nNew conversation\nInterruptions\nAgents",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "div",
+        "x": 0,
+        "y": 44
+      },
+      {
+        "boxShadow": "none",
+        "name": "work-composer",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "textarea",
+        "x": 393,
+        "y": 434
+      },
+      {
+        "boxShadow": "none",
+        "name": "Hivemind\nSet up\nWork\nAgents\nProject\nLive\nhivemind-manager-test-ndYfAn\nCtrl+K\nNothing running\nChecks\nNew conversation\nInterruptions\nAgents\nCommands\n\nJump to a section or open a project",
+        "outlineStyle": "none",
+        "outlineWidth": "3px",
+        "tag": "body",
+        "x": 0,
+        "y": 0
+      },
+      {
+        "boxShadow": "none",
+        "name": "Nothing running\nChecks\nNew conversation\nInterruptions\nAgents",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "div",
+        "x": 0,
+        "y": 44
+      }
+    ],
+    "pressableRestStyle": null,
+    "pressableFocus": null,
+    "settingsDialogAccessibleName": "Settings",
+    "settingsDialogFocusEscaped": false,
+    "settingsDialogEscapeClosed": true,
+    "settingsDialogFocusAfterClose": {
+      "name": "Hivemind\nSet up\nWork\nAgents\nProject\nLive\nhivemind-manager-test-ndYfAn\nCtrl+K\nNothing running\nChecks\nNew conversation\nInterruptions\nAgents\nCommands\n\nJump to a section or open a project",
+      "tag": "body"
+    },
+    "settingsDialogFocusReturnedToTrigger": false
+  },
+  "accessibility": {
+    "composerAccessibleName": "Ask a question, or describe what you want built…",
+    "composerAriaLabel": null,
+    "composerAriaLabelledBy": null,
+    "composerAssociatedLabelCount": 0,
+    "visibleUnnamedControls": [],
+    "paletteContrast": {
+      "body": {
+        "background": "rgb(7, 17, 28)",
+        "color": "rgb(244, 247, 251)"
+      },
+      "ink": {
+        "background": "rgba(0, 0, 0, 0)",
+        "color": "rgb(244, 247, 251)"
+      },
+      "muted": {
+        "background": "rgba(0, 0, 0, 0)",
+        "color": "rgb(150, 163, 181)"
+      },
+      "navy": null
+    }
+  },
+  "longConversation": {
+    "appendedConversationPairs": 2100,
+    "appendedConversationEvents": 4201,
+    "projectOpenToLatestRenderedMs": 7070,
+    "switchToAgentsMs": 240,
+    "switchBackToWorkMs": 795,
+    "threadAccessibleName": "What has happened in this run",
+    "threadAriaRole": "generic",
+    "threadAriaLive": null,
+    "threadAriaRelevant": null,
+    "articleCount": 4000,
+    "documentNodeCount": 18156,
+    "earliestPresent": false,
+    "latestPresent": true,
+    "rootClientHeight": 654,
+    "rootScrollHeight": 654,
+    "textLength": 104449,
+    "threadNodeCount": 18006,
+    "truncationNoticePresent": true,
+    "viewportClientHeight": 654,
+    "viewportRole": null,
+    "viewportScrollHeight": 296062,
+    "viewportTabIndex": null
+  },
+  "browserSevereLogs": [],
+  "error": null,
+  "recentProjects": {
+    "beforeSha256": "a3328357f4c39a68f1e9f087f6e170f9d0c67c076693124fbbc0db6235ee41b7",
+    "afterSha256": "a3328357f4c39a68f1e9f087f6e170f9d0c67c076693124fbbc0db6235ee41b7",
+    "restoredExactly": true
+  }
+}

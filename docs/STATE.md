@@ -2754,3 +2754,69 @@ production builds, and all **30/30** reachability predicates. The reachability
 checker again printed success without terminating; only its exact
 Node/esbuild/headless-Edge process trees were stopped, and no related process
 remained. Phase 5 must not begin until the next dedicated turn.
+
+## Full audit Phase 5: UI, accessibility, viewport, and long-session behavior — 2026-08-26
+
+Phase 5 is complete as an audit-only pass. It adds **13 distinct open
+findings**, bringing the cumulative audit count to **73**. No product runtime
+code changed and no earlier finding was closed.
+
+Installed build **26.826.1622** was exercised at 1440x900 and at the Tauri
+shell's configured minimum outer window of 800x620. An isolated long-use
+fixture supplied 2,100 conversation pairs / 4,201 durable conversation events,
+made no provider call, stopped only its own daemon, and restored the real
+recent-project registry byte-for-byte. Structured results, six captures, and
+the complete 21st review are under
+`docs/evidence/full-audit-phase5-26.826.1622/`; the reusable probe is
+`desktop/e2e/phase5-ui-accessibility-audit.mjs`.
+
+The declared minimum window is not supported by the installed layout. Tauri
+allows an 800x620 outer window while the document demands 820 CSS pixels; the
+measured Windows client was 790 pixels wide. Every main tab acquired horizontal
+overflow, Commands, Settings, and all three window controls extended beyond the
+viewport, Work/Agents overlaid `Nothing running` on their actions, and
+Project's full-record control was partially clipped. `verify:reachable` cannot
+see this: it starts at 1280x720, models an inner browser viewport rather than a
+minimum outer window, and rejects only controls wholly beyond a side. Its
+30/30 result therefore coexists with an installed close button outside the
+screen.
+
+The assistive-technology path is materially incomplete. The conversation has
+an accessible name but computes to a generic, non-live region; planner status,
+elapsed liveness, streamed draft text, and appended replies are visual-only
+changes. The thread's actual scroll viewport had 296,062 pixels of content and
+no role or tab stop, so keyboard users cannot enter it to read older turns.
+Settings trapped focus and closed on Escape but restored focus to `body`; all
+controlled dialogs omit a trigger/restoration target. Plan review additionally
+prevents Radix's opening autofocus without choosing a replacement, leaving
+focus behind the approval overlay. Shared disabled buttons put explanations in
+titles while also removing pointer and keyboard access, provider pressables
+override the global focus outline, and the main composer has only a placeholder
+instead of a persistent/programmatically bound label.
+
+Long-project behavior is also a designed limit rather than an incidental slow
+frame. The installed long thread mounted 4,000 articles and 18,156 document
+nodes; opening it took 7.070 seconds and returning from Agents to Work took 795
+ms on the final measured run, versus 2.062 seconds and 147 nodes for the idle
+fixture. The 4,000-event cap honestly warns about eviction but offers no way to
+load older messages. Project's full-record action reads the durable events but
+renders only timestamp/type/task identity, ignoring the request/reply text in
+`data`, so evicted conversation content remains unreachable. Project history
+then repeats the scaling problem: every run and every full-record event is
+mapped into the DOM, while Core reconstructs each session by filtering the
+complete event list once per run.
+
+The 21st UI review was used as a lead generator and then checked against the
+design contract, source composition, and installed app. It reviewed 97 files
+and returned 9 errors, 34 warnings, and 42 suggestions. Token literals,
+bounded-dialog widths, the Vite `img` regex, and other generic matches were not
+counted. Only focus, disabled-pointer, viewport, and long-session leads that
+survived disposition informed the register.
+
+Full severities, deduplication, and source/runtime evidence are in
+`docs/AUDIT-2026-08-26.md`. Phase 5 validation passed its installed probe with
+zero severe WebView console entries and zero provider/model calls. Core passed
+934 tests with 2 intentional skips (936 total), Desktop passed 352/352, Rust
+passed 52/52, both production builds passed, and `verify:reachable` passed all
+30 checks at its three configured non-minimum viewports. Static closeout passed.
+Phase 6 must not begin until the next dedicated turn.
