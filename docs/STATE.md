@@ -2696,3 +2696,61 @@ Rust (**52/52**), root and desktop production builds, and all **30/30**
 reachability predicates. The reachability checker again printed success without
 terminating; only its verified Node/headless-Edge process tree was stopped. No
 provider call was made. Phase 4 is the next authorized turn.
+
+## Full audit Phase 4: failure, recovery, interruption, and persistence — 2026-08-26
+
+Phase 4 is complete as an audit-only pass. It adds **12 distinct open
+findings**, bringing the cumulative audit count to **60**. No product runtime
+code changed and no earlier finding was closed.
+
+Installed build **26.826.1622** and its bundled Core were exercised with an
+isolated ratified project and a deterministic local manager process. The probe
+made **zero provider/model calls**, stopped only its fixture daemon, restored
+the real recent-project registry byte-for-byte, and recorded a 1440x900
+installed-screen capture plus structured evidence under
+`docs/evidence/full-audit-phase4-26.826.1622/`. The reusable probe is
+`desktop/e2e/phase4-failure-recovery-audit.mjs`.
+
+The highest-risk result is that Stop is testimony rather than enforcement for
+the manager loop. The probe durably cancelled a run in 30 ms while its manager
+process stayed alive; the returned proposal was then consumed and its
+`get_status` action executed. Manager history ignores the cancellation events,
+so the same cancelled session was projected as active and continuable. The
+installed application consequently showed `Waiting on the next agent`, `WORK
+IS RUNNING`, a running clock, and another Stop button with no cancellation
+text. The first manager proposal has the inverse boundary defect: the process
+exists before a manager-session artifact or any discoverable session/run ID,
+so it cannot be stopped or honestly reconstructed if interrupted.
+
+The crash-window probes found two critical durable-state failures. A metered
+reservation written before process binding retains `process_identity: null`;
+restart reconciliation keeps it active forever and the fixture continued to
+hold 150,000 reserved tokens. Resume writes `task.resumed` before
+`task.started`; a simulated crash between them left a task projected as
+running while startup reconciliation examined no task. Separately,
+`markRunFailed` permits a late background failure to append after
+`task.cancelled`, changing the latest terminal state from cancelled to failed.
+
+Open-round recovery also loses facts. Two quality drafts for one task collapse
+to one because their draft/run identities are not part of the key; all taskless
+scheduler waves likewise collapse. `quality.cancel_failed` closes a round even
+when its durable fields say retryable and cleanup incomplete. A taskless
+abandoned wave can still be detected by Core, but workspace inspection filters
+its null ID and publishes no `silent_rounds` entry. Likewise, a durable
+`scheduler.run_cancel_failed` produced no persistent `needs_you` item. These
+are the recurring built-but-unreachable mechanism shape, now on recovery paths.
+
+The remaining findings are a completed manager session receiving false
+cancellation events when New conversation calls `run.stop` merely because a
+session object exists, and the answer-only draft branch returning success after
+ignoring failure to append the event that closes its authoritative draft round.
+Full severities, source anchors, deduplication, and evidence are in
+`docs/AUDIT-2026-08-26.md`.
+
+The installed probe and all scoped finding assertions passed with zero severe
+WebView console entries. Validation also passed the Core suite (**934 passed, 2
+skipped, 936 total**), Desktop (**352/352**), Rust (**52/52**), root and desktop
+production builds, and all **30/30** reachability predicates. The reachability
+checker again printed success without terminating; only its exact
+Node/esbuild/headless-Edge process trees were stopped, and no related process
+remained. Phase 5 must not begin until the next dedicated turn.
