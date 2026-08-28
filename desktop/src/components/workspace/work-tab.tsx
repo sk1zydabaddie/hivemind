@@ -4199,6 +4199,7 @@ function queueActionLabel(actionType: string): string {
   if (actionType === "manager.continue") return "Keep going";
   if (actionType === "manager.retry_blocked") return "Try again";
   if (actionType === "task.stop") return "Stop this task";
+  if (actionType === "run.stop") return "Retry stopping";
   if (actionType === "task.resume") return "Carry on";
   if (actionType === "verification.rerun") return "Run the checks again";
   if (actionType === "adoption.review") return "Show me the changes";
@@ -4210,6 +4211,7 @@ function actionSuccessMessage(actionType: string): string {
   if (actionType === "manager.approve_pending") return "The next step was approved.";
   if (actionType === "verification.rerun") return "Fresh project checks completed.";
   if (actionType === "task.resume") return "Picked up where it stopped.";
+  if (actionType === "run.stop") return "Run cleanup was retried.";
   return "Done.";
 }
 
@@ -4236,6 +4238,8 @@ const QUEUE_FALLBACK: Record<WorkspaceQueueItem["kind"], string> = {
   reverification_required:
     "The checks that passed are older than the code as it stands now. They have to run again before this can ship.",
   run_stalled: "Work stopped and has not picked up again.",
+  recovery_required: "Recorded work stopped reporting. Continue only from the last saved project state.",
+  run_cancel_failed: "The run did not stop cleanly. Retry cleanup before starting more work.",
   task_attention: "This task needs you before it can carry on.",
   quality_cancel_failed:
     "A second attempt may still be running. Check it before starting another one.",

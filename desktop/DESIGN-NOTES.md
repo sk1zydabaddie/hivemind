@@ -1966,7 +1966,11 @@ found the same shape four more times. Treat this as a class, not a series of
 one-offs: **when Core appends an event, something must either render it or
 deliberately suppress it.** An event with no reader is a silent state.
 
-Two are outstanding, both needing Core to surface state it already records.
+Both are now closed. `adoption.indeterminate` and `adoption.failed` reach typed
+Needs-you items, and Phase 5 remediation routes `scheduler.run_cancel_failed`
+through a dedicated `run_cancel_failed` item with a `run.stop` retry labelled
+“Retry stopping.” The historical requirements below remain because they explain
+why absence and generic action copy are not acceptable recovery presentations.
 
 #### `adoption.indeterminate` — the most dangerous silence in the app
 
@@ -2003,7 +2007,7 @@ review the change set" with no mention that the previous attempt failed. A
 `needs_you` item with the failure reason and a `verification.rerun` action would
 close it.
 
-#### `scheduler.run_cancel_failed` — Stop that half-worked
+#### `scheduler.run_cancel_failed` — Stop that half-worked (closed 2026-08-28)
 
 `src/manager.ts` emits this when some workers refuse to stop, carrying
 `failures`, `stopped_task_ids` and `retryable: true`. Nothing surfaces it. The

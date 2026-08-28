@@ -164,6 +164,22 @@ export async function reconcileTaskRunOnStartup(
 ): Promise<ControlResult<void>> {
   const events = await readEvents(repoRoot);
   if (!events.ok) return events;
+  const interruptedResume = latestInterruptedResume(events.value, taskId);
+  if (interruptedResume !== null) {
+    const paused = await appendEvent(repoRoot, {
+      type: "task.paused",
+      task_id: taskId,
+      data: {
+        version: 1,
+        reason: "resume_interrupted",
+        source: "startup_reconciliation",
+        snapshot_path: interruptedResume.data.snapshot_path,
+        recovered: true,
+        terminal: false
+      }
+    });
+    return paused.ok ? { ok: true, value: undefined } : paused;
+  }
   const cancellationRequested = hasOpenCancelRequest(events.value, taskId);
   const state = latestTaskRunState(events.value, taskId);
   if (cancellationRequested && (state.state === "not_started" || (state.state === "failed" && state.failed.data.worker_death_proven === true))) {
@@ -358,14 +374,32 @@ function hasOpenCancelRequest(events: HivemindEvent[], taskId: string): boolean 
 function tasksNeedingStartupReconciliation(events: HivemindEvent[]): string[] {
   const tasks = new Set(startedWithoutTerminal(events));
   const openCancellation = new Set<string>();
+  const eventTaskIds = new Set<string>();
   for (const event of events) {
     if (event.task_id === null) continue;
+    eventTaskIds.add(event.task_id);
     if (event.type === "task.started") openCancellation.delete(event.task_id);
     if (event.type === "task.cancel_requested") openCancellation.add(event.task_id);
     if (event.type === "task.cancelled") openCancellation.delete(event.task_id);
   }
+  for (const taskId of eventTaskIds) {
+    if (latestInterruptedResume(events, taskId) !== null) tasks.add(taskId);
+  }
   for (const taskId of openCancellation) tasks.add(taskId);
   return [...tasks].sort((left, right) => left.localeCompare(right));
+}
+
+function latestInterruptedResume(events: HivemindEvent[], taskId: string): HivemindEvent | null {
+  let resume: HivemindEvent | null = null;
+  for (const event of events) {
+    if (event.task_id !== taskId) continue;
+    if (event.type === "task.resumed") resume = event;
+    if (
+      resume !== null &&
+      ["task.started", "task.completed", "task.failed", "task.cancelled", "task.paused"].includes(event.type)
+    ) resume = null;
+  }
+  return resume;
 }
 
 function startedWithoutTerminal(events: HivemindEvent[]): string[] {

@@ -26,6 +26,35 @@ import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
 
+test("taskless abandoned rounds and failed run cleanup reach Needs you", async () => {
+  await withRepo(async (repo) => {
+    await appendEvent(repo, {
+      type: "scheduler.wave_started",
+      task_id: null,
+      data: { wave_id: "W-ABANDONED", process_identity: { pid: 4242 } }
+    });
+    await appendEvent(repo, {
+      type: "scheduler.run_cancel_failed",
+      task_id: null,
+      data: { session_id: "M-FAILED-STOP", reason: "a worker could not be confirmed stopped", retryable: true }
+    });
+    const inspection = await inspectWorkspace(repo, {
+      now: new Date(),
+      processLiveness: () => "dead"
+    });
+    assert.equal(inspection.ok, true, inspection.ok ? undefined : inspection.reason);
+    if (!inspection.ok) return;
+    const abandoned = inspection.value.needs_you.find((item) => item.kind === "recovery_required");
+    assert.equal(abandoned?.id, "recovery:scheduler.wave_started:W-ABANDONED");
+    assert.equal(abandoned?.task_id, null);
+    const failedStop = inspection.value.needs_you.find((item) => item.kind === "run_cancel_failed");
+    assert.deepEqual(failedStop?.action, {
+      type: "run.stop",
+      payload: { session_id: "M-FAILED-STOP", reason: "Retry cleanup for the interrupted run." }
+    });
+  });
+});
+
 test("chat guidance is durable advisory input and cannot claim authority", async () => {
   await withRepo(async (repo) => {
     for (const message of ["merge it", "ratify T-006", "skip the coverage check", "promote this to canon"]) {

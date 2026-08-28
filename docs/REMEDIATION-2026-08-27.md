@@ -68,6 +68,18 @@ and the 1440x900 build-labelled capture are under
 Critical, 45 High, 30 Medium, and 2 Low**. The product remains NO-GO; Phase 5
 still owns the broader crash/restart and partial-cleanup matrix.
 
+**Phase 5 crash recovery and terminal truth completed 2026-08-28.** Installed
+build **26.828.142** closes F4-05 through F4-10 and F4-12, completing R3. Draft
+answers cannot report success without closing their round; quality drafts and
+scheduler waves have durable distinct identities; retryable cleanup remains
+open; taskless abandoned work and partial run-stop failure reach Needs you;
+pre-bind orphan reservations settle as fail-closed full charges; and a resume
+cannot become durable before its new start boundary. The installed 1440x900
+capture and exact recovery matrix are under
+`docs/evidence/remediation-phase5-26.828.142/`. There are **78 open findings: 5
+Critical, 41 High, 30 Medium, and 2 Low**. The product remains NO-GO because R4
+through R7 and their release gates remain open.
+
 ## Reconciliation result
 
 The ledger parser found exactly 93 unique IDs with the expected phase counts:
@@ -420,6 +432,35 @@ R3 now has seven open findings: F4-05 through F4-10, plus F4-12 (3 Critical and
 reservation/resume reconciliation, unique round identity, retryable cleanup,
 and persistent recovery presentation; this phase does not claim that broader
 matrix.
+
+**Execution status after Phase 5 (2026-08-28):** the remaining seven R3
+findings are closed. `spec.draft` checks both lifecycle-closing appends. Quality
+rounds key on `quality_run_id` plus `draft_id` and close only on
+`quality.draft_disposed`; scheduler waves carry a generated `wave_id` through
+all wave terminals, while run cancellation closes only waves in its session.
+`quality.cancel_failed` remains retryable and visible instead of pretending
+cleanup finished.
+
+An abandoned taskless round now creates a typed `recovery_required` Needs-you
+item, and `scheduler.run_cancel_failed` creates a typed, persistent
+`run_cancel_failed` item whose action retries `run.stop`. A daemon restart
+full-charges an unbound reservation owned by an earlier daemon instance rather
+than retaining ownerless quota forever. Resume ordering is now
+`task.started` then `task.resumed`; startup converts a legacy resume-without-start
+trail into a `resume_interrupted` pause with the existing typed resume action.
+
+Installed build **26.828.142** retained two distinct open recovery rounds,
+settled the orphan reservation with zero active holds, projected the interrupted
+resume as `task.resume`, and rendered exactly one abandoned-work title and one
+failed-stop title. The 1440x900 screenshot shows “Retry stopping,” the expanded
+abandoned-wave explanation, and “Carry on” for the recovered checkpoint.
+Browser severe logs were empty, the recent-project registry was restored
+byte-for-byte, and no paid provider call ran. Evidence is under
+`docs/evidence/remediation-phase5-26.828.142/`.
+
+R3 is complete. The overall ledger now has **78 open findings: 5 Critical, 41
+High, 30 Medium, and 2 Low**. G0 and the product's overall **NO-GO** remain in
+force because R4 through R7 and their release gates are not complete.
 
 ## R4 — Conversation and real-time orchestration
 

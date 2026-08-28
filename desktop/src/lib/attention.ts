@@ -64,6 +64,8 @@ const INTERRUPTS: Record<string, string> = {
   verification_blocked: "The checks could not finish",
   reverification_required: "This needs checking again",
   run_stalled: "Work has stopped",
+  recovery_required: "Recorded work stopped reporting",
+  run_cancel_failed: "This run did not stop cleanly",
   quality_cancel_failed: "A cancellation did not take",
   plan_amendment: "The plan changed and needs you",
   /* Both are Later items, not attention: a waiting note is not a question,

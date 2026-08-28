@@ -1020,12 +1020,14 @@ async function tryExecuteConcurrentWorkerWave(
     : configuredCap < runnable.length
       ? "configured_cap"
       : "ready_count";
+  const waveId = randomUUID();
 
   const waveStarted = await appendEvent(repoRoot, {
     type: "scheduler.wave_started",
     task_id: null,
     data: {
       version: 1,
+      wave_id: waveId,
       session_id: session.session_id,
       group_id: group.group_id,
       task_ids: runnable.map((entry) => entry.task.task_id),
@@ -1156,6 +1158,7 @@ async function tryExecuteConcurrentWorkerWave(
     task_id: null,
     data: {
       version: 1,
+      wave_id: waveId,
       session_id: session.session_id,
       group_id: group.group_id,
       expected_task_ids: runnable.map((entry) => entry.task.task_id),
@@ -1244,6 +1247,7 @@ async function tryExecuteConcurrentWorkerWave(
     task_id: null,
     data: {
       version: 1,
+      wave_id: waveId,
       session_id: session.session_id,
       group_id: group.group_id,
       task_ids: runnable.map((entry) => entry.task.task_id),

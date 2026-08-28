@@ -3144,3 +3144,45 @@ Medium, and 2 Low**. Phase 5 still owns F4-05 through F4-10, plus F4-12: the
 broader crash/restart, reservation/resume, unique-round,
 retryable-cleanup, and persistent-recovery matrix. G0 and the product's overall
 **NO-GO** remain in force. Phase 5 begins only in its next dedicated turn.
+
+## Remediation Phase 5: crash recovery and terminal truth — 2026-08-28
+
+Phase 5 is complete and closes **F4-05, F4-06, F4-07, F4-08, F4-09, F4-10,
+and F4-12**, completing R3. The seven defects shared one durable-state cause:
+work was ambiguously identified, prematurely classified as closed, or omitted
+from the persistent recovery surface.
+
+Draft replies now fail if their lifecycle-closing event cannot be written.
+Quality drafts use `quality_run_id/draft_id`; scheduler waves carry one generated
+`wave_id` through start and all wave terminals. Retryable quality-cancel failure
+no longer closes a draft. Taskless abandoned rounds become typed Needs-you
+items, and partial run-stop failure persists with a labelled `run.stop` retry.
+
+Quota reconciliation uses daemon-instance provenance only to identify a
+pre-bind orphan from an earlier daemon; it never scopes session capacity. Such
+an orphan is fail-closed as a full charge and cannot hold active quota forever.
+New resume trails write `task.started` before `task.resumed`; startup converts a
+legacy resume-without-start crash into an honest `resume_interrupted` pause that
+offers the existing resume action.
+
+Installed build **26.828.142** was built, installed, and matched across
+executable, Core, shell, and pinned Node 22.23.2 identities. The no-paid installed
+matrix retained both distinct open rounds, settled the orphan with zero active
+reservations, recovered the interrupted resume, and rendered exactly one
+abandoned-work item plus one partial-stop item at 1440x900. The final screenshot
+shows “Retry stopping,” the expanded abandoned-wave reason, and “Carry on.”
+Severe browser logs were empty and the recent-project registry was restored
+byte-for-byte. Evidence is under
+`docs/evidence/remediation-phase5-26.828.142/`.
+
+Final validation passed Core (**950 passed, 2 skipped, 952 total**), Desktop
+(**335/335**), Rust (**47/47**), the 9/9 focused recovery matrix, both-lockfile
+advisory gate with zero findings, all **30/30** reachability surfaces,
+`git diff --check`, the unchanged 20-item unreachable scan, installed identity
+verification, and the installed recovery proof. No provider/model call, key
+operation, publication, or public-channel mutation occurred.
+
+The remediation ledger is now **78 open findings: 5 Critical, 41 High, 30
+Medium, and 2 Low**. R3 is complete; R4 through R7 remain. G0 and the product's
+overall **NO-GO** remain in force. Phase 6 begins only in its next dedicated
+turn.

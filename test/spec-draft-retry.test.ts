@@ -4,6 +4,13 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+
+test("every answer-only reply checks that its draft round closed before reporting success", async () => {
+  const source = await readFile(path.resolve("src/spec-draft-action.ts"), "utf8");
+  const branch = source.slice(source.indexOf("if (options.answerOnly === true)"), source.indexOf("const proposal =", source.indexOf("if (options.answerOnly === true)")));
+  assert.match(branch, /const closed = await appendEvent/u);
+  assert.match(branch, /if \(!closed\.ok\) return closed;/u);
+});
 import { promisify } from "node:util";
 
 import { initProject } from "../src/init.js";

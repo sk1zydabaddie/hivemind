@@ -1,5 +1,5 @@
 import { createCachedProcessLivenessProbe } from "./process-liveness.js";
-import { openRounds, roundIsReporting } from "./open-rounds.js";
+import { openRounds, roundIsReporting, type OpenRound } from "./open-rounds.js";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_AUTONOMY_LEVEL, isAutonomyLevel, type AutonomyLevel } from "./autonomy-level.js";
@@ -41,7 +41,7 @@ import { hasFailureCode } from "./failure-code.js";
 
 export interface WorkspaceQueueItem {
   id: string;
-  kind: "plan_review" | "manager_approval" | "verification_blocked" | "reverification_required" | "run_stalled" | "task_attention" | "quality_cancel_failed" | "memory_review" | "quality_review" | "plan_amendment" | "guidance_pending" | "guidance_expired" | "adoption_ready" | "adoption_failed" | "adoption_indeterminate";
+  kind: "plan_review" | "manager_approval" | "verification_blocked" | "reverification_required" | "run_stalled" | "recovery_required" | "run_cancel_failed" | "task_attention" | "quality_cancel_failed" | "memory_review" | "quality_review" | "plan_amendment" | "guidance_pending" | "guidance_expired" | "adoption_ready" | "adoption_failed" | "adoption_indeterminate";
   title: string;
   detail: string;
   created_at: string;
@@ -361,6 +361,10 @@ export async function inspectWorkspace(
     ? { ok: true as const, review: null, current: null }
     : await inspectPlans(repoRoot, specId, events.value, config.config);
   if (!planState.ok) return planState;
+  const reconciledRounds = openRounds(events.value, {
+    now: (options.now ?? new Date()).getTime(),
+    probeLiveness: options.processLiveness ?? createCachedProcessLivenessProbe()
+  });
   const integrationFailure = buildIntegrationFailure(status.value, session.value, config.config);
   const queues = await buildQueues(
     repoRoot,
@@ -370,7 +374,8 @@ export async function inspectWorkspace(
     session.value,
     integrationFailure,
     options,
-    status.value
+    status.value,
+    reconciledRounds
   );
   if (!queues.ok) return queues;
   const ledger = await readQuotaLedgerState(repoRoot);
@@ -449,10 +454,6 @@ export async function inspectWorkspace(
   const tasks = buildWorkspaceTasks(status.value, events.value, planState.current ?? planState.review, queues.value.needsYou, integrated);
   const executionGroups = buildWorkspaceExecutionGroups(tasks, planState.current ?? planState.review, events.value);
   const taskTitles = Object.fromEntries(tasks.map((task) => [task.task_id, task.title]));
-  const reconciledRounds = openRounds(events.value, {
-    now: Date.now(),
-    probeLiveness: createCachedProcessLivenessProbe()
-  });
   const activeAgents = await buildActiveAgents(
     repoRoot,
     reconciledRounds,
@@ -1231,9 +1232,31 @@ async function buildQueues(
   session: ManagerWorkspaceSession | null,
   integrationFailure: WorkspaceInspection["integration_failure"],
   options: WorkspaceInspectionOptions,
-  status: HivemindStatus | null
+  status: HivemindStatus | null,
+  reconciledRounds: OpenRound[]
 ): Promise<{ ok: true; value: { needsYou: WorkspaceQueueItem[]; later: WorkspaceQueueItem[] } } | { ok: false; reason: string }> {
   const needsYou: WorkspaceQueueItem[] = [];
+  for (const round of reconciledRounds.filter((candidate) => !roundIsReporting(candidate))) {
+    needsYou.push({
+      id: `recovery:${round.type}:${round.id ?? round.startedAt}`,
+      kind: "recovery_required",
+      title: "Recorded work stopped reporting",
+      detail: `Hivemind can no longer confirm ${round.what} is running because ${round.liveness.standing === "running" ? "its state is unknown" : round.liveness.because}. Retry from the last durable project state.`,
+      created_at: round.startedAt,
+      task_id: round.taskId,
+      action: null
+    });
+  }
+  for (const event of latestRunCancellationFailures(events)) {
+    const sessionId = event.data.session_id;
+    needsYou.push({
+      ...queueEvent(event, "run_cancel_failed", "This run did not stop cleanly", plainEvidence(event)),
+      action: typeof sessionId === "string" ? {
+        type: "run.stop",
+        payload: { session_id: sessionId, reason: "Retry cleanup for the interrupted run." }
+      } : null
+    });
+  }
   if (planReview !== null) {
     needsYou.push({
       id: `plan:${planReview.plan_hash}`,
@@ -1365,7 +1388,9 @@ async function buildQueues(
        forward was a new prompt that threw away an approved plan. */
     if (event.type === "task.paused" && event.task_id !== null) {
       item.action = { type: "task.resume", payload: { task_id: event.task_id } };
-      item.detail = "This stopped because the run reached its spending limit. Continuing picks up the same task with the work it already did.";
+      item.detail = event.data.reason === "resume_interrupted"
+        ? "Hivemind restarted before the resumed worker began. Continuing uses the same saved checkpoint; no completed work was claimed."
+        : "This stopped because the run reached its spending limit. Continuing picks up the same task with the work it already did.";
     }
     needsYou.push(item);
   }
@@ -1636,6 +1661,17 @@ function latestQualityCancellationFailures(events: HivemindEvent[]): HivemindEve
     if (typeof id === "string" && ["quality.cancel_failed", "quality.cancelled"].includes(event.type)) latest.set(id, event);
   }
   return [...latest.values()].filter((event) => event.type === "quality.cancel_failed");
+}
+
+function latestRunCancellationFailures(events: HivemindEvent[]): HivemindEvent[] {
+  const latest = new Map<string, HivemindEvent>();
+  for (const event of events) {
+    const id = event.data.session_id;
+    if (typeof id === "string" && ["scheduler.run_cancel_failed", "scheduler.run_cancelled"].includes(event.type)) {
+      latest.set(id, event);
+    }
+  }
+  return [...latest.values()].filter((event) => event.type === "scheduler.run_cancel_failed");
 }
 
 function queueEvent(event: HivemindEvent, kind: WorkspaceQueueItem["kind"], title: string, detail: string): WorkspaceQueueItem {

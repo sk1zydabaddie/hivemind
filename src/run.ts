@@ -265,27 +265,13 @@ async function prepareRunTask(
   if (!quotaPauseResume.ok) {
     return quotaPauseResume;
   }
+  let pendingResume: { snapshot_path: string; source: string } | null = quotaPauseResume.value === null
+    ? null
+    : { snapshot_path: quotaPauseResume.value.snapshot_path, source: "quota-reset-resume" };
   if (quotaPauseResume.value === null) {
     const cleanResult = await verifyRunWorktreeClean(worktreeResult.value.worktree, taskId);
     if (!cleanResult.ok) {
       return cleanResult;
-    }
-  } else {
-    const resumedEvent = await emitRunEvent(
-      repoRoot,
-      {
-        type: "task.resumed",
-        task_id: taskId,
-        data: {
-          tool: selectedTool,
-          snapshot_path: quotaPauseResume.value.snapshot_path,
-          source: "quota-reset-resume"
-        }
-      },
-      options.onEvent
-    );
-    if (!resumedEvent.ok) {
-      return resumedEvent;
     }
   }
 
@@ -308,6 +294,10 @@ async function prepareRunTask(
         };
       }
       selectedTool = predictive.value.tool;
+      pendingResume = {
+        snapshot_path: predictive.value.snapshot_path,
+        source: "quota-wall-recovery"
+      };
     }
   }
 
@@ -352,6 +342,14 @@ async function prepareRunTask(
   );
   if (!startedEvent.ok) {
     return startedEvent;
+  }
+  if (pendingResume !== null) {
+    const resumedEvent = await emitRunEvent(repoRoot, {
+      type: "task.resumed",
+      task_id: taskId,
+      data: { tool: selectedTool, ...pendingResume }
+    }, options.onEvent);
+    if (!resumedEvent.ok) return resumedEvent;
   }
 
   return {
@@ -422,6 +420,19 @@ async function finishPreparedRun(
       if (!startedEvent.ok) {
         const failed = await emitRunFailure(repoRoot, active, startedEvent.reason, attempt.toolExit, attempt.diffPath, attempt.changedFiles);
         return failed.ok ? startedEvent : failed;
+      }
+      const resumedEvent = await emitRunEvent(repoRoot, {
+        type: "task.resumed",
+        task_id: active.taskId,
+        data: {
+          tool: reroute.value.tool,
+          snapshot_path: reroute.value.snapshot_path,
+          source: "quota-wall-recovery"
+        }
+      }, active.onEvent);
+      if (!resumedEvent.ok) {
+        const failed = await emitRunFailure(repoRoot, active, resumedEvent.reason, attempt.toolExit, attempt.diffPath, attempt.changedFiles);
+        return failed.ok ? resumedEvent : failed;
       }
       active = {
         ...active,
@@ -707,22 +718,6 @@ async function checkpointAndRerouteTask(
   if (!rerouted.ok) {
     return rerouted;
   }
-  const resumed = await emitRunEvent(
-    repoRoot,
-    {
-      type: "task.resumed",
-      task_id: input.taskId,
-      data: {
-        tool: route.value.tool,
-        snapshot_path: checkpoint.value.snapshot_path,
-        source: "quota-wall-recovery"
-      }
-    },
-    input.onEvent
-  );
-  if (!resumed.ok) {
-    return resumed;
-  }
   return { ok: true, value: { status: "rerouted", tool: route.value.tool, snapshot_path: checkpoint.value.snapshot_path } };
 }
 
@@ -740,7 +735,10 @@ async function loadQuotaPauseResumeState(
     if (event.task_id !== taskId) {
       continue;
     }
-    if (event.type === "task.paused" && event.data.reason === quotaExhaustedPauseReason) {
+    if (
+      event.type === "task.paused" &&
+      (event.data.reason === quotaExhaustedPauseReason || event.data.reason === "resume_interrupted")
+    ) {
       pause = event;
       continue;
     }

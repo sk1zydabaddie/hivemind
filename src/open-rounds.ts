@@ -63,7 +63,7 @@ interface RoundShape {
   /** Every event that closes it. */
   terminal: readonly string[];
   /** What identifies this round within its type, beyond `task_id`. */
-  idField: string | null;
+  idFields: readonly string[];
   /** What the round is, for a sentence a person reads. */
   what: string;
 }
@@ -80,49 +80,49 @@ export const ROUND_SHAPES: readonly RoundShape[] = [
   {
     started: "spec.draft_started",
     terminal: ["spec.draft_completed", "spec.draft_failed"],
-    idField: "spec_id",
+    idFields: ["spec_id"],
     what: "drafting"
   },
   {
     started: "task.started",
     terminal: ["task.completed", "task.failed", "task.cancelled", "task.blocked", "task.paused"],
-    idField: null,
+    idFields: [],
     what: "a worker"
   },
   {
     started: "task.scouting_started",
     terminal: ["scout.completed", "task.failed", "task.cancelled"],
-    idField: null,
+    idFields: [],
     what: "scouting"
   },
   {
     started: "task.worker_process_started",
     terminal: ["task.worker_process_stopped"],
-    idField: null,
+    idFields: [],
     what: "a worker process"
   },
   {
     started: "integration.started",
     terminal: ["integration.passed", "integration.failed", "integration.blocked", "integration.low_confidence"],
-    idField: null,
+    idFields: [],
     what: "integration"
   },
   {
     started: "adoption.started",
     terminal: ["adoption.completed", "adoption.failed", "adoption.indeterminate"],
-    idField: null,
+    idFields: [],
     what: "adopting the change"
   },
   {
     started: "quality.draft_started",
-    terminal: ["quality.refinement_completed", "quality.cancelled", "quality.cancel_failed"],
-    idField: null,
+    terminal: ["quality.draft_disposed"],
+    idFields: ["quality_run_id", "draft_id"],
     what: "a draft run"
   },
   {
     started: "scheduler.wave_started",
     terminal: ["scheduler.wave_completed", "scheduler.wave_settled", "scheduler.wave_stopped", "scheduler.run_cancelled"],
-    idField: null,
+    idFields: ["wave_id"],
     what: "a wave of work"
   },
   /* Found by the coverage test above on its first run, which is the point of
@@ -130,25 +130,25 @@ export const ROUND_SHAPES: readonly RoundShape[] = [
   {
     started: "verification.rerun_started",
     terminal: ["verification.rerun_completed", "verification.completed"],
-    idField: null,
+    idFields: [],
     what: "re-running the checks"
   },
   {
     started: "quality.worker_process_started",
     terminal: ["task.worker_process_stopped", "quality.cancelled"],
-    idField: null,
+    idFields: [],
     what: "a draft worker process"
   },
   {
     started: "manager.run_started",
     terminal: ["manager.run_completed", "manager.run_failed", "scheduler.run_cancelled"],
-    idField: "session_id",
+    idFields: ["session_id"],
     what: "a manager run"
   },
   {
     started: "manager.worker_process_started",
     terminal: ["manager.worker_process_stopped"],
-    idField: "call_id",
+    idFields: ["call_id"],
     what: "a manager process"
   }
 ];
@@ -167,19 +167,22 @@ export interface OpenRound {
   what: string;
   /** Spec id, task id, or whatever identifies it. Null when nothing does. */
   id: string | null;
+  taskId: string | null;
   startedAt: string;
   ageMs: number;
   liveness: RoundStanding;
 }
 
+function roundIdentity(shape: RoundShape, event: RoundEvent): string[] {
+  return shape.idFields.map((field) => typeof event.data[field] === "string" ? event.data[field] as string : "");
+}
+
 function roundKey(shape: RoundShape, event: RoundEvent): string {
-  const own = shape.idField === null ? null : event.data[shape.idField];
-  return `${shape.started}:${event.task_id ?? ""}:${typeof own === "string" ? own : ""}`;
+  return `${shape.started}:${event.task_id ?? ""}:${roundIdentity(shape, event).join(":")}`;
 }
 
 function terminalKey(shape: RoundShape, event: RoundEvent): string {
-  const own = shape.idField === null ? null : event.data[shape.idField];
-  return `${shape.started}:${event.task_id ?? ""}:${typeof own === "string" ? own : ""}`;
+  return roundKey(shape, event);
 }
 
 /** The pid recorded on the round, when one was. */
@@ -216,7 +219,16 @@ export function openRounds(
            reopened, and the older one is superseded rather than doubly open. */
         open.set(roundKey(shape, event), { shape, event });
       } else if (shape.terminal.includes(event.type)) {
-        open.delete(terminalKey(shape, event));
+        if (shape.started === "scheduler.wave_started" && event.type === "scheduler.run_cancelled") {
+          for (const [key, candidate] of open) {
+            if (
+              candidate.shape.started === shape.started &&
+              candidate.event.data.session_id === event.data.session_id
+            ) open.delete(key);
+          }
+        } else {
+          open.delete(terminalKey(shape, event));
+        }
       }
     }
   }
@@ -244,10 +256,8 @@ export function openRounds(
     rounds.push({
       type: shape.started,
       what: shape.what,
-      id:
-        shape.idField !== null && typeof event.data[shape.idField] === "string"
-          ? (event.data[shape.idField] as string)
-          : event.task_id,
+      id: roundIdentity(shape, event).filter((part) => part !== "").join("/") || event.task_id,
+      taskId: event.task_id,
       startedAt: event.ts,
       ageMs,
       liveness

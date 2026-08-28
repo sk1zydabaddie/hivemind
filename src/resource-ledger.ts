@@ -118,7 +118,7 @@ export interface MeteredUsage {
 
 export interface MeteredCallSettlement {
   settled_at: string;
-  reason: "completed" | "spawn_failed" | "dead_process_usage_recovered" | "dead_process_full_charge";
+  reason: "completed" | "spawn_failed" | "dead_process_usage_recovered" | "dead_process_full_charge" | "orphaned_unbound_full_charge";
   charged_tokens: number;
   accounting_source: "provider_reported" | "self_measured" | "full_reservation";
 }
@@ -131,19 +131,11 @@ export interface MeteredCallReservation {
   session_id: string;
   run_id: string;
   task_id: string | null;
-  /* PROVENANCE, deliberately never read.
-     Written on every reservation and consulted by nothing, which is the shape
-     this project named as a failure family -- so the fact that it is on purpose
-     has to be written down where somebody would otherwise tidy it up.
-     Scoping capacity by it would be a BUG: a session legitimately spans daemon
-     restarts, and the update flow now performs one deliberately, so filtering
-     would drop everything the previous instance spent and hand out a second
-     full budget after every restart. The question it looks able to answer --
-     are these reservations from a process still alive -- is answered better by
-     asking the process, which `daemon_work` does against the pid in
-     daemon.json. Kept because "which instance made this call" is worth having
-     when reading a trail afterwards. Guarded by a test: see "the session
-     ceiling is scoped by session, never by daemon instance". */
+  /* Provenance never scopes capacity: a session spans daemon restarts and all
+     of its settled usage still counts. It does, however, close the crash window
+     between reservation and process binding. An active, unbound reservation
+     written by an earlier daemon instance cannot acquire an owner later, so
+     startup reconciles it by charging the full reservation. */
   daemon_instance_id: string;
   reserved_tokens: number;
   created_at: string;
@@ -482,7 +474,7 @@ export async function writeMeteredUsageArtifact(
 
 export async function reconcileMeteredCallReservations(
   repoRoot: string,
-  options: { probeLiveness?: (pid: number) => ProcessLiveness } = {}
+  options: { probeLiveness?: (pid: number) => ProcessLiveness; currentDaemonInstanceId?: string } = {}
 ): Promise<{ ok: true; value: { retained: number; settled: number; fully_charged: number } } | { ok: false; reason: string }> {
   const state = await readQuotaLedgerState(repoRoot);
   if (!state.ok) return state;
@@ -492,8 +484,19 @@ export async function reconcileMeteredCallReservations(
   let fullyCharged = 0;
   const failures: string[] = [];
   const probe = options.probeLiveness ?? getProcessLiveness;
+  const currentDaemonInstanceId = options.currentDaemonInstanceId ?? currentMeteringRuntimeInstanceId();
   for (const reservation of active) {
     const identity = reservation.process_identity;
+    if (identity === null && reservation.daemon_instance_id !== currentDaemonInstanceId) {
+      const recovered = await settleOrphanedUnboundReservation(repoRoot, reservation.reservation_id);
+      if (!recovered.ok) {
+        failures.push(`${reservation.reservation_id}: ${recovered.reason}`);
+        continue;
+      }
+      settled += 1;
+      fullyCharged += 1;
+      continue;
+    }
     if (identity === null || probe(identity.pid) !== "dead") {
       retained += 1;
       continue;
@@ -528,6 +531,43 @@ export async function reconcileMeteredCallReservations(
     return { ok: false, reason: `metered reservation reconciliation failed: ${failures.join("; ")}` };
   }
   return { ok: true, value: { retained, settled, fully_charged: fullyCharged } };
+}
+
+async function settleOrphanedUnboundReservation(
+  repoRoot: string,
+  reservationId: string
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const result = await withLedgerMutation(repoRoot, async (state) => {
+    const reservation = state.reservations[reservationId];
+    if (reservation === undefined || reservation.status !== "active" || reservation.process_identity !== null) {
+      return { ok: false, reason: `active unbound metered reservation not found: ${reservationId}` };
+    }
+    const usage: MeteredUsage = {
+      input_tokens_estimated: reservation.reserved_tokens,
+      output_tokens_estimated: 0,
+      wall_time_ms: 0,
+      throttled: false,
+      provider_usage: {
+        status: "not_available",
+        parser: null,
+        reason: "the daemon restarted before this reservation acquired a process owner; full reservation charged"
+      }
+    };
+    const applied = applyMeteredUsage(state.providers, reservation.provider, reservation.session_id, usage);
+    state.providers = applied.providers;
+    state.reservations[reservationId] = {
+      ...reservation,
+      status: "settled",
+      settlement: {
+        settled_at: new Date().toISOString(),
+        reason: "orphaned_unbound_full_charge",
+        charged_tokens: applied.effectiveTokens,
+        accounting_source: "full_reservation"
+      }
+    };
+    return { ok: true, value: undefined };
+  });
+  return result.ok ? { ok: true } : result;
 }
 
 export async function checkTokenBudgetPreflight(
@@ -1081,7 +1121,8 @@ function normalizeMeteredSettlement(
     value.reason !== "completed" &&
     value.reason !== "spawn_failed" &&
     value.reason !== "dead_process_usage_recovered" &&
-    value.reason !== "dead_process_full_charge"
+    value.reason !== "dead_process_full_charge" &&
+    value.reason !== "orphaned_unbound_full_charge"
   ) {
     return { ok: false, reason: `quota reservation ${reservationId}.settlement.reason is invalid` };
   }

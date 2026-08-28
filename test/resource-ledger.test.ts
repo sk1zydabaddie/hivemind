@@ -426,6 +426,33 @@ test("restart reconciliation retains reservations for live and unknown worker li
   }
 });
 
+test("restart reconciliation full-charges an unbound reservation from an earlier daemon", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const reserved = await reserveMeteredCall(repo, {
+      provider: "codex",
+      session_id: "orphan-session",
+      run_id: "orphan-run",
+      task_id: "T-ORPHAN",
+      daemon_instance_id: "daemon-before-crash",
+      estimated_input_tokens: 1
+    });
+    assert.equal(reserved.ok, true);
+    const reconciled = await reconcileMeteredCallReservations(repo, {
+      currentDaemonInstanceId: "daemon-after-restart",
+      probeLiveness: () => "unknown"
+    });
+    assert.deepEqual(reconciled, { ok: true, value: { retained: 0, settled: 1, fully_charged: 1 } });
+    const state = await readQuotaLedgerState(repo);
+    assert.equal(state.ok, true);
+    if (!state.ok || !reserved.ok || reserved.value.reservation === null) return;
+    const reservation = state.value.reservations[reserved.value.reservation.reservation_id];
+    assert.equal(reservation.status, "settled");
+    assert.equal(reservation.settlement?.reason, "orphaned_unbound_full_charge");
+    assert.equal(reservation.settlement?.accounting_source, "full_reservation");
+    assert.equal(Object.values(state.value.reservations).some((entry) => entry.status === "active"), false);
+  });
+});
+
 test("daemon startup preserves a live metered reservation instead of blanket-releasing it", async () => {
   await withTempRepo(async ({ repo }) => {
     const reservation = await reserveTestCall(repo, "daemon-restart-live");

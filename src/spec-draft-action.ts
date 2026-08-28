@@ -280,7 +280,7 @@ export async function draftSpecFromPrompt(
       }
     });
     if (!answered.ok) return answered;
-    await appendEvent(repoRoot, {
+    const closed = await appendEvent(repoRoot, {
       type: "spec.draft_failed",
       task_id: null,
       data: {
@@ -289,6 +289,7 @@ export async function draftSpecFromPrompt(
         reason: "a plan is already prepared, so the message was answered rather than drafted from"
       }
     });
+    if (!closed.ok) return closed;
     return {
       ok: true,
       value: {

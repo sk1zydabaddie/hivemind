@@ -86,6 +86,35 @@ test("closing one round leaves the others open", () => {
   assert.deepEqual(rounds.map((round) => round.id), ["T-002"]);
 });
 
+test("quality drafts have distinct durable identities and a failed cancellation does not hide either", () => {
+  const events = [
+    ev("quality.draft_started", { quality_run_id: "Q-001", draft_id: "D-001" }, at(5), "T-001"),
+    ev("quality.draft_started", { quality_run_id: "Q-001", draft_id: "D-002" }, at(4), "T-001"),
+    ev("quality.cancel_failed", { quality_run_id: "Q-001", retryable: true }, at(3), "T-001"),
+    ev("quality.draft_disposed", { quality_run_id: "Q-001", draft_id: "D-001" }, at(2), "T-001")
+  ];
+  assert.deepEqual(openRounds(events, { now: NOW }).map((round) => round.id), ["Q-001/D-002"]);
+});
+
+test("scheduler waves with distinct ids cannot close one another", () => {
+  const events = [
+    ev("scheduler.wave_started", { wave_id: "W-001" }, at(5)),
+    ev("scheduler.wave_started", { wave_id: "W-002" }, at(4)),
+    ev("scheduler.wave_completed", { wave_id: "W-001" }, at(3))
+  ];
+  assert.deepEqual(openRounds(events, { now: NOW }).map((round) => round.id), ["W-002"]);
+});
+
+test("run cancellation closes every open wave in that session and no other session", () => {
+  const events = [
+    ev("scheduler.wave_started", { wave_id: "W-001", session_id: "M-001" }, at(5)),
+    ev("scheduler.wave_started", { wave_id: "W-002", session_id: "M-001" }, at(4)),
+    ev("scheduler.wave_started", { wave_id: "W-003", session_id: "M-002" }, at(3)),
+    ev("scheduler.run_cancelled", { session_id: "M-001" }, at(2))
+  ];
+  assert.deepEqual(openRounds(events, { now: NOW }).map((round) => round.id), ["W-003"]);
+});
+
 test("a reopened round supersedes the earlier one rather than doubling it", () => {
   const rounds = openRounds(
     [

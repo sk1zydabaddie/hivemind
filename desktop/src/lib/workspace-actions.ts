@@ -11,6 +11,8 @@ export interface WorkspaceQueueItem {
     | "verification_blocked"
     | "reverification_required"
     | "run_stalled"
+    | "recovery_required"
+    | "run_cancel_failed"
     | "task_attention"
     | "quality_cancel_failed"
     | "memory_review"

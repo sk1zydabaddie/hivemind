@@ -29,6 +29,7 @@ import {
 import { submitTask } from "../src/submit.js";
 import { authorizeManualTask, reviewManualTaskForAuthorization } from "../src/plan.js";
 import { reconcileTaskRunOnStartup, reconcileTaskRunsOnStartup, requestTaskStop } from "../src/task-control.js";
+import { latestTaskRunState } from "../src/run-state.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
 import { withTemplateRepo } from "./support/fixture-repo.js";
@@ -521,7 +522,10 @@ test("runTask reacts to a quota wall by checkpointing and resuming on another pr
     assert.equal(rerouted?.data.from_tool, "primary");
     assert.equal(rerouted?.data.to_tool, "secondary");
     assert.equal("provider_session" in (rerouted?.data ?? {}), false);
-    assert.equal(events.value.some((event) => event.type === "task.resumed" && event.task_id === "T-001"), true);
+    const resumedIndex = events.value.findIndex((event) => event.type === "task.resumed" && event.task_id === "T-001");
+    assert.ok(resumedIndex > 0);
+    assert.equal(events.value[resumedIndex - 1]?.type, "task.started");
+    assert.equal(events.value[resumedIndex - 1]?.data.tool, "secondary");
     assert.equal(events.value.some((event) => event.type === "task.failed" && event.task_id === "T-001"), false);
   });
 });
@@ -625,7 +629,9 @@ test("runTask resumes a quota-paused task from its preserved checkpoint when a p
       return;
     }
     assert.equal(events.value.some((event) => event.type === "task.paused" && event.task_id === "T-001"), true);
-    assert.equal(events.value.some((event) => event.type === "task.resumed" && event.task_id === "T-001" && event.data.source === "quota-reset-resume"), true);
+    const resumedIndex = events.value.findIndex((event) => event.type === "task.resumed" && event.task_id === "T-001" && event.data.source === "quota-reset-resume");
+    assert.ok(resumedIndex > 0);
+    assert.equal(events.value[resumedIndex - 1]?.type, "task.started");
     assert.equal(events.value.some((event) => event.type === "task.failed" && event.task_id === "T-001"), false);
     assert.equal(events.value.some((event) => event.type === "task.completed" && event.task_id === "T-001"), true);
   });
@@ -1128,6 +1134,25 @@ test("ordinary restart reconciliation treats EPERM-style ambiguity as alive", as
     const events = await readEvents(repo);
     assert.equal(events.ok, true);
     if (events.ok) assert.equal(events.value.some((event) => event.type === "task.failed" && event.task_id === "T-RUN-UNKNOWN"), false);
+  });
+});
+
+test("restart reconciliation turns a resume-without-start crash into an actionable pause", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await appendEvent(repo, {
+      type: "task.resumed",
+      task_id: "T-RESUME-CRASH",
+      data: { tool: "codex", snapshot_path: ".hivemind/resource/checkpoints/T-RESUME-CRASH.snapshot.json" }
+    });
+    const reconciled = await reconcileTaskRunOnStartup(repo, "T-RESUME-CRASH");
+    assert.equal(reconciled.ok, true, reconciled.ok ? undefined : reconciled.reason);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (!events.ok) return;
+    const last = events.value.at(-1);
+    assert.equal(last?.type, "task.paused");
+    assert.equal(last?.data.reason, "resume_interrupted");
+    assert.equal(latestTaskRunState(events.value, "T-RESUME-CRASH").state, "not_started");
   });
 });
 
