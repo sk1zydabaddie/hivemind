@@ -91,7 +91,8 @@ describe("desktop packaging", () => {
     expect(config.bundle?.resources).toMatchObject({
       "../../dist": "core/dist",
       "../../node_modules": "core/node_modules",
-      "gen/shell-build-id.txt": "core/shell-build-id.txt"
+      "gen/shell-build-id.txt": "core/shell-build-id.txt",
+      "../runtime": "runtime"
     });
     expect(config.bundle?.windows?.nsis?.installerHooks).toBe("./windows/installer-hooks.nsh");
     const installerHooks = await readFile(
@@ -100,11 +101,27 @@ describe("desktop packaging", () => {
     );
     expect(installerHooks).toMatch(/NSIS_HOOK_PREINSTALL/u);
     expect(installerHooks).toMatch(/RMDir \/r "\$INSTDIR\\core"/u);
+    expect(installerHooks).toMatch(/RMDir \/r "\$INSTDIR\\runtime"/u);
     expect(main).toContain('windows_subsystem = "windows"');
     expect(project).toContain('.join("core")');
     expect(project).toContain('.join("cli.js")');
     expect(project).toContain("installed Hivemind Core resource is missing");
     expect(project).toContain("packaged shell build identity is missing");
+    expect(project).toContain("installed Hivemind runtime is missing");
+
+    const runtime = JSON.parse(
+      await readFile(path.join(repoRoot, "desktop", "runtime", "node-runtime.json"), "utf8")
+    ) as Record<string, string>;
+    expect(runtime).toEqual({
+      version: "22.23.2",
+      platform: "win32",
+      arch: "x64",
+      url: "https://nodejs.org/dist/v22.23.2/win-x64/node.exe",
+      sha256: "0d0f5e39f9f3d9587bc19f73eab3c2c9c4903fd02d6dbf9c853dd81b3d95fad4"
+    });
+    expect(prepare).toMatch(/sha256File\(stagedRuntimePath\).*runtime\.sha256/su);
+    expect(prepare).toMatch(/fetch\(runtime\.url/u);
+    expect(prepare).toMatch(/stagedRuntimeVersion !== `v\$\{runtime\.version\}`/u);
   });
 });
 
@@ -149,6 +166,9 @@ describe("shipping", () => {
   expect(installer).toMatch(/INSTALL DID NOT TAKE/u);
   expect(installer).toMatch(/installedCoreBuild !== expectedCoreBuild/u);
   expect(installer).toMatch(/installedShellBuild !== expectedShellBuild/u);
+  expect(installer).toMatch(/installedRuntimeSha256 !== expectedRuntime\.sha256/u);
+  expect(installer).toMatch(/installedRuntimeVersion !== `v\$\{expectedRuntime\.version\}`/u);
+  expect(installer).toMatch(/execFileSync\(installedRuntime, \[installedCli, "build-id"\]/u);
   expect(installer).toMatch(/INSTALLED RUNTIME DID NOT MATCH THE BUNDLE/u);
   /* And it exits non-zero, or the check is decoration. */
   expect(installer).toMatch(/process\.exit\(1\)/u);

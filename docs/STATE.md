@@ -3055,3 +3055,49 @@ Medium, and 2 Low**. F6-03 remains deliberately open: packaged Core still uses
 ambient bare `node`. Phase 3 must bundle and bind a pinned runtime rather than
 expanding this phase into a second authority change. G0 and the overall
 **NO-GO** remain in force. Phase 3 begins only in its next dedicated turn.
+
+## Remediation Phase 3: pinned installed Core runtime — 2026-08-27
+
+Phase 3 is complete and closes **F6-03**. The supported Windows x64 consumer
+bundle no longer depends on Node being installed or present on `PATH`. The
+tracked `desktop/runtime/node-runtime.json` pins official Node **22.23.2**, the
+exact `nodejs.org` binary URL, platform, architecture, and SHA-256. Bundle
+preparation accepts only that manifest shape, downloads only the fixed HTTPS
+URL, verifies the bytes and reported version, and leaves the 86,997,320-byte
+binary in an ignored resource slot. The repository therefore records the
+identity without checking the runtime binary into Git.
+
+Tauri packages the runtime directory. Release command construction resolves
+both `runtime/node.exe` and packaged Core from the installed resource root; no
+release literal launches bare `node`. The existing NSIS preinstall hook removes
+both replaceable `core` and `runtime` directories. `install:local` verifies the
+installed runtime manifest, version, and hash, then uses that installed runtime
+to ask installed Core for its build identity. The build machine's Node is no
+longer accepted as evidence about the installed runtime.
+
+The exact pre-fix probe launched build **26.827.2301** after removing every
+Node/NVM PATH entry and independently confirmed `node` could not resolve. The
+screen showed `Connection error` and `could not query Hivemind Core build
+identity: program not found`. Installed build **26.827.2322** under the same
+environment reached `Live` with the selected fixture visible. During that live
+session, the durable daemon PID resolved to the installed
+`runtime/node.exe`; its `v22.23.2` output and SHA-256 matched the manifest.
+Severe browser logs were empty and the real recent-project registry was
+restored exactly. The pre/post 1440x900 captures were produced respectively by
+builds **26.827.2301** and **26.827.2322**. Evidence is under
+**docs/evidence/remediation-phase3-26.827.2301/** and
+**docs/evidence/remediation-phase3-26.827.2322/**.
+
+Final no-paid validation passed Core (**940 passed, 2 skipped, 942 total**),
+Desktop (**335/335**), Rust (**47/47**), optimized Rust compilation without
+warnings, the two-lockfile advisory gate with zero findings, all **30/30**
+reachability surfaces, `git diff --check`, the unchanged 20-item unreachable
+report, bundle/runtime hash and version checks, installed identity verification,
+and the Node-free installed probe. No provider/model call, key operation,
+publication, or public-channel mutation occurred.
+
+The remediation ledger is now **90 open findings: 10 Critical, 48 High, 30
+Medium, and 2 Low**. F6-15 remains open because the bundle still copies the
+mutable development dependency tree; Phase 3 did not falsely broaden a pinned
+runtime into a clean production-staging claim. G0 and the product's overall
+**NO-GO** remain in force. Phase 4 begins only in its next dedicated turn.

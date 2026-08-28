@@ -48,6 +48,15 @@ two-launch installed proof are under
 NO-GO. There are **91 open findings: 10 Critical, 49 High, 30 Medium, and 2
 Low**.
 
+**Phase 3 pinned installed runtime completed 2026-08-27.** Installed build
+**26.827.2322** closed F6-03. Node 22.23.2 is fixed by platform, architecture,
+official URL, version, and SHA-256; bundle staging, Tauri resources, release
+launch, NSIS replacement, and installed verification all consume that one
+manifest. The Node-free pre-fix and post-fix installed evidence is under
+`docs/evidence/remediation-phase3-26.827.2301/` and
+`docs/evidence/remediation-phase3-26.827.2322/`. There are **90 open findings:
+10 Critical, 48 High, 30 Medium, and 2 Low**. The product remains NO-GO.
+
 ## Reconciliation result
 
 The ledger parser found exactly 93 unique IDs with the expected phase counts:
@@ -316,6 +325,23 @@ clean Windows user profile, verify every manifest identity, run both dependency
 advisory gates, validate Authenticode and updater signatures, then perform an
 offline/draft release rehearsal. Actual publication remains a separately
 approved external action.
+
+**Execution status after Phase 3 (2026-08-27):** F6-03 is closed. The current
+Windows x64 package pins official Node 22.23.2 and its SHA-256 in
+`desktop/runtime/node-runtime.json`. The executable itself is downloaded and
+hash/version checked during bundle preparation, remains ignored in Git, and is
+packaged as `runtime/node.exe`. Release Core commands use that exact installed
+path. Installation rechecks version, hash, manifest, Core, shell, and executable
+identity on disk.
+
+Installed build **26.827.2322** opened a real fixture with ambient Node absent.
+The exact `Live` element was visible, and the live daemon PID's executable was
+the installed pinned runtime. Build **26.827.2301** failed the same proof with
+`program not found`. The real recent-project registry was restored exactly and
+no provider call ran. R2 now has eight open findings; the overall ledger has
+**90 open findings: 10 Critical, 48 High, 30 Medium, and 2 Low**. This does not
+close F6-15 or the later immutable-artifact work: Core dependencies are still
+copied from the mutable development tree until the release-supply-chain phase.
 
 ## R3 — Cancellation, crash recovery, and terminal truth
 

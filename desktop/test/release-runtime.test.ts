@@ -20,8 +20,21 @@ describe("release executable provenance", () => {
     );
 
     expect(release).toContain("bundled_cli_path(resource_dir)");
+    expect(release).toContain("bundled_node_path(resource_dir)");
     expect(release).toContain("command_for_bundled_cli_path");
     expect(release).not.toMatch(/std::env|HIVEMIND_|hidden_command\("hivemind"\)/u);
+  });
+
+  test("release launches packaged Core through the packaged runtime", async () => {
+    const source = await readFile(projectSource, "utf8");
+    const releaseCommand = between(
+      source,
+      "#[cfg(not(debug_assertions))]\nfn command_for_bundled_cli_path",
+      "#[cfg(debug_assertions)]\nfn command_for_development_cli_path"
+    );
+
+    expect(releaseCommand).toContain("hidden_command(node_compatible_path(&node_path))");
+    expect(releaseCommand).not.toMatch(/hidden_command\("node"\)|std::env|HIVEMIND_/u);
   });
 
   test("release shell identity comes from the packaged manifest", async () => {

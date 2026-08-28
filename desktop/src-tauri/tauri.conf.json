@@ -35,7 +35,8 @@
       "../../dist": "core/dist",
       "../../node_modules": "core/node_modules",
       "../../package.json": "core/package.json",
-      "gen/shell-build-id.txt": "core/shell-build-id.txt"
+      "gen/shell-build-id.txt": "core/shell-build-id.txt",
+      "../runtime": "runtime"
     },
     "icon": [
       "icons/32x32.png",

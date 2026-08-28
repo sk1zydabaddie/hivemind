@@ -15,6 +15,7 @@
  * binary that is actually installed, and fails loudly when they differ.
  */
 import { execFile, execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,13 +36,20 @@ if (process.platform !== "win32") {
 const versionFile = path.join(desktopRoot, "src-tauri", "gen", "app-version.txt");
 const expectedCoreBuildFile = path.join(desktopRoot, "src-tauri", "gen", "core-build-id.txt");
 const expectedShellBuildFile = path.join(desktopRoot, "src-tauri", "gen", "shell-build-id.txt");
+const expectedRuntimeManifestFile = path.join(
+  desktopRoot,
+  "runtime",
+  "node-runtime.json"
+);
 let expected;
 let expectedCoreBuild;
 let expectedShellBuild;
+let expectedRuntime;
 try {
   expected = (await readFile(versionFile, "utf8")).trim();
   expectedCoreBuild = (await readFile(expectedCoreBuildFile, "utf8")).trim();
   expectedShellBuild = (await readFile(expectedShellBuildFile, "utf8")).trim();
+  expectedRuntime = JSON.parse(await readFile(expectedRuntimeManifestFile, "utf8"));
 } catch {
   console.error(
     "No build to install: src-tauri/gen/app-version.txt is missing.\nRun `npm run tauri:build` first — that is the step that stamps a version."
@@ -125,7 +133,23 @@ const installedCli = path.join(
   "src",
   "cli.js"
 );
-const installedCoreBuild = execFileSync(process.execPath, [installedCli, "build-id"], {
+const installedRuntime = path.join(installedRoot(), "runtime", "node.exe");
+const installedRuntimeManifestFile = path.join(
+  installedRoot(),
+  "runtime",
+  "node-runtime.json"
+);
+const installedRuntimeManifest = JSON.parse(
+  await readFile(installedRuntimeManifestFile, "utf8")
+);
+const installedRuntimeSha256 = createHash("sha256")
+  .update(await readFile(installedRuntime))
+  .digest("hex");
+const installedRuntimeVersion = execFileSync(installedRuntime, ["--version"], {
+  encoding: "utf8",
+  windowsHide: true
+}).trim();
+const installedCoreBuild = execFileSync(installedRuntime, [installedCli, "build-id"], {
   cwd: desktopRoot,
   encoding: "utf8",
   windowsHide: true
@@ -137,7 +161,13 @@ const installedShellBuild = (
   )
 ).trim();
 
-if (installedCoreBuild !== expectedCoreBuild || installedShellBuild !== expectedShellBuild) {
+if (
+  installedCoreBuild !== expectedCoreBuild ||
+  installedShellBuild !== expectedShellBuild ||
+  installedRuntimeVersion !== `v${expectedRuntime.version}` ||
+  installedRuntimeSha256 !== expectedRuntime.sha256 ||
+  JSON.stringify(installedRuntimeManifest) !== JSON.stringify(expectedRuntime)
+) {
   console.error(
     [
       "",
@@ -146,6 +176,8 @@ if (installedCoreBuild !== expectedCoreBuild || installedShellBuild !== expected
       `  Core installed:   ${installedCoreBuild}`,
       `  shell built:      ${expectedShellBuild}`,
       `  shell installed:  ${installedShellBuild}`,
+      `  runtime built:    v${expectedRuntime.version} ${expectedRuntime.sha256}`,
+      `  runtime installed:${installedRuntimeVersion} ${installedRuntimeSha256}`,
       "",
       "The executable version landed, but its bundled runtime did not."
     ].join("\n")
@@ -153,4 +185,10 @@ if (installedCoreBuild !== expectedCoreBuild || installedShellBuild !== expected
   process.exit(1);
 }
 
-console.log(`installed ${installed} — executable, Core, and shell identities verified on disk`);
+console.log(
+  `installed ${installed} — executable, Core, shell, and Node ${installedRuntimeVersion} identities verified on disk`
+);
+
+function installedRoot() {
+  return path.join(process.env.LOCALAPPDATA ?? "", "Hivemind AI");
+}

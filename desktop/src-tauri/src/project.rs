@@ -704,8 +704,27 @@ fn bundled_cli_path(resource_dir: Option<&Path>) -> Result<PathBuf, String> {
 }
 
 #[cfg(not(debug_assertions))]
+fn bundled_node_path(resource_dir: Option<&Path>) -> Result<PathBuf, String> {
+    let Some(resource_dir) = resource_dir else {
+        return Err(
+            "installed Hivemind runtime directory is unavailable; reinstall the desktop app"
+                .to_string(),
+        );
+    };
+    let bundled_node = resource_dir.join("runtime").join("node.exe");
+    if !bundled_node.is_file() {
+        return Err(
+            "installed Hivemind runtime is missing; reinstall the desktop app".to_string(),
+        );
+    }
+    Ok(bundled_node)
+}
+
+#[cfg(not(debug_assertions))]
 fn daemon_command(resource_dir: Option<&Path>) -> Result<Command, String> {
-    bundled_cli_path(resource_dir).map(command_for_bundled_cli_path)
+    let bundled_cli = bundled_cli_path(resource_dir)?;
+    let bundled_node = bundled_node_path(resource_dir)?;
+    Ok(command_for_bundled_cli_path(bundled_node, bundled_cli))
 }
 
 #[cfg(debug_assertions)]
@@ -846,8 +865,8 @@ fn is_build_identity(value: &str) -> bool {
 }
 
 #[cfg(not(debug_assertions))]
-fn command_for_bundled_cli_path(cli_path: PathBuf) -> Command {
-    let mut command = hidden_command("node");
+fn command_for_bundled_cli_path(node_path: PathBuf, cli_path: PathBuf) -> Command {
+    let mut command = hidden_command(node_compatible_path(&node_path));
     command.arg(node_compatible_path(&cli_path));
     command
 }

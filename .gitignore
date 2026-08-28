@@ -5,3 +5,4 @@ npm-debug.log*
 *.tsbuildinfo
 desktop/src-tauri/gen/
 desktop/src-tauri/target/
+desktop/runtime/node.exe

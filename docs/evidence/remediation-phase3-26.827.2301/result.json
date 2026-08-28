@@ -1,0 +1,27 @@
+{
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "installedVersion": "26.827.2301",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "paidProviderCalls": 0,
+  "ambientNodeAvailable": false,
+  "runtime": {},
+  "projectReachedLive": false,
+  "selectedProjectVisible": false,
+  "daemon": {},
+  "browserSevereLogs": [],
+  "recentProjects": {
+    "beforeSha256": "a3328357f4c39a68f1e9f087f6e170f9d0c67c076693124fbbc0db6235ee41b7",
+    "afterSha256": "a3328357f4c39a68f1e9f087f6e170f9d0c67c076693124fbbc0db6235ee41b7",
+    "restoredExactly": true
+  },
+  "screenshots": [
+    "D:\\Projects\\Hivemind AI\\docs\\evidence\\remediation-phase3-26.827.2301\\installed-no-ambient-node-failure-26.827.2301-1440x900.png"
+  ],
+  "error": {
+    "message": "installed project did not reach Live without ambient Node\nWait timed out after 30023ms; visible body: Hivemind\nConnection error\nhivemind-phase3-runtime-PAjYQC\nCtrl+K\nSet up this project.\n\nHivemind builds inside one project folder, using the coding agent you already pay for. Four steps, in order — and a fifth once there is an agent to tune.\n\nThere is no editor, no terminal and no preview here, deliberately. Hivemind checks what an agent did before it can reach your branch, and each of those three would be a way around the check. If you want to write the code yourself, you want an IDE — that is a better tool for it, and this is not trying to be one.\n\nHivemind could not open this project\n\ncould not query Hivemind Core build identity: program not found\n\nYour project folder\nC:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase3-runtime-PAjYQC\nChoose another\n2\nSet up the folder\nCreates .hivemind in the project: settings, cost tiers, and the history every run is rebuilt from. Nothing is sent anywhere.\nSet it up\n3\nHow do you check your code works?\nWaiting on step 2 — the check command lives in the project's settings.\n4\nWhich providers do you have?\nWaiting on step 2 — connecting writes into the project, so the folder has to be set up first.\nCommands\n\nJump to a section or open a project",
+    "stack": "Error: installed project did not reach Live without ambient Node\nWait timed out after 30023ms; visible body: Hivemind\nConnection error\nhivemind-phase3-runtime-PAjYQC\nCtrl+K\nSet up this project.\n\nHivemind builds inside one project folder, using the coding agent you already pay for. Four steps, in order — and a fifth once there is an agent to tune.\n\nThere is no editor, no terminal and no preview here, deliberately. Hivemind checks what an agent did before it can reach your branch, and each of those three would be a way around the check. If you want to write the code yourself, you want an IDE — that is a better tool for it, and this is not trying to be one.\n\nHivemind could not open this project\n\ncould not query Hivemind Core build identity: program not found\n\nYour project folder\nC:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase3-runtime-PAjYQC\nChoose another\n2\nSet up the folder\nCreates .hivemind in the project: settings, cost tiers, and the history every run is rebuilt from. Nothing is sent anywhere.\nSet it up\n3\nHow do you check your code works?\nWaiting on step 2 — the check command lives in the project's settings.\n4\nWhich providers do you have?\nWaiting on step 2 — connecting writes into the project, so the folder has to be set up first.\nCommands\n\nJump to a section or open a project\n    at runInstalledSession (file:///D:/Projects/Hivemind%20AI/desktop/e2e/phase3-pinned-runtime.mjs:198:13)\n    at async file:///D:/Projects/Hivemind%20AI/desktop/e2e/phase3-pinned-runtime.mjs:78:19"
+  }
+}

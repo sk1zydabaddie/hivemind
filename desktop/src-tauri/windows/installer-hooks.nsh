@@ -6,4 +6,5 @@
 ; one. Project state lives outside $INSTDIR and is not touched.
 !macro NSIS_HOOK_PREINSTALL
   RMDir /r "$INSTDIR\core"
+  RMDir /r "$INSTDIR\runtime"
 !macroend

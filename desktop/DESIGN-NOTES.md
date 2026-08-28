@@ -4649,3 +4649,35 @@ open until Phase 3 packages a pinned runtime and binds it into the installed
 artifact identity. Compiling out one escape hatch must not be reported as
 closing a neighboring missing-dependency boundary.
 
+### A consumer runtime is an artifact, not a prerequisite — 2026-08-27
+
+The desktop app sells one installable Windows product. A branded installer that
+quietly requires a separately installed `node` executable is therefore an
+incomplete artifact, even when every JavaScript module is present. Consumer
+release commands resolve both the interpreter and Core entrypoint from Tauri's
+installed resource root. Development may use the developer's runtime; release
+may not consult `PATH`.
+
+The runtime identity is small and reviewable even though the binary is not.
+`desktop/runtime/node-runtime.json` pins official Node 22.23.2 by HTTPS URL,
+platform, architecture, version, and SHA-256. The 86,997,320-byte executable is
+downloaded only when the ignored staged copy is absent or has the wrong hash.
+Bundle preparation verifies the hash before replacement and executes
+`--version` before packaging. The source manifest is packaged beside the
+runtime, and local installation rechecks both before using the installed
+runtime to query installed Core. Copying the build machine's `node.exe` would
+prove neither source nor version and is not allowed.
+
+The runtime proof is sampled while the app is alive. Build **26.827.2322** ran
+with every Node/NVM PATH entry removed, reached the exact `Live` element, then
+resolved the durable daemon PID through Windows while that session was still
+open. Its executable path was the installed `runtime/node.exe`; its version and
+hash matched the manifest. Sampling after closing the app initially found no
+process and was rejected as a bad instrument rather than reported as product
+evidence.
+
+This is not the complete release manifest. It closes the missing-runtime
+boundary only. Mutable production dependency staging, clean source-to-artifact
+binding, signatures, and publication admission stay open until their own
+release phases and exact proofs.
+
