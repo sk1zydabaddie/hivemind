@@ -10,6 +10,7 @@
  * until after it, and reports what was on screen at each moment. It cannot pass
  * without text having been there while the work was going.
  */
+import "./protect-recent-projects.mjs";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";

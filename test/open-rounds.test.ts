@@ -73,6 +73,21 @@ test("a closed round is not open at all", () => {
   assert.deepEqual(rounds, []);
 });
 
+test("provider setup has a distinct durable identity and both terminal outcomes close it", () => {
+  const started = (provider: string, operation: string, role: string | undefined, minutes: number) =>
+    ev("provider.setup_started", { provider_id: provider, operation, ...(role === undefined ? {} : { role }) }, at(minutes));
+  const terminal = (type: "provider.setup_completed" | "provider.setup_failed", provider: string, operation: string, role: string | undefined, minutes: number) =>
+    ev(type, { provider_id: provider, operation, ...(role === undefined ? {} : { role }) }, at(minutes));
+  const rounds = openRounds([
+    started("grok", "sign_in", undefined, 8),
+    started("codex-cli", "connect", "planner", 7),
+    started("claude", "connect", "worker", 6),
+    terminal("provider.setup_completed", "grok", "sign_in", undefined, 5),
+    terminal("provider.setup_failed", "claude", "connect", "worker", 4)
+  ], { now: NOW });
+  assert.deepEqual(rounds.map((round) => round.id), ["codex-cli/connect/planner"]);
+});
+
 /* Rounds are keyed, so one task closing does not close another's. */
 test("closing one round leaves the others open", () => {
   const rounds = openRounds(

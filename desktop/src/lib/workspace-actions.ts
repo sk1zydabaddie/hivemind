@@ -392,7 +392,7 @@ export interface CatalogueProvider {
 
 export interface ProviderAuthenticationStanding {
   provider_id: string;
-  status: "signed_in" | "signed_out" | "unknown";
+  status: "signed_in" | "signed_out" | "unknown" | "unverifiable" | "missing" | "malformed" | "failed";
   detail: string;
   /** Which vendors this harness's own sign-ins reach; unrecognised entries are
       counted, never carried. Absent on older daemons and on integrated harnesses. */

@@ -62,7 +62,8 @@ describe("cold open", () => {
     expect(hook).toMatch(/invoke<GitReadiness>\("inspect_git_readiness"/u);
     expect(screen).toMatch(/gitReadiness !== null && gitRefusal === null/u);
     expect(screen).toMatch(/gitRefusal \?\? \(startsEmpty/u);
-    expect(screen).toMatch(/create a Git repository and an empty first commit/u);
+    expect(screen).toMatch(/write its project settings and sharing rules/u);
+    expect(screen).toMatch(/Exact first-commit set/u);
     expect(screen).toMatch(/Set up git for me/u);
     expect(screen).toMatch(/generatedIgnores\.join/u);
     /* The guarantee is that a git refusal SUPPRESSES the setup action, and it
@@ -292,9 +293,10 @@ describe("cold open", () => {
     /* Was "Ready to check", one of four phrases on two axes in a single
        column. The ranked vocabulary replaces it. */
     expect(source).toMatch(/Not signed in/u);
-    /* Was "Cannot connect yet" -- the "yet" promised that waiting helps, which
-       is not what an unconnectable provider means. */
-    expect(source).toMatch(/Cannot connect/u);
+    /* Missing, unreadable and unverifiable are different states; none is
+       allowed to borrow the verified styling or the signed-out claim. */
+    expect(source).toMatch(/Not installed/u);
+    expect(source).toMatch(/Sign-in not readable/u);
     /* And the reason is shown rather than found by clicking. The per-provider
        caveats are the capability contract made visible and are the best thing
        on this screen; they survive every restructure. */

@@ -168,6 +168,10 @@ describe("multiplier tier surfaces", () => {
     /* And NOT a timer: a poll would re-read a provider CLI on a schedule to
        catch a change that happens at most once per sign-in. */
     expect(watcher).not.toMatch(/setInterval|setTimeout/u);
+    /* A provider with no readable status gets one return interaction, not a
+       CLI subprocess on every later click that can never produce a verdict. */
+    expect(watcher).toMatch(/watchedStanding\?\.status === "unverifiable"/u);
+    expect(watcher).toMatch(/watchedProvider\.current = null/u);
     /* The measurement is recorded where the decision is. */
     expect(watcher).toMatch(/hasFocus\(\)` stayed `true`/u);
   });
@@ -206,10 +210,16 @@ describe("multiplier tier surfaces", () => {
        unchanged: the row states which fact it has and never a bare
        "Connected". */
     expect(providerList).toMatch(/providerStanding\(provider, authenticationStatus\)/u);
-    expect(providerList).toMatch(/"Checked here", "Signed in", "Not signed in", "Cannot connect"/u);
+    expect(providerList).toMatch(/"Checked here", "Signed in", "Not signed in", "Sign-in not readable", "Not installed", "Unreadable response", "Not checked yet", "Status check failed"/u);
     /* The weaker state says out loud that a model here may still refuse. */
     expect(providerList).toMatch(/a model here may still refuse/u);
     /* And the old unqualified claim is gone. */
     expect(providerList).not.toMatch(/^\s*Connected\s*$/mu);
+    /* Product support cannot paint a missing or failed local executable as a
+       healthy blue standing, and install help stays reachable on that row. */
+    expect(providerList).toMatch(/const standingRank = providerStandingRank/u);
+    expect(providerList).toMatch(/const install = provider\.install \?\? null/u);
+    expect(providerList).toMatch(/install !== null/u);
+    expect(providerList).not.toMatch(/provider\.checked_here \|\| provider\.status === "supported"/u);
   });
 });

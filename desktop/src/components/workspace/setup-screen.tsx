@@ -22,6 +22,7 @@ import type {
   CatalogueProvider,
   InspectedAdapter,
   ProjectConfigView,
+  ProviderAuthenticationStanding,
   RoleRecommendation,
   WorkspaceAction
 } from "@/lib/workspace-actions";
@@ -120,6 +121,7 @@ export function SetupScreen({
   const checkingGit = problem?.action === "git" && gitReadiness === null && actionError === "";
   const gitRefusal = problem?.action === "git" ? gitReadiness?.refusal ?? null : null;
   const generatedIgnores = gitReadiness?.would_ignore ?? [];
+  const commitPreview = gitReadiness?.would_commit ?? [];
   const startsEmpty = gitReadiness?.starts_empty ?? false;
   const gitBlocksSetup = problem?.action === "git";
 
@@ -182,12 +184,22 @@ export function SetupScreen({
                         : actionError !== ""
                           ? "Hivemind could not confirm that a first commit would be safe."
                           : gitRefusal ?? (startsEmpty
-                              ? "Hivemind will create a Git repository and an empty first commit, ready for a new project."
+                              ? "Hivemind will create the repository, write its project settings and sharing rules, and include those facts in the first commit."
                               : generatedIgnores.length > 0
                                 ? `Hivemind will add ${generatedIgnores.join(", ")} to .gitignore, verify they are excluded, then create the repository and first commit.`
                                 : problem.detail)
                       : problem.detail}
                   </p>
+                  {problem.action === "git" && gitReadiness !== null && gitRefusal === null ? (
+                    <details className="mt-2" open>
+                      <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground">
+                        Exact first-commit set — {commitPreview.length} file{commitPreview.length === 1 ? "" : "s"}
+                      </summary>
+                      <code className="mt-1.5 block max-h-28 overflow-auto rounded-xs bg-canvas px-2 py-1.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                        {commitPreview.join("\n")}
+                      </code>
+                    </details>
+                  ) : null}
                   {actionError === "" ? null : (
                     <p className="mt-2 mb-0 text-[12px] font-medium text-clay" role="alert">
                       {/* "Nothing changed." is a claim about durable state, and
@@ -543,6 +555,21 @@ export interface PlannedProviderConnection {
   providerId: string;
 }
 
+export function initialProviderSelection(): Set<string> {
+  return new Set();
+}
+
+export function providerCanBeSelectedForProof(
+  provider: CatalogueProvider,
+  standing: ProviderAuthenticationStanding | undefined
+): boolean {
+  return provider.connectable && (
+    provider.checked_here ||
+    standing?.status === "signed_in" ||
+    (standing?.status === "unverifiable" && standing.installed === true)
+  );
+}
+
 /**
  * Turn the two independent choices on this screen into the exact probes the
  * dispatcher will run. Kept pure so a regression cannot make the second
@@ -668,7 +695,7 @@ function ConnectStep({
   const [failure, setFailure] = useState("");
   const [picked, setPicked] = useState<Set<string> | null>(null);
   const [opened, setOpened] = useState<string | null>(null);
-  const { standings: authenticationStandings, watchForCompletion } =
+  const { standings: authenticationStandings, error: authenticationError, refresh: refreshAuthentication, watchForCompletion } =
     useProviderAuthentication({ active: enabled, onAction });
 
   /* Windows reduced motion can stop the spinner, but it cannot stop the
@@ -690,12 +717,10 @@ function ConnectStep({
   const recommendations = view?.recommendations ?? [];
   const adapters = view?.adapters ?? [];
 
-  /* Verified providers start ticked, because that is the answer for almost
-     everybody and an empty form is a worse first impression than a sensible
-     one. It is a pre-selection, not a decision: nothing is spent until
-     Continue. */
-  const chosen =
-    picked ?? new Set(providers.filter((entry) => entry.status === "supported").map((e) => e.id));
+  /* A provider check is a paid action. Availability and catalogue support may
+     recommend a row, but neither is consent, so setup starts with no provider
+     selected and keeps every row deselectable until Continue actually begins. */
+  const chosen = picked ?? initialProviderSelection();
 
   const connectedRoles = new Set(
     adapters
@@ -870,6 +895,7 @@ function ConnectStep({
               {providers.map((provider) => (
                 <ProviderListRow
                   authenticationBusy={authBusy === provider.id}
+                  authenticationInstalled={authenticationStandings.get(provider.id)?.installed}
                   authenticationStatus={authenticationStandings.get(provider.id)?.status ?? "unknown"}
                   checksBusy={busy !== null}
                   expanded={opened === provider.id}
@@ -883,9 +909,8 @@ function ConnectStep({
                        row itself contradicted, and the failure surfaced later
                        at connect. Signing in is the first step, so it is the
                        only thing the row offers until it is done. */
-                    const signedIn =
-                      authenticationStandings.get(provider.id)?.status === "signed_in" ||
-                      provider.checked_here;
+                    const standing = authenticationStandings.get(provider.id);
+                    const availableForProof = providerCanBeSelectedForProof(provider, standing);
                     return (
                       <Checkbox
                         /* "Use X" promised the thing and delivered an
@@ -894,11 +919,13 @@ function ConnectStep({
                            what pressing it does. */
                         aria-label={`Include ${provider.label} when connecting`}
                         checked={chosen.has(provider.id)}
-                        disabled={!provider.connectable || !signedIn}
+                        disabled={!provider.connectable || !availableForProof || busy !== null}
                         title={
-                          signedIn
+                          availableForProof
                             ? `Include ${provider.label} when connecting`
-                            : `Sign in to ${provider.label} first — connecting runs it once, and it cannot run without a session.`
+                            : standing?.status === "missing"
+                              ? `Install ${provider.label} before connecting it.`
+                              : `Sign in to ${provider.label} first — connecting runs it once, and it cannot run without a session.`
                         }
                         onCheckedChange={() => toggle(provider.id)}
                       />
@@ -950,6 +977,13 @@ function ConnectStep({
               your own subscription.
             </span>
           </div>
+
+          {authenticationError === "" ? null : (
+            <div className="flex items-center gap-2 rounded-sm border-l-2 border-clay bg-clay-wash px-2.5 py-1.5 text-[12px] text-clay" role="alert">
+              <span className="min-w-0 flex-1 break-words">Provider status could not be read: {authenticationError}</span>
+              <Button size="xs" type="button" variant="outline" onClick={() => void refreshAuthentication()}>Try again</Button>
+            </div>
+          )}
 
         </>
       ) : null}
@@ -1234,33 +1268,11 @@ function ChecksStep({
   const tried = config?.test_command_trial?.command === (config?.test_command ?? "").trim();
   const done = enabled && config !== null && ((commandPresent && tried) || declared);
   const candidates = view?.check_candidates ?? [];
-  /* A command detection recorded and nothing ran. Run it once, automatically:
-     a person did not choose it, and should not have to press a button to find
-     out whether the thing Hivemind picked for them works. Core removes it if it
-     cannot run, and this step goes back to asking. */
+  /* Detection is a recommendation, not permission to execute project code.
+     The exact command is shown with an answering control; nothing calls
+     `checks.try` until that control is pressed. */
   const untriedCommand =
     enabled && config !== null && commandPresent && !tried ? config.test_command : null;
-  const [autoTried, setAutoTried] = useState<string | null>(null);
-  useEffect(() => {
-    if (untriedCommand === null || autoTried === untriedCommand) return;
-    setAutoTried(untriedCommand);
-    void (async () => {
-      setBusy(untriedCommand);
-      setError("");
-      try {
-        const result = await onAction<CheckTryResult>({
-          type: "checks.try",
-          payload: { command: untriedCommand }
-        });
-        setTrial(result?.trial ?? null);
-        onReload();
-      } catch (cause) {
-        setError(plainActionError(cause));
-      } finally {
-        setBusy(null);
-      }
-    })();
-  }, [untriedCommand, autoTried, onAction, onReload]);
 
   /* The recorded trial belongs to the command it ran. A later edit through
      Settings leaves it pointing at the older string, and reporting it against
@@ -1335,7 +1347,7 @@ function ChecksStep({
                            until it has. A tick above a sentence admitting the
                            step was unverified was the tick asserting what the
                            sentence denied. */
-                        " Hivemind is running it once to check that it works here."
+                        " Hivemind detected it but has not run it. Press Run detected check to verify it."
                   } Change it in Settings whenever you like.`
                 : declared
                   ? "Every ship's record says so. Picking a command in Settings replaces the declaration."
@@ -1346,6 +1358,14 @@ function ChecksStep({
 
       {enabled && config !== null && !done ? (
         <div className="grid gap-2.5 pl-8">
+          {untriedCommand === null ? null : (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <Button disabled={busy !== null} size="sm" type="button" onClick={() => void tryCommand(untriedCommand, false)}>
+                {busy === untriedCommand ? "Running it…" : "Run detected check"}
+              </Button>
+              <span className="font-mono text-[11px] text-muted-foreground">{untriedCommand}</span>
+            </div>
+          )}
           {/* Suggestions first, because a one-press answer that came from the
               project itself beats anything typed. Each names its kind: a build
               passing is not tests passing. */}

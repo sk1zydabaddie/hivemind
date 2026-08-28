@@ -7,6 +7,7 @@
  *   3. a hand-edited section is not offered for overwrite afterwards
  */
 import assert from "node:assert/strict";
+import "./protect-recent-projects.mjs";
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";

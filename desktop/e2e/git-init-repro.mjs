@@ -10,6 +10,7 @@
  * Plus: does anything flash a console window?
  */
 import assert from "node:assert/strict";
+import "./protect-recent-projects.mjs";
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";

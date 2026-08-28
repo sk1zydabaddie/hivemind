@@ -1684,10 +1684,16 @@ mod tests {
 // capability, no connection. Switching therefore cannot carry a verification
 // across, because there is nothing here that could carry one.
 
-#[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct RecentProject {
     pub path: String,
     pub opened_at: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub missing: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 fn recents_file(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
@@ -1700,24 +1706,125 @@ fn recents_file(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(dir.join("recent-projects.json"))
 }
 
-fn read_recents(app: &tauri::AppHandle) -> Vec<RecentProject> {
-    let Ok(file) = recents_file(app) else {
-        return Vec::new();
+fn read_recents(app: &tauri::AppHandle) -> Result<Vec<RecentProject>, String> {
+    let file = recents_file(app)?;
+    let text = match std::fs::read_to_string(&file) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(format!("could not read the recent project list at {}: {error}", file.display())),
     };
-    let Ok(text) = std::fs::read_to_string(&file) else {
-        return Vec::new();
+    decode_recents(&file, &text)
+}
+
+fn decode_recents(file: &Path, text: &str) -> Result<Vec<RecentProject>, String> {
+    serde_json::from_str::<Vec<RecentProject>>(text).map_err(|error| {
+        format!(
+            "the recent project list at {} is corrupt; it was preserved for recovery: {error}",
+            file.display()
+        )
+    })
+}
+
+fn replace_file_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    let parent = path.parent().ok_or_else(|| "recent project list has no parent directory".to_string())?;
+    let temp = parent.join(format!(
+        ".recent-projects-{}-{}.tmp",
+        std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos()
+    ));
+    let result = (|| -> Result<(), String> {
+        let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&temp)
+            .map_err(|error| format!("could not create a temporary recent project list: {error}"))?;
+        file.write_all(bytes).map_err(|error| format!("could not write the temporary recent project list: {error}"))?;
+        file.sync_all().map_err(|error| format!("could not flush the temporary recent project list: {error}"))?;
+        replace_path(&temp, path)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    result
+}
+
+#[cfg(not(windows))]
+fn replace_path(source: &Path, destination: &Path) -> Result<(), String> {
+    std::fs::rename(source, destination).map_err(|error| format!("could not replace the recent project list: {error}"))
+}
+
+#[cfg(windows)]
+fn replace_path(source: &Path, destination: &Path) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH};
+    let source_wide: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+    let destination_wide: Vec<u16> = destination.as_os_str().encode_wide().chain(Some(0)).collect();
+    let moved = unsafe {
+        MoveFileExW(source_wide.as_ptr(), destination_wide.as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
     };
-    serde_json::from_str::<Vec<RecentProject>>(&text).unwrap_or_default()
+    if moved == 0 {
+        return Err(format!("could not replace the recent project list: {}", std::io::Error::last_os_error()));
+    }
+    Ok(())
+}
+
+fn write_recents(app: &tauri::AppHandle, entries: &[RecentProject]) -> Result<(), String> {
+    let file = recents_file(app)?;
+    let text = serde_json::to_vec_pretty(entries)
+        .map_err(|error| format!("could not encode the recent project list: {error}"))?;
+    replace_file_atomically(&file, &text)
+}
+
+#[cfg(test)]
+mod recent_project_registry_tests {
+    use super::*;
+
+    fn registry_file(name: &str) -> PathBuf {
+        let directory = std::env::temp_dir().join(format!(
+            "hivemind-recents-{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos()
+        ));
+        std::fs::create_dir_all(&directory).expect("registry fixture");
+        directory.join("recent-projects.json")
+    }
+
+    #[test]
+    fn corrupt_registry_is_reported_and_preserved_byte_for_byte() {
+        let file = registry_file("corrupt");
+        let before = b"[{not-json\r\n";
+        std::fs::write(&file, before).expect("corrupt fixture");
+        let text = std::fs::read_to_string(&file).expect("read fixture");
+        let error = decode_recents(&file, &text).expect_err("corruption accepted");
+        assert!(error.contains("preserved for recovery"), "{error}");
+        assert_eq!(std::fs::read(&file).expect("read after"), before);
+        let _ = std::fs::remove_dir_all(file.parent().expect("parent"));
+    }
+
+    #[test]
+    fn registry_replacement_is_atomic_and_leaves_no_temporary_file() {
+        let file = registry_file("atomic");
+        std::fs::write(&file, b"old").expect("old registry");
+        let next = br#"[{"path":"D:\\Project","opened_at":"2026-08-28T00:00:00Z"}]"#;
+        replace_file_atomically(&file, next).expect("atomic replace");
+        assert_eq!(std::fs::read(&file).expect("read replacement"), next);
+        let leftovers: Vec<_> = std::fs::read_dir(file.parent().expect("parent"))
+            .expect("list registry directory")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "temporary files remain");
+        let _ = std::fs::remove_dir_all(file.parent().expect("parent"));
+    }
 }
 
 #[tauri::command]
 pub async fn recent_projects(app: tauri::AppHandle) -> Result<Vec<RecentProject>, String> {
-    // A path that no longer exists is dropped rather than offered. Opening a
-    // folder that has been moved or deleted is a dead end the shell can see
-    // coming, and offering it would be the same failure as a stale shortcut.
-    Ok(read_recents(&app)
+    Ok(read_recents(&app)?
         .into_iter()
-        .filter(|entry| std::path::Path::new(&entry.path).is_dir())
+        .map(|mut entry| {
+            entry.missing = !std::path::Path::new(&entry.path).is_dir();
+            entry
+        })
         .collect())
 }
 
@@ -1739,7 +1846,7 @@ pub struct LastProject {
 
 #[tauri::command]
 pub async fn last_project(app: tauri::AppHandle) -> Result<Option<LastProject>, String> {
-    Ok(read_recents(&app).into_iter().next().map(|entry| LastProject {
+    Ok(read_recents(&app)?.into_iter().next().map(|entry| LastProject {
         missing: !std::path::Path::new(&entry.path).is_dir(),
         path: entry.path,
         opened_at: entry.opened_at,
@@ -1761,16 +1868,12 @@ pub async fn forget_project(app: tauri::AppHandle, project_path: String) -> Resu
     let canonical = std::fs::canonicalize(&project_path)
         .map(|path| path.to_string_lossy().to_string())
         .unwrap_or_else(|_| project_path.clone());
-    let before = read_recents(&app);
+    let before = read_recents(&app)?;
     let after: Vec<RecentProject> = before
         .into_iter()
         .filter(|entry| entry.path != project_path && entry.path != canonical)
         .collect();
-    let file = recents_file(&app)?;
-    let text = serde_json::to_string_pretty(&after)
-        .map_err(|error| format!("could not rewrite the recent project list: {error}"))?;
-    std::fs::write(&file, text)
-        .map_err(|error| format!("could not write the recent project list: {error}"))
+    write_recents(&app, &after)
 }
 
 #[tauri::command]
@@ -1778,7 +1881,7 @@ pub async fn remember_project(app: tauri::AppHandle, project_path: String) -> Re
     let normalized = std::fs::canonicalize(&project_path)
         .map(|path| path.to_string_lossy().to_string())
         .unwrap_or(project_path);
-    let mut entries: Vec<RecentProject> = read_recents(&app)
+    let mut entries: Vec<RecentProject> = read_recents(&app)?
         .into_iter()
         .filter(|entry| entry.path != normalized)
         .collect();
@@ -1787,14 +1890,11 @@ pub async fn remember_project(app: tauri::AppHandle, project_path: String) -> Re
         RecentProject {
             path: normalized,
             opened_at: chrono_now(),
+            missing: false,
         },
     );
     entries.truncate(8);
-    let file = recents_file(&app)?;
-    let text = serde_json::to_string_pretty(&entries)
-        .map_err(|error| format!("could not record the recent project: {error}"))?;
-    std::fs::write(&file, text)
-        .map_err(|error| format!("could not write the recent project list: {error}"))
+    write_recents(&app, &entries)
 }
 
 // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ What this person has already been shown ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬
@@ -2541,7 +2641,7 @@ pub struct GitReadiness {
     pub starts_empty: bool,
     /// Files that would be committed, so the offer can name them.
     pub would_commit: Vec<String>,
-    /// Generated top-level directories Hivemind can safely add to .gitignore.
+    /// Generated directories at any depth Hivemind can safely add to .gitignore.
     pub would_ignore: Vec<String>,
     /// Why Hivemind will not initialise this folder, when it will not.
     pub refusal: Option<String>,
@@ -2667,13 +2767,6 @@ fn classify_content(root: &Path, entries: &[String]) -> (FolderContent, Vec<Stri
 
     for name in entries {
         let path = root.join(name);
-        if path.is_dir() {
-            // A directory is not walked. Depth would make this slow on a large
-            // tree for no gain: the shapes being refused are all visible at the
-            // top level, and a folder whose only source lives three levels down
-            // still reads as a project by its top-level files.
-            continue;
-        }
         let extension = path
             .extension()
             .map(|value| value.to_string_lossy().to_lowercase())
@@ -2710,6 +2803,150 @@ fn classify_content(root: &Path, entries: &[String]) -> (FolderContent, Vec<Stri
         return (FolderContent::Documents, examples(documents));
     }
     (FolderContent::Unrecognised, Vec::new())
+}
+
+const MAX_GIT_INVENTORY_ENTRIES: usize = 20_000;
+
+#[derive(Default)]
+struct GitInventory {
+    files: Vec<String>,
+    ignored_generated: Vec<String>,
+    dangerous: Vec<String>,
+}
+
+fn normalized_relative(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn likely_secret(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    (lower == ".env" || (lower.starts_with(".env.") && lower != ".env.example"))
+        || NEVER_COMMIT.iter().any(|entry| lower == entry.to_ascii_lowercase())
+}
+
+fn glob_matches(pattern: &[u8], value: &[u8]) -> bool {
+    if pattern.is_empty() {
+        return value.is_empty();
+    }
+    if pattern[0] == b'*' {
+        return glob_matches(&pattern[1..], value)
+            || (!value.is_empty() && glob_matches(pattern, &value[1..]));
+    }
+    !value.is_empty()
+        && (pattern[0] == b'?' || pattern[0].eq_ignore_ascii_case(&value[0]))
+        && glob_matches(&pattern[1..], &value[1..])
+}
+
+fn ignore_rule_matches(pattern: &str, relative: &str, is_directory: bool) -> bool {
+    let mut rule = pattern.trim().trim_start_matches('/');
+    let directory_only = rule.ends_with('/');
+    rule = rule.trim_end_matches('/');
+    if rule.is_empty() || (directory_only && !is_directory) {
+        return false;
+    }
+    if rule.contains('/') {
+        return glob_matches(rule.as_bytes(), relative.as_bytes())
+            || (is_directory && relative.starts_with(&format!("{rule}/")));
+    }
+    relative
+        .split('/')
+        .any(|component| glob_matches(rule.as_bytes(), component.as_bytes()))
+}
+
+fn ignored_by_project_rules(rules: &[String], relative: &str, is_directory: bool) -> bool {
+    let mut ignored = false;
+    for raw in rules {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let negated = trimmed.starts_with('!');
+        let pattern = if negated { &trimmed[1..] } else { trimmed };
+        if ignore_rule_matches(pattern, relative, is_directory) {
+            ignored = !negated;
+        }
+    }
+    ignored
+}
+
+fn project_ignore_rules(root: &Path) -> Result<Vec<String>, String> {
+    match std::fs::read_to_string(root.join(".gitignore")) {
+        Ok(text) => Ok(text.lines().map(str::to_string).collect()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(error) => Err(format!("could not read .gitignore: {error}")),
+    }
+}
+
+fn inventory_project(root: &Path) -> Result<GitInventory, String> {
+    fn walk(
+        root: &Path,
+        directory: &Path,
+        rules: &[String],
+        inventory: &mut GitInventory,
+        visited: &mut usize,
+    ) -> Result<(), String> {
+        let entries = std::fs::read_dir(directory)
+            .map_err(|error| format!("could not inspect {}: {error}", directory.display()))?;
+        for entry in entries {
+            let entry = entry.map_err(|error| format!("could not inspect a project entry: {error}"))?;
+            *visited += 1;
+            if *visited > MAX_GIT_INVENTORY_ENTRIES {
+                return Err(format!("this folder has more than {MAX_GIT_INVENTORY_ENTRIES} entries outside ignored directories; Hivemind will not guess at a first commit this large"));
+            }
+            let path = entry.path();
+            let relative_path = path.strip_prefix(root).map_err(|_| "project inventory escaped its root".to_string())?;
+            let relative = normalized_relative(relative_path);
+            let name = entry.file_name().to_string_lossy().to_string();
+            if relative == ".git" || relative.starts_with(".git/") || relative == ".hivemind" {
+                continue;
+            }
+            let kind = entry.file_type().map_err(|error| format!("could not inspect {relative}: {error}"))?;
+            if kind.is_symlink() {
+                inventory.dangerous.push(format!("{relative} (symbolic link)"));
+                continue;
+            }
+            if ignored_by_project_rules(rules, &relative, kind.is_dir()) {
+                continue;
+            }
+            if kind.is_dir() {
+                if name == ".git" {
+                    inventory.dangerous.push(format!("{relative} (nested repository)"));
+                    continue;
+                }
+                if NOT_AUTHORED_DIRS.iter().any(|candidate| name == *candidate) {
+                    inventory.ignored_generated.push(relative);
+                    continue;
+                }
+                walk(root, &path, rules, inventory, visited)?;
+                continue;
+            }
+            if likely_secret(&name) {
+                inventory.dangerous.push(relative.clone());
+            }
+            inventory.files.push(relative);
+        }
+        Ok(())
+    }
+
+    let rules = project_ignore_rules(root)?;
+    let mut inventory = GitInventory::default();
+    let mut visited = 0;
+    walk(root, root, &rules, &mut inventory, &mut visited)?;
+    inventory.files.sort();
+    inventory.files.dedup();
+    inventory.ignored_generated.sort();
+    inventory.ignored_generated.dedup();
+    inventory.dangerous.sort();
+    inventory.dangerous.dedup();
+    Ok(inventory)
+}
+
+fn git_repository_standing(root: &Path) -> Result<bool, String> {
+    let output = hidden_command("git")
+        .args(["-C", &root.to_string_lossy(), "rev-parse", "--show-toplevel"])
+        .output()
+        .map_err(|error| format!("git could not inspect this folder: {error}"))?;
+    Ok(output.status.success())
 }
 
 /// Why Hivemind will not initialise this folder, when it will not.
@@ -2780,7 +3017,9 @@ pub async fn inspect_git_readiness(project_path: String) -> Result<GitReadiness,
             ),
         });
     }
-    if root.join(".git").exists() {
+    let git_marker = root.join(".git").exists();
+    let valid_repository = git_repository_standing(root)?;
+    if valid_repository {
         return Ok(GitReadiness {
             exists: true,
             is_directory: true,
@@ -2794,34 +3033,44 @@ pub async fn inspect_git_readiness(project_path: String) -> Result<GitReadiness,
         });
     }
 
-    let mut would_commit = Vec::new();
-    let mut would_ignore = Vec::new();
-    let mut dangerous = Vec::new();
-    // Every top-level name, including the ones the display list hides. The
-    // shape check has to see `node_modules` -- it is the whole reason the check
-    // exists, and filtering it out of the list first is what let an install
-    // directory through. `would_commit` is what a person is SHOWN; `present` is
-    // what is actually there.
-    let mut present = Vec::new();
-    let entries = std::fs::read_dir(root)
-        .map_err(|error| format!("could not read that folder: {error}"))?;
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if name == ".git" || name == ".hivemind" {
-            continue;
-        }
-        present.push(name.clone());
-        if entry.path().is_dir() && NOT_AUTHORED_DIRS.iter().any(|dir| name == *dir) {
-            would_ignore.push(name);
-            continue;
-        }
-        if NEVER_COMMIT.iter().any(|needle| name == *needle) {
-            dangerous.push(name.clone());
-        }
-        would_commit.push(name);
+    if git_marker {
+        return Ok(GitReadiness {
+            exists: true,
+            is_directory: true,
+            is_repo: false,
+            content: FolderContent::Unrecognised,
+            saw: vec![".git".to_string()],
+            starts_empty: false,
+            would_commit: Vec::new(),
+            would_ignore: Vec::new(),
+            refusal: Some("This folder has an incomplete or corrupt .git directory. Hivemind will not call it a repository or overwrite it; repair or remove that partial Git setup, then try again.".to_string()),
+        });
     }
+
+    if root.join(".hivemind").exists() {
+        return Ok(GitReadiness {
+            exists: true,
+            is_directory: true,
+            is_repo: false,
+            content: FolderContent::Unrecognised,
+            saw: vec![".hivemind".to_string()],
+            starts_empty: false,
+            would_commit: Vec::new(),
+            would_ignore: Vec::new(),
+            refusal: Some("This untracked folder already contains .hivemind state. Hivemind will not overwrite or silently commit partial project state; move that state aside or finish the repository setup yourself.".to_string()),
+        });
+    }
+
+    let inventory = inventory_project(root)?;
+    let mut would_commit = inventory.files.clone();
+    let would_ignore = inventory.ignored_generated.clone();
+    let mut dangerous = inventory.dangerous;
+    if !would_ignore.is_empty() && !would_commit.iter().any(|entry| entry == ".gitignore") {
+        would_commit.push(".gitignore".to_string());
+    }
+    would_commit.push(".hivemind/.gitignore".to_string());
+    would_commit.push(".hivemind/config.json".to_string());
     would_commit.sort();
-    would_ignore.sort();
 
     // Refuse rather than guess. A .env in the folder is not something to decide
     // about on somebody's behalf -- and a first commit cannot be un-made
@@ -2830,7 +3079,7 @@ pub async fn inspect_git_readiness(project_path: String) -> Result<GitReadiness,
     //
     // Named secrets first, because that refusal names the actual file and is
     // the more useful sentence when both apply.
-    let (content, saw) = classify_content(root, &present);
+    let (content, saw) = classify_content(root, &inventory.files);
     let refusal = if !dangerous.is_empty() {
         dangerous.sort();
         Some(format!(
@@ -2847,7 +3096,7 @@ pub async fn inspect_git_readiness(project_path: String) -> Result<GitReadiness,
         is_repo: false,
         content,
         saw,
-        starts_empty: present.is_empty(),
+        starts_empty: inventory.files.is_empty(),
         would_commit,
         would_ignore,
         refusal,
@@ -2919,6 +3168,7 @@ fn undo_git_setup(
     root: &Path,
     original_gitignore: Option<String>,
     created_git_dir: bool,
+    created_hivemind_dir: bool,
 ) -> Vec<String> {
     let mut remaining = Vec::new();
     let git_dir = root.join(".git");
@@ -2942,6 +3192,13 @@ fn undo_git_setup(
     if !restored {
         remaining.push(".gitignore".to_string());
     }
+    let hivemind_dir = root.join(".hivemind");
+    if created_hivemind_dir && hivemind_dir.exists() {
+        let _ = std::fs::remove_dir_all(&hivemind_dir);
+        if hivemind_dir.exists() {
+            remaining.push(".hivemind".to_string());
+        }
+    }
     remaining
 }
 
@@ -2957,6 +3214,7 @@ fn perform_git_setup(
     root: &Path,
     would_ignore: &[String],
     run: &dyn Fn(&[&str]) -> Result<(), String>,
+    initialize_hivemind: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), GitSetupFailure> {
     /* Captured BEFORE the first mutation, so "nothing changed" is a
        measurement against this state rather than a hope. */
@@ -2970,10 +3228,16 @@ fn perform_git_setup(
         }
     };
     let git_dir_existed = root.join(".git").exists();
+    let hivemind_dir_existed = root.join(".hivemind").exists();
 
     let sequence = || -> Result<(), String> {
         add_generated_ignores(root, would_ignore)?;
         run(&["init"])?;
+        /* Project facts must be part of the base commit. The previous order
+           committed first and ran Core init only after reopening, so the base
+           every future diff was measured against omitted Hivemind's own
+           config and sharing policy. */
+        initialize_hivemind()?;
         for entry in would_ignore {
             run(&["check-ignore", "--quiet", "--", entry])?;
         }
@@ -2996,7 +3260,12 @@ fn perform_git_setup(
     match sequence() {
         Ok(()) => Ok(()),
         Err(cause) => {
-            let remaining = undo_git_setup(root, original_gitignore, !git_dir_existed);
+            let remaining = undo_git_setup(
+                root,
+                original_gitignore,
+                !git_dir_existed,
+                !hivemind_dir_existed,
+            );
             if remaining.is_empty() {
                 Err(GitSetupFailure::untouched(cause))
             } else {
@@ -3017,7 +3286,21 @@ fn perform_git_setup(
 /// than trusted from the caller -- the readiness answer and the action are two
 /// round trips apart, and a file can appear between them.
 #[tauri::command]
-pub async fn initialize_git(project_path: String) -> Result<GitReadiness, GitSetupFailure> {
+pub async fn initialize_git(
+    app: tauri::AppHandle,
+    project_path: String,
+) -> Result<GitReadiness, GitSetupFailure> {
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|error| GitSetupFailure::untouched(format!("could not resolve desktop resources: {error}")))?;
+    initialize_git_with(project_path, &|root| run_core_init(root, Some(&resource_dir))).await
+}
+
+async fn initialize_git_with(
+    project_path: String,
+    initialize_hivemind: &(dyn Fn(&Path) -> Result<(), String> + Sync),
+) -> Result<GitReadiness, GitSetupFailure> {
     let readiness = inspect_git_readiness(project_path.clone())
         .await
         .map_err(GitSetupFailure::untouched)?;
@@ -3060,7 +3343,9 @@ pub async fn initialize_git(project_path: String) -> Result<GitReadiness, GitSet
        come from the closed list above, and the sequence verifies git ignores
        every one before staging anything. */
     run(&["--version"]).map_err(GitSetupFailure::untouched)?;
-    perform_git_setup(root, &readiness.would_ignore, &run)?;
+    perform_git_setup(root, &readiness.would_ignore, &run, &|| {
+        initialize_hivemind(root)
+    })?;
 
     inspect_git_readiness(project_path).await.map_err(|error| GitSetupFailure {
         /* The commit exists by this point, so claiming nothing changed would
@@ -3362,8 +3647,9 @@ mod git_readiness_tests {
         std::fs::write(dir.join("dist").join("bundle.js"), "generated\n").expect("bundle");
         std::fs::write(dir.join("index.js"), "export default 1;\n").expect("source");
 
-        let result = tauri::async_runtime::block_on(initialize_git(
+        let result = tauri::async_runtime::block_on(initialize_git_with(
             dir.to_string_lossy().to_string(),
+            &|_| Ok(()),
         ))
         .expect("one-click git setup");
         assert!(result.is_repo);
@@ -3411,7 +3697,7 @@ mod git_readiness_tests {
     }
 
     #[test]
-    fn an_empty_folder_is_offered_and_one_action_creates_an_empty_first_commit() {
+    fn an_empty_folder_is_offered_and_the_first_commit_contains_hivemind_facts() {
         let dir = temp_dir("empty-project");
 
         let readiness = tauri::async_runtime::block_on(inspect_git_readiness(
@@ -3421,10 +3707,21 @@ mod git_readiness_tests {
         assert!(!readiness.is_repo);
         assert!(readiness.starts_empty);
         assert_eq!(readiness.refusal, None);
-        assert!(readiness.would_commit.is_empty());
+        assert_eq!(
+            readiness.would_commit,
+            vec![".hivemind/.gitignore", ".hivemind/config.json"]
+        );
 
-        let result = tauri::async_runtime::block_on(initialize_git(
+        let result = tauri::async_runtime::block_on(initialize_git_with(
             dir.to_string_lossy().to_string(),
+            &|root| {
+                std::fs::create_dir_all(root.join(".hivemind")).map_err(|error| error.to_string())?;
+                std::fs::write(root.join(".hivemind").join(".gitignore"), "*\n!.gitignore\n!config.json\n")
+                    .map_err(|error| error.to_string())?;
+                std::fs::write(root.join(".hivemind").join("config.json"), "{}\n")
+                    .map_err(|error| error.to_string())?;
+                Ok(())
+            },
         ))
         .expect("one-click empty-project setup");
         assert!(result.is_repo);
@@ -3443,10 +3740,9 @@ mod git_readiness_tests {
             .output()
             .expect("git ls-files");
         assert!(tracked.status.success());
-        assert!(
-            String::from_utf8_lossy(&tracked.stdout).trim().is_empty(),
-            "the greenfield base commit must not invent a project file"
-        );
+        let tracked = String::from_utf8_lossy(&tracked.stdout);
+        assert!(tracked.contains(".hivemind/.gitignore"), "{tracked}");
+        assert!(tracked.contains(".hivemind/config.json"), "{tracked}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -3488,8 +3784,10 @@ mod git_readiness_tests {
 
         // And the action refuses too, re-checked rather than trusting the
         // earlier answer -- a file can appear between the two round trips.
-        let attempted =
-            tauri::async_runtime::block_on(initialize_git(dir.to_string_lossy().to_string()));
+        let attempted = tauri::async_runtime::block_on(initialize_git_with(
+            dir.to_string_lossy().to_string(),
+            &|_| Ok(()),
+        ));
         assert!(attempted.is_err(), "initialize_git proceeded past a refusal");
         assert!(!dir.join(".git").exists(), "a repository was created anyway");
         let _ = std::fs::remove_dir_all(&dir);
@@ -3528,7 +3826,7 @@ mod git_readiness_tests {
             real(args)
         };
 
-        let failure = perform_git_setup(&dir, &["node_modules".to_string()], &failing_at_add)
+        let failure = perform_git_setup(&dir, &["node_modules".to_string()], &failing_at_add, &|| Ok(()))
             .expect_err("the injected failure must surface");
 
         assert_eq!(failure.code, "nothing_changed");
@@ -3567,7 +3865,7 @@ mod git_readiness_tests {
             }
         };
 
-        let failure = perform_git_setup(&dir, &["node_modules".to_string()], &failing_at_commit)
+        let failure = perform_git_setup(&dir, &["node_modules".to_string()], &failing_at_commit, &|| Ok(()))
             .expect_err("the injected failure must surface");
 
         assert_eq!(failure.code, "nothing_changed");
@@ -3588,7 +3886,7 @@ mod git_readiness_tests {
         let dir = temp_dir("rollback-stuck");
         std::fs::write(dir.join(".git"), "not a directory").expect("blocker");
 
-        let remaining = undo_git_setup(&dir, None, true);
+        let remaining = undo_git_setup(&dir, None, true, false);
 
         assert!(
             remaining.contains(&".git".to_string()),
@@ -3619,12 +3917,68 @@ mod git_readiness_tests {
     #[test]
     fn an_existing_repository_is_left_alone() {
         let dir = temp_dir("existing");
-        std::fs::create_dir_all(dir.join(".git")).expect("git dir");
+        let initialized = std::process::Command::new("git")
+            .arg("init")
+            .current_dir(&dir)
+            .status()
+            .expect("git init");
+        assert!(initialized.success());
         let readiness =
             tauri::async_runtime::block_on(inspect_git_readiness(dir.to_string_lossy().to_string()))
                 .expect("readiness");
         assert!(readiness.is_repo);
         assert!(readiness.would_commit.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_incomplete_git_marker_is_a_recoverable_refusal_not_a_repository() {
+        let dir = temp_dir("partial-git");
+        std::fs::create_dir_all(dir.join(".git")).expect("partial git dir");
+        let readiness = tauri::async_runtime::block_on(inspect_git_readiness(
+            dir.to_string_lossy().to_string(),
+        ))
+        .expect("readiness");
+        assert!(!readiness.is_repo);
+        assert!(readiness.refusal.as_deref().unwrap_or_default().contains("incomplete or corrupt .git"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn nested_source_is_found_and_nested_secrets_and_generated_dirs_are_not_staged() {
+        let dir = temp_dir("nested-inventory");
+        std::fs::create_dir_all(dir.join("packages").join("app").join("src")).expect("source dir");
+        std::fs::create_dir_all(dir.join("packages").join("app").join("node_modules")).expect("deps dir");
+        std::fs::write(dir.join("packages").join("app").join("src").join("index.ts"), "export {};\n").expect("source");
+        std::fs::write(dir.join("packages").join("app").join(".env.production"), "SECRET=x\n").expect("secret");
+        std::fs::write(dir.join("packages").join("app").join("node_modules").join("dep.js"), "generated\n").expect("dep");
+        let readiness = tauri::async_runtime::block_on(inspect_git_readiness(
+            dir.to_string_lossy().to_string(),
+        ))
+        .expect("readiness");
+        assert_eq!(readiness.content, FolderContent::Source);
+        assert!(readiness.would_commit.contains(&"packages/app/src/index.ts".to_string()));
+        assert!(readiness.would_ignore.contains(&"packages/app/node_modules".to_string()));
+        assert!(!readiness.would_commit.iter().any(|entry| entry.contains("node_modules")));
+        assert!(readiness.refusal.as_deref().unwrap_or_default().contains("packages/app/.env.production"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn existing_ignore_rules_exclude_files_from_the_exact_commit_preview() {
+        let dir = temp_dir("existing-ignore");
+        std::fs::create_dir_all(dir.join("src")).expect("source dir");
+        std::fs::create_dir_all(dir.join("scratch")).expect("scratch dir");
+        std::fs::write(dir.join("src").join("index.ts"), "export {};\n").expect("source");
+        std::fs::write(dir.join("scratch").join("private.ts"), "secret-ish\n").expect("ignored");
+        std::fs::write(dir.join(".gitignore"), "scratch/\n").expect("ignore");
+        let readiness = tauri::async_runtime::block_on(inspect_git_readiness(
+            dir.to_string_lossy().to_string(),
+        ))
+        .expect("readiness");
+        assert!(readiness.would_commit.contains(&"src/index.ts".to_string()));
+        assert!(readiness.would_commit.contains(&".gitignore".to_string()));
+        assert!(!readiness.would_commit.iter().any(|entry| entry.contains("scratch")));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

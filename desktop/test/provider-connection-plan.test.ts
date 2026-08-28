@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { planProviderConnections } from "../src/components/workspace/setup-screen";
+import {
+  initialProviderSelection,
+  planProviderConnections,
+  providerCanBeSelectedForProof
+} from "../src/components/workspace/setup-screen";
 import {
   providerIsConnected,
   providerStanding
@@ -121,5 +125,27 @@ describe("provider connection planning", () => {
       remainingRoles: ["planner", "manager", "worker"]
     });
     expect(plan).toEqual([]);
+  });
+
+  test("no provider is preselected for a paid check", () => {
+    expect([...initialProviderSelection()]).toEqual([]);
+  });
+
+  test("an installed unverifiable provider can receive an explicit bounded proof without becoming signed in", () => {
+    const grok = { ...providers[1]!, id: "grok", label: "Grok Build" };
+    expect(providerCanBeSelectedForProof(grok, {
+      provider_id: "grok",
+      status: "unverifiable",
+      installed: true,
+      detail: "No safe status command"
+    })).toBe(true);
+    expect(providerIsConnected(grok, "unverifiable")).toBe(false);
+    expect(providerStanding(grok, "unverifiable")).toBe("Sign-in not readable");
+    expect(providerCanBeSelectedForProof(grok, {
+      provider_id: "grok",
+      status: "missing",
+      installed: false,
+      detail: "Missing"
+    })).toBe(false);
   });
 });

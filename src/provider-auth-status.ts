@@ -1,9 +1,12 @@
 import { execFile } from "node:child_process";
+import { access } from "node:fs/promises";
+import path from "node:path";
 
 import {
   PROVIDER_AUTHENTICATION_STATUS_SPECS,
   catalogueProviders,
   innerProviderStandingForAuthName,
+  providerAuthentication,
   type InnerProviderStanding,
   type ProviderAuthenticationStatusSpec
 } from "./agent-catalogue.js";
@@ -19,7 +22,7 @@ const MAX_STATUS_OUTPUT_BYTES = 64 * 1024;
 
 export interface ProviderAuthenticationStanding {
   provider_id: string;
-  status: "signed_in" | "signed_out" | "unknown";
+  status: "signed_in" | "signed_out" | "unknown" | "unverifiable" | "missing" | "malformed" | "failed";
   detail: string;
   /**
    * Whether the provider CLI is present on this machine at all — typed,
@@ -56,6 +59,11 @@ export type AuthenticationStatusRunner = (
   context: { cwd: string; env: NodeJS.ProcessEnv }
 ) => Promise<AuthenticationStatusProcessResult>;
 
+export type ProviderAvailabilityRunner = (
+  command: string,
+  context: { env: NodeJS.ProcessEnv }
+) => Promise<boolean>;
+
 /**
  * Ask provider CLIs for login standing without reading their credential stores.
  * Output is reduced to a tri-state; account names, email addresses, tokens and
@@ -63,18 +71,31 @@ export type AuthenticationStatusRunner = (
  */
 export async function inspectProviderAuthentication(
   repoRoot: string,
-  options: { runner?: AuthenticationStatusRunner } = {}
+  options: { runner?: AuthenticationStatusRunner; availability?: ProviderAvailabilityRunner } = {}
 ): Promise<ProviderAuthenticationStatusView> {
   const accounts = await readAccounts(repoRoot);
   const runner = options.runner ?? runAuthenticationStatusProcess;
+  const availability = options.availability ?? providerCommandAvailable;
   const providers = await Promise.all(
     catalogueProviders().map(async (provider): Promise<ProviderAuthenticationStanding> => {
       const spec = PROVIDER_AUTHENTICATION_STATUS_SPECS[provider.id];
+      const authentication = providerAuthentication(provider.id);
+      const command = authentication?.command[0] ?? null;
+      const installed = command === null ? null : await availability(command, { env: process.env });
+      if (installed === false) {
+        return {
+          provider_id: provider.id,
+          status: "missing",
+          detail: "The provider CLI is not installed or is not on PATH.",
+          installed: false
+        };
+      }
       if (spec === undefined) {
         return {
           provider_id: provider.id,
-          status: "unknown",
-          detail: "This provider CLI does not publish a safe login-status command."
+          status: "unverifiable",
+          detail: "This provider CLI does not publish a safe login-status command. Hivemind can only prove the connection with a bounded provider check.",
+          installed: installed ?? undefined
         };
       }
       const chosen = selectedAccount(accounts, provider.id);
@@ -89,11 +110,11 @@ export async function inspectProviderAuthentication(
         }
         return {
           provider_id: provider.id,
-          status: "unknown",
+          status: "failed",
           detail: result.reason ?? "The provider CLI did not report its login status.",
           /* ENOENT is the one failure that PROVES absence; every other
              failure leaves a CLI that exists and misbehaved. */
-          installed: result.notInstalled === true ? false : true
+          installed: result.notInstalled === true ? false : (installed ?? true)
         };
       }
       /* Codex on Windows writes its successful `login status` sentence to
@@ -116,7 +137,7 @@ export function parseAuthenticationStatus(
   if (kind === "login-text") {
     if (/^logged in\b/imu.test(output)) return signedIn(providerId);
     if (/not logged in|signed out/iu.test(output)) return signedOut(providerId);
-    return unknown(providerId);
+    return malformed(providerId);
   }
   if (kind === "logged-in-json") {
     try {
@@ -125,13 +146,13 @@ export function parseAuthenticationStatus(
         return parsed.loggedIn ? signedIn(providerId) : signedOut(providerId);
       }
     } catch {
-      return unknown(providerId);
+      return malformed(providerId);
     }
-    return unknown(providerId);
+    return malformed(providerId);
   }
   const plain = output.replaceAll(/\u001b\[[0-9;]*m/gu, "");
   const match = /\b(\d+) credentials?\b/iu.exec(plain);
-  if (match === null) return unknown(providerId);
+  if (match === null) return malformed(providerId);
   const standing = Number(match[1]) > 0 ? signedIn(providerId) : signedOut(providerId);
   /* Environment-variable entries are sign-ins too — a key in the environment
      reaches its vendor exactly as a stored credential does — so both sections'
@@ -170,12 +191,35 @@ function signedOut(providerId: string): ProviderAuthenticationStanding {
   };
 }
 
-function unknown(providerId: string): ProviderAuthenticationStanding {
+function malformed(providerId: string): ProviderAuthenticationStanding {
   return {
     provider_id: providerId,
-    status: "unknown",
+    status: "malformed",
     detail: "The provider CLI returned an unrecognised login-status response."
   };
+}
+
+export async function providerCommandAvailable(
+  command: string,
+  context: { env: NodeJS.ProcessEnv }
+): Promise<boolean> {
+  const candidate = command.trim();
+  if (candidate === "") return false;
+  if (path.isAbsolute(candidate) || candidate.includes("/") || candidate.includes("\\")) {
+    return access(candidate).then(() => true, () => false);
+  }
+  const directories = (context.env.PATH ?? context.env.Path ?? "").split(path.delimiter).filter(Boolean);
+  const extensions = process.platform === "win32"
+    ? (context.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";")
+    : [""];
+  const hasExtension = path.extname(candidate) !== "";
+  for (const directory of directories) {
+    const names = hasExtension ? [candidate] : extensions.map((extension) => `${candidate}${extension}`);
+    for (const name of names) {
+      if (await access(path.join(directory, name)).then(() => true, () => false)) return true;
+    }
+  }
+  return false;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

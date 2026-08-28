@@ -9,6 +9,7 @@
  * progress | wrong message.
  */
 import { spawn } from "node:child_process";
+import "./protect-recent-projects.mjs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";

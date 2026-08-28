@@ -9,6 +9,7 @@
  *   - the controls must be where a Windows user expects them
  */
 import assert from "node:assert/strict";
+import "./protect-recent-projects.mjs";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync } from "node:fs";

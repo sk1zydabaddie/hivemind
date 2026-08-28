@@ -97,25 +97,48 @@ function accountsPath(repoRoot: string): string {
 }
 
 export async function readAccounts(repoRoot: string): Promise<AccountsFile> {
+  const file = accountsPath(repoRoot);
+  let text: string;
   try {
-    const parsed: unknown = JSON.parse(await readFile(accountsPath(repoRoot), "utf8"));
-    if (typeof parsed !== "object" || parsed === null) return emptyAccounts();
-    const record = parsed as Partial<AccountsFile>;
-    return {
-      version: 1,
-      accounts: Array.isArray(record.accounts) ? record.accounts.filter(isAccount) : [],
-      selected:
-        typeof record.selected === "object" && record.selected !== null
-          ? (record.selected as Record<string, string>)
-          : {}
-    };
-  } catch {
-    return emptyAccounts();
+    text = await readFile(file, "utf8");
+  } catch (cause) {
+    if (isMissingFile(cause)) return emptyAccounts();
+    throw new Error(`could not read provider accounts at ${file}: ${errorMessage(cause)}`);
   }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (cause) {
+    throw new Error(`provider accounts at ${file} are corrupt JSON: ${errorMessage(cause)}`);
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`provider accounts at ${file} are corrupt: the file must contain an object`);
+  }
+  const record = parsed as Partial<AccountsFile>;
+  if (record.version !== 1 || !Array.isArray(record.accounts) || !record.accounts.every(isAccount)) {
+    throw new Error(`provider accounts at ${file} are corrupt: version or account entries are invalid`);
+  }
+  if (!isStringRecord(record.selected)) {
+    throw new Error(`provider accounts at ${file} are corrupt: selected accounts are invalid`);
+  }
+  return { version: 1, accounts: record.accounts, selected: record.selected };
 }
 
 function emptyAccounts(): AccountsFile {
   return { version: 1, accounts: [], selected: {} };
+}
+
+function isMissingFile(value: unknown): boolean {
+  return typeof value === "object" && value !== null && "code" in value && value.code === "ENOENT";
+}
+
+function errorMessage(value: unknown): string {
+  return value instanceof Error ? value.message : String(value);
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return typeof value === "object" && value !== null && !Array.isArray(value) &&
+    Object.values(value).every((entry) => typeof entry === "string");
 }
 
 /**

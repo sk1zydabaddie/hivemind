@@ -89,7 +89,8 @@ export default function App(): React.JSX.Element {
      cross-project coupling the isolation work removed. It holds paths and
      nothing else: no task, no run, no capability. Switching therefore cannot
      carry a verification across, because there is nothing here that could. */
-  const [recents, setRecents] = useState<{ path: string; opened_at: string }[]>([]);
+  const [recents, setRecents] = useState<{ path: string; opened_at: string; missing?: boolean }[]>([]);
+  const [recentsError, setRecentsError] = useState("");
   /* The CONNECTED root, for everything that needs a live project. */
   const projectPath = workspace.connection?.project_root ?? "";
   /* And the SELECTED one, which survives a failed connection. The update bar
@@ -100,18 +101,19 @@ export default function App(): React.JSX.Element {
   const selectedPath = workspace.projectPath;
 
   useEffect(() => {
-    void invoke<{ path: string; opened_at: string }[]>("recent_projects")
-      .then(setRecents)
-      .catch(() => {
-        /* Running outside the shell, e.g. the replay harness. The palette
-           simply offers nothing rather than showing an error where a project
-           list belongs. */
-      });
+    void invoke<{ path: string; opened_at: string; missing?: boolean }[]>("recent_projects")
+      .then((entries) => {
+        setRecents(entries);
+        setRecentsError("");
+      })
+      .catch((cause) => setRecentsError(cause instanceof Error ? cause.message : String(cause)));
   }, [projectPath]);
 
   useEffect(() => {
     if (projectPath === "") return;
-    void invoke("remember_project", { projectPath }).catch(() => undefined);
+    void invoke("remember_project", { projectPath }).catch((cause) =>
+      setRecentsError(cause instanceof Error ? cause.message : String(cause))
+    );
   }, [projectPath]);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -136,7 +138,8 @@ export default function App(): React.JSX.Element {
   ): Promise<void> => {
     event.preventDefault();
     if (projectInput.trim() === "") return;
-    await workspace.switchProject(projectInput);
+    const opened = await workspace.switchProject(projectInput);
+    if (!opened) return;
     setProjectInput("");
     setProjectOpen(false);
   };
@@ -150,7 +153,8 @@ export default function App(): React.JSX.Element {
       });
       if (selected === null) return;
       setProjectInput(selected);
-      await workspace.switchProject(selected);
+      const opened = await workspace.switchProject(selected);
+      if (!opened) return;
       setProjectInput("");
       setProjectOpen(false);
     } catch (cause) {
@@ -423,12 +427,13 @@ export default function App(): React.JSX.Element {
                       <div className="flex items-stretch gap-1" key={entry.path}>
                         <DropdownMenuItem
                           className="min-w-0 flex-1"
+                          disabled={entry.missing === true}
                           onSelect={() => void workspace.switchProject(entry.path)}
                         >
                           <FolderGit2 aria-hidden="true" />
                           <span className="min-w-0">
                             <span className="block font-medium text-ink">
-                              {projectNameFromPath(entry.path)}
+                              {projectNameFromPath(entry.path)}{entry.missing === true ? " — folder missing" : ""}
                             </span>
                             <span className="block break-all font-mono text-[11px] text-muted-foreground">
                               {displayProjectPath(entry.path)}
@@ -446,9 +451,12 @@ export default function App(): React.JSX.Element {
                             event.preventDefault();
                             event.stopPropagation();
                             void invoke("forget_project", { projectPath: entry.path })
-                              .then(() => invoke<{ path: string; opened_at: string }[]>("recent_projects"))
-                              .then(setRecents)
-                              .catch(() => undefined);
+                              .then(() => invoke<{ path: string; opened_at: string; missing?: boolean }[]>("recent_projects"))
+                              .then((entries) => {
+                                setRecents(entries);
+                                setRecentsError("");
+                              })
+                              .catch((cause) => setRecentsError(cause instanceof Error ? cause.message : String(cause)));
                           }}
                         >
                           <X aria-hidden="true" />
@@ -461,6 +469,11 @@ export default function App(): React.JSX.Element {
                       they are, and opening it again brings it back.
                     </p>
                   </>
+                )}
+                {recentsError === "" ? null : (
+                  <p className="m-0 mx-2.5 my-1.5 rounded-sm border-l-2 border-clay bg-clay-wash px-2 py-1.5 text-[11px] leading-relaxed text-clay" role="alert">
+                    Project list could not be read or updated. Its file was left untouched: {recentsError}
+                  </p>
                 )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={() => setProjectOpen(true)}>
@@ -620,11 +633,11 @@ export default function App(): React.JSX.Element {
             projection={workspace.projection}
             stage={value === "agents" ? "graph" : "thread"}
             onAction={workspace.performAction}
-            onReconnect={() =>
-              workspace.switchProject(
+            onReconnect={async () => {
+              await workspace.switchProject(
                 workspace.connection?.project_root ?? workspace.projectPath
-              )
-            }
+              );
+            }}
             onSelectTask={workspace.selectTaskOutput}
           />
         </TabsContent>

@@ -15,6 +15,7 @@ import { isMachineSpecific, trackedMachineFiles, untrackMachineFiles } from "../
 import { currentMachine, machineStanding } from "../src/verification-standing.js";
 import { buildProfileForAgent, connectAdapter, connectDiscoveredAdapter, initProjectForDesktop, inspectProjectConfig, setProjectConfig, startProviderAuthentication } from "../src/config-actions.js";
 import { executeWorkspaceAction } from "../src/workspace-actions.js";
+import { readEvents } from "../src/events.js";
 
 const run = promisify(execFile);
 
@@ -350,6 +351,14 @@ test("provider sign-in launches only the catalogue-owned command and returns no 
     );
     assert.equal(launchedFrom, repo);
     assert.equal(JSON.stringify(result).match(/token|credential|password/giu), null);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (events.ok) {
+      assert.deepEqual(
+        events.value.filter((event) => event.type.startsWith("provider.setup_")).map((event) => event.type),
+        ["provider.setup_started", "provider.setup_completed"]
+      );
+    }
 
     let called = false;
     const unknown = await startProviderAuthentication(repo, "not-a-provider", {
@@ -359,6 +368,56 @@ test("provider sign-in launches only the catalogue-owned command and returns no 
     });
     assert.equal(unknown.ok, false);
     assert.equal(called, false);
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("malformed provider profile and connection artifacts stay visible as corruption", async () => {
+  const repo = await repoWithProject();
+  try {
+    assert.equal((await initProjectForDesktop(repo)).ok, true);
+    const adapters = path.join(repo, ".hivemind", "adapters");
+    await writeFile(path.join(adapters, "planner.profile.json"), "{not-json", "utf8");
+    await writeFile(path.join(adapters, "planner.connection.json"), "[]", "utf8");
+    const inspected = await inspectProjectConfig(repo);
+    assert.equal(inspected.ok, true, inspected.ok ? undefined : inspected.reason);
+    if (!inspected.ok) return;
+    const planner = (inspected.value as { adapters: Array<{ role: string; installed: boolean; connected_at: string | null; problems: string[] }> }).adapters
+      .find((entry) => entry.role === "planner");
+    assert.equal(planner?.installed, true);
+    assert.equal(planner?.connected_at, null);
+    assert.match(planner?.problems.join("; ") ?? "", /corrupt JSON/iu);
+    assert.match(planner?.problems.join("; ") ?? "", /connection evidence is malformed/iu);
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("a partial connection artifact cannot masquerade as checked evidence", async () => {
+  const repo = await repoWithProject();
+  try {
+    assert.equal((await initProjectForDesktop(repo)).ok, true);
+    const plannerProfile = buildProfileForAgent(findCatalogueAgent("codex-terra")!, "planner");
+    assert.ok(plannerProfile);
+    await writeFile(
+      path.join(repo, ".hivemind", "adapters", "planner.profile.json"),
+      `${JSON.stringify(plannerProfile, null, 2)}\n`,
+      "utf8"
+    );
+    await writeFile(
+      path.join(repo, ".hivemind", "adapters", "planner.connection.json"),
+      JSON.stringify({ agent_id: "codex", connected_at: new Date().toISOString() }),
+      "utf8"
+    );
+    const inspected = await inspectProjectConfig(repo);
+    assert.equal(inspected.ok, true, inspected.ok ? undefined : inspected.reason);
+    if (!inspected.ok) return;
+    const planner = (inspected.value as {
+      adapters: Array<{ role: string; connected_at: string | null; problems: string[] }>;
+    }).adapters.find((entry) => entry.role === "planner");
+    assert.match(planner?.problems.join("; ") ?? "", /connection evidence is malformed/u);
+    assert.equal(planner?.connected_at, null);
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

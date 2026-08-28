@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import "./protect-recent-projects.mjs";
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";

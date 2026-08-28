@@ -4722,3 +4722,33 @@ then showed a scoped provider failure on the same named status surface. Both
 captures and structured evidence are under
 `docs/evidence/remediation-phase6-26.828.320/`.
 
+### Setup is a transaction with evidence, not optimistic navigation — 2026-08-28
+
+Provider support, local executable presence, authentication evidence, and
+project connection proof are different facts. The setup row must preserve that
+distinction in both wording and eligibility: unknown or unverifiable is not
+signed out, a working terminal wrapper does not prove the provider child
+exists, and no provider is selected for paid work merely because Hivemind
+supports it. Selection begins empty, remains reversible until activation, and
+the displayed estimate describes exactly that selection.
+
+A detected repository command is information, never consent. It may populate
+an answering Run control but cannot execute from mount, project open, or an
+effect. Similarly, one-click Git is one transaction: recursively classify the
+confined tree, refuse ambiguous secrets/links/nested repositories, honor ignore
+rules, preview the exact staged set, write shared Hivemind facts, then commit.
+Failure restores the prior ignore file and removes only state the transaction
+created.
+
+Long project operations own a generation. Completion may update the surface
+only if it still owns the current generation; this applies equally to opening,
+Git initialization, and their follow-up inspection. A failed manual entry is
+not completion and therefore cannot dismiss or clear its editor. Recent-project
+state follows the same evidence rule: missing is a removable entry, corruption
+is an explicit error, and installed verification must restore the registry's
+exact bytes rather than merely leave the same visible rows.
+
+Installed build **26.828.510** is the reference evidence. Its five 1440x900
+captures and structured provider/project matrix are under
+`docs/evidence/remediation-phase7-26.828.510/`.
+

@@ -69,6 +69,28 @@ export const PROJECT_FAULT = {
   unknown: "unknown"
 } as const;
 
+/**
+ * Whether a failed connection still selected a real project folder.
+ *
+ * Opening a folder and connecting its daemon are separate facts. A folder
+ * that needs Git or Hivemind setup is a successful SELECTION even though no
+ * daemon can connect yet; a missing path or ordinary file is not. The shell's
+ * readiness classification decides the ambiguous no-Git case, while faults
+ * that can only occur after Git resolved already prove a usable repository.
+ */
+export function projectSelectionAccepted(
+  faultCode: string | undefined,
+  readiness: GitReadiness | null
+): boolean {
+  if (faultCode === PROJECT_FAULT.notAGitRepository) return pathIsUsableFolder(readiness);
+  return new Set<string>([
+    PROJECT_FAULT.notInitialized,
+    PROJECT_FAULT.desktopUpdateRequired,
+    PROJECT_FAULT.daemonUnavailable,
+    PROJECT_FAULT.daemonBuildMismatch
+  ]).has(faultCode ?? "");
+}
+
 export interface ProjectFault {
   code: string;
   /** For a person to read. Never for the interface to decide on. */
@@ -156,7 +178,11 @@ interface ProjectSessionOptions {
 
 type OpenResult =
   | { ok: true; value: ProjectConnection }
-  | { ok: false; reason?: string; stale?: true };
+  | { ok: false; reason?: string; code?: string; stale?: true };
+
+type PreparationResult =
+  | { ok: true }
+  | { ok: false; cause?: unknown; stale?: true };
 
 export function createProjectSession({
   selectProject,
@@ -167,6 +193,7 @@ export function createProjectSession({
 }: ProjectSessionOptions): {
   switchProject: (projectPath: string) => Promise<OpenResult>;
   initializeProject: (projectPath: string) => Promise<OpenResult>;
+  prepareProject: (projectPath: string, prepare: (projectPath: string) => Promise<unknown>) => Promise<PreparationResult>;
   adopt: (connection: ProjectConnection) => void;
 } {
   let generation = 0;
@@ -189,7 +216,7 @@ export function createProjectSession({
           message: "No project folder has been chosen."
         };
         onError(fault);
-        return { ok: false, reason: fault.message };
+        return { ok: false, reason: fault.message, code: fault.code };
       }
 
       let connection: ProjectConnection;
@@ -201,7 +228,7 @@ export function createProjectSession({
         }
         const fault = projectFaultFrom(error);
         onError(fault);
-        return { ok: false, reason: fault.message };
+        return { ok: false, reason: fault.message, code: fault.code };
       }
       if (currentGeneration !== generation) {
         return { ok: false, stale: true };
@@ -213,6 +240,20 @@ export function createProjectSession({
   return {
     switchProject: (projectPath) => open(projectPath, selectProject),
     initializeProject: (projectPath) => open(projectPath, initializeProject),
+    async prepareProject(projectPath, prepare) {
+      const selectedPath = String(projectPath ?? "").trim();
+      const currentGeneration = ++generation;
+      onSwitchStart(selectedPath);
+      if (selectedPath === "") return { ok: false, cause: new Error("No project folder has been chosen.") };
+      try {
+        await prepare(selectedPath);
+      } catch (cause) {
+        return currentGeneration === generation
+          ? { ok: false, cause }
+          : { ok: false, stale: true };
+      }
+      return currentGeneration === generation ? { ok: true } : { ok: false, stale: true };
+    },
     /* A connection obtained outside `open` — the daemon restart returns one
        directly. It still advances the generation, so streams opened against
        the process that was just stopped are ignored rather than reconnected. */

@@ -24,6 +24,7 @@
  *                          the recorded real-workflow project)
  *   HIVEMIND_E2E_EVIDENCE  where captures land
  */
+import "./protect-recent-projects.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";

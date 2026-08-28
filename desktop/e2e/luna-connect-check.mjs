@@ -10,6 +10,7 @@
  * Verifies by DOING it: the connection record on disk is the evidence, and the
  * row's own words are checked for the claim they used to overstate.
  */
+import "./protect-recent-projects.mjs";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";

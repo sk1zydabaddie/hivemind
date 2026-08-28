@@ -348,7 +348,7 @@ function AgentSection({
   const [opened, setOpened] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [probe, setProbe] = useState<{ role: string; result: ProbedCapability[]; ok: boolean } | null>(null);
-  const { standings: authenticationStandings, watchForCompletion } =
+  const { standings: authenticationStandings, error: authenticationError, refresh: refreshAuthentication, watchForCompletion } =
     useProviderAuthentication({ active: view !== null, onAction });
 
   useEffect(() => {
@@ -436,6 +436,7 @@ function AgentSection({
             {providers.map((provider) => (
               <ProviderListRow
                 authenticationBusy={authBusy === provider.id}
+                authenticationInstalled={authenticationStandings.get(provider.id)?.installed}
                 authenticationStatus={authenticationStandings.get(provider.id)?.status ?? "unknown"}
                 checksBusy={connecting !== null}
                 expanded={opened === provider.id}
@@ -470,6 +471,13 @@ function AgentSection({
               );
             })()}
           </div>
+
+          {authenticationError === "" ? null : (
+            <div className="mt-2 flex items-center gap-2 rounded-sm border-l-2 border-clay bg-clay-wash px-2.5 py-1.5 text-[12px] text-clay" role="alert">
+              <span className="min-w-0 flex-1 break-words">Provider status could not be read: {authenticationError}</span>
+              <Button size="xs" type="button" variant="outline" onClick={() => void refreshAuthentication()}>Try again</Button>
+            </div>
+          )}
 
           {notice === "" ? null : (
             <p className="mt-2 mb-0 rounded-sm border-l-2 border-navy bg-navy-wash px-2.5 py-1.5 text-[12px] text-ink" role="status">

@@ -3245,3 +3245,55 @@ The remediation ledger is now **64 open findings: 5 Critical, 31 High, 26
 Medium, and 2 Low**. R4 is complete; R5 through R7 remain. G0 and the product's
 overall **NO-GO** remain in force. Phase 7 begins only in its next dedicated
 turn.
+
+## Remediation Phase 7: provider, setup, Git, and project lifecycle — 2026-08-28
+
+Phase 7 is complete and closes **F1-06, F1-15, F1-21, and F2-01 through
+F2-15**, completing R5. Provider setup now has one durable round identity with
+start and terminal events. Provider standing separates signed in, signed out,
+unknown, unverifiable, missing, malformed, and failed; Windows executable
+presence is checked at the intended child rather than inferred from a working
+`cmd.exe` wrapper. Setup begins with no selection, keeps eligible providers
+deselectable until work starts, and estimates only the exact selected plan.
+Grok and Kimi may enter an explicit bounded proof while still labelled
+unverifiable; no unknown state becomes a signed-in claim.
+
+Detected repository checks are recommendations until the user presses their
+Run control. Git readiness recursively inventories the confined project,
+honors root ignore rules, finds nested source, excludes nested dependency/build
+trees, refuses secret variants, links, nested repositories, and incomplete Git
+metadata, and shows the exact first-commit set. Hivemind shared facts are
+written before staging; failures roll back newly created Git/Hivemind state and
+restore the prior ignore file.
+
+Project open and Git initialization carry generation identity, so stale work
+cannot replace a newer selection. A failed manual path stays editable. Recent
+projects use atomic write-through replacement, preserve corrupt evidence, keep
+missing entries removable, and every installed JavaScript driver now protects
+the user's actual registry with an exact-byte snapshot/restore guard.
+
+Installed build **26.828.510** was built, installed, and matched across the
+executable, Core, shell, and pinned Node identities. At 1440x900 the installed
+matrix proved a failed manual path remained in place, a corrected nested-source
+project reached the exact Git preview, `.env.production` and incomplete `.git`
+were refused without a setup control, the detected `npm test` marker remained
+absent before its Run control, all five providers started unselected, and the
+estimate remained zero. A direct installed-Core run with a restricted PATH
+reported all five missing provider executables as `missing` with
+`installed: false`. Five build-labelled captures and structured evidence are
+under `docs/evidence/remediation-phase7-26.828.510/`; severe browser logs were
+empty and the user's recent-project registry was restored exactly.
+
+Final no-paid validation passed Core (**966 passed, 2 skipped, 968 total**),
+Desktop (**341/341**), Rust (**52/52**), all **30/30** configured reachability
+surfaces, the advisory gates with zero findings, `git diff --check`, the
+unchanged 20-item reachability lead report, installed identity verification,
+and the installed lifecycle proof. A missing developer Node link interrupted
+one initial Core run; the final count used the repository's intended Node 22
+runtime directly. No provider/model call, key operation, publication, or
+public-channel mutation occurred.
+
+The remediation ledger is now **46 open findings: 5 Critical, 23 High, 16
+Medium, and 2 Low**. R5 is complete; R6 and R7 remain. G0 and the product's
+overall **NO-GO** remain in force. Phase 8 begins only in its next dedicated
+turn.

@@ -11,6 +11,7 @@
  *   6. there is a way forward from the last screen
  *   7. the command badge is not stretched
  */
+import "./protect-recent-projects.mjs";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";

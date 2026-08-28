@@ -320,7 +320,7 @@ test("the provider row carries the vendor's install command and the reachable pr
   assert.deepEqual(codex?.reachable_providers, []);
 });
 
-test("installed is a typed fact: ENOENT proves absence, anything else leaves a CLI that exists", async () => {
+test("installed is a typed fact from the executable itself, not from a wrapper status command", async () => {
   const repo = await repoWithProject();
   try {
     const view = await inspectProviderAuthentication(repo, {
@@ -329,13 +329,17 @@ test("installed is a typed fact: ENOENT proves absence, anything else leaves a C
           return { ok: false, stdout: "", stderr: "", reason: "The provider CLI is not installed or is not on PATH.", notInstalled: true };
         }
         return { ok: true, stdout: spec.kind === "login-text" ? "Logged in\n" : '{"loggedIn":true}', stderr: "", reason: null };
-      }
+      },
+      availability: async (command) => command[0]?.toLowerCase().includes("opencode") !== true
     });
     const byId = new Map(view.providers.map((provider) => [provider.provider_id, provider]));
     assert.equal(byId.get("opencode")?.installed, false);
     assert.equal(byId.get("codex-cli")?.installed, true);
-    /* A provider with no status command at all says nothing either way. */
-    assert.equal(byId.get("grok")?.installed, undefined);
+    /* A provider with no safe account-status command can still prove whether
+       its actual executable is present; only its SIGN-IN standing remains
+       unverifiable. */
+    assert.equal(byId.get("grok")?.installed, true);
+    assert.equal(byId.get("grok")?.status, "unverifiable");
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

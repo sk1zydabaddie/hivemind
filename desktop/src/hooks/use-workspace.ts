@@ -18,6 +18,7 @@ import {
   actionErrorAfterDurableProgress,
   gitSetupFailureFrom,
   PROJECT_FAULT,
+  projectSelectionAccepted,
   projectFaultFrom,
   projectStreamUrl,
   validateProjectConnection,
@@ -48,7 +49,7 @@ interface WorkspaceView {
   gitSetupFailure: GitSetupFailure | null;
   /** Set once git setup succeeded for THIS project, with what it committed. */
   gitSetupDone: { forProject: string; files: string[] } | null;
-  switchProject: (projectPath: string) => Promise<void>;
+  switchProject: (projectPath: string) => Promise<boolean>;
   initializeProject: () => Promise<void>;
   initializeGit: () => Promise<void>;
   restartDaemon: () => Promise<void>;
@@ -503,9 +504,24 @@ export function useWorkspace(): WorkspaceView {
   const switchProject = useCallback(
     async (selectedPath: string) => {
       setProjectPath(selectedPath);
-      await session.switchProject(selectedPath);
+      const result = await session.switchProject(selectedPath);
+      if (result.ok) return true;
+      if (result.stale === true) return false;
+      if (result.code !== PROJECT_FAULT.notAGitRepository) {
+        return projectSelectionAccepted(result.code, null);
+      }
+      try {
+        const readiness = await invoke<GitReadiness>("inspect_git_readiness", {
+          projectPath: selectedPath
+        });
+        setGitReadiness(readiness);
+        return projectSelectionAccepted(result.code, readiness);
+      } catch (error) {
+        recordActionError(error instanceof Error ? error.message : String(error));
+        return false;
+      }
     },
-    [session]
+    [recordActionError, session]
   );
 
   const initializeProject = useCallback(async () => {
@@ -587,9 +603,15 @@ export function useWorkspace(): WorkspaceView {
        the button they pressed. */
     const wouldCommit = gitReadiness?.would_commit ?? [];
     try {
-      await invoke("initialize_git", { projectPath });
+      const prepared = await session.prepareProject(projectPath, (selectedPath) =>
+        invoke("initialize_git", { projectPath: selectedPath })
+      );
+      if (!prepared.ok) {
+        if (prepared.stale) return;
+        throw prepared.cause;
+      }
       setGitSetupDone({ forProject: projectPath, files: wouldCommit });
-      await session.switchProject(projectPath);
+      await session.initializeProject(projectPath);
     } catch (error) {
       /* The shell's answer, typed. The screen's "Nothing changed." claim is
          allowed only when the shell measured exactly that (A-07); anything

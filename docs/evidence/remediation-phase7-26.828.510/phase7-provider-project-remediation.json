@@ -1,0 +1,122 @@
+{
+  "installedVersion": "26.828.510",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "paidProviderCalls": 0,
+  "missingProviders": {
+    "providers": [
+      {
+        "provider_id": "codex-cli",
+        "status": "missing",
+        "detail": "The provider CLI is not installed or is not on PATH.",
+        "installed": false
+      },
+      {
+        "provider_id": "claude",
+        "status": "missing",
+        "detail": "The provider CLI is not installed or is not on PATH.",
+        "installed": false
+      },
+      {
+        "provider_id": "opencode",
+        "status": "missing",
+        "detail": "The provider CLI is not installed or is not on PATH.",
+        "installed": false
+      },
+      {
+        "provider_id": "grok",
+        "status": "missing",
+        "detail": "The provider CLI is not installed or is not on PATH.",
+        "installed": false
+      },
+      {
+        "provider_id": "kimi",
+        "status": "missing",
+        "detail": "The provider CLI is not installed or is not on PATH.",
+        "installed": false
+      }
+    ]
+  },
+  "failedManualPath": {
+    "dialogStillOpen": true,
+    "retained": "C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase7-rzf3lm\\does-not-exist"
+  },
+  "nestedProject": {
+    "sourceListed": true,
+    "generatedExcluded": true,
+    "projectFactsListed": true
+  },
+  "secretRefusal": {
+    "namesSecret": true,
+    "setupOffered": false
+  },
+  "incompleteGit": {
+    "refused": true,
+    "setupOffered": false
+  },
+  "explicitCheck": {
+    "markerBeforeControl": false,
+    "controlVisible": true
+  },
+  "providers": {
+    "selection": [
+      {
+        "checked": "false",
+        "disabled": false,
+        "label": "Include Codex when connecting"
+      },
+      {
+        "checked": "false",
+        "disabled": false,
+        "label": "Include Grok Build when connecting"
+      },
+      {
+        "checked": "false",
+        "disabled": false,
+        "label": "Include Claude Code when connecting"
+      },
+      {
+        "checked": "false",
+        "disabled": false,
+        "label": "Include OpenCode when connecting"
+      },
+      {
+        "checked": "false",
+        "disabled": false,
+        "label": "Include Kimi Code when connecting"
+      }
+    ],
+    "noPreselection": true,
+    "exactEstimate": true
+  },
+  "screenshots": [
+    {
+      "item": "01-nested-project-preview",
+      "build": "26.828.510",
+      "file": "01-nested-project-preview-26.828.510-1440x900.png"
+    },
+    {
+      "item": "02-secret-refusal",
+      "build": "26.828.510",
+      "file": "02-secret-refusal-26.828.510-1440x900.png"
+    },
+    {
+      "item": "03-incomplete-git-refusal",
+      "build": "26.828.510",
+      "file": "03-incomplete-git-refusal-26.828.510-1440x900.png"
+    },
+    {
+      "item": "04-explicit-check-and-provider-state",
+      "build": "26.828.510",
+      "file": "04-explicit-check-and-provider-state-26.828.510-1440x900.png"
+    },
+    {
+      "item": "05-provider-selection",
+      "build": "26.828.510",
+      "file": "05-provider-selection-26.828.510-1440x900.png"
+    }
+  ],
+  "browserSevereLogs": []
+}

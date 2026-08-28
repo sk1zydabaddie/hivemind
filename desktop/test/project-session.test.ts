@@ -6,6 +6,7 @@ import {
   createProjectStreamGuard,
   displayProjectPath,
   projectNameFromPath,
+  projectSelectionAccepted,
   projectStreamUrl,
   validateProjectConnection
 } from "../src/lib/project-session";
@@ -121,6 +122,64 @@ describe("project-bound desktop session", () => {
     const projectB = guard.capture();
     expect(projectA()).toBe(false);
     expect(projectB()).toBe(true);
+  });
+
+  test("a completed Git preparation cannot reopen an older project after a newer selection", async () => {
+    let finishPreparation!: () => void;
+    const connected: string[] = [];
+    const session = createProjectSession({
+      initializeProject: async (projectPath) => ({
+        project_root: projectPath,
+        daemon_url: "http://127.0.0.1:41001",
+        daemon_token: daemonToken,
+        build_id: buildId,
+        shell_build_id: shellBuildId,
+        expected_shell_build_id: shellBuildId,
+        status: "attached"
+      }),
+      selectProject: async (projectPath) => ({
+        project_root: projectPath,
+        daemon_url: "http://127.0.0.1:41002",
+        daemon_token: daemonToken,
+        build_id: buildId,
+        shell_build_id: shellBuildId,
+        expected_shell_build_id: shellBuildId,
+        status: "attached"
+      }),
+      onSwitchStart: () => undefined,
+      onConnected: (connection) => connected.push(connection.project_root),
+      onError: () => undefined
+    });
+    const preparing = session.prepareProject("A", () => new Promise<void>((resolve) => { finishPreparation = resolve; }));
+    expect((await session.switchProject("B")).ok).toBe(true);
+    finishPreparation();
+    expect(await preparing).toEqual({ ok: false, stale: true });
+    expect(connected).toEqual(["B"]);
+  });
+
+  test("a usable setup folder closes the chooser while a missing path remains editable", () => {
+    expect(projectSelectionAccepted("not_a_git_repository", {
+      exists: true,
+      is_directory: true,
+      is_repo: false,
+      content: "source",
+      saw: ["src/index.js"],
+      starts_empty: false,
+      would_commit: ["src/index.js"],
+      would_ignore: [],
+      refusal: null
+    })).toBe(true);
+    expect(projectSelectionAccepted("not_a_git_repository", {
+      exists: false,
+      is_directory: false,
+      is_repo: false,
+      starts_empty: false,
+      would_commit: [],
+      would_ignore: [],
+      refusal: "The folder does not exist."
+    })).toBe(false);
+    expect(projectSelectionAccepted("not_initialized_for_hivemind", null)).toBe(true);
+    expect(projectSelectionAccepted("unknown", null)).toBe(false);
   });
 
   test("stream credentials stay confined to the daemon's read-only stream routes", () => {

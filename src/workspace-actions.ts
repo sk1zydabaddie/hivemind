@@ -18,14 +18,14 @@ import { readCheckOutput } from "./check-output.js";
 import { addAccount, selectAccount } from "./provider-accounts.js";
 import { listProjectFiles, readProjectFile } from "./project-files.js";
 import { findGitRoot } from "./repo.js";
-import { readEvents, type HivemindEvent } from "./events.js";
+import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
 import { requestTaskRedirect } from "./supervision.js";
 import { requestTaskStop } from "./task-control.js";
 import { inspectWorkspace } from "./workspace-inspection.js";
 
 import { resumeTask } from "./task-resume.js";
 import { startNewConversation, draftSpecFromPrompt, type ConversationAttachment } from "./spec-draft-action.js";
-import { adapterRoleNames, isAdapterRoleName } from "./agent-catalogue.js";
+import { adapterRoleNames, findCatalogueAgent, isAdapterRoleName, type AdapterRoleName } from "./agent-catalogue.js";
 import { discoverProviderModels } from "./model-discovery.js";
 import {
   connectAdapter,
@@ -125,6 +125,32 @@ export const workspaceActionTypes = [
 
 export type WorkspaceActionType = (typeof workspaceActionTypes)[number];
 type ActionResult = { ok: true; value: unknown } | { ok: false; reason: string };
+
+async function runRecordedProviderSetup(
+  repoRoot: string,
+  data: { provider_id: string; operation: string; role: string },
+  run: () => Promise<ActionResult>
+): Promise<ActionResult> {
+  const started = await appendEvent(repoRoot, {
+    type: "provider.setup_started",
+    task_id: null,
+    data
+  });
+  if (!started.ok) return { ok: false, reason: `could not record provider setup start: ${started.reason}` };
+  const result = await run();
+  const terminal = await appendEvent(repoRoot, {
+    type: result.ok ? "provider.setup_completed" : "provider.setup_failed",
+    task_id: null,
+    data: result.ok ? data : { ...data, reason_code: "provider_check_refused" }
+  });
+  if (!terminal.ok) {
+    return {
+      ok: false,
+      reason: `${result.ok ? "the provider check completed" : "the provider check failed"}, but its durable setup record could not be written: ${terminal.reason}`
+    };
+  }
+  return result;
+}
 const conversationRequests = new Map<string, Promise<ActionResult>>();
 
 export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Promise<ActionResult> {
@@ -470,7 +496,13 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
     if (!isAdapterRoleName(parsed.value.role)) {
       return { ok: false, reason: `role must be one of ${adapterRoleNames.join(", ")}` };
     }
-    return connectAdapter(repoRoot, parsed.value.role, parsed.value.agent_id);
+    const role = parsed.value.role as AdapterRoleName;
+    const providerId = findCatalogueAgent(parsed.value.agent_id)?.harness ?? "unknown";
+    return runRecordedProviderSetup(
+      repoRoot,
+      { provider_id: providerId, operation: "connection_check", role },
+      () => connectAdapter(repoRoot, role, parsed.value.agent_id)
+    );
   }
   if (raw.type === "adapter.connect_model") {
     const parsed = exactStrings(payload, ["role", "provider_id", "model_slug"]);
@@ -478,11 +510,16 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
     if (!isAdapterRoleName(parsed.value.role)) {
       return { ok: false, reason: `role must be one of ${adapterRoleNames.join(", ")}` };
     }
-    return connectDiscoveredAdapter(
+    const role = parsed.value.role as AdapterRoleName;
+    return runRecordedProviderSetup(
       repoRoot,
-      parsed.value.role,
-      parsed.value.provider_id,
-      parsed.value.model_slug
+      { provider_id: parsed.value.provider_id, operation: "connection_check", role },
+      () => connectDiscoveredAdapter(
+        repoRoot,
+        role,
+        parsed.value.provider_id,
+        parsed.value.model_slug
+      )
     );
   }
   return { ok: false, reason: "unsupported workspace action" };

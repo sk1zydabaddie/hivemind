@@ -118,6 +118,12 @@ export const eventTypes = [
   "approval.required",
   "quota.low",
   "quota.exhausted",
+  /* Provider setup has side effects outside React (a provider-owned terminal
+     or a bounded capability probe). These three events make the transition
+     durable without carrying credentials or provider output into the trail. */
+  "provider.setup_started",
+  "provider.setup_completed",
+  "provider.setup_failed",
   "conversation.message_recorded",
   /* What the drafter said back when the message was not a build request. It
      carries advisory_only/authorization_effect exactly as human guidance does,

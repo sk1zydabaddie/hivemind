@@ -94,6 +94,20 @@ Installed/no-paid evidence and both 1440x900 build-labelled captures are under
 Critical, 31 High, 26 Medium, and 2 Low**. The product remains NO-GO because R5
 through R7 and their release gates remain open.
 
+**Phase 7 provider, setup, Git, and project lifecycle completed 2026-08-28.**
+Installed build **26.828.510** closes F1-06, F1-15, F1-21, and F2-01 through
+F2-15, completing R5. Provider standing is typed and executable-backed; setup
+starts with no paid selection and never runs a detected repository command
+without its answering control. Git entry is recursively classified, previews
+the exact first commit, writes shared Hivemind facts before staging, and rolls
+back partial initialization. Project operations are generation-bound, recent
+projects are atomic and recoverable, and every installed driver preserves the
+real registry byte-for-byte. Installed/no-paid evidence and five 1440x900
+build-labelled captures are under
+`docs/evidence/remediation-phase7-26.828.510/`. There are **46 open findings: 5
+Critical, 23 High, 16 Medium, and 2 Low**. The product remains NO-GO because R6
+and R7 and the release workstreams remain open.
+
 ## Reconciliation result
 
 The ledger parser found exactly 93 unique IDs with the expected phase counts:
@@ -554,7 +568,7 @@ JSONL/plain-text records arrive intact, and transport failure becomes a scoped
 recoverable error. Repeat for every supported protocol with no-paid fixtures;
 real provider calls require separate approval.
 
-## R5 — Provider, setup, Git, and project lifecycle
+## R5 — Provider, setup, Git, and project lifecycle — COMPLETE 2026-08-28
 
 **Primary areas:** `desktop/src-tauri/src/project.rs`, provider registry and
 adapter inspection, `desktop/src/lib/provider-authentication.ts`, project session

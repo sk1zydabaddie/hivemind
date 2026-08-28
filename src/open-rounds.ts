@@ -150,6 +150,12 @@ export const ROUND_SHAPES: readonly RoundShape[] = [
     terminal: ["manager.worker_process_stopped"],
     idFields: ["call_id"],
     what: "a manager process"
+  },
+  {
+    started: "provider.setup_started",
+    terminal: ["provider.setup_completed", "provider.setup_failed"],
+    idFields: ["provider_id", "operation", "role"],
+    what: "provider setup"
   }
 ];
 

@@ -31,7 +31,7 @@ export function providerRank(status: CatalogueProvider["status"]): number {
  * provider keeps its own control -- "What is unverified about X" -- where it
  * cannot be mistaken for something measured here.
  */
-export type ProviderStandingRank = 0 | 1 | 2 | 3;
+export type ProviderStandingRank = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export function providerStandingRank(
   provider: CatalogueProvider,
@@ -39,14 +39,20 @@ export function providerStandingRank(
 ): ProviderStandingRank {
   if (provider.checked_here) return 0;
   if (authenticationStatus === "signed_in") return 1;
-  return provider.connectable ? 2 : 3;
+  if (authenticationStatus === "signed_out") return 2;
+  if (authenticationStatus === "unverifiable") return 3;
+  if (authenticationStatus === "missing") return 4;
+  if (authenticationStatus === "malformed") return 5;
+  if (authenticationStatus === "unknown") return 6;
+  if (authenticationStatus === "failed") return 7;
+  return provider.connectable ? 6 : 4;
 }
 
 export function providerStanding(
   provider: CatalogueProvider,
   authenticationStatus: ProviderAuthenticationStanding["status"]
 ): string {
-  return ["Checked here", "Signed in", "Not signed in", "Cannot connect"][
+  return ["Checked here", "Signed in", "Not signed in", "Sign-in not readable", "Not installed", "Unreadable response", "Not checked yet", "Status check failed"][
     providerStandingRank(provider, authenticationStatus)
   ]!;
 }
@@ -60,7 +66,11 @@ export function providerStandingDetail(
     "A capability check passed for this project, so this provider can run work here.",
     "The provider CLI reports an active sign-in. Nothing has been checked in this project yet, so a model here may still refuse.",
     "The provider CLI reports no sign-in. Sign in first -- connecting runs it once, and it cannot run without a session.",
-    "Hivemind cannot connect this provider yet."
+    "This provider does not publish a safe sign-in status. A bounded connection check can prove that it works without calling this signed in.",
+    "The provider CLI is missing. Install it before trying to sign in or connect.",
+    "The provider CLI returned a response Hivemind could not safely interpret. It has not been treated as signed out or signed in.",
+    "Hivemind has not received a provider status answer yet.",
+    "The provider status check failed. Retry it; the previous standing has not been guessed."
   ][providerStandingRank(provider, authenticationStatus)]!;
 }
 
@@ -84,6 +94,7 @@ export function ProviderListRow({
   expanded,
   authenticationBusy,
   authenticationStatus,
+  authenticationInstalled,
   reaches = null,
   checksBusy,
   leading,
@@ -95,6 +106,7 @@ export function ProviderListRow({
   expanded: boolean;
   authenticationBusy: boolean;
   authenticationStatus: ProviderAuthenticationStanding["status"];
+  authenticationInstalled?: boolean;
   /** Which vendors this harness's own sign-ins reach, for multiplier rows. */
   reaches?: ProviderAuthenticationStanding["reaches"];
   checksBusy: boolean;
@@ -104,10 +116,15 @@ export function ProviderListRow({
   onAuthenticate: () => void;
 }): React.JSX.Element {
   const connected = providerIsConnected(provider, authenticationStatus);
+  const install = provider.install ?? null;
   /* The disclosure behind the chevron: the caveat as before, plus the tier
      claim and — for a multiplier — which vendors its sign-ins reach. */
   const expandable =
-    provider.caveat !== null || provider.tier_claim !== undefined || reaches != null;
+    provider.caveat !== null ||
+    provider.tier_claim !== undefined ||
+    reaches != null ||
+    install !== null;
+  const standingRank = providerStandingRank(provider, authenticationStatus);
   return (
     <div className="border-b border-rule last:border-b-0">
       <div
@@ -155,7 +172,7 @@ export function ProviderListRow({
         ) : (
           <Button
             aria-label={`Open ${provider.label} sign-in`}
-            disabled={authenticationBusy || checksBusy}
+            disabled={authenticationBusy || checksBusy || authenticationStatus === "missing" || authenticationInstalled === false}
             size="xs"
             title={provider.authentication.detail}
             type="button"
@@ -167,16 +184,18 @@ export function ProviderListRow({
             ) : (
               <ExternalLink aria-hidden="true" />
             )}
-            {authenticationBusy ? "Opening…" : "Sign in"}
+            {authenticationBusy ? "Opening…" : authenticationStatus === "missing" || authenticationInstalled === false ? "Not installed" : "Sign in"}
           </Button>
         )}
         <span
           className={`shrink-0 text-[11px] font-medium ${
-            provider.checked_here || provider.status === "supported"
+            standingRank <= 1
               ? "text-navy"
-              : provider.connectable
+              : standingRank === 2 || standingRank === 3 || standingRank === 6
                 ? "text-amber"
-                : "text-muted-foreground"
+                : standingRank === 5 || standingRank === 7
+                  ? "text-clay"
+                  : "text-muted-foreground"
           }`}
         >
           {providerStanding(provider, authenticationStatus)}
@@ -209,6 +228,14 @@ export function ProviderListRow({
           {provider.caveat === null ? null : (
             <p className="m-0 text-[11px] leading-relaxed break-words text-muted-foreground">
               {provider.caveat}
+            </p>
+          )}
+          {install === null ? null : (
+            <p className="m-0 text-[11px] leading-relaxed break-words text-muted-foreground">
+              <span className="font-medium text-ink">Install:</span>{" "}
+              {install.detail}{" "}
+              <code className="font-mono text-ink">{install.command}</code>{" "}
+              <span>({install.url}, checked {install.checked}).</span>
             </p>
           )}
           {reaches == null ? null : (

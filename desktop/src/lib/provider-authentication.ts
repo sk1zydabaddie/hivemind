@@ -14,23 +14,40 @@ export function useProviderAuthentication({
   onAction: <T>(action: WorkspaceAction) => Promise<T>;
 }): {
   standings: ReadonlyMap<string, ProviderAuthenticationStanding>;
+  error: string;
+  refresh: () => Promise<void>;
   watchForCompletion: (providerId: string | null) => void;
 } {
   const [standings, setStandings] = useState<ReadonlyMap<string, ProviderAuthenticationStanding>>(
     new Map()
   );
+  const [error, setError] = useState("");
   const watchedProvider = useRef<string | null>(null);
 
   const refresh = useCallback(async (): Promise<void> => {
-    const view = await onAction<ProviderAuthenticationStatusView>({
-      type: "provider.auth.inspect",
-      payload: {}
-    });
-    const next = new Map(view.providers.map((provider) => [provider.provider_id, provider]));
-    setStandings(next);
-    const watched = watchedProvider.current;
-    if (watched !== null && next.get(watched)?.status === "signed_in") {
-      watchedProvider.current = null;
+    try {
+      const view = await onAction<ProviderAuthenticationStatusView>({
+        type: "provider.auth.inspect",
+        payload: {}
+      });
+      const next = new Map(view.providers.map((provider) => [provider.provider_id, provider]));
+      setStandings(next);
+      setError("");
+      const watched = watchedProvider.current;
+      const watchedStanding = watched === null ? undefined : next.get(watched);
+      if (
+        watchedStanding?.status === "signed_in" ||
+        watchedStanding?.status === "unverifiable" ||
+        watchedStanding?.status === "missing"
+      ) {
+        /* Some harnesses publish no safe account-status command. One refresh
+           after the person returns is still useful (it catches install/path
+           changes), but repeating that same intrinsically unverifiable probe
+           on every later click can never turn it into a sign-in verdict. */
+        watchedProvider.current = null;
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
     }
   }, [onAction]);
 
@@ -72,6 +89,8 @@ export function useProviderAuthentication({
 
   return {
     standings,
+    error,
+    refresh,
     watchForCompletion: (providerId) => {
       watchedProvider.current = providerId;
     }

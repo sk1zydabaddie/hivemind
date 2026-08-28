@@ -81,6 +81,13 @@ test("an account is a directory the harness owns, and selecting one points at it
   });
 });
 
+test("a corrupt accounts file is reported as corruption instead of becoming no accounts", async () => {
+  await withRepo(async (repo) => {
+    await writeFile(path.join(repo, ".hivemind", "adapters", "accounts.json"), "{not-json", "utf8");
+    await assert.rejects(readAccounts(repo), /accounts.*corrupt JSON/iu);
+  });
+});
+
 test("the first connection probe runs under the selected account before a record exists", async () => {
   await withRepo(async (repo) => {
     const home = await fakeHome(repo, "first-connect");

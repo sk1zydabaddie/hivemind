@@ -10,6 +10,7 @@
  * than only at the end.
  */
 import assert from "node:assert/strict";
+import "./protect-recent-projects.mjs";
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";

@@ -57,6 +57,8 @@ import {
 } from "./verification-standing.js";
 import { writeJsonAtomic } from "./atomic.js";
 import { spawnEnvironment } from "./spawn-environment.js";
+import { appendEvent } from "./events.js";
+import { providerCommandAvailable } from "./provider-auth-status.js";
 
 type ActionResult = { ok: true; value: unknown } | { ok: false; reason: string };
 
@@ -251,9 +253,17 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
   for (const { role, name } of await adapterProfileNames(repoRoot)) {
     const file = path.join(repoRoot, ".hivemind", "adapters", `${name}.profile.json`);
     let raw: unknown;
+    let profileProblem: string | null = null;
     try {
-      raw = JSON.parse(await readFile(file, "utf8"));
-    } catch {
+      const text = await readFile(file, "utf8");
+      try {
+        raw = JSON.parse(text);
+      } catch (cause) {
+        raw = {};
+        profileProblem = `profile is corrupt JSON: ${cause instanceof Error ? cause.message : String(cause)}`;
+      }
+    } catch (cause) {
+      if (!isMissingFile(cause)) throw cause;
       adapters.push({
         role,
         installed: false,
@@ -277,13 +287,16 @@ export async function inspectProjectConfig(repoRoot: string): Promise<ActionResu
       continue;
     }
     const problems = validateAdapterProfile(raw, name);
+    if (profileProblem !== null) problems.unshift(profileProblem);
     const profile = isRecord(raw) ? raw : {};
     const invoke = Array.isArray(profile.invoke)
       ? profile.invoke.filter((entry): entry is string => typeof entry === "string")
       : [];
     const dangerous = findDangerousAdapterArgs(invoke);
     if (dangerous.length > 0) problems.push(`carries a refused flag: ${dangerous.join(", ")}`);
-    const record = await readConnectionRecord(repoRoot, name);
+    const connectionStanding = await readConnectionRecordStanding(repoRoot, name);
+    const record = connectionStanding.record;
+    if (connectionStanding.problem !== null) problems.push(connectionStanding.problem);
     /* By HARNESS, resolved from the connection's recorded agent -- `profile.tool`
        is the role, and keying an account by it silently showed none. */
     const chosen = selectedAccount(accountsFile, await harnessForRole(repoRoot, name));
@@ -806,12 +819,79 @@ async function readConnectionRecord(
   repoRoot: string,
   profileName: string
 ): Promise<ConnectionRecord | null> {
+  return (await readConnectionRecordStanding(repoRoot, profileName)).record;
+}
+
+async function readConnectionRecordStanding(
+  repoRoot: string,
+  profileName: string
+): Promise<{ record: ConnectionRecord | null; problem: string | null }> {
+  const file = connectionRecordPath(repoRoot, profileName);
+  let text: string;
   try {
-    const parsed = JSON.parse(await readFile(connectionRecordPath(repoRoot, profileName), "utf8"));
-    return isRecord(parsed) ? (parsed as unknown as ConnectionRecord) : null;
-  } catch {
-    return null;
+    text = await readFile(file, "utf8");
+  } catch (cause) {
+    if (isMissingFile(cause)) return { record: null, problem: null };
+    return { record: null, problem: `connection evidence could not be read: ${cause instanceof Error ? cause.message : String(cause)}` };
   }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (cause) {
+    return { record: null, problem: `connection evidence is corrupt JSON: ${cause instanceof Error ? cause.message : String(cause)}` };
+  }
+  if (!isConnectionRecord(parsed)) {
+    return { record: null, problem: "connection evidence is malformed and was not treated as a successful check" };
+  }
+  return { record: parsed, problem: null };
+}
+
+function isConnectionRecord(value: unknown): value is ConnectionRecord {
+  if (!isRecord(value)) return false;
+  if (
+    typeof value.agent_id !== "string" ||
+    typeof value.connected_at !== "string" ||
+    typeof value.effective_tokens !== "number" ||
+    !Number.isFinite(value.effective_tokens) ||
+    value.effective_tokens < 0 ||
+    !isNullableString(value.readback_source) ||
+    !isNullableString(value.provider_version) ||
+    !Array.isArray(value.capabilities) ||
+    !value.capabilities.every((entry) => isRecord(entry))
+  ) {
+    return false;
+  }
+  if (value.capabilities_stale !== undefined && !isNullableString(value.capabilities_stale)) return false;
+  if (value.config_digest !== undefined && !isNullableString(value.config_digest)) return false;
+  if (
+    value.machine !== undefined &&
+    (!isRecord(value.machine) ||
+      typeof value.machine.host !== "string" ||
+      typeof value.machine.platform !== "string" ||
+      !isNullableString(value.machine.account_home))
+  ) {
+    return false;
+  }
+  if (value.inner_provider !== undefined && value.inner_provider !== null && !isRecord(value.inner_provider)) {
+    return false;
+  }
+  if (
+    value.verdict_source !== undefined &&
+    (!isRecord(value.verdict_source) ||
+      value.verdict_source.kind !== "machine_cache" ||
+      typeof value.verdict_source.measured_at !== "string")
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function isMissingFile(value: unknown): boolean {
+  return typeof value === "object" && value !== null && "code" in value && value.code === "ENOENT";
 }
 
 /**
@@ -895,17 +975,46 @@ export async function startProviderAuthentication(
   }
   const accounts = await readAccounts(repoRoot);
   const selected = selectedAccount(accounts, providerId);
+  const started = await appendEvent(repoRoot, {
+    type: "provider.setup_started",
+    task_id: null,
+    data: { provider_id: providerId, operation: "sign_in" }
+  });
+  if (!started.ok) return { ok: false, reason: `could not record provider sign-in start: ${started.reason}` };
+  if (options.launcher === undefined && !(await providerCommandAvailable(command[0], { env: process.env }))) {
+    const failed = await appendEvent(repoRoot, {
+      type: "provider.setup_failed",
+      task_id: null,
+      data: { provider_id: providerId, operation: "sign_in", reason_code: "provider_cli_missing" }
+    });
+    if (!failed.ok) return { ok: false, reason: `the provider CLI is missing, and that failure could not be recorded: ${failed.reason}` };
+    return { ok: false, reason: `${providerId} is not installed or is not on PATH; no sign-in window was opened` };
+  }
   try {
     await (options.launcher ?? launchAuthentication)(command, {
       cwd: repoRoot,
       env: spawnEnvironment(process.env, accountEnvironment(selected))
     });
   } catch (cause) {
+    const failed = await appendEvent(repoRoot, {
+      type: "provider.setup_failed",
+      task_id: null,
+      data: { provider_id: providerId, operation: "sign_in", reason_code: "provider_cli_start_failed" }
+    });
+    if (!failed.ok) {
+      return { ok: false, reason: `the provider sign-in window did not open, and that failure could not be recorded: ${failed.reason}` };
+    }
     return {
       ok: false,
       reason: `could not open the provider's sign-in window: ${cause instanceof Error ? cause.message : String(cause)}`
     };
   }
+  const completed = await appendEvent(repoRoot, {
+    type: "provider.setup_completed",
+    task_id: null,
+    data: { provider_id: providerId, operation: "sign_in", outcome: "window_opened" }
+  });
+  if (!completed.ok) return { ok: false, reason: `the provider sign-in window opened, but that fact could not be recorded: ${completed.reason}` };
   return {
     ok: true,
     value: {

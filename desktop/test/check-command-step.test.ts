@@ -1,4 +1,6 @@
 import { describe, expect, test } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 import { trialAffordance, type CheckTrialView } from "../src/lib/workspace-actions";
 
@@ -40,5 +42,16 @@ describe("what a trial lets you do next", () => {
   test("nothing is offered once it is stored", () => {
     expect(trialAffordance(trial({ outcome: "passed", stored: true }))).toBe("settled");
     expect(trialAffordance(trial({ outcome: "failed", stored: true }))).toBe("settled");
+  });
+
+  test("a detected command is never executed by an effect", () => {
+    const source = readFileSync(
+      path.resolve(import.meta.dirname, "../src/components/workspace/setup-screen.tsx"),
+      "utf8"
+    ).replace(/\/\*[\s\S]*?\*\//gu, "");
+    expect(source.match(/type: "checks\.try"/gu)).toHaveLength(1);
+    expect(source).toMatch(/Run detected check/u);
+    expect(source).toMatch(/onClick=\{\(\) => void tryCommand\(untriedCommand, false\)\}/u);
+    expect(source).not.toMatch(/autoTried/u);
   });
 });

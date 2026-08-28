@@ -9,6 +9,7 @@
  *   wrong invitation | dead affordance | false progress | wrong message
  */
 import { spawn } from "node:child_process";
+import "./protect-recent-projects.mjs";
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
