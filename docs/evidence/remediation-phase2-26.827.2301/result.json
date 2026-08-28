@@ -1,0 +1,31 @@
+{
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "installedVersion": "26.827.2301",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "paidProviderCalls": 0,
+  "cliOverride": {
+    "projectReachedLive": true,
+    "selectedProjectVisible": true,
+    "markerCreated": false,
+    "invocations": []
+  },
+  "nodeOverride": {
+    "configuredPathExists": false,
+    "projectReachedLive": true,
+    "selectedProjectVisible": true
+  },
+  "browserSevereLogs": [],
+  "recentProjects": {
+    "beforeSha256": "a3328357f4c39a68f1e9f087f6e170f9d0c67c076693124fbbc0db6235ee41b7",
+    "afterSha256": "a3328357f4c39a68f1e9f087f6e170f9d0c67c076693124fbbc0db6235ee41b7",
+    "restoredExactly": true
+  },
+  "screenshots": [
+    "D:\\Projects\\Hivemind AI\\docs\\evidence\\remediation-phase2-26.827.2301\\installed-cli-override-26.827.2301-1440x900.png",
+    "D:\\Projects\\Hivemind AI\\docs\\evidence\\remediation-phase2-26.827.2301\\installed-node-override-26.827.2301-1440x900.png"
+  ],
+  "error": null
+}

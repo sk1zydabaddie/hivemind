@@ -683,42 +683,53 @@ fn start_daemon(project_root: &Path, resource_dir: Option<&Path>) -> Result<Opti
         .map_err(|error| format!("could not start Hivemind daemon: {error}"))
 }
 
+fn bundled_cli_path(resource_dir: Option<&Path>) -> Result<PathBuf, String> {
+    let Some(resource_dir) = resource_dir else {
+        return Err(
+            "installed Hivemind Core resource directory is unavailable; reinstall the desktop app"
+                .to_string(),
+        );
+    };
+    let bundled_cli = resource_dir
+        .join("core")
+        .join("dist")
+        .join("src")
+        .join("cli.js");
+    if !bundled_cli.is_file() {
+        return Err(
+            "installed Hivemind Core resource is missing; reinstall the desktop app".to_string(),
+        );
+    }
+    Ok(bundled_cli)
+}
+
+#[cfg(not(debug_assertions))]
+fn daemon_command(resource_dir: Option<&Path>) -> Result<Command, String> {
+    bundled_cli_path(resource_dir).map(command_for_bundled_cli_path)
+}
+
+#[cfg(debug_assertions)]
 fn daemon_command(resource_dir: Option<&Path>) -> Result<Command, String> {
     if let Ok(configured) = std::env::var("HIVEMIND_CLI_PATH") {
         let configured = PathBuf::from(configured);
         if !configured.is_file() {
             return Err("HIVEMIND_CLI_PATH does not point to a file".to_string());
         }
-        return Ok(command_for_cli_path(configured));
+        return Ok(command_for_development_cli_path(configured));
     }
 
-    if let Some(resource_dir) = resource_dir {
-        let bundled_cli = resource_dir
-            .join("core")
-            .join("dist")
-            .join("src")
-            .join("cli.js");
-        if bundled_cli.is_file() {
-            return Ok(command_for_cli_path(bundled_cli));
-        }
-        if !cfg!(debug_assertions) {
-            return Err(
-                "installed Hivemind Core resource is missing; reinstall the desktop app"
-                    .to_string(),
-            );
-        }
+    if let Ok(bundled_cli) = bundled_cli_path(resource_dir) {
+        return Ok(command_for_development_cli_path(bundled_cli));
     }
 
-    if cfg!(debug_assertions) {
-        let development_cli = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("dist")
-            .join("src")
-            .join("cli.js");
-        if development_cli.is_file() {
-            return Ok(command_for_cli_path(development_cli));
-        }
+    let development_cli = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("dist")
+        .join("src")
+        .join("cli.js");
+    if development_cli.is_file() {
+        return Ok(command_for_development_cli_path(development_cli));
     }
     Ok(hidden_command("hivemind"))
 }
@@ -730,6 +741,7 @@ fn query_cli_build_identity(
     query_cli_identity(project_root, resource_dir, "build-id", "Core build")
 }
 
+#[cfg(debug_assertions)]
 fn query_cli_shell_build_identity(
     project_root: &Path,
     resource_dir: Option<&Path>,
@@ -746,29 +758,51 @@ fn query_expected_shell_build_identity(
     project_root: &Path,
     resource_dir: Option<&Path>,
 ) -> Result<String, String> {
+    query_expected_shell_build_identity_for_runtime(project_root, resource_dir)
+}
+
+fn packaged_shell_build_identity(resource_dir: Option<&Path>) -> Result<String, String> {
+    let Some(resource_dir) = resource_dir else {
+        return Err(
+            "packaged shell build identity directory is unavailable; reinstall the desktop app"
+                .to_string(),
+        );
+    };
+    let manifest = resource_dir.join("core").join("shell-build-id.txt");
+    if !manifest.is_file() {
+        return Err(
+            "packaged shell build identity is missing; reinstall the desktop app".to_string(),
+        );
+    }
+    let value = fs::read_to_string(&manifest)
+        .map_err(|error| format!("could not read packaged shell build identity: {error}"))?
+        .trim()
+        .to_string();
+    if !is_build_identity(&value) {
+        return Err(
+            "packaged shell build identity is malformed; reinstall the desktop app".to_string(),
+        );
+    }
+    Ok(value)
+}
+
+#[cfg(not(debug_assertions))]
+fn query_expected_shell_build_identity_for_runtime(
+    _project_root: &Path,
+    resource_dir: Option<&Path>,
+) -> Result<String, String> {
+    packaged_shell_build_identity(resource_dir)
+}
+
+#[cfg(debug_assertions)]
+fn query_expected_shell_build_identity_for_runtime(
+    project_root: &Path,
+    resource_dir: Option<&Path>,
+) -> Result<String, String> {
     if std::env::var_os("HIVEMIND_CLI_PATH").is_none() {
         if let Some(resource_dir) = resource_dir {
-            let manifest = resource_dir.join("core").join("shell-build-id.txt");
-            if manifest.is_file() {
-                let value = fs::read_to_string(&manifest)
-                    .map_err(|error| {
-                        format!("could not read packaged shell build identity: {error}")
-                    })?
-                    .trim()
-                    .to_string();
-                if !is_build_identity(&value) {
-                    return Err(
-                        "packaged shell build identity is malformed; reinstall the desktop app"
-                            .to_string(),
-                    );
-                }
-                return Ok(value);
-            }
-            if !cfg!(debug_assertions) {
-                return Err(
-                    "packaged shell build identity is missing; reinstall the desktop app"
-                        .to_string(),
-                );
+            if resource_dir.join("core").join("shell-build-id.txt").is_file() {
+                return packaged_shell_build_identity(Some(resource_dir));
             }
         }
     }
@@ -811,7 +845,15 @@ fn is_build_identity(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-fn command_for_cli_path(cli_path: PathBuf) -> Command {
+#[cfg(not(debug_assertions))]
+fn command_for_bundled_cli_path(cli_path: PathBuf) -> Command {
+    let mut command = hidden_command("node");
+    command.arg(node_compatible_path(&cli_path));
+    command
+}
+
+#[cfg(debug_assertions)]
+fn command_for_development_cli_path(cli_path: PathBuf) -> Command {
     if cli_path.extension().and_then(|value| value.to_str()) == Some("js") {
         let mut command = hidden_command(
             std::env::var("HIVEMIND_NODE_PATH").unwrap_or_else(|_| "node".to_string()),

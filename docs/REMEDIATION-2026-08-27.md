@@ -34,6 +34,20 @@ rebuilt, and no provenance-bound replacement installer exists. Phase 0 removes
 the executable authorities while R0/R1/R2 remain open for their permanent
 contracts.
 
+**Phase 1 authenticated daemon transport completed 2026-08-27.** Installed
+build **26.827.2222** closed F6-01 with authenticated route, Host, Origin, and
+content-type evidence under `docs/evidence/remediation-phase1-26.827.2222/`.
+
+**Phase 2 release executable provenance completed 2026-08-27.** Installed
+build **26.827.2301** closed F6-02. Consumer builds resolve only packaged Core
+and packaged shell identity; CLI/Node overrides and development fallbacks are
+compiled only into debug builds. The pre-fix execution marker and the post-fix
+two-launch installed proof are under
+`docs/evidence/remediation-phase2-26.827.2222/` and
+`docs/evidence/remediation-phase2-26.827.2301/`. The overall product remains
+NO-GO. There are **91 open findings: 10 Critical, 49 High, 30 Medium, and 2
+Low**.
+
 ## Reconciliation result
 
 The ledger parser found exactly 93 unique IDs with the expected phase counts:
@@ -209,11 +223,22 @@ never an unauthenticated client path. Source, regressions, cleanup, installed
 result, and 1440x900 build-labelled capture are recorded under
 `docs/evidence/remediation-phase1-26.827.2222/`.
 
-R0 now has three open findings: F6-02, F6-04, and F6-13. The overall ledger has
-**92 open findings: 10 Critical, 50 High, 30 Medium, and 2 Low**. G0 remains
-open because production executable overrides and the old updater trust root
-have not yet been removed or migrated. No later remediation phase is implied by
-this closure.
+**Execution status after Phase 2 (2026-08-27):** F6-02 is closed. Release
+daemon selection accepts only packaged Core, and expected shell identity comes
+only from the packaged manifest. The CLI/Node overrides, source-tree CLI, and
+bare executable fallback exist only in debug-compiled functions. Installed
+build **26.827.2301** reached `Live` with a supplied malicious CLI path without
+executing it, then reached `Live` with a supplied nonexistent Node path. Both
+release executable copies contain no override-name strings. The real recent-
+project registry was restored exactly and no provider call ran. Evidence is in
+`docs/evidence/remediation-phase2-26.827.2222/` and
+`docs/evidence/remediation-phase2-26.827.2301/`.
+
+R0 now has two open findings: F6-04 and F6-13. The overall ledger has **91 open
+findings: 10 Critical, 49 High, 30 Medium, and 2 Low**. G0 remains open because
+the spoofable source identity and old updater trust root have not yet been
+removed or migrated. F6-03 also remains open in R2: packaged Core still depends
+on ambient `node`, which Phase 3 must replace with a pinned installed runtime.
 
 ## R1 — Update lifecycle
 

@@ -4624,3 +4624,28 @@ recovery closed. An absent daemon record can make abandoned artifacts orphaned,
 but a present record whose owner cannot be proven is not absence and cannot be
 treated as idle.
 
+### Release provenance is selected before execution — 2026-08-27
+
+An identity check after process launch cannot establish executable provenance.
+If a caller-selected path runs `shell-build-id` and is rejected afterward, the
+authority boundary has already failed. Consumer builds therefore compile a
+different command-selection path from development builds: release accepts only
+the packaged Core entrypoint and packaged shell-identity manifest. CLI/Node
+environment overrides, source-tree discovery, and executable fallbacks belong
+only to `debug_assertions` code.
+
+The installed proof must contain a positive condition as well as absence. A
+broken app that never starts would also fail to execute an override. Phase 2
+therefore launched build **26.827.2301** twice: once with a marker-writing Core
+override and once with a nonexistent Node override. Both sessions had to reach
+the exact `Live` indicator using packaged Core; the first also had to leave its
+marker absent. The release binaries were scanned independently for both
+override names. This is the executable-provenance contract for every future
+consumer build.
+
+This contract does not claim the runtime is self-contained. Release still
+starts the fixed packaged JavaScript through ambient bare `node`; F6-03 remains
+open until Phase 3 packages a pinned runtime and binds it into the installed
+artifact identity. Compiling out one escape hatch must not be reported as
+closing a neighboring missing-dependency boundary.
+

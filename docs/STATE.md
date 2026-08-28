@@ -3017,3 +3017,41 @@ publication, or public-channel mutation occurred.
 The current remediation ledger is **92 open findings: 10 Critical, 50 High, 30
 Medium, and 2 Low**. G0 and the product's overall **NO-GO** remain in force.
 Phase 2 begins only in its next dedicated turn.
+
+## Remediation Phase 2: release executable provenance — 2026-08-27
+
+Phase 2 is complete and closes **F6-02**. The consumer shell no longer reads
+`HIVEMIND_CLI_PATH` or `HIVEMIND_NODE_PATH`, falls back to a source-tree CLI,
+or launches a bare `hivemind` executable. Those development conveniences are
+compiled only under `debug_assertions`. Release daemon startup accepts only the
+packaged `core/dist/src/cli.js`, and expected shell identity comes only from
+the packaged `core/shell-build-id.txt`. Identity checking therefore describes
+the selected packaged artifact instead of running an untrusted target first
+and refusing it afterward.
+
+The pre-fix installed counterexample used build **26.827.2222**. A supplied
+fixture CLI executed with `shell-build-id` and wrote its marker before the
+shell-build mismatch stopped the app. Installed build **26.827.2301** ran two
+separate 1440x900 sessions. With the same malicious CLI override, the fixture
+reached `Live`, the selected project was visible, no marker was created, and
+the override received no invocation. With a nonexistent Node override, the
+fixture again reached `Live`. Both the built and installed release executable
+lack the override-name strings. Severe WebView logs were empty, and the real
+recent-project registry SHA-256 was identical before and after the probe.
+Evidence is under **docs/evidence/remediation-phase2-26.827.2222/** and
+**docs/evidence/remediation-phase2-26.827.2301/**. Both screenshots were
+produced by build **26.827.2301** at 1440x900.
+
+Final no-paid validation passed Core (**940 passed, 2 skipped, 942 total**),
+Desktop (**334/334**), Rust (**47/47**), the optimized Rust compile without
+warnings, the two-lockfile advisory gate with zero findings, all **30/30**
+reachability surfaces, `git diff --check`, release-binary string scans, and the
+installed two-session provenance probe. The existing unreached scanner still
+reports the same 20 later-phase debts; this phase added none. No provider/model
+call, key operation, publication, or public-channel mutation occurred.
+
+The remediation ledger is now **91 open findings: 10 Critical, 49 High, 30
+Medium, and 2 Low**. F6-03 remains deliberately open: packaged Core still uses
+ambient bare `node`. Phase 3 must bundle and bind a pinned runtime rather than
+expanding this phase into a second authority change. G0 and the overall
+**NO-GO** remain in force. Phase 3 begins only in its next dedicated turn.
