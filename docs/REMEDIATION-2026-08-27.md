@@ -19,6 +19,21 @@ contain no secrets or valuable work, the public/source updater is not invoked,
 and each test owns and removes only its own processes and state. That narrow lab
 use is not product qualification.
 
+## Execution status
+
+**Phase 0 immediate containment completed 2026-08-27.** Installed build
+**26.827.2050** has read-only release discovery but no registered install
+command, source-build route, swap helper, local update transport, signing
+script, or publication script. Both release command names now fail closed
+before key or network access. Native evidence is under
+`docs/evidence/remediation-phase0-26.827.2050/`.
+
+This does not change the overall NO-GO verdict or reduce the ledger count. The
+current updater key remains exposed externally, the public channel is not
+rebuilt, and no provenance-bound replacement installer exists. Phase 0 removes
+the executable authorities while R0/R1/R2 remain open for their permanent
+contracts.
+
 ## Reconciliation result
 
 The ledger parser found exactly 93 unique IDs with the expected phase counts:

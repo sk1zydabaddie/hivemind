@@ -4567,3 +4567,34 @@ valuable repositories until the relevant release gates in
 that posture, and an audit finding remains open until its direct source,
 regression, cleanup and installed proof are recorded.
 
+### Containment removes authority; it does not simulate a safe update — 2026-08-27
+
+When update admission is not yet machine-wide and artifact provenance is not
+yet bound, the safe degraded state has no install command. A disabled button, a
+hidden source classifier, or a React-owned refusal would leave the authority
+callable by another path. Phase 0 therefore keeps only read-only release
+discovery in Rust and removes the command, source builder, swap helper, local
+update transport, and every consumer that could execute them.
+
+The visual contract follows the authority contract. A newer release may be
+reported in the existing update bar, but it carries plain text explaining that
+updates are paused and no action control. An unreachable endpoint remains
+visible with one read-only “Check again” response. There is no progress
+treatment, spinner, elapsed clock, or raised install control because there is
+no operation to report or press. Those elements return only with the single
+provenance-bound installer in the later release phase.
+
+Release tooling obeys the same rule. The two familiar command names
+deliberately remain so automation and operators receive an explicit refusal
+instead of a missing script or, worse, an old parallel path. Both resolve to
+one side-effect-free program that exits before key access or network
+publication. This is containment evidence, not release readiness: the exposed
+external key and the legacy public key compiled into existing clients still
+require an explicit migration.
+
+Installed build **26.827.2050** proves the absence at the native boundary. The
+read-only command answered, the removed command was rejected as not found, and
+the screen exposed no build/install/restart control. The supporting 1440x900
+capture and structured result are in
+`docs/evidence/remediation-phase0-26.827.2050/`.
+

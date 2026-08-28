@@ -519,16 +519,10 @@ export default function App(): React.JSX.Element {
           <WindowControls />
         </header>
 
-        {/* The build bar was a second answer to the one question the update bar
-            asks. "Your checkout is ahead" and "a release is available" are both
-            "a newer version exists", and a person should never have to know
-            which mechanism produced the answer -- `newer_version` picks the
-            source and `UpdateBar` renders one line. */}
-        {/* Above the sharing bar: a stale build is the thing that makes every
-            other message on screen untrustworthy. Not gated on `live` -- an
-            update matters whether or not a project is open, and the endpoint
-            being unreachable is exactly the state that must not be silent. */}
-        <UpdateBar projectPath={selectedPath} />
+        {/* Read-only release news sits above project state. It is not gated on
+            `live`, and it carries no installation authority while the release
+            pipeline is contained. */}
+        <UpdateBar />
         {live ? <SharingBar onAction={workspace.performAction} /> : null}
 
         {shellUpdateRequired ? (

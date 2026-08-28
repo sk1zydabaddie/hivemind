@@ -291,31 +291,13 @@ class ReplayEventSource {
     /* Removing an entry is shell state the replay has none of, and answering
        is closer to the truth than throwing: there is nothing to forget. */
     if (command === "forget_project") return null;
-    /* Without a stub this threw, the bar rendered its genuinely-broken clay
-       state, and EVERY design capture carried a red "could not check for
-       updates" alarm that was about the harness rather than the app. A fixture
-       that is wrong the same way in every frame is worse than one that is
-       obviously missing: it is the surface design gets judged on.
-
-       So it answers, and it answers the state a healthy machine actually sits
-       in -- nothing newer, and the check could not reach a remote, which for a
-       harness with no backend and no checkout is the literal truth rather than
-       a convenient one. That renders the near-silent line. It deliberately
-       does NOT answer `caveat: null`, which would claim a check that never
-       happened and would hide the bar entirely. */
+    /* The replay has no updater endpoint. Return the ordinary quiet answer so
+       design captures are not dominated by a harness-only network fault. */
     if (command === "newer_version") {
       return {
         source: "none",
-        /* Right shape so the line lays out as it really will, with a suffix
-           that cannot be misread as a reading taken from the running build. */
-        running: "26.816.1540-replay",
-        caveat: "replay harness: no remote to check and no checkout to compare"
+        running: "26.816.1540-replay"
       };
-    }
-    /* And taking one is refused rather than mimed. A replay that reported a
-       restart would be the fixture asserting an outcome it cannot produce. */
-    if (command === "take_newer_version") {
-      return { state: "failed", detail: "the replay harness cannot install anything" };
     }
     if (command === "dismissed_hints") return { "setup.what-this-is": true };
     if (command === "select_project") {

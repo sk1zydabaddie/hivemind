@@ -24,13 +24,64 @@
  *   quietly passes when it could not run is the silent guard again, one level
  *   further down.
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Stop only the process tree this harness started. Edge ignores the ordinary
+ * Node child signal on Windows and otherwise survives a green check, keeping
+ * both the port and the parent Node process alive. `taskkill` is bound to the
+ * exact captured PID; it never enumerates or touches an existing browser. */
+function stopStartedProcess(child) {
+  if (child.exitCode !== null || child.pid === undefined) return;
+  if (process.platform === "win32") {
+    spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+      stdio: "ignore",
+      windowsHide: true
+    });
+    return;
+  }
+  child.kill();
+}
+
+function listeningPid(port) {
+  if (process.platform !== "win32") return null;
+  const result = spawnSync("netstat", ["-ano", "-p", "tcp"], {
+    encoding: "utf8",
+    windowsHide: true
+  });
+  if (result.status !== 0) return null;
+  const suffix = `:${String(port)}`;
+  for (const line of result.stdout.split(/\r?\n/u)) {
+    const columns = line.trim().split(/\s+/u);
+    if (columns.length < 5 || columns[3] !== "LISTENING") continue;
+    if (!columns[1].endsWith(suffix)) continue;
+    const pid = Number.parseInt(columns[4], 10);
+    if (Number.isInteger(pid) && pid > 0) return pid;
+  }
+  return null;
+}
+
+function stopStartedBrowser(child, port) {
+  if (process.platform === "win32") {
+    /* Edge may relaunch under a child PID and let the PID returned by spawn
+       exit. The port was proven unused immediately before this harness started
+       Edge, so its listener is the exact owned browser even after relaunch. */
+    const pid = listeningPid(port) ?? child.pid;
+    if (pid !== undefined) {
+      spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
+        stdio: "ignore",
+        windowsHide: true
+      });
+    }
+    return;
+  }
+  stopStartedProcess(child);
+}
 
 async function responds(url) {
   try {
@@ -161,7 +212,7 @@ export async function ensureHarness({ base, port, root, candidates, staticRoot, 
       stdio: "ignore",
       shell: process.platform === "win32"
     });
-    started.push(() => dev.kill());
+    started.push(() => stopStartedProcess(dev));
     await waitFor(base, 40, "the dev server");
     console.log("  started a dev server");
   }
@@ -183,7 +234,7 @@ export async function ensureHarness({ base, port, root, candidates, staticRoot, 
       ],
       { stdio: "ignore" }
     );
-    started.push(() => browser.kill());
+    started.push(() => stopStartedBrowser(browser, port));
     await waitFor(`http://127.0.0.1:${port}/json/list`, 30, "the browser");
     console.log(`  started ${path.basename(binary)} headless`);
   }

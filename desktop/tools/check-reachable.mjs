@@ -391,10 +391,14 @@ for (const viewport of VIEWPORTS) {
   for (const surface of SURFACES) {
     page.drainEvents();
     await page.send("Page.navigate", { url: surface.url });
+    /* Readiness is the React root, not an arbitrary page-text quota. The old
+       >200-character predicate rejected a correctly rendered short surface and
+       could equally accept unrelated footer/composer text. Each requested
+       control is checked against its own element below. */
     let ready = false;
     for (let attempt = 0; attempt < 60 && !ready; attempt += 1) {
       ready = await page.evaluate(
-        "return document.body !== null && (document.body.innerText || '').trim().length > 200;"
+        "return document.readyState === 'complete' && (document.querySelector('#root')?.childElementCount ?? 0) > 0;"
       );
       if (!ready) await settle(300);
     }
@@ -402,7 +406,7 @@ for (const viewport of VIEWPORTS) {
       await page.send("Page.reload", { ignoreCache: true });
       for (let attempt = 0; attempt < 60 && !ready; attempt += 1) {
         ready = await page.evaluate(
-          "return document.body !== null && (document.body.innerText || '').trim().length > 200;"
+          "return document.readyState === 'complete' && (document.querySelector('#root')?.childElementCount ?? 0) > 0;"
         );
         if (!ready) await settle(300);
       }

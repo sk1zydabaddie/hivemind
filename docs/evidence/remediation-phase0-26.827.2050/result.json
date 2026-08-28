@@ -1,0 +1,18 @@
+{
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "discovery": {
+    "resolved": true,
+    "value": {
+      "running": "26.827.2050",
+      "source": "none"
+    }
+  },
+  "installAttempt": {
+    "error": "Command take_newer_version not found",
+    "resolved": false
+  },
+  "updateButtons": [],
+  "buildNumber": "26.827.2050",
+  "severe": [],
+  "screenshotPath": "D:\\Projects\\Hivemind AI\\docs\\evidence\\remediation-phase0-26.827.2050\\installed-1440x900.png"
+}

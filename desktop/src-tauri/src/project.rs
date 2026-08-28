@@ -939,12 +939,6 @@ fn same_path(left: &Path, right: &Path) -> bool {
     }
 }
 
-/* The sibling module needs the same window-hiding spawn; exposing this one
-   keeps a second copy of the platform detail from existing. */
-pub fn hidden_command_for_selfbuild(program: impl AsRef<std::ffi::OsStr>) -> Command {
-    hidden_command(program)
-}
-
 fn hidden_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     let mut command = Command::new(program);
     hide_window(&mut command);
@@ -2903,7 +2897,6 @@ mod spawn_hygiene_tests {
         let mut offenders: Vec<String> = Vec::new();
         for (name, source) in [
             ("project.rs", include_str!("project.rs")),
-            ("selfbuild.rs", include_str!("selfbuild.rs")),
             ("main.rs", include_str!("main.rs")),
         ] {
             let mut in_test_module = false;
@@ -2928,14 +2921,12 @@ mod spawn_hygiene_tests {
                 if !line.contains("Command::new") {
                     continue;
                 }
-                /* The helper itself, and the sibling that re-exports it, are
-                   where the flag is applied. */
+                /* The central helper is where the flag is applied. */
                 if line.contains("let mut command = Command::new(program)") {
                     continue;
                 }
                 /* A spawn that sets its own creation flags nearby is already
-                   hardened -- selfbuild does this for the swap helper and npm
-                   because it needs a different flag combination. */
+                   hardened even when it needs a different flag combination. */
                 let window: String = source
                     .lines()
                     .skip(index)

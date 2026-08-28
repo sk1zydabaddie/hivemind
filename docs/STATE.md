@@ -2929,3 +2929,48 @@ configured reachability checks; reachability exited normally. The installed
 Phase 2–6 probes remain the authoritative runtime evidence. Remediation begins
 only as separately approved, single-acceptance contracts; the audit itself is
 now complete.
+
+## Remediation Phase 0: unsafe update and release containment — 2026-08-27
+
+Phase 0 is complete as containment, not as a reconstructed distribution system.
+Consumer builds retain one read-only **newer_version** query against the
+configured HTTPS endpoint. The custom install command, selected-repository
+source classifier, source build/swap module, retry marker, local update
+server/configuration, and every React execution control were removed. No
+production path can now download, install, build, swap, or restart an update.
+
+Both **release:local** and **release:github** now terminate through the same
+deterministic containment entry before reading a key, signing an installer,
+consulting Git credentials, or reaching GitHub. Their former signing and
+publication scripts were deleted. The passwordless updater private key was not
+read, moved, deleted, or rotated in this phase; it remains an exposed external
+trust root requiring the approved client/key migration. The legacy public key
+remains compiled alongside the read-only endpoint configuration.
+Therefore F6-13 and the permanent R0/R1/R2 replacement work remain open.
+
+The pre-fix containment regression failed both exact assertions: the installed
+command was registered and both release scripts were live. It now passes 2/2.
+Installed build **26.827.2050** was built, installed, and matched across
+executable, Core, and shell identities. The native 1440x900 probe then invoked
+the shell directly: **newer_version** returned source “none” and running
+“26.827.2050”; **take_newer_version** returned “Command take_newer_version not
+found”; the exact update-button query returned an empty list; and severe WebView
+logs were empty. Evidence is under
+**docs/evidence/remediation-phase0-26.827.2050/**.
+
+The required reachability run exposed a separate false predicate during this
+phase: a correctly rendered short empty-project screen failed because readiness
+required more than 200 characters anywhere in the body. Readiness now checks
+the rendered React root, while each control remains checked as its own element.
+The managed browser now terminates the exact port-owning Edge process tree it
+starts, including Edge's Windows relaunch child. The complete **30/30**
+surface/viewport matrix passes and exits normally.
+
+Final no-paid validation passed Core (**934 passed, 2 skipped, 936 total**),
+Desktop (**330/330**), Rust (**45/45**), root and desktop production builds,
+the two-lockfile advisory gate with zero findings, **git diff --check**, and the
+installed containment probe. Both release commands were run as negative probes
+and exited 1 with the exact containment message. No provider/model call, key
+operation, publication, or public release mutation occurred. The overall
+product remains **NO-GO** for public distribution and valuable repositories.
+Phase 1 begins only in its next dedicated turn.
