@@ -3101,3 +3101,46 @@ Medium, and 2 Low**. F6-15 remains open because the bundle still copies the
 mutable development dependency tree; Phase 3 did not falsely broaden a pinned
 runtime into a clean production-staging claim. G0 and the product's overall
 **NO-GO** remain in force. Phase 4 begins only in its next dedicated turn.
+
+## Remediation Phase 4: manager ownership and enforced cancellation — 2026-08-28
+
+Phase 4 is complete and closes **F4-01, F4-02, F4-03, F4-04, and F4-11**. A
+manager session is now durable before the first provider spawn. Every manager
+proposal and redirect-correction call goes through one owned process wrapper
+which publishes call/process identity and its stopped boundary. Stop writes its
+request once, inhibits new actions, terminates the exact process tree, waits for
+execution to end, and only then records terminal cancellation. Provider output
+that arrives after cancellation is refused rather than consumed.
+
+Manager history now reconstructs first-proposal runs from their durable start
+events and respects completion, failure, and cancellation terminals. Completed
+history cannot be falsely stopped by New conversation or the Core action. A
+late background failure cannot regress a cancelled task to failed. The new
+manager started-shaped events are also members of the existing open-round
+catalogue, so an abandoned manager run/process cannot silently bypass that
+class-wide reconciliation invariant. The former separate unowned redirect
+spawn path was removed; `src/manager.ts` now has one `runAdapterProcess` caller.
+
+Installed build **26.828.47** was built, installed, and matched across
+executable, Core, shell, and pinned Node 22.23.2 identities. A no-paid installed
+fixture held its manager provider for 30 seconds. Stop killed PID 4548, wrote
+`manager.worker_process_stopped` before `scheduler.run_cancelled`, created no
+session artifact, consumed no late result, and projected the run as stopped and
+not continuable. A completed manager run rejected Stop and wrote no cancellation
+request. The 1440x900 installed capture shows the fixture task as `Waiting to
+start` with no run Stop control. Browser severe logs were empty and the real
+recent-project registry was restored exactly. Evidence is under
+`docs/evidence/remediation-phase4-26.828.47/`.
+
+Final no-paid validation passed Core (**943 passed, 2 skipped, 945 total**),
+Desktop (**335/335**), Rust (**47/47**), the two-lockfile advisory gate with zero
+findings, all **30/30** configured reachability surfaces, `git diff --check`,
+the single-spawn-path scan, installed identity verification, and the installed
+cancellation proof. No provider/model call, key operation, publication, or
+public-channel mutation occurred.
+
+The remediation ledger is now **85 open findings: 8 Critical, 45 High, 30
+Medium, and 2 Low**. Phase 5 still owns F4-05 through F4-10, plus F4-12: the
+broader crash/restart, reservation/resume, unique-round,
+retryable-cleanup, and persistent-recovery matrix. G0 and the product's overall
+**NO-GO** remain in force. Phase 5 begins only in its next dedicated turn.

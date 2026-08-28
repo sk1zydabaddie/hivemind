@@ -10,7 +10,9 @@ import {
   findDangerousAdapterArgs,
   formatAdapterProcessFailure,
   loadAdapterProfile,
-  runAdapterProcess
+  runAdapterProcess,
+  type AdapterProcessExecutionResult,
+  type AdapterProfile
 } from "./adapter.js";
 import { DEFAULT_MAX_CONCURRENT_WORKERS, loadConfig } from "./config.js";
 import { createTaskContract, type CreateTaskContractResult } from "./contract.js";
@@ -34,6 +36,7 @@ import { applyOrchestratorContextBudget } from "./orchestrator-context.js";
 import { requestLeaseForContract, type LeaseGrantResult } from "./lease.js";
 import { evaluatePlanThrash, loadCurrentRatifiedPlan, loadTentativePlan, readRatifiedWorkspacePlanSession, type TentativePlan, type TentativePlanTask } from "./plan.js";
 import { findGitRoot } from "./repo.js";
+import { terminateProcessTreeAndVerify, type DurableProcessIdentity } from "./process-control.js";
 import { readMeteredBudgetCapacity } from "./resource-ledger.js";
 import { inferTaskTier } from "./routing.js";
 import { markRunFailed, startRunTaskJob, type RunFailureMarkResult, type RunResult, type RunStartResult } from "./run.js";
@@ -173,6 +176,8 @@ export type ManagerAction =
   | ({ type: "integrate_shadow" } & Partial<IntegrationQueueExpectation>);
 
 const MANAGER_BATCH_MAX_ACTIONS = 5;
+const managerStopWaitMs = 2_500;
+const managerStopPollMs = 50;
 const PRE_WORKER_BATCH_SEQUENCE: ManagerAction["type"][] = [
   "create_task_contract",
   "request_lease",
@@ -380,6 +385,20 @@ async function startManagerSessionWithId(
   } catch (error: unknown) {
     if (!isNodeError(error, "ENOENT")) throw error;
   }
+  const runStarted = await appendEvent(repoRoot, {
+    type: "manager.run_started",
+    task_id: null,
+    data: {
+      version: 1,
+      session_id: sessionId,
+      spec_id: spec.value.spec_id,
+       tool: options.tool ?? "manager",
+       execution_mode: options.deterministicHappyPath === true ? "deterministic_happy_path" : "llm_reactive",
+       autonomy_level: autonomy.value,
+       new_launches_permitted: true
+    }
+  });
+  if (!runStarted.ok) return runStarted;
   const proposedAction = options.proposedAction === undefined
     ? options.deterministicHappyPath === true
       ? await deriveOrGenerateManagerProposal(
@@ -391,11 +410,9 @@ async function startManagerSessionWithId(
         )
       : await generateManagerProposal(repoRoot, message.trim(), options.tool ?? "manager", spec.value.spec_id, sessionId)
     : ({ ok: true, value: options.proposedAction } as const);
-  if (!proposedAction.ok) {
-    return recordManagerProposalFailure(repoRoot, sessionId, proposedAction);
-  }
+  if (!proposedAction.ok) return recordStartedManagerRunFailure(repoRoot, sessionId, proposedAction);
   const proposalValidation = validateAutonomousSessionProposal(proposedAction.value);
-  if (!proposalValidation.ok) return proposalValidation;
+  if (!proposalValidation.ok) return recordStartedManagerRunFailure(repoRoot, sessionId, proposalValidation);
   const session: ManagerSession = {
     version: 1,
     session_id: sessionId,
@@ -439,6 +456,10 @@ async function startManagerSessionWithId(
     reason: `Manager run started with project autonomy level ${autonomy.value}.`
   });
   if (!autonomyRecorded.ok) return autonomyRecorded;
+  if (options.proposedAction === undefined && proposedAction.value.actions.length === 0) {
+    const completed = await recordManagerRunCompleted(repoRoot, sessionId, "initial proposal contained no actions");
+    if (!completed.ok) return completed;
+  }
   return {
     ok: true,
     value: {
@@ -448,6 +469,109 @@ async function startManagerSessionWithId(
       proposed_action: proposedAction.value
     }
   };
+}
+
+interface OwnedManagerProcessOptions {
+  sessionId?: string;
+  usageRunId: string;
+  usageTaskId?: string;
+  outputLogPath: string;
+  callKind: "proposal" | "redirect_correction";
+}
+
+async function runOwnedManagerProcess(
+  repoRoot: string,
+  profile: AdapterProfile,
+  prompt: string,
+  options: OwnedManagerProcessOptions
+): Promise<AdapterProcessExecutionResult> {
+  const ownedSessionId = options.sessionId !== undefined && isManagerSessionId(options.sessionId)
+    ? options.sessionId
+    : null;
+  const managerCallId = randomUUID();
+  const processIdentities: DurableProcessIdentity[] = [];
+  if (ownedSessionId !== null) {
+    const starting = await appendEvent(repoRoot, {
+      type: "manager.worker_process_starting",
+      task_id: null,
+      data: {
+        version: 1,
+        session_id: ownedSessionId,
+        call_id: managerCallId,
+        call_kind: options.callKind,
+        tool: profile.tool
+      }
+    });
+    if (!starting.ok) return starting;
+    if (await runCancellationRequested(repoRoot, ownedSessionId)) {
+      const stopped = await appendEvent(repoRoot, {
+        type: "manager.worker_process_stopped",
+        task_id: null,
+        data: {
+          version: 1,
+          session_id: ownedSessionId,
+          call_id: managerCallId,
+          adapter_result: "cancelled_before_spawn"
+        }
+      });
+      return stopped.ok
+        ? { ok: false, reason: `manager run ${ownedSessionId} was cancelled before a new provider call could start` }
+        : stopped;
+    }
+  }
+  const processResult = await runAdapterProcess(repoRoot, profile, repoRoot, prompt, {
+    outputLogPath: options.outputLogPath,
+    usageSessionId: options.sessionId,
+    usageRunId: options.usageRunId,
+    ...(options.usageTaskId === undefined ? {} : { usageTaskId: options.usageTaskId }),
+    ...(ownedSessionId === null
+      ? {}
+      : {
+          shouldCancel: () => runCancellationRequested(repoRoot, ownedSessionId),
+          onProcessStart: async (identity: DurableProcessIdentity) => {
+            const recorded = await appendEvent(repoRoot, {
+              type: "manager.worker_process_started",
+              task_id: null,
+              data: {
+                version: 1,
+                session_id: ownedSessionId,
+                call_id: managerCallId,
+                call_kind: options.callKind,
+                tool: profile.tool,
+                pid: identity.pid,
+                process_instance_id: identity.process_instance_id,
+                process_group_id: identity.process_group_id ?? null
+              }
+            });
+            if (recorded.ok) processIdentities.push(identity);
+            return recorded.ok ? { ok: true as const } : recorded;
+          }
+        })
+  });
+  const processIdentity = processIdentities.at(-1) ?? null;
+  if (ownedSessionId !== null) {
+    const stopped = await appendEvent(repoRoot, {
+      type: "manager.worker_process_stopped",
+      task_id: null,
+      data: {
+        version: 1,
+        session_id: ownedSessionId,
+        call_id: managerCallId,
+        ...(processIdentity === null
+          ? {}
+          : {
+              pid: processIdentity.pid,
+              process_instance_id: processIdentity.process_instance_id
+            }),
+        adapter_result: processResult.ok ? "closed" : "failed_after_start"
+      }
+    });
+    if (!stopped.ok) return stopped;
+    if (await runCancellationRequested(repoRoot, ownedSessionId)) {
+      return { ok: false, reason: `manager run ${ownedSessionId} was cancelled before its provider result could be consumed` };
+    }
+  }
+  return processResult;
 }
 
 export async function generateManagerProposal(
@@ -502,10 +626,11 @@ export async function generateManagerProposal(
     return prompt;
   }
 
-  const processResult = await runAdapterProcess(repoRoot, profileResult.profile, repoRoot, prompt.value, {
+  const processResult = await runOwnedManagerProcess(repoRoot, profileResult.profile, prompt.value, {
+    sessionId: usageSessionId,
+    usageRunId: usageSessionId ?? resolvedSpecId,
     outputLogPath: adapterRunLogPath(repoRoot, `manager-${resolvedSpecId}`),
-    usageSessionId,
-    usageRunId: usageSessionId ?? resolvedSpecId
+    callKind: "proposal"
   });
   if (!processResult.ok) {
     return processResult;
@@ -1223,6 +1348,133 @@ async function runCancellationRequested(repoRoot: string, sessionId: string): Pr
   return requested;
 }
 
+async function recordManagerRunCompleted(repoRoot: string, sessionId: string, reason: string): Promise<SpecResult<void>> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return events;
+  if (events.value.some((event) => event.type === "scheduler.run_cancel_requested" && event.data.session_id === sessionId)) {
+    return { ok: false, reason: `manager run ${sessionId} had already entered cancellation before completion could be recorded` };
+  }
+  const terminal = managerRunTerminal(events.value, sessionId);
+  if (terminal === "cancelled" || terminal === "failed") {
+    return { ok: false, reason: `manager run ${sessionId} was already ${terminal} before completion could be recorded` };
+  }
+  if (terminal === "completed") return { ok: true, value: undefined };
+  const recorded = await appendEvent(repoRoot, {
+    type: "manager.run_completed",
+    task_id: null,
+    data: { version: 1, session_id: sessionId, reason, terminal: true }
+  });
+  return recorded.ok ? { ok: true, value: undefined } : recorded;
+}
+
+function managerRunStart(events: HivemindEvent[], sessionId: string): HivemindEvent | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.type === "manager.run_started" && event.data.session_id === sessionId) return event;
+  }
+  return null;
+}
+
+function managerRunTerminal(events: HivemindEvent[], sessionId: string): "completed" | "cancelled" | "failed" | null {
+  let cancellationStarted = false;
+  for (const event of events) {
+    if (event.data.session_id !== sessionId) continue;
+    if (event.type === "scheduler.run_cancel_requested") cancellationStarted = true;
+    if (event.type === "manager.run_completed" && !cancellationStarted) return "completed";
+    if (event.type === "manager.run_failed" && !cancellationStarted) return "failed";
+    if (event.type === "scheduler.run_cancelled") return "cancelled";
+  }
+  return null;
+}
+
+function latestManagerCall(events: HivemindEvent[], sessionId: string): {
+  callId: string;
+  settled: boolean;
+  identity: DurableProcessIdentity | null;
+} | null {
+  let starting: HivemindEvent | undefined;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.type === "manager.worker_process_starting" && event.data.session_id === sessionId) {
+      starting = event;
+      break;
+    }
+  }
+  const callId = starting?.data.call_id;
+  if (typeof callId !== "string" || callId === "") return null;
+  const stopped = events.some(
+    (event) =>
+      event.type === "manager.worker_process_stopped" &&
+      event.data.session_id === sessionId &&
+      event.data.call_id === callId
+  );
+  let started: HivemindEvent | undefined;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (
+      event.type === "manager.worker_process_started" &&
+      event.data.session_id === sessionId &&
+      event.data.call_id === callId
+    ) {
+      started = event;
+      break;
+    }
+  }
+  if (stopped) return { callId, settled: true, identity: null };
+  if (
+    started === undefined ||
+    !Number.isSafeInteger(started.data.pid) ||
+    Number(started.data.pid) <= 0 ||
+    typeof started.data.process_instance_id !== "string" ||
+    started.data.process_instance_id === ""
+  ) {
+    return { callId, settled: false, identity: null };
+  }
+  const processGroupId = started.data.process_group_id;
+  return {
+    callId,
+    settled: false,
+    identity: {
+      pid: Number(started.data.pid),
+      process_instance_id: started.data.process_instance_id,
+      process_group_id: typeof processGroupId === "number" ? processGroupId : null
+    }
+  };
+}
+
+async function waitForManagerCallIdentity(
+  repoRoot: string,
+  sessionId: string
+): Promise<SpecResult<{ callId: string; identity: DurableProcessIdentity } | null>> {
+  const deadline = Date.now() + managerStopWaitMs;
+  while (Date.now() <= deadline) {
+    const events = await readEvents(repoRoot);
+    if (!events.ok) return events;
+    const call = latestManagerCall(events.value, sessionId);
+    if (call === null || call.settled) return { ok: true, value: null };
+    if (call.identity !== null) return { ok: true, value: { callId: call.callId, identity: call.identity } };
+    await new Promise((resolve) => setTimeout(resolve, managerStopPollMs));
+  }
+  return { ok: false, reason: `manager stop could not establish durable provider process identity for session ${sessionId}` };
+}
+
+async function waitForManagerCallStopped(repoRoot: string, sessionId: string, callId: string): Promise<SpecResult<void>> {
+  const deadline = Date.now() + managerStopWaitMs;
+  while (Date.now() <= deadline) {
+    const events = await readEvents(repoRoot);
+    if (!events.ok) return events;
+    const stopped = events.value.some(
+      (event) =>
+        event.type === "manager.worker_process_stopped" &&
+        event.data.session_id === sessionId &&
+        event.data.call_id === callId
+    );
+    if (stopped) return { ok: true, value: undefined };
+    await new Promise((resolve) => setTimeout(resolve, managerStopPollMs));
+  }
+  return { ok: false, reason: `manager provider process died but did not reach its durable stopped boundary for session ${sessionId}` };
+}
+
 export async function cancelManagerRun(
   repoRoot: string,
   request: unknown
@@ -1238,25 +1490,50 @@ export async function cancelManagerRun(
     return { ok: false, reason: "run stop reason must be a non-empty string of at most 2000 characters" };
   }
   const sessionId = request.session_id.trim();
-  const session = await loadManagerSession(repoRoot, sessionId);
-  if (!session.ok) return session;
-  const plan = await loadCurrentRatifiedPlan(repoRoot, session.value.spec_id, "run cancellation");
+  if (!isManagerSessionId(sessionId)) return { ok: false, reason: "manager session id must be a UUID" };
+  const before = await readEvents(repoRoot);
+  if (!before.ok) return before;
+  const runStart = managerRunStart(before.value, sessionId);
+  if (runStart === null) return { ok: false, reason: `manager run ${sessionId} has no durable start record` };
+  const alreadyTerminal = managerRunTerminal(before.value, sessionId);
+  if (alreadyTerminal !== null) {
+    return { ok: false, reason: `run stop refused: manager run ${sessionId} is already terminal (${alreadyTerminal})` };
+  }
+  const specId = runStart.data.spec_id;
+  if (typeof specId !== "string" || specId.trim() === "") {
+    return { ok: false, reason: `manager run ${sessionId} has no durable spec identity` };
+  }
+  const plan = await loadCurrentRatifiedPlan(repoRoot, specId, "run cancellation");
   if (!plan.ok) return plan;
-  const requested = await appendEvent(repoRoot, {
-    type: "scheduler.run_cancel_requested",
-    task_id: null,
-    data: {
-      version: 1,
-      session_id: sessionId,
-      reason: request.reason.trim(),
-      requested_by: "human",
-      new_launches_permitted: false
-    }
-  });
-  if (!requested.ok) return requested;
+  if (!before.value.some((event) => event.type === "scheduler.run_cancel_requested" && event.data.session_id === sessionId)) {
+    const requested = await appendEvent(repoRoot, {
+      type: "scheduler.run_cancel_requested",
+      task_id: null,
+      data: {
+        version: 1,
+        session_id: sessionId,
+        reason: request.reason.trim(),
+        requested_by: "human",
+        new_launches_permitted: false
+      }
+    });
+    if (!requested.ok) return requested;
+  }
 
   const stoppedTaskIds: string[] = [];
   const failures: string[] = [];
+  const managerCall = await waitForManagerCallIdentity(repoRoot, sessionId);
+  if (!managerCall.ok) {
+    failures.push(managerCall.reason);
+  } else if (managerCall.value !== null) {
+    const terminated = await terminateProcessTreeAndVerify(managerCall.value.identity);
+    if (terminated.status !== "dead") {
+      failures.push(`manager provider process: ${terminated.reason}`);
+    } else {
+      const stopped = await waitForManagerCallStopped(repoRoot, sessionId, managerCall.value.callId);
+      if (!stopped.ok) failures.push(stopped.reason);
+    }
+  }
   const events = await readEvents(repoRoot);
   if (!events.ok) return events;
   const status = await getStatus(repoRoot);
@@ -1284,7 +1561,7 @@ export async function cancelManagerRun(
       reason: request.reason.trim(),
       stopped_task_ids: stoppedTaskIds,
       failures,
-      terminal: true,
+      terminal: failures.length === 0,
       retryable: failures.length > 0
     }
   });
@@ -1301,6 +1578,9 @@ async function executeScheduledWaveAction(
   policy: ManagerAutonomyRuntimePolicy,
   mode: DeterministicActionMode
 ): Promise<SpecResult<{ tier: ConcurrentWaveStep["tier"]; result: ManagerActionExecutionRecord }>> {
+  if (await runCancellationRequested(repoRoot, sessionId)) {
+    return { ok: false, reason: `manager run ${sessionId} was cancelled before ${action.type} could start` };
+  }
   const session = await loadManagerSession(repoRoot, sessionId);
   if (!session.ok) return session;
   const decision = deterministicProposal([action], `Core scheduled ${action.type} as one independently gated member of an admitted concurrent wave.`);
@@ -1458,11 +1738,12 @@ async function generateRedirectCorrection(
     return prompt;
   }
 
-  const processResult = await runAdapterProcess(repoRoot, profileResult.profile, repoRoot, prompt.value, {
-    outputLogPath: adapterRunLogPath(repoRoot, `redirect-${action.task_id}`),
-    usageSessionId,
+  const processResult = await runOwnedManagerProcess(repoRoot, profileResult.profile, prompt.value, {
+    sessionId: usageSessionId,
     usageRunId: usageSessionId,
-    usageTaskId: action.task_id
+    usageTaskId: action.task_id,
+    outputLogPath: adapterRunLogPath(repoRoot, `redirect-${action.task_id}`),
+    callKind: "redirect_correction"
   });
   if (!processResult.ok) {
     return processResult;
@@ -2324,6 +2605,9 @@ export async function continueAutonomousManagerLoop(
 ): Promise<SpecResult<ManagerAutonomousLoopResult>> {
   const steps: ManagerAutonomousLoopResult["steps"] = [];
   for (let index = 0; index < options.maxSteps; index += 1) {
+    if (await runCancellationRequested(repoRoot, sessionId)) {
+      return { ok: false, reason: `manager run ${sessionId} was cancelled; no further action was started` };
+    }
     const policy = await loadManagerAutonomyPolicy(repoRoot);
     if (!policy.ok) return policy;
     const session = await loadManagerSession(repoRoot, sessionId);
@@ -2518,6 +2802,8 @@ export async function continueAutonomousManagerLoop(
       }
 
       if (nextProposal.actions.length === 0) {
+        const completed = await recordManagerRunCompleted(repoRoot, sessionId, "manager proposed no further actions");
+        if (!completed.ok) return completed;
         const status = await getStatus(repoRoot);
         if (!status.ok) {
           return status;
@@ -2624,6 +2910,9 @@ export async function continueAutonomousManagerLoop(
       }
     }
 
+    if (await runCancellationRequested(repoRoot, sessionId)) {
+      return { ok: false, reason: `manager run ${sessionId} was cancelled before ${action.type} could start` };
+    }
     const result = await executeProposedManagerAction(repoRoot, sessionId, proposalId, action);
     if (!result.ok) {
       return result;
@@ -2755,10 +3044,36 @@ async function recordManagerProposalFailure(
   return { ok: false, reason: failure.reason, ...(failure.code === undefined ? {} : { code: failure.code }) };
 }
 
+async function recordStartedManagerRunFailure(
+  repoRoot: string,
+  sessionId: string,
+  failure: { reason: string; code?: FailureCode }
+): Promise<SpecResult<never>> {
+  const proposalFailure = await recordManagerProposalFailure(repoRoot, sessionId, failure);
+  if (proposalFailure.ok) {
+    return { ok: false, reason: "manager proposal failure recorder returned an impossible success" };
+  }
+  const recorded = await appendEvent(repoRoot, {
+    type: "manager.run_failed",
+    task_id: null,
+    data: {
+      version: 1,
+      session_id: sessionId,
+      reason: proposalFailure.reason,
+      terminal: true,
+      ...(proposalFailure.code === undefined ? {} : { code: proposalFailure.code })
+    }
+  });
+  return recorded.ok ? proposalFailure : recorded;
+}
+
 export async function retryBlockedManagerAction(
   repoRoot: string,
   sessionId: string
 ): Promise<SpecResult<{ session_id: string; action_type: ManagerAction["type"]; status: "judgment_pending" | "retry_pending" }>> {
+  if (await runCancellationRequested(repoRoot, sessionId)) {
+    return { ok: false, reason: `manager retry refused: run ${sessionId} was cancelled` };
+  }
   const session = await loadManagerSession(repoRoot, sessionId);
   if (!session.ok) return session;
   if (session.value.blocked_action === undefined) {
@@ -2910,7 +3225,9 @@ async function executeAuthorizedManagerAction(
   clearPendingAction = false,
   mode: DeterministicActionMode = "complete"
 ): Promise<SpecResult<ManagerActionResult>> {
-
+  if (await runCancellationRequested(repoRoot, session.session_id)) {
+    return { ok: false, reason: `manager run ${session.session_id} was cancelled before ${action.type} could start` };
+  }
   if (proposalId !== undefined) {
     const proposal = requirePendingProposal(session, proposalId, action);
     if (!proposal.ok) return proposal;
@@ -2921,6 +3238,9 @@ async function executeAuthorizedManagerAction(
     result = await executeDeterministicAction(repoRoot, session.session_id, action, mode);
   } catch (error: unknown) {
     result = { ok: false, reason: formatErrorDetail(error, `unexpected ${action.type} failure`) };
+  }
+  if (await runCancellationRequested(repoRoot, session.session_id)) {
+    return { ok: false, reason: `manager run ${session.session_id} was cancelled while ${action.type} was settling; its late callback was not recorded` };
   }
   const recordedSession = appendActionToSession(session, action, result, proposalId);
   const nextSession = clearPendingAction ? { ...recordedSession, pending_action: undefined } : recordedSession;
@@ -3472,19 +3792,62 @@ export async function inspectLatestManagerSession(
 export async function inspectManagerSessionHistory(
   repoRoot: string
 ): Promise<SpecResult<ManagerWorkspaceHistorySession[]>> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return events;
   let names: string[];
   try {
     names = await readdir(path.join(repoRoot, ".hivemind", "orchestrator", "sessions"));
   } catch (error: unknown) {
-    if (isNodeError(error, "ENOENT")) return { ok: true, value: [] };
-    throw error;
+    if (!isNodeError(error, "ENOENT")) throw error;
+    names = [];
   }
   const sessions: ManagerWorkspaceHistorySession[] = [];
+  const storedSessionIds = new Set<string>();
   for (const name of names.filter((entry) => entry.endsWith(".json")).sort()) {
     const sessionId = name.slice(0, -".json".length);
     const loaded = await loadManagerSession(repoRoot, sessionId);
     if (!loaded.ok) return loaded;
-    sessions.push(presentManagerWorkspaceHistorySession(loaded.value));
+    storedSessionIds.add(sessionId);
+    sessions.push(presentManagerWorkspaceHistorySession(loaded.value, events.value));
+  }
+  for (const event of events.value) {
+    if (event.type !== "manager.run_started" || typeof event.data.session_id !== "string") continue;
+    const sessionId = event.data.session_id;
+    if (storedSessionIds.has(sessionId) || sessions.some((session) => session.session_id === sessionId)) continue;
+    const specId = event.data.spec_id;
+    if (!isManagerSessionId(sessionId) || typeof specId !== "string" || specId.trim() === "") continue;
+    const terminal = managerRunTerminal(events.value, sessionId);
+    const autonomyLevel = isAutonomyLevel(event.data.autonomy_level)
+      ? event.data.autonomy_level
+      : DEFAULT_AUTONOMY_LEVEL;
+    const activity = events.value
+      .filter((candidate) => candidate.data.session_id === sessionId)
+      .map((candidate) => candidate.ts)
+      .filter((value) => !Number.isNaN(Date.parse(value)));
+    sessions.push({
+      session_id: sessionId,
+      spec_id: specId,
+      created_at: event.ts,
+      last_activity_at: activity.sort().at(-1) ?? event.ts,
+      status: terminal === "completed" ? "complete" : terminal === "cancelled" || terminal === "failed" ? "stopped" : "active",
+      tool: typeof event.data.tool === "string" ? event.data.tool : "manager",
+      call_count: events.value.filter(
+        (candidate) => candidate.type === "manager.worker_process_started" && candidate.data.session_id === sessionId
+      ).length,
+      pending_action: null,
+      blocked_action_type: null,
+      blocked_reason: terminal === "cancelled"
+        ? "Run cancelled before the first manager proposal completed."
+        : terminal === "failed"
+          ? "Manager proposal failed before the session could be created."
+          : null,
+      blocked_code: null,
+      continuation_available: false,
+      autonomy_level: autonomyLevel,
+      autonomy_levels: [autonomyLevel],
+      task_ids: [],
+      evidence_path: ".hivemind/log/events.jsonl"
+    });
   }
   return {
     ok: true,
@@ -3494,7 +3857,7 @@ export async function inspectManagerSessionHistory(
   };
 }
 
-function presentManagerWorkspaceHistorySession(session: ManagerSession): ManagerWorkspaceHistorySession {
+function presentManagerWorkspaceHistorySession(session: ManagerSession, events: HivemindEvent[]): ManagerWorkspaceHistorySession {
   const pending = session.pending_action ?? null;
   const blockedReason = session.blocked_action?.result.reason ?? null;
   const blockedCode = session.blocked_action?.result.code ?? null;
@@ -3504,19 +3867,34 @@ function presentManagerWorkspaceHistorySession(session: ManagerSession): Manager
   const taskIds = session.executed_actions
     .map((action) => action.task_id)
     .filter((taskId): taskId is string => typeof taskId === "string");
-  const status = pending !== null ? "paused" : blockedReason !== null ? "stopped" : session.proposed_action.actions.length === 0 ? "complete" : "active";
+  const terminal = managerRunTerminal(events, session.session_id);
+  const status = terminal === "completed"
+    ? "complete"
+    : terminal === "cancelled" || terminal === "failed"
+      ? "stopped"
+      : pending !== null
+        ? "paused"
+        : blockedReason !== null
+          ? "stopped"
+          : session.proposed_action.actions.length === 0
+            ? "complete"
+            : "active";
+  const runActivity = events
+    .filter((event) => event.data.session_id === session.session_id)
+    .map((event) => event.ts)
+    .filter((value) => !Number.isNaN(Date.parse(value)));
   const autonomyLevel = session.autonomy_level_at_start ?? "review_everything";
   return {
     session_id: session.session_id,
     spec_id: session.spec_id,
     created_at: session.created_at,
-    last_activity_at: [...actionTimes, session.created_at].sort().at(-1) ?? session.created_at,
+    last_activity_at: [...actionTimes, ...runActivity, session.created_at].sort().at(-1) ?? session.created_at,
     status,
     tool: session.proposed_action.tool ?? "manager",
     call_count: session.turns.filter((turn) => turn.role === "manager").length,
     pending_action: pending,
     blocked_action_type: session.blocked_action?.action_type ?? null,
-    blocked_reason: blockedReason,
+    blocked_reason: terminal === "cancelled" ? "Run cancelled." : terminal === "failed" ? "Manager run failed." : blockedReason,
     blocked_code: blockedCode,
     continuation_available: status === "active" && session.proposal_state !== undefined,
     autonomy_level: autonomyLevel,
@@ -3527,7 +3905,7 @@ function presentManagerWorkspaceHistorySession(session: ManagerSession): Manager
 }
 
 async function loadManagerSession(repoRoot: string, sessionId: string): Promise<SpecResult<ManagerSession>> {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sessionId)) {
+  if (!isManagerSessionId(sessionId)) {
     return { ok: false, reason: "manager session id must be a UUID" };
   }
 
@@ -3545,6 +3923,10 @@ async function loadManagerSession(repoRoot: string, sessionId: string): Promise<
   }
 
   return validateManagerSession(parsed, sessionId);
+}
+
+function isManagerSessionId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function validateManagerSession(value: unknown, sessionId: string): SpecResult<ManagerSession> {

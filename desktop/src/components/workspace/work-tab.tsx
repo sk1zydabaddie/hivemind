@@ -648,7 +648,7 @@ export function WorkTab({
       /* The existing stop path, not a second one. It cleans up every active
          task on the way out, which is the behaviour a new conversation needs
          and which has already been proven to do it. */
-      if (managerSession) {
+      if (runActive && managerSession) {
         await onAction({
           type: "run.stop",
           payload: { session_id: managerSession.session_id, reason: "Starting a new conversation" }

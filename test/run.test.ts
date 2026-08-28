@@ -13,7 +13,7 @@ import test from "node:test";
 import { initProject } from "../src/init.js";
 import { checkWriteIntent } from "../src/intent.js";
 import { readActiveLeases, requestLease, requestLeaseForContract } from "../src/lease.js";
-import { runTask } from "../src/run.js";
+import { markRunFailed, runTask } from "../src/run.js";
 import { analyzeTask } from "../src/analyze.js";
 import { appendEvent, readEvents } from "../src/events.js";
 import { recordHumanGuidance } from "../src/human-guidance.js";
@@ -36,6 +36,24 @@ import { withTemplateRepo } from "./support/fixture-repo.js";
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
 const cliPath = path.resolve(testDir, "../src/cli.js");
+
+test("a late background failure cannot regress a cancelled task", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await appendEvent(repo, { type: "task.started", task_id: "T-CANCELLED", data: { run_id: "R-1", tool: "fixture" } });
+    await appendEvent(repo, { type: "task.cancelled", task_id: "T-CANCELLED", data: { reason: "human stop", terminal: true } });
+
+    const marked = await markRunFailed(repo, "T-CANCELLED", "late detached rejection");
+
+    assert.equal(marked.ok, true, marked.ok ? undefined : marked.reason);
+    if (marked.ok) assert.equal(marked.value.status, "already_cancelled");
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true, events.ok ? undefined : events.reason);
+    if (events.ok) {
+      assert.equal(events.value.filter((event) => event.type === "task.failed" && event.task_id === "T-CANCELLED").length, 0);
+      assert.equal(events.value.at(-1)?.type, "task.cancelled");
+    }
+  });
+});
 
 test("runTask captures an untracked worker-created file in diff.patch", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {

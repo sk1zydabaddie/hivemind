@@ -1,0 +1,47 @@
+{
+  "installedVersion": "26.828.47",
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "paidProviderCalls": 0,
+  "cancellation": {
+    "sessionId": "700d8b73-c951-484e-911f-9a1ea81339b3",
+    "callId": "068c159a-8e06-46d6-9d4f-1dc776223b48",
+    "pid": 4548,
+    "processAliveAfterCancellation": false,
+    "stoppedEventIndex": 8,
+    "cancelledEventIndex": 10,
+    "stoppedBeforeTerminalCancellation": true,
+    "providerResultConsumed": false,
+    "sessionArtifactCreated": false,
+    "projectedStatus": "stopped",
+    "continuationAvailable": false
+  },
+  "terminalMonotonicity": {
+    "markRunFailedStatus": "already_cancelled",
+    "stateAfterLateFailure": "cancelled",
+    "taskFailedEventWritten": false
+  },
+  "completedRun": {
+    "sessionId": "2264a8e3-65f3-4942-b030-71d6061042a8",
+    "stopAccepted": false,
+    "reason": "run stop refused: manager run 2264a8e3-65f3-4942-b030-71d6061042a8 is already terminal (completed)",
+    "cancellationEventWritten": false
+  },
+  "installedPresentation": {
+    "build": "26.828.47",
+    "screenshot": "phase4-cancelled-run-26.828.47-1440x900.png",
+    "exactStatusHeading": "1 agent in this run",
+    "exactStatusHeadingCount": 1,
+    "exactRunStopControlCount": 0,
+    "exactWaitingToStartCount": 1
+  },
+  "browserSevereLogs": [],
+  "recentProjects": {
+    "beforeSha256": "a3328357f4c39a68f1e9f087f6e170f9d0c67c076693124fbbc0db6235ee41b7",
+    "afterSha256": "a3328357f4c39a68f1e9f087f6e170f9d0c67c076693124fbbc0db6235ee41b7",
+    "restoredExactly": true
+  }
+}

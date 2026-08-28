@@ -50,7 +50,7 @@ export interface RunStartResult {
 
 export interface RunFailureMarkResult {
   task_id: string;
-  status: "failed" | "already_completed";
+  status: "failed" | "already_completed" | "already_cancelled";
   reason?: string;
 }
 
@@ -163,6 +163,9 @@ export async function markRunFailed(
   const state = latestTaskRunState(events.value, taskId);
   if (state.state === "completed") {
     return { ok: true, value: { task_id: taskId, status: "already_completed" } };
+  }
+  if (state.state === "cancelled") {
+    return { ok: true, value: { task_id: taskId, status: "already_cancelled" } };
   }
   if (state.state === "failed") {
     const existingReason = typeof state.failed.data.reason === "string" ? state.failed.data.reason : undefined;

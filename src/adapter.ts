@@ -193,7 +193,7 @@ export type AdapterProcessFailure = {
   metering?: AdapterFailureMetering;
 };
 
-type AdapterProcessExecutionResult = { ok: true; value: AdapterProcessResult } | AdapterProcessFailure;
+export type AdapterProcessExecutionResult = { ok: true; value: AdapterProcessResult } | AdapterProcessFailure;
 
 const ADAPTER_PROFILE_FIELDS = new Set([
   "tool",

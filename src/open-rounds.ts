@@ -138,6 +138,18 @@ export const ROUND_SHAPES: readonly RoundShape[] = [
     terminal: ["task.worker_process_stopped", "quality.cancelled"],
     idField: null,
     what: "a draft worker process"
+  },
+  {
+    started: "manager.run_started",
+    terminal: ["manager.run_completed", "manager.run_failed", "scheduler.run_cancelled"],
+    idField: "session_id",
+    what: "a manager run"
+  },
+  {
+    started: "manager.worker_process_started",
+    terminal: ["manager.worker_process_stopped"],
+    idField: "call_id",
+    what: "a manager process"
   }
 ];
 

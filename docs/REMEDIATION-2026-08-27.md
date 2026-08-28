@@ -57,6 +57,17 @@ manifest. The Node-free pre-fix and post-fix installed evidence is under
 `docs/evidence/remediation-phase3-26.827.2322/`. There are **90 open findings:
 10 Critical, 48 High, 30 Medium, and 2 Low**. The product remains NO-GO.
 
+**Phase 4 manager ownership and cancellation completed 2026-08-28.** Installed
+build **26.828.47** closes F4-01, F4-02, F4-03, F4-04, and F4-11. Manager runs
+publish their session and provider-call identity before spawn; Stop inhibits new
+actions, terminates the exact owned process tree, waits for its durable stopped
+boundary, and only then records terminal cancellation. Cancellation and
+completion are monotonic in history and task state. Installed/no-paid evidence
+and the 1440x900 build-labelled capture are under
+`docs/evidence/remediation-phase4-26.828.47/`. There are **85 open findings: 8
+Critical, 45 High, 30 Medium, and 2 Low**. The product remains NO-GO; Phase 5
+still owns the broader crash/restart and partial-cleanup matrix.
+
 ## Reconciliation result
 
 The ledger parser found exactly 93 unique IDs with the expected phase counts:
@@ -379,6 +390,36 @@ after every reservation, bind, resume, stop, and terminal write. After restart,
 there are no ownerless reservations, immortal running tasks, executing cancelled
 processes, regressed terminals, or hidden recovery records. The installed UI
 must agree with the durable event trail during—not only after—each operation.
+
+**Execution status after Phase 4 (2026-08-28):** F4-01, F4-02, F4-03, F4-04,
+and F4-11 are closed. `manager.run_started` is written with the session,
+execution mode, tool, and autonomy level before the first provider call.
+Provider calls share one owned wrapper which writes starting/started/stopped
+events with call and process identity. Stop refuses completed/failed/cancelled
+history, writes a cancellation request once, blocks subsequent actions, kills
+the exact live process tree, waits for `manager.worker_process_stopped`, and
+appends `scheduler.run_cancelled` afterward. A late `markRunFailed` cannot move
+a cancelled task to failed. The Work surface requests cancellation for New
+conversation only when Core's projection says the run is active; Core remains
+the authority and independently refuses terminal history.
+
+The installed build **26.828.47** proof used a local manager fixture delayed for
+30 seconds. Its exact PID was dead when Stop returned; the stopped event was
+index 8 and terminal cancellation index 10; no provider result or session
+artifact was consumed; history projected `stopped` with no continuation. A
+separate completed run rejected Stop without writing a cancellation request.
+The installed 1440x900 Work screen showed the fixture's one plan task as
+`Waiting to start` and exposed exactly zero run Stop controls. Severe browser
+logs were empty, the user's recent-project registry was restored byte-for-byte,
+and no paid provider call ran. Evidence is in
+`docs/evidence/remediation-phase4-26.828.47/`.
+
+R3 now has seven open findings: F4-05 through F4-10, plus F4-12 (3 Critical and
+4 High). The overall ledger has **85 open findings: 8 Critical,
+45 High, 30 Medium, and 2 Low**. Phase 5 must address crash windows,
+reservation/resume reconciliation, unique round identity, retryable cleanup,
+and persistent recovery presentation; this phase does not claim that broader
+matrix.
 
 ## R4 — Conversation and real-time orchestration
 

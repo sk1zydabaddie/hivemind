@@ -19,10 +19,12 @@ import { integratedTaskIdsFromEvents } from "../src/integration-state.js";
 import { requestLease, requestLeaseForContract } from "../src/lease.js";
 import { readQuotaLedger, readQuotaLedgerState, recordQuotaUsage, reserveMeteredCall } from "../src/resource-ledger.js";
 import { latestTaskRunState } from "../src/run-state.js";
+import { getProcessLiveness } from "../src/process-liveness.js";
 import {
   approvePendingManagerAction,
   continueAutonomousManagerLoop,
   executeManagerAction,
+  inspectManagerSessionHistory,
   runAutonomousManagerLoop,
   startManagerSession,
   startWorkspaceManagerSession,
@@ -50,6 +52,7 @@ import {
   intentFor,
   testProposal,
   proposalFor,
+  prepareConcurrentManagerFixture,
   prepareLintedPlan,
   prepareLintedPlanWithTasks,
   planTaskFromContract,
@@ -137,6 +140,91 @@ test("manager session shell records a user message against the active ratified s
       return;
     }
     assert.equal(ledger.value.manager.session_usage[result.value.session_id]?.requests, 1);
+  });
+});
+
+test("run.stop terminates the owned first manager process before cancellation becomes terminal", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await prepareConcurrentManagerFixture(repo, 1, 1, "sequence", 10, 500_000);
+    const managerPath = await writeAgent(repo, "owned-manager.mjs", [
+      "await new Promise((resolve) => setTimeout(resolve, 30_000));",
+      `console.log(${JSON.stringify(JSON.stringify(proposalFor([{ type: "get_status" }])))});`
+    ]);
+    await writeProfile(repo, "manager", managerPath, "strong", 1, 15_000);
+
+    const starting = startManagerSession(repo, "Begin the approved work.", { tool: "manager" });
+    await waitForDurableEvent(repo, "manager.worker_process_started", null, 30_000);
+    const during = await readRequiredEvents(repo);
+    const runStarted = during.find((event) => event.type === "manager.run_started");
+    assert.equal(typeof runStarted?.data.session_id, "string");
+    const sessionId = String(runStarted?.data.session_id);
+    const processStarted = during.find(
+      (event) => event.type === "manager.worker_process_started" && event.data.session_id === sessionId
+    );
+    assert.equal(typeof processStarted?.data.pid, "number");
+
+    const projectedDuring = await inspectManagerSessionHistory(repo);
+    assert.equal(projectedDuring.ok, true, projectedDuring.ok ? undefined : projectedDuring.reason);
+    if (projectedDuring.ok) {
+      const projected = projectedDuring.value.find((session) => session.session_id === sessionId);
+      assert.equal(projected?.status, "active");
+      assert.equal(projected?.continuation_available, false);
+    }
+
+    const cancelled = await executeWorkspaceAction(repo, {
+      type: "run.stop",
+      payload: { session_id: sessionId, reason: "Stop the owned first proposal." }
+    });
+    assert.equal(cancelled.ok, true, cancelled.ok ? undefined : cancelled.reason);
+    const startResult = await starting;
+    assert.equal(startResult.ok, false, startResult.ok ? "cancelled start unexpectedly produced a proposal" : undefined);
+
+    const after = await readRequiredEvents(repo);
+    const processStoppedIndex = after.findIndex(
+      (event) => event.type === "manager.worker_process_stopped" && event.data.session_id === sessionId
+    );
+    const cancelledIndex = after.findIndex(
+      (event) => event.type === "scheduler.run_cancelled" && event.data.session_id === sessionId
+    );
+    assert.equal(processStoppedIndex >= 0, true);
+    assert.equal(cancelledIndex > processStoppedIndex, true);
+    assert.equal(getProcessLiveness(Number(processStarted?.data.pid)), "dead");
+    assert.equal(after.some((event) => event.type === "manager.run_completed" && event.data.session_id === sessionId), false);
+    await assert.rejects(stat(path.join(repo, ".hivemind", "orchestrator", "sessions", `${sessionId}.json`)), /ENOENT/u);
+
+    const projectedAfter = await inspectManagerSessionHistory(repo);
+    assert.equal(projectedAfter.ok, true, projectedAfter.ok ? undefined : projectedAfter.reason);
+    if (projectedAfter.ok) {
+      const projected = projectedAfter.value.find((session) => session.session_id === sessionId);
+      assert.equal(projected?.status, "stopped");
+      assert.equal(projected?.continuation_available, false);
+    }
+  });
+});
+
+test("run.stop refuses completed manager history without writing false cancellation", async () => {
+  await withTempRepo(async ({ repo }) => {
+    await createRatifiedSpec(repo, "S-001");
+    await writeManagerProposalProfile(repo, {
+      reason: "The requested work is complete.",
+      human_approval_required_for: [],
+      actions: []
+    });
+    const completed = await startManagerSession(repo, "Check whether anything remains.");
+    assert.equal(completed.ok, true, completed.ok ? undefined : completed.reason);
+    if (!completed.ok) return;
+
+    const stopped = await executeWorkspaceAction(repo, {
+      type: "run.stop",
+      payload: { session_id: completed.value.session_id, reason: "Start a new conversation." }
+    });
+
+    assert.equal(stopped.ok, false);
+    if (!stopped.ok) assert.match(stopped.reason, /already terminal \(completed\)/u);
+    const events = await readRequiredEvents(repo);
+    assert.equal(events.some((event) => event.type === "manager.run_completed"), true);
+    assert.equal(events.some((event) => event.type === "scheduler.run_cancel_requested"), false);
+    assert.equal(events.some((event) => event.type === "scheduler.run_cancelled"), false);
   });
 });
 
@@ -294,6 +382,15 @@ test("manager proposal generation rejects dangerous profiles before writing a se
     }
     assert.match(result.reason, /dangerous invocation flags/);
     assert.equal(await exists(path.join(repo, ".hivemind", "orchestrator", "sessions")), false);
+    const history = await inspectManagerSessionHistory(repo);
+    assert.equal(history.ok, true, history.ok ? undefined : history.reason);
+    if (history.ok) {
+      assert.equal(history.value.length, 1);
+      assert.equal(history.value[0].status, "stopped");
+      assert.equal(history.value[0].continuation_available, false);
+    }
+    const events = await readRequiredEvents(repo);
+    assert.equal(events.some((event) => event.type === "manager.run_failed"), true);
   });
 });
 
@@ -858,6 +955,7 @@ test("LLM-proposed and Core-derived execution have equivalent work trails while 
         trail: events
           .filter((event) =>
             !event.type.startsWith("autonomy.") &&
+            !event.type.startsWith("manager.worker_process_") &&
             event.type !== "orchestrator.checkpointed" &&
             event.type !== "orchestrator.resumed"
           )
