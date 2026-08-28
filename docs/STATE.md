@@ -2820,3 +2820,63 @@ zero severe WebView console entries and zero provider/model calls. Core passed
 passed 52/52, both production builds passed, and `verify:reachable` passed all
 30 checks at its three configured non-minimum viewports. Static closeout passed.
 Phase 6 must not begin until the next dedicated turn.
+
+## Full audit Phase 6: security, boundaries, packaging, and updater — 2026-08-27
+
+Phase 6 is complete as an audit-only pass. It adds **20 distinct open
+findings**, bringing the cumulative audit count to **93**. No product runtime
+code changed and no earlier finding was closed.
+
+Installed build **26.826.1622**, its bundled Core, the built installer, and the
+configured public update channel were inspected with no provider/model calls
+and without starting an update, installer, sign-in, or publication. The probe
+used an isolated Git fixture, stopped only its own processes, and restored the
+real recent-project registry byte-for-byte. Structured evidence and two
+1440x900 installed-screen captures are under
+`docs/evidence/full-audit-phase6-26.826.1622/`; the reusable probe is
+`desktop/e2e/phase6-security-packaging-audit.mjs`.
+
+The highest-risk boundary failure is the daemon itself. Its audited dispatcher
+is reachable over an unauthenticated HTTP control plane: a request with no
+authorization, an untrusted Origin, and `text/plain` content invoked
+`checks.try`, ran the supplied command, and wrote a marker. Production also
+honors environment-selected Core and Node paths before identity verification;
+the installed executable ran fixture-owned JavaScript during its identity
+query. An audit table limits what a named action may do, but it does not prove
+who is allowed to name that action or which executable implements Core.
+
+The installed package is not self-contained. It ships 4,706 Core files / 91.9
+MiB, including the mutable root development dependency tree, but no Node
+runtime. With Git and Windows available and Node removed from PATH, the real
+installed app opened its shell and then failed to open a valid project with
+`program not found`. The advisory gate approved both npm lockfiles with zero
+findings but does not inspect the shipped mutable tree or the Rust dependency
+graph; `cargo audit` is not installed or part of `ship`.
+
+The source updater has executable-provenance failures rather than cosmetic
+freshness defects. It identifies Hivemind source by searching one configuration
+file for the substring `ai.hivemind.desktop`; an unrelated repository carrying
+that text only in a JSON note and one future-dated file received a real `Build
+and restart` offer. That path runs a weaker build/install pipeline than `ship`.
+The update safety proof checks one selected project once, while other project
+daemons and the rest of the UI can begin or continue work through the
+transition. The public updater separately maps a successful download/install
+to `Restarting` without invoking a restart or relaunch.
+
+Release publication does not bind one artifact to one clean source identity.
+The command can sign an existing ignored installer and publish it under current
+HEAD, verifies only weak metadata after publication, uses a passwordless
+Ed25519 key readable by the sandbox-users group, and distributes unsigned
+Windows binaries. Minute-resolution versions can collide. The configured
+public channel is also stale at **26.818.803**, while the installed/local build
+is **26.826.1622**; `verify:release` fails on that exact mismatch. These include
+deliberate beta choices because the audit scope explicitly counts designed-in
+production barriers, not only accidental defects.
+
+Full severities, source anchors, deduplication, and evidence are in
+`docs/AUDIT-2026-08-26.md`. Validation passed the installed security probe,
+Core (**934 passed, 2 skipped, 936 total**), Desktop (**352/352**), Rust
+(**52/52**), both production builds, the npm advisory gate with zero findings,
+and all **30/30** reachability checks; the reachability process exited normally.
+No paid calls or release mutations were made. Phase 7 must not begin until the
+next dedicated turn.

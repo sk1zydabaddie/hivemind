@@ -1,0 +1,109 @@
+{
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "installedVersion": "26.826.1622",
+  "installer": "D:\\Projects\\Hivemind AI\\desktop\\src-tauri\\target\\release\\bundle\\nsis\\Hivemind AI_26.826.1622_x64-setup.exe",
+  "paidProviderCalls": 0,
+  "unauthenticatedDaemonAction": {
+    "url": "http://127.0.0.1:55361",
+    "sentAuthorizationHeader": false,
+    "sentOrigin": "https://untrusted.example",
+    "sentContentType": "text/plain",
+    "httpStatus": 200,
+    "responseOk": true,
+    "responseBody": {
+      "ok": true,
+      "reason": null,
+      "trial": {
+        "command": "\"C:\\nvm4w\\nodejs\\node.exe\" -e \"require('node:fs').writeFileSync('phase6-unauthenticated-action.txt','executed')\"",
+        "outcome": "passed",
+        "exit_code": 0,
+        "duration_ms": 144,
+        "output_tail": "",
+        "detail": "Ran clean in 0.1s.",
+        "stored": true
+      }
+    },
+    "markerCreated": true,
+    "markerContents": "executed"
+  },
+  "noBundledNodeRuntime": {
+    "restrictedPath": "C:\\WINDOWS\\System32;D:\\Git\\cmd;C:\\Users\\ethan\\.cargo\\bin",
+    "nodeDirectoryExcluded": true,
+    "errorText": [
+      "could not query Hivemind Core build identity: program not found"
+    ]
+  },
+  "productionCliOverride": {
+    "configuredPath": "C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-manager-test-W0BmA6\\phase6-cli-override.js",
+    "markerCreated": true,
+    "invocations": [
+      [
+        "shell-build-id"
+      ]
+    ],
+    "shellIdentityInvocationObserved": true,
+    "daemonInvocationObserved": false,
+    "installedExecutableLaunchedDirectly": true
+  },
+  "spoofedOwnSource": {
+    "configContainsOnlyIdentifierSubstring": true,
+    "futureSourceMtime": "2026-08-29T02:18:43.608Z",
+    "sourceUpdateOffered": true,
+    "buildAndRestartOffered": true,
+    "buildButtonPressed": false
+  },
+  "packageContents": {
+    "coreFiles": 4706,
+    "coreBytes": 96312485,
+    "coreMiB": 91.9,
+    "bundledNodeExecutables": [],
+    "devDependencyExamples": [
+      "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\core\\node_modules\\typescript",
+      "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\core\\node_modules\\@types",
+      "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\core\\node_modules\\.bin"
+    ]
+  },
+  "signatures": {
+    "installedExecutable": {
+      "Status": "NotSigned",
+      "StatusMessage": "The file C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe is not digitally signed. You cannot run this script on the current system. For more information about running scripts and setting execution policy, see about_Execution_Policies at https://go.microsoft.com/fwlink/?LinkID=135170",
+      "Path": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe"
+    },
+    "builtInstaller": {
+      "Status": "NotSigned",
+      "StatusMessage": "The file D:\\Projects\\Hivemind AI\\desktop\\src-tauri\\target\\release\\bundle\\nsis\\Hivemind AI_26.826.1622_x64-setup.exe is not digitally signed. You cannot run this script on the current system. For more information about running scripts and setting execution policy, see about_Execution_Policies at https://go.microsoft.com/fwlink/?LinkID=135170",
+      "Path": "D:\\Projects\\Hivemind AI\\desktop\\src-tauri\\target\\release\\bundle\\nsis\\Hivemind AI_26.826.1622_x64-setup.exe"
+    }
+  },
+  "signingKey": {
+    "exists": true,
+    "bytes": 348,
+    "acl": "C:\\Users\\ethan\\AppData\\Roaming\\Hivemind AI\\updater\\hivemind-updater.key nobottleneck\\CodexSandboxUsers:(I)(RX)\n                                                                        NT AUTHORITY\\SYSTEM:(I)(F)\n                                                                        BUILTIN\\Administrators:(I)(F)\n                                                                        NOBOTTLENECK\\ethan:(I)(F)\n\nSuccessfully processed 1 files; Failed processing 0 files"
+  },
+  "updaterHelper": {
+    "pidPath": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\update-helper.pid",
+    "pidText": "38176",
+    "pidIsInteger": true,
+    "processCurrentlyPresent": false,
+    "lastWriteTime": "2026-08-21T04:38:33.508Z"
+  },
+  "publicUpdater": {
+    "endpoint": "https://github.com/sk1zydabaddie/hivemind/releases/latest/download/latest.json",
+    "httpStatus": 200,
+    "publicVersion": "26.818.803",
+    "localVersion": "26.826.1622",
+    "matchesLocalVersion": false
+  },
+  "rustAdvisoryGate": {
+    "cargoAuditExitCode": 101,
+    "stdout": "",
+    "stderr": "error: no such command: `audit`\n\nhelp: a command with a similar name exists: `add`\n\nhelp: view all installed commands with `cargo --list`\nhelp: find a package to install `audit` with `cargo search cargo-audit`"
+  },
+  "browserSevereLogs": [],
+  "recentProjects": {
+    "beforeSha256": "a3328357f4c39a68f1e9f087f6e170f9d0c67c076693124fbbc0db6235ee41b7",
+    "afterSha256": "a3328357f4c39a68f1e9f087f6e170f9d0c67c076693124fbbc0db6235ee41b7",
+    "restoredExactly": true
+  },
+  "error": null
+}

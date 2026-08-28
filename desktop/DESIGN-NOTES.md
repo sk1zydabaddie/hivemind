@@ -4492,3 +4492,46 @@ responsive lead; source/runtime inspection validated provider-focus and
 disabled-pointer leads; the remaining generic notices did not override the
 established Hivemind component family or visual structure.
 
+### A release is one authenticated artifact transition, not four scripts — 2026-08-27
+
+Phase 6 of the full audit established that an audited action registry is not a
+caller-authentication boundary. Installed build **26.826.1622** accepted a
+mutable daemon action from an HTTP request with no credential, an untrusted
+Origin and a non-JSON content type. Loopback is a transport choice, not an
+identity. Every daemon route that reads project data or reaches the dispatcher
+must authenticate an intended Hivemind client independently of CORS, Host
+conventions, or the action's own tier.
+
+The executable that implements Core is part of the same boundary. A production
+shell cannot execute an environment-selected Core or Node path and then use the
+result of that execution to decide whether the executable was trusted. Debug
+escape hatches must not cross the packaged-production path. The installed app
+must carry or formally install its required runtime; a branded shell that
+depends on an ambient `node` command is not a complete artifact.
+
+Building repository source is code execution. The source-updater identity must
+therefore be structural and cryptographic enough to bind the intended Hivemind
+repository and build inputs, never a substring in a user-selected project's
+configuration. Its safety proof is machine-wide and lasts through the entire
+transition: all Hivemind project daemons must be idle or inhibited, the UI must
+not start new work after the proof, and the condition must be rechecked at the
+install handoff. A public updater that promises `Restarting` must perform and
+prove the relaunch.
+
+Build, ship, source-update, public-update, and release-publish are one artifact
+contract even if implemented by separate commands. One immutable identity must
+bind clean source/HEAD, lockfiles and shipped dependency bytes, Core and shell
+manifests, installer, signature, and the installed result. Admission checks
+belong before publication; post-install proof must compare the complete
+identity. A version with minute resolution is a label, not a unique build
+identity.
+
+The distribution trust root is product state. An updater private key cannot be
+passwordless or broadly readable, a helper PID cannot authorize termination
+without process identity, and an intentionally unsigned Windows installer
+remains a user-visible security barrier rather than a packaging footnote.
+Phase 6 records 20 open findings in these areas, **93 cumulative**, with no
+runtime correction yet. Its installed probe and all three suites passed; the
+public release verifier correctly failed because the channel still serves
+26.818.803 instead of 26.826.1622.
+
