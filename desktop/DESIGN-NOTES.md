@@ -4535,3 +4535,35 @@ runtime correction yet. Its installed probe and all three suites passed; the
 public release verifier correctly failed because the channel still serves
 26.818.803 instead of 26.826.1622.
 
+### A finding closes at its failed boundary, not near it — 2026-08-27
+
+The seven-phase audit ended with 93 distinct findings: 11 Critical, 50 High, 30
+Medium and 2 Low. Similar symptoms stay separate when their authorities or
+proofs differ. Stopping a process is not the same proof as projecting a
+cancellation; authenticating a caller is not the same as auditing the action it
+requests; parsing a message shape is not the same as retaining a JSONL record
+across chunks; binding source to an artifact is not the same as verifying it
+before publication. A green neighboring test cannot close either half.
+
+Every correction therefore starts with the exact pre-fix counterexample and
+ends with evidence at that same boundary. Behavior that occurs during an
+operation is sampled during the operation. UI evidence names the exact element,
+viewport and installed build. Process evidence identifies the owned process and
+proves termination. Durable-state evidence survives restart. Packaging evidence
+binds the exact source, dependencies, artifact and installed bytes. The broad
+full suites remain regression evidence, never the sole closure proof.
+
+The remediation order is a product invariant: authenticate and contain first;
+restore enforceable cancellation/recovery truth; make project entry safe; make
+conversation observable; support the declared viewport, keyboard and archive;
+resolve unreachable contracts and dead paths; then create one signed,
+self-contained artifact through one pre-publication admission graph. Later UI
+or release polish cannot redeem an earlier authority failure.
+
+The current posture is deliberately explicit: build **26.826.1622** is not a
+general-use candidate. The product is no-go for public distribution and for
+valuable repositories until the relevant release gates in
+`docs/REMEDIATION-2026-08-27.md` pass. Documentation progress does not change
+that posture, and an audit finding remains open until its direct source,
+regression, cleanup and installed proof are recorded.
+

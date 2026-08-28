@@ -2880,3 +2880,52 @@ Core (**934 passed, 2 skipped, 936 total**), Desktop (**352/352**), Rust
 and all **30/30** reachability checks; the reachability process exited normally.
 No paid calls or release mutations were made. Phase 7 must not begin until the
 next dedicated turn.
+
+## Full audit Phase 7: consolidation and remediation program — 2026-08-27
+
+The requested seven-phase audit is complete. Phase 7 added no new symptom count;
+it independently reconciled the durable ledger into **93 unique open findings:
+11 Critical, 50 High, 30 Medium, and 2 Low**. The phase totals remain 21, 15,
+12, 12, 13, and 20, and the eight remediation workstreams own 4, 7, 9, 12, 14,
+18, 14, and 15 findings respectively. Both sums are 93.
+
+No product source changed during Phases 1–7, so none of these findings is fixed.
+The final posture is **NO-GO for public distribution** and **NO-GO for normal
+development against a valuable repository**. Installed build **26.826.1622**
+is an audit/remediation target only. Disposable non-secret fixtures remain
+appropriate for bounded no-cost verification when update/publication paths are
+not invoked and each probe restores user state exactly.
+
+The complete remediation program is
+`docs/REMEDIATION-2026-08-27.md`. It recommends removing the production source
+updater in favor of signed published artifacts, authenticating every daemon
+route, bundling a pinned Core runtime, treating the current updater key as
+exposed, making update exclusion machine-wide and durable, unifying build/install/
+release identity, restoring enforceable cancellation and crash reconciliation,
+then fixing setup, conversation, accessibility/archive scale, and unreachable
+contracts before producing a release candidate.
+
+Eight workstreams give every finding one primary owner: trust perimeter; update
+lifecycle; packaging/release supply chain; cancellation/recovery/terminal truth;
+conversation/realtime orchestration; provider/setup/Git/project lifecycle;
+UI/accessibility/viewport/archive scale; and reachability/contracts/observable
+failures. Eight release gates require containment, durable control, safe project
+entry, observable conversation, the supported human interface, contract hygiene,
+and one qualified immutable artifact before a general-use candidate exists.
+
+The final installed acceptance walk requires a fresh Windows profile, a
+purpose-built nested-source/secret-canary/long-history fixture, explicit live
+conversation and Stop observation, two-project update exclusion, keyboard and
+paging proof, then install/relaunch/full-identity verification. It requires a
+human to read the actual reply and inspect the affected controls; broad page
+predicates cannot substitute.
+
+Phase 7 changed documentation only. It made no paid call, installed no build,
+published no release, rotated no key, and did not claim a documentation-only
+rerun as new runtime proof. Fresh regression validation passed Core (**934
+passed, 2 skipped, 936 total**), Desktop (**352/352**), Rust (**52/52**), both
+production builds, the npm advisory gate with zero findings, and all **30/30**
+configured reachability checks; reachability exited normally. The installed
+Phase 2–6 probes remain the authoritative runtime evidence. Remediation begins
+only as separately approved, single-acceptance contracts; the audit itself is
+now complete.
