@@ -108,6 +108,18 @@ build-labelled captures are under
 Critical, 23 High, 16 Medium, and 2 Low**. The product remains NO-GO because R6
 and R7 and the release workstreams remain open.
 
+**Phase 8 UI, accessibility, viewport, and archive scale completed
+2026-08-28.** Installed build **26.828.648** closes F1-16 and F5-01 through
+F5-13, completing R6. The declared minimum and the production reachability
+boundary now agree; conversation/status/dialog/form semantics work by keyboard
+and assistive technology; durable history is bounded, paged, and virtualized;
+and Project reconstruction is linear in the trail. The no-paid installed corpus
+proved both archive ends across 4,202 conversation events while mounting at
+most 15 articles and 272 document nodes. Evidence is under
+`docs/evidence/phase8-ui-accessibility-remediation-26.828.648/`. There are **32
+open findings: 5 Critical, 15 High, 10 Medium, and 2 Low**. The product remains
+NO-GO because R7 and the release workstreams remain open.
+
 ## Reconciliation result
 
 The ledger parser found exactly 93 unique IDs with the expected phase counts:
@@ -617,7 +629,32 @@ concurrent project switching, corrupt registries, and app restart. No repository
 command or provider call executes before its exact answering control. The real
 recent-project registry is byte-identical before and after every installed test.
 
-## R6 — UI, accessibility, viewport, and archive scale
+## R6 — UI, accessibility, viewport, and archive scale — COMPLETE 2026-08-28
+
+**Execution status:** completed 2026-08-28. All 14 owned findings are closed:
+F1-16 and F5-01 through F5-13. The final installed artifact is build
+**26.828.648**. The supported outer minimum is 800x620, represented by the real
+790x610 Windows client in production replay. Forty exact surface/viewport
+combinations reject document overflow, partially clipped or unreachable
+controls, overlap/occlusion, severe browser resource errors, and orphan
+processes.
+
+Conversation and project history use the audited read-only `trail.inspect`
+action with hard page limits. The transcript is a labelled, focusable live log;
+status announcements are concise; controlled dialogs own initial and restored
+focus; disabled explanations and persistent field names survive pointer-free
+use. Dynamic virtualization keeps the DOM bounded while keyboard paging reaches
+the beginning and returns to latest. Core builds historical run buckets in one
+event pass. Active user-facing mojibake is removed.
+
+The installed no-paid corpus appended 4,202 conversation events, visited 14
+archive pages, mounted at most 15 articles and 272 total nodes, and changed the
+exact reduced-motion liveness element from `19s elapsed` to `22s elapsed` over
+three seconds. Each installed window rectangle matched its requested size.
+Browser severe logs and unnamed visible controls were empty,
+dialog focus stayed trapped and returned to Settings, and the recent-project
+registry was restored byte-for-byte. Evidence and build-labelled screenshots
+are under `docs/evidence/phase8-ui-accessibility-remediation-26.828.648/`.
 
 **Primary areas:** Tauri window configuration, `desktop/src/styles.css`, shared
 pressable/dialog/form primitives, Work/Project/Settings surfaces, projection,

@@ -256,7 +256,7 @@ export function SettingsDialog({
                 <>
                   <div className="grid gap-3 sm:grid-cols-3">
                     <NumberField
-                      detail={`One agent call really costs ${view!.limits.observed_worker_call_tokens.low.toLocaleString()}Ã¢â‚¬â€œ${view!.limits.observed_worker_call_tokens.high.toLocaleString()} tokens on this project's own runs. A limit below that stops the run after you have paid for the call.`}
+                      detail={`One agent call really costs ${view!.limits.observed_worker_call_tokens.low.toLocaleString()}–${view!.limits.observed_worker_call_tokens.high.toLocaleString()} tokens on this project's own runs. A limit below that stops the run after you have paid for the call.`}
                       disabled={disabled}
                       label="Most one call may use"
                       value={config.run_ceiling_tokens}
@@ -547,7 +547,7 @@ function ModelDiscoverySummary({
       <div className="flex flex-wrap items-center gap-2">
         <span className="min-w-0 flex-1 text-[11px] leading-relaxed text-muted-foreground">
           {discovering
-            ? "Asking the installed CLIs for modelsÃ¢â‚¬Â¦"
+            ? "Asking the installed CLIs for models…"
             : detected === 0
               ? "No model list is available yet. Sign in or configure a provider, then refresh."
               : `${detected} model slug${detected === 1 ? "" : "s"} detected from the installed CLIs without running a model.`}
@@ -793,7 +793,7 @@ function ProbeReport({
               <span className="text-[12px] font-medium text-ink">{entry.label}</span>
               {entry.requested === null && entry.reported === null ? null : (
                 <span className="ml-2 font-mono text-[11px] text-muted-foreground">
-                  asked {entry.requested ?? "Ã¢â‚¬â€"} · got {entry.reported ?? "no answer"}
+                  asked {entry.requested ?? "—"} · got {entry.reported ?? "no answer"}
                 </span>
               )}
               <span className="mt-0.5 block text-[11px] leading-relaxed break-words text-muted-foreground">
@@ -1019,7 +1019,7 @@ function Waiting(): React.JSX.Element {
   return (
     <p className="m-0 flex items-center gap-2 text-[12px] text-muted-foreground">
       <Loader aria-hidden="true" className="size-3.5 animate-spin text-navy" />
-      Reading this project's settingsÃ¢â‚¬Â¦
+      Reading this project's settings…
     </p>
   );
 }
@@ -1135,7 +1135,7 @@ const WORK_KINDS: Array<{ id: string; label: string; detail: string }> = [
    from a stronger model is not something this project has measured on your
    work. Said plainly, so declining it is an informed choice. */
 const VISUAL_SUGGESTION =
-  "Screens are where a stronger model most often pays for itself Ã¢â‚¬â€ layout and spacing are judged by eye, and cheaper models tend to need more revisions. Hivemind will not do this on its own: it costs more per task, and this has not been measured on your project.";
+  "Screens are where a stronger model most often pays for itself — layout and spacing are judged by eye, and cheaper models tend to need more revisions. Hivemind will not do this on its own: it costs more per task, and this has not been measured on your project.";
 
 function TaskTypeRouting({
   config,

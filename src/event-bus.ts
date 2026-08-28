@@ -19,6 +19,8 @@ export interface EventBusErrorMessage {
 type Subscriber = (message: EventBusMessage) => void;
 type OutputSubscriber = (message: TaskOutputBusMessage) => void;
 const ssePadding = " ".repeat(1024);
+/** A live subscription is a present-tense feed, not an archive download. */
+export const EVENT_STREAM_HISTORY_LIMIT = 512;
 
 export interface TaskOutputBusMessage {
   kind: "output";
@@ -48,11 +50,17 @@ export class EventBus {
       return;
     }
 
+    const historyStart = Math.max(0, history.value.length - EVENT_STREAM_HISTORY_LIMIT);
     this.writeBody(
       body,
       [
         `: hivemind event stream ${ssePadding}`,
-        ...history.value.map((event, index) => this.formatMessage({ kind: "event", source: "history", seq: index + 1, event }))
+        ...history.value.slice(historyStart).map((event, index) => this.formatMessage({
+          kind: "event",
+          source: "history",
+          seq: historyStart + index + 1,
+          event
+        }))
       ].join("\r\n\r\n") + "\r\n\r\n"
     );
 

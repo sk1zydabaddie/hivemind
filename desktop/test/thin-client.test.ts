@@ -144,7 +144,7 @@ describe("React workspace boundary", () => {
        this one. Memory and History stay merged into Project -- they were two
        tabs over one subject that could not act -- and the agent graph is back,
        because a shape shows something a list cannot. */
-    const triggers = [...app.matchAll(/<TabsTrigger value="([a-z]+)">/gu)].map(
+    const triggers = [...app.matchAll(/<TabsTrigger[^>]*\bvalue="([a-z]+)"/gu)].map(
       (match) => match[1]
     );
     /* Plus Set up, which is not a fourth place: it is the same three, with the
@@ -324,6 +324,8 @@ describe("React workspace boundary", () => {
       "plan.prepare",
       "plan.ratify",
       "plan.review",
+      // Read an explicitly bounded page of the durable project trail.
+      "trail.inspect",
       // The one review signs the spec before it ratifies the plan, because
       // ratifying a plan requires a ratified spec. Ordering, not a second
       // decision -- the person acts once.
@@ -712,11 +714,14 @@ describe("React workspace boundary", () => {
     );
     const thread = await readFile(path.join(desktopRoot, "src", "lib", "work-thread.ts"), "utf8");
 
-    // The thread renders the replayed event history, so it survives a reload.
+    // The thread renders a bounded page from durable event history, so it
+    // survives a reload without mounting an unbounded transcript.
     // The third argument is Core's reconciliation of rounds nothing is
     // reporting on -- an INPUT from the daemon, not client memory, which is
     // what this test is about. The client must not decide staleness itself.
-    expect(work).toMatch(/buildRunThread\(events, taskTitles, new Set\(silentRounds\)\)/u);
+    expect(work).toMatch(/buildRunThread\(displayedEvents, taskTitles, new Set\(silentRounds\)\)/u);
+    expect(work).toMatch(/type: "trail\.inspect", payload: \{ limit: 320 \}/u);
+    expect(work).toMatch(/<VirtualList[\s\S]*role="log"/u);
     expect(work).toMatch(/silentRounds=\{inspection\?\.silent_rounds \?\? \[\]\}/u);
     expect(work).not.toMatch(/ROUND_SILENCE_BOUND|openRounds\(/u);
     expect(work).toMatch(/events=\{projection\.recentEvents\}/u);

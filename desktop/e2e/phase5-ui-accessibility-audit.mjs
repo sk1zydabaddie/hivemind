@@ -25,6 +25,7 @@ const installedBinary = path.join(installedRoot, "hivemind_desktop.exe");
 const installedVersion = (
   await readFile(path.resolve("src-tauri", "gen", "app-version.txt"), "utf8")
 ).trim();
+const remediation = process.argv.includes("--remediation");
 const recentProjectsPath = path.join(
   process.env.APPDATA ?? "",
   "ai.hivemind.desktop",
@@ -34,7 +35,7 @@ const evidenceDir = path.resolve(
   "..",
   "docs",
   "evidence",
-  `full-audit-phase5-${installedVersion}`
+  `${remediation ? "phase8-ui-accessibility-remediation" : "full-audit-phase5"}-${installedVersion}`
 );
 const longPairCount = 2100;
 
@@ -98,7 +99,7 @@ try {
       await stopFixtureDaemon(repo);
     }
   });
-  validateObservedFindings();
+  remediation ? validateRemediation() : validateObservedFindings();
 } finally {
   await closeInstalledSession();
   if (project !== undefined) await stopFixtureDaemon(project);
@@ -153,6 +154,43 @@ function validateObservedFindings() {
   assert.equal(evidence.paidProviderCalls, 0);
 }
 
+function validateRemediation() {
+  for (const [size, expected] of Object.entries({
+    "800x620": { width: 800, height: 620 },
+    "1280x720": { width: 1280, height: 720 },
+    "1366x768": { width: 1366, height: 768 },
+    "1440x900": { width: 1440, height: 900 }
+  })) {
+    const actual = evidence.minimumWindow.windowRects?.[size];
+    assert.ok(actual, `${size} installed window rectangle was not recorded`);
+    assert.equal(actual.width, expected.width, `${size} installed window width did not apply`);
+    assert.equal(actual.height, expected.height, `${size} installed window height did not apply`);
+  }
+  for (const [size, surfaces] of Object.entries(evidence.minimumWindow.viewports ?? {})) {
+    for (const [name, surface] of Object.entries(surfaces)) {
+      assert.equal(surface.horizontalOverflowPx, 0, `${size} ${name} has horizontal overflow`);
+      assert.deepEqual(surface.offscreenControls, [], `${size} ${name} has offscreen controls`);
+    }
+  }
+  assert.equal(evidence.keyboard.settingsDialogFocusReturnedToTrigger, true);
+  assert.equal(evidence.keyboard.settingsDialogFocusEscaped, false);
+  assert.ok(evidence.keyboard.pressableFocus, "no pressable received keyboard focus");
+  assert.deepEqual(evidence.keyboard.focusTrailMissingVisibleOutline, []);
+  assert.equal(evidence.accessibility.composerAccessibleName, "Message Hivemind");
+  assert.deepEqual(evidence.accessibility.visibleUnnamedControls, []);
+  assert.equal(evidence.longConversation.threadAriaRole, "log");
+  assert.equal(evidence.longConversation.threadAriaLive, "polite");
+  assert.equal(evidence.longConversation.viewportTabIndex, "0");
+  assert.ok(evidence.longConversation.maxMountedArticles < 80);
+  assert.ok(evidence.longConversation.maxDocumentNodeCount < 3500);
+  assert.equal(evidence.longConversation.earliestReachable, true);
+  assert.equal(evidence.longConversation.latestReachableAgain, true);
+  assert.ok(evidence.longConversation.pagesVisited >= 13);
+  assert.notEqual(evidence.longConversation.livenessBefore, evidence.longConversation.livenessAfter);
+  assert.deepEqual(evidence.browserSevereLogs, []);
+  assert.equal(evidence.paidProviderCalls, 0);
+}
+
 async function runInstalledSession(repo, longConversation) {
   await startInstalledSession();
   await driver.manage().window().setRect({ x: -1800, y: 0, width: 1440, height: 900 });
@@ -162,6 +200,9 @@ async function runInstalledSession(repo, longConversation) {
   await driver.wait(until.elementLocated(By.id("work-composer")), 45_000);
 
   if (longConversation) {
+    if (remediation) {
+      await auditRemediatedLongConversation(openedAt);
+    } else {
     await driver.wait(
       async () => (await threadText()).includes(`PHASE5-LATEST-${longPairCount - 1}`),
       90_000,
@@ -212,6 +253,7 @@ async function runInstalledSession(repo, longConversation) {
       ...longSnapshot
     };
     await capture("03-long-conversation-1440x900");
+    }
   } else {
     await driver.wait(
       async () => (await bodyText()).includes("Nothing running"),
@@ -235,6 +277,128 @@ async function runInstalledSession(repo, longConversation) {
   evidence.browserSevereLogs.push(...severe);
   await closeInstalledSession();
   await stopFixtureDaemon(repo);
+}
+
+async function auditRemediatedLongConversation(openedAt) {
+  const latest = `PHASE5-LATEST-${longPairCount - 1}`;
+  await driver.wait(
+    async () => (await threadText()).includes(latest),
+    90_000,
+    "the installed virtual thread did not render the newest durable reply"
+  );
+  await driver.wait(
+    async () => {
+      const buttons = await driver.findElements(By.xpath('//button[normalize-space(.)="Older messages"]'));
+      return buttons.length > 0 && await buttons[0].isDisplayed().catch(() => false);
+    },
+    90_000,
+    "the installed conversation never exposed its durable older-page control"
+  );
+  const log = await driver.findElement(By.css('[data-testid="conversation-log"]'));
+  const snapshots = [];
+  const sample = async () => {
+    const value = await driver.executeScript(`
+      const root = arguments[0];
+      return {
+        articleCount: root.querySelectorAll("article").length,
+        documentNodeCount: document.querySelectorAll("*").length,
+        text: root.textContent
+      };`, log);
+    snapshots.push(value);
+    return value;
+  };
+  await sample();
+  evidence.longConversation.initialArchiveControls = await driver.executeScript(`
+    return [...document.querySelectorAll("button")]
+      .filter((button) => button.offsetParent !== null)
+      .map((button) => button.innerText || button.getAttribute("aria-label") || "")
+      .filter((name) => /Older|Newer|Latest|Reading/u.test(name));
+  `);
+  evidence.longConversation.initialArchiveRegion = await driver.executeScript(`
+    const log = document.querySelector('[data-testid="conversation-log"]');
+    return log?.parentElement?.parentElement?.innerText?.slice(0, 800) ?? null;
+  `);
+  let pagesVisited = 1;
+  let earliestReachable = false;
+  for (let guard = 0; guard < 24; guard += 1) {
+    const settled = await driver.wait(async () => {
+      const older = await driver.findElements(By.xpath('//button[normalize-space(.)="Older messages"]'));
+      if (older.length > 0 && await older[0].isDisplayed().catch(() => false)) {
+        return { kind: "older", element: older[0] };
+      }
+      const beginning = await driver.findElements(By.xpath('//*[normalize-space(.)="Beginning of conversation"]'));
+      if (beginning.length > 0 && await beginning[0].isDisplayed().catch(() => false)) {
+        return { kind: "beginning", element: null };
+      }
+      return false;
+    }, 15_000, `archive page ${pagesVisited} did not settle on a next-page or beginning state`);
+    if (settled.kind === "beginning") break;
+    const previousText = await threadText();
+    await settled.element.click();
+    pagesVisited += 1;
+    await driver.wait(
+      async () => (await threadText()) !== previousText,
+      15_000,
+      `archive page ${pagesVisited} did not replace the scoped conversation log`
+    );
+    const page = await sample();
+    if (page.text.includes("PHASE5-EARLIEST-0")) {
+      earliestReachable = true;
+      break;
+    }
+  }
+  if (!earliestReachable) {
+    await log.click();
+    await log.sendKeys(Key.HOME);
+    await driver.wait(
+      async () => (await threadText()).includes("PHASE5-EARLIEST-0"),
+      15_000,
+      "the first durable request was not reachable from the final archive page with keyboard Home"
+    );
+    earliestReachable = true;
+    await sample();
+  }
+  evidence.longConversation.pageTraversal = {
+    pagesVisited,
+    earliestReachable,
+    earliestReachedByKeyboard: true
+  };
+  assert.equal(earliestReachable, true, "older-message paging never reached the first durable request");
+  const latestButton = await driver.findElement(By.xpath('//button[normalize-space(.)="Latest"]'));
+  await latestButton.click();
+  await driver.wait(async () => (await threadText()).includes(latest), 15_000);
+  const latestReachableAgain = (await threadText()).includes(latest);
+  const livenessBefore = await elapsedText();
+  await capture("06-reduced-motion-liveness-before-1440x900");
+  await new Promise((resolve) => setTimeout(resolve, 3_100));
+  const livenessAfter = await elapsedText();
+  await capture("07-reduced-motion-liveness-after-1440x900");
+  evidence.longConversation = {
+    appendedConversationPairs: longPairCount,
+    appendedConversationEvents: longPairCount * 2 + 2,
+    projectOpenToLatestRenderedMs: Date.now() - openedAt,
+    threadAccessibleName: await log.getAccessibleName(),
+    threadAriaRole: await log.getAriaRole(),
+    threadAriaLive: await log.getAttribute("aria-live"),
+    threadAriaRelevant: await log.getAttribute("aria-relevant"),
+    viewportTabIndex: await log.getAttribute("tabindex"),
+    pagesVisited,
+    earliestReachable,
+    latestReachableAgain,
+    maxMountedArticles: Math.max(...snapshots.map((entry) => entry.articleCount)),
+    maxDocumentNodeCount: Math.max(...snapshots.map((entry) => entry.documentNodeCount)),
+    livenessBefore,
+    livenessAfter
+  };
+  await capture("05-long-conversation-virtualized-1440x900");
+}
+
+async function elapsedText() {
+  return driver.executeScript(`
+    return [...document.querySelectorAll("span")]
+      .map((node) => node.textContent?.trim() ?? "")
+      .find((text) => text.endsWith(" elapsed")) ?? null;
+  `);
 }
 
 async function auditAccessibility() {
@@ -295,12 +459,28 @@ async function auditKeyboard() {
       const node = document.activeElement;
       const style = getComputedStyle(node);
       const rect = node.getBoundingClientRect();
+      let focusVisual = null;
+      for (let current = node; current && current !== document.documentElement; current = current.parentElement) {
+        const currentStyle = getComputedStyle(current);
+        const outlined = currentStyle.outlineStyle !== "none" && currentStyle.outlineWidth !== "0px";
+        const shadowed = currentStyle.boxShadow !== "none" && currentStyle.boxShadow !== "";
+        if (outlined || shadowed) {
+          focusVisual = {
+            tag: current.tagName.toLowerCase(),
+            outlineStyle: currentStyle.outlineStyle,
+            outlineWidth: currentStyle.outlineWidth,
+            boxShadow: currentStyle.boxShadow
+          };
+          break;
+        }
+      }
       return {
         tag: node.tagName.toLowerCase(),
         name: node.getAttribute("aria-label") || node.innerText || node.title || node.id || "",
         outlineStyle: style.outlineStyle,
         outlineWidth: style.outlineWidth,
         boxShadow: style.boxShadow,
+        focusVisual,
         x: Math.round(rect.x), y: Math.round(rect.y)
       };
     `));
@@ -371,9 +551,7 @@ async function auditKeyboard() {
     tabArrowNavigation: { selectedAfterRight, selectedAfterLeft },
     focusTrail,
     focusTrailMissingVisibleOutline: focusTrail.filter(
-      (entry) =>
-        (entry.outlineStyle === "none" || entry.outlineWidth === "0px") &&
-        (entry.boxShadow === "none" || entry.boxShadow === "")
+      (entry) => entry.tag !== "body" && entry.tag !== "html" && entry.focusVisual === null
     ),
     pressableRestStyle,
     pressableFocus,
@@ -386,6 +564,44 @@ async function auditKeyboard() {
 }
 
 async function auditMinimumWindow() {
+  if (remediation) {
+    const viewports = {};
+    const windowRects = {};
+    for (const size of [
+      { width: 800, height: 620 },
+      { width: 1280, height: 720 },
+      { width: 1366, height: 768 },
+      { width: 1440, height: 900 }
+    ]) {
+      await driver.manage().window().setRect({ x: -1800, y: 0, ...size });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const key = `${size.width}x${size.height}`;
+      windowRects[key] = await driver.manage().window().getRect();
+      viewports[key] = {};
+      for (const name of ["Work", "Set up", "Agents", "Project"]) {
+        await selectTab(name);
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        viewports[key][name] = await minimumSurfaceSnapshot();
+        await capture(`04-${key}-${name.toLowerCase().replaceAll(" ", "-")}`);
+        if (name === "Set up") {
+          const help = await driver.findElement(By.xpath('//summary[contains(normalize-space(.), "see your provider")]'));
+          await help.click();
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          viewports[key]["Set up — expanded provider help"] = await minimumSurfaceSnapshot();
+          await capture(`04-${key}-set-up-expanded-provider-help`);
+          await help.click();
+        }
+      }
+    }
+    evidence.minimumWindow = {
+      declaredMinimum: { width: 800, height: 620 },
+      actualWindowRect: await driver.manage().window().getRect(),
+      windowRects,
+      viewports
+    };
+    await selectTab("Work");
+    return;
+  }
   await driver.manage().window().setRect({ x: -1800, y: 0, width: 800, height: 620 });
   await new Promise((resolve) => setTimeout(resolve, 750));
   const surfaces = {};
@@ -406,25 +622,47 @@ async function auditMinimumWindow() {
 
 async function minimumSurfaceSnapshot() {
   return driver.executeScript(`
+    const testReachability = arguments[0];
     const visible = (node) => {
+      if (node.parentElement?.closest('[hidden], [aria-hidden="true"], [data-state="closed"]')) return false;
+      if (node.tagName !== "SUMMARY" && node.parentElement?.closest('details:not([open])')) return false;
       const style = getComputedStyle(node);
       const rect = node.getBoundingClientRect();
       return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
     };
-    const offscreenControls = [...document.querySelectorAll('button, input, textarea, select, [role="tab"]')]
-      .filter((node) => {
-        if (!visible(node)) return false;
-        const rect = node.getBoundingClientRect();
-        return rect.left < 0 || rect.right > window.innerWidth || rect.top < 0 || rect.bottom > window.innerHeight;
-      })
-      .map((node) => {
-        const rect = node.getBoundingClientRect();
-        return {
+    const controls = [...document.querySelectorAll('button, input, textarea, select, summary, [role="tab"]')]
+      .filter(visible);
+    const scrollState = [...document.querySelectorAll('*')]
+      .filter((node) => node.scrollHeight > node.clientHeight || node.scrollWidth > node.clientWidth)
+      .map((node) => [node, node.scrollLeft, node.scrollTop]);
+    const windowScroll = [window.scrollX, window.scrollY];
+    const clippedByAncestor = (node, rect) => {
+      for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+        const style = getComputedStyle(parent);
+        if (!/(auto|scroll|hidden|clip)/u.test(style.overflowX + " " + style.overflowY)) continue;
+        const box = parent.getBoundingClientRect();
+        if (rect.left < box.left - 1 || rect.right > box.right + 1 ||
+            rect.top < box.top - 1 || rect.bottom > box.bottom + 1) return true;
+      }
+      return false;
+    };
+    const offscreenControls = [];
+    for (const node of controls) {
+      if (testReachability) node.scrollIntoView({ block: "center", inline: "center" });
+      const rect = node.getBoundingClientRect();
+      if (rect.left < 0 || rect.right > window.innerWidth || rect.top < 0 ||
+          rect.bottom > window.innerHeight || clippedByAncestor(node, rect)) {
+        offscreenControls.push({
           name: node.getAttribute("aria-label") || node.innerText || node.title || node.id || node.tagName,
           left: Math.round(rect.left), right: Math.round(rect.right),
           top: Math.round(rect.top), bottom: Math.round(rect.bottom)
-        };
-      });
+        });
+      }
+    }
+    if (testReachability) {
+      for (const [node, left, top] of scrollState) node.scrollTo(left, top);
+      window.scrollTo(windowScroll[0], windowScroll[1]);
+    }
     const clippedContainers = [...document.querySelectorAll('*')]
       .filter((node) => {
         if (!visible(node) || node.closest('.sr-only, [hidden], [aria-hidden="true"]')) return false;
@@ -453,7 +691,7 @@ async function minimumSurfaceSnapshot() {
       offscreenControls,
       clippedContainers
     };
-  `);
+  `, remediation);
 }
 
 async function appendLongConversation(repo) {
@@ -476,6 +714,11 @@ async function appendLongConversation(repo) {
         text: `PHASE5-LATEST-${index}`
       })
     );
+  }
+  if (remediation) {
+    events.push(event(new Date().toISOString(), "spec.draft_started", null, {
+      spec_id: "phase8-reduced-motion-liveness"
+    }));
   }
   await appendFile(
     path.join(repo, ".hivemind", "log", "events.jsonl"),
@@ -571,7 +814,9 @@ async function viewportSnapshot() {
 }
 
 async function threadText() {
-  const roots = await driver.findElements(By.css('[aria-label="What has happened in this run"]'));
+  const roots = await driver.findElements(By.css(
+    remediation ? '[data-testid="conversation-log"]' : '[aria-label="What has happened in this run"]'
+  ));
   return roots.length === 0 ? "" : roots[0].getText();
 }
 

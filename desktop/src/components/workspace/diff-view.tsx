@@ -324,7 +324,7 @@ function NoteEditor({
     <div className="grid gap-2 border-y border-rule bg-surface px-3 py-2.5">
       <textarea
         autoFocus
-        className="min-h-[64px] w-full resize-y rounded-sm border border-rule bg-panel px-2.5 py-2 text-[13px] leading-relaxed text-ink outline-none"
+        className="min-h-[64px] w-full resize-y rounded-sm border border-rule bg-panel px-2.5 py-2 text-[13px] leading-relaxed text-ink outline-none focus-visible:border-navy focus-visible:ring-[3px] focus-visible:ring-navy/25"
         placeholder="What should change about this line?"
         value={draft}
         onChange={(event) => onChange(event.target.value)}

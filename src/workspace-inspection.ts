@@ -866,9 +866,19 @@ async function inspectHistory(
   const sessions = await inspectManagerSessionHistory(repoRoot);
   if (!sessions.ok) return sessions;
   const ascending = [...sessions.value].sort((left, right) => left.created_at.localeCompare(right.created_at));
+  const eventsByRun = ascending.map(() => [] as HivemindEvent[]);
+  let runIndex = 0;
+  for (const event of events) {
+    while (
+      runIndex + 1 < ascending.length &&
+      event.ts >= ascending[runIndex + 1]!.created_at
+    ) runIndex += 1;
+    if (ascending[runIndex] !== undefined && event.ts >= ascending[runIndex]!.created_at) {
+      eventsByRun[runIndex]!.push(event);
+    }
+  }
   const runs = await Promise.all(ascending.map(async (session, index) => {
-    const nextStart = ascending[index + 1]?.created_at;
-    const runEvents = events.filter((event) => event.ts >= session.created_at && (nextStart === undefined || event.ts < nextStart));
+    const runEvents = eventsByRun[index]!;
     const verifiedTasks = runVerifiedTaskIds(runEvents, integrated);
     const mergedTasks = mergedTaskIds(runEvents);
     const stoppedTasks = stoppedTaskStates(runEvents);
@@ -984,7 +994,7 @@ function attemptOutcome(
 // Scope only. This decides which run a verified task is attributed to; whether
 // the task is verified at all is decided solely by the caller's
 // integratedTaskIdsFromEvents set, so History and `hivemind status` cannot
-// disagree â€” including after a retraction the run window alone cannot see.
+// disagree — including after a retraction the run window alone cannot see.
 function runVerifiedTaskIds(runEvents: HivemindEvent[], integrated: Set<string>): string[] {
   const ids = new Set<string>();
   for (const event of runEvents) {

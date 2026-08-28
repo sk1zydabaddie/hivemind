@@ -4752,3 +4752,45 @@ Installed build **26.828.510** is the reference evidence. Its five 1440x900
 captures and structured provider/project matrix are under
 `docs/evidence/remediation-phase7-26.828.510/`.
 
+### The supported window is an outer-window contract
+
+The Windows minimum is 800x620 outer pixels. Verification must exercise the
+corresponding 790x610 WebView client, not substitute a larger browser viewport.
+For every exact control it scrolls the owning container, checks both viewport
+and ancestor clipping, restores container positions, and rejects partial
+clipping, overlap, occlusion, document overflow, severe browser/resource errors,
+or an owned process left behind. Closed disclosure content is excluded only
+while closed; its expanded state is a separate required surface.
+
+### Archive size must not become DOM size
+
+Durable events remain authoritative, but the UI reads them through bounded
+`trail.inspect` pages. Work keeps at most 320 events per page and Project keeps
+at most 160. Both use measured virtualization rather than assuming fixed row
+height. The conversation viewport is the focus owner and a labelled `log`, so
+Home/End and ordinary scroll keys reach older content without moving thousands
+of articles into the document. New replies use polite `additions` announcements;
+functional progress has one concise status announcement rather than announcing
+every streamed token.
+
+Project reconstruction must be one pass over the selected event set. A new run
+bucket may be indexed while walking the trail; a surface must not filter the
+complete trail once per run. Full records may show durable identifiers, but
+list keys and primary labels do not expose them.
+
+### Focus belongs to the interaction that opened a layer
+
+A controlled dialog names an explicit initial focus owner and restores focus to
+the control that opened it. Shared controls use the shared visible-focus rule;
+route-local focus suppression is not allowed. A disabled answering control must
+publish its explanation through accessible description because a disabled
+control cannot rely on hover or focus to reveal a title. Persistent field names
+remain after placeholder text disappears.
+
+Installed build **26.828.648** is the reference evidence. Its 4,202-event corpus
+visited 14 pages, reached both archive ends, mounted at most 15 articles and 272
+document nodes, and retained a three-second text liveness change under reduced
+motion. The installed driver records and asserts the physical rectangle before
+capturing each required size. Evidence and build-labelled screenshots are under
+`docs/evidence/phase8-ui-accessibility-remediation-26.828.648/`.
+

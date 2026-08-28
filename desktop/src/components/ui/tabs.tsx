@@ -62,7 +62,7 @@ export function TabsContent({
     <TabsPrimitive.Content
       data-slot="tabs-content"
       className={cn(
-        "min-h-0 flex-1 outline-none focus-visible:outline-2 focus-visible:outline-navy focus-visible:outline-offset-[-2px]",
+        "min-h-0 flex-1 outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-navy focus-visible:outline-offset-[-2px]",
         className
       )}
       {...props}

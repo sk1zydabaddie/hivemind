@@ -57,7 +57,7 @@ export function Checkbox({
     <CheckboxPrimitive.Root
       data-slot="checkbox"
       className={cn(
-        "grid size-[18px] shrink-0 place-items-center rounded-sm border border-input bg-canvas text-transparent outline-none",
+        "grid size-[18px] shrink-0 place-items-center rounded-sm border border-input bg-canvas text-transparent outline-none focus-visible:border-navy focus-visible:ring-[3px] focus-visible:ring-navy/25",
         PRESSABLE,
         CHECKED_FILL,
         className
@@ -84,7 +84,7 @@ export function RadioGroupItem({
     <RadioGroupPrimitive.Item
       data-slot="radio"
       className={cn(
-        "grid size-[18px] shrink-0 place-items-center rounded-full border border-input bg-canvas outline-none",
+        "grid size-[18px] shrink-0 place-items-center rounded-full border border-input bg-canvas outline-none focus-visible:border-navy focus-visible:ring-[3px] focus-visible:ring-navy/25",
         PRESSABLE,
         CHECKED_FILL,
         className
@@ -116,7 +116,7 @@ export function Switch({
     <SwitchPrimitive.Root
       data-slot="switch"
       className={cn(
-        "group relative inline-flex h-4 w-7 shrink-0 cursor-pointer items-center rounded-full border border-input bg-canvas outline-none",
+        "group relative inline-flex h-4 w-7 shrink-0 cursor-pointer items-center rounded-full border border-input bg-canvas outline-none focus-visible:border-navy focus-visible:ring-[3px] focus-visible:ring-navy/25",
         /* The groove: an inset shadow, and inset only. A switch track is the
            inverse of relief and must never be confused for it. */
         "shadow-[inset_0_1px_2px_0_color-mix(in_oklab,#000000_18%,transparent)]",

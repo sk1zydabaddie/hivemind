@@ -30,6 +30,7 @@ import {
   PanelLabel
 } from "@/components/ui/panel";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { VirtualList } from "@/components/ui/virtual-list";
 import { AccountsPanel } from "@/components/workspace/accounts-panel";
 import { ANONYMOUS_TASK, taskTitleOrNull } from "@/lib/identifiers";
 import type { BoardProjection } from "@/lib/projection";
@@ -37,7 +38,7 @@ import { buildUsagePanel, formatTokens, type UsagePanel } from "@/lib/provider-u
 import { projectTotals, type ProjectTotals } from "@/lib/project-totals";
 import { plainActionError } from "@/lib/plain-language";
 import type {
-  DurableTrailEvent,
+  DurableTrailPage,
   ProjectConfigView,
   WorkspaceAction,
   WorkspaceCharacterization,
@@ -86,7 +87,8 @@ export function ProjectTab({
     };
   }, [onAction]);
   const usage = buildUsagePanel(inspection, projection, config?.adapters ?? []);
-  const [trail, setTrail] = useState<DurableTrailEvent[] | null>(null);
+  const [trailPages, setTrailPages] = useState<DurableTrailPage[]>([]);
+  const [trailPageIndex, setTrailPageIndex] = useState(0);
   const [trailError, setTrailError] = useState("");
   const [trailLoading, setTrailLoading] = useState(false);
   const [trailOpen, setTrailOpen] = useState(false);
@@ -121,13 +123,36 @@ export function ProjectTab({
 
   const openTrail = (): void => {
     setTrailOpen(true);
-    if (trail !== null) return;
+    if (trailPages.length > 0) return;
     setTrailLoading(true);
     setTrailError("");
-    void onAction<DurableTrailEvent[]>({ type: "trail.inspect", payload: {} })
-      .then(setTrail)
+    void onAction<DurableTrailPage>({ type: "trail.inspect", payload: { limit: 160 } })
+      .then((page) => setTrailPages([page]))
       .catch((error: unknown) => setTrailError(plainActionError(error)))
       .finally(() => setTrailLoading(false));
+  };
+
+  const loadOlderTrail = async (): Promise<void> => {
+    if (trailPageIndex + 1 < trailPages.length) {
+      setTrailPageIndex(trailPageIndex + 1);
+      return;
+    }
+    const cursor = trailPages[trailPageIndex]?.next_before;
+    if (cursor === null || cursor === undefined) return;
+    setTrailLoading(true);
+    setTrailError("");
+    try {
+      const page = await onAction<DurableTrailPage>({
+        type: "trail.inspect",
+        payload: { before: cursor, limit: 160 }
+      });
+      setTrailPages((pages) => [...pages, page]);
+      setTrailPageIndex(trailPageIndex + 1);
+    } catch (error) {
+      setTrailError(plainActionError(error));
+    } finally {
+      setTrailLoading(false);
+    }
   };
 
   /* Nothing recorded yet is the ordinary state of a new project, and it is one
@@ -137,6 +162,7 @@ export function ProjectTab({
 
   return (
     <div
+      data-slot="project-root"
       className={`grid h-full min-h-0 overflow-hidden p-3 ${
         bare ? "content-start grid-rows-[auto_auto]" : "grid-rows-[auto_minmax(0,1fr)]"
       }`}
@@ -202,29 +228,32 @@ export function ProjectTab({
            two panels to the viewport over one run left ~60% of the surface as
            held-open white, which reads as unfinished rather than as empty --
            the same reasoning the bare state above already followed. */
-        <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_340px] items-start gap-3 overflow-hidden">
+        <div className="project-history-layout grid min-h-0 grid-cols-[minmax(0,1fr)_340px] items-start gap-3 overflow-hidden">
           <Panel className="max-h-full">
             <PanelHeader>
               <PanelLabel className="text-ink">Past runs</PanelLabel>
               <PanelCount>{runs.length}</PanelCount>
             </PanelHeader>
-            <ScrollArea className="min-h-0">
-              {runs.length === 0 ? (
+            {runs.length === 0 ? (
                 <p className="m-0 px-4 py-5 text-[13px] leading-relaxed text-muted-foreground">
                   No run has finished in this project yet.
                 </p>
               ) : (
-                <div className="grid">
-                  {runs.map((run) => (
+                <VirtualList
+                  ariaLabel="Past runs"
+                  className="min-h-0"
+                  estimateSize={116}
+                  itemKey={(run) => run.session_id}
+                  items={runs}
+                  testId="project-run-list"
+                  renderItem={(run) => (
                     <RunCard
-                      key={run.session_id}
                       run={run}
                       taskTitles={inspection?.task_titles ?? {}}
                     />
-                  ))}
-                </div>
+                  )}
+                />
               )}
-            </ScrollArea>
           </Panel>
 
           {/* The last row holds a scroll area, so it takes the leftover space
@@ -304,8 +333,11 @@ export function ProjectTab({
         error={trailError}
         loading={trailLoading}
         open={trailOpen}
-        trail={trail}
+        page={trailPages[trailPageIndex] ?? null}
+        pageIndex={trailPageIndex}
         onOpenChange={setTrailOpen}
+        onNewer={() => setTrailPageIndex(Math.max(0, trailPageIndex - 1))}
+        onOlder={() => void loadOlderTrail()}
       />
     </div>
   );
@@ -810,16 +842,22 @@ function DraftTestCard({
 
 function TrailDialog({
   open,
-  trail,
+  page,
+  pageIndex,
   loading,
   error,
-  onOpenChange
+  onOpenChange,
+  onNewer,
+  onOlder
 }: {
   open: boolean;
-  trail: DurableTrailEvent[] | null;
+  page: DurableTrailPage | null;
+  pageIndex: number;
   loading: boolean;
   error: string;
   onOpenChange: (open: boolean) => void;
+  onNewer: () => void;
+  onOlder: () => void;
 }): React.JSX.Element {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -832,43 +870,59 @@ function TrailDialog({
               they are gone everywhere else: a person who needs one is reading
               the raw record or quoting it to support, and has asked for it. */}
           <DialogDescription>
-            Every step the project wrote down, oldest first. This is the record
+            Every step the project wrote down, newest first. This is the record
             the app reads, shown exactly as it was written — including the
             internal names for things, which is what support will ask for.
           </DialogDescription>
         </DialogHeader>
-        <ScrollArea className="min-h-0 bg-canvas">
-          <div className="px-5 py-4">
+        <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] bg-canvas">
+          <div className="flex min-h-10 items-center gap-2 border-b border-rule px-5 py-1.5">
+            {pageIndex > 0 ? <Button size="sm" variant="ghost" onClick={onNewer}>Newer</Button> : null}
+            {page?.next_before !== null && page !== null ? (
+              <Button disabled={loading} size="sm" variant="ghost" onClick={onOlder}>
+                {loading ? "Reading…" : "Older"}
+              </Button>
+            ) : null}
+          </div>
+          <div className="min-h-0">
             {error !== "" ? (
-              <p className="m-0 rounded-md bg-clay-wash px-3 py-2 text-[13px] break-words text-clay">
+              <p className="m-5 rounded-md bg-clay-wash px-3 py-2 text-[13px] break-words text-clay">
                 {error}
               </p>
             ) : loading ? (
-              <p className="m-0 text-[13px] text-muted-foreground">Reading the record…</p>
+              <p className="m-5 text-[13px] text-muted-foreground">Reading the record…</p>
             ) : (
-              <ol className="m-0 grid list-none gap-0 p-0">
-                {(trail ?? []).map((event, index) => (
-                  <li
-                    className="grid grid-cols-[124px_minmax(0,1fr)] items-baseline gap-3 border-b border-rule py-1.5 last:border-b-0"
-                    key={`${event.ts}-${index}`}
+              <VirtualList
+                ariaLabel="Full project record"
+                className="h-full"
+                estimateSize={78}
+                itemKey={(event) => JSON.stringify(event)}
+                items={page?.events ?? []}
+                testId="project-trail-list"
+                renderItem={(event) => (
+                  <article
+                    className="grid grid-cols-[124px_minmax(0,1fr)] items-start gap-3 border-b border-rule px-5 py-2"
                   >
                     <time className="font-mono text-[11px] text-muted-foreground">
-                      {formatDateTime(event.ts ?? "")}
+                      {formatDateTime(event.ts)}
                     </time>
                     <div className="min-w-0">
                       <span className="text-[13px] break-words text-ink">
-                        {plainEventName(event.type ?? "")}
+                        {plainEventName(event.type)}
                       </span>
                       <span className="ml-2 font-mono text-[11px] text-muted-foreground">
                         {event.task_id ?? "run"}
                       </span>
+                      <pre className="mt-1 mb-0 overflow-x-auto font-mono text-[10.5px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                        {JSON.stringify(event.data, null, 2)}
+                      </pre>
                     </div>
-                  </li>
-                ))}
-              </ol>
+                  </article>
+                )}
+              />
             )}
           </div>
-        </ScrollArea>
+        </div>
       </DialogContent>
     </Dialog>
   );

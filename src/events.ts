@@ -202,6 +202,44 @@ export async function readEvents(
   );
 }
 
+export interface EventPage {
+  /** Newest event first. */
+  events: HivemindEvent[];
+  /** Exclusive event-index cursor for the next older page. */
+  next_before: number | null;
+}
+
+/**
+ * One bounded page of the durable trail.
+ *
+ * The cursor is an exclusive event index, not a timestamp: multiple durable
+ * events may legitimately share a timestamp, while append order is exact. New
+ * appends do not move an older cursor, so loading history while work continues
+ * cannot duplicate or skip a record.
+ */
+export async function readEventPage(
+  repoRoot: string,
+  options: { before?: number; limit: number }
+): Promise<{ ok: true; value: EventPage } | { ok: false; reason: string }> {
+  if (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 500) {
+    return { ok: false, reason: "trail page limit must be an integer from 1 to 500" };
+  }
+  const trail = await readEvents(repoRoot);
+  if (!trail.ok) return trail;
+  const before = options.before ?? trail.value.length;
+  if (!Number.isSafeInteger(before) || before < 0 || before > trail.value.length) {
+    return { ok: false, reason: "trail page cursor is outside the durable trail" };
+  }
+  const start = Math.max(0, before - options.limit);
+  return {
+    ok: true,
+    value: {
+      events: trail.value.slice(start, before).reverse(),
+      next_before: start === 0 ? null : start
+    }
+  };
+}
+
 /**
  * Removes an interrupted trailing append from the event trail, and records
  * that it did.

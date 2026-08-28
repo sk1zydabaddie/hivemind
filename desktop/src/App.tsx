@@ -318,14 +318,14 @@ export default function App(): React.JSX.Element {
             to their right. Windows and Linux put the controls on the right,
             where this app renders them. */}
         <header
-          className={`flex h-11 shrink-0 items-stretch gap-4 border-b border-rule bg-panel shadow-[var(--glass-edge-far)] pr-2.5 ${
+          className={`app-titlebar flex h-11 shrink-0 items-stretch gap-4 border-b border-rule bg-panel shadow-[var(--glass-edge-far)] pr-2.5 ${
             trafficLightInset() ? "pl-[78px]" : "pl-3"
           }`}
           data-tauri-drag-region
         >
           <div className="flex shrink-0 items-center gap-2">
             <BrandMark />
-            <span className="text-[13px] leading-none font-semibold tracking-tight text-ink">
+            <span className="app-brand-label text-[13px] leading-none font-semibold tracking-tight text-ink">
               Hivemind
             </span>
           </div>
@@ -346,32 +346,32 @@ export default function App(): React.JSX.Element {
             {/* Stays until there is an agent to run, then leaves. The app is
                 never blocked meanwhile: every other section is reachable. */}
             {runnable ? null : (
-              <TabsTrigger value="setup">
+              <TabsTrigger aria-label="Set up" value="setup">
                 <Plug aria-hidden="true" />
-                Set up
+                <span className="app-tab-label">Set up</span>
               </TabsTrigger>
             )}
-            <TabsTrigger value="work">
+            <TabsTrigger aria-label="Work" value="work">
               <LayoutList aria-hidden="true" />
-              Work
+              <span className="app-tab-label">Work</span>
             </TabsTrigger>
-            <TabsTrigger value="agents">
+            <TabsTrigger aria-label="Agents" value="agents">
               <Workflow aria-hidden="true" />
-              Agents
+              <span className="app-tab-label">Agents</span>
               {agentsWorking > 0 ? (
                 <span className="ml-0.5 font-mono text-[11px]">
                   {agentsWorking}
                 </span>
               ) : null}
             </TabsTrigger>
-            <TabsTrigger value="project">
+            <TabsTrigger aria-label="Project" value="project">
               <Library aria-hidden="true" />
-              Project
+              <span className="app-tab-label">Project</span>
             </TabsTrigger>
           </TabsList>
           ) : null}
 
-          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <div className="app-chrome-actions ml-auto flex shrink-0 items-center gap-1.5">
             <ConnectionReadout
               detail={workspace.connectionDetail}
               /* A project that has not been set up yet is not a fault, and the
@@ -396,8 +396,8 @@ export default function App(): React.JSX.Element {
                   variant="ghost"
                 >
                   <FolderGit2 aria-hidden="true" />
-                  <span className="font-mono text-[12px] text-ink">{projectName}</span>
-                  <ChevronDown aria-hidden="true" />
+                  <span className="app-project-label font-mono text-[12px] text-ink">{projectName}</span>
+                  <ChevronDown aria-hidden="true" className="app-project-chevron" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-[360px]">
@@ -494,6 +494,7 @@ export default function App(): React.JSX.Element {
                 <Button
                   aria-label="Commands"
                   disabled={!projectReady}
+                  disabledReason="Opens once the project is open"
                   size="sm"
                   title={projectReady ? "Commands" : "Opens once the project is open"}
                   type="button"
@@ -505,7 +506,7 @@ export default function App(): React.JSX.Element {
                       height: as a bare inline `kbd` inside a flex button it was
                       stretched to the button's cross-axis, which distorted the
                       glyph and the K rather than fitting them in a box. */}
-                  <kbd className="inline-flex h-[18px] shrink-0 items-center rounded-sm border border-rule px-1 font-mono text-[11px] leading-none text-muted-foreground">
+                  <kbd className="app-command-shortcut inline-flex h-[18px] shrink-0 items-center rounded-sm border border-rule px-1 font-mono text-[11px] leading-none text-muted-foreground">
                     {shortcutLabel("K")}
                   </kbd>
                 </Button>
@@ -517,6 +518,7 @@ export default function App(): React.JSX.Element {
                 <Button
                   aria-label="Settings"
                   disabled={!projectReady}
+                  disabledReason="Opens once the project is open"
                   size="icon-sm"
                   title={projectReady ? "Settings" : "Opens once the project is open"}
                   type="button"
@@ -855,11 +857,12 @@ function ConnectionReadout({
     <Tooltip>
       <TooltipTrigger asChild>
         <span
+          aria-label={shown}
           aria-live="polite"
-          className="flex cursor-default items-center gap-1.5 px-1 text-[12px] text-muted-foreground"
+          className="app-connection-readout flex cursor-default items-center gap-1.5 px-1 text-[12px] text-muted-foreground"
         >
           <span aria-hidden="true" className={`size-1.5 rounded-xs ${dot}`} />
-          <span className="font-medium text-ink first-letter:uppercase">{shown}</span>
+          <span className="app-connection-label font-medium text-ink first-letter:uppercase">{shown}</span>
         </span>
       </TooltipTrigger>
       <TooltipContent side="bottom">

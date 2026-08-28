@@ -17,8 +17,10 @@
  * If a control cannot be scrolled to, it cannot be pressed, and a surface with
  * an unpressable control cannot be completed. Nothing here inspects markup.
  *
- * Sizes are the ones people actually have, smallest first: a 1366x768 laptop is
- * the common floor and is where a tall setup screen fails first.
+ * Sizes include the content area left by the declared 800x620 outer minimum,
+ * then the common laptop and desktop geometries. The minimum is deliberately
+ * first: a CSS floor larger than the native window once hid thirty pixels of
+ * controls while every larger replay passed.
  *
  * It starts what it needs. The app is built for production, served under the
  * committed Tauri CSP, and opened in a managed browser. This matters because a
@@ -97,6 +99,7 @@ const SURFACES = [
 ];
 
 const VIEWPORTS = [
+  { width: 790, height: 610 },
   { width: 1280, height: 720 },
   { width: 1366, height: 768 },
   { width: 1440, height: 900 }
@@ -162,7 +165,8 @@ const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
    same thing a keyboard user's focus does, so a control it cannot bring into
    the viewport is one nobody can reach by any means. */
 const PROBE = `
-  const controls = [...document.querySelectorAll('button, [role="tab"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], a[href], input, textarea, select')]
+  const interactionRoot = document.querySelector('[role="dialog"]') ?? document;
+  const controls = [...interactionRoot.querySelectorAll('button, [role="tab"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], a[href], input, textarea, select')]
     .filter((el) => {
       if (el.disabled) return false;
       const box = el.getBoundingClientRect();
@@ -170,20 +174,56 @@ const PROBE = `
       return el.offsetParent !== null || getComputedStyle(el).position === "fixed";
     });
   const unreachable = [];
-  for (const el of controls) {
-    el.scrollIntoView({ block: "nearest", inline: "nearest" });
+  const visibleBox = (el) => {
     const box = el.getBoundingClientRect();
+    const visible = { left: Math.max(0, box.left), top: Math.max(0, box.top), right: Math.min(window.innerWidth, box.right), bottom: Math.min(window.innerHeight, box.bottom) };
+    for (let parent = el.parentElement; parent !== null; parent = parent.parentElement) {
+      const style = getComputedStyle(parent);
+      const clipX = ["auto", "hidden", "scroll", "clip"].includes(style.overflowX);
+      const clipY = ["auto", "hidden", "scroll", "clip"].includes(style.overflowY);
+      if (!clipX && !clipY) continue;
+      const parentBox = parent.getBoundingClientRect();
+      if (clipX) {
+        visible.left = Math.max(visible.left, parentBox.left);
+        visible.right = Math.min(visible.right, parentBox.right);
+      }
+      if (clipY) {
+        visible.top = Math.max(visible.top, parentBox.top);
+        visible.bottom = Math.min(visible.bottom, parentBox.bottom);
+      }
+    }
+    return { box, visible };
+  };
+  for (const el of controls) {
+    el.scrollIntoView({ block: "center", inline: "center" });
+    const { box, visible } = visibleBox(el);
     const label = (el.innerText || el.getAttribute("aria-label") || el.placeholder || el.tagName)
       .replace(/\\s+/g, " ").trim().slice(0, 48);
     /* A 2px tolerance for sub-pixel layout; anything more is genuinely off. */
-    const belowFold = box.top > window.innerHeight - 2 || box.bottom < 2;
-    const offSide = box.left > window.innerWidth - 2 || box.right < 2;
-    if (belowFold || offSide) {
+    const belowFold = box.top < -2 || box.bottom > window.innerHeight + 2;
+    const offSide = box.left < -2 || box.right > window.innerWidth + 2;
+    const clippedByAncestor = visible.left > box.left + 2 || visible.right < box.right - 2 ||
+      visible.top > box.top + 2 || visible.bottom < box.bottom - 2;
+    const center = document.elementFromPoint(
+      Math.max(0, Math.min(window.innerWidth - 1, box.left + box.width / 2)),
+      Math.max(0, Math.min(window.innerHeight - 1, box.top + box.height / 2))
+    );
+    const occluded = center !== null && center !== el && !el.contains(center);
+    const coveredBy = occluded
+      ? center.tagName.toLowerCase() + "." + (center.className?.toString?.().replace(/\\s+/g, ".").slice(0, 100) ?? "")
+      : null;
+    if (belowFold || offSide || clippedByAncestor || occluded) {
       unreachable.push({
         label,
         top: Math.round(box.top),
         bottom: Math.round(box.bottom),
-        viewport: window.innerHeight
+        left: Math.round(box.left),
+        right: Math.round(box.right),
+        viewport: window.innerHeight,
+        occluded,
+        coveredBy,
+        coveredBox: occluded ? (() => { const value = center.getBoundingClientRect(); return { top: Math.round(value.top), bottom: Math.round(value.bottom), left: Math.round(value.left), right: Math.round(value.right) }; })() : null,
+        clippedByAncestor
       });
     }
   }
@@ -257,6 +297,43 @@ const PROBE = `
       (el.innerText || el.getAttribute("aria-label") || slot).replace(/\s+/g, " ").trim().slice(0, 36)
     );
   }
+  /* The reachability loop deliberately scrolls one control at a time. Restore
+     every viewport before asking whether controls overlap; comparing boxes
+     after the final arbitrary scroll reports controls that are each reachable
+     but were never simultaneously presented. */
+  window.scrollTo(0, 0);
+  for (const scroller of document.querySelectorAll("*")) {
+    if (scroller.scrollTop !== 0) scroller.scrollTop = 0;
+    if (scroller.scrollLeft !== 0) scroller.scrollLeft = 0;
+  }
+  const visibleControls = controls.filter((el) => {
+    const { box, visible } = visibleBox(el);
+    if (!(box.width > 0 && box.height > 0 && box.left >= -2 && box.top >= -2 &&
+      box.right <= window.innerWidth + 2 && box.bottom <= window.innerHeight + 2)) return false;
+    if (visible.left > box.left + 2 || visible.right < box.right - 2 || visible.top > box.top + 2 || visible.bottom < box.bottom - 2) return false;
+    const center = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    return center === el || (center !== null && el.contains(center));
+  });
+  const overlaps = [];
+  for (let leftIndex = 0; leftIndex < visibleControls.length; leftIndex += 1) {
+    const left = visibleControls[leftIndex];
+    const a = visibleBox(left).visible;
+    for (let rightIndex = leftIndex + 1; rightIndex < visibleControls.length; rightIndex += 1) {
+      const right = visibleControls[rightIndex];
+      if (left.contains(right) || right.contains(left)) continue;
+      const b = visibleBox(right).visible;
+      const width = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+      const height = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+      if (width <= 2 || height <= 2) continue;
+      const name = (el) => (el.innerText || el.getAttribute("aria-label") || el.tagName)
+        .replace(/\\s+/g, " ").trim().slice(0, 36);
+      overlaps.push({ left: name(left), right: name(right), width: Math.round(width), height: Math.round(height) });
+    }
+  }
+  const documentOverflow = {
+    x: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
+    y: Math.max(0, document.documentElement.scrollHeight - window.innerHeight)
+  };
   const inconsistentControls = [...primitiveGroups.entries()]
     .filter(([, signatures]) => signatures.size > 1)
     .map(([group, signatures]) => ({
@@ -313,7 +390,7 @@ const PROBE = `
       }
     }
   }
-  return { controls: controls.length, unreachable, clipped, brokenImages, inconsistentControls, lowContrastControls };
+  return { controls: controls.length, unreachable, overlaps, documentOverflow, clipped, brokenImages, inconsistentControls, lowContrastControls };
 `;
 
 /* Build the replay through the SAME production transform that Tauri bundles.
@@ -382,13 +459,19 @@ await page.send("Log.enable");
 await page.send("Network.enable");
 
 let failures = 0;
-for (const viewport of VIEWPORTS) {
+const selectedViewports = process.env.REACHABLE_VIEWPORT === undefined
+  ? VIEWPORTS
+  : VIEWPORTS.filter((viewport) => `${viewport.width}x${viewport.height}` === process.env.REACHABLE_VIEWPORT);
+const selectedSurfaces = process.env.REACHABLE_SURFACE === undefined
+  ? SURFACES
+  : SURFACES.filter((surface) => surface.name.includes(process.env.REACHABLE_SURFACE));
+for (const viewport of selectedViewports) {
   await page.send("Emulation.setDeviceMetricsOverride", {
     ...viewport,
     deviceScaleFactor: 1,
     mobile: false
   });
-  for (const surface of SURFACES) {
+  for (const surface of selectedSurfaces) {
     page.drainEvents();
     await page.send("Page.navigate", { url: surface.url });
     /* Readiness is the React root, not an arbitrary page-text quota. The old
@@ -484,6 +567,9 @@ for (const viewport of VIEWPORTS) {
     }
     if (
       found.unreachable.length === 0 &&
+      found.overlaps.length === 0 &&
+      found.documentOverflow.x <= 2 &&
+      found.documentOverflow.y <= 2 &&
       found.clipped.length === 0 &&
       found.brokenImages.length === 0 &&
       found.inconsistentControls.length === 0 &&
@@ -497,11 +583,17 @@ for (const viewport of VIEWPORTS) {
     console.log(`  FAIL ${label}  (${found.controls} controls)`);
     for (const entry of found.unreachable) {
       console.log(
-        `         unreachable: "${entry.label}" at y=${entry.top}..${entry.bottom} of ${entry.viewport}`
+        `         unreachable: "${entry.label}" at ${entry.left}..${entry.right},${entry.top}..${entry.bottom} of ${entry.viewport}${entry.occluded ? ` (covered by ${entry.coveredBy ?? "another element"} ${JSON.stringify(entry.coveredBox)})` : entry.clippedByAncestor ? " (clipped by its container)" : ""}`
       );
     }
     for (const entry of found.clipped) {
       console.log(`         clipped: <${entry.tag} class="${entry.cls}"> hides ${entry.hidden}px`);
+    }
+    for (const entry of found.overlaps) {
+      console.log(`         overlap: "${entry.left}" with "${entry.right}" across ${entry.width}x${entry.height}px`);
+    }
+    if (found.documentOverflow.x > 2 || found.documentOverflow.y > 2) {
+      console.log(`         document overflow: ${found.documentOverflow.x}px horizontal, ${found.documentOverflow.y}px vertical`);
     }
     for (const source of found.brokenImages) {
       console.log(`         image did not load: ${source}`);

@@ -18,7 +18,7 @@ import { readCheckOutput } from "./check-output.js";
 import { addAccount, selectAccount } from "./provider-accounts.js";
 import { listProjectFiles, readProjectFile } from "./project-files.js";
 import { findGitRoot } from "./repo.js";
-import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
+import { appendEvent, readEventPage, readEvents, type HivemindEvent } from "./events.js";
 import { requestTaskRedirect } from "./supervision.js";
 import { requestTaskStop } from "./task-control.js";
 import { inspectWorkspace } from "./workspace-inspection.js";
@@ -280,8 +280,18 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
     return inspectWorkspace(repoRoot);
   }
   if (raw.type === "trail.inspect") {
-    if (Object.keys(payload).length > 0) return { ok: false, reason: "trail.inspect takes no fields" };
-    return readEvents(repoRoot);
+    const allowed = new Set(["before", "limit"]);
+    const extra = Object.keys(payload).find((key) => !allowed.has(key));
+    if (extra !== undefined) return { ok: false, reason: `trail.inspect cannot take: ${extra}` };
+    const limit = payload.limit ?? 100;
+    if (typeof limit !== "number" || !Number.isSafeInteger(limit)) {
+      return { ok: false, reason: "trail.inspect limit must be an integer" };
+    }
+    const before = payload.before;
+    if (before !== undefined && (typeof before !== "number" || !Number.isSafeInteger(before))) {
+      return { ok: false, reason: "trail.inspect before must be an integer when present" };
+    }
+    return readEventPage(repoRoot, { before, limit });
   }
   if (raw.type === "change.inspect") {
     const parsed = exactStrings(payload, ["task_id"]);

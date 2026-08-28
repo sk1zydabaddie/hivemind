@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils"
  * face and its press redemption; every utility variant stays in the surface
  * plane and remains solid. */
 const buttonVariants = cva(
-  "relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-md border border-transparent bg-transparent text-sm leading-none font-medium whitespace-nowrap outline-none transition-[color,background-color,border-color,box-shadow,transform] duration-[120ms] ease-[var(--spring)] [--control-relief:var(--relief)] [--control-relief-pressed:var(--relief-pressed)] [--press-distance:2px] focus-visible:border-navy focus-visible:ring-[3px] focus-visible:ring-navy/25 active:duration-[60ms] disabled:pointer-events-none disabled:cursor-default disabled:border-rule disabled:bg-surface disabled:bg-none disabled:text-muted-foreground disabled:shadow-none disabled:opacity-50 aria-invalid:border-destructive [&_kbd]:bg-transparent [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-md border border-transparent bg-transparent text-sm leading-none font-medium whitespace-nowrap outline-none transition-[color,background-color,border-color,box-shadow,transform] duration-[120ms] ease-[var(--spring)] [--control-relief:var(--relief)] [--control-relief-pressed:var(--relief-pressed)] [--press-distance:2px] focus-visible:border-navy focus-visible:ring-[3px] focus-visible:ring-navy/25 active:duration-[60ms] disabled:pointer-events-none disabled:cursor-default disabled:border-rule disabled:bg-surface disabled:bg-none disabled:text-muted-foreground disabled:shadow-none disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:border-rule aria-disabled:bg-surface aria-disabled:bg-none aria-disabled:text-muted-foreground aria-disabled:shadow-none aria-disabled:opacity-50 aria-invalid:border-destructive [&_kbd]:bg-transparent [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
@@ -58,20 +58,37 @@ function Button({
   variant = "default",
   size = "default",
   asChild = false,
+  disabledReason,
+  disabled,
+  onClick,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
+    disabledReason?: string
   }) {
   const Comp = asChild ? Slot.Root : "button"
+  const explainableDisabled = disabled === true && disabledReason !== undefined
 
   return (
     <Comp
+      {...props}
+      aria-description={explainableDisabled ? disabledReason : props["aria-description"]}
+      aria-disabled={explainableDisabled || props["aria-disabled"]}
       data-slot="button"
       data-variant={variant}
       data-size={size}
       className={cn(buttonVariants({ variant, size, className }))}
-      {...props}
+      disabled={explainableDisabled ? undefined : disabled}
+      title={explainableDisabled ? disabledReason : props.title}
+      onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
+        if (explainableDisabled) {
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
+        onClick?.(event)
+      }}
     />
   )
 }

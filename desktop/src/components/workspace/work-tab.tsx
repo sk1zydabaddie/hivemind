@@ -60,6 +60,7 @@ import {
 } from "@/components/ui/panel";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SelectionControl } from "@/components/ui/selection-control";
+import { VirtualList } from "@/components/ui/virtual-list";
 import { AgentGraph } from "@/components/workspace/agent-graph";
 import {
   DiffView,
@@ -83,7 +84,6 @@ import {
 import { ANONYMOUS_TASK, taskTitleOrNull } from "@/lib/identifiers";
 import { plainActionError, shortcutLabel } from "@/lib/plain-language";
 import {
-  RECENT_EVENT_LIMIT,
   type BoardProjection,
   type TaskProjection,
   type TaskState
@@ -112,6 +112,7 @@ import type {
   SpecReview,
   StartedSession,
   TaskDiff,
+  DurableTrailPage,
   WorkspaceAction,
   WorkspaceInspection,
   WorkspacePlanReview,
@@ -1093,6 +1094,8 @@ export function WorkTab({
                   events={projection.recentEvents}
                   plan={displayedPlan}
                   taskTitles={inspection?.task_titles ?? {}}
+                  projectRoot={projectRoot}
+                  onAction={onAction}
                   onOpenPlan={() => void openPlanReview()}
                 />
               </div>
@@ -1118,7 +1121,7 @@ export function WorkTab({
         <aside
           className={`grid min-h-0 gap-3 ${
             selected
-              ? "grid-rows-[minmax(120px,1fr)_minmax(0,auto)]"
+              ? "grid-rows-[minmax(120px,1fr)_minmax(180px,45%)]"
               : "grid-rows-[minmax(0,1fr)]"
           }`}
         >
@@ -1138,7 +1141,7 @@ export function WorkTab({
             />
           </Panel>
           {selected ? (
-            <Panel className="grid-rows-[auto_auto]">
+            <Panel>
               <InspectorPane
                 busy={busy}
                 output={projection.selectedOutput}
@@ -1844,13 +1847,13 @@ function RunHeader({
           They used to be interleaved with an interruption SETTING in a single
           row of middot-separated readings, where a person had no way to tell
           which was status and which was a control they had set. */}
-      <div className="relative flex min-h-8 items-start gap-4">
+      <div className="run-header-main relative flex min-h-8 items-start gap-4">
         <div
-          className={
+          className={`run-header-heading ${
             subject === null && tasks.length === 0 && !runActive
               ? "pointer-events-none absolute inset-0 flex items-center justify-center"
               : "min-w-0 flex-1"
-          }
+          }`}
         >
           {subject === null ? null : (
             <>
@@ -1881,9 +1884,9 @@ function RunHeader({
           </h2>
         </div>
 
-        <div className="ml-auto flex shrink-0 items-center gap-1">
+        <div className="run-header-actions ml-auto flex shrink-0 items-center gap-1">
           {planAvailable ? (
-            <Button size="sm" type="button" variant="ghost" onClick={onOpenPlan}>
+            <Button aria-label="View plan" size="sm" type="button" variant="ghost" onClick={onOpenPlan}>
               <Layers3 aria-hidden="true" />
               View plan
             </Button>
@@ -1893,7 +1896,7 @@ function RunHeader({
               only on a failure: a person wants to read a passing run's output
               too, and a control that appears only in trouble is a control
               nobody can find when they need it. */}
-          <Button size="sm" type="button" variant="ghost" onClick={onOpenChecks}>
+          <Button aria-label="Checks" size="sm" type="button" variant="ghost" onClick={onOpenChecks}>
             <ClipboardList aria-hidden="true" />
             Checks
           </Button>
@@ -1903,6 +1906,7 @@ function RunHeader({
               work away and here it does not: the trail keeps everything, and a
               prepared plan is still waiting afterwards. */}
           <Button
+            aria-label="New conversation"
             disabled={newConversationBusy}
             size="sm"
             title={
@@ -1919,6 +1923,7 @@ function RunHeader({
           </Button>
           {runActive ? (
             <Button
+              aria-label="Guide run"
               disabled={busy}
               size="sm"
               type="button"
@@ -1931,6 +1936,7 @@ function RunHeader({
           ) : null}
           {runActive ? (
             <Button
+              aria-label="Stop run"
               disabled={stopBusy}
               size="sm"
               type="button"
@@ -2421,7 +2427,7 @@ function InspectorPane({
         </div>
       </header>
 
-      <div className="grid min-h-0 grid-rows-[minmax(0,auto)_auto]">
+      <div className="grid min-h-0 grid-rows-[minmax(0,auto)_auto] overflow-y-auto">
         {output.length > 0 ? (
           <ScrollArea className="max-h-[340px] min-h-0">
             <pre className="m-0 px-3 py-2.5 font-mono text-[12px] leading-[1.65] break-words whitespace-pre-wrap text-ink">
@@ -2512,6 +2518,8 @@ function RunThread({
   silentRounds,
   pendingSince,
   workerStream,
+  projectRoot,
+  onAction,
   onOpenPlan
 }: {
   events: BoardProjection["recentEvents"];
@@ -2525,6 +2533,8 @@ function RunThread({
   pendingSince: number | null;
   /** The running agent's output as it arrives, or null when none is. */
   workerStream: { taskId: string; title: string; text: string } | null;
+  projectRoot: string;
+  onAction: <T>(action: WorkspaceAction) => Promise<T>;
   onOpenPlan: () => void;
 }): React.JSX.Element {
   /* Which open rounds nothing is reporting on any more.
@@ -2534,34 +2544,113 @@ function RunThread({
    * the client is not the authority on what a stale round is. It re-reads on the
    * inspection refresh, so a round that crosses the bound while nobody touches
    * anything still stops counting. */
+  const [pages, setPages] = useState<DurableTrailPage[]>([]);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [archiveError, setArchiveError] = useState("");
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setPages([]);
+    setPageIndex(0);
+    setArchiveError("");
+    setArchiveLoading(true);
+    void onAction<DurableTrailPage>({ type: "trail.inspect", payload: { limit: 320 } })
+      .then((page) => {
+        if (!cancelled) setPages([page]);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setArchiveError(plainActionError(error));
+      })
+      .finally(() => {
+        if (!cancelled) setArchiveLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [onAction, projectRoot]);
+
+  const currentPage = pages[pageIndex] ?? null;
+  const displayedEvents = pageIndex === 0
+    ? mergeNewestEvents(events, currentPage?.events ?? [])
+    : currentPage?.events ?? [];
   const entries = useMemo(
-    () => buildRunThread(events, taskTitles, new Set(silentRounds)),
-    [events, taskTitles, silentRounds]
+    () => buildRunThread(displayedEvents, taskTitles, new Set(silentRounds)),
+    [displayedEvents, taskTitles, silentRounds]
   );
+  const showThreadStatus = entries.length === 0 || pendingSince !== null || workerStream !== null;
+  const loadOlder = async (): Promise<void> => {
+    if (pageIndex + 1 < pages.length) {
+      setPageIndex(pageIndex + 1);
+      return;
+    }
+    if (currentPage?.next_before === null || currentPage === null) return;
+    setArchiveLoading(true);
+    setArchiveError("");
+    try {
+      const page = await onAction<DurableTrailPage>({
+        type: "trail.inspect",
+        payload: { before: currentPage.next_before, limit: 320 }
+      });
+      setPages((value) => [...value, page]);
+      setPageIndex(pageIndex + 1);
+    } catch (error) {
+      setArchiveError(plainActionError(error));
+    } finally {
+      setArchiveLoading(false);
+    }
+  };
   return (
-    <ScrollArea aria-label="What has happened in this run" className="min-h-0">
-      <div className="grid gap-3 px-5 py-4">
-        {events.length >= RECENT_EVENT_LIMIT ? (
-          <p className="m-0 text-[12px] text-muted-foreground">
-            This run is long enough that its earliest activity is no longer shown.
-          </p>
+    <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto]">
+      <div className="flex min-h-7 items-center gap-1.5 border-b border-rule px-5 py-0.5">
+        {pageIndex > 0 ? (
+          <Button size="xs" type="button" variant="ghost" onClick={() => setPageIndex(pageIndex - 1)}>
+            Newer messages
+          </Button>
         ) : null}
+        {currentPage?.next_before !== null && currentPage !== null ? (
+          <Button disabled={archiveLoading} size="xs" type="button" variant="ghost" onClick={() => void loadOlder()}>
+            {archiveLoading ? "Reading…" : "Older messages"}
+          </Button>
+        ) : pageIndex > 0 ? (
+          <span className="text-[11px] text-muted-foreground" role="status">
+            Beginning of conversation
+          </span>
+        ) : null}
+        {pageIndex > 0 ? (
+          <Button className="ml-auto" size="xs" type="button" variant="ghost" onClick={() => setPageIndex(0)}>
+            Latest
+          </Button>
+        ) : null}
+        {archiveError === "" ? null : <span className="text-[12px] text-clay">{archiveError}</span>}
+      </div>
+      <VirtualList
+        ariaLabel="Conversation"
+        className="min-h-0"
+        estimateSize={104}
+        followEnd={pageIndex === 0}
+        itemKey={(entry) => entry.id}
+        items={entries}
+        live={pageIndex === 0 ? "polite" : "off"}
+        relevant="additions"
+        role="log"
+        testId="conversation-log"
+        renderItem={(entry) => (
+          <div className="px-5 py-1.5">
+            <ThreadRow
+              draftText={draftText}
+              entry={entry}
+              plan={plan}
+              taskTitles={taskTitles}
+              onOpenPlan={onOpenPlan}
+            />
+          </div>
+        )}
+      />
+      {showThreadStatus ? <div className="grid gap-3 px-5 py-2">
         {entries.length === 0 ? (
           <p className="m-0 text-[13px] leading-relaxed text-muted-foreground">
             Nothing has happened yet. Describe what you want below and Hivemind
             will prepare a plan.
           </p>
         ) : null}
-        {entries.map((entry) => (
-          <ThreadRow
-            draftText={draftText}
-            entry={entry}
-            key={entry.id}
-            plan={plan}
-            taskTitles={taskTitles}
-            onOpenPlan={onOpenPlan}
-          />
-        ))}
         {/* Working, from the moment you press send.
             The indicator used to wait for `spec.draft_started` to arrive over
             the event stream, so for the whole of a short call there was nothing
@@ -2571,18 +2660,20 @@ function RunThread({
             arrive. */}
         {pendingSince === null ? null : (
           <article
+            aria-live="polite"
             className="max-w-[720px] text-[13px] text-muted-foreground"
             data-testid="conversation-progress"
+            role="status"
           >
             <div className="flex items-center gap-2.5">
               <span
                 aria-hidden="true"
                 className="grid size-7 shrink-0 place-items-center rounded-full border border-rule bg-surface text-navy"
               >
-                <Loader className="size-3.5 animate-spin" />
+                <Loader aria-hidden="true" className="size-3.5 animate-spin" />
               </span>
               <span>Planner is reading your request</span>
-              <span className="font-mono text-[11px]">
+              <span aria-hidden="true" className="font-mono text-[11px]">
                 <LiveElapsed startedAt={new Date(pendingSince).toISOString()} />
               </span>
             </div>
@@ -2602,13 +2693,13 @@ function RunThread({
             thing for the agent that is actually changing the code. It sits at
             the foot of the thread because that is where the present is. */}
         {workerStream === null ? null : (
-          <article className="max-w-[720px] text-[13px] text-muted-foreground">
+          <article aria-live="polite" className="max-w-[720px] text-[13px] text-muted-foreground" role="status">
             <div className="flex items-center gap-2.5">
               <span
                 aria-hidden="true"
                 className="grid size-7 shrink-0 place-items-center rounded-full border border-rule bg-surface text-navy"
               >
-                <Loader className="size-3.5 animate-spin" />
+                <Loader aria-hidden="true" className="size-3.5 animate-spin" />
               </span>
               <span>{workerStream.title} is working</span>
             </div>
@@ -2617,10 +2708,23 @@ function RunThread({
             </pre>
           </article>
         )}
-        <div ref={endRef} />
-      </div>
-    </ScrollArea>
+      </div> : null}
+      <div aria-hidden="true" className="sr-only" ref={endRef} />
+    </div>
   );
+}
+
+function mergeNewestEvents(
+  live: BoardProjection["recentEvents"],
+  durable: DurableTrailPage["events"]
+): BoardProjection["recentEvents"] {
+  const seen = new Set<string>();
+  return [...live, ...durable].filter((event) => {
+    const key = JSON.stringify(event);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).sort((left, right) => right.ts.localeCompare(left.ts));
 }
 
 /** Textual liveness remains useful when Windows or the browser disables
@@ -3079,8 +3183,8 @@ function PromptDock({
     <Button
       aria-label={sendLabel}
       disabled={busy || value.trim() === ""}
+      disabledReason={sendReason}
       size="icon-round"
-      title={sendReason}
       type="submit"
     >
       <ArrowUp aria-hidden="true" className="size-4" />
@@ -3147,6 +3251,7 @@ function PromptDock({
         )}
         {centered ? null : leftActions}
         <textarea
+          aria-label="Message Hivemind"
           className="max-h-[180px] min-h-[44px] w-full resize-none border-0 bg-transparent px-2 py-1.5 text-[15px] leading-relaxed text-ink outline-none placeholder:text-muted-foreground focus-visible:outline-none"
           id="work-composer"
           placeholder={
@@ -3473,7 +3578,6 @@ function PlanTakeover({
         frame
         className="grid h-[min(780px,calc(100vh-40px))] w-[min(1120px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-none"
         showCloseButton={false}
-        onOpenAutoFocus={(event) => event.preventDefault()}
       >
         <DialogHeader frame className="gap-1.5">
           <span className="text-[11px] font-medium tracking-label text-navy uppercase">
@@ -3592,8 +3696,8 @@ function PlanTakeover({
             {ratificationPending ? (
               <Button
                 disabled={busy || blockedReason !== null}
+                disabledReason={blockedReason ?? (busy ? "Hivemind is finishing the current action" : undefined)}
                 size="lg"
-                title={blockedReason ?? undefined}
                 type="button"
                 onClick={() => void onRatify()}
               >

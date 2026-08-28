@@ -487,8 +487,8 @@ export function useWorkspace(): WorkspaceView {
           /* A build mismatch after an update is recoverable, and asking a
              person to press a button about it is asking them a question the
              machine can answer. The Rust side only restarts when it can PROVE
-             nothing is in flight â€” reading the resource ledger and the worktree
-             directory off disk â€” and refuses otherwise, so this cannot orphan a
+             nothing is in flight — reading the resource ledger and the worktree
+             directory off disk — and refuses otherwise, so this cannot orphan a
              worker. If it refuses, its reason replaces this one and the button
              is still there. */
           if (fault.code === PROJECT_FAULT.daemonBuildMismatch) {
@@ -543,7 +543,7 @@ export function useWorkspace(): WorkspaceView {
    *
    * The Rust side refuses unless it can PROVE nothing is in flight, reading the
    * resource ledger and the worktree directory off disk rather than asking the
-   * old daemon about itself â€” the old daemon being the thing under suspicion.
+   * old daemon about itself — the old daemon being the thing under suspicion.
    */
   const restartDaemon = useCallback(async () => {
     setInitializing(true);

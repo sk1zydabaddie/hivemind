@@ -15,8 +15,11 @@ export function ScrollArea({
       {...props}
     >
       <ScrollAreaPrimitive.Viewport
+        aria-label={typeof props["aria-label"] === "string" ? props["aria-label"] : "Scrollable content"}
         data-slot="scroll-area-viewport"
-        className="size-full rounded-[inherit] outline-none"
+        className="size-full rounded-[inherit] outline-none focus-visible:ring-[2px] focus-visible:ring-inset focus-visible:ring-navy/35"
+        role="region"
+        tabIndex={0}
       >
         {children}
       </ScrollAreaPrimitive.Viewport>

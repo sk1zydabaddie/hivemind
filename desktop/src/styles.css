@@ -379,7 +379,7 @@
   body,
   #root {
     height: 100%;
-    min-width: 820px;
+    min-width: 0;
   }
 
   body {
@@ -399,6 +399,63 @@
      gone; hierarchy now comes from stepped surfaces and rules. */
   .brand-canvas {
     background-color: var(--canvas);
+  }
+
+  @media (max-width: 900px) {
+    .app-titlebar {
+      gap: 0.35rem;
+      padding-left: 0.5rem;
+      padding-right: 0.35rem;
+    }
+
+    .app-brand-label,
+    .app-tab-label,
+    .app-connection-label,
+    .app-project-label,
+    .app-project-chevron,
+    .app-command-shortcut {
+      display: none;
+    }
+
+    .app-chrome-actions {
+      gap: 0.125rem;
+    }
+
+    .run-header-main {
+      flex-wrap: wrap;
+    }
+
+    .run-header-heading {
+      position: static !important;
+      flex: 1 1 100%;
+      justify-content: center;
+      text-align: center;
+    }
+
+    .run-header-actions {
+      margin-left: 0;
+      flex: 1 1 100%;
+      justify-content: center;
+    }
+
+    .run-header-actions [data-slot="button"] {
+      width: 2rem;
+      padding-inline: 0.4rem;
+      font-size: 0;
+    }
+
+    [data-slot="project-root"] {
+      overflow-y: auto;
+    }
+
+    .project-history-layout {
+      grid-template-columns: minmax(0, 1fr);
+      overflow: visible;
+    }
+
+    .project-history-layout > [data-slot="panel"] {
+      min-height: 280px;
+    }
   }
 
   /* One self-hosted drawing derived from the interlocking Hivemind mark. It is

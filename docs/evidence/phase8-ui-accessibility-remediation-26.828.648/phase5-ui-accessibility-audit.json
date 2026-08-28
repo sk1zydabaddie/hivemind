@@ -1,0 +1,944 @@
+{
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "installedVersion": "26.828.648",
+  "paidProviderCalls": 0,
+  "baseline": {
+    "viewport": {
+      "bodyScrollHeight": 900,
+      "bodyScrollWidth": 1440,
+      "documentClientHeight": 900,
+      "documentClientWidth": 1440,
+      "documentScrollHeight": 900,
+      "documentScrollWidth": 1440,
+      "horizontalOverflowPx": 0,
+      "innerHeight": 900,
+      "innerWidth": 1440,
+      "verticalOverflowPx": 0
+    },
+    "documentNodeCount": 151,
+    "projectOpenToComposerMs": 1972
+  },
+  "minimumWindow": {
+    "declaredMinimum": {
+      "width": 800,
+      "height": 620
+    },
+    "actualWindowRect": {
+      "height": 900,
+      "width": 1440,
+      "x": -1714,
+      "y": 79
+    },
+    "windowRects": {
+      "800x620": {
+        "height": 620,
+        "width": 800,
+        "x": -1714,
+        "y": 79
+      },
+      "1280x720": {
+        "height": 720,
+        "width": 1280,
+        "x": -1714,
+        "y": 79
+      },
+      "1366x768": {
+        "height": 768,
+        "width": 1366,
+        "x": -1714,
+        "y": 79
+      },
+      "1440x900": {
+        "height": 900,
+        "width": 1440,
+        "x": -1714,
+        "y": 79
+      }
+    },
+    "viewports": {
+      "800x620": {
+        "Work": {
+          "bodyScrollHeight": 620,
+          "bodyScrollWidth": 800,
+          "clippedContainers": [
+            {
+              "className": "relative inline-flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md border border-transp",
+              "hiddenX": 29,
+              "hiddenY": 0,
+              "slot": "button",
+              "tag": "button"
+            },
+            {
+              "className": "relative inline-flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md border border-transp",
+              "hiddenX": 60,
+              "hiddenY": 0,
+              "slot": "button",
+              "tag": "button"
+            },
+            {
+              "className": "relative inline-flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md border border-transp",
+              "hiddenX": 56,
+              "hiddenY": 0,
+              "slot": "button",
+              "tag": "button"
+            }
+          ],
+          "documentClientHeight": 620,
+          "documentClientWidth": 800,
+          "documentScrollHeight": 620,
+          "documentScrollWidth": 800,
+          "horizontalOverflowPx": 0,
+          "innerHeight": 620,
+          "innerWidth": 800,
+          "offscreenControls": [],
+          "verticalOverflowPx": 0
+        },
+        "Set up": {
+          "bodyScrollHeight": 620,
+          "bodyScrollWidth": 800,
+          "clippedContainers": [
+            {
+              "className": "hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block",
+              "hiddenX": 62,
+              "hiddenY": 0,
+              "slot": null,
+              "tag": "span"
+            },
+            {
+              "className": "hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block",
+              "hiddenX": 12,
+              "hiddenY": 0,
+              "slot": null,
+              "tag": "span"
+            }
+          ],
+          "documentClientHeight": 620,
+          "documentClientWidth": 800,
+          "documentScrollHeight": 620,
+          "documentScrollWidth": 800,
+          "horizontalOverflowPx": 0,
+          "innerHeight": 620,
+          "innerWidth": 800,
+          "offscreenControls": [],
+          "verticalOverflowPx": 0
+        },
+        "Set up — expanded provider help": {
+          "bodyScrollHeight": 620,
+          "bodyScrollWidth": 800,
+          "clippedContainers": [
+            {
+              "className": "hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block",
+              "hiddenX": 62,
+              "hiddenY": 0,
+              "slot": null,
+              "tag": "span"
+            },
+            {
+              "className": "hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block",
+              "hiddenX": 12,
+              "hiddenY": 0,
+              "slot": null,
+              "tag": "span"
+            }
+          ],
+          "documentClientHeight": 620,
+          "documentClientWidth": 800,
+          "documentScrollHeight": 620,
+          "documentScrollWidth": 800,
+          "horizontalOverflowPx": 0,
+          "innerHeight": 620,
+          "innerWidth": 800,
+          "offscreenControls": [],
+          "verticalOverflowPx": 0
+        },
+        "Agents": {
+          "bodyScrollHeight": 620,
+          "bodyScrollWidth": 800,
+          "clippedContainers": [
+            {
+              "className": "relative inline-flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md border border-transp",
+              "hiddenX": 29,
+              "hiddenY": 0,
+              "slot": "button",
+              "tag": "button"
+            },
+            {
+              "className": "relative inline-flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md border border-transp",
+              "hiddenX": 60,
+              "hiddenY": 0,
+              "slot": "button",
+              "tag": "button"
+            },
+            {
+              "className": "relative inline-flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md border border-transp",
+              "hiddenX": 56,
+              "hiddenY": 0,
+              "slot": "button",
+              "tag": "button"
+            }
+          ],
+          "documentClientHeight": 620,
+          "documentClientWidth": 800,
+          "documentScrollHeight": 620,
+          "documentScrollWidth": 800,
+          "horizontalOverflowPx": 0,
+          "innerHeight": 620,
+          "innerWidth": 800,
+          "offscreenControls": [],
+          "verticalOverflowPx": 0
+        },
+        "Project": {
+          "bodyScrollHeight": 620,
+          "bodyScrollWidth": 800,
+          "clippedContainers": [],
+          "documentClientHeight": 620,
+          "documentClientWidth": 800,
+          "documentScrollHeight": 620,
+          "documentScrollWidth": 800,
+          "horizontalOverflowPx": 0,
+          "innerHeight": 620,
+          "innerWidth": 800,
+          "offscreenControls": [],
+          "verticalOverflowPx": 0
+        }
+      },
+      "1280x720": {
+        "Work": {
+          "bodyScrollHeight": 720,
+          "bodyScrollWidth": 1280,
+          "clippedContainers": [],
+          "documentClientHeight": 720,
+          "documentClientWidth": 1280,
+          "documentScrollHeight": 720,
+          "documentScrollWidth": 1280,
+          "horizontalOverflowPx": 0,
+          "innerHeight": 720,
+          "innerWidth": 1280,
+          "offscreenControls": [],
+          "verticalOverflowPx": 0
+        },
+        "Set up": {
+          "bodyScrollHeight": 720,
+          "bodyScrollWidth": 1280,
+          "clippedContainers": [
+            {
+              "className": "hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block",
+              "hiddenX": 62,
+              "hiddenY": 0,
+              "slot": null,
+              "tag": "span"
+            },
+            {
+              "className": "hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block",
+              "hiddenX": 12,
+              "hiddenY": 0,
+              "slot": null,
+              "tag": "span"
+            }
+          ],
+          "documentClientHeight": 720,
+          "documentClientWidth": 1280,
+          "documentScrollHeight": 720,
+          "documentScrollWidth": 1280,
+          "horizontalOverflowPx": 0,
+          "innerHeight": 720,
+          "innerWidth": 1280,
+          "offscreenControls": [],
+          "verticalOverflowPx": 0
+        },
+        "Set up — expanded provider help": {
+          "bodyScrollHeight": 720,
+          "bodyScrollWidth": 1280,
+          "clippedContainers": [
+            {
+              "className": "hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block",
+              "hiddenX": 62,
+              "hiddenY": 0,
+              "slot": null,
+              "tag": "span"
+            },
+            {
+              "className": "hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block",
+              "hiddenX": 12,
+              "hiddenY": 0,
+              "slot": null,
+              "tag": "span"
+            }
+          ],
+          "documentClientHeight": 720,
+          "documentClientWidth": 1280,
+          "documentScrollHeight": 720,
+          "documentScrollWidth": 1280,
+          "horizontalOverflowPx": 0,
+          "innerHeight": 720,
+          "innerWidth": 1280,
+          "offscreenControls": [],
+          "verticalOverflowPx": 0
+        },
+        "Agents": {
+          "bodyScrollHeight": 720,
+          "bodyScrollWidth": 1280,
+          "clippedContainers": [],
+          "documentClientHeight": 720,
+          "documentClientWidth": 1280,
+          "documentScrollHeight": 720,
+          "documentScrollWidth": 1280,
+          "horizontalOverflowPx": 0,
+          "innerHeight": 720,
+          "innerWidth": 1280,
+          "offscreenControls": [],
+          "verticalOverflowPx": 0
+        },
+        "Project": {
+          "bodyScrollHeight": 720,
+          "bodyScrollWidth": 1280,
+          "clippedContainers": [],
+          "documentClientHeight": 720,
+          "documentClientWidth": 1280,
+          "documentScrollHeight": 720,
+          "documentScrollWidth": 1280,
+          "horizontalOverflowPx": 0,
+          "innerHeight": 720,
+          "innerWidth": 1280,
+          "offscreenControls": [],
+          "verticalOverflowPx": 0
+        }
+      },
+      "1366x768": {
+        "Work": {
+          "bodyScrollHeight": 768,
+          "bodyScrollWidth": 1366,
+          "clippedContainers": [],
+          "documentClientHeight": 768,
+          "documentClientWidth": 1366,
+          "documentScrollHeight": 768,
+          "documentScrollWidth": 1366,
+          "horizontalOverflowPx": 0,
+          "innerHeight": 768,
+          "innerWidth": 1366,
+          "offscreenControls": [],
+          "verticalOverflowPx": 0
+        },
+        "Set up": {
+          "bodyScrollHeight": 768,
+          "bodyScrollWidth": 1366,
+          "clippedContainers": [
+            {
+              "className": "hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block",
+              "hiddenX": 62,
+              "hiddenY": 0,
+              "slot": null,
+              "tag": "span"
+            },
+            {
+              "className": "hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block",
+              "hiddenX": 12,
+              "hiddenY": 0,
+              "slot": null,
+              "tag": "span"
+            }
+          ],
+          "documentClientHeight": 768,
+          "documentClientWidth": 1366,
+          "documentScrollHeight": 768,
+          "documentScrollWidth": 1366,
+          "horizontalOverflowPx": 0,
+          "innerHeight": 768,
+          "innerWidth": 1366,
+          "offscreenControls": [],
+          "verticalOverflowPx": 0
+        },
+        "Set up — expanded provider help": {
+          "bodyScrollHeight": 768,
+          "bodyScrollWidth": 1366,
+          "clippedContainers": [
+            {
+              "className": "hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block",
+              "hiddenX": 62,
+              "hiddenY": 0,
+              "slot": null,
+              "tag": "span"
+            },
+            {
+              "className": "hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block",
+              "hiddenX": 12,
+              "hiddenY": 0,
+              "slot": null,
+              "tag": "span"
+            }
+          ],
+          "documentClientHeight": 768,
+          "documentClientWidth": 1366,
+          "documentScrollHeight": 768,
+          "documentScrollWidth": 1366,
+          "horizontalOverflowPx": 0,
+          "innerHeight": 768,
+          "innerWidth": 1366,
+          "offscreenControls": [],
+          "verticalOverflowPx": 0
+        },
+        "Agents": {
+          "bodyScrollHeight": 768,
+          "bodyScrollWidth": 1366,
+          "clippedContainers": [],
+          "documentClientHeight": 768,
+          "documentClientWidth": 1366,
+          "documentScrollHeight": 768,
+          "documentScrollWidth": 1366,
+          "horizontalOverflowPx": 0,
+          "innerHeight": 768,
+          "innerWidth": 1366,
+          "offscreenControls": [],
+          "verticalOverflowPx": 0
+        },
+        "Project": {
+          "bodyScrollHeight": 768,
+          "bodyScrollWidth": 1366,
+          "clippedContainers": [],
+          "documentClientHeight": 768,
+          "documentClientWidth": 1366,
+          "documentScrollHeight": 768,
+          "documentScrollWidth": 1366,
+          "horizontalOverflowPx": 0,
+          "innerHeight": 768,
+          "innerWidth": 1366,
+          "offscreenControls": [],
+          "verticalOverflowPx": 0
+        }
+      },
+      "1440x900": {
+        "Work": {
+          "bodyScrollHeight": 900,
+          "bodyScrollWidth": 1440,
+          "clippedContainers": [],
+          "documentClientHeight": 900,
+          "documentClientWidth": 1440,
+          "documentScrollHeight": 900,
+          "documentScrollWidth": 1440,
+          "horizontalOverflowPx": 0,
+          "innerHeight": 900,
+          "innerWidth": 1440,
+          "offscreenControls": [],
+          "verticalOverflowPx": 0
+        },
+        "Set up": {
+          "bodyScrollHeight": 900,
+          "bodyScrollWidth": 1440,
+          "clippedContainers": [
+            {
+              "className": "hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block",
+              "hiddenX": 62,
+              "hiddenY": 0,
+              "slot": null,
+              "tag": "span"
+            },
+            {
+              "className": "hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block",
+              "hiddenX": 12,
+              "hiddenY": 0,
+              "slot": null,
+              "tag": "span"
+            }
+          ],
+          "documentClientHeight": 900,
+          "documentClientWidth": 1440,
+          "documentScrollHeight": 900,
+          "documentScrollWidth": 1440,
+          "horizontalOverflowPx": 0,
+          "innerHeight": 900,
+          "innerWidth": 1440,
+          "offscreenControls": [],
+          "verticalOverflowPx": 0
+        },
+        "Set up — expanded provider help": {
+          "bodyScrollHeight": 900,
+          "bodyScrollWidth": 1440,
+          "clippedContainers": [
+            {
+              "className": "hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block",
+              "hiddenX": 62,
+              "hiddenY": 0,
+              "slot": null,
+              "tag": "span"
+            },
+            {
+              "className": "hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block",
+              "hiddenX": 12,
+              "hiddenY": 0,
+              "slot": null,
+              "tag": "span"
+            }
+          ],
+          "documentClientHeight": 900,
+          "documentClientWidth": 1440,
+          "documentScrollHeight": 900,
+          "documentScrollWidth": 1440,
+          "horizontalOverflowPx": 0,
+          "innerHeight": 900,
+          "innerWidth": 1440,
+          "offscreenControls": [],
+          "verticalOverflowPx": 0
+        },
+        "Agents": {
+          "bodyScrollHeight": 900,
+          "bodyScrollWidth": 1440,
+          "clippedContainers": [],
+          "documentClientHeight": 900,
+          "documentClientWidth": 1440,
+          "documentScrollHeight": 900,
+          "documentScrollWidth": 1440,
+          "horizontalOverflowPx": 0,
+          "innerHeight": 900,
+          "innerWidth": 1440,
+          "offscreenControls": [],
+          "verticalOverflowPx": 0
+        },
+        "Project": {
+          "bodyScrollHeight": 900,
+          "bodyScrollWidth": 1440,
+          "clippedContainers": [],
+          "documentClientHeight": 900,
+          "documentClientWidth": 1440,
+          "documentScrollHeight": 900,
+          "documentScrollWidth": 1440,
+          "horizontalOverflowPx": 0,
+          "innerHeight": 900,
+          "innerWidth": 1440,
+          "offscreenControls": [],
+          "verticalOverflowPx": 0
+        }
+      }
+    }
+  },
+  "keyboard": {
+    "tabArrowNavigation": {
+      "selectedAfterRight": "Agents",
+      "selectedAfterLeft": "Work"
+    },
+    "focusTrail": [
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0636549) 0px 0px 0px 0.763859px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0636549) 0px 0px 0px 0.763859px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Switch project, currently hivemind-manager-test-vg7acH",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 877,
+        "y": 6
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.110543) 0px 0px 0px 1.32652px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.110543) 0px 0px 0px 1.32652px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Commands",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1150,
+        "y": 6
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Settings",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1250,
+        "y": 6
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Minimise window",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1302,
+        "y": 0
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Maximise window",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1348,
+        "y": 0
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Close window",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1394,
+        "y": 0
+      },
+      {
+        "boxShadow": "none",
+        "focusVisual": {
+          "boxShadow": "none",
+          "outlineStyle": "solid",
+          "outlineWidth": "2px",
+          "tag": "div"
+        },
+        "name": "Nothing running\nChecks\nNew conversation\nInterruptions\nAgents",
+        "outlineStyle": "solid",
+        "outlineWidth": "2px",
+        "tag": "div",
+        "x": 0,
+        "y": 44
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Checks",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1016,
+        "y": 69
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "New conversation",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1110,
+        "y": 69
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "How often Hivemind interrupts you",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1267,
+        "y": 69
+      },
+      {
+        "boxShadow": "none",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.2) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "3px",
+          "tag": "div"
+        },
+        "name": "Message Hivemind",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "textarea",
+        "x": 393,
+        "y": 434
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.058721) 0px 0px 0px 0.704652px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.058721) 0px 0px 0px 0.704652px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Add files or a folder",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 393,
+        "y": 531
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Choose planner, manager, and worker models",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 429,
+        "y": 531
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.112994) 0px 0px 0px 1.35593px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.112994) 0px 0px 0px 1.35593px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Send",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1007,
+        "y": 527
+      },
+      {
+        "boxShadow": "none",
+        "focusVisual": null,
+        "name": "Hivemind\nSet up\nWork\nAgents\nProject\nLive\nhivemind-manager-test-vg7acH\nCtrl+K\nNothing running\nChecks\nNew conversation\nInterruptions\nAgents\nCommands\n\nJump to a section or open a project",
+        "outlineStyle": "none",
+        "outlineWidth": "3px",
+        "tag": "body",
+        "x": 0,
+        "y": 0
+      },
+      {
+        "boxShadow": "none",
+        "focusVisual": {
+          "boxShadow": "none",
+          "outlineStyle": "solid",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Work",
+        "outlineStyle": "solid",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 192,
+        "y": 0
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0636549) 0px 0px 0px 0.763859px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0636549) 0px 0px 0px 0.763859px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Switch project, currently hivemind-manager-test-vg7acH",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 877,
+        "y": 6
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0626739) 0px 0px 0px 0.752086px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0626739) 0px 0px 0px 0.752086px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Commands",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1150,
+        "y": 6
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.10972) 0px 0px 0px 1.31664px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.10972) 0px 0px 0px 1.31664px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Settings",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1250,
+        "y": 6
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Minimise window",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1302,
+        "y": 0
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Maximise window",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1348,
+        "y": 0
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Close window",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1394,
+        "y": 0
+      },
+      {
+        "boxShadow": "none",
+        "focusVisual": {
+          "boxShadow": "none",
+          "outlineStyle": "solid",
+          "outlineWidth": "2px",
+          "tag": "div"
+        },
+        "name": "Nothing running\nChecks\nNew conversation\nInterruptions\nAgents",
+        "outlineStyle": "solid",
+        "outlineWidth": "2px",
+        "tag": "div",
+        "x": 0,
+        "y": 44
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Checks",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1016,
+        "y": 69
+      }
+    ],
+    "focusTrailMissingVisibleOutline": [],
+    "pressableRestStyle": {
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(255, 255, 255, 0.12) 0px 1px 0px 0px inset, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px",
+      "outlineStyle": "none",
+      "outlineWidth": "3px",
+      "wasDisabled": true
+    },
+    "pressableFocus": {
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(255, 255, 255, 0.12) 0px 1px 0px 0px inset, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px",
+      "name": "Include Codex when connecting",
+      "outlineStyle": "none",
+      "outlineWidth": "2px",
+      "slot": "checkbox"
+    },
+    "settingsDialogAccessibleName": "Settings",
+    "settingsDialogFocusEscaped": false,
+    "settingsDialogEscapeClosed": true,
+    "settingsDialogFocusAfterClose": {
+      "name": "Settings",
+      "tag": "button"
+    },
+    "settingsDialogFocusReturnedToTrigger": true
+  },
+  "accessibility": {
+    "composerAccessibleName": "Message Hivemind",
+    "composerAriaLabel": "Message Hivemind",
+    "composerAriaLabelledBy": null,
+    "composerAssociatedLabelCount": 0,
+    "visibleUnnamedControls": [],
+    "paletteContrast": {
+      "body": {
+        "background": "rgb(7, 17, 28)",
+        "color": "rgb(244, 247, 251)"
+      },
+      "ink": {
+        "background": "rgba(0, 0, 0, 0)",
+        "color": "rgb(244, 247, 251)"
+      },
+      "muted": {
+        "background": "rgba(0, 0, 0, 0)",
+        "color": "rgb(150, 163, 181)"
+      },
+      "navy": null
+    }
+  },
+  "longConversation": {
+    "appendedConversationPairs": 2100,
+    "appendedConversationEvents": 4202,
+    "projectOpenToLatestRenderedMs": 21484,
+    "threadAccessibleName": "Conversation",
+    "threadAriaRole": "log",
+    "threadAriaLive": "polite",
+    "threadAriaRelevant": "additions",
+    "viewportTabIndex": "0",
+    "pagesVisited": 14,
+    "earliestReachable": true,
+    "latestReachableAgain": true,
+    "maxMountedArticles": 15,
+    "maxDocumentNodeCount": 272,
+    "livenessBefore": "19s elapsed",
+    "livenessAfter": "22s elapsed"
+  },
+  "browserSevereLogs": [],
+  "error": null,
+  "recentProjects": {
+    "beforeSha256": "a3328357f4c39a68f1e9f087f6e170f9d0c67c076693124fbbc0db6235ee41b7",
+    "afterSha256": "a3328357f4c39a68f1e9f087f6e170f9d0c67c076693124fbbc0db6235ee41b7",
+    "restoredExactly": true
+  }
+}

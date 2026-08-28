@@ -2,7 +2,7 @@ import { DEFAULT_RUN_TOKEN_CEILING, DEFAULT_SESSION_TOKEN_CEILING } from "../src
 import assert from "node:assert/strict";
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
-import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -342,21 +342,78 @@ test("adoption remains an exact typed human boundary at every autonomy level", a
   });
 });
 
-test("the complete durable trail remains available on demand and cannot mutate state", async () => {
+test("the durable trail is paged newest-first and inspection cannot mutate state", async () => {
   await withRepo(async (repo) => {
     assert.equal((await executeWorkspaceAction(repo, { type: "autonomy.set", payload: { level: "review_plan" } })).ok, true);
     assert.equal((await executeWorkspaceAction(repo, { type: "guidance.record", payload: { target: "orchestrator", message: "Keep this visible." } })).ok, true);
     const before = await readEvents(repo);
-    const inspected = await executeWorkspaceAction(repo, { type: "trail.inspect", payload: {} });
+    const inspected = await executeWorkspaceAction(repo, { type: "trail.inspect", payload: { limit: 1 } });
     assert.equal(before.ok, true);
     assert.equal(inspected.ok, true, inspected.ok ? undefined : inspected.reason);
     if (!before.ok || !inspected.ok) return;
-    assert.deepEqual(inspected.value, before.value);
-    assert.equal((await executeWorkspaceAction(repo, { type: "trail.inspect", payload: { limit: 1 } })).ok, false);
+    const newest = inspected.value as { events: unknown[]; next_before: number | null };
+    assert.equal(newest.events.length, 1);
+    assert.equal(newest.next_before, 1);
+    const older = await executeWorkspaceAction(repo, {
+      type: "trail.inspect",
+      payload: { before: newest.next_before, limit: 1 }
+    });
+    assert.equal(older.ok, true, older.ok ? undefined : older.reason);
+    if (older.ok) {
+      const page = older.value as { events: unknown[]; next_before: number | null };
+      assert.equal(page.events.length, 1);
+      assert.equal(page.next_before, null);
+      assert.deepEqual([...newest.events, ...page.events], [...before.value].reverse());
+    }
+    assert.equal((await executeWorkspaceAction(repo, { type: "trail.inspect", payload: { limit: 0 } })).ok, false);
+    assert.equal((await executeWorkspaceAction(repo, { type: "trail.inspect", payload: { before: 99, limit: 1 } })).ok, false);
     const after = await readEvents(repo);
     assert.equal(after.ok, true);
     if (after.ok) assert.deepEqual(after.value, before.value);
   });
+});
+
+test("a 4,000-event archive stays bounded per page and run projection buckets events once", async () => {
+  await withRepo(async (repo) => {
+    const seed = await readEvents(repo);
+    assert.equal(seed.ok, true);
+    if (!seed.ok) return;
+    const events = Array.from({ length: 4_001 }, (_, index) => ({
+      ts: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
+      type: "conversation.message_recorded",
+      task_id: null,
+      data: { thread_id: "scale", message_id: `scale-${index}`, text: `message ${index}` }
+    }));
+    await appendFile(
+      path.join(repo, ".hivemind", "log", "events.jsonl"),
+      `${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
+      "utf8"
+    );
+    let before: number | undefined;
+    let count = 0;
+    let pages = 0;
+    do {
+      const inspected = await executeWorkspaceAction(repo, {
+        type: "trail.inspect",
+        payload: { ...(before === undefined ? {} : { before }), limit: 137 }
+      });
+      assert.equal(inspected.ok, true, inspected.ok ? undefined : inspected.reason);
+      if (!inspected.ok) return;
+      const page = inspected.value as { events: unknown[]; next_before: number | null };
+      assert.ok(page.events.length <= 137);
+      count += page.events.length;
+      pages += 1;
+      before = page.next_before ?? undefined;
+      if (page.next_before === null) break;
+    } while (pages < 100);
+    assert.equal(count, seed.value.length + events.length);
+    assert.ok(pages >= 30);
+  });
+
+  const source = await readFile(path.resolve("src/workspace-inspection.ts"), "utf8");
+  const body = source.slice(source.indexOf("async function inspectHistory("), source.indexOf("function presentMemoryProposal"));
+  assert.doesNotMatch(body, /events\.filter\(/u);
+  assert.match(body, /eventsByRun\[runIndex\]/u);
 });
 
 test("a run with no durable progress surfaces recovery while a healthy long worker does not false-alert", async () => {

@@ -3297,3 +3297,43 @@ The remediation ledger is now **46 open findings: 5 Critical, 23 High, 16
 Medium, and 2 Low**. R5 is complete; R6 and R7 remain. G0 and the product's
 overall **NO-GO** remain in force. Phase 8 begins only in its next dedicated
 turn.
+
+## Remediation Phase 8: UI, accessibility, viewport, and archive scale — 2026-08-28
+
+Phase 8 is complete and closes **F1-16 and F5-01 through F5-13**, completing
+R6. Hivemind now has one enforceable 800x620 outer-window minimum. Its
+production replay covers the corresponding 790x610 client plus 1280x720,
+1366x768, and 1440x900, and checks exact controls for partial clipping,
+overlap/occlusion, reachability, document overflow, browser errors, and clean
+teardown across **40/40** combinations.
+
+Conversation is a labelled, keyboard-focusable polite log with concise live
+status. Dialogs take and restore focus, fields keep persistent names, provider
+selection has visible focus, and disabled controls expose their reason without
+requiring a pointer. Durable history is read in bounded pages through the
+audited read-only `trail.inspect` action. Work and Project virtualize the
+current page; keyboard navigation reaches the beginning and returns to latest.
+Core reconstructs Project run history in one event pass rather than one full
+trail filter per run. Active user-facing Settings mojibake is corrected.
+
+Installed build **26.828.648** was built, installed, and matched across the
+executable, Core, shell, and pinned Node identities. The no-paid installed
+fixture appended **4,202 conversation events**, visited **14 archive pages**,
+reached both ends, mounted at most **15 articles** and **272 document nodes**,
+and changed the exact reduced-motion liveness element from `19s elapsed` to
+`22s elapsed` after three seconds. Installed rectangles and captures at
+800x620, 1280x720, 1366x768, and 1440x900 matched their requested sizes and had
+no horizontal overflow or offscreen controls. The
+focus audit, accessible-name audit, and severe browser log were clean; the
+user's recent-project registry was restored byte-for-byte. Evidence is under
+`docs/evidence/phase8-ui-accessibility-remediation-26.828.648/`.
+
+Final no-paid validation passed Core (**967 passed, 2 skipped, 969 total**),
+Desktop (**346/346**), Rust (**52/52**), the advisory gates with zero findings,
+all **40/40** production reachability combinations, builds, installed identity
+verification, and the installed archive/accessibility proof. No provider/model
+call, paid operation, publication, or public-channel mutation occurred.
+
+The remediation ledger is now **32 open findings: 5 Critical, 15 High, 10
+Medium, and 2 Low**. R6 is complete; R7 remains. G0 and the product's overall
+**NO-GO** remain in force. Phase 9 begins only in its next dedicated turn.

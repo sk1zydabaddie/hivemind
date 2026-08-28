@@ -84,7 +84,7 @@ function CommandInput({
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(
-          "h-11 w-full bg-transparent text-[14px] text-ink outline-none placeholder:text-muted-foreground disabled:opacity-45",
+          "h-11 w-full bg-transparent text-[14px] text-ink outline-none placeholder:text-muted-foreground focus-visible:ring-[2px] focus-visible:ring-inset focus-visible:ring-navy/35 disabled:opacity-45",
           className
         )}
         {...props}
@@ -158,7 +158,7 @@ function CommandItem({
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "relative flex h-8 cursor-default items-center gap-2.5 rounded-md px-2.5 text-[13px] text-ink outline-none select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-45 data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5 [&_svg:not([class*='text-'])]:text-muted-foreground data-[selected=true]:[&_svg]:text-navy",
+        "relative flex h-8 cursor-default items-center gap-2.5 rounded-md px-2.5 text-[13px] text-ink outline-none select-none focus-visible:ring-[2px] focus-visible:ring-inset focus-visible:ring-navy/35 data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-45 data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5 [&_svg:not([class*='text-'])]:text-muted-foreground data-[selected=true]:[&_svg]:text-navy",
         className
       )}
       {...props}

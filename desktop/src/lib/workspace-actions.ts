@@ -816,12 +816,18 @@ export interface VerificationProvenance {
   adversarial_coverage: "unknown";
 }
 
-/** One event off the durable trail, as `trail.inspect` returns it. */
+/** One event off the durable trail. */
 export interface DurableTrailEvent {
-  ts?: string;
-  type?: string;
-  task_id?: string | null;
-  data?: Record<string, unknown>;
+  ts: string;
+  type: string;
+  task_id: string | null;
+  data: Record<string, unknown>;
+}
+
+/** One bounded, newest-first page returned by `trail.inspect`. */
+export interface DurableTrailPage {
+  events: DurableTrailEvent[];
+  next_before: number | null;
 }
 
 /** What `adapter.connect` returns: the probe it ran, and the config after. */

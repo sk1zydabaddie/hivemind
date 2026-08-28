@@ -5,10 +5,24 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
+const DialogFocusContext = React.createContext<React.RefObject<HTMLElement | null> | null>(null)
+
 function Dialog({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Root>) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+  const opener = React.useRef<HTMLElement | null>(null)
+  const previousOpen = React.useRef(false)
+  React.useEffect(() => {
+    if (props.open === true && !previousOpen.current) {
+      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    }
+    previousOpen.current = props.open === true
+  }, [props.open])
+  return (
+    <DialogFocusContext.Provider value={opener}>
+      <DialogPrimitive.Root data-slot="dialog" {...props} />
+    </DialogFocusContext.Provider>
+  )
 }
 
 function DialogTrigger({
@@ -52,22 +66,39 @@ function DialogContent({
   children,
   frame = false,
   showCloseButton = true,
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   frame?: boolean
   showCloseButton?: boolean
 }) {
+  const opener = React.useContext(DialogFocusContext)
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-xl border border-rule bg-background shadow-[var(--elevation-overlay),var(--glass-edge-near)] p-5 duration-[240ms] ease-[var(--spring)] outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
+          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-xl border border-rule bg-background shadow-[var(--elevation-overlay),var(--glass-edge-near)] p-5 duration-[240ms] ease-[var(--spring)] outline-none focus-visible:ring-[3px] focus-visible:ring-navy/25 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
           frame && "gap-0 p-0",
           className
         )}
         {...props}
+        onOpenAutoFocus={(event) => {
+          onOpenAutoFocus?.(event)
+          if (event.defaultPrevented) return
+          event.preventDefault()
+          const content = event.currentTarget as HTMLElement
+          const target = content.querySelector<HTMLElement>("[data-dialog-initial-focus], [data-slot='dialog-title']")
+          target?.focus()
+        }}
+        onCloseAutoFocus={(event) => {
+          onCloseAutoFocus?.(event)
+          if (event.defaultPrevented) return
+          event.preventDefault()
+          opener?.current?.focus()
+        }}
       >
         {children}
         {showCloseButton && (
@@ -139,6 +170,7 @@ function DialogTitle({
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
+      tabIndex={-1}
       className={cn(
         "text-[17px] leading-tight font-semibold tracking-tight text-ink",
         className

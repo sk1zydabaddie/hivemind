@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
  * inventing their own pressure, type, radius, and spacing.
  */
 const selectionControlVariants = cva(
-  "cursor-pointer border border-rule bg-panel/52 text-left text-ink transition-[color,background-color,border-color] duration-[120ms] ease-[var(--spring)] hover:border-navy/25 hover:bg-navy-wash/50 active:bg-navy-wash disabled:pointer-events-none disabled:cursor-default disabled:bg-canvas disabled:text-muted-foreground disabled:opacity-45",
+  "cursor-pointer border border-rule bg-panel/52 text-left text-ink outline-none transition-[color,background-color,border-color] duration-[120ms] ease-[var(--spring)] hover:border-navy/25 hover:bg-navy-wash/50 active:bg-navy-wash focus-visible:border-navy focus-visible:ring-[3px] focus-visible:ring-navy/25 disabled:pointer-events-none disabled:cursor-default disabled:bg-canvas disabled:text-muted-foreground disabled:opacity-45",
   {
     variants: {
       shape: {
