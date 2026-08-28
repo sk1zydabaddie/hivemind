@@ -15,7 +15,7 @@ import { runTask } from "../src/run.js";
 import { runScout } from "../src/scout.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
-import { authorizePlanlessManualTaskIfEligible } from "./support/manual-task.js";
+import { ratifyPlanForExistingTask } from "./support/ratified-plan.js";
 import { withTemplateRepo } from "./support/fixture-repo.js";
 import { stopChildProcess } from "./support/child-process.js";
 
@@ -271,7 +271,7 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
     path.join(repo, ".hivemind", "tasks", `${taskId}.contract.json`),
     `${JSON.stringify(contractFor(taskId, baseCommit, allowedFiles), null, 2)}\n`
   );
-  await authorizePlanlessManualTaskIfEligible(repo, taskId);
+  await ratifyPlanForExistingTask(repo, taskId);
 }
 
 async function writeProfile(repo: string, tool: string, agentPath: string, dangerous = false): Promise<void> {

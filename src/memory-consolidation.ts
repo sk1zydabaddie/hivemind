@@ -98,7 +98,7 @@ export async function consolidateMemory(
 
 function consolidatableEvidence(events: HivemindEvent[]): ConsolidationEvidence[] {
   return events.flatMap((event, index) =>
-    event.type === "memory.proposed" || event.type === "memory.accepted"
+    event.type === "memory.proposed"
       ? []
       : [{ ref: `events.jsonl#L${index + 1}`, event }]
   );

@@ -1,9 +1,10 @@
 import { Hex } from "@/components/workspace/hex";
-import { ChevronRight, Clock3, FileSearch, Lightbulb, ScrollText } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ChevronRight, Clock3, Copy, FileSearch, FlaskConical, Layers3, Lightbulb, ScrollText, Sparkles, Square } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 
 import { AgentsFileCard } from "@/components/workspace/agents-file-card";
 import { Button } from "@/components/ui/button";
+import { ActionFailure } from "@/components/ui/action-failure";
 import {
   Collapsible,
   CollapsibleContent,
@@ -29,7 +30,6 @@ import {
   PanelHeader,
   PanelLabel
 } from "@/components/ui/panel";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { VirtualList } from "@/components/ui/virtual-list";
 import { AccountsPanel } from "@/components/workspace/accounts-panel";
 import { ANONYMOUS_TASK, taskTitleOrNull } from "@/lib/identifiers";
@@ -39,6 +39,7 @@ import { projectTotals, type ProjectTotals } from "@/lib/project-totals";
 import { plainActionError } from "@/lib/plain-language";
 import type {
   DurableTrailPage,
+  MemoryReviewHandoff,
   ProjectConfigView,
   WorkspaceAction,
   WorkspaceCharacterization,
@@ -72,15 +73,33 @@ export function ProjectTab({
      audited `config.inspect`; the figures come from `routing.observed`, which
      is a durable event. Nothing here writes, and nothing here estimates. */
   const [config, setConfig] = useState<ProjectConfigView | null>(null);
+  const [configError, setConfigError] = useState("");
+  const [configLoading, setConfigLoading] = useState(false);
+  const loadConfigView = useCallback(async (): Promise<void> => {
+    setConfigLoading(true);
+    setConfigError("");
+    try {
+      setConfig(await onAction<ProjectConfigView>({ type: "config.inspect", payload: {} }));
+    } catch (error) {
+      setConfig(null);
+      setConfigError(plainActionError(error));
+    } finally {
+      setConfigLoading(false);
+    }
+  }, [onAction]);
   useEffect(() => {
     let cancelled = false;
+    setConfigLoading(true);
+    setConfigError("");
     void onAction<ProjectConfigView>({ type: "config.inspect", payload: {} })
       .then((value) => {
         if (!cancelled) setConfig(value);
       })
-      .catch(() => {
-        /* The panel simply does not appear. A usage surface that renders an
-           error where a figure belongs is worse than one that is absent. */
+      .catch((error) => {
+        if (!cancelled) setConfigError(plainActionError(error));
+      })
+      .finally(() => {
+        if (!cancelled) setConfigLoading(false);
       });
     return () => {
       cancelled = true;
@@ -100,11 +119,11 @@ export function ProjectTab({
   const waiting: Array<{ key: string; node: React.ReactNode }> = [
     ...(memory?.pending_lessons ?? []).map((proposal) => ({
       key: `lesson:${proposal.proposal_id}`,
-      node: <LessonCard key={proposal.proposal_id} proposal={proposal} />
+      node: <LessonCard key={proposal.proposal_id} proposal={proposal} onAction={onAction} />
     })),
     ...(memory?.routing_changes ?? []).map((proposal) => ({
       key: `routing:${proposal.proposal_id}`,
-      node: <RoutingCard key={proposal.proposal_id} proposal={proposal} />
+      node: <RoutingCard key={proposal.proposal_id} proposal={proposal} onAction={onAction} />
     })),
     ...(memory?.draft_tests ?? []).map((candidate) => ({
       key: `draft:${candidate.candidate_id}`,
@@ -204,6 +223,11 @@ export function ProjectTab({
            entirely -- so the proposal was hidden precisely when it was worth
            the most. Found by walking a fresh project on the installed app. */
         <div className="grid gap-3 self-start">
+        {configError === "" ? null : (
+          <ActionFailure busy={configLoading} detail={configError} title="Hivemind could not read this project's agent settings" onRetry={() => void loadConfigView()} />
+        )}
+        <AccountsPanel onAction={onAction} />
+        <SpendPanel usage={usage} />
         <section className="rounded-lg border border-rule bg-panel py-12">
           <Empty className="mx-auto max-w-[520px] p-0 md:p-0">
             <EmptyHeader>
@@ -263,8 +287,12 @@ export function ProjectTab({
               scrollbar nobody had. Caught by the reachability run at 358px
               hidden the first time a tall card landed here. */}
           <aside className="grid max-h-full min-h-0 auto-rows-min gap-3 overflow-y-auto">
+            {configError === "" ? null : (
+              <ActionFailure busy={configLoading} detail={configError} title="Hivemind could not read this project's agent settings" onRetry={() => void loadConfigView()} />
+            )}
             <AccountsPanel onAction={onAction} />
             <SpendPanel usage={usage} />
+            <AdvancedActionsPanel config={config} inspection={inspection} projection={projection} onAction={onAction} />
             <Panel>
               <PanelHeader>
                 <PanelLabel className="text-ink">What it has learned</PanelLabel>
@@ -553,12 +581,17 @@ function Total({
  * it means "I cannot see" is how the next three days go.
  */
 function SpendPanel({ usage }: { usage: UsagePanel }): React.JSX.Element | null {
-  if (usage.providers.length === 0) return null;
+  if (
+    usage.providers.length === 0 &&
+    usage.unattributedTokens === 0 &&
+    usage.session === null &&
+    usage.quota === null
+  ) return null;
   return (
     <Panel>
       <PanelHeader>
-        <PanelLabel className="text-ink">Agents and what they spent</PanelLabel>
-        <PanelCount>{usage.providers.length}</PanelCount>
+        <PanelLabel className="text-ink">Usage</PanelLabel>
+        {usage.providers.length === 0 ? null : <PanelCount>{usage.providers.length}</PanelCount>}
       </PanelHeader>
       <div className="grid gap-2.5 px-3 py-3">
         {usage.providers.map((provider) => (
@@ -632,12 +665,131 @@ function SpendPanel({ usage }: { usage: UsagePanel }): React.JSX.Element | null 
         )}
 
         {usage.quota === null ? null : (
-          <p className="m-0 border-t border-rule pt-2 text-[11px] leading-relaxed text-amber">
-            The provider last reported: {usage.quota.status}
-            {usage.quota.provider === null ? "" : ` (${usage.quota.provider})`}
-            {usage.quota.at === null ? "" : ` at ${formatDateTime(usage.quota.at)}`}.
-          </p>
+          <div className="grid gap-1 border-t border-rule pt-2 text-[11px] leading-relaxed text-muted-foreground">
+            <strong className="font-medium text-ink">
+              Provider usage{usage.quota.provider === null ? "" : ` · ${usage.quota.provider}`}
+              {usage.quota.plan === null ? "" : ` · ${usage.quota.plan}`}
+            </strong>
+            {usage.quota.windows.map((window) => (
+              <span key={window.name}>
+                {window.name}: {Math.max(0, 100 - window.usedPercent).toLocaleString()}% left
+                {window.windowMinutes === null ? "" : ` in its ${window.windowMinutes.toLocaleString()}-minute window`}
+                {window.resetsAt === null ? "" : `; resets ${formatDateTime(window.resetsAt)}`}
+              </span>
+            ))}
+            {usage.quota.at === null ? null : <span>Last reported {formatDateTime(usage.quota.at)}.</span>}
+          </div>
         )}
+      </div>
+    </Panel>
+  );
+}
+
+/**
+ * Deliberately secondary: these actions spend extra work to inspect or compare
+ * an existing task. They do not belong in the ordinary two-decision run, but a
+ * mechanism kept in the audited action registry must have one honest product
+ * consumer. Core still owns admission, routing, budgets and cancellation.
+ */
+function AdvancedActionsPanel({
+  config,
+  inspection,
+  projection,
+  onAction
+}: {
+  config: ProjectConfigView | null;
+  inspection: WorkspaceInspection | null;
+  projection: BoardProjection;
+  onAction: <T>(action: WorkspaceAction) => Promise<T>;
+}): React.JSX.Element | null {
+  const tasks = Object.entries(inspection?.task_titles ?? {}).sort((left, right) => left[1].localeCompare(right[1]));
+  const tools = [...new Set(
+    (config?.adapters ?? [])
+      .filter((adapter) => adapter.installed)
+      .map((adapter) => adapter.tool)
+      .filter((entry): entry is string => entry !== null)
+  )].sort();
+  const [taskId, setTaskId] = useState("");
+  const [tool, setTool] = useState("");
+  const [working, setWorking] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+  const [problem, setProblem] = useState("");
+  const activeQuality = Object.values(projection.qualityRuns).filter((run) =>
+    ["requested", "admitted", "drafting", "checking", "reviewing"].includes(run.status)
+  );
+
+  useEffect(() => {
+    if (taskId === "" && tasks[0] !== undefined) setTaskId(tasks[0][0]);
+    if (tool === "" && tools[0] !== undefined) setTool(tools[0]);
+  }, [taskId, tasks, tool, tools]);
+
+  if (tasks.length === 0 && activeQuality.length === 0) return null;
+
+  const run = async (label: string, action: WorkspaceAction): Promise<void> => {
+    setWorking(label);
+    setNotice("");
+    setProblem("");
+    try {
+      await onAction(action);
+      setNotice(`${label} started. Its result will appear in this project's record.`);
+    } catch (error) {
+      setProblem(`${label} did not start. ${plainActionError(error)}`);
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  return (
+    <Panel>
+      <PanelHeader>
+        <PanelLabel className="text-ink">Extra review</PanelLabel>
+      </PanelHeader>
+      <div className="grid gap-2.5 px-3 py-3">
+        <p className="m-0 text-[11px] leading-relaxed text-muted-foreground">
+          Optional second-pass work. These controls can use your connected agents and their quota; nothing runs merely because this panel is open.
+        </p>
+        {tasks.length === 0 ? null : (
+          <>
+            <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">
+              Task
+              <select className="h-8 rounded-md border border-input bg-canvas px-2 text-[12px] text-ink outline-none focus:border-navy focus:ring-2 focus:ring-navy/20" value={taskId} onChange={(event) => setTaskId(event.target.value)}>
+                {tasks.map(([id, title]) => <option key={id} value={id}>{title}</option>)}
+              </select>
+            </label>
+            {tools.length === 0 ? null : (
+              <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">
+                Agent for the characterization
+                <select className="h-8 rounded-md border border-input bg-canvas px-2 text-[12px] text-ink outline-none focus:border-navy focus:ring-2 focus:ring-navy/20" value={tool} onChange={(event) => setTool(event.target.value)}>
+                  {tools.map((entry) => <option key={entry} value={entry}>{entry}</option>)}
+                </select>
+              </label>
+            )}
+            <div className="grid grid-cols-1 gap-1.5">
+              <Button disabled={working !== null || taskId === "" || tool === ""} size="xs" type="button" variant="outline" onClick={() => void run("Characterization", { type: "verify.characterize", payload: { task_id: taskId, tool } })}>
+                <FlaskConical aria-hidden="true" /> Characterize a failing case
+              </Button>
+              <Button disabled={working !== null || taskId === ""} size="xs" type="button" variant="outline" onClick={() => void run("Two-draft comparison", { type: "quality.best_of_n", payload: { task_id: taskId, n: 2, ...(tool === "" ? {} : { tool }) } })}>
+                <Layers3 aria-hidden="true" /> Compare two drafts
+              </Button>
+              <Button disabled={working !== null || taskId === ""} size="xs" type="button" variant="outline" onClick={() => void run("Draft and refine", { type: "quality.draft_refine", payload: { task_id: taskId } })}>
+                <Sparkles aria-hidden="true" /> Draft, then refine
+              </Button>
+            </div>
+          </>
+        )}
+        {activeQuality.map((quality) => (
+          <div className="flex items-center justify-between gap-2 border-t border-rule pt-2" key={quality.quality_run_id}>
+            <span className="min-w-0 text-[11px] text-muted-foreground">
+              {taskTitleOrNull(quality.task_id, inspection?.task_titles ?? {}) ?? "Quality review"} · {quality.status}
+            </span>
+            <Button disabled={working !== null} size="xs" type="button" variant="outline-destructive" onClick={() => void run("Quality review cancellation", { type: "quality.cancel", payload: { quality_run_id: quality.quality_run_id, reason: "Stopped from the Project screen" } })}>
+              <Square aria-hidden="true" /> Stop
+            </Button>
+          </div>
+        ))}
+        {working === null ? null : <span className="text-[11px] text-navy" role="status">{working} is starting…</span>}
+        {notice === "" ? null : <span className="text-[11px] leading-relaxed text-navy" role="status">{notice}</span>}
+        {problem === "" ? null : <span className="text-[11px] leading-relaxed text-clay" role="alert">{problem} You can try the same control again.</span>}
       </div>
     </Panel>
   );
@@ -751,13 +903,27 @@ function ReviewCard({
   );
 }
 
-function LessonCard({ proposal }: { proposal: WorkspaceMemoryProposal }): React.JSX.Element {
+function LessonCard({
+  proposal,
+  onAction
+}: {
+  proposal: WorkspaceMemoryProposal;
+  onAction: <T>(action: WorkspaceAction) => Promise<T>;
+}): React.JSX.Element {
   return (
-    <ReviewCard body={proposal.lesson} command={proposal.review_command} title={proposal.title} />
+    <ReviewCard body={proposal.lesson} command={proposal.review_command} title={proposal.title}>
+      <MemoryReviewButton onAction={onAction} proposal={proposal} />
+    </ReviewCard>
   );
 }
 
-function RoutingCard({ proposal }: { proposal: WorkspaceRoutingChange }): React.JSX.Element {
+function RoutingCard({
+  proposal,
+  onAction
+}: {
+  proposal: WorkspaceRoutingChange;
+  onAction: <T>(action: WorkspaceAction) => Promise<T>;
+}): React.JSX.Element {
   return (
     <ReviewCard body={proposal.lesson} command={proposal.review_command} title={proposal.title}>
       {proposal.change_kind === "routing_weights" ? (
@@ -772,7 +938,43 @@ function RoutingCard({ proposal }: { proposal: WorkspaceRoutingChange }): React.
           {proposal.error_prone_task_types.map(plainWorkKind).join(", ")}.
         </p>
       )}
+      <MemoryReviewButton onAction={onAction} proposal={proposal} />
     </ReviewCard>
+  );
+}
+
+function MemoryReviewButton({
+  proposal,
+  onAction
+}: {
+  proposal: WorkspaceMemoryProposal;
+  onAction: <T>(action: WorkspaceAction) => Promise<T>;
+}): React.JSX.Element {
+  const [state, setState] = useState<"idle" | "working" | "copied">("idle");
+  const [problem, setProblem] = useState("");
+  const copyReviewCommand = async (): Promise<void> => {
+    setState("working");
+    setProblem("");
+    try {
+      const result = await onAction<MemoryReviewHandoff>({
+        type: "memory.review_handoff",
+        payload: { proposal_id: proposal.proposal_id }
+      });
+      await navigator.clipboard.writeText(result.command);
+      setState("copied");
+    } catch (error) {
+      setState("idle");
+      setProblem(plainActionError(error));
+    }
+  };
+  return (
+    <div className="mt-2 grid gap-1.5">
+      <Button className="justify-self-start" disabled={state === "working"} size="xs" type="button" variant="outline" onClick={() => void copyReviewCommand()}>
+        <Copy aria-hidden="true" />
+        {state === "working" ? "Preparing…" : state === "copied" ? "Review command copied" : "Copy review command"}
+      </Button>
+      {problem === "" ? null : <span className="text-[11px] leading-relaxed text-clay" role="alert">{problem} Try again.</span>}
+    </div>
   );
 }
 

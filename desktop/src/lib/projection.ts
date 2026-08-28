@@ -147,6 +147,14 @@ export interface BoardProjection {
   quota: {
     status: string;
     provider: string | null;
+    source: "provider" | "hivemind" | null;
+    plan: string | null;
+    windows: Array<{
+      name: string;
+      usedPercent: number;
+      windowMinutes: number | null;
+      resetsAt: string | null;
+    }>;
     lastEvent: HivemindEvent | null;
   };
   integration: {
@@ -182,6 +190,9 @@ export function createBoardProjection(): BoardProjection {
     quota: {
       status: "unknown",
       provider: null,
+      source: null,
+      plan: null,
+      windows: [],
       lastEvent: null
     },
     integration: {
@@ -254,14 +265,6 @@ export function applyEventMessage(
           readStringArray(event.data.depends_on) ?? task.depends_on;
       }
       break;
-    case "task.assigned":
-      if (task) {
-        task.agent =
-          readString(event.data.agent) ??
-          readString(event.data.tool) ??
-          task.agent;
-      }
-      break;
     case "task.started":
     case "task.resumed":
     case "task.redirected":
@@ -304,15 +307,6 @@ export function applyEventMessage(
         task.state = "failed";
         task.issue = readString(event.data.reason) ?? "worker stopped";
         task.worker_finished_at = event.ts;
-      }
-      break;
-    case "task.scouting_started":
-      if (event.task_id) {
-        const scout = ensureScout(projection, event.task_id, event.ts);
-        scout.state = "healthy";
-        scout.status = "Mapping the task";
-        scout.tool = readString(event.data.tool) ?? scout.tool;
-        scout.last_event_at = event.ts;
       }
       break;
     case "scout.completed":
@@ -401,10 +395,6 @@ export function applyEventMessage(
         readStringArray(event.data.queue) ?? projection.integration.queue;
       projection.integration.lastEvent = event;
       break;
-    case "integration.started":
-      projection.integration.status = "running";
-      projection.integration.lastEvent = event;
-      break;
     case "integration.passed":
       projection.integration.status = "passed";
       projection.integration.applied =
@@ -447,20 +437,43 @@ export function applyEventMessage(
         readString(event.data.report) ?? projection.integration.report;
       projection.integration.lastEvent = event;
       break;
-    case "quota.low":
     case "quota.exhausted":
-      projection.quota.status =
-        event.type === "quota.low" ? "low" : "exhausted";
+      projection.quota.status = "exhausted";
+      projection.quota.source = "hivemind";
+      projection.quota.plan = null;
+      projection.quota.windows = [];
       projection.quota.provider =
         readString(event.data.provider) ??
         readString(event.data.tool) ??
         projection.quota.provider;
       projection.quota.lastEvent = event;
       break;
-    case "context.low":
-      projection.context.status = "low";
-      projection.context.lastEvent = event;
+    case "provider.quota_observed": {
+      const windows = Array.isArray(event.data.windows)
+        ? event.data.windows.flatMap((value) => {
+            if (typeof value !== "object" || value === null) return [];
+            const record = value as Record<string, unknown>;
+            const name = readString(record.name);
+            const usedPercent = readNumber(record.used_percent);
+            if (name === null || usedPercent === null) return [];
+            return [{
+              name,
+              usedPercent,
+              windowMinutes: readNumber(record.window_minutes),
+              resetsAt: readString(record.resets_at)
+            }];
+          })
+        : [];
+      if (windows.length > 0) {
+        projection.quota.status = "reported";
+        projection.quota.provider = readString(event.data.provider);
+        projection.quota.source = "provider";
+        projection.quota.plan = readString(event.data.plan);
+        projection.quota.windows = windows;
+        projection.quota.lastEvent = event;
+      }
       break;
+    }
     case "orchestrator.checkpointed":
     case "orchestrator.resumed":
       projection.orchestrator.lastEvent = event;

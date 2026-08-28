@@ -1,129 +1,163 @@
 /**
- * Mechanisms that exist and are never consulted.
+ * Reachability leads plus one exact action-consumer contract.
  *
- * A distinct failure family, and the third one this project has named. It is
- * not the instrument family (an assertion that can only return one answer) and
- * not the rig family (a measurement of something other than what you think).
- * This one is:
- *
- *   > **The mechanism exists, is correct, is tested — and nothing asks it.**
- *
- * Three instances, all of which passed review looking finished:
- *
- * 1. `provider_version` — written onto every connection record and never
- *    compared, so a self-updating harness silently invalidated its own verdict.
- * 2. `daemon_instance_id` — recorded on every reservation and never filtered
- *    on.
- * 3. `compareAdapterVersion` — written, unit-tested, and imported by nothing
- *    but its own test, so the check it implements had never once run.
- *
- * Review cannot catch these. Every one of them looks right in a diff: the field
- * is populated, the function is covered, nothing is missing. The absence is
- * somewhere else entirely — in the call that was never written.
- *
- * ## What this can and cannot detect
- *
- * **Can:** an exported function that no production module imports and that is
- * not called inside its own file. That is a genuinely unreached mechanism, and
- * it is exactly instance 3.
- *
- * **Cannot:** an unread FIELD, which is instances 1 and 2. Property access in
- * TypeScript is dynamic — `record[key]`, destructuring, spreads, and
- * `JSON.parse` results that are read through an index signature — so "written
- * by one site and read by none" is not decidable by grep without both false
- * positives and false negatives. Where a field's absence would be dangerous,
- * the next-best guard is a test that asserts the field is NOT consulted, which
- * turns a silent gap into a stated decision: see
- * `daemon_instance_id is provenance, and scoping by it would break the ceiling`
- * in test/resource-ledger.test.ts.
- *
- * ## Why this reports rather than fails
- *
- * Measured before being trusted: on this tree it finds candidates that include
- * legitimate CLI entry points and public surface reached by dispatch rather
- * than by import. A check that fails the build on those would be an instrument
- * that cries wolf, and the first response to it would be to loosen it until it
- * stopped — which is how the word bans went wrong four times.
- *
- * So it prints, and the list is meant to be read by a person deciding whether
- * each entry is a mechanism nobody wired or an entry point reached another way.
- *
- * Usage: npm run audit:unreached
+ * This intentionally does not claim whole-program dead-code proof. The
+ * production TypeScript build owns declarations the compiler can prove
+ * unused. This report covers exported mechanisms with no named import,
+ * same-module value reference, or package-script entrypoint.
  */
-import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+import ts from "typescript";
 
-const listTs = (dir) =>
-  existsSync(dir)
-    ? readdirSync(dir)
-        .filter((file) => file.endsWith(".ts"))
-        .map((file) => path.join(dir, file))
-    : [];
+const sourceFilesBelow = (root) => {
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(root, entry.name);
+    return entry.isDirectory()
+      ? sourceFilesBelow(full)
+      : entry.isFile() && /\.[cm]?tsx?$/u.test(entry.name)
+        ? [full]
+        : [];
+  });
+};
 
-const production = listTs("src");
-const tests = listTs("test");
-const body = new Map(
-  [...production, ...tests].map((file) => [file, readFileSync(file, "utf8")])
+const coreFiles = sourceFilesBelow("src");
+const testFiles = sourceFilesBelow("test");
+const desktopFiles = sourceFilesBelow(path.join("desktop", "src"));
+const textByFile = new Map(
+  [...coreFiles, ...testFiles, ...desktopFiles].map((file) => [file, readFileSync(file, "utf8")])
+);
+const astByFile = new Map(
+  [...textByFile].map(([file, text]) => [
+    file,
+    ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, file.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
+  ])
 );
 
-/* Real import statements rather than word matches. A word match reports every
-   function whose name appears in prose as "used", which is how the first
-   version of this reported 445 dead exports including `invokeAgent`. */
-function importedNames(text) {
-  const names = new Set();
-  const patterns = [
-    /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["'][^"']+["']/g,
-    /* Dynamic imports. `cli.ts` reaches every subcommand this way --
-       `const { cacheCommand } = await import("./cache.js")` -- so a parser that
-       only reads static imports reports the entire CLI as unreached. Measured:
-       it did, and that is why this second pattern exists. */
-    /* `[^{}\n]` rather than `[^}]`: the loose version is greedy across
-       newlines and swallows whole preceding blocks into the capture, so the
-       "names" it extracts are chunks of source and match nothing. It reported
-       9 hits on cli.ts and found none of the 9 command names. */
-    /\{([^{}\n]*)\}\s*=\s*await\s+import\s*\(\s*["'][^"']+["']\s*\)/g
-  ];
-  for (const pattern of patterns) {
-    for (const match of text.matchAll(pattern)) {
-      for (const part of match[1].split(",")) {
-        const name = part.trim().replace(/^type\s+/u, "").split(/[\s:]+as[\s:]+|\s*:\s*/u)[0].trim();
-        if (name !== "") names.add(name);
+const importedByCore = new Set();
+const importedByTests = new Set();
+for (const [file, source] of astByFile) {
+  const target = file.startsWith(`test${path.sep}`) ? importedByTests : importedByCore;
+  const visit = (node) => {
+    if (ts.isImportSpecifier(node)) target.add((node.propertyName ?? node.name).text);
+    if (ts.isVariableDeclaration(node) && ts.isObjectBindingPattern(node.name) && node.initializer !== undefined) {
+      for (const element of node.name.elements) {
+        target.add((element.propertyName ?? element.name).getText(source));
       }
     }
-  }
-  return names;
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
 }
 
-const importedByProduction = new Set();
-const importedByTests = new Set();
-for (const [file, text] of body) {
-  const target = file.startsWith("test") ? importedByTests : importedByProduction;
-  for (const name of importedNames(text)) target.add(name);
-}
+const scripts = ["package.json", path.join("desktop", "package.json")]
+  .map((file) => JSON.parse(readFileSync(file, "utf8")).scripts ?? {})
+  .flatMap((record) => Object.values(record))
+  .join("\n");
 
-const unreached = [];
-const exportedOnly = [];
-for (const file of production) {
-  const text = body.get(file);
-  for (const match of text.matchAll(/^export (?:async )?function ([A-Za-z0-9_]+)/gmu)) {
-    const name = match[1];
-    if (importedByProduction.has(name)) continue;
-    /* Called inside its own file? Then the FUNCTION is live and only the
-       `export` is over-broad — a much weaker finding, and not this class.
-       `plainReason` and `createDaemonServer` are both this. */
-    const calls = [...text.matchAll(new RegExp(`\\b${name}\\s*\\(`, "gu"))].length;
-    const entry = { name, file, testOnly: importedByTests.has(name) };
-    if (calls > 1) exportedOnly.push(entry);
-    else unreached.push(entry);
-  }
-}
-
-console.log(`unreached in production: ${unreached.length}`);
-for (const entry of unreached) {
-  console.log(
-    `  ${entry.name.padEnd(32)} ${entry.file.padEnd(36)} ${
-      entry.testOnly ? "imported only by its own tests" : "imported by nothing"
-    }`
+const leads = [];
+const overExported = [];
+for (const file of coreFiles) {
+  const source = astByFile.get(file);
+  const exported = source.statements.filter((node) =>
+    ts.isFunctionDeclaration(node) &&
+    node.name !== undefined &&
+    node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)
   );
+  for (const declaration of exported) {
+    const name = declaration.name.text;
+    let sameModuleValueReferences = 0;
+    const visit = (node) => {
+      if (ts.isIdentifier(node) && node.text === name && node !== declaration.name) sameModuleValueReferences += 1;
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    const productionImport = importedByCore.has(name);
+    const packageEntrypoint = new RegExp(`\\b${name}\\b`, "u").test(scripts);
+    const entry = { name, file, testOnly: importedByTests.has(name) };
+    if (productionImport || packageEntrypoint) continue;
+    if (sameModuleValueReferences > 0) overExported.push(entry);
+    else leads.push(entry);
+  }
 }
-console.log(`\nexported more broadly than needed (function is live): ${exportedOnly.length}`);
+
+console.log(`unreached export leads (not whole-program proof): ${leads.length}`);
+for (const entry of leads) {
+  console.log(`  ${entry.name.padEnd(34)} ${entry.file.padEnd(40)} ${entry.testOnly ? "tests only" : "no named consumer"}`);
+}
+console.log(`exported more broadly than their value flow requires: ${overExported.length}`);
+console.log("handled false-positive classes: callback/value references, static or destructured dynamic imports, package-script entrypoints");
+
+const literals = (body) => [...body.matchAll(/"([a-z_]+(?:\.[a-z_]+)+)"/gu)].map((match) => match[1]);
+const coreActionSource = readFileSync(path.join("src", "workspace-actions.ts"), "utf8");
+const actionStart = coreActionSource.indexOf("export const workspaceActionTypes");
+const actionBlock = coreActionSource.slice(actionStart, coreActionSource.indexOf("] as const;", actionStart));
+const actions = literals(actionBlock);
+const consumers = new Set();
+for (const file of desktopFiles) {
+  for (const match of textByFile.get(file).matchAll(/\btype:\s*"([a-z_]+(?:\.[a-z_]+)+)"/gu)) {
+    if (actions.includes(match[1])) consumers.add(match[1]);
+  }
+}
+const queueSource = readFileSync(path.join("src", "workspace-inspection.ts"), "utf8");
+for (const match of queueSource.matchAll(/\btype:\s*"([a-z_]+(?:\.[a-z_]+)+)"/gu)) {
+  if (actions.includes(match[1])) consumers.add(match[1]);
+}
+const actionGaps = actions.filter((action) => !consumers.has(action));
+console.log(`audited actions without a production consumer: ${actionGaps.length}`);
+for (const action of actionGaps) console.log(`  ${action}`);
+if (actionGaps.length > 0) process.exitCode = 1;
+
+/* An event declaration with no producer is a more dangerous version of an
+   unused export: the client can render it and tests can project it, while no
+   real operation can ever place it in the durable trail. Restrict this check
+   to object-literal `type` fields in production Core. It is intentionally
+   narrower than a text search, so a comment, projection case or test fixture
+   cannot make a producer look real. */
+const eventSource = readFileSync(path.join("src", "events.ts"), "utf8");
+const eventStart = eventSource.indexOf("export const eventTypes");
+const eventBlock = eventSource.slice(eventStart, eventSource.indexOf("] as const;", eventStart));
+const events = literals(eventBlock);
+const producedEvents = new Set();
+for (const file of coreFiles) {
+  const source = astByFile.get(file);
+  const visit = (node) => {
+    if (
+      ts.isPropertyAssignment(node) &&
+      node.name.getText(source).replaceAll('"', "") === "type" &&
+      ts.isStringLiteral(node.initializer) &&
+      events.includes(node.initializer.text)
+    ) {
+      producedEvents.add(node.initializer.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+}
+/* These producers choose between two audited event types or pass a narrow
+   event-type union into one append helper. The AST check above deliberately
+   does not pretend to do interprocedural data flow, so each exception names
+   the production module where that bounded choice is made. Removing or
+   renaming the literal there invalidates the exception. */
+const indirectEventProducers = new Map([
+  ["patch.accepted", path.join("src", "analyze.ts")],
+  ["patch.rejected", path.join("src", "analyze.ts")],
+  ["integration.passed", path.join("src", "integrate.ts")],
+  ["integration.failed", path.join("src", "integrate.ts")],
+  ["integration.blocked", path.join("src", "integrate.ts")],
+  ["integration.low_confidence", path.join("src", "integrate.ts")],
+  ["verification.completed", path.join("src", "verification.ts")],
+  ["quality.draft_verified", path.join("src", "verification.ts")],
+  ["scheduler.wave_completed", path.join("src", "manager.ts")],
+  ["scheduler.wave_stopped", path.join("src", "manager.ts")],
+  ["scheduler.run_cancelled", path.join("src", "manager.ts")],
+  ["scheduler.run_cancel_failed", path.join("src", "manager.ts")]
+]);
+for (const [event, file] of indirectEventProducers) {
+  if (textByFile.get(file)?.includes(`"${event}"`)) producedEvents.add(event);
+}
+const eventGaps = events.filter((event) => !producedEvents.has(event));
+console.log(`declared durable events without a production producer: ${eventGaps.length}`);
+for (const event of eventGaps) console.log(`  ${event}`);
+if (eventGaps.length > 0) process.exitCode = 1;

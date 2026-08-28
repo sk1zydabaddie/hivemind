@@ -10,7 +10,7 @@ import { appendEvent, readEvents } from "../src/events.js";
 import { initProject } from "../src/init.js";
 import { checkWriteIntent } from "../src/intent.js";
 import { requestLease } from "../src/lease.js";
-import { authorizeManualTask, reviewManualTaskForAuthorization } from "../src/plan.js";
+import { ratifyPlanForExistingTask } from "./support/ratified-plan.js";
 import { runTask } from "../src/run.js";
 import { resumeTask } from "../src/task-resume.js";
 import { createRatifiedSpec } from "./support/spec.js";
@@ -358,11 +358,7 @@ async function writeContract(
       2
     )}\n`
   );
-  const review = await reviewManualTaskForAuthorization(repo, "S-001", taskId);
-  if (review.ok) {
-    const authorized = await authorizeManualTask(repo, "S-001", taskId, review.value.contract_hash);
-    assert.equal(authorized.ok, true, authorized.ok ? undefined : authorized.reason);
-  }
+  await ratifyPlanForExistingTask(repo, taskId);
 }
 
 async function writeProfile(repo: string, tool: string, agentPath: string): Promise<void> {

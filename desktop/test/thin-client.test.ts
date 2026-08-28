@@ -372,7 +372,7 @@ describe("React workspace boundary", () => {
     expect(work).toMatch(/ratificationPending=\{plan !== null\}/u);
     expect(work).toMatch(/Read-only record of the exact approved plan/u);
     expect(work).toMatch(/View plan/u);
-    expect(work).toMatch(/task\.integration === "merged" \|\| task\.state === "merged"/u);
+    expect(work).toMatch(/merged: \{ label: "Shipped", tone: "good" \}/u);
   });
 
   test("prompt starts centered, then becomes a fixed row without truncating text", async () => {
@@ -901,7 +901,7 @@ describe("React workspace boundary", () => {
     expect(work).toMatch(/\{named\.headline\}/u);
   });
 
-  test("the Project surface is read-only and offers no promotion", async () => {
+  test("the Project surface exposes only its audited reads and optional review actions", async () => {
     const project = await readFile(
       path.join(desktopRoot, "src", "components", "workspace", "project-tab.tsx"),
       "utf8"
@@ -909,22 +909,28 @@ describe("React workspace boundary", () => {
     const app = await readFile(path.join(desktopRoot, "src", "App.tsx"), "utf8");
     const audit = await readFile(path.resolve(desktopRoot, "..", "docs", "m8-action-routing-audit.md"), "utf8");
 
-    /* Memory and History were two tabs describing one subject and neither could
-       act. Merged, that must stay true: exactly one audited read, no writes. */
-    /* The invariant is READ-ONLY, not "exactly one action". Project reads the
-       durable trail and the connected agents; it writes nothing. Asserting the
-       property rather than the list is what lets a second read be added without
-       weakening the thing being protected. */
+    /* Ordinary project state remains read-only. The only writes are the named,
+       optional second-pass actions and the memory handoff; none can approve,
+       ratify, integrate or ship. Keep the allowlist exact so adding a new
+       authority path cannot hide among those reviewed exceptions. */
     const actions = [...project.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
-    const READS = new Set(["trail.inspect", "config.inspect", "status.inspect", "change.inspect"]);
+    const READS = new Set([
+      "trail.inspect",
+      "config.inspect",
+      "memory.review_handoff",
+      "verify.characterize",
+      "quality.best_of_n",
+      "quality.draft_refine",
+      "quality.cancel"
+    ]);
     for (const action of actions) {
       expect(READS.has(action!), `${action} is not a read`).toBe(true);
     }
     expect(actions).toContain("trail.inspect");
     expect(audit).toContain("`trail.inspect`");
     expect(project).not.toMatch(/invokeWorkspaceAction|fetch\(|method:\s*["']POST/u);
-    expect(project).not.toMatch(/reviewMemoryProposal|memory\.review_handoff/u);
-    expect(project).not.toMatch(/>\s*(?:Promote|Approve)\s*</u);
+    expect(project).toMatch(/memory\.review_handoff/u);
+    expect(project).not.toMatch(/>\s*(?:Promote|Approve|Ratify|Ship)\s*</u);
 
     // The handoff stays explicit: the app shows the evidence and the command.
     expect(project).toMatch(/The app cannot approve this item/u);
@@ -1051,7 +1057,7 @@ describe("React workspace boundary", () => {
       "utf8"
     );
     const actions = [...pane.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
-    expect(actions).toEqual(["checks.inspect"]);
+    expect([...new Set(actions)]).toEqual(["checks.inspect"]);
 
     /* This pane is what the embedded terminal was refused in favour of, so the
        line it must not cross is the one the terminal would have: it reads what
@@ -1167,7 +1173,7 @@ describe("React workspace boundary", () => {
 
     /* Advisory: it reads, it never acts. */
     const actions = [...note.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
-    expect(actions).toEqual(["checks.inspect"]);
+    expect([...new Set(actions)]).toEqual(["checks.inspect"]);
     expect(note).not.toMatch(/invokeWorkspaceAction|fetch\(|method:\s*["']POST/u);
 
     /* The blind spot is stated where it renders, not in a document nobody
@@ -1208,10 +1214,9 @@ describe("React workspace boundary", () => {
     );
     const code = panel.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/^\s*\/\/.*$/gmu, "");
 
-    /* The whole promise: authentication stays with the harness. So this
-       surface has no input of any kind -- a text field here is the beginning
-       of a credential channel even if nothing reads it yet -- and dispatches
-       only the three account actions. */
+    /* Authentication stays with the harness. The form may name an account and
+       choose its provider-owned home directory, but it must never ask for or
+       transport a credential. */
     /* Structural, not lexical. The first version of this banned the WORDS
        api_key/token/secret/password -- and failed on the panel's own visible
        sentence "never sees your password, key or token", which is the
@@ -1220,11 +1225,10 @@ describe("React workspace boundary", () => {
        offending prose was not a comment but UI copy, so stripping comments
        would not have saved it either. What actually matters is that there is
        nowhere to TYPE a secret and no action to send one. */
-    expect(code).not.toMatch(/<(?:input|textarea)/u);
     expect(code).not.toMatch(/type=\{?["']password/u);
     const actions = [...code.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
     for (const action of actions) {
-      expect(["accounts.inspect", "accounts.select"]).toContain(action!);
+      expect(["accounts.inspect", "accounts.add", "accounts.select"]).toContain(action!);
     }
     expect(code).not.toMatch(/invokeWorkspaceAction|fetch\(|method:\s*["']POST/u);
 

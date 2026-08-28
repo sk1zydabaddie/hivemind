@@ -18,7 +18,7 @@ import { getStatus, type HivemindStatus, type StatusTask } from "../src/status.j
 import { submitTask } from "../src/submit.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
-import { authorizePlanlessManualTaskIfEligible } from "./support/manual-task.js";
+import { ratifyPlanForExistingTask } from "./support/ratified-plan.js";
 import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
@@ -434,7 +434,7 @@ async function writeContract(repo: string, taskId: string, title: string, baseCo
       2
     )}\n`
   );
-  await authorizePlanlessManualTaskIfEligible(repo, taskId);
+  await ratifyPlanForExistingTask(repo, taskId);
 }
 
 async function approveIntent(repo: string, taskId: string, files: string[]): Promise<void> {

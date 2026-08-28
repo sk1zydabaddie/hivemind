@@ -12,6 +12,7 @@ import { initProject } from "../src/init.js";
 import { requestLease } from "../src/lease.js";
 import { runTask } from "../src/run.js";
 import { createSpec } from "../src/spec.js";
+import { adoptSpec } from "../src/spec-review.js";
 import { checkPlanningAllowed, requireActiveSpecRatified } from "../src/spec.js";
 import { recordIdeationRound, startIdeationSession } from "../src/ideation.js";
 import { createTaskWorktree } from "../src/worktree.js";
@@ -74,6 +75,20 @@ test("the desktop's own planning route allows an unratified spec", async () => {
   const section = plan.slice(plan.indexOf("planning prompt must not be empty"));
   assert.match(section.slice(0, 1200), /checkPlanningAllowed\(repoRoot/u);
   assert.doesNotMatch(section.slice(0, 1200), /requireActiveSpecRatified/u);
+});
+
+test("a vacuous drafted non-goal cannot cross the production adoption gate", async () => {
+  await withDraftSpec(async (repo) => {
+    const before = await readFile(path.join(repo, ".hivemind", "spec", "S-001.md"), "utf8");
+    const result = await adoptSpec(repo, "S-001", ["None"]);
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.reason, /does not name a boundary/u);
+    assert.equal(
+      await readFile(path.join(repo, ".hivemind", "spec", "S-001.md"), "utf8"),
+      before,
+      "the refusal must happen before the drafted spec is rewritten or ratified"
+    );
+  });
 });
 
 test("a plan cannot be ratified against an unratified spec, by anyone", async () => {

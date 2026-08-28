@@ -3608,7 +3608,7 @@ function latestQuotaPauseAfterLatestStart(events: HivemindEvent[], taskId: strin
 }
 
 async function runResultFromCompletedEvent(
-  repoRoot: string,
+  _repoRoot: string,
   taskId: string,
   event: HivemindEvent
 ): Promise<{ ok: true; value: RunResult } | { ok: false; reason: string }> {

@@ -19,7 +19,7 @@ import {
 import { releaseLease, requestLease, requestLeaseForContract } from "../src/lease.js";
 import { getProcessLiveness } from "../src/process-liveness.js";
 import { createRatifiedSpec } from "./support/spec.js";
-import { authorizePlanlessManualTaskIfEligible } from "./support/manual-task.js";
+import { ratifyPlanForExistingTask } from "./support/ratified-plan.js";
 import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
@@ -341,7 +341,7 @@ test("contract lease grants absent confined create paths", async () => {
   });
 });
 
-test("contract lease rejects create paths that already exist at base", async () => {
+test("contract lease cannot authorize create paths that planning rejects", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-CLOBBER", baseCommit, ["README.md"], { "README.md": "create" });
 
@@ -351,7 +351,7 @@ test("contract lease rejects create paths that already exist at base", async () 
     if (result.ok) {
       return;
     }
-    assert.match(result.reason, /create path "README\.md" already exists at base/);
+    assert.match(result.reason, /requires an explicitly ratified plan|not present in the active ratified plan/);
     await assertMissing(path.join(repo, ".hivemind", "leases", "active.json"));
   });
 });
@@ -371,7 +371,7 @@ test("contract lease rejects create paths outside the repo scope", async () => {
   });
 });
 
-test("contract lease conflicts when two tasks create the same path", async () => {
+test("planning refuses to authorize two contract tasks that create the same path", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit, ["src/new.ts"], { "src/new.ts": "create" });
     await writeContract(repo, "T-002", baseCommit, ["src/new.ts"], { "src/new.ts": "create" });
@@ -384,12 +384,12 @@ test("contract lease conflicts when two tasks create the same path", async () =>
     if (second.ok) {
       return;
     }
-    assert.match(second.reason, /src\/new\.ts held by T-001/);
+    assert.match(second.reason, /not present in the active ratified plan/);
     assert.deepEqual(await readActive(repo), { "src/new.ts": "T-001" });
   });
 });
 
-test("contract lease treats unlabeled paths as modify and requires base existence", async () => {
+test("contract lease cannot authorize untracked modify paths that planning rejects", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-UNLABELED", baseCommit, ["src/new.ts"]);
 
@@ -399,7 +399,7 @@ test("contract lease treats unlabeled paths as modify and requires base existenc
     if (result.ok) {
       return;
     }
-    assert.match(result.reason, /src\/new\.ts.*not a tracked file at base/);
+    assert.match(result.reason, /requires an explicitly ratified plan|not present in the active ratified plan/);
     await assertMissing(path.join(repo, ".hivemind", "leases", "active.json"));
   });
 });
@@ -423,24 +423,29 @@ test("CLI lease refuses contract files that do not exist at the contract base co
   });
 });
 
-test("CLI lease rejects contract globs and overlapping leases", async () => {
+test("CLI lease refuses a second contract whose scope cannot join the ratified plan", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
     await writeContract(repo, "T-002", baseCommit, ["README.md"]);
-    await writeContract(repo, "T-003", baseCommit, ["src/*.ts"]);
     await execFileAsync("node", [cliPath, "lease", "T-001"], { cwd: repo, windowsHide: true });
 
     await assert.rejects(
       execFileAsync("node", [cliPath, "lease", "T-002"], { cwd: repo, windowsHide: true }),
       (error: unknown) => {
         assert.equal((error as { code?: number }).code, 1);
-        assert.match(String((error as { stderr?: string }).stderr), /README\.md held by T-001/);
+        assert.match(String((error as { stderr?: string }).stderr), /not present in the active ratified plan/);
         return true;
       }
     );
+  });
+});
+
+test("CLI lease rejects a ratified contract glob because lease scopes are concrete", async () => {
+  await withTempRepo(async ({ repo, baseCommit }) => {
+    await writeContract(repo, "T-GLOB", baseCommit, ["src/*.ts"]);
 
     await assert.rejects(
-      execFileAsync("node", [cliPath, "lease", "T-003"], { cwd: repo, windowsHide: true }),
+      execFileAsync("node", [cliPath, "lease", "T-GLOB"], { cwd: repo, windowsHide: true }),
       (error: unknown) => {
         assert.equal((error as { code?: number }).code, 1);
         assert.match(String((error as { stderr?: string }).stderr), /uses a glob; contract lease scopes must be concrete files/);
@@ -519,7 +524,7 @@ async function writeContract(
       2
     )}\n`
   );
-  await authorizePlanlessManualTaskIfEligible(repo, taskId);
+  await ratifyPlanForExistingTask(repo, taskId);
 }
 
 async function prepareLintedPlanWithTasks(repo: string, tasks: Record<string, unknown>[]): Promise<void> {

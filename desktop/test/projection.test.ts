@@ -221,7 +221,6 @@ describe("read-only event projection", () => {
   test("projects Scouts and records artifact motion only for live durable events", () => {
     const state = createBoardProjection();
     for (const event of [
-      makeEvent("task.scouting_started", "T-005", { tool: "codex-scout" }),
       makeEvent("scout.completed", "T-005", { tool: "codex-scout", cited_files: 4 }),
       makeEvent("patch.accepted", "T-005", { reason: "scope matched" })
     ]) {

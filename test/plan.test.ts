@@ -15,13 +15,11 @@ import { initProject } from "../src/init.js";
 import { requestLeaseForContract } from "../src/lease.js";
 import { createSpec, ratifySpec } from "../src/spec.js";
 import {
-  authorizeManualTask,
   createTentativePlan,
   groundTentativePlan,
   lintTentativePlan,
   ratifyPlan,
   requireTaskDependenciesIntegrated,
-  reviewManualTaskForAuthorization,
   reviewPlanForRatification
 } from "../src/plan.js";
 import { executeWorkspaceAction } from "../src/workspace-actions.js";
@@ -120,7 +118,7 @@ test("execution contracts require an exact explicitly ratified plan", async () =
   });
 });
 
-test("a contract omitted from an unratified tentative plan cannot escape through manual authorization", async () => {
+test("a contract omitted from an unratified tentative plan cannot become executable", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
     assert.equal((await createTentativePlan(repo, "S-001", {
@@ -131,9 +129,6 @@ test("a contract omitted from an unratified tentative plan cannot escape through
     assert.equal((await lintTentativePlan(repo, "S-001")).ok, true);
     await writeContract(repo, "T-OMITTED", baseCommit);
 
-    const manualReview = await reviewManualTaskForAuthorization(repo, "S-001", "T-OMITTED");
-    assert.equal(manualReview.ok, false);
-    if (!manualReview.ok) assert.match(manualReview.reason, /has a tentative plan/u);
     const dependency = await requireTaskDependenciesIntegrated(repo, "S-001", "T-OMITTED");
     assert.equal(dependency.ok, false);
     if (!dependency.ok) assert.match(dependency.reason, /explicitly ratified plan/u);
@@ -143,25 +138,18 @@ test("a contract omitted from an unratified tentative plan cannot escape through
   });
 });
 
-test("a planless manual contract requires an exact durable authorization and changes require re-authorization", async () => {
+test("a planless manual contract has no compatibility authorization path", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await createRatifiedSpec(repo, "S-001");
     await writeContract(repo, "T-MANUAL", baseCommit);
     const before = await requireTaskDependenciesIntegrated(repo, "S-001", "T-MANUAL");
     assert.equal(before.ok, false);
-    const review = await reviewManualTaskForAuthorization(repo, "S-001", "T-MANUAL");
-    assert.equal(review.ok, true, review.ok ? undefined : review.reason);
-    if (!review.ok) return;
-    const authorized = await authorizeManualTask(repo, "S-001", "T-MANUAL", review.value.contract_hash);
-    assert.equal(authorized.ok, true, authorized.ok ? undefined : authorized.reason);
-    assert.equal((await requireTaskDependenciesIntegrated(repo, "S-001", "T-MANUAL")).ok, true);
-
     const contractPath = path.join(repo, ".hivemind", "tasks", "T-MANUAL.contract.json");
     const contract = JSON.parse(await readFile(contractPath, "utf8")) as Record<string, unknown>;
     await writeFile(contractPath, `${JSON.stringify({ ...contract, title: "Changed after authorization" }, null, 2)}\n`);
     const changed = await requireTaskDependenciesIntegrated(repo, "S-001", "T-MANUAL");
     assert.equal(changed.ok, false);
-    if (!changed.ok) assert.match(changed.reason, /requires explicit authorization/u);
+    if (!changed.ok) assert.match(changed.reason, /not present in a ratified plan/u);
   });
 });
 

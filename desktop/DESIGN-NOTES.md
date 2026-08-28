@@ -2872,6 +2872,12 @@ stops the guard firing — the guard does not relax to meet it.
 
 ### Actions with no way to reach them
 
+> **Historical finding, superseded by Remediation Phase 9 on 2026-08-28.**
+> The final measured set was eight. The productless manual-task pair was
+> deleted; Accounts and Project now provide intended consumers for every
+> retained action; the exact action-consumer audit reports zero gaps. The list
+> below is preserved as the dated counterexample, not current guidance.
+
 Eight audited workspace actions have no control anywhere in the desktop. This
 was re-swept on 2026-08-26 against direct React action construction plus the
 Core-published queue actions consumed by Work. The exact set is asserted in
@@ -4793,4 +4799,36 @@ document nodes, and retained a three-second text liveness change under reduced
 motion. The installed driver records and asserts the physical rectangle before
 capturing each required size. Evidence and build-labelled screenshots are under
 `docs/evidence/phase8-ui-accessibility-remediation-26.828.648/`.
+
+### A retained capability must have one honest surface
+
+An audited action is not a product capability until an intended client control
+can invoke it. Every retained action must have one live consumer; an action with
+no product decision is deleted together with its dispatcher, projection,
+prompt, compatibility fixture, and tests. Event names follow the same rule:
+each is produced by a production transition or documented as an external input,
+otherwise the name and every dead UI branch are removed.
+
+Optional second-pass controls belong together on Project and say that opening
+their panel runs nothing. Accounts are directories owned and authenticated by
+the coding-agent harness; Hivemind may select among them but never accepts or
+reads credentials. Account registration therefore offers the OS folder picker
+and manual path entry, and remains visible on a fresh project rather than
+depending on completed history.
+
+Provider quota and Hivemind's token ceiling are different evidence. External
+headroom is rendered only from `provider.quota_observed`; an internal refusal
+must never be relabelled as provider usage. The Usage panel remains reachable
+when quota is the only known figure. Unknown spend reads `not readable`, never
+zero. A failed action keeps its answering control present, names the failure,
+and offers a retry rather than disappearing or implying success.
+
+Installed build **26.828.858** is the reference evidence. Its five 1440x900
+captures show optional review, provider quota, account registration, and the
+retryable refusal in-frame, then exercise memory-review handoff and quality
+cancellation through their live controls. No provider process or paid call ran, severe browser
+logs were empty, all 44 configured surface/viewport combinations remained
+reachable, and the installer/installed Core contained no stale output for the
+deleted convention-evidence subsystem. Evidence is under
+`docs/evidence/remediation-phase9-26.828.858/`.
 

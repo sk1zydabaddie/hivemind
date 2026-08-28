@@ -44,6 +44,7 @@ interface WorkspaceView {
   connectionDetail: string;
   inspection: WorkspaceInspection | null;
   actionError: string;
+  lastProjectError: string;
   gitReadiness: GitReadiness | null;
   /** How the last one-click git setup failed, typed. Null when it has not. */
   gitSetupFailure: GitSetupFailure | null;
@@ -53,6 +54,7 @@ interface WorkspaceView {
   initializeProject: () => Promise<void>;
   initializeGit: () => Promise<void>;
   restartDaemon: () => Promise<void>;
+  retryLastProject: () => void;
   initializing: boolean;
   selectTaskOutput: (taskId: string) => void;
   performAction: <T>(action: WorkspaceAction) => Promise<T>;
@@ -85,11 +87,13 @@ export function useWorkspace(): WorkspaceView {
     null
   );
   const [actionError, setActionError] = useState("");
+  const [lastProjectError, setLastProjectError] = useState("");
+  const [lastProjectRevision, setLastProjectRevision] = useState(0);
   const actionErrorRef = useRef("");
   const [gitReadiness, setGitReadiness] = useState<GitReadiness | null>(null);
   const [gitSetupFailure, setGitSetupFailure] = useState<GitSetupFailure | null>(null);
   const [initializing, setInitializing] = useState(false);
-  const [revision, setRevision] = useState(0);
+  const [, setRevision] = useState(0);
   const projectionRef = useRef(createBoardProjection());
   const eventSourceRef = useRef<EventSource | null>(null);
   const outputSourceRef = useRef<EventSource | null>(null);
@@ -496,7 +500,7 @@ export function useWorkspace(): WorkspaceView {
           }
         }
       }),
-    [closeStreams, connectEventStream, recordActionError, render]
+    [closeStreams, connectEventStream, recordActionError, recoverFromBuildMismatch, render]
   );
 
   sessionRef.current = session;
@@ -678,9 +682,18 @@ export function useWorkspace(): WorkspaceView {
 
          Outside the shell (the replay harness) this rejects, which is the same
          answer as an empty list: open nothing and show the chooser. */
-      const last = await invoke<{ path: string; missing: boolean } | null>("last_project").catch(
-        () => null
-      );
+      let last: { path: string; missing: boolean } | null;
+      try {
+        last = await invoke<{ path: string; missing: boolean } | null>("last_project");
+        if (!abandoned) setLastProjectError("");
+      } catch (error) {
+        if (!abandoned) {
+          setLastProjectError(
+            `Hivemind could not read the last project. ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+        return;
+      }
       if (abandoned) return;
       if (last === null || last.path.trim() === "") return;
       if (last.missing) {
@@ -704,7 +717,7 @@ export function useWorkspace(): WorkspaceView {
         window.clearTimeout(inspectionTimerRef.current);
       }
     };
-  }, [closeStreams, recordActionError, requestedPath, session]);
+  }, [closeStreams, lastProjectRevision, recordActionError, requestedPath, session]);
 
   const performAction = useCallback(
     async <T,>(action: WorkspaceAction): Promise<T> => {
@@ -739,6 +752,7 @@ export function useWorkspace(): WorkspaceView {
     connectionDetail,
     inspection,
     actionError,
+    lastProjectError,
     gitReadiness,
     gitSetupFailure,
     gitSetupDone,
@@ -746,6 +760,7 @@ export function useWorkspace(): WorkspaceView {
     initializeProject,
     initializeGit,
     restartDaemon,
+    retryLastProject: () => setLastProjectRevision((current) => current + 1),
     initializing,
     selectTaskOutput: openOutputStream,
     draftStream,

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && tsc -p tsconfig.production.json && vite build",
     "bundle:prepare": "node scripts/prepare-bundle.mjs",
     "tauri:dev": "tauri dev",
     "tauri:build": "npm run bundle:stamp && tauri build --bundles nsis --config src-tauri/gen/version.conf.json",

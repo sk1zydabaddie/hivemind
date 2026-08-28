@@ -4,7 +4,6 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { analyzeTask } from "./analyze.js";
 import { applyPatchToCheckout, withDetachedCheckout } from "./changeset.js";
-import { loadConfig } from "./config.js";
 import { loadAndValidateContract } from "./contract.js";
 import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
 import {

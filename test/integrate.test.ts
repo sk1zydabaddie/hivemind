@@ -101,7 +101,6 @@ test("shadow verification refuses a queue other than the exact authorized surviv
     if (!result.ok) assert.match(result.reason, /queue changed after survivor authorization/u);
     const events = await readEvents(repo);
     assert.equal(events.ok, true);
-    if (events.ok) assert.equal(events.value.some((event) => event.type === "integration.started"), false);
   });
 });
 

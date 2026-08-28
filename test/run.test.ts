@@ -27,7 +27,7 @@ import {
   reserveMeteredCall
 } from "../src/resource-ledger.js";
 import { submitTask } from "../src/submit.js";
-import { authorizeManualTask, reviewManualTaskForAuthorization } from "../src/plan.js";
+import { ratifyPlanForExistingTask } from "./support/ratified-plan.js";
 import { reconcileTaskRunOnStartup, reconcileTaskRunsOnStartup, requestTaskStop } from "../src/task-control.js";
 import { latestTaskRunState } from "../src/run-state.js";
 import { createTaskWorktree } from "../src/worktree.js";
@@ -174,11 +174,16 @@ test("runTask refuses a plan-backed dependent task without an identity-bound dep
 });
 
 test("runTask refuses to invoke an agent without a covering active lease", async () => {
-  await withTempRepo(async ({ repo, baseCommit }) => {
+  await withTempRepo(async ({ repo }) => {
+    await mkdir(path.join(repo, "src"), { recursive: true });
+    await writeFile(path.join(repo, "src", "extra.ts"), "export const extra = true;\n");
+    await git(repo, ["add", "src/extra.ts"]);
+    await git(repo, ["commit", "-m", "add extra"]);
+    const nextBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
     const agentPath = await writeAgent(repo, "should-not-run-without-lease.mjs", [
       "await import('node:fs/promises').then(({ writeFile }) => writeFile('README.md', '# Fixture\\nagent ran without lease\\n'));"
     ]);
-    await writeContract(repo, "T-001", baseCommit, ["README.md"]);
+    await writeContract(repo, "T-001", nextBase, ["README.md", "src/extra.ts"]);
     await writeProfile(repo, "fake", agentPath);
 
     const noLease = await runTask(repo, "T-001", "fake");
@@ -192,23 +197,17 @@ test("runTask refuses to invoke an agent without a covering active lease", async
     await assertMissing(path.join(repo, ".hivemind", "worktrees", "T-001"));
     await assertMissing(path.join(repo, ".hivemind", "patches", "T-001", "diff.patch"));
 
-    await mkdir(path.join(repo, "src"), { recursive: true });
-    await writeFile(path.join(repo, "src", "extra.ts"), "export const extra = true;\n");
-    await git(repo, ["add", "src/extra.ts"]);
-    await git(repo, ["commit", "-m", "add extra"]);
-    const nextBase = await gitStdout(repo, ["rev-parse", "HEAD"]);
-    await writeContract(repo, "T-002", nextBase, ["README.md", "src/extra.ts"]);
-    await grantLease(repo, "T-002", ["README.md"]);
+    await grantLease(repo, "T-001", ["README.md"]);
 
-    const partialLease = await runTask(repo, "T-002", "fake");
+    const partialLease = await runTask(repo, "T-001", "fake");
 
     assert.equal(partialLease.ok, false);
     if (partialLease.ok) {
       return;
     }
     assert.match(partialLease.reason, /src\/extra\.ts is not leased/);
-    await assertMissing(path.join(repo, ".hivemind", "worktrees", "T-002"));
-    await assertMissing(path.join(repo, ".hivemind", "patches", "T-002", "diff.patch"));
+    await assertMissing(path.join(repo, ".hivemind", "worktrees", "T-001"));
+    await assertMissing(path.join(repo, ".hivemind", "patches", "T-001", "diff.patch"));
   });
 });
 
@@ -1426,11 +1425,7 @@ async function writeContract(
       2
     )}\n`
   );
-  const review = await reviewManualTaskForAuthorization(repo, "S-001", taskId);
-  if (review.ok) {
-    const authorized = await authorizeManualTask(repo, "S-001", taskId, review.value.contract_hash);
-    assert.equal(authorized.ok, true, authorized.ok ? undefined : authorized.reason);
-  }
+  await ratifyPlanForExistingTask(repo, taskId);
 }
 
 async function prepareLintedPlanWithTasks(repo: string, tasks: Record<string, unknown>[]): Promise<void> {

@@ -1,0 +1,59 @@
+{
+  "installedVersion": "26.828.858",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "paidProviderCalls": 0,
+  "providerProcessCalls": 0,
+  "consumers": {
+    "accounts": true,
+    "addAccount": true,
+    "characterization": true,
+    "bestOfTwo": true,
+    "draftRefine": true,
+    "memoryReview": true,
+    "qualityCancel": true,
+    "memoryReviewAnswered": true,
+    "qualityCancelAnswered": true
+  },
+  "quota": {
+    "providerLabel": true,
+    "realRemaining": true,
+    "internalCeilingMislabelled": false
+  },
+  "retryFailure": {
+    "visible": true,
+    "retryInstruction": true,
+    "controlStillPresent": true
+  },
+  "screenshots": [
+    {
+      "item": "01-project-consumers-and-provider-quota",
+      "build": "26.828.858",
+      "file": "01-project-consumers-and-provider-quota-26.828.858-1440x900.png"
+    },
+    {
+      "item": "02-account-registration-consumer",
+      "build": "26.828.858",
+      "file": "02-account-registration-consumer-26.828.858-1440x900.png"
+    },
+    {
+      "item": "03-characterization-refusal-remains-retryable",
+      "build": "26.828.858",
+      "file": "03-characterization-refusal-remains-retryable-26.828.858-1440x900.png"
+    },
+    {
+      "item": "04-memory-review-handoff-consumer",
+      "build": "26.828.858",
+      "file": "04-memory-review-handoff-consumer-26.828.858-1440x900.png"
+    },
+    {
+      "item": "05-quality-cancellation-consumer",
+      "build": "26.828.858",
+      "file": "05-quality-cancellation-consumer-26.828.858-1440x900.png"
+    }
+  ],
+  "browserSevereLogs": [],
+  "diagnosticBody": null
+}

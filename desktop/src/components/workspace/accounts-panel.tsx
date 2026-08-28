@@ -1,7 +1,9 @@
-import { Check, ChevronDown } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { Check, ChevronDown, FolderOpen, Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ActionFailure } from "@/components/ui/action-failure";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,13 +38,26 @@ export function AccountsPanel({
   const [view, setView] = useState<AccountsView | null>(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [label, setLabel] = useState("");
+  const [harness, setHarness] = useState("");
+  const [homeDir, setHomeDir] = useState("");
 
   const load = async (): Promise<void> => {
+    setProblem(null);
     try {
-      setView(await onAction<AccountsView>({ type: "accounts.inspect", payload: {} }));
-    } catch {
-      /* The panel simply does not appear. A surface that renders an error
-         where an account belongs is worse than one that is absent. */
+      const next = await onAction<AccountsView>({ type: "accounts.inspect", payload: {} });
+      if (
+        typeof next !== "object" ||
+        next === null ||
+        !Array.isArray(next.roles) ||
+        !Array.isArray(next.accounts)
+      ) {
+        throw new Error("Core returned an unreadable account record.");
+      }
+      setView(next);
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -57,14 +72,20 @@ export function AccountsPanel({
      straight through and the panel crashed reading `.roles`. The same defect
      took the ship surface down through `provenance`, found the same way: by
      replaying a real trail instead of a fixture that always had the field. */
-  if (
-    view === null ||
-    typeof view !== "object" ||
-    !Array.isArray(view.roles) ||
-    !Array.isArray(view.accounts) ||
-    view.roles.length === 0
-  ) {
-    return null;
+  if (view === null) {
+    return problem === null ? null : (
+      <Panel>
+        <PanelHeader><PanelLabel className="text-ink">Accounts</PanelLabel></PanelHeader>
+        <div className="px-3 py-3">
+          <ActionFailure
+            busy={busy}
+            detail={problem}
+            title="Hivemind could not read the account choices"
+            onRetry={() => void load()}
+          />
+        </div>
+      </Panel>
+    );
   }
 
   const switchable = (harness: string | null): boolean =>
@@ -82,13 +103,106 @@ export function AccountsPanel({
     }
   };
 
+  const switchableHarnesses = Object.keys(view.switchable).sort();
+
+  const chooseHome = async (): Promise<void> => {
+    try {
+      const selected = await invoke<string | null>("choose_project_folder", { initialPath: homeDir });
+      if (selected !== null) setHomeDir(selected);
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const addAccount = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (label.trim() === "" || harness === "" || homeDir.trim() === "") return;
+    setBusy(true);
+    setProblem(null);
+    try {
+      setView(await onAction<AccountsView>({
+        type: "accounts.add",
+        payload: { label: label.trim(), harness, home_dir: homeDir.trim() }
+      }));
+      setAdding(false);
+      setLabel("");
+      setHomeDir("");
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Panel>
       <PanelHeader>
         <PanelLabel className="text-ink">Accounts</PanelLabel>
         <PanelCount>{view.accounts.length}</PanelCount>
+        {switchableHarnesses.length === 0 ? null : (
+          <Button
+            aria-label={adding ? "Close account form" : "Add an account"}
+            className="ml-auto"
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              setAdding(!adding);
+              setHarness(harness || switchableHarnesses[0] || "");
+            }}
+          >
+            {adding ? <X aria-hidden="true" /> : <Plus aria-hidden="true" />}
+          </Button>
+        )}
       </PanelHeader>
       <div className="grid gap-2.5 px-3 py-3">
+        {adding ? (
+          <form className="grid gap-2 rounded-md border border-rule bg-canvas p-2.5" onSubmit={(event) => void addAccount(event)}>
+            <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">
+              Account name
+              <input
+                className="h-8 rounded-md border border-input bg-canvas px-2.5 text-[13px] text-ink outline-none focus:border-navy focus:ring-2 focus:ring-navy/20"
+                disabled={busy}
+                placeholder="Work account"
+                value={label}
+                onChange={(event) => setLabel(event.target.value)}
+              />
+            </label>
+            <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">
+              Coding agent
+              <select
+                className="h-8 rounded-md border border-input bg-canvas px-2.5 text-[13px] text-ink outline-none focus:border-navy focus:ring-2 focus:ring-navy/20"
+                disabled={busy}
+                value={harness}
+                onChange={(event) => setHarness(event.target.value)}
+              >
+                {switchableHarnesses.map((entry) => <option key={entry} value={entry}>{entry}</option>)}
+              </select>
+            </label>
+            <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">
+              Agent account folder
+              <span className="flex gap-1.5">
+                <input
+                  className="h-8 min-w-0 flex-1 rounded-md border border-input bg-canvas px-2.5 font-mono text-[11px] text-ink outline-none focus:border-navy focus:ring-2 focus:ring-navy/20"
+                  disabled={busy}
+                  value={homeDir}
+                  onChange={(event) => setHomeDir(event.target.value)}
+                />
+                <Button aria-label="Choose account folder" disabled={busy} size="icon-sm" type="button" variant="outline" onClick={() => void chooseHome()}>
+                  <FolderOpen aria-hidden="true" />
+                </Button>
+              </span>
+            </label>
+            <Button
+              className="justify-self-start"
+              disabled={busy || label.trim() === "" || harness === "" || homeDir.trim() === ""}
+              size="sm"
+              type="submit"
+            >
+              {busy ? "Adding…" : "Add account"}
+            </Button>
+          </form>
+        ) : null}
         {view.roles.map((entry) => {
           const options = view.accounts.filter((account) => account.harness === entry.tool);
           return (

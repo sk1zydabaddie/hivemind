@@ -379,10 +379,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error && error.message.trim() !== ""
     ? error.message

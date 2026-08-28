@@ -345,10 +345,6 @@ function activeLeaseLockPath(repoRoot: string): string {
   return path.join(repoRoot, ".hivemind", "leases", "active.lock");
 }
 
-function leaseLockReaperPath(repoRoot: string): string {
-  return `${activeLeaseLockPath(repoRoot)}.reaper`;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

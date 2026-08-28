@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import path from "node:path";
 import { promisify } from "node:util";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent } from "./events.js";

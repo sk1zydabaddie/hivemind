@@ -139,9 +139,7 @@ const RUN_MILESTONES: Record<string, { text: string; tone: ThreadTone }> = {
     text: "A plan change was queued for review",
     tone: "neutral"
   },
-  "quota.low": { text: "The model provider is running low on capacity", tone: "warning" },
-  "quota.exhausted": { text: "The model provider is out of capacity", tone: "danger" },
-  "context.low": { text: "An agent is running out of room to work", tone: "warning" },
+  "quota.exhausted": { text: "This run reached its Hivemind spending limit", tone: "danger" },
   /* adoption.started is suppressed as mechanical, but its outcomes are not: the
      thread previously said "merging" and then went quiet whichever way it went. */
   "adoption.failed": { text: "The merge did not happen and your branch is unchanged", tone: "danger" },
@@ -156,8 +154,6 @@ const RUN_MILESTONES: Record<string, { text: string; tone: ThreadTone }> = {
    deterministic code, so their only readers are the detail surfaces. */
 const SUPPRESSED = new Set([
   "task.created",
-  "task.assigned",
-  "task.scouting_started",
   "task.revision_requested",
   "scout.completed",
   "lease.approved",
@@ -166,7 +162,6 @@ const SUPPRESSED = new Set([
   "patch.submitted",
   "patch.accepted",
   "integration.queued",
-  "integration.started",
   "routing.observed",
   "orchestrator.checkpointed",
   "orchestrator.resumed",

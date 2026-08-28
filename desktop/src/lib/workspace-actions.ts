@@ -692,8 +692,6 @@ export type WorkspaceAction = {
     | "plan.ratify"
     | "spec.review"
     | "spec.adopt"
-    | "manual_task.review"
-    | "manual_task.authorize"
     | "plan.amend"
     | "manager.approve_pending"
     | "task.redirect"
@@ -794,6 +792,11 @@ export interface ChecksOutput {
   tests?: string | null;
   /** Absent on a run recorded before provenance existed, which is not `null`. */
   provenance?: VerificationProvenance | null;
+}
+
+/** What `memory.review_handoff` returns. No approval crosses this boundary. */
+export interface MemoryReviewHandoff {
+  command: string;
 }
 
 /**

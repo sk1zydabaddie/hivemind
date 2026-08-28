@@ -535,7 +535,7 @@ never load-bearing, and now cannot be made at all for a compacted run.
 | **Schema migration beyond two formats** | Nothing — a decision. **21 modules declare `version: 1` and hard-fail on `!== 1`, and no format is ever version 2.** The convention is present and inert; only task contracts and `daemon.json` have real migration | A pass per format, or a decision to leave them |
 | **`.hivemind` retention** | Nothing — but it interacts with the trail-rebuild rule, so it is *classify then prune*, never age or size. One corpus run logged ~7M tokens of evidence | A pass, after the classification |
 | **Dogfooding** | Nothing. Deferred since M3; M10.4 removed the serial limitation that justified it | A deliberate demonstration |
-| **Four unreachable actions** | Nothing — no UI. `manual_task.review` / `manual_task.authorize`, `verify.characterize`, `quality.best_of_n` / `quality.draft_refine`. All audited, all working, none reachable | Half a day |
+| **Unreachable actions (historical; superseded 2026-08-28)** | The later measured set was eight. Phase 9 deleted the productless manual-task pair and gave every retained action an intended client control; the current action-consumer audit reports zero gaps. | Closed in Phase 9 |
 | **Attention on a project you are not looking at** | A decision. Knowing requires asking that project's daemon; starting one per recent project to render a dot is a real cost, and an invented badge on the screen whose purpose is *where should I look* is worse than none | Small, once the "ask only running daemons" shape is accepted |
 
 ### 3.1 MCP — three separate questions, three different answers
@@ -1121,7 +1121,7 @@ next session does not have to rediscover them.
 > | Boundary | Crosses | State |
 > | --- | --- | --- |
 > | Tauri command names | React → Rust | **was broken** (2 of 15 missing) — now enforced by `command-surface.test.ts` |
-> | Action ids (`adapter.connect`, …) | client → Rust → daemon → Core | consistent: all 42 the client can send are accepted; 3 Core accepts are unsent, which is the known unreachable-actions item |
+> | Action ids (`adapter.connect`, …) | client → Rust → daemon → Core | Historical snapshot: all 42 the client could send were accepted and 3 Core actions were unsent. Superseded by the 2026-08-26 eight-action measurement and Phase 9's zero-gap action-consumer audit. |
 > | Queue `kind` (`plan_review`, …) | Core → client, and now the notification allowlist | consistent, checked by hand |
 > | Trail event `type` names | Core → the client projection | consistent, 13 of 13 |
 >
@@ -3337,3 +3337,47 @@ call, paid operation, publication, or public-channel mutation occurred.
 The remediation ledger is now **32 open findings: 5 Critical, 15 High, 10
 Medium, and 2 Low**. R6 is complete; R7 remains. G0 and the product's overall
 **NO-GO** remain in force. Phase 9 begins only in its next dedicated turn.
+
+## Remediation Phase 9: reachability, contracts, and observable failures — 2026-08-28
+
+Phase 9 is complete and closes **F1-01 through F1-05, F1-09 through F1-14,
+and F1-17 through F1-20**, completing R7 and contract-hygiene gate G5. The
+productless `manual_task.review` / `manual_task.authorize` pair and dormant
+convention-evidence subsystem are deleted with their dispatcher, audit, prompt,
+fixture, and test paths. Every retained audited action now has an intended
+client consumer. Declared events have a production producer or an explicit
+external-input contract; obsolete aliases and dead projection branches are
+removed.
+
+Provider responses now pass through the existing quota parser and append a
+durable `provider.quota_observed` event. Project shows that external headroom
+separately from Hivemind's internal token ceiling, even before a project has a
+completed run. Accounts, memory review handoff, characterization, best-of-two,
+draft-refine, and cancellation are reachable through the existing UI system.
+Configuration, provenance, setup, and project-operation failures have explicit
+retryable states. Spec adoption rejects vacuous non-goals before ratification,
+and grounded plans keep allowed-file intents aligned when a glob expands.
+
+Installed build **26.828.858** was built, installed, and matched across the
+executable, Core, shell, and pinned Node identities. At 1440x900 the installed
+fixture showed the account-registration form, all optional review controls,
+real provider headroom (`76% left`) without a token-ceiling mislabel, and a
+characterization refusal whose explanation and controls remained visible. The
+configured adapter was never spawned, no paid provider call ran, and browser
+severe logs were empty. The Core build cleaned its output before compilation;
+both the installer manifest and installed Core were checked and contained no
+retired convention-evidence output. Five build-labelled captures and
+structured evidence are under
+`docs/evidence/remediation-phase9-26.828.858/`.
+
+Final no-paid validation passed Core (**961 passed, 2 skipped, 963 total**),
+Desktop (**348/348**), Rust (**52/52**), all **44/44** production reachability
+surface/viewport combinations, both advisory audits with zero vulnerabilities,
+installed identity verification, and the installed Phase 9 walkthrough. The
+exact action-consumer and event-producer audits report zero gaps; the remaining
+export report is explicitly a lead generator rather than proof.
+
+The remediation ledger is now **17 open findings: 5 Critical, 10 High, 2
+Medium, and 0 Low**. R3 through R7 and G5 are complete. The product remains
+**NO-GO** because the release workstreams R0, R1, and R2 remain open. Phase 10
+begins only in its next dedicated turn.

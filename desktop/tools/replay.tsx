@@ -49,6 +49,7 @@ interface ReplayScenario {
 
 const HEX = "9f".repeat(32);
 const params = new URLSearchParams(window.location.search);
+const failedActions = new Set((params.get("failAction") ?? "").split(",").filter(Boolean));
 
 /* Captured settings state. Written by running `project.init` and
    `adapter.connect` against a real repository and a real coding agent, so the
@@ -313,6 +314,9 @@ class ReplayEventSource {
     }
     if (command === "workspace_action") {
       const action = payload.action as { type: string };
+      if (failedActions.has(action.type)) {
+        throw new Error(`Injected ${action.type} read failure for the reachability contract.`);
+      }
       if (action.type === "status.inspect") {
         const inspection = currentInspection();
         if (inspection === null) {
@@ -328,6 +332,17 @@ class ReplayEventSource {
       if (action.type === "config.inspect" || action.type === "config.set") {
         if (settings === null) throw new Error("no captured settings state");
         return settings.config;
+      }
+      if (action.type === "accounts.inspect") {
+        return {
+          roles: [
+            { role: "planner", tool: "codex" },
+            { role: "manager", tool: "claude" },
+            { role: "worker", tool: "codex" }
+          ],
+          accounts: [],
+          switchable: { codex: true, claude: true }
+        };
       }
       /* The AGENTS.md proposal, shaped exactly as Core returns one.
          A refusal here would render no card, and the card's controls would then

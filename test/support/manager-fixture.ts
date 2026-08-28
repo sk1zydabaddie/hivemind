@@ -33,7 +33,7 @@ import { createSpec, type SpecResult } from "../../src/spec.js";
 import { getStatus } from "../../src/status.js";
 import { executeWorkspaceAction } from "../../src/workspace-actions.js";
 import { admitExecutionWave } from "../../src/wave-admission.js";
-import { authorizePlanlessManualTaskIfEligible } from "./manual-task.js";
+import { ratifyPlanForExistingTask } from "./ratified-plan.js";
 import { createRatifiedSpec } from "./spec.js";
 import { withTemplateRepo } from "./fixture-repo.js";
 
@@ -1009,7 +1009,7 @@ export async function writeContract(repo: string, taskId: string, baseCommit: st
       2
     )}\n`
   );
-  await authorizePlanlessManualTaskIfEligible(repo, taskId);
+  await ratifyPlanForExistingTask(repo, taskId);
 }
 
 export async function writeAcceptedPatchBundle(repo: string, taskId: string, baseCommit: string, edit: () => Promise<void>): Promise<void> {

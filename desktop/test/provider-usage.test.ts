@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 import replayData from "../tools/replay-data.json";
+import { ProjectTab } from "../src/components/workspace/project-tab";
 import { buildUsagePanel, formatTokens } from "../src/lib/provider-usage";
 import {
   applyEventMessage,
@@ -169,6 +172,84 @@ describe("the session's own ledger", () => {
 
   test("quota is shown only when the provider actually said something", () => {
     expect(buildUsagePanel(null, projectionWith([]), []).quota).toBeNull();
+  });
+
+  test("provider headroom stays distinct from Hivemind's own spending ceiling", () => {
+    const projection = createBoardProjection();
+    applyEventMessage(projection, {
+      kind: "event",
+      source: "live",
+      event: {
+        ts: "2026-08-28T12:00:00.000Z",
+        type: "quota.exhausted",
+        task_id: "T-001",
+        data: { source: "token_ceiling", provider: "codex" }
+      }
+    });
+    expect(buildUsagePanel(null, projection, []).quota).toBeNull();
+
+    applyEventMessage(projection, {
+      kind: "event",
+      source: "live",
+      event: {
+        ts: "2026-08-28T12:01:00.000Z",
+        type: "provider.quota_observed",
+        task_id: "T-001",
+        data: {
+          provider: "codex",
+          plan: "plus",
+          windows: [{
+            name: "primary",
+            used_percent: 24,
+            window_minutes: 300,
+            resets_at: "2026-08-28T17:00:00.000Z"
+          }]
+        }
+      }
+    });
+    expect(buildUsagePanel(null, projection, []).quota).toEqual({
+      provider: "codex",
+      plan: "plus",
+      at: "2026-08-28T12:01:00.000Z",
+      windows: [{
+        name: "primary",
+        usedPercent: 24,
+        windowMinutes: 300,
+        resetsAt: "2026-08-28T17:00:00.000Z"
+      }]
+    });
+  });
+
+  test("the Project surface shows provider quota even with no provider-spend rows", () => {
+    const projection = createBoardProjection();
+    applyEventMessage(projection, {
+      kind: "event",
+      source: "live",
+      event: {
+        ts: "2026-08-28T12:01:00.000Z",
+        type: "provider.quota_observed",
+        task_id: "T-001",
+        data: {
+          provider: "codex",
+          plan: "plus",
+          windows: [{ name: "primary", used_percent: 24 }]
+        }
+      }
+    });
+
+    const markup = renderToStaticMarkup(
+      createElement(ProjectTab, {
+        inspection: null,
+        projection,
+        projectName: "quota-proof",
+        onAction: async () => {
+          throw new Error("not called during a static render");
+        }
+      })
+    );
+
+    expect(markup).toContain("Provider usage · codex · plus");
+    expect(markup).toContain("primary: 76% left");
   });
 });
 

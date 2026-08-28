@@ -3,6 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ActionFailure } from "@/components/ui/action-failure";
 import {
   Dialog,
   DialogContent,
@@ -174,6 +175,19 @@ export function SettingsDialog({
     }
   };
 
+  const changeAutonomy = async (nextLevel: AutonomyLevel): Promise<void> => {
+    const requested = projectPath;
+    setWorking(true);
+    setProblem(null);
+    try {
+      await onAction({ type: "autonomy.set", payload: { level: nextLevel } });
+    } catch (cause) {
+      setProblem({ forProject: requested, message: plainActionError(cause) });
+    } finally {
+      setWorking(false);
+    }
+  };
+
   const config = view?.config ?? null;
   /* `view === null` is the project-identity half of the gate: after a switch,
      the previous project's controls must not accept a change against the new
@@ -204,12 +218,7 @@ export function SettingsDialog({
         <ScrollArea className="min-h-0 bg-canvas">
           <div className="grid gap-3 px-5 py-4">
             {error === "" ? null : (
-              <p
-                className="m-0 rounded-md border border-clay/25 border-l-2 border-l-clay bg-clay-wash px-3 py-2 text-[12px] break-words text-clay"
-                role="status"
-              >
-                {error}
-              </p>
+              <ActionFailure busy={working} detail={error} retryLabel="Read settings again" title="Hivemind could not finish that settings action" onRetry={() => void refresh()} />
             )}
 
             {view !== null && !view.initialized ? (
@@ -294,7 +303,7 @@ export function SettingsDialog({
                     key={entry.value}
                     shape="card"
                     onClick={() => {
-                      void onAction({ type: "autonomy.set", payload: { level: entry.value } });
+                      void changeAutonomy(entry.value);
                     }}
                   >
                     <strong className="block text-[13px] font-medium text-ink">{entry.label}</strong>

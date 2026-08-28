@@ -2,6 +2,7 @@ import { ArrowRight, Check, FolderGit2, Loader, Plug, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ActionFailure } from "@/components/ui/action-failure";
 import { Checkbox } from "@/components/ui/pressable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SelectionControl } from "@/components/ui/selection-control";
@@ -55,6 +56,7 @@ export function SetupScreen({
   connectionDetail,
   connectionState,
   actionError,
+  lastProjectError,
   gitReadiness,
   gitSetupFailure,
   gitSetupDone,
@@ -64,6 +66,7 @@ export function SetupScreen({
   onInitializeProject,
   onInitializeGit,
   onRestartDaemon,
+  onRetryLastProject,
   onAction,
   onReload,
   initializing,
@@ -76,6 +79,7 @@ export function SetupScreen({
   connectionDetail: string;
   connectionState: string;
   actionError: string;
+  lastProjectError: string;
   gitReadiness: GitReadiness | null;
   gitSetupFailure: GitSetupFailure | null;
   /* Set once git setup succeeded for the open project, with the files its
@@ -96,6 +100,7 @@ export function SetupScreen({
   /* Stops the previous version's background process and opens the project on
      the matching one. Refuses while anything is in flight. */
   onRestartDaemon: () => void;
+  onRetryLastProject: () => void;
   onAction: <T>(action: WorkspaceAction) => Promise<T>;
   onReload: () => Promise<void>;
   initializing: boolean;
@@ -171,6 +176,16 @@ export function SetupScreen({
               <NotAnEditor />
 
               <WhatThisIs />
+
+              {lastProjectError === "" ? null : (
+                <div className="mt-6">
+                  <ActionFailure
+                    detail={lastProjectError}
+                    title="Hivemind could not reopen your last project"
+                    onRetry={onRetryLastProject}
+                  />
+                </div>
+              )}
 
               {problem === null ? null : (
                 <section className="mt-6 rounded-md border border-amber/25 border-l-2 border-l-amber bg-amber-wash px-4 py-3">

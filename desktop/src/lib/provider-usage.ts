@@ -57,7 +57,17 @@ export interface UsagePanel {
     nearCeiling: boolean;
   } | null;
   /** Quota state as the provider last reported it, where it reported one. */
-  quota: { status: string; provider: string | null; at: string | null } | null;
+  quota: {
+    provider: string | null;
+    plan: string | null;
+    at: string | null;
+    windows: Array<{
+      name: string;
+      usedPercent: number;
+      windowMinutes: number | null;
+      resetsAt: string | null;
+    }>;
+  } | null;
   /**
    * Tokens the trail attributes to no connected provider. Reported rather than
    * folded into a total, because a number that quietly absorbs work nobody can
@@ -132,12 +142,13 @@ export function buildUsagePanel(
             nearCeiling: spend.near_session_ceiling
           },
     quota:
-      projection.quota.status === "unknown"
+      projection.quota.source !== "provider" || projection.quota.windows.length === 0
         ? null
         : {
-            status: projection.quota.status,
             provider: projection.quota.provider,
-            at: quotaEvent?.ts ?? null
+            plan: projection.quota.plan,
+            at: quotaEvent?.ts ?? null,
+            windows: projection.quota.windows
           },
     unattributedTokens: unattributed
   };

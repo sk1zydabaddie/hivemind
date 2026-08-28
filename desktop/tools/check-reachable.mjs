@@ -69,6 +69,15 @@ const SURFACES = [
     name: "project — history",
     url: `${BASE}/replay.html?scenario=e2e-textkit-parallel-run&section=project`
   },
+  {
+    name: "project — retryable read failures",
+    url: `${BASE}/replay.html?scenario=e2e-textkit-parallel-run&section=project&failAction=config.inspect,accounts.inspect`,
+    expectText: [
+      "Hivemind could not read this project's agent settings",
+      "Hivemind could not read the account choices",
+      "Try again"
+    ]
+  },
   /* Dialogs do not exist until they are opened, so a surface list that only
      navigates can never see them -- and a dialog whose Approve button is below
      the fold is this same bug with worse consequences, because the surface it
@@ -496,6 +505,16 @@ for (const viewport of selectedViewports) {
     }
     if (!ready) throw new Error(`${surface.name} never rendered`);
     await settle(1200);
+
+    if (surface.expectText !== undefined) {
+      const missing = await page.evaluate(`
+        const text = (document.body.innerText ?? "").replace(/\\s+/g, " ");
+        return ${JSON.stringify(surface.expectText)}.filter((expected) => !text.includes(expected));
+      `);
+      if (missing.length > 0) {
+        throw new Error(`${surface.name}: missing exact failure state ${JSON.stringify(missing)}`);
+      }
+    }
 
     if (surface.open !== undefined) {
       const opened = await page.evaluate(`

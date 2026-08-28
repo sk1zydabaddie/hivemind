@@ -118,16 +118,7 @@ describe("seam: action ids, client union to Core's accepted list", () => {
     }
 
     const unreachable = core.filter((action) => !constructed.has(action));
-    expect(unreachable).toEqual([
-      "accounts.add",
-      "manual_task.authorize",
-      "manual_task.review",
-      "memory.review_handoff",
-      "quality.best_of_n",
-      "quality.cancel",
-      "quality.draft_refine",
-      "verify.characterize"
-    ]);
+    expect(unreachable).toEqual([]);
   });
 });
 

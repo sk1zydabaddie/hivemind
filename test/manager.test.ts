@@ -36,7 +36,6 @@ import { createSpec, type SpecResult } from "../src/spec.js";
 import { getStatus } from "../src/status.js";
 import { executeWorkspaceAction } from "../src/workspace-actions.js";
 import { admitExecutionWave } from "../src/wave-admission.js";
-import { authorizePlanlessManualTaskIfEligible } from "./support/manual-task.js";
 import { createRatifiedSpec } from "./support/spec.js";
 import { withTemplateRepo } from "./support/fixture-repo.js";
 

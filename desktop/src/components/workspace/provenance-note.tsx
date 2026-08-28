@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
+import { ActionFailure } from "@/components/ui/action-failure";
 import type {
   ChecksOutput,
   VerificationProvenance,
@@ -74,9 +75,31 @@ export function ProvenanceNote({
 }): React.JSX.Element | null {
   const [provenance, setProvenance] = useState<VerificationProvenance | null>(null);
   const [missing, setMissing] = useState(false);
+  const [problem, setProblem] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async (): Promise<void> => {
+    setLoading(true);
+    setProblem("");
+    try {
+      const value = await onAction<ChecksOutput>({ type: "checks.inspect", payload: {} });
+      const next = value.provenance;
+      const valid = isProvenance(next);
+      setProvenance(valid ? next : null);
+      setMissing(!valid);
+    } catch (error) {
+      setProvenance(null);
+      setMissing(false);
+      setProblem(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLoading(false);
+    }
+  }, [onAction]);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setProblem("");
     void onAction<ChecksOutput>({ type: "checks.inspect", payload: {} })
       .then((value) => {
         if (cancelled) return;
@@ -95,15 +118,31 @@ export function ProvenanceNote({
         setProvenance(isProvenance(value.provenance) ? value.provenance : null);
         setMissing(!isProvenance(value.provenance));
       })
-      .catch(() => {
-        /* No recorded run at all. Nothing to qualify, so nothing renders --
-           this note describes a result, and there is no result. */
-        if (!cancelled) setMissing(false);
+      .catch((error) => {
+        if (!cancelled) {
+          setProvenance(null);
+          setMissing(false);
+          setProblem(error instanceof Error ? error.message : String(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
   }, [onAction]);
+
+  if (problem !== "") {
+    return (
+      <ActionFailure
+        busy={loading}
+        detail={problem}
+        title="Hivemind could not check what this result stood on"
+        onRetry={() => void load()}
+      />
+    );
+  }
 
   if (missing) {
     /* A run recorded before provenance existed. Different from "nothing to

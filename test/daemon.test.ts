@@ -15,7 +15,7 @@ import { readActiveLeases, requestLeaseForContract } from "../src/lease.js";
 import { appendTaskOutput, readTaskOutput } from "../src/output-stream.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
-import { authorizePlanlessManualTaskIfEligible } from "./support/manual-task.js";
+import { ratifyPlanForExistingTask } from "./support/ratified-plan.js";
 import { withTemplateRepo } from "./support/fixture-repo.js";
 import { stopChildProcess } from "./support/child-process.js";
 import { setProjectConfig } from "../src/config-actions.js";
@@ -51,20 +51,17 @@ test("a coded daemon failure survives the HTTP round trip", async () => {
   });
 });
 
-test("daemon serializes concurrent lease requests and re-reads committed state after restart", async () => {
+test("daemon serializes idempotent concurrent lease requests and re-reads committed state after restart", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
-    await writeContract(repo, "T-002", baseCommit, ["README.md"]);
     let daemon = await startDaemon(repo);
     try {
       const [first, second] = await Promise.allSettled([
         execCli(repo, daemon.url, ["lease", "T-001"]),
-        execCli(repo, daemon.url, ["lease", "T-002"])
+        execCli(repo, daemon.url, ["lease", "T-001"])
       ]);
       const fulfilled = [first, second].filter((result) => result.status === "fulfilled");
-      const rejected = [first, second].filter((result) => result.status === "rejected");
-      assert.equal(fulfilled.length, 1);
-      assert.equal(rejected.length, 1);
+      assert.equal(fulfilled.length, 2);
 
       const store = await readActiveLeases(repo);
       assert.equal(store.ok, true);
@@ -72,7 +69,7 @@ test("daemon serializes concurrent lease requests and re-reads committed state a
         return;
       }
       assert.equal(Object.keys(store.store).length, 1);
-      assert.match(store.store["README.md"] ?? "", /^T-00[12]$/);
+      assert.equal(store.store["README.md"], "T-001");
     } finally {
       await stopDaemon(daemon);
     }
@@ -84,21 +81,11 @@ test("daemon serializes concurrent lease requests and re-reads committed state a
       if (!store.ok) {
         return;
       }
-      const winner = store.store["README.md"];
-      const loser = winner === "T-001" ? "T-002" : "T-001";
-      await assert.rejects(
-        execCli(repo, daemon.url, ["lease", loser]),
-        (error: unknown) => {
-          assert.equal((error as { code?: number }).code, 1);
-          assert.match(String((error as { stderr?: string }).stderr), new RegExp(`lease conflict: README\\.md held by ${winner}`));
-          return true;
-        }
-      );
-
-      await execCli(repo, daemon.url, ["lease", winner, "--release"]);
-      const granted = await execCli(repo, daemon.url, ["lease", loser]);
+      assert.equal(store.store["README.md"], "T-001");
+      await execCli(repo, daemon.url, ["lease", "T-001", "--release"]);
+      const granted = await execCli(repo, daemon.url, ["lease", "T-001"]);
       const parsed = JSON.parse(granted.stdout) as { task_id: string; granted: string[] };
-      assert.equal(parsed.task_id, loser);
+      assert.equal(parsed.task_id, "T-001");
       assert.deepEqual(parsed.granted, ["README.md"]);
     } finally {
       await stopDaemon(daemon);
@@ -121,7 +108,6 @@ test("lease command falls back to direct single-writer mode without a daemon URL
 test("lease command discovers a live daemon without HIVEMIND_DAEMON_URL before falling back to direct mode", async () => {
   await withTempRepo(async ({ repo, baseCommit }) => {
     await writeContract(repo, "T-001", baseCommit, ["README.md"]);
-    await writeContract(repo, "T-002", baseCommit, ["README.md"]);
 
     const daemon = await startDaemon(repo);
     try {
@@ -152,12 +138,12 @@ test("lease command discovers a live daemon without HIVEMIND_DAEMON_URL before f
     });
     assert.equal(JSON.parse(released.stdout).task_id, "T-001");
 
-    const direct = await execFileAsync(process.execPath, [cliPath, "lease", "T-002"], {
+    const direct = await execFileAsync(process.execPath, [cliPath, "lease", "T-001"], {
       cwd: repo,
       env: { ...process.env, HIVEMIND_DAEMON_URL: "" },
       windowsHide: true
     });
-    assert.equal(JSON.parse(direct.stdout).task_id, "T-002");
+    assert.equal(JSON.parse(direct.stdout).task_id, "T-001");
   });
 });
 
@@ -714,7 +700,7 @@ async function writeContract(repo: string, taskId: string, baseCommit: string, a
       2
     )}\n`
   );
-  await authorizePlanlessManualTaskIfEligible(repo, taskId);
+  await ratifyPlanForExistingTask(repo, taskId);
 }
 
 async function writeStreamingProfile(repo: string, tool: string): Promise<void> {

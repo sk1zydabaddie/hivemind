@@ -72,7 +72,6 @@ import { ProvenanceNote } from "@/components/workspace/provenance-note";
 import { FileTree } from "@/components/workspace/file-tree";
 import { FileViewer } from "@/components/workspace/file-viewer";
 import { Hex, hexTone } from "@/components/workspace/hex";
-import { LaneCanvas } from "@/components/workspace/lane-canvas";
 import { holdingGate, passedGates, type GateRule as GateRuleModel } from "@/lib/gates";
 import { PhaseSpine, phaseRatio } from "@/components/workspace/phase-spine";
 import {
@@ -82,7 +81,7 @@ import {
   type NonGoalEntry
 } from "@/components/workspace/spec-review";
 import { ANONYMOUS_TASK, taskTitleOrNull } from "@/lib/identifiers";
-import { plainActionError, shortcutLabel } from "@/lib/plain-language";
+import { plainActionError } from "@/lib/plain-language";
 import {
   type BoardProjection,
   type TaskProjection,
@@ -189,14 +188,6 @@ const toneText: Record<Tone, string> = {
   good: "text-navy",
   warning: "text-amber",
   danger: "text-clay"
-};
-
-const toneEdge: Record<Tone, string> = {
-  neutral: "bg-rule",
-  live: "bg-navy",
-  good: "bg-navy",
-  warning: "bg-amber",
-  danger: "bg-clay"
 };
 
 const toneDot: Record<ThreadTone, string> = {
@@ -859,12 +850,6 @@ export function WorkTab({
     tasks.length === 0 && displayedPlan === null && !runActive && attention === null && !hasConversation;
   const composerCentered = idle && !composerHasMoved;
 
-  /* What the canvas draws: the tasks of this run, in the order the daemon
-     scheduled them. Capped at six because past that the lanes are narrower than
-     their own titles, and a lane you cannot read is not a picture of anything —
-     the rail below still lists every one of them. */
-  const laneTasks = tasks.slice(0, 6);
-
   /* The running agent's own output.
    *
    * The shell already opens an output stream for the running task and keeps its
@@ -914,7 +899,6 @@ export function WorkTab({
       rolePickerOpen={rolePickerOpen}
       rolePickerView={rolePickerView}
       runActive={runActive}
-      spend={inspection?.spend ?? null}
       value={composer}
       onAddAttachments={addAttachments}
       onChange={setComposer}
@@ -2084,24 +2068,6 @@ function Divider(): React.JSX.Element {
 
 /* Readings, hairline-separated, with the separators decided by what is
    actually present rather than by each reading's own condition. */
-function MetaLine({
-  readings
-}: {
-  readings: Array<React.ReactNode | null>;
-}): React.JSX.Element {
-  const present = readings.filter((reading): reading is React.ReactNode => reading !== null);
-  return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] text-muted-foreground">
-      {present.map((reading, index) => (
-        <Fragment key={index}>
-          {index === 0 ? null : <Divider />}
-          {reading}
-        </Fragment>
-      ))}
-    </div>
-  );
-}
-
 /* ── The work itself ─────────────────────────────────────────────────────── */
 
 function TaskBoard({
@@ -3080,7 +3046,6 @@ function PromptDock({
   rolePickerBusy,
   rolePickerError,
   roleChanging,
-  spend,
   activeAgents,
   onAddAttachments,
   onChange,
@@ -3109,7 +3074,6 @@ function PromptDock({
   rolePickerBusy: boolean;
   rolePickerError: string;
   roleChanging: string | null;
-  spend: WorkspaceInspection["spend"] | null;
   /** One entry per agent currently working, for the dials. */
   activeAgents: ActiveAgentView[];
   onAddAttachments: (kind: PromptAttachment["kind"]) => Promise<void>;
@@ -4247,10 +4211,6 @@ function autonomyLabel(level: AutonomyLevel): string {
       : "Every step";
 }
 
-function shipped(task: TaskProjection): boolean {
-  return task.integration === "merged" || task.state === "merged";
-}
-
 /* What to say instead, chosen by the item's typed `kind`. Keying on the kind is
    safe in a way that reading Core's sentence is not: the kind is a contract
    field this client is handed, and every one of these says only what that kind
@@ -4418,14 +4378,6 @@ function formatDuration(ms: number): string {
   const hours = Math.floor(minutes / 60);
   return `${hours}h ${minutes % 60}m ${rest}s`;
 }
-
-function formatCompact(value: number): string {
-  return new Intl.NumberFormat(undefined, {
-    notation: "compact",
-    maximumFractionDigits: 1
-  }).format(value);
-}
-
 
 /**
  * One dial per working agent: what it is, what it runs on, and how full it is.

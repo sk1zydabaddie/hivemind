@@ -53,6 +53,12 @@ function bullets(body: string | null): string[] {
     .filter((line) => line !== "");
 }
 
+const VACUOUS_NON_GOAL = /^(?:n\/?a|none|nothing|not applicable|no non-?goals?|no restrictions?)\.?$/iu;
+
+function vacuousNonGoal(entries: readonly string[]): string | null {
+  return entries.find((entry) => VACUOUS_NON_GOAL.test(entry.trim())) ?? null;
+}
+
 /** Read the spec for presentation. Never mutates. */
 export async function readSpecForReview(repoRoot: string, specId: string): Promise<SpecResult<SpecReview>> {
   const spec = await loadSpecDocument(repoRoot, specId);
@@ -108,6 +114,13 @@ export async function adoptSpec(
      is nothing" is a judgement. It has to be said explicitly -- it is never a
      default and is never prefilled -- but once said it satisfies the section. */
   const cleaned = nonGoals.map((entry) => entry.trim()).filter((entry) => entry !== "");
+  const vacuous = vacuousNonGoal(cleaned);
+  if (vacuous !== null) {
+    return {
+      ok: false,
+      reason: `“${vacuous}” does not name a boundary. Say what this should not do, or explicitly choose “There is nothing to decline.”`
+    };
+  }
   if (cleaned.length === 0 && !nothingToDecline) {
     return {
       ok: false,

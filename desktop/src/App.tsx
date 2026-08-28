@@ -564,6 +564,7 @@ export default function App(): React.JSX.Element {
             connectionDetail={workspace.connectionDetail}
             connectionState={workspace.connectionState}
             actionError={workspace.actionError}
+            lastProjectError={workspace.lastProjectError}
             gitReadiness={workspace.gitReadiness}
             gitSetupFailure={workspace.gitSetupFailure}
             gitSetupDone={workspace.gitSetupDone}
@@ -576,6 +577,7 @@ export default function App(): React.JSX.Element {
             onInitializeGit={() => void workspace.initializeGit()}
             onInitializeProject={() => void workspace.initializeProject()}
             onRestartDaemon={() => void workspace.restartDaemon()}
+            onRetryLastProject={workspace.retryLastProject}
             onReload={refreshConfig}
             /* The last screen of onboarding used to have no way forward: with
                every step checked, the connect step hid its own Continue button
@@ -596,6 +598,7 @@ export default function App(): React.JSX.Element {
             connectionDetail={workspace.connectionDetail}
             connectionState={workspace.connectionState}
             actionError={workspace.actionError}
+            lastProjectError={workspace.lastProjectError}
             gitReadiness={workspace.gitReadiness}
             gitSetupFailure={workspace.gitSetupFailure}
             gitSetupDone={workspace.gitSetupDone}
@@ -608,6 +611,7 @@ export default function App(): React.JSX.Element {
             onInitializeGit={() => void workspace.initializeGit()}
             onInitializeProject={() => void workspace.initializeProject()}
             onRestartDaemon={() => void workspace.restartDaemon()}
+            onRetryLastProject={workspace.retryLastProject}
             onReload={refreshConfig}
             /* The last screen of onboarding used to have no way forward: with
                every step checked, the connect step hid its own Continue button

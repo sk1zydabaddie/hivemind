@@ -783,7 +783,6 @@ async function retireSupersededDefaultWorker(
   keep: string
 ): Promise<void> {
   if (agent.model === null) return;
-  const accountsFileForDigest = await readAccounts(repoRoot);
   const dir = path.join(repoRoot, ".hivemind", "adapters");
   let entries: string[];
   try {

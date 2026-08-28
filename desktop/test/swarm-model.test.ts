@@ -20,7 +20,7 @@ describe("Swarm presentation model", () => {
       });
     }
     for (const item of [
-      event("task.scouting_started", "T-001", { tool: "scout" }),
+      event("scout.completed", "T-001", { tool: "scout", cited_files: 3 }),
       event("quality.admission_decided", "T-002", { quality_run_id: "Q-T-002-demo", admitted: true }),
       event("quality.draft_started", "T-002", { quality_run_id: "Q-T-002-demo", draft_id: "D-001" })
     ]) {

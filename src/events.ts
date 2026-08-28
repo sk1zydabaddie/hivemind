@@ -28,8 +28,6 @@ export const eventTrailRepairCommand = "hivemind events repair";
 export const eventTypes = [
   "task.created",
   "task.authoring_base_prepared",
-  "task.assigned",
-  "task.scouting_started",
   "task.run_accepted",
   "task.started",
   "task.worker_process_started",
@@ -39,11 +37,8 @@ export const eventTypes = [
   "task.paused",
   "task.cancel_requested",
   "task.cancelled",
-  "task.submitted",
-  "task.in_review",
   "task.revision_requested",
   "task.redirected",
-  "task.integrated",
   "task.checkpointed",
   "task.resumed",
   "task.rerouted",
@@ -51,19 +46,16 @@ export const eventTypes = [
   "write_intent.submitted",
   "write_intent.approved",
   "write_intent.rejected",
-  "lease.requested",
   "lease.approved",
   "lease.rejected",
   "lease.released",
   "patch.submitted",
   "patch.accepted",
   "patch.rejected",
-  "patch.revision_requested",
   "cache.read",
   "scout.completed",
   "replan.triggered",
   "integration.queued",
-  "integration.started",
   "integration.passed",
   "integration.failed",
   "integration.blocked",
@@ -78,7 +70,6 @@ export const eventTypes = [
   "verification.rerun_completed",
   "verification.rerun_failed",
   "memory.proposed",
-  "memory.accepted",
   "routing.observed",
   "routing.corpus_registered",
   "quality.admission_decided",
@@ -93,7 +84,6 @@ export const eventTypes = [
   "quality.cancelled",
   "plan.ratified",
   "plan.prepared",
-  "manual_task.authorized",
   "plan.amendment_queued",
   "autonomy.level_changed",
   "autonomy.decision_recorded",
@@ -115,9 +105,11 @@ export const eventTypes = [
   "scheduler.run_cancel_requested",
   "scheduler.run_cancelled",
   "scheduler.run_cancel_failed",
-  "approval.required",
-  "quota.low",
   "quota.exhausted",
+  /* A provider-owned rate-limit snapshot observed in the completed adapter
+     stream. This is deliberately distinct from quota.exhausted, which is
+     Hivemind's own deterministic spending-ceiling event. */
+  "provider.quota_observed",
   /* Provider setup has side effects outside React (a provider-owned terminal
      or a bounded capability probe). These three events make the transition
      durable without carrying credentials or provider output into the trail. */
@@ -136,8 +128,6 @@ export const eventTypes = [
   "spec.draft_started",
   "spec.draft_completed",
   "spec.draft_failed",
-  "spec.ratified",
-  "context.low",
   "orchestrator.checkpointed",
   "orchestrator.resumed",
   // A repair that leaves no trace makes the trail unable to explain its own
@@ -378,8 +368,4 @@ function isEventType(value: unknown): value is HivemindEventType {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

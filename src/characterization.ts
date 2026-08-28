@@ -513,18 +513,6 @@ function isNodeError(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
-function commandError(error: unknown): string {
-  if (typeof error === "object" && error !== null) {
-    if ("stderr" in error && String(error.stderr).trim() !== "") {
-      return String(error.stderr).trim();
-    }
-    if ("stdout" in error && String(error.stdout).trim() !== "") {
-      return String(error.stdout).trim();
-    }
-  }
-  return errorMessage(error);
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error && error.message.trim() !== "" ? error.message : "unknown error";
 }

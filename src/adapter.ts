@@ -9,6 +9,7 @@ import { explainMissingAdapterProgram, resolveAdapterInvocation } from "./adapte
 import { writeFileAtomic } from "./atomic.js";
 import { loadAndValidateContract, TaskContract } from "./contract.js";
 import { formatErrorDetail } from "./error-detail.js";
+import { appendEvent } from "./events.js";
 import { readJsonFile } from "./json.js";
 import { terminateProcessTreeAndVerify, type DurableProcessIdentity } from "./process-control.js";
 import { assembleAgentPrompt, buildAgentPromptFromContract } from "./prompt-cache.js";
@@ -718,7 +719,26 @@ export async function runAdapterProcess(
           reservedTokens: reservation?.reserved_tokens ?? null,
           budgetOvershoot
         };
-        void resolveProcessResult(
+        const providerQuota = parseProviderQuota(resolveAdapterUsageParser(profile) ?? "", capturedStdout);
+        const quotaObservation = providerQuota === null
+          ? { ok: true as const }
+          : await appendEvent(repoRoot, {
+              type: "provider.quota_observed",
+              task_id: options.usageTaskId ?? null,
+              data: {
+                version: 1,
+                provider: profile.tool,
+                plan: providerQuota.plan,
+                windows: providerQuota.windows
+              }
+            });
+        const identityFailure = identityRecorded.ok
+          ? undefined
+          : `worker process identity was not durably recorded: ${identityRecorded.reason}`;
+        const quotaFailure = quotaObservation.ok
+          ? undefined
+          : `provider quota was observed but could not be recorded: ${quotaObservation.reason}`;
+        await resolveProcessResult(
           repoRoot,
           profile.tool,
           prompt,
@@ -726,7 +746,7 @@ export async function runAdapterProcess(
           processIdentity,
           result,
           resolve,
-          identityRecorded.ok ? undefined : `worker process identity was not durably recorded: ${identityRecorded.reason}`
+          [identityFailure, quotaFailure].filter((entry): entry is string => entry !== undefined).join("; ") || undefined
         );
       })();
     });

@@ -636,10 +636,6 @@ function applyWorkspaceTaskEvent(task: WorkspaceTaskProjection, event: HivemindE
     task.title = readNonEmptyString(event.data.title) ?? readNonEmptyString(event.data.goal) ?? task.title;
     return;
   }
-  if (event.type === "task.assigned") {
-    task.agent = readNonEmptyString(event.data.agent) ?? readNonEmptyString(event.data.tool) ?? task.agent;
-    return;
-  }
   if (["task.started", "task.resumed", "task.redirected"].includes(event.type)) {
     task.state = "running";
     task.agent = readNonEmptyString(event.data.tool) ?? task.agent;

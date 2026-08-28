@@ -90,22 +90,10 @@ export const ROUND_SHAPES: readonly RoundShape[] = [
     what: "a worker"
   },
   {
-    started: "task.scouting_started",
-    terminal: ["scout.completed", "task.failed", "task.cancelled"],
-    idFields: [],
-    what: "scouting"
-  },
-  {
     started: "task.worker_process_started",
     terminal: ["task.worker_process_stopped"],
     idFields: [],
     what: "a worker process"
-  },
-  {
-    started: "integration.started",
-    terminal: ["integration.passed", "integration.failed", "integration.blocked", "integration.low_confidence"],
-    idFields: [],
-    what: "integration"
   },
   {
     started: "adoption.started",

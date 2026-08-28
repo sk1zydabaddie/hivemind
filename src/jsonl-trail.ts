@@ -217,7 +217,7 @@ async function readAppendedBytes(
 }
 
 export async function readTrail<T>(
-  repoRoot: string,
+  _repoRoot: string,
   trailPath: string,
   relativePath: string,
   validate: (value: unknown) => { ok: true } | { ok: false; reason: string },

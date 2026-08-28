@@ -19,6 +19,7 @@ import {
   validateAdapterProfile
 } from "../src/adapter.js";
 import { initProject } from "../src/init.js";
+import { readEvents } from "../src/events.js";
 import { estimateTokens, readQuotaLedger, readQuotaLedgerState } from "../src/resource-ledger.js";
 import { createTaskWorktree } from "../src/worktree.js";
 import { createRatifiedSpec } from "./support/spec.js";
@@ -800,6 +801,59 @@ test("invokeAgent passes the prompt as an argument when the profile requests arg
     }
     assert.equal(result.value.exitCode, 0);
     assert.match(await readFile(result.value.logPath, "utf8"), /arg prompt ok/);
+  });
+});
+
+test("a provider quota snapshot from a real adapter run becomes durable product state", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const line = JSON.stringify({
+      type: "turn.completed",
+      usage: { input_tokens: 12, cached_input_tokens: 2, output_tokens: 3 },
+      rate_limits: {
+        planType: "plus",
+        primary: {
+          used_percent: 24,
+          window_minutes: 300,
+          resets_at: "2026-08-29T00:00:00Z"
+        }
+      }
+    });
+    const result = await runAdapterProcess(
+      repo,
+      {
+        tool: "codex-fixture",
+        invoke: [process.execPath, "--eval", `console.log(${JSON.stringify(line)})`],
+        prompt_arg: "stdin",
+        verified_on: "2026-08-28",
+        context_window: 1_024,
+        usage_parser: "codex-jsonl"
+      },
+      repo,
+      "read-only quota fixture",
+      { usageTaskId: "T-QUOTA" }
+    );
+
+    assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true, events.ok ? undefined : events.reason);
+    if (!events.ok) return;
+    const observed = events.value.find((event) => event.type === "provider.quota_observed");
+    assert.deepEqual(observed, {
+      ts: observed?.ts,
+      type: "provider.quota_observed",
+      task_id: "T-QUOTA",
+      data: {
+        version: 1,
+        provider: "codex-fixture",
+        plan: "plus",
+        windows: [{
+          name: "primary",
+          used_percent: 24,
+          window_minutes: 300,
+          resets_at: "2026-08-29T00:00:00Z"
+        }]
+      }
+    });
   });
 });
 

@@ -1572,47 +1572,39 @@ Phase note: the implemented spine is `submitted → (deterministic gate) → in_
 
 ## Real-Time Supervision
 
-Hivemind should use an event system.
+Hivemind should use an event system. The list below names implemented durable
+transitions, not aspirational aliases. `src/events.ts` is the exact closed
+catalogue; an event belongs there only with a production producer or a named
+external-input contract. Presentation-only lifecycle labels must be projected
+from produced evidence rather than declared as events that can never arrive.
 
 Events:
 
 - task.created
-- task.assigned
-- task.scouting_started
 - task.started
 - task.paused
 - task.cancelled
-- task.submitted
-- task.in_review
 - task.revision_requested
 - task.redirected
-- task.integrated
 - task.blocked
 - write_intent.submitted
 - write_intent.approved
 - write_intent.rejected
-- lease.requested
 - lease.approved
 - lease.rejected
 - lease.released
 - patch.submitted
 - patch.accepted
 - patch.rejected
-- patch.revision_requested
-- integration.started
 - integration.failed
 - integration.passed
 - verification.completed
 - memory.proposed
-- memory.accepted
-- approval.required
-- quota.low
 - quota.exhausted
+- provider.quota_observed
 - task.checkpointed
 - task.resumed
 - task.rerouted
-- spec.ratified
-- context.low
 - orchestrator.checkpointed
 - orchestrator.resumed
 

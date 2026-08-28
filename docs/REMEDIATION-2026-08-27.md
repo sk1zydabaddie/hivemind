@@ -120,6 +120,23 @@ most 15 articles and 272 document nodes. Evidence is under
 open findings: 5 Critical, 15 High, 10 Medium, and 2 Low**. The product remains
 NO-GO because R7 and the release workstreams remain open.
 
+**Phase 9 reachability, contracts, and observable failures completed
+2026-08-28.** Installed build **26.828.858** closes F1-01 through F1-05,
+F1-09 through F1-14, and F1-17 through F1-20, completing R7. Retained audited
+actions now have live client consumers; the productless manual-task pair,
+dormant convention-evidence subsystem, obsolete event aliases, and their test
+compatibility paths are deleted. Provider quota is durably observed and shown
+independently from Hivemind's token ceiling, including on a project with no
+completed run. Client failures remain visible and retryable. Normal Core and
+desktop builds reject unused production declarations, and the reachability
+audit now distinguishes exact action/event contract checks from heuristic
+export leads. Core builds clean their output first, so deleted modules and tests
+cannot survive in the installer as stale JavaScript. Five installed 1440x900
+captures and structured no-paid evidence are under
+`docs/evidence/remediation-phase9-26.828.858/`. There are **17 open
+findings: 5 Critical, 10 High, 2 Medium, and 0 Low**. The product remains NO-GO
+because the release workstreams R0, R1, and R2 remain open.
+
 ## Reconciliation result
 
 The ledger parser found exactly 93 unique IDs with the expected phase counts:
@@ -734,6 +751,19 @@ entries, every declared event has a production producer or an explicit external
 input contract, the static scanner has zero known false-positive class in its
 claim, normal builds reject unused production declarations, and injected client
 failures render an exact retryable state rather than absence/success.
+
+**Execution status — complete 2026-08-28.** The action-consumer and event-
+producer contract checks both report zero gaps. The retained action controls,
+provider quota, account registration, and retryable characterization refusal
+were exercised in installed build **26.828.858** at 1440x900. The installed
+walkthrough made no provider call and confirmed that the deliberately refused
+characterization never spawned its configured adapter. Browser severe logs
+were empty. It also invoked the memory-review handoff and quality-cancellation
+controls in their real pending states. Core passed **961 tests with 2 skipped
+(963 total)**, Desktop passed
+**348/348**, Rust passed **52/52**, and production reachability passed **44/44**
+surface/viewport combinations. R7 and G5 are complete; this does not qualify a
+release while R0, R1, and R2 remain open.
 
 ## Release gates
 

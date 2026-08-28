@@ -11,7 +11,7 @@ import { formatErrorDetail } from "./error-detail.js";
 import type { FailureCode } from "./failure-code.js";
 import { setTaskOutputPublisher } from "./output-stream.js";
 import { EventBus } from "./event-bus.js";
-import { appendEvent, readEvents, setEventPublisher } from "./events.js";
+import { readEvents, setEventPublisher } from "./events.js";
 import { enqueueIntegrationPatch, integrateShadow } from "./integrate.js";
 import { checkWriteIntent } from "./intent.js";
 import { requestLeaseForContract, releaseLease } from "./lease.js";
@@ -342,7 +342,7 @@ function routeHandler(repoRoot: string, method: string | undefined, url: string 
     };
   }
   if (method === "POST" && url === "/run") {
-    return async (payload, eventBus) => {
+    return async (payload, _eventBus) => {
       const taskId = readTaskId(payload);
       if (!taskId.ok) {
         return taskId;

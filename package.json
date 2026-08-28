@@ -8,9 +8,9 @@
     "hivemind": "./dist/src/cli.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node tools/clean-dist.mjs && tsc -p tsconfig.json && tsc -p tsconfig.production.json",
     "test": "npm run build && node --test --test-concurrency=8 --test-timeout=1800000 \"dist/**/*.test.js\"",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.production.json",
     "adapters:local": "node -e \"import(\\\"./dist/src/local-adapters.js\\\").then(m=>m.writeLocalAdapterProfiles(process.cwd())).then(w=>console.log(\\\"wrote\\\",w.join(\\\", \\\")))\"",
     "audit:unreached": "node tools/audit-unreached.mjs"
   },

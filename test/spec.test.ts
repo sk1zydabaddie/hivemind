@@ -11,7 +11,7 @@ import { markIdeationConvergence, recordIdeationRound, startIdeationSession } fr
 import { requestUserConvergence } from "../src/spec-convergence.js";
 import { initProject } from "../src/init.js";
 import { createSpec, ratifySpec } from "../src/spec.js";
-import { authorizePlanlessManualTaskIfEligible } from "./support/manual-task.js";
+import { ratifyPlanForExistingTask } from "./support/ratified-plan.js";
 import { withTemplateRepo } from "./support/fixture-repo.js";
 
 const execFileAsync = promisify(execFile);
@@ -146,7 +146,7 @@ test("draft spec permits planning and blocks lease grants until ratified", async
 
     await completeIdeationViaCli(repo, "S-001");
     await execFileAsync(process.execPath, [cliPath, "spec", "S-001", "--ratify"], { cwd: repo, windowsHide: true });
-    await authorizePlanlessManualTaskIfEligible(repo, "T-001");
+    await ratifyPlanForExistingTask(repo, "T-001");
     const plan = await execFileAsync(process.execPath, [cliPath, "plan", "S-001", "--check"], { cwd: repo, windowsHide: true });
     const lease = await execFileAsync(process.execPath, [cliPath, "lease", "T-001"], { cwd: repo, windowsHide: true });
 
