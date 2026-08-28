@@ -42,6 +42,7 @@ import { inferTaskTier } from "./routing.js";
 import { markRunFailed, startRunTaskJob, type RunFailureMarkResult, type RunResult, type RunStartResult } from "./run.js";
 import { latestTaskRunState } from "./run-state.js";
 import { integratedTaskIdsFromEvents } from "./integration-state.js";
+import { ACTIVITY_STREAM_ID, createLiveOutputWriter } from "./output-stream.js";
 import { runScout, type ScoutResult } from "./scout.js";
 import { requireActiveSpecRatified, type SpecResult } from "./spec.js";
 import { loadSpecDocument } from "./spec-format.js";
@@ -519,11 +520,15 @@ async function runOwnedManagerProcess(
         : stopped;
     }
   }
+  const liveOutput = createLiveOutputWriter(repoRoot, ACTIVITY_STREAM_ID, profile.tool, undefined, {
+    structuredAnswers: true
+  });
   const processResult = await runAdapterProcess(repoRoot, profile, repoRoot, prompt, {
     outputLogPath: options.outputLogPath,
     usageSessionId: options.sessionId,
     usageRunId: options.usageRunId,
     ...(options.usageTaskId === undefined ? {} : { usageTaskId: options.usageTaskId }),
+    onStreamChunk: liveOutput.onChunk,
     ...(ownedSessionId === null
       ? {}
       : {
@@ -548,6 +553,7 @@ async function runOwnedManagerProcess(
           }
         })
   });
+  const streamed = await liveOutput.drain();
   const processIdentity = processIdentities.at(-1) ?? null;
   if (ownedSessionId !== null) {
     const stopped = await appendEvent(repoRoot, {
@@ -571,6 +577,7 @@ async function runOwnedManagerProcess(
       return { ok: false, reason: `manager run ${ownedSessionId} was cancelled before its provider result could be consumed` };
     }
   }
+  if (!streamed.ok) return streamed;
   return processResult;
 }
 

@@ -607,7 +607,7 @@ export interface AgentsFileProposalView {
 }
 
 /**
- * What `spec.draft` answers with.
+ * What the Core-owned conversation drafter streams while a submit is active.
  *
  * `status` is the code the client switches on. "replied" means the drafter
  * judged the message not to be a build request and answered it instead: no spec
@@ -620,11 +620,10 @@ export interface DraftStreamView {
      belong to the wait it is in -- the channel replays history on subscribe,
      and replayed history drawn as live is false progress. */
   lines: Array<{ at: number; text: string }>;
+  /** The answer as it arrives. Complete records replace; deltas append. */
+  answer: string;
+  answer_at: number | null;
 }
-
-export type DraftOutcome =
-  | { status: "draft"; spec_id: string; title: string }
-  | { status: "replied"; reply: string };
 
 export interface ProjectConfigView {
   initialized: boolean;
@@ -687,10 +686,10 @@ export type WorkspaceAction = {
     | "manager.continue"
     | "manager.retry_blocked"
     | "guidance.record"
+    | "conversation.submit"
     | "plan.prepare"
     | "plan.review"
     | "plan.ratify"
-    | "spec.draft"
     | "spec.review"
     | "spec.adopt"
     | "manual_task.review"
@@ -718,8 +717,7 @@ export type WorkspaceAction = {
        whether it may be stored. The client renders the typed outcome; it does
        not get to store a command the run refused. */
     | "checks.try"
-    /* Begin a fresh thread. Appends one boundary event: the trail keeps every
-       earlier message and a prepared plan is untouched. */
+    /* Begin a fresh thread. The trail stays; Core archives the active request. */
     | "conversation.new"
     /* AGENTS.md. `agents.propose` reads and returns a diff; `agents.apply`
        writes what CORE re-derived, taking only the hashes this client was

@@ -80,6 +80,20 @@ capture and exact recovery matrix are under
 Critical, 41 High, 30 Medium, and 2 Low**. The product remains NO-GO because R4
 through R7 and their release gates remain open.
 
+**Phase 6 conversation and real-time orchestration completed 2026-08-28.**
+Installed build **26.828.320** closes F1-07, F1-08, and F3-01 through F3-12,
+completing R4. Core now classifies every conversational submit, retains a
+request identity through durable acceptance, reads bounded current-tree and
+structured attachment contents through the audited file action, and creates a
+real archived New-conversation boundary. Event/output publication and closed
+read-only inspection remain live while provider work runs. One stateful
+provider-neutral decoder handles split records, safe plain text, and
+Codex/Claude/Grok/OpenCode/Kimi output without exposing hidden reasoning.
+Installed/no-paid evidence and both 1440x900 build-labelled captures are under
+`docs/evidence/remediation-phase6-26.828.320/`. There are **64 open findings: 5
+Critical, 31 High, 26 Medium, and 2 Low**. The product remains NO-GO because R5
+through R7 and their release gates remain open.
+
 ## Reconciliation result
 
 The ledger parser found exactly 93 unique IDs with the expected phase counts:
@@ -463,6 +477,42 @@ High, 30 Medium, and 2 Low**. G0 and the product's overall **NO-GO** remain in
 force because R4 through R7 and their release gates are not complete.
 
 ## R4 — Conversation and real-time orchestration
+
+**Execution status:** completed 2026-08-28. All 14 owned findings are closed:
+F1-07, F1-08, and F3-01 through F3-12. The client has one typed
+`conversation.submit` path; explicit run guidance remains a separate advisory
+action. Long provider work no longer blocks durable event publication or the
+closed read-only inspection set. The current-tree pack is bounded to 8 files,
+12 KiB per file, 48 KiB total, and 16 read attempts; the inventory retains at
+most 10,000 names and reports truncation. File/folder attachments are typed,
+root-confined, and refuse `.git` and `.hivemind`.
+
+The shared live writer is attached to provider-call sites for drafting,
+planning, management, quality, ideation, Scout, memory, characterization, and
+workers. It buffers per-process records across operating-system chunks,
+normalizes every supported provider family, preserves safe plain-text progress,
+and fails the operation when its durable output cannot be written. Hidden
+chain-of-thought is never forwarded; the surface receives only readable stage,
+tool/action, elapsed-time, and answer text. The old React classifier, standalone
+`spec.draft` action, duplicate RUN publisher, attachment prompt marker, and
+success-converting draft-output catch were removed. The newly unreachable
+`assessNonGoals` helper was also deleted rather than allowlisted; this cleanup
+does not close F1-02, whose missing production non-goal check remains owned by
+R7.
+
+Installed build **26.828.320** proved one durable message and one adapter call
+under two synchronous submits, a 36 ms concurrent status read while the provider
+was alive, current tracked contents, honest untracked-name truncation, explicit
+folder/file attachment contents, an archived active-spec pointer, and a durable
+visible provider failure. The exact prompt and reply were `Describe what this
+project does, in one sentence.` and `This installed fixture reports a
+deterministic TypeScript project status.` The named progress and answer elements
+were sampled before provider exit. Severe browser logs were empty and the real
+recent-project registry was restored byte-for-byte. Final validation passed
+Core (**961 passed, 2 skipped, 963 total**), Desktop (**335/335**), Rust
+(**47/47**), the focused 70 Core and 41 Desktop seam checks, the two-lockfile
+advisory gate, all **30/30** reachability surfaces, installed identity, and the
+installed phase proof. No paid provider/model call ran.
 
 **Primary areas:** `src/daemon.ts`, `src/spec-draft-action.ts`,
 `src/manager.ts`, adapter command/protocol modules,

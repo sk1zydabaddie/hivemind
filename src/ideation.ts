@@ -12,6 +12,7 @@ import { extractJsonObject, readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
 import { checkFormatVersion, formatVersions } from "./format-version.js";
 import { hasFailureCode } from "./failure-code.js";
+import { ACTIVITY_STREAM_ID, createLiveOutputWriter } from "./output-stream.js";
 import { createInterface } from "node:readline/promises";
 import {
   recordUserConvergence,
@@ -391,13 +392,19 @@ export async function generateIdeationRound(
   }
 
   const prompt = buildIdeationGenerationPrompt(loaded.value, spec.value.markdown, steering);
+  const liveOutput = createLiveOutputWriter(repoRoot, ACTIVITY_STREAM_ID, profileResult.profile.tool, undefined, {
+    structuredAnswers: true
+  });
   const processResult = await runAdapterProcess(repoRoot, profileResult.profile, repoRoot, prompt, {
     outputLogPath: adapterRunLogPath(repoRoot, `ideation-${specId}`),
     usageRunId: specId,
+    onStreamChunk: liveOutput.onChunk,
     ...(profileResult.profile.usage_parser === "claude-json"
       ? { structuredOutputSchema: ideationRoundJsonSchema }
       : {})
   });
+  const streamed = await liveOutput.drain();
+  if (!streamed.ok) return streamed;
   if (!processResult.ok) {
     return processResult;
   }

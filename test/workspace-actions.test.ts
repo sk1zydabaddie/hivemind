@@ -1768,12 +1768,13 @@ test("Work tab drives configured interruption policy through typed actions and k
   // control is desktop copy and is asserted in the desktop suite.
   assert.match(source, /managerStartAvailable \? \([\s\S]{0,400}onStartManager\(\)/u);
   assert.match(source, /managerStartAvailable[\s\S]*type: "manager\.start"/u);
-  /* Was "Typed guidance cannot approve it", said in response to a message typed
-     while a plan waited -- which treated a question as an attempt to approve and
-     stopped the conversation to say so. What has to hold is the property, not
-     the sentence: typing cannot approve a plan, and only the button does. The
-     conversation continues in the mode that answers and never drafts. */
-  assert.match(source, /answer_only: true/u);
+  /* The composer has one Core-owned door. It cannot choose spec, plan, manager,
+     or guidance authority from inspection state; the separate Guide-run dialog
+     is an explicit advisory control. */
+  const submit = source.slice(source.indexOf("const submitPrompt"), source.indexOf("const [newConversationBusy"));
+  assert.match(submit, /type: "conversation\.submit"/u);
+  assert.doesNotMatch(submit, /type: "(?:spec\.draft|plan\.prepare|plan\.ratify|manager\.start|guidance\.record)"/u);
+  assert.match(source, /title="Guide the manager"[\s\S]*type: "guidance\.record"/u);
   assert.match(source, /Approve and start/u);
   assert.match(source, /type: "autonomy\.set"/u);
   assert.match(source, /type: "run\.stop"/u);

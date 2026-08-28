@@ -96,6 +96,7 @@ test("best-of-N generates two sequential routed drafts with provenance, cumulati
     }
 
     assert.deepEqual(await canonicalIdentity(repo), canonicalBefore);
+    await assertLiveOutputWasAppended(repo, "draft-fixture");
     await assertOnlyMainCheckoutAndBranch(repo);
     const events = await readEvents(repo);
     assert.equal(events.ok, true, events.ok ? undefined : events.reason);
@@ -312,6 +313,7 @@ test("adapter failure is preserved as an immutable draft and detached checkout c
       }
     }
     assert.deepEqual(await canonicalIdentity(repo), canonicalBefore);
+    await assertLiveOutputWasAppended(repo, "crash-fixture");
     await assertOnlyMainCheckoutAndBranch(repo);
   });
 });
@@ -530,9 +532,18 @@ async function canonicalIdentity(repo: string): Promise<Record<string, string>> 
     canonical_worktree: await hashTree(path.join(repo, ".hivemind", "worktrees", "T-001")),
     patch_bundle: await hashTree(path.join(repo, ".hivemind", "patches", "T-001")),
     lease_store: await hashTree(path.join(repo, ".hivemind", "leases")),
-    canon: await hashTree(path.join(repo, ".hivemind", "canon")),
-    task_output: await hashTree(path.join(repo, ".hivemind", "log", "tasks"))
+    canon: await hashTree(path.join(repo, ".hivemind", "canon"))
   };
+}
+
+async function assertLiveOutputWasAppended(repo: string, tool: string): Promise<void> {
+  const lines = (await readFile(
+    path.join(repo, ".hivemind", "log", "tasks", "T-001.output.jsonl"),
+    "utf8"
+  )).trim().split(/\r?\n/u).map((line) => JSON.parse(line) as Record<string, unknown>);
+  assert.deepEqual(lines[0], { output: "canonical" });
+  assert.ok(lines.length > 1, "the provider call must append observable output");
+  assert.ok(lines.slice(1).every((line) => line.task_id === "T-001" && line.tool === tool));
 }
 
 async function readDraftPatch(repo: string, qualityRunId: string, draftId: string): Promise<string> {

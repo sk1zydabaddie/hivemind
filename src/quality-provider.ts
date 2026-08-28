@@ -13,6 +13,7 @@ import {
   type SpeculativeDraftProducerResult,
   type SpeculativeDraftProvenance
 } from "./speculative-draft.js";
+import { createLiveOutputWriter } from "./output-stream.js";
 
 export interface QualityProviderExecution {
   producer_result: SpeculativeDraftProducerResult;
@@ -41,6 +42,9 @@ export async function runQualityProvider(
   taskId: string
 ): Promise<QualityProviderExecution> {
   const output: SpeculativeDraftOutput[] = [];
+  const liveOutput = createLiveOutputWriter(repoRoot, taskId, route.profile.tool, undefined, {
+    structuredAnswers: true
+  });
   const startedAt = Date.now();
   const processResult = await runAdapterProcess(
     repoRoot,
@@ -68,10 +72,27 @@ export async function runQualityProvider(
         });
         return recorded.ok ? { ok: true as const } : recorded;
       },
-      onStreamChunk: (chunk) => output.push(chunk)
+      onStreamChunk: (chunk) => {
+        output.push(chunk);
+        liveOutput.onChunk(chunk);
+      }
     }
   );
   const wallTimeMs = Date.now() - startedAt;
+  const streamed = await liveOutput.drain();
+  if (!streamed.ok) {
+    return {
+      producer_result: {
+        status: "crashed",
+        reason: streamed.reason,
+        output,
+        provenance: processResult.ok
+          ? buildProcessProvenance(route, qualityRunId, wallTimeMs, processResult.value, processResult.value.quotaRequest, prompt)
+          : buildUnstartedProvenance(route, qualityRunId, wallTimeMs)
+      },
+      model_output: processResult.ok ? processResult.value.modelOutput : ""
+    };
+  }
   if (!processResult.ok) {
     return {
       producer_result: {

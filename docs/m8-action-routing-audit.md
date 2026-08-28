@@ -1,6 +1,6 @@
 # M8 Workspace Action Routing Audit
 
-M8 follows two fixed rules: chat steers while typed actions authorize, and the React/Tauri workspace is a thin client over deterministic Core. The shared dispatcher is `executeWorkspaceAction()`; `hivemind workspace <typed-action-json-file>`, daemon `POST /workspace/action`, and Tauri `workspace_action` all reach that same function. React contains only the typed Tauri invocation. External callers use loopback HTTP to reach the daemon's serialized mutation queue. While a workspace action is already executing inside that queue, daemon-aware Core callers use a scoped in-process transport that resolves the same route handler and primitive; they never call the daemon back over HTTP or acquire the queue twice.
+M8 follows two fixed rules: chat steers while typed actions authorize, and the React/Tauri workspace is a thin client over deterministic Core. The shared dispatcher is `executeWorkspaceAction()`; `hivemind workspace <typed-action-json-file>`, daemon `POST /workspace/action`, and Tauri `workspace_action` all reach that same function. React contains only the typed Tauri invocation. External callers use loopback HTTP. Mutations retain the serialized writer queue; event/output publication and the closed read-only action set bypass a long provider wait so observation remains live. While a workspace action already owns the mutation queue, nested project-file reads re-enter the same audited dispatcher in-process and never call the daemon back over HTTP.
 
 ## Action Registry
 
@@ -11,6 +11,7 @@ M8 follows two fixed rules: chat steers while typed actions authorize, and the R
 | `manager.continue` | `continueAutonomousManagerLoop()` | Consumes the exact durable proposal stored by `manager.start`, then M9.3 re-reads the ratified plan, contracts, events, leases, intent, worktrees, patches, queue, and verification evidence to derive only the next proven mechanical action/batch. Every member retains M9.2's immutable proposal id/cursor and independently uses the existing deterministic action primitive and floors. For M9-configurable `run_worker` / `integrate_shadow`, Auto and Review-plan still create the same exact pending identity/hash and send it through the same pending-action disposer with durable `authorization_source: autonomy_policy`; Review-everything leaves it for explicit human disposal. Pending guidance or non-happy state uses the existing proposal adapter for judgment instead of deterministic advancement. | The first refusal, worker failure/crash/timeout, Critical/sensitive escalation, policy ambiguity, stale pending identity/state, Tier-3 stop, oracle block, quota stop, ceiling stop, or unknown state records normally, discards unexecuted work, and stops. Continuation never implies blanket approval, never advances past unobserved evidence, cannot replace an unconsumed proposal, and refuses ambiguous state rather than guessing. Adoption is not a manager action and cannot be derived. |
 | `manager.retry_blocked` / Work `Retry` | `retryBlockedManagerAction()` then existing `continueAutonomousManagerLoop()` | Requires the exact consumed proposal and failed execution recorded by Core. For an explicit LLM-reactive session it preserves the existing behavior and re-presents only that action. For an M9.3 deterministic session it clears no underlying failure and records `manager.judgment_requested`; the next continuation invokes the existing manager proposal adapter for redirect/cancel/re-plan/escalation rather than mechanically replaying the failed step. The retry action itself executes nothing and spends nothing. | Missing, malformed, unconsumed, or execution-history-mismatched blocked state is refused. A deterministic session cannot continue into later mechanical work before the judgment turn, and any resulting Tier-2 action still receives a fresh pending identity and current durable-state hash. |
 | `guidance.record` | `recordHumanGuidance()` | Accepts only `target: orchestrator` and narrative text. The guidance module has no approval, plan, memory-promotion, integration, quality-admission, or routing dependency. Pending guidance is injected once into the next already-scheduled proposal, then its audit events are excluded from later proposal context. | Extra authority-shaped fields are refused. Malformed durable guidance is refused during assembly rather than skipped or interpreted. Guidance never launches a provider call, mutates a running worker, or satisfies a gate. |
+| `conversation.submit` | `submitConversationMessage()` -> `draftSpecFromPrompt()` and, only for a newly drafted request, `prepareWorkspaceTentativePlan()` | Accepts one UUID request identity, narrative prompt, fixed planner tool, and up to 20 structured project-relative file/folder references. Core alone inspects lifecycle state, classifies the turn, assembles bounded current-working-tree evidence through nested audited `files.read`, and decides whether the result is an advisory reply or an unsigned draft plus tentative plan. The durable message is written before a provider starts. | The UUID is idempotent in flight and against the durable trail. Duplicate submits start no second process. Existing project work makes the turn answer-only; message prose cannot approve, ratify, start a manager, integrate, or ship. Invalid attachments, unreadable current-tree evidence, provider failure, or durable output/event failure is explicit. |
 | `plan.prepare` | `prepareWorkspaceTentativePlan()` -> existing generation / grounding / lint / exact `ratifyPlan()` path | Treats prompt text only as planning steering. Uses the active ratified spec, confined adapter profile, token preflight, Git-grounded scope, and every existing plan-lint rule including `SKELETON_TRAP_ACCEPTANCE`. It records `plan.prepared` with the exact review hash and level. Auto then calls the same exact-hash ratification primitive with policy source; Review-plan and Review-everything retain the human ratification boundary. | Draft/missing spec, unsafe profile, budget exhaustion, malformed output, grounding uncertainty, lint/review failure, unreadable policy, or exact-hash mismatch surfaces the reason. Prompt prose cannot choose the level or satisfy ratification. |
 | `plan.review` | `reviewPlanForRatification()` | Read-only hash of the current grounded, lint-passed tentative plan. | Missing, ungrounded, or lint-failing plans are not reviewable. |
 | `plan.ratify` | `ratifyPlan()` | Requires the exact reviewed SHA-256; stores an immutable ratified artifact and durable `plan.ratified`. Contract creation and plan-backed dependency execution read that artifact. | A changed hash, malformed event, missing artifact, hash mismatch, or unratified tentative plan refuses contract creation/execution. |
@@ -47,7 +48,7 @@ MCP exposes no workspace action or promotion tool. If an M8 control later needs 
 
 ## Queue Exception
 
-Long-running manager and quality generation use the serialized daemon mutation queue. `task.stop`, `run.stop`, and `quality.cancel` are the only named interrupts permitted outside that queue so one worker or an entire run can be stopped. `run.stop` records the no-new-launch boundary and delegates each active lane to the existing task-stop disposer; it does not implement a second stop path. These interrupts can only append/reconcile cancellation evidence and run existing bounded cleanup primitives; none can admit, generate, select, adopt, or mutate accepted canonical state. Event appends retain the existing atomic append discipline, and each terminal cancellation follows its existing durable cleanup evidence.
+Long-running manager and quality generation use the serialized daemon mutation queue. `task.stop`, `run.stop`, and `quality.cancel` are the only mutation interrupts permitted outside that queue so one worker or an entire run can be stopped. A closed read-only set (`status.inspect`, trail/change/spec/plan/config/files/checks/account/provider/model/sharing inspection plus the matching GET status/quota routes) also executes concurrently: observation is not an interrupt and cannot mutate or authorize. Durable event and output writers publish immediately after their atomic append, so subscribers do not wait for the provider action to return. `run.stop` records the no-new-launch boundary and delegates each active lane to the existing task-stop disposer; it does not implement a second stop path. None of these exceptions can admit, generate, select, adopt, or mutate accepted canonical state.
 
 The in-process transport is not a queue exception. It exists only while the outer daemon request already owns the queue and invokes the exact registered daemon route locally. The full dispatcher regression asserts that a complete task lifecycle entering through `/workspace/action` emits no nested HTTP route. CLI, MCP, and Tauri transports remain unchanged.
 
@@ -72,19 +73,18 @@ Two actions added for the single first-run review.
   while any open question remains, naming them. The orchestrator cannot propose
   this action, and `markIdeationConvergence` refuses a user signature without an
   authorization no matter who calls it.
-- `spec.draft` — one adapter call. Turns a prompt into a short-form spec, opens
-  its ideation session, and records the drafter's own alternatives and
-  self-critique as the orchestrator's round. Writes `convergence.orchestrator`
-  only; it has no path to `convergence.user`, asserted in
-  `test/spec-convergence.test.ts`. Before that one call, Core assembles a
-  read-only project context through nested `files.read` actions sent back
-  through this same dispatcher in process. The snapshot prioritizes files named
-  in the question, root descriptors, entry points, then shallow source; it is
-  capped at 8 files, 12 KiB per file, and 48 KiB total. Larger projects keep the
-  remaining tracked names, and naming a file in a later question promotes it.
-  `.hivemind` and `.git` names and contents remain outside the project-file
-  surface. File contents are labelled untrusted evidence and cannot choose the
-  answer kind, authorize, ratify, approve, execute, or ship anything.
+- `conversation.submit` — the sole conversation front door. One UUID-bound
+  request records the message durably, then Core assembles current-working-tree
+  evidence through nested audited `files.read`. Structured file attachments
+  promote exact files; folder attachments promote bounded descendants. The pack
+  is capped at 8 files, 12 KiB per file, 48 KiB total, 16 read attempts, and a
+  10,000-name inventory. Files outside the pack remain names and can be attached
+  on the next turn; `.hivemind` and `.git` remain refused. Core alone chooses a
+  reply or unsigned spec, and only a new spec proceeds to tentative planning.
+  Existing work forces answer-only behavior. The former standalone
+  `spec.draft` workspace action was deleted because it duplicated this boundary
+  and had no production consumer. No reply or project evidence can authorize,
+  ratify, approve, execute, integrate, or ship anything.
 - `task.resume` — continues a task that paused for capacity, reusing the
   contract, lease and worktree that survived the pause. Applies every gate a
   fresh run applies (ratified spec, task in the approved plan, lease still this
@@ -168,14 +168,13 @@ connection actions write only what a probe confirmed.
   must produce identical gates, leases and checks. A lesson that would change
   what Hivemind PLANS belongs in canon instead, behind its human door; this
   action cannot reach canon and canon cannot reach this file.
-- `conversation.new` — `startNewConversation()`. Appends one boundary event and
-  removes nothing. The trail keeps every earlier message, plan, run and check; a
-  prepared plan is untouched and still waiting, because discarding one silently
-  would throw away work nobody has looked at; and the active spec is untouched,
-  so a follow-up that is a build request still lands against the same spec. All
-  it moves is where the thread starts reading. Takes no fields, and carries
-  `advisory_only`/`authorization_effect: none` -- moving where a view begins
-  must never read as permission.
+- `conversation.new` — `startNewConversation()`. Creates a durable conversation
+  identity and archives the prior active-request pointer before appending the
+  boundary. Earlier message, spec and plan artifacts remain immutable history,
+  but they cannot control the new thread. If the boundary append fails, Core
+  restores the pointer; if either transition cannot be proven, the action
+  refuses. Takes no fields and carries `advisory_only` plus
+  `authorization_effect: none` -- a conversation boundary is never permission.
 - `project.init` — `initProjectForDesktop()`. Wraps `initProject` and then
   writes default tier globs, because a project with no globs infers High for
   every path and routes all work to the most expensive provider. It deliberately

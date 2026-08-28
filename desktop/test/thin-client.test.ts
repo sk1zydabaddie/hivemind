@@ -43,7 +43,8 @@ describe("React workspace boundary", () => {
 
     expect(work).toMatch(/invoke<PromptAttachment\[\]?>\("choose_project_files"/u);
     expect(work).toMatch(/invoke<PromptAttachment\[\]?>\("choose_project_attachment_folder"/u);
-    expect(work).toMatch(/Project references:/u);
+    expect(work).toMatch(/request_id: requestId[\s\S]{0,100}attachments/u);
+    expect(work).not.toMatch(/Project references:/u);
     expect(work).toMatch(/aria-label="Attached project items"/u);
     expect(shell).toMatch(/choose_project_files/u);
     expect(shell).toMatch(/choose_project_attachment_folder/u);
@@ -64,6 +65,11 @@ describe("React workspace boundary", () => {
     expect(hook).not.toMatch(/localStorage|sessionStorage|fetch\(|XMLHttpRequest/u);
     expect(hook).toMatch(/invokeWorkspaceAction<WorkspaceInspection>/u);
     expect(hook).toMatch(/setInterval\(\(\) => void refreshInspection\(\), 5_000\)/u);
+    expect(hook).toMatch(/function parseEventMessage/u);
+    expect(hook).toMatch(/function parseOutputMessage/u);
+    expect(hook).not.toMatch(/JSON\.parse\(value\) as T/u);
+    expect(hook).not.toMatch(/activitySource\.onerror = \(\) => undefined/u);
+    expect(hook).toMatch(/Live agent activity was interrupted/u);
     expect(hook).not.toMatch(/submit_patch|integrate_shadow|request_lease|runGate/u);
   });
 
@@ -267,7 +273,7 @@ describe("React workspace boundary", () => {
          -- and a footer describing only the third was the invitation that made
          a greeting look unsupported. What has to hold is that the footer names
          what will happen, in plain words. */
-      "Hivemind will ask whether this is guidance for it or a new piece of work",
+      "A conversational reply cannot approve, replace, or start work",
       "Approve and start"
     ]) {
       expect(visibleSource).toContain(label);
@@ -307,9 +313,9 @@ describe("React workspace boundary", () => {
       "autonomy.set",
       "change.inspect",
       "config.inspect",
-      // Begin a fresh thread. Appends one boundary event; the trail keeps every
-      // earlier message and a prepared plan is untouched.
+      // Begin a fresh durable thread boundary.
       "conversation.new",
+      "conversation.submit",
       "guidance.record",
       "manager.continue",
       "manager.start",
@@ -321,7 +327,6 @@ describe("React workspace boundary", () => {
       // The one review signs the spec before it ratifies the plan, because
       // ratifying a plan requires a ratified spec. Ordering, not a second
       // decision -- the person acts once.
-      "spec.draft",
       "spec.review",
       "spec.adopt",
       "task.redirect",
@@ -341,12 +346,13 @@ describe("React workspace boundary", () => {
     expect(work).toMatch(/if \(!item\.action\) return;[\s\S]*await onAction<[^>]+>\(item\.action\)/u);
     expect(work).toMatch(/item\.action\.type === "manager\.retry_blocked"[\s\S]*type: "manager\.continue"/u);
     expect(audit).toContain("`manager.approve_pending`");
-    /* Was the guidance-only footer. What has to hold is that a message sent
-       while work is running says so BEFORE it is typed, and says the choice is
-       coming -- a different button label on an identical box did not carry it. */
+    /* The composer is conversation-only during a run. It must say that before
+       submission and must not imply that prose can reach an authority gate. */
     expect(work).toMatch(/Work is running/u);
-    expect(work).toMatch(/What you send goes to this run, not to a new one/u);
-    expect(work).toMatch(/whether this is guidance for it or a new piece of work/u);
+    expect(work).toMatch(/A conversational reply cannot approve, replace, or start work/u);
+    expect(work).toMatch(/title="Guide the manager"[\s\S]*type: "guidance\.record"/u);
+    expect(work).toContain('data-testid="conversation-progress"');
+    expect(work).toContain('data-testid="conversation-live-answer"');
     expect(work).toMatch(/Nothing starts until you review and approve this exact plan/u);
     expect(work).not.toMatch(/title="Later"|<h2>Routing<\/h2>|<h2>Draft comparisons<\/h2>/u);
     expect(work).toMatch(/change_set\??\.changed_files\.map/u);
@@ -426,40 +432,21 @@ describe("React workspace boundary", () => {
     expect(work).not.toMatch(/\btruncate\b|text-ellipsis|line-clamp/u);
   });
 
-  test("a finished plan never captures the next request, and a pending plan has an exit", async () => {
+  test("the composer has one Core-owned conversation door and a pending plan has an explicit exit", async () => {
     const work = await readFile(
       path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"),
       "utf8"
     );
 
-    // A plan with nothing left to do must not swallow a new request: the composer
-    // routes on unfinished work, not on whether a plan exists at all.
-    expect(work).toMatch(/const planHasWorkLeft =/u);
-    expect(work).toMatch(/task\.state !== "merged" && task\.state !== "cancelled"/u);
-    expect(work).toMatch(/\} else if \(!planHasWorkLeft\) \{\s*await preparePlan\(message\);/u);
-    expect(work).not.toMatch(
-      /else if \(inspection\?\.current_plan === null \|\| inspection\?\.current_plan === undefined\)/u
-    );
-
-    // A plan the person does not want is not a dead end: their text becomes the
-    // start of a different plan instead of being refused.
-    /* A plan waiting no longer captures the next message. It used to open a
-       modal offering to replace the plan and answer "Review the prepared plan
-       first", treating a question as an attempt to approve. The conversation
-       continues in the mode that answers and never drafts; only "Start over"
-       replaces a plan, and only a button approves one. */
-    expect(work).toMatch(/answer_only: true/u);
-    expect(work).toMatch(/Start over with a different plan/u);
+    const submit = work.slice(work.indexOf("const submitPrompt"), work.indexOf("const [newConversationBusy"));
+    expect(submit).toMatch(/type: "conversation\.submit"/u);
+    expect(submit).toMatch(/request_id: requestId/u);
+    expect(submit).toMatch(/attachments/u);
+    expect(submit).not.toMatch(/type: "(?:spec\.draft|plan\.prepare|manager\.start)"/u);
+    expect(submit).not.toMatch(/planHasWorkLeft|inspection\?\.active_spec_id|runActive\)/u);
+    expect(work).toMatch(/submitInFlightRef\.current/u);
     expect(work).toMatch(/Start over with a different plan/u);
     expect(work).toMatch(/onStartOver/u);
-    /* A first prompt drafts a spec before it plans. Both calls are asserted, in
-       order; the windows are distances rather than guarantees and were widened
-       when drafting learned to answer a message that was not a build request,
-       which added the branch that stops before planning. */
-    expect(work).toMatch(/const preparePlan[\s\S]{0,1400}type: "spec\.draft"[\s\S]{0,700}type: "plan\.prepare"/u);
-    /* And that branch is the guarantee worth pinning: a reply must not fall
-       through into preparing a plan nobody asked for. */
-    expect(work).toMatch(/status === "replied"[\s\S]{0,120}return;/u);
 
     // Nothing offers a control that cannot do anything.
     expect(work).toMatch(/if \(!canOpenAttention\(item\)\) return null;/u);

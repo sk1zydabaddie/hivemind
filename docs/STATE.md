@@ -3186,3 +3186,62 @@ The remediation ledger is now **78 open findings: 5 Critical, 41 High, 30
 Medium, and 2 Low**. R3 is complete; R4 through R7 remain. G0 and the product's
 overall **NO-GO** remain in force. Phase 6 begins only in its next dedicated
 turn.
+
+## Remediation Phase 6: conversation and real-time orchestration — 2026-08-28
+
+Phase 6 is complete and closes **F1-07, F1-08, and F3-01 through F3-12**,
+completing R4. One Core-owned `conversation.submit` action now classifies every
+message and keeps conversational replies unable to approve, ratify, start,
+integrate, or ship. A client request UUID survives retry and deduplicates both
+provider calls and durable messages. Text and structured attachments remain in
+the composer until Core has durably accepted them.
+
+Conversation context now reads the current working tree through the audited,
+root-confined `files.read` action. It is bounded to 8 files, 12 KiB per file,
+48 KiB total, 16 read attempts, and 10,000 inventory names with an explicit
+truncation signal. File and folder attachments are typed and prioritize their
+actual bounded contents; `.git` and `.hivemind` remain refused. New conversation
+now archives the active spec pointer, writes a new durable conversation
+identity, and refuses while manager work is live.
+
+Events publish at their durable append boundary and closed read-only inspection
+does not wait behind provider mutation. A single stateful live-output writer is
+used by drafting, planning, management, quality, ideation, Scout, memory,
+characterization, and worker calls. It buffers split records, preserves safe
+plain text, normalizes Codex, Claude, Grok-compatible, OpenCode, and Kimi
+formats, and exposes validated stage/answer fields without hidden
+chain-of-thought. Output-write failure fails the provider operation. Explicit
+run guidance remains a separate advisory control rather than a composer-owned
+authority fork. The now-unreachable `assessNonGoals` helper was deleted; F1-02
+remains open because production still needs an actually reachable non-goal
+quality check under R7.
+
+Installed build **26.828.320** was built, installed, and matched across
+executable, Core, shell, and pinned Node 22.23.2 identities. The exact installed
+exchange was:
+
+- Typed: `Describe what this project does, in one sentence.`
+- Reply: `This installed fixture reports a deterministic TypeScript project status.`
+
+The named progress and answer elements were sampled while the delayed provider
+was still alive. The progress included the planner stage, ticking elapsed time,
+and answer; a concurrent status read completed in 36 ms. Two synchronous
+submits produced one adapter call and one durable message. The context and
+attachment probes distinguished tracked contents, an untracked inventory name,
+and explicitly attached untracked/folder contents. New conversation archived
+one active pointer. A provider failure was visible and durable. Both 1440x900
+captures were produced by build **26.828.320**; browser severe logs were empty
+and the recent-project registry was restored byte-for-byte. Evidence is under
+`docs/evidence/remediation-phase6-26.828.320/`.
+
+Final validation passed Core (**961 passed, 2 skipped, 963 total**), Desktop
+(**335/335**), Rust (**47/47**), the 70/70 focused Core matrix, the 41/41
+Desktop seam/thin-client matrix, the two-lockfile advisory gate with zero
+findings, all **30/30** reachability surfaces, installed identity verification,
+and the installed proof. No paid provider/model call, key operation,
+publication, or public-channel mutation occurred.
+
+The remediation ledger is now **64 open findings: 5 Critical, 31 High, 26
+Medium, and 2 Low**. R4 is complete; R5 through R7 remain. G0 and the product's
+overall **NO-GO** remain in force. Phase 7 begins only in its next dedicated
+turn.

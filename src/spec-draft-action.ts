@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { readdir } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { mkdir, readdir, rename } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -13,10 +14,9 @@ import {
 import { writeFileAtomic, writeJsonAtomic } from "./atomic.js";
 import { loadConfig } from "./config.js";
 import { plainReason } from "./plain-reason.js";
-import { ACTIVITY_STREAM_ID, appendTaskOutput } from "./output-stream.js";
-import { appendEvent } from "./events.js";
+import { ACTIVITY_STREAM_ID, createLiveOutputWriter } from "./output-stream.js";
+import { appendEvent, readEvents } from "./events.js";
 import { recordIdeationRound, startIdeationSession } from "./ideation.js";
-import { trackedFilesAtBase, currentHead } from "./plan.js";
 import {
   buildSpecDraftingPrompt,
   draftedSpecJsonSchema,
@@ -81,6 +81,12 @@ export const CONVERSATION_CONTEXT_MAX_FILES = 8;
 export const CONVERSATION_CONTEXT_MAX_FILE_BYTES = 12 * 1024;
 export const CONVERSATION_CONTEXT_MAX_TOTAL_BYTES = 48 * 1024;
 const CONVERSATION_CONTEXT_MAX_READ_ATTEMPTS = 16;
+const CONVERSATION_PROJECT_FILE_LIMIT = 10_000;
+
+export interface ConversationAttachment {
+  kind: "file" | "folder";
+  path: string;
+}
 
 type ProjectFileReadAction = (
   filePath: string
@@ -95,21 +101,34 @@ type ProjectFileReadAction = (
  *    exactly where it was; this appends one event and removes nothing. The
  *    Project tab still shows the whole history, and a reconstruction still
  *    rebuilds every earlier state.
- *  - A PREPARED PLAN is untouched and still waiting. Discarding one silently
- *    would throw away work a person has not looked at yet, and replacing a plan
- *    is an explicit act with its own control.
- *  - The active spec is untouched, so a follow-up that IS a build request still
- *    lands against the same spec rather than starting a second one by surprise.
+ *  - The prior active-request POINTER is moved into an archive. Its spec and
+ *    plan artifacts remain in history, but neither can control the new thread.
+ *  - A new conversation id is recorded and every later message carries it.
  *
- * All it moves is where the thread starts reading.
+ * This is therefore a durable semantic boundary, not only a display filter.
  */
 export async function startNewConversation(repoRoot: string): Promise<SpecResult<{ started_at: string }>> {
   const startedAt = new Date().toISOString();
+  const conversationId = `C-${randomUUID()}`;
+  const activePath = activeSpecPath(repoRoot);
+  const archivePath = path.join(repoRoot, ".hivemind", "spec", "archive", `${conversationId}.active.json`);
+  let archived = false;
+  try {
+    await mkdir(path.dirname(archivePath), { recursive: true });
+    await rename(activePath, archivePath);
+    archived = true;
+  } catch (error: unknown) {
+    if (!isNodeError(error, "ENOENT")) {
+      return { ok: false, reason: `new conversation could not archive the active project request: ${error instanceof Error ? error.message : String(error)}` };
+    }
+  }
   const recorded = await appendEvent(repoRoot, {
     type: "conversation.started",
     task_id: null,
     data: {
       version: 1,
+      conversation_id: conversationId,
+      active_request_archived: archived,
       /* Advisory and authority-free, in the same shape as guidance: moving
          where a thread begins is a view decision and must never read as one
          that permits anything. */
@@ -117,6 +136,13 @@ export async function startNewConversation(repoRoot: string): Promise<SpecResult
       authorization_effect: "none"
     }
   });
+  if (!recorded.ok && archived) {
+    try {
+      await rename(archivePath, activePath);
+    } catch {
+      return { ok: false, reason: `${recorded.reason}; the prior active request also could not be restored` };
+    }
+  }
   return recorded.ok ? { ok: true, value: { started_at: startedAt } } : recorded;
 }
 
@@ -128,7 +154,12 @@ export async function draftSpecFromPrompt(
      an approval, so the conversation continues -- but drafting a second spec
      behind a plan nobody has looked at would replace their work by surprise. So
      the drafter answers and never drafts, and says what is waiting. */
-  options: { answerOnly?: boolean; readProjectFile: ProjectFileReadAction }
+  options: {
+    answerOnly?: boolean;
+    readProjectFile: ProjectFileReadAction;
+    requestId?: string;
+    attachments?: ConversationAttachment[];
+  }
 ): Promise<SpecResult<DraftSpecOutcome>> {
   if (prompt.trim() === "") {
     return { ok: false, reason: "describe what you want built before drafting a spec" };
@@ -159,20 +190,15 @@ export async function draftSpecFromPrompt(
         "this project has no verification command and has not declared that it has no tests; finish setup first -- set the command there, or state the absence explicitly"
     };
   }
-  const head = await currentHead(repoRoot);
-  if (!head.ok) return head;
-  const tracked = await trackedFilesAtBase(repoRoot, head.value);
-  if (!tracked.ok) return tracked;
-  /* `trackedFilesAtBase` is planning evidence and legitimately includes
-     Hivemind's own tracked records. Conversation context is the project-file
-     surface, whose contract refuses those roots entirely -- including names.
-     Use one filtered list for both the snapshot and the filename appendix so
-     the old list-only path cannot leak around the new reader's boundary. */
-  const visibleTrackedFiles = tracked.value.filter((filePath) => !isPrivateProjectRoot(filePath));
+  const projectFiles = await currentProjectFiles(repoRoot);
+  if (!projectFiles.ok) return projectFiles;
+  const visibleProjectFiles = projectFiles.value.files.filter((filePath) => !isPrivateProjectRoot(filePath));
   const projectContext = await buildConversationProjectContext(
     prompt,
-    visibleTrackedFiles,
-    options.readProjectFile
+    visibleProjectFiles,
+    options.readProjectFile,
+    options.attachments ?? [],
+    projectFiles.value.truncated
   );
 
   const specId = await nextSpecId(repoRoot);
@@ -191,7 +217,13 @@ export async function draftSpecFromPrompt(
   const recorded = await appendEvent(repoRoot, {
     type: "conversation.message_recorded",
     task_id: null,
-    data: { message_id: turnId, text: prompt.trim() }
+    data: {
+      message_id: turnId,
+      conversation_id: await currentConversationId(repoRoot),
+      ...(options.requestId === undefined ? {} : { request_id: options.requestId }),
+      text: prompt.trim(),
+      attachments: options.attachments ?? []
+    }
   });
   if (!recorded.ok) return recorded;
 
@@ -212,7 +244,7 @@ export async function draftSpecFromPrompt(
 
   const drafting = buildSpecDraftingPrompt({
     prompt,
-    trackedFiles: visibleTrackedFiles,
+    trackedFiles: visibleProjectFiles,
     testCommand: config.config.test_command ?? null,
     projectContext,
     answerOnly: options.answerOnly === true
@@ -392,16 +424,18 @@ const PROJECT_SOURCE = /\.(?:[cm]?[jt]sx?|rs|py|go|java|kt|kts|cs|cpp|cc|c|h|hpp
 /** Assemble one deterministic, bounded context pack through the supplied action. */
 async function buildConversationProjectContext(
   prompt: string,
-  trackedFiles: string[],
-  readProjectFileAction: ProjectFileReadAction
+  projectFiles: string[],
+  readProjectFileAction: ProjectFileReadAction,
+  attachments: ConversationAttachment[],
+  inventoryTruncated: boolean
 ): Promise<ConversationProjectContext> {
   const promptFolded = prompt.toLocaleLowerCase("en-US").replaceAll("\\", "/");
-  const candidates = trackedFiles
+  const candidates = projectFiles
     .filter((filePath) => !isPrivateProjectRoot(filePath))
     .map((filePath, index) => ({
       path: filePath,
       index,
-      score: conversationFileScore(filePath, promptFolded)
+      score: conversationFileScore(filePath, promptFolded, attachments)
     }))
     .filter((candidate) => candidate.score > 0)
     .sort((left, right) => right.score - left.score || left.index - right.index || left.path.localeCompare(right.path));
@@ -429,10 +463,11 @@ async function buildConversationProjectContext(
 
   return {
     files,
-    tracked_files: trackedFiles.length,
+    tracked_files: projectFiles.length,
     candidate_files: candidates.length,
     max_files: CONVERSATION_CONTEXT_MAX_FILES,
-    max_total_bytes: CONVERSATION_CONTEXT_MAX_TOTAL_BYTES
+    max_total_bytes: CONVERSATION_CONTEXT_MAX_TOTAL_BYTES,
+    inventory_truncated: inventoryTruncated
   };
 }
 
@@ -453,11 +488,21 @@ function utf8Prefix(value: Buffer, maxBytes: number): string {
   return "";
 }
 
-function conversationFileScore(filePath: string, promptFolded: string): number {
+function conversationFileScore(
+  filePath: string,
+  promptFolded: string,
+  attachments: ConversationAttachment[]
+): number {
   const normalized = filePath.replaceAll("\\", "/");
   const folded = normalized.toLocaleLowerCase("en-US");
   const basename = folded.split("/").at(-1) ?? folded;
   const depth = folded.split("/").length - 1;
+  const attachment = attachments.find((entry) => {
+    const attached = entry.path.replaceAll("\\", "/").replace(/^\.\//u, "").replace(/\/$/u, "").toLocaleLowerCase("en-US");
+    return entry.kind === "file" ? folded === attached : folded.startsWith(`${attached}/`);
+  });
+  if (attachment?.kind === "file") return 30_000 - depth;
+  if (attachment?.kind === "folder") return 25_000 - depth;
   const explicitlyNamed = promptFolded.includes(folded) ||
     (basename.length >= 4 && promptFolded.includes(basename));
   if (explicitlyNamed) return 20_000 - depth;
@@ -465,6 +510,58 @@ function conversationFileScore(filePath: string, promptFolded: string): number {
   if (PROJECT_ENTRYPOINT.test(folded)) return 12_000 - depth;
   if (PROJECT_SOURCE.test(folded)) return 1_000 - Math.min(depth, 100);
   return 0;
+}
+
+async function currentProjectFiles(
+  repoRoot: string
+): Promise<SpecResult<{ files: string[]; truncated: boolean }>> {
+  return new Promise((resolve) => {
+    const child = spawn("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], {
+      cwd: repoRoot,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    const files: string[] = [];
+    let carry = "";
+    let truncated = false;
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      carry += chunk;
+      const names = carry.split("\0");
+      carry = names.pop() ?? "";
+      for (const name of names) {
+        if (name === "") continue;
+        if (files.length < CONVERSATION_PROJECT_FILE_LIMIT) files.push(name);
+        else truncated = true;
+      }
+    });
+    child.stderr.on("data", (chunk: string) => {
+      if (stderr.length < 16 * 1024) stderr += chunk.slice(0, 16 * 1024 - stderr.length);
+    });
+    child.once("error", (error) => {
+      resolve({ ok: false, reason: `current project files could not be listed: ${error.message}` });
+    });
+    child.once("close", (code) => {
+      if (code !== 0) {
+        resolve({ ok: false, reason: `current project files could not be listed: ${stderr.trim() || `git exited ${code ?? "without a status"}`}` });
+        return;
+      }
+      if (carry !== "") {
+        if (files.length < CONVERSATION_PROJECT_FILE_LIMIT) files.push(carry);
+        else truncated = true;
+      }
+      resolve({ ok: true, value: { files, truncated } });
+    });
+  });
+}
+
+async function currentConversationId(repoRoot: string): Promise<string> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return "legacy";
+  const boundary = [...events.value].reverse().find((event) => event.type === "conversation.started");
+  return typeof boundary?.data.conversation_id === "string" ? boundary.data.conversation_id : "legacy";
 }
 
 function isPrivateProjectRoot(filePath: string): boolean {
@@ -539,32 +636,20 @@ async function draftOnce(
 
      Writes are chained rather than fired in parallel: the records are a
      transcript, and a transcript out of order is worse than no transcript. */
-  let tail: Promise<unknown> = Promise.resolve();
+  const liveOutput = createLiveOutputWriter(repoRoot, ACTIVITY_STREAM_ID, tool, undefined, {
+    structuredAnswers: true
+  });
   const process = await runAdapterProcess(repoRoot, profile, repoRoot, drafting, {
     outputLogPath: adapterRunLogPath(repoRoot, `drafting-${turnId}-1`),
     usageSessionId: turnId,
     usageRunId: turnId,
-    onStreamChunk: (chunk) => {
-      tail = tail.then(() =>
-        appendTaskOutput(repoRoot, {
-          /* One channel for "what is happening right now", rather than one per
-             turn. A per-turn key meant the surface could only subscribe once it
-             had been TOLD the turn id, and that arrives on the event stream --
-             which does not reach the client until the action returns, so the
-             stream opened exactly when it had nothing left to carry. A fixed
-             key is subscribable before anything starts. Records carry their
-             timestamp, so a surface shows only what belongs to the wait it is
-             currently in. */
-          task_id: ACTIVITY_STREAM_ID,
-          tool,
-          stream: chunk.stream,
-          text: chunk.text
-        }).catch(() => undefined)
-      );
-    },
+    /* A fixed channel is subscribable before the turn id exists. The writer is
+       per process, so framing state never bleeds between concurrent calls. */
+    onStreamChunk: liveOutput.onChunk,
     ...(profile.usage_parser === "claude-json" ? { structuredOutputSchema: draftedSpecJsonSchema } : {})
   });
-  await tail;
+  const output = await liveOutput.drain();
+  if (!output.ok) return output;
   if (!process.ok) return process;
   if (process.value.exitCode !== 0) {
     return { ok: false, reason: formatAdapterProcessFailure(tool, process.value, "spec drafter") };

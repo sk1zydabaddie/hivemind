@@ -15,6 +15,13 @@ import { validateRequestedTaskId } from "./task-id.js";
  * fighting itself for the file lock.
  */
 const eventAppendQueues = new Map<string, Promise<void>>();
+type EventPublisher = (event: HivemindEvent) => void;
+let publisher: EventPublisher | null = null;
+
+/** Registered by the daemon that owns the live subscribers. */
+export function setEventPublisher(next: EventPublisher | null): void {
+  publisher = next;
+}
 
 export const eventTrailRepairCommand = "hivemind events repair";
 
@@ -171,6 +178,9 @@ export async function appendEvent(repoRoot: string, input: HivemindEventInput): 
   if (!appended.ok) {
     return appended;
   }
+  /* Publication follows the durable append immediately. It must not wait for
+     the provider action that caused this event to return. */
+  publisher?.(event);
   return { ok: true, value: event };
 }
 

@@ -4685,3 +4685,40 @@ boundary only. Mutable production dependency staging, clean source-to-artifact
 binding, signatures, and publication admission stay open until their own
 release phases and exact proofs.
 
+### Conversation is one visible stream, not a lifecycle shortcut — 2026-08-28
+
+The Work composer always means conversation. It sends one typed request to
+Core; React does not choose drafting, planning, management, guidance, or
+execution from the current lifecycle. Questions remain questions even when a
+spec or plan exists. A conversational response cannot approve, ratify, start,
+integrate, or ship. Advice for an active run is an explicit `Guide run` control
+with copy that says it is advisory and may not be read before the run finishes.
+
+Submission is redeemed by durable acceptance. The same request UUID is reused
+on retry, synchronous duplicate submits are refused, and text/attachments stay
+in the composer until Core records the message. New conversation is a real
+boundary: it archives the active spec pointer and writes a new conversation
+identity, or refuses while live manager work makes that unsafe.
+
+Liveness is part of the answer surface. Event and output records publish when
+their durable append succeeds, while closed read-only inspection remains
+available during a long provider call. The exact progress and answer elements
+are named so verification samples them while work is still running. Raw JSON,
+provider envelopes, and hidden reasoning never become presentation. One Core
+decoder buffers split records and translates Codex, Claude, Grok-compatible,
+OpenCode, Kimi, and safe plain-text output into readable stage/action and answer
+fields. Reduced motion never removes these changing textual facts.
+
+Project evidence is useful only while bounded and honest. The default pack
+reads at most 8 current-tree files, 12 KiB each, 48 KiB total, with 16 read
+attempts and a 10,000-name inventory ceiling. A truncated inventory says it was
+truncated. File/folder attachment chips correspond to typed, confined contents;
+they are not converted into decorative `@path` prose. `.git` and `.hivemind`
+remain outside this surface.
+
+Installed build **26.828.320** is the reference evidence. At 1440x900 it showed
+the exact planner stage, elapsed time, and reply before the provider exited,
+then showed a scoped provider failure on the same named status surface. Both
+captures and structured evidence are under
+`docs/evidence/remediation-phase6-26.828.320/`.
+

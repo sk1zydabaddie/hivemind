@@ -102,7 +102,6 @@ import { list } from "@/lib/durable";
 import { adapterModelText } from "@/lib/workspace-actions";
 import type {
   ActiveAgentView,
-  DraftOutcome,
   DraftStreamView,
   AdapterConnectResult,
   AutonomyLevel,
@@ -255,19 +254,17 @@ export function WorkTab({
   const [roleChanging, setRoleChanging] = useState<string | null>(null);
   const [rolePickerError, setRolePickerError] = useState("");
   const [feedback, setFeedback] = useState("");
-  /* Text typed while a run is in flight, held until the person says which of
-     the two things they meant. Never inferred from the wording: deciding
-     between "add a task" and "file a note" by pattern-matching prose is
-     control flow depending on message text, which this project has recorded
-     four separate times as the thing that keeps breaking. */
-  const [midRunRequest, setMidRunRequest] = useState("");
   const [busy, setBusy] = useState(false);
+  const submitInFlightRef = useRef(false);
+  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
   const [promptStartedAt, setPromptStartedAt] = useState<number | null>(null);
   const [amendment, setAmendment] = useState<{
     kind: "add_task" | "edit_task";
     draft: AmendmentDraft;
   } | null>(null);
   const [redirectOpen, setRedirectOpen] = useState(false);
+  const [managerGuidanceOpen, setManagerGuidanceOpen] = useState(false);
+  const [managerGuidanceText, setManagerGuidanceText] = useState("");
   /* The checks' own output. Read on open rather than held in the projection:
      it is a record of one past run, not live state, and re-reading it on every
      event would be a lot of bytes to keep current for a dialog nobody has
@@ -291,6 +288,17 @@ export function WorkTab({
   useEffect(() => {
     activityEndRef.current?.scrollIntoView({ block: "nearest" });
   }, [projection.eventCount]);
+
+  useEffect(() => {
+    if (pendingRequestId === null) return;
+    const accepted = projection.recentEvents.some((event) =>
+      event.type === "conversation.message_recorded" && event.data.request_id === pendingRequestId
+    );
+    if (!accepted) return;
+    setComposer("");
+    setAttachments([]);
+    setPendingRequestId(null);
+  }, [pendingRequestId, projection.eventCount, projection.recentEvents]);
 
   /* Moving the composer is presentation state, not project truth. Reset it
      when this surface disconnects from a project; otherwise a newly selected
@@ -476,15 +484,6 @@ export function WorkTab({
     inspection?.current_plan !== undefined &&
     plan === null &&
     (managerSession === null || managerSession === undefined);
-  /* A plan that has nothing left to do must not capture the next request. A task
-     the daemon has not projected yet has not finished either. */
-  const planHasWorkLeft =
-    currentPlan !== null &&
-    currentPlan.tasks.some((planned) => {
-      const task = tasks.find((entry) => entry.task_id === planned.task_id);
-      return task === undefined || (task.state !== "merged" && task.state !== "cancelled");
-    });
-
   const startManager = async (
     message = "Execute the exact ratified plan through the normal checks."
   ): Promise<StartedSession> =>
@@ -507,29 +506,9 @@ export function WorkTab({
     });
   };
 
-  /* One request, one plan. Used by the composer when nothing is left to do, and
-     by "Start over" when a prepared plan is not what the person wanted. */
-  const preparePlan = async (message: string): Promise<void> => {
-    /* A project with no spec yet gets one drafted from what was typed. Core
-       decides everything about it; this only notices, from the inspection, that
-       there is nothing to plan against yet. The drafted spec carries the
-       orchestrator's signature only -- the person's comes at the review. */
-    if (inspection?.active_spec_id === null || inspection?.active_spec_id === undefined) {
-      /* The drafter decides, in the call it was making anyway, whether this was
-         a build request at all -- and says so with a typed status rather than
-         leaving the client to read the words. "Hello" used to be drafted from,
-         fail the ideation gate, and come back as a refusal; now it comes back
-         as an answer and the thread shows it. Nothing was authorised either
-         way: a reply cannot start work, and starting work is still a button. */
-      const drafted = await onAction<DraftOutcome>({
-        type: "spec.draft",
-        payload: { prompt: message, tool: "planner" }
-      });
-      if (drafted?.status === "replied") {
-        setFeedback("");
-        return;
-      }
-    }
+  /* This is an explicit replacement control, not the conversation classifier.
+     It operates only on the current durable spec; Core refuses if none exists. */
+  const prepareDifferentPlan = async (message: string): Promise<void> => {
     const prepared = await onAction<PreparedPlan>({
       type: "plan.prepare",
       payload: { prompt: message, tool: "planner" }
@@ -549,58 +528,33 @@ export function WorkTab({
     event: React.FormEvent<HTMLFormElement>
   ): Promise<void> => {
     event.preventDefault();
+    if (submitInFlightRef.current) return;
     const typedMessage = composer.trim();
     if (typedMessage === "") return;
-    const message =
-      attachments.length === 0
-        ? typedMessage
-        : `${typedMessage}\n\nProject references:\n${attachments
-            .map((attachment) => `- @${attachment.path}`)
-            .join("\n")}`;
+    const requestId = pendingRequestId ?? crypto.randomUUID();
+    setPendingRequestId(requestId);
+    submitInFlightRef.current = true;
     setComposerHasMoved(true);
     setBusy(true);
     setPromptStartedAt(Date.now());
     setFeedback("");
-    /* Sending moves the message into the durable conversation trail. Keeping
-       the same text in the composer made a submitted request look unsent for
-       the entire provider call. */
-    setComposer("");
-    setAttachments([]);
     try {
-      if (runActive) {
-        /* Two different things a person can mean while work is running, and
-           only they know which. Filing guidance unconditionally -- what this
-           did before -- meant a typed feature request became advice that a
-           deterministic run may never read, under a message that said it had
-           been saved. */
-        setMidRunRequest(message);
-        setFeedback("");
-      } else if (plan !== null) {
-        /* A plan waiting is not a reason to stop talking.
-         *
-         * This used to capture the message, open a modal offering to replace
-         * the plan, and answer "Review the prepared plan first" -- treating a
-         * question as though it were an attempt to approve. It is not: only a
-         * button approves, and only "Start over" replaces. So the message goes
-         * through the same conversation the rest of the surface uses, in the
-         * mode that answers and never drafts, and the plan is untouched. */
-        await onAction<DraftOutcome>({
-          type: "spec.draft",
-          payload: { prompt: message, tool: "planner", answer_only: true }
-        });
-        setFeedback("");
-        return;
-      } else if (!planHasWorkLeft) {
-        await preparePlan(message);
-      } else {
-        const started = await startManager(message);
-        if (inspection?.autonomy.configured_level === "review_everything") {
-          setFeedback("The first step is prepared. Continue when you are ready.");
-        } else {
-          await continueSession(started.session_id);
-          setFeedback("Working until it finishes or something needs you.");
+      await onAction({
+        type: "conversation.submit",
+        payload: {
+          prompt: typedMessage,
+          tool: "planner",
+          request_id: requestId,
+          attachments
         }
-      }
+      });
+      /* A successful response can only follow Core's durable message append.
+         Clearing here preserves the request through transport/provider failure
+         before acceptance while avoiding a second client-side authority test. */
+      setComposer("");
+      setAttachments([]);
+      setPendingRequestId(null);
+      setFeedback("");
     } catch (error) {
       const explanation = plainActionError(error);
       setFeedback(
@@ -609,6 +563,7 @@ export function WorkTab({
           : "That request stopped before a plan was ready. See the conversation above for details."
       );
     } finally {
+      submitInFlightRef.current = false;
       setPromptStartedAt(null);
       setBusy(false);
     }
@@ -657,7 +612,6 @@ export function WorkTab({
       await onAction({ type: "conversation.new", payload: {} });
       setReplanOpen(false);
       setReplanText("");
-      setMidRunRequest("");
       setFeedback(
         "New conversation. The run has ended and the board is clear — everything that happened is still in this project's history."
       );
@@ -948,44 +902,6 @@ export function WorkTab({
       busy={busy}
       composerRef={composerRef}
       continuationAvailable={continuationAvailable}
-      midRunRequest={midRunRequest}
-      onAddAsTask={(message) => {
-        /* Into the amendment form, which is the audited door: it revalidates
-           the whole plan, so the new task's files must be disjoint from every
-           other task's, and Core refuses outright when a running worker
-           already holds one of them. */
-        setAmendment({
-          kind: "add_task",
-          draft: { ...emptyAmendment(), title: message, acceptance: message }
-        });
-        setMidRunRequest("");
-        setFeedback(
-          "Name the files it may write and how it is checked. It joins this run once you approve the change - it does not start on its own."
-        );
-      }}
-      onFileGuidance={(message) => {
-        setMidRunRequest("");
-        void (async () => {
-          setBusy(true);
-          try {
-            await onAction({
-              type: "guidance.record",
-              payload: { target: "orchestrator", message }
-            });
-            setFeedback(
-              "Filed as advice. It is read at the next decision point, and a run that finishes without needing one will not read it - the Later list shows it waiting."
-            );
-          } catch (error) {
-            setFeedback(plainActionError(error));
-          } finally {
-            setBusy(false);
-          }
-        })();
-      }}
-      onReturnRequest={(message) => {
-        setComposer(message);
-        setMidRunRequest("");
-      }}
       centered={composerCentered}
       feedback={feedback || plainActionError(actionError)}
       idle={idle}
@@ -1126,6 +1042,7 @@ export function WorkTab({
                 }
               }}
               onOpenChecks={() => setChecksOpen(true)}
+              onGuideRun={() => setManagerGuidanceOpen(true)}
               onOpenPlan={() => void openPlanReview()}
               onStop={() => void stopRun()}
             />
@@ -1362,6 +1279,37 @@ export function WorkTab({
 
       <TextActionDialog
         busy={busy}
+        description="This note is advisory. The manager can read it at its next decision point, but it cannot approve a plan, bypass a check, or start work."
+        open={managerGuidanceOpen}
+        note="Use Stop if the current run must not continue."
+        submitLabel="Guide the run"
+        title="Guide the manager"
+        value={managerGuidanceText}
+        onChange={setManagerGuidanceText}
+        onOpenChange={setManagerGuidanceOpen}
+        onSubmit={async () => {
+          const message = managerGuidanceText.trim();
+          if (message === "") return;
+          setBusy(true);
+          setFeedback("");
+          try {
+            await onAction({
+              type: "guidance.record",
+              payload: { target: "orchestrator", message }
+            });
+            setManagerGuidanceText("");
+            setManagerGuidanceOpen(false);
+            setFeedback("Guidance saved for the manager's next decision point.");
+          } catch (error) {
+            setFeedback(plainActionError(error));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
+
+      <TextActionDialog
+        busy={busy}
         description="Hivemind will prepare a different plan from this description. The plan waiting now is replaced, and nothing starts until you approve the new one."
         open={replanOpen}
         note="Nothing runs until you approve the new plan."
@@ -1376,7 +1324,7 @@ export function WorkTab({
           setBusy(true);
           setFeedback("");
           try {
-            await preparePlan(message);
+            await prepareDifferentPlan(message);
             setReplanText("");
             setReplanOpen(false);
             setReviewOpen(false);
@@ -1828,6 +1776,7 @@ function RunHeader({
   stopBusy,
   advancing,
   onOpenChecks,
+  onGuideRun,
   onNewConversation,
   newConversationBusy,
   onOpenPlan,
@@ -1847,6 +1796,7 @@ function RunHeader({
   stopBusy: boolean;
   advancing: string | null;
   onOpenChecks: () => void;
+  onGuideRun: () => void;
   /** Begin a fresh thread. Keeps the trail and any prepared plan. */
   onNewConversation: () => void;
   newConversationBusy: boolean;
@@ -1967,6 +1917,18 @@ function RunHeader({
             <MessageSquarePlus aria-hidden="true" />
             {newConversationBusy ? "Starting…" : "New conversation"}
           </Button>
+          {runActive ? (
+            <Button
+              disabled={busy}
+              size="sm"
+              type="button"
+              variant="ghost"
+              onClick={onGuideRun}
+            >
+              <MessageSquareText aria-hidden="true" />
+              Guide run
+            </Button>
+          ) : null}
           {runActive ? (
             <Button
               disabled={stopBusy}
@@ -2608,7 +2570,10 @@ function RunThread({
             immediate and true, and the streamed steps fill in underneath as they
             arrive. */}
         {pendingSince === null ? null : (
-          <article className="max-w-[720px] text-[13px] text-muted-foreground">
+          <article
+            className="max-w-[720px] text-[13px] text-muted-foreground"
+            data-testid="conversation-progress"
+          >
             <div className="flex items-center gap-2.5">
               <span
                 aria-hidden="true"
@@ -2622,7 +2587,10 @@ function RunThread({
               </span>
             </div>
             {draftText === null || draftText.trim() === "" ? null : (
-              <pre className="mt-1.5 mb-0 max-h-40 overflow-auto pl-9 font-mono text-[11.5px] leading-relaxed break-words whitespace-pre-wrap text-muted-foreground">
+              <pre
+                className="mt-1.5 mb-0 max-h-40 overflow-auto pl-9 font-mono text-[11.5px] leading-relaxed break-words whitespace-pre-wrap text-muted-foreground"
+                data-testid="conversation-live-answer"
+              >
                 {draftText}
               </pre>
             )}
@@ -3002,10 +2970,6 @@ function PromptDock({
   managerStartAvailable,
   busy,
   feedback,
-  midRunRequest,
-  onAddAsTask,
-  onFileGuidance,
-  onReturnRequest,
   rolePickerOpen,
   rolePickerView,
   rolePickerModels,
@@ -3035,12 +2999,6 @@ function PromptDock({
   managerStartAvailable: boolean;
   busy: boolean;
   feedback: string;
-  /* Text typed while work is running, waiting for the person to say which of
-     the two things they meant. Empty when there is nothing to ask about. */
-  midRunRequest: string;
-  onAddAsTask: (message: string) => void;
-  onFileGuidance: (message: string) => void;
-  onReturnRequest: (message: string) => void;
   rolePickerOpen: boolean;
   rolePickerView: ProjectConfigView | null;
   rolePickerModels: ModelDiscoveryView | null;
@@ -3150,7 +3108,7 @@ function PromptDock({
             Work is running
           </span>
           <span className="min-w-0 text-[11px] leading-snug break-words text-muted-foreground">
-            What you send goes to this run, not to a new one.
+            Your message stays conversational; it cannot approve or start work.
           </span>
         </div>
       ) : null}
@@ -3230,44 +3188,6 @@ function PromptDock({
           {attachmentError}
         </p>
       ) : null}
-      {midRunRequest === "" ? null : (
-        <div className="m-0 grid gap-2 rounded-sm border border-rule bg-canvas px-2.5 py-2">
-          <p className="m-0 text-[12px] leading-snug text-ink">
-            Work is running. What did you mean by this?
-          </p>
-          <p className="m-0 font-mono text-[11px] leading-snug break-words text-muted-foreground">
-            {midRunRequest}
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            <Button
-              disabled={busy}
-              size="xs"
-              type="button"
-              onClick={() => onAddAsTask(midRunRequest)}
-            >
-              Add it as a task to this run
-            </Button>
-            <Button
-              disabled={busy}
-              size="xs"
-              type="button"
-              variant="outline"
-              onClick={() => onFileGuidance(midRunRequest)}
-            >
-              File it as guidance for the next decision
-            </Button>
-            <Button
-              disabled={busy}
-              size="xs"
-              type="button"
-              variant="ghost"
-              onClick={() => onReturnRequest(midRunRequest)}
-            >
-              Put it back in the box
-            </Button>
-          </div>
-        </div>
-      )}
       {feedback ? (
         <p
           className="m-0 rounded-sm border-l-2 border-navy bg-navy-wash px-2.5 py-1.5 text-[12px] leading-snug break-words text-navy"
@@ -3293,7 +3213,7 @@ function PromptDock({
                 supported thing to type -- which it now is, but the invitation
                 still had to catch up. */}
             {runActive
-              ? "Work is running, so Hivemind will ask whether this is guidance for it or a new piece of work."
+              ? "Ask about the project or this run. A conversational reply cannot approve, replace, or start work."
               : "Ask anything, or describe a change. A question is answered here; a change becomes a plan you approve before anything runs."}
           </span>
           {managerStartAvailable ? (
@@ -4468,6 +4388,9 @@ function draftLinesSince(
   pendingSince: number | null
 ): string | null {
   if (stream === null || pendingSince === null) return null;
+  if (stream.answer !== "" && stream.answer_at !== null && stream.answer_at >= pendingSince) {
+    return stream.answer;
+  }
   const lines = stream.lines.filter((line) => line.at >= pendingSince).map((line) => line.text);
   return lines.length === 0 ? null : lines.slice(-8).join(String.fromCharCode(10));
 }

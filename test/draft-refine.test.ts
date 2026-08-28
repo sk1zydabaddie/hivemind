@@ -113,6 +113,7 @@ test("draft-refine routes cheap then strong, grounds critique in real evidence, 
     }
 
     assert.deepEqual(await canonicalIdentity(repo), canonicalBefore);
+    await assertLiveOutputWasAppended(repo, ["cheap-fixture", "strong-fixture"]);
     await assertOnlyMainCheckoutAndBranch(repo);
     const events = await readEvents(repo);
     assert.equal(events.ok, true, events.ok ? undefined : events.reason);
@@ -161,6 +162,7 @@ test("a failed refinement is ineligible and does not displace the passing origin
     assert.equal(result.value.selection.selected_draft_id, "D-001");
     assert.deepEqual(result.value.selection.eligible_draft_ids, ["D-001"]);
     assert.deepEqual(await canonicalIdentity(repo), canonicalBefore);
+    await assertLiveOutputWasAppended(repo, ["cheap-fixture", "strong-fixture"]);
     await assertOnlyMainCheckoutAndBranch(repo);
   });
 });
@@ -184,6 +186,7 @@ test("a crashed refiner is preserved as ineligible, the original wins, and clean
     assert.equal(result.value.selection.selected_draft_id, "D-001");
     assert.deepEqual(result.value.selection.eligible_draft_ids, ["D-001"]);
     assert.deepEqual(await canonicalIdentity(repo), canonicalBefore);
+    await assertLiveOutputWasAppended(repo, ["cheap-fixture", "strong-fixture"]);
     await assertOnlyMainCheckoutAndBranch(repo);
   });
 });
@@ -500,9 +503,23 @@ async function canonicalIdentity(repo: string): Promise<Record<string, string>> 
     worktree: await hashTree(path.join(repo, ".hivemind", "worktrees", "T-001")),
     patch: await hashTree(path.join(repo, ".hivemind", "patches", "T-001")),
     leases: await hashTree(path.join(repo, ".hivemind", "leases")),
-    canon: await hashTree(path.join(repo, ".hivemind", "canon")),
-    output: await hashTree(path.join(repo, ".hivemind", "log", "tasks"))
+    canon: await hashTree(path.join(repo, ".hivemind", "canon"))
   };
+}
+
+async function assertLiveOutputWasAppended(repo: string, expectedTools: string[]): Promise<void> {
+  const lines = (await readFile(
+    path.join(repo, ".hivemind", "log", "tasks", "T-001.output.jsonl"),
+    "utf8"
+  )).trim().split(/\r?\n/u).map((line) => JSON.parse(line) as Record<string, unknown>);
+  assert.deepEqual(lines[0], { output: "canonical" });
+  const appended = lines.slice(1);
+  assert.ok(appended.length > 0, "the provider calls must append observable output");
+  assert.ok(appended.every((line) => line.task_id === "T-001"));
+  assert.deepEqual(
+    [...new Set(appended.map((line) => line.tool))].sort(),
+    [...expectedTools].sort()
+  );
 }
 
 async function hashTree(root: string): Promise<string> {

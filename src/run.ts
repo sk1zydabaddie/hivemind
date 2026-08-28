@@ -15,7 +15,7 @@ import { formatErrorDetail } from "./error-detail.js";
 import { appendEvent, readEvents, type HivemindEvent, type HivemindEventInput } from "./events.js";
 import { releaseLease, verifyLeaseCoverage } from "./lease.js";
 import { appendRoutingObservation, diffByteSize } from "./learned-routing.js";
-import { appendTaskOutput, type TaskOutputRecord, type TaskOutputInput } from "./output-stream.js";
+import { createLiveOutputWriter, type TaskOutputRecord } from "./output-stream.js";
 import { requireTaskDependenciesIntegrated } from "./plan.js";
 import { findGitRoot } from "./repo.js";
 import { requirePassedWriteIntent } from "./intent.js";
@@ -453,8 +453,7 @@ async function finishPreparedRunAttempt(
   | { ok: true; value: RunResult }
   | { ok: false; reason: string; throttled?: boolean; toolExit?: number; diffPath?: string; changedFiles?: number }
 > {
-  const streamOutputWrites: Array<Promise<{ ok: true } | { ok: false; reason: string }>> = [];
-  let streamOutputTail: Promise<{ ok: true } | { ok: false; reason: string }> = Promise.resolve({ ok: true });
+  const liveOutput = createLiveOutputWriter(repoRoot, prepared.taskId, prepared.tool, prepared.onOutput);
   const workerProcessIdentities: DurableProcessIdentity[] = [];
   const invokeResult = await invokeAgent(repoRoot, prepared.taskId, prepared.tool, {
     allowDangerousAdapter: prepared.allowDangerousAdapter,
@@ -483,23 +482,7 @@ async function finishPreparedRunAttempt(
       if (recorded.ok) workerProcessIdentities.push(identity);
       return recorded.ok ? { ok: true as const } : recorded;
     },
-    onStreamChunk: (chunk) => {
-      streamOutputTail = streamOutputTail.then((previous) =>
-        previous.ok
-          ? emitTaskOutput(
-              repoRoot,
-              {
-                task_id: prepared.taskId,
-                tool: prepared.tool,
-                stream: chunk.stream,
-                text: chunk.text
-              },
-              prepared.onOutput
-            )
-          : previous
-      );
-      streamOutputWrites.push(streamOutputTail);
-    }
+    onStreamChunk: liveOutput.onChunk
   });
   const workerProcessIdentity = workerProcessIdentities.at(-1);
   if (workerProcessIdentity !== undefined) {
@@ -520,11 +503,10 @@ async function finishPreparedRunAttempt(
     );
     if (!stopped.ok) return stopped;
   }
-  const streamOutputResults = await Promise.all(streamOutputWrites);
-  const failedStreamOutput = streamOutputResults.find((result) => !result.ok);
-  if (failedStreamOutput !== undefined && !failedStreamOutput.ok) {
-    const failed = await emitRunFailure(repoRoot, prepared, failedStreamOutput.reason);
-    return failed.ok ? failedStreamOutput : failed;
+  const streamed = await liveOutput.drain();
+  if (!streamed.ok) {
+    const failed = await emitRunFailure(repoRoot, prepared, streamed.reason);
+    return failed.ok ? streamed : failed;
   }
   if (!invokeResult.ok) {
     if (invokeResult.budget_exceeded === true) {
@@ -778,19 +760,6 @@ async function emitRunEvent(
     return eventResult;
   }
   onEvent?.(eventResult.value);
-  return { ok: true };
-}
-
-async function emitTaskOutput(
-  repoRoot: string,
-  input: TaskOutputInput,
-  onOutput: ((record: TaskOutputRecord) => void) | undefined
-): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const outputResult = await appendTaskOutput(repoRoot, input);
-  if (!outputResult.ok) {
-    return outputResult;
-  }
-  onOutput?.(outputResult.value);
   return { ok: true };
 }
 

@@ -81,6 +81,7 @@ export interface ConversationProjectContext {
   candidate_files: number;
   max_files: number;
   max_total_bytes: number;
+  inventory_truncated: boolean;
 }
 
 export const draftedSpecJsonSchema: Record<string, unknown> = {
@@ -238,8 +239,11 @@ export function buildSpecDraftingPrompt(input: {
           ""
         ]
       : [
-          `The snapshot contains ${context.files.length} of ${context.candidate_files} candidate files from ${context.tracked_files} tracked files.`,
+          `The snapshot contains ${context.files.length} of ${context.candidate_files} candidate files from ${context.tracked_files} current working-tree files.`,
           `It is capped at ${context.max_files} files and ${context.max_total_bytes} UTF-8 bytes total.`,
+          ...(context.inventory_truncated
+            ? ["The working-tree inventory exceeded its 10000-file bound; ask for an exact project-relative path if the needed file is absent."]
+            : []),
           "A file marked truncated contains only its prefix. If this evidence is not",
           "enough, say which project-relative file would answer the question instead",
           "of pretending the file list proves more than it does.",
@@ -340,48 +344,6 @@ export function parseDraftedSpec(modelOutput: string): SpecResult<DraftedSpecPro
       self_critique: { weakest_point: weakest, cut_or_change: change }
     }
   };
-}
-
-/**
- * Is this a real constraint, or a shrug?
- *
- * An empty non-goals list is an honest answer for a request with no tempting
- * adjacent scope. A list whose only content is a placeholder is not: it passes
- * the Non-goals gate while telling the person nothing, which turns the gate
- * into theatre. Vacuity is reported rather than repaired, because the fix is to
- * the drafting prompt and pretending otherwise hides that.
- */
-const VACUOUS = [
-  /^none\b/iu,
-  /^n\/?a\b/iu,
-  /^nothing\b/iu,
-  /^no\s+non-?goals?\b/iu,
-  /^not\s+applicable\b/iu,
-  /^anything\s+(not|else)\b/iu,
-  /^everything\s+else\b/iu,
-  /^out\s+of\s+scope\b/iu,
-  /^tbd\b/iu,
-  /^unspecified\b/iu
-];
-
-export interface NonGoalVacuity {
-  /** No non-goals at all. Honest for some requests, suspicious across many. */
-  empty: boolean;
-  /** Entries that say nothing: "None recorded", "Anything else". */
-  vacuous: string[];
-  /** Entries that name a specific declined scope. */
-  substantive: string[];
-}
-
-export function assessNonGoals(nonGoals: string[]): NonGoalVacuity {
-  const vacuous: string[] = [];
-  const substantive: string[] = [];
-  for (const entry of nonGoals) {
-    const text = entry.trim();
-    if (text === "" || VACUOUS.some((pattern) => pattern.test(text))) vacuous.push(entry);
-    else substantive.push(entry);
-  }
-  return { empty: nonGoals.length === 0, vacuous, substantive };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

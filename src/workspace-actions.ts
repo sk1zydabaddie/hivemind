@@ -18,13 +18,13 @@ import { readCheckOutput } from "./check-output.js";
 import { addAccount, selectAccount } from "./provider-accounts.js";
 import { listProjectFiles, readProjectFile } from "./project-files.js";
 import { findGitRoot } from "./repo.js";
-import { readEvents } from "./events.js";
+import { readEvents, type HivemindEvent } from "./events.js";
 import { requestTaskRedirect } from "./supervision.js";
 import { requestTaskStop } from "./task-control.js";
 import { inspectWorkspace } from "./workspace-inspection.js";
 
 import { resumeTask } from "./task-resume.js";
-import { startNewConversation, draftSpecFromPrompt } from "./spec-draft-action.js";
+import { startNewConversation, draftSpecFromPrompt, type ConversationAttachment } from "./spec-draft-action.js";
 import { adapterRoleNames, isAdapterRoleName } from "./agent-catalogue.js";
 import { discoverProviderModels } from "./model-discovery.js";
 import {
@@ -50,7 +50,7 @@ export const workspaceActionTypes = [
   "plan.prepare",
   "plan.review",
   "plan.ratify",
-  "spec.draft",
+  "conversation.submit",
   "spec.review",
   "spec.adopt",
   "manual_task.review",
@@ -87,9 +87,8 @@ export const workspaceActionTypes = [
      decision is Core's because a client that ignored the outcome could
      otherwise store a command that never ran. */
   "checks.try",
-  /* Begin a new conversation. Appends one boundary event: the trail keeps every
-     earlier message and a prepared plan is untouched -- see
-     `startNewConversation` for what it does and does not move. */
+  /* Begin a new conversation. The trail stays immutable, while Core archives
+     the active-request pointer so prior work cannot control the new thread. */
   "conversation.new",
   /* AGENTS.md: `agents.propose` reads the repository and returns a diff;
      `agents.apply` writes only what Core itself re-derived, and only when the
@@ -126,6 +125,7 @@ export const workspaceActionTypes = [
 
 export type WorkspaceActionType = (typeof workspaceActionTypes)[number];
 type ActionResult = { ok: true; value: unknown } | { ok: false; reason: string };
+const conversationRequests = new Map<string, Promise<ActionResult>>();
 
 export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Promise<ActionResult> {
   if (!isRecord(raw) || typeof raw.type !== "string" || !workspaceActionTypes.includes(raw.type as WorkspaceActionType)) {
@@ -148,36 +148,40 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
     const parsed = exactStrings(payload, ["prompt", "tool"]);
     return parsed.ok ? prepareWorkspaceTentativePlan(repoRoot, parsed.value.prompt, parsed.value.tool) : parsed;
   }
+  if (raw.type === "conversation.submit") {
+    const allowed = new Set(["prompt", "tool", "request_id", "attachments"]);
+    const extra = Object.keys(payload).find((key) => !allowed.has(key));
+    if (extra !== undefined) return { ok: false, reason: `conversation.submit cannot take: ${extra}` };
+    const parsed = exactStrings(
+      { prompt: payload.prompt, tool: payload.tool, request_id: payload.request_id },
+      ["prompt", "tool", "request_id"]
+    );
+    if (!parsed.ok) return parsed;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(parsed.value.request_id)) {
+      return { ok: false, reason: "conversation.submit request_id must be a UUID" };
+    }
+    const attachments = parseConversationAttachments(payload.attachments);
+    if (!attachments.ok) return attachments;
+    const key = `${path.resolve(repoRoot).toLocaleLowerCase("en-US")}\0${parsed.value.request_id}`;
+    const existing = conversationRequests.get(key);
+    if (existing !== undefined) return existing;
+    const request = submitConversationMessage(
+      repoRoot,
+      parsed.value.prompt,
+      parsed.value.tool,
+      parsed.value.request_id,
+      attachments.value
+    );
+    conversationRequests.set(key, request);
+    try {
+      return await request;
+    } finally {
+      if (conversationRequests.get(key) === request) conversationRequests.delete(key);
+    }
+  }
   if (raw.type === "plan.review") {
     const parsed = exactStrings(payload, ["spec_id"]);
     return parsed.ok ? reviewPlanForRatification(repoRoot, parsed.value.spec_id) : parsed;
-  }
-  /* Drafts a spec from a prompt and signs only the orchestrator's half. */
-  if (raw.type === "spec.draft") {
-    /* `answer_only` is set when a plan is already prepared: the conversation
-       continues, but nothing drafts behind a plan the person has not seen.
-       Exactly true, like every other recorded decision here. */
-    const answerOnly = payload.answer_only;
-    if (answerOnly !== undefined && answerOnly !== true) {
-      return { ok: false, reason: "answer_only can only be omitted or exactly true" };
-    }
-    const { answer_only: _ignored, ...rest } = payload;
-    const parsed = exactStrings(rest, ["prompt", "tool"]);
-    return parsed.ok
-      ? draftSpecFromPrompt(repoRoot, parsed.value.prompt, parsed.value.tool, {
-          answerOnly: answerOnly === true,
-          /* Re-enter the SAME audited dispatcher for every project-file read.
-             This is intentionally in-process: the outer daemon request already
-             owns the mutation queue, and calling its HTTP route again would
-             deadlock it. The nested action is read-only and still receives the
-             exact files.read payload validation and confinement checks. */
-          readProjectFile: (filePath) =>
-            executeWorkspaceAction(repoRoot, {
-              type: "files.read",
-              payload: { path: filePath }
-            })
-        })
-      : parsed;
   }
   if (raw.type === "spec.review") {
     const parsed = exactStrings(payload, ["spec_id"]);
@@ -402,6 +406,22 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
   }
   if (raw.type === "conversation.new") {
     if (Object.keys(payload).length > 0) return { ok: false, reason: "conversation.new takes no fields" };
+    const inspection = await inspectWorkspace(repoRoot);
+    if (!inspection.ok) return inspection;
+    const events = await readEvents(repoRoot);
+    if (!events.ok) return events;
+    const liveSession = inspection.value.manager_session?.status === "active" ||
+      inspection.value.manager_session?.status === "paused" ||
+      hasOpenManagerRun(events.value);
+    const liveTasks = inspection.value.tasks.some((task) =>
+      ["running", "paused", "submitted", "accepted"].includes(task.state)
+    );
+    if (liveSession || liveTasks) {
+      return {
+        ok: false,
+        reason: "the current run must be stopped before starting a new conversation"
+      };
+    }
     return startNewConversation(repoRoot);
   }
   if (raw.type === "checks.try") {
@@ -466,6 +486,80 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
     );
   }
   return { ok: false, reason: "unsupported workspace action" };
+}
+
+function hasOpenManagerRun(events: HivemindEvent[]): boolean {
+  const started = new Set<string>();
+  const terminal = new Set<string>();
+  for (const event of events) {
+    const sessionId = typeof event.data.session_id === "string" ? event.data.session_id : null;
+    if (sessionId === null) continue;
+    if (event.type === "manager.run_started") started.add(sessionId);
+    if (event.type === "manager.run_completed" || event.type === "manager.run_failed" || event.type === "scheduler.run_cancelled") {
+      terminal.add(sessionId);
+    }
+  }
+  for (const sessionId of started) {
+    if (!terminal.has(sessionId)) return true;
+  }
+  return false;
+}
+
+async function submitConversationMessage(
+  repoRoot: string,
+  prompt: string,
+  tool: string,
+  requestId: string,
+  attachments: ConversationAttachment[]
+): Promise<ActionResult> {
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return events;
+  if (events.value.some((event) =>
+    event.type === "conversation.message_recorded" && event.data.request_id === requestId
+  )) {
+    return { ok: true, value: { status: "duplicate", request_id: requestId } };
+  }
+
+  const inspection = await inspectWorkspace(repoRoot);
+  if (!inspection.ok) return inspection;
+  /* A current request/plan makes this an answer-only turn. The classifier is
+     still invoked; what is forbidden is treating message text as approval,
+     plan replacement, or permission to start the manager. */
+  const answerOnly = inspection.value.active_spec_id !== null;
+  const drafted = await draftSpecFromPrompt(repoRoot, prompt, tool, {
+    answerOnly,
+    requestId,
+    attachments,
+    readProjectFile: (filePath) => executeWorkspaceAction(repoRoot, {
+      type: "files.read",
+      payload: { path: filePath }
+    })
+  });
+  if (!drafted.ok) return drafted;
+  if (drafted.value.status === "replied") {
+    return { ok: true, value: { ...drafted.value, request_id: requestId } };
+  }
+  const prepared = await prepareWorkspaceTentativePlan(repoRoot, prompt, tool);
+  return prepared.ok
+    ? { ok: true, value: { status: "planned", request_id: requestId, draft: drafted.value, plan: prepared.value } }
+    : prepared;
+}
+
+function parseConversationAttachments(value: unknown): { ok: true; value: ConversationAttachment[] } | { ok: false; reason: string } {
+  if (value === undefined) return { ok: true, value: [] };
+  if (!Array.isArray(value) || value.length > 20) {
+    return { ok: false, reason: "conversation.submit attachments must be a list of at most 20 project items" };
+  }
+  const attachments: ConversationAttachment[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry) || (entry.kind !== "file" && entry.kind !== "folder") ||
+        typeof entry.path !== "string" || entry.path.trim() === "" ||
+        Object.keys(entry).some((key) => key !== "kind" && key !== "path")) {
+      return { ok: false, reason: "each conversation attachment must contain only a file/folder kind and project-relative path" };
+    }
+    attachments.push({ kind: entry.kind, path: entry.path });
+  }
+  return { ok: true, value: attachments };
 }
 
 /**

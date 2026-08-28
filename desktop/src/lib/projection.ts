@@ -48,6 +48,8 @@ export interface EventMessage {
 export interface OutputRecord {
   /** What this line means, computed by Core. Absent when it says nothing. */
   activity?: string;
+  answer?: string;
+  answer_mode?: "complete" | "delta";
   ts: string;
   task_id: string;
   tool: string;

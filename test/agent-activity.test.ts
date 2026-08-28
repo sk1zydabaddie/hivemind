@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { activityLine, activityLines } from "../src/agent-activity.js";
+import { AgentStreamDecoder, activityLine, activityLines } from "../src/agent-activity.js";
 
 /* ── What is actually available ────────────────────────────────────────────
  *
@@ -39,13 +39,67 @@ test("nothing unrecognised leaks through as text", () => {
   for (const raw of [
     '{"type":"turn.completed","usage":{"input_tokens":21652}}',
     '2026-08-25T23:47:00Z ERROR codex_models_manager: failed to load models cache',
-    "not json at all",
+    "{",
     "{",
     ""
   ]) {
     const line = activityLine(raw);
     assert.ok(line === null || !line.includes("{"), `leaked: ${line}`);
   }
+});
+
+test("a JSONL record split across operating-system chunks is retained", () => {
+  const decoder = new AgentStreamDecoder();
+  assert.deepEqual(decoder.push('{"type":"turn.'), []);
+  assert.deepEqual(decoder.push('started"}\n'), [{ activity: "Thinking" }]);
+});
+
+test("safe plain-text progress remains visible", () => {
+  const decoder = new AgentStreamDecoder();
+  assert.deepEqual(decoder.push("Inspecting project files"), [{ activity: "Inspecting project files" }]);
+});
+
+test("Claude, Grok-compatible, OpenCode, and Kimi shapes normalize without leaking envelopes", () => {
+  const decoder = new AgentStreamDecoder();
+  const visible = [
+    ...decoder.push('{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read"}]}}\n'),
+    ...decoder.push('{"type":"content_block_delta","delta":{"text":"Hello "}}\n'),
+    ...decoder.push('{"type":"text_delta","text":"from Grok"}\n'),
+    ...decoder.push('{"type":"step-start"}\n'),
+    ...decoder.push('{"type":"message.part.updated","part":{"type":"tool","tool":"search"}}\n')
+  ];
+  assert.deepEqual(visible, [
+    { activity: "Using Read" },
+    { answer: "Hello ", answer_mode: "delta" },
+    { answer: "from Grok", answer_mode: "delta" },
+    { activity: "Thinking" },
+    { activity: "Using search" }
+  ]);
+});
+
+test("structured provider replies expose reply text but never their JSON envelope", () => {
+  const decoder = new AgentStreamDecoder({ structuredAnswers: true });
+  assert.deepEqual(
+    decoder.push('{"kind":"reply","reply":"Direct answer."}'),
+    [{ answer: "Direct answer.", answer_mode: "complete" }]
+  );
+  assert.deepEqual(
+    decoder.push('{"type":"item.completed","item":{"type":"agent_message","text":"{\\"kind\\":\\"reply\\",\\"reply\\":\\"Visible answer.\\"}"}}\n'),
+    [{ answer: "Visible answer.", answer_mode: "complete" }]
+  );
+  assert.deepEqual(
+    decoder.push('{"type":"item.completed","item":{"type":"agent_message","text":"{\\"kind\\":\\"draft\\",\\"title\\":\\"Hidden schema\\"}"}}\n'),
+    []
+  );
+});
+
+test("structured JSON split across provider deltas is buffered until it is safe", () => {
+  const decoder = new AgentStreamDecoder({ structuredAnswers: true });
+  assert.deepEqual(decoder.push('{"type":"content_block_delta","delta":{"text":"{\\"kind\\":\\"reply\\","}}\n'), []);
+  assert.deepEqual(
+    decoder.push('{"type":"content_block_delta","delta":{"text":"\\"reply\\":\\"Across chunks.\\"}"}}\n'),
+    [{ answer: "Across chunks.", answer_mode: "complete" }]
+  );
 });
 
 /* "Thinking / Thinking / Thinking" is a stutter, not progress. */

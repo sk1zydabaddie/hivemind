@@ -19,6 +19,7 @@ import { contextPackRelativePath, loadContextPackForContract } from "./context-p
 import { captureWorktreeDiff } from "./diff-capture.js";
 import { readEvents, type HivemindEvent } from "./events.js";
 import { resolveTaskAuthoringBase } from "./task-authoring-base.js";
+import { createLiveOutputWriter } from "./output-stream.js";
 
 export interface CharacterizationGenerationResult {
   task_id: string;
@@ -117,6 +118,9 @@ export async function generateCharacterizationCandidate(
     repoRoot,
     authoringBase.value.commit,
     async (checkoutPath): Promise<CharacterizationGenerationOutcome> => {
+      const liveOutput = createLiveOutputWriter(repoRoot, taskId, profileResult.profile.tool, undefined, {
+        structuredAnswers: true
+      });
       const processResult = await runAdapterProcess(
         repoRoot,
         profileResult.profile,
@@ -126,9 +130,12 @@ export async function generateCharacterizationCandidate(
           outputLogPath,
           usageSessionId: sessionId,
           usageRunId: sessionId,
-          usageTaskId: taskId
+          usageTaskId: taskId,
+          onStreamChunk: liveOutput.onChunk
         }
       );
+      const streamed = await liveOutput.drain();
+      if (!streamed.ok) return streamed;
       if (!processResult.ok) {
         return processResult;
       }

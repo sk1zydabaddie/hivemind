@@ -10,6 +10,7 @@ import { extractJsonObject } from "./json.js";
 import { proposeMemoryLesson, type MemoryProposal, type MemoryProposalInput } from "./memory-log.js";
 import type { MemoryResult } from "./memory-types.js";
 import { withProjectTempDirectory } from "./project-temp.js";
+import { ACTIVITY_STREAM_ID, createLiveOutputWriter } from "./output-stream.js";
 
 const maximumProposalCount = 8;
 
@@ -53,10 +54,16 @@ export async function consolidateMemory(
   const prompt = buildConsolidationPrompt(evidence);
   const outputLogPath = adapterRunLogPath(repoRoot, "memory-consolidation");
   return withProjectTempDirectory(repoRoot, "consolidation", async ({ path: isolatedCwd }) => {
+    const liveOutput = createLiveOutputWriter(repoRoot, ACTIVITY_STREAM_ID, profile.profile.tool, undefined, {
+      structuredAnswers: true
+    });
     const processResult = await runAdapterProcess(repoRoot, profile.profile, isolatedCwd, prompt, {
       outputLogPath,
-      usageRunId: "memory-consolidation"
+      usageRunId: "memory-consolidation",
+      onStreamChunk: liveOutput.onChunk
     });
+    const streamed = await liveOutput.drain();
+    if (!streamed.ok) return streamed;
     if (!processResult.ok) {
       return processResult;
     }

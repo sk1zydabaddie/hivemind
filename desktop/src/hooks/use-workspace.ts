@@ -258,11 +258,13 @@ export function useWorkspace(): WorkspaceView {
         if (!isCurrentProject()) {
           return;
         }
-        const message = parseMessage<OutputMessage>(event.data);
+        const message = parseOutputMessage(event.data);
         if (message) {
           clearTransportErrorAfterProgress();
           applyOutputMessage(projectionRef.current, message);
           render();
+        } else {
+          recordActionError("Live task output was malformed and was refused. It will reconnect; the run is unaffected.");
         }
       };
       render();
@@ -304,18 +306,37 @@ export function useWorkspace(): WorkspaceView {
         projectStreamUrl(nextConnection, "/tasks/activity/output/stream")
       );
       draftSourceRef.current = activitySource;
-      activitySource.onerror = () => undefined;
+      activitySource.onerror = () => {
+        if (isCurrentProject()) {
+          recordActionError("Live agent activity was interrupted. It will reconnect on its own; the run is unaffected.");
+        }
+      };
       activitySource.onmessage = (chunk) => {
         if (!isCurrentProject()) return;
-        const record = parseMessage<{ record?: { activity?: unknown; ts?: unknown } }>(chunk.data);
-        const line = typeof record?.record?.activity === "string" ? record.record.activity : "";
-        const at = typeof record?.record?.ts === "string" ? Date.parse(record.record.ts) : NaN;
-        if (line === "") return;
+        const record = parseOutputMessage(chunk.data);
+        if (record === null) {
+          recordActionError("Live agent output was malformed and was refused. It will reconnect; the run is unaffected.");
+          return;
+        }
+        clearTransportErrorAfterProgress();
+        const line = record.record.activity ?? "";
+        const at = Date.parse(record.record.ts);
+        const answer = record.record.answer ?? "";
+        if (line === "" && answer === "") return;
         setDraftStream((previous) => {
           const lines = previous?.lines ?? [];
-          if (lines.at(-1)?.text === line) return previous;
+          const nextLines = line === "" || lines.at(-1)?.text === line
+            ? lines
+            : [...lines, { at: Number.isFinite(at) ? at : Date.now(), text: line }].slice(-40);
+          const nextAnswer = answer === ""
+            ? previous?.answer ?? ""
+            : record.record.answer_mode === "delta"
+              ? `${previous?.answer ?? ""}${answer}`
+              : answer;
           return {
-            lines: [...lines, { at: Number.isFinite(at) ? at : Date.now(), text: line }].slice(-40)
+            lines: nextLines,
+            answer: nextAnswer,
+            answer_at: answer === "" ? previous?.answer_at ?? null : Number.isFinite(at) ? at : Date.now()
           };
         });
       };
@@ -324,8 +345,9 @@ export function useWorkspace(): WorkspaceView {
         if (!isCurrentProject()) {
           return;
         }
-        const message = parseMessage<EventMessage>(event.data);
+        const message = parseEventMessage(event.data);
         if (!message) {
+          recordActionError("A project event was malformed and was refused. Reconnect before trusting the live view.");
           return;
         }
         if (message.source === "history") markHistoryReplay();
@@ -709,10 +731,38 @@ export function useWorkspace(): WorkspaceView {
   };
 }
 
-function parseMessage<T>(value: string): T | null {
+function parseJson(value: string): unknown {
   try {
-    return JSON.parse(value) as T;
+    return JSON.parse(value) as unknown;
   } catch {
     return null;
   }
+}
+
+function parseEventMessage(value: string): EventMessage | null {
+  const raw = parseJson(value);
+  if (!isRecord(raw) || raw.kind !== "event" || (raw.source !== "history" && raw.source !== "live")) return null;
+  if (!isRecord(raw.event)) return null;
+  const event = raw.event;
+  if (typeof event.ts !== "string" || Number.isNaN(Date.parse(event.ts))) return null;
+  if (typeof event.type !== "string" || (event.task_id !== null && typeof event.task_id !== "string") || !isRecord(event.data)) return null;
+  if (raw.seq !== undefined && (!Number.isSafeInteger(raw.seq) || (raw.seq as number) < 1)) return null;
+  return raw as unknown as EventMessage;
+}
+
+function parseOutputMessage(value: string): OutputMessage | null {
+  const raw = parseJson(value);
+  if (!isRecord(raw) || raw.kind !== "output" || (raw.source !== "history" && raw.source !== "live") || !isRecord(raw.record)) return null;
+  const record = raw.record;
+  if (typeof record.ts !== "string" || Number.isNaN(Date.parse(record.ts))) return null;
+  if (typeof record.task_id !== "string" || typeof record.tool !== "string" ||
+      (record.stream !== "stdout" && record.stream !== "stderr") || typeof record.text !== "string") return null;
+  if (record.activity !== undefined && typeof record.activity !== "string") return null;
+  if (record.answer !== undefined && typeof record.answer !== "string") return null;
+  if (record.answer_mode !== undefined && record.answer_mode !== "complete" && record.answer_mode !== "delta") return null;
+  return raw as unknown as OutputMessage;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

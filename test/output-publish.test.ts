@@ -9,6 +9,8 @@ import { promisify } from "node:util";
 import {
   ACTIVITY_STREAM_ID,
   appendTaskOutput,
+  createLiveOutputWriter,
+  readTaskOutput,
   setTaskOutputPublisher,
   type TaskOutputRecord
 } from "../src/output-stream.js";
@@ -93,6 +95,22 @@ test("appending works with no publisher registered", async () => {
       text: "plain text\n"
     });
     assert.equal(appended.ok, true, appended.ok ? undefined : appended.reason);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("the shared live writer flushes a final record without a newline", async () => {
+  const dir = await project();
+  try {
+    const writer = createLiveOutputWriter(dir, ACTIVITY_STREAM_ID, "planner");
+    writer.onChunk({ stream: "stdout", text: '{"type":"turn.started"' });
+    writer.onChunk({ stream: "stdout", text: "}" });
+    const drained = await writer.drain();
+    assert.equal(drained.ok, true, drained.ok ? undefined : drained.reason);
+    const output = await readTaskOutput(dir, ACTIVITY_STREAM_ID);
+    assert.equal(output.ok, true, output.ok ? undefined : output.reason);
+    if (output.ok) assert.equal(output.value.at(-1)?.activity, "Thinking");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

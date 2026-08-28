@@ -18,6 +18,7 @@ import { createRatifiedSpec } from "./support/spec.js";
 import { authorizePlanlessManualTaskIfEligible } from "./support/manual-task.js";
 import { withTemplateRepo } from "./support/fixture-repo.js";
 import { stopChildProcess } from "./support/child-process.js";
+import { setProjectConfig } from "../src/config-actions.js";
 
 const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -277,8 +278,42 @@ test("daemon streams compact authoritative events separately from per-task worke
 
     const busSourceText = await readFile(path.join(process.cwd(), "src", "event-bus.ts"), "utf8");
     assert.doesNotMatch(busSourceText, /claude|codex/i);
-    for (const sourcePath of ["src/plan.ts", "src/integrate.ts", "src/status.ts", "src/replan.ts", "src/cache.ts"]) {
+    for (const sourcePath of ["src/integrate.ts", "src/status.ts", "src/replan.ts", "src/cache.ts"]) {
       assert.doesNotMatch(await readFile(path.join(process.cwd(), sourcePath), "utf8"), /output-stream|readTaskOutput|TaskOutput/u);
+    }
+    assert.match(await readFile(path.join(process.cwd(), "src", "plan.ts"), "utf8"), /createLiveOutputWriter/u);
+  });
+});
+
+test("read-only inspection remains live while a conversation provider is running", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const configured = await setProjectConfig(repo, { no_tests_declared: true });
+    assert.equal(configured.ok, true, configured.ok ? undefined : configured.reason);
+    await writeDelayedPlanner(repo);
+    const daemon = await startDaemon(repo);
+    try {
+      const conversation = postDaemon(daemon, "/workspace/action", {
+        type: "conversation.submit",
+        payload: {
+          prompt: "What does this project do?",
+          tool: "planner",
+          request_id: "123e4567-e89b-42d3-a456-426614174010",
+          attachments: []
+        }
+      });
+      await waitForEvent(repo, (event) =>
+        event.type === "conversation.message_recorded" && event.data.request_id === "123e4567-e89b-42d3-a456-426614174010"
+      );
+      const started = Date.now();
+      const inspection = await postDaemon(daemon, "/workspace/action", {
+        type: "status.inspect",
+        payload: {}
+      });
+      assert.equal(inspection.ok, true);
+      assert.ok(Date.now() - started < 1_000, `inspection waited ${Date.now() - started}ms`);
+      assert.equal((await conversation).ok, true);
+    } finally {
+      await stopDaemon(daemon);
     }
   });
 });
@@ -764,4 +799,49 @@ async function gitStdout(cwd: string, args: string[]): Promise<string> {
 
 async function cleanupTempRepo(repo: string): Promise<void> {
   await rm(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+}
+
+async function writeDelayedPlanner(repo: string): Promise<void> {
+  const agentPath = path.join(repo, "delayed-planner.mjs");
+  await writeFile(
+    agentPath,
+    [
+      "process.stdin.resume();",
+      "await new Promise((resolve) => setTimeout(resolve, 1500));",
+      "process.stdout.write(JSON.stringify({ kind: 'reply', reply: 'A daemon fixture.' }));"
+    ].join("\n"),
+    "utf8"
+  );
+  const adaptersDir = path.join(repo, ".hivemind", "adapters");
+  await mkdir(adaptersDir, { recursive: true });
+  await writeFile(
+    path.join(adaptersDir, "planner.profile.json"),
+    `${JSON.stringify({
+      tool: "planner",
+      invoke: [process.execPath, agentPath],
+      prompt_arg: "stdin",
+      verified_on: "test",
+      context_window: 100000,
+      timeout_ms: 5000,
+      routing_tier: "cheap",
+      roles: ["orchestrator"]
+    }, null, 2)}\n`,
+    "utf8"
+  );
+}
+
+async function postDaemon(
+  daemon: DaemonProcess,
+  route: string,
+  payload: unknown
+): Promise<{ ok: boolean; [key: string]: unknown }> {
+  const response = await fetch(`${daemon.url}${route}`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${daemon.authToken}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+  return await response.json() as { ok: boolean; [key: string]: unknown };
 }

@@ -36,6 +36,7 @@ import { latestTaskRunState } from "./run-state.js";
 import { workerProtectedPathReason, workerProtectedScopeReason } from "./worker-protected-paths.js";
 import { checkFormatVersion, formatVersions } from "./format-version.js";
 import { codedFailure, hasFailureCode } from "./failure-code.js";
+import { ACTIVITY_STREAM_ID, createLiveOutputWriter } from "./output-stream.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -383,14 +384,20 @@ async function generateTentativePlanWithSession(
   if (!prompt.ok) {
     return prompt;
   }
+  const liveOutput = createLiveOutputWriter(repoRoot, ACTIVITY_STREAM_ID, profileResult.profile.tool, undefined, {
+    structuredAnswers: true
+  });
   const processResult = await runAdapterProcess(repoRoot, profileResult.profile, repoRoot, prompt.value, {
     outputLogPath: adapterRunLogPath(repoRoot, `planning-${specId}`),
     usageSessionId,
     usageRunId: usageSessionId ?? specId,
+    onStreamChunk: liveOutput.onChunk,
     ...(profileResult.profile.usage_parser === "claude-json"
       ? { structuredOutputSchema: tentativePlanJsonSchema }
       : {})
   });
+  const streamed = await liveOutput.drain();
+  if (!streamed.ok) return streamed;
   if (!processResult.ok) {
     return processResult;
   }

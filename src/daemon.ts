@@ -11,7 +11,7 @@ import { formatErrorDetail } from "./error-detail.js";
 import type { FailureCode } from "./failure-code.js";
 import { setTaskOutputPublisher } from "./output-stream.js";
 import { EventBus } from "./event-bus.js";
-import { appendEvent, readEvents } from "./events.js";
+import { appendEvent, readEvents, setEventPublisher } from "./events.js";
 import { enqueueIntegrationPatch, integrateShadow } from "./integrate.js";
 import { checkWriteIntent } from "./intent.js";
 import { requestLeaseForContract, releaseLease } from "./lease.js";
@@ -153,6 +153,7 @@ export async function daemonCommand(cwd: string, args: string[]): Promise<number
 export function createDaemonServer(repoRoot: string, buildId: string, authToken: string) {
   const queue = new SerializedQueue();
   const eventBus = new EventBus();
+  setEventPublisher((event) => eventBus.publishEvent(event));
   /* Every task-output writer publishes through this, registered once rather
      than threaded per action -- see `setTaskOutputPublisher`. Without it a
      writer reached disk and no subscriber, which is how the drafting stream
@@ -227,7 +228,7 @@ export function createDaemonServer(repoRoot: string, buildId: string, authToken:
         invokeInProcess,
         () => handler(payloadResult.value, eventBus)
       );
-      const result = isQueueInterrupt(request.method, target.path, payloadResult.value)
+      const result = isConcurrentObservation(request.method, target.path, payloadResult.value) || isQueueInterrupt(request.method, target.path, payloadResult.value)
         ? await execute()
         : await queue.run(execute);
       await eventBus.publishNewDurableEvents(repoRoot, previousEvents.value.length);
@@ -357,9 +358,9 @@ function routeHandler(repoRoot: string, method: string | undefined, url: string 
       return startRunTaskJob(repoRoot, taskId.value, tool.value, {
         allowDangerousAdapter: payload.allow_dangerous_adapter === true,
         ...(usageSessionId.value === undefined ? {} : { usageSessionId: usageSessionId.value }),
-        onEvent: (event) => eventBus.publishEvent(event),
-        /* No publisher here: `appendTaskOutput` publishes for every writer
-           now, and calling it twice would deliver each line twice. */
+        /* Event and output publication live at their durable append points;
+           route-local publishers would deliver every record twice. */
+        onEvent: undefined,
         onOutput: undefined
       });
     };
@@ -430,6 +431,31 @@ function isQueueInterrupt(method: string | undefined, path: string, payload: Dae
   return method === "POST" &&
     path === "/workspace/action" &&
     (payload.type === "quality.cancel" || payload.type === "task.stop" || payload.type === "run.stop");
+}
+
+const concurrentWorkspaceObservations = new Set([
+  "status.inspect",
+  "trail.inspect",
+  "change.inspect",
+  "spec.review",
+  "plan.review",
+  "config.inspect",
+  "files.list",
+  "files.read",
+  "checks.inspect",
+  "accounts.inspect",
+  "sharing.inspect",
+  "provider.auth.inspect",
+  "models.discover"
+]);
+
+/** Read-only observation must remain available while a provider process runs. */
+function isConcurrentObservation(method: string | undefined, path: string, payload: DaemonPayload): boolean {
+  if (method !== "POST") return false;
+  if (path === "/status" || path === "/resource/quota") return true;
+  return path === "/workspace/action" &&
+    typeof payload.type === "string" &&
+    concurrentWorkspaceObservations.has(payload.type);
 }
 
 function parseIntegrationQueueExpectation(payload: DaemonPayload) {

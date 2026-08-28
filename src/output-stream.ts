@@ -1,4 +1,5 @@
-import { activityLines } from "./agent-activity.js";
+import { AgentStreamDecoder, activityLines, type AgentVisibleOutput } from "./agent-activity.js";
+import type { AdapterStreamChunk } from "./adapter.js";
 import path from "node:path";
 import {
   appendTrailLine,
@@ -58,6 +59,9 @@ export interface TaskOutputRecord {
    * is most of them.
    */
   activity?: string;
+  /** User-visible answer text decoded by Core, never a raw provider envelope. */
+  answer?: string;
+  answer_mode?: "complete" | "delta";
 }
 
 export interface TaskOutputInput {
@@ -65,6 +69,86 @@ export interface TaskOutputInput {
   tool: string;
   stream: TaskOutputStream;
   text: string;
+  /** Present when a stateful per-process decoder already framed this chunk. */
+  visible?: AgentVisibleOutput;
+}
+
+export interface LiveOutputWriter {
+  onChunk: (chunk: AdapterStreamChunk) => void;
+  drain: () => Promise<{ ok: true } | { ok: false; reason: string }>;
+}
+
+/**
+ * One ordered, stateful output writer for one provider process.
+ *
+ * Every orchestration caller uses this instead of inventing its own callback.
+ * JSON records split across operating-system chunks therefore share one carry
+ * buffer, and a failed durable write fails the provider operation rather than
+ * being converted into successful silence.
+ */
+export function createLiveOutputWriter(
+  repoRoot: string,
+  taskId: string,
+  tool: string,
+  onRecord?: (record: TaskOutputRecord) => void,
+  options: { structuredAnswers?: boolean } = {}
+): LiveOutputWriter {
+  const decoders = {
+    stdout: new AgentStreamDecoder(options),
+    stderr: new AgentStreamDecoder(options)
+  };
+  let tail: Promise<{ ok: true } | { ok: false; reason: string }> = Promise.resolve({ ok: true });
+  let flushed = false;
+
+  const append = (chunk: AdapterStreamChunk, visible: AgentVisibleOutput): void => {
+    tail = tail.then((previous) =>
+      previous.ok
+        ? appendTaskOutput(repoRoot, {
+            task_id: taskId,
+            tool,
+            stream: chunk.stream,
+            text: chunk.text,
+            visible
+          }).then((result) => {
+            if (!result.ok) return result;
+            onRecord?.(result.value);
+            return { ok: true as const };
+          })
+        : previous
+    );
+  };
+
+  return {
+    onChunk: (chunk) => {
+      const decoded = decoders[chunk.stream].push(chunk.text);
+      if (decoded.length === 0) {
+        append(chunk, {});
+        return;
+      }
+      const activities = decoded.flatMap((entry) => entry.activity === undefined ? [] : [entry.activity]);
+      const answers = decoded.flatMap((entry) => entry.answer === undefined ? [] : [entry.answer]);
+      append(chunk, {
+        ...(activities.length === 0 ? {} : { activity: activities.join(" · ") }),
+        ...(answers.length === 0
+          ? {}
+          : {
+              answer: answers.join(""),
+              answer_mode: decoded.some((entry) => entry.answer_mode === "delta") ? "delta" : "complete"
+            })
+      });
+    },
+    drain: () => {
+      if (!flushed) {
+        flushed = true;
+        for (const stream of ["stdout", "stderr"] as const) {
+          for (const visible of decoders[stream].flush()) {
+            append({ stream, text: "" }, visible);
+          }
+        }
+      }
+      return tail;
+    }
+  };
 }
 
 export async function appendTaskOutput(
@@ -78,14 +162,16 @@ export async function appendTaskOutput(
 
   /* One chunk can carry several JSONL lines, so the readable account is the
      lines it contains, joined. Absent when it contains nothing worth showing. */
-  const activity = activityLines([input.text]).join(" · ");
+  const activity = input.visible?.activity ?? (input.visible === undefined ? activityLines([input.text]).join(" · ") : "");
   const record: TaskOutputRecord = {
     ts: new Date().toISOString(),
     task_id: input.task_id,
     tool: input.tool,
     stream: input.stream,
     text: input.text,
-    ...(activity === "" ? {} : { activity })
+    ...(activity === "" ? {} : { activity }),
+    ...(input.visible?.answer === undefined ? {} : { answer: input.visible.answer }),
+    ...(input.visible?.answer_mode === undefined ? {} : { answer_mode: input.visible.answer_mode })
   };
 
   let line: string;
@@ -180,6 +266,17 @@ function validateTaskOutputInput(input: TaskOutputInput): { ok: true } | { ok: f
   if (typeof input.text !== "string") {
     return { ok: false, reason: "task output text must be a string" };
   }
+  if (input.visible !== undefined) {
+    if (input.visible.activity !== undefined && typeof input.visible.activity !== "string") {
+      return { ok: false, reason: "task output visible activity must be a string" };
+    }
+    if (input.visible.answer !== undefined && typeof input.visible.answer !== "string") {
+      return { ok: false, reason: "task output visible answer must be a string" };
+    }
+    if (input.visible.answer_mode !== undefined && input.visible.answer_mode !== "complete" && input.visible.answer_mode !== "delta") {
+      return { ok: false, reason: "task output visible answer_mode must be complete or delta" };
+    }
+  }
   return { ok: true };
 }
 
@@ -201,6 +298,15 @@ function validateTaskOutputShape(value: unknown, expectedTaskId: string): { ok: 
   }
   if (typeof value.text !== "string") {
     return { ok: false, reason: "task output text must be a string" };
+  }
+  if (value.activity !== undefined && typeof value.activity !== "string") {
+    return { ok: false, reason: "task output activity must be a string when present" };
+  }
+  if (value.answer !== undefined && typeof value.answer !== "string") {
+    return { ok: false, reason: "task output answer must be a string when present" };
+  }
+  if (value.answer_mode !== undefined && value.answer_mode !== "complete" && value.answer_mode !== "delta") {
+    return { ok: false, reason: "task output answer_mode must be complete or delta when present" };
   }
   return { ok: true };
 }

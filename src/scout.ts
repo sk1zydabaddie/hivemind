@@ -15,6 +15,7 @@ import { loadAndValidateContract, type TaskContract } from "./contract.js";
 import { buildContractTaskContextLayer, readCachedRepoFile, resolveTaskPromptSourceRoot, taskContextReadPaths, type CachedReadResult } from "./prompt-cache.js";
 import { requireActiveSpecRatified } from "./spec.js";
 import { writeContextPack } from "./context-pack.js";
+import { ACTIVITY_STREAM_ID, createLiveOutputWriter } from "./output-stream.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -104,12 +105,18 @@ export async function runScout(
     return promptResult;
   }
 
+  const liveOutput = createLiveOutputWriter(repoRoot, ACTIVITY_STREAM_ID, profileResult.profile.tool, undefined, {
+    structuredAnswers: true
+  });
   const processResult = await runAdapterProcess(repoRoot, profileResult.profile, sourceRootResult.value, promptResult.value.prompt, {
     outputLogPath: adapterRunLogPath(repoRoot, `scout-${taskId}`),
     usageSessionId: options.usageSessionId,
     usageRunId: options.usageSessionId ?? taskId,
-    usageTaskId: taskId
+    usageTaskId: taskId,
+    onStreamChunk: liveOutput.onChunk
   });
+  const streamed = await liveOutput.drain();
+  if (!streamed.ok) return streamed;
   if (!processResult.ok) {
     return processResult;
   }

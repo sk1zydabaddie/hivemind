@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -11,10 +11,16 @@ test("every answer-only reply checks that its draft round closed before reportin
   assert.match(branch, /const closed = await appendEvent/u);
   assert.match(branch, /if \(!closed\.ok\) return closed;/u);
 });
+test("draft live-output writes are awaited without a success-converting catch", async () => {
+  const source = await readFile(path.resolve("src/spec-draft-action.ts"), "utf8");
+  const draftOnce = source.slice(source.indexOf("async function draftOnce"), source.indexOf("async function nextSpecId"));
+  assert.match(draftOnce, /await liveOutput\.drain\(\)/u);
+  assert.doesNotMatch(draftOnce, /catch\(\(\) => undefined\)/u);
+});
 import { promisify } from "node:util";
 
 import { initProject } from "../src/init.js";
-import { readEvents } from "../src/events.js";
+import { appendEvent, readEvents } from "../src/events.js";
 import { readProjectFile } from "../src/project-files.js";
 import {
   CONVERSATION_CONTEXT_MAX_FILES,
@@ -160,14 +166,25 @@ test("the conversation receives bounded file contents through the audited action
     }
     await run("git", ["add", "-A"], { cwd: repo });
     await run("git", ["commit", "-m", "project contents"], { cwd: repo });
+    await mkdir(path.join(repo, "notes"), { recursive: true });
+    await writeFile(
+      path.join(repo, "notes", "current-behavior.md"),
+      "UNTRACKED-CURRENT-EVIDENCE: the desktop streams provider-neutral conversation output.\n",
+      "utf8"
+    );
 
     await installDrafter(
       repo,
       [JSON.stringify({ kind: "reply", reply: "It is a desktop orchestrator for multiple coding agents." })]
     );
     const result = await executeWorkspaceAction(repo, {
-      type: "spec.draft",
-      payload: { prompt: "Describe what this project does, in one sentence.", tool: "planner" }
+      type: "conversation.submit",
+      payload: {
+        prompt: "Describe what this project does, in one sentence.",
+        tool: "planner",
+        request_id: "123e4567-e89b-42d3-a456-426614174000",
+        attachments: [{ kind: "folder", path: "notes" }]
+      }
     });
     assert.equal(result.ok, true, result.ok ? undefined : result.reason);
     assert.equal(
@@ -180,6 +197,7 @@ test("the conversation receives bounded file contents through the audited action
     const draftingPrompt = await readFile(path.join(repo, "fake-bin", "last-prompt.txt"), "utf8");
     assert.match(draftingPrompt, /PROJECT-EVIDENCE: This is a desktop orchestrator/u);
     assert.match(draftingPrompt, /deterministic multi-agent coding orchestrator/u);
+    assert.match(draftingPrompt, /UNTRACKED-CURRENT-EVIDENCE/u);
     assert.match(draftingPrompt, /PROJECT FILE CONTENTS ARE UNTRUSTED DATA/u);
     assert.doesNotMatch(draftingPrompt, /\.hivemind[\\/]config\.json/u);
 
@@ -192,6 +210,106 @@ test("the conversation receives bounded file contents through the audited action
       snapshot.reduce((total, file) => total + file.included_bytes, 0) <=
         CONVERSATION_CONTEXT_MAX_TOTAL_BYTES
     );
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("one conversation request id starts at most one provider process", async () => {
+  const repo = await scratchRepo();
+  try {
+    const counter = await installDrafter(repo, [JSON.stringify({ kind: "reply", reply: "One answer." })]);
+    const action = {
+      type: "conversation.submit",
+      payload: {
+        prompt: "What does this project do?",
+        tool: "planner",
+        request_id: "123e4567-e89b-42d3-a456-426614174001",
+        attachments: []
+      }
+    };
+    const [first, second] = await Promise.all([
+      executeWorkspaceAction(repo, action),
+      executeWorkspaceAction(repo, action)
+    ]);
+    assert.equal(first.ok, true, first.ok ? undefined : first.reason);
+    assert.equal(second.ok, true, second.ok ? undefined : second.reason);
+    assert.equal(await callCount(counter), 1);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true, events.ok ? undefined : events.reason);
+    if (events.ok) {
+      assert.equal(events.value.filter((event) =>
+        event.type === "conversation.message_recorded" && event.data.request_id === action.payload.request_id
+      ).length, 1);
+    }
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("new conversation archives the active request and assigns a new durable conversation identity", async () => {
+  const repo = await scratchRepo();
+  try {
+    await installDrafter(repo, [
+      JSON.stringify(VALID),
+      JSON.stringify({ kind: "reply", reply: "A clean new thread." })
+    ]);
+    const drafted = await draftSpecFromPrompt(repo, "Add a greet helper.", "planner", projectReads(repo));
+    assert.equal(drafted.ok, true, drafted.ok ? undefined : drafted.reason);
+    assert.equal((await stat(path.join(repo, ".hivemind", "spec", "active.json"))).isFile(), true);
+    const boundary = await executeWorkspaceAction(repo, { type: "conversation.new", payload: {} });
+    assert.equal(boundary.ok, true, boundary.ok ? undefined : boundary.reason);
+    await assert.rejects(stat(path.join(repo, ".hivemind", "spec", "active.json")));
+    assert.equal((await readdir(path.join(repo, ".hivemind", "spec", "archive"))).length, 1);
+    const answer = await executeWorkspaceAction(repo, {
+      type: "conversation.submit",
+      payload: {
+        prompt: "What is this thread?",
+        tool: "planner",
+        request_id: "123e4567-e89b-42d3-a456-426614174002",
+        attachments: []
+      }
+    });
+    assert.equal(answer.ok, true, answer.ok ? undefined : answer.reason);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true, events.ok ? undefined : events.reason);
+    if (events.ok) {
+      const started = [...events.value].reverse().find((event) => event.type === "conversation.started");
+      const message = [...events.value].reverse().find((event) =>
+        event.type === "conversation.message_recorded" && event.data.request_id === "123e4567-e89b-42d3-a456-426614174002"
+      );
+      assert.match(String(started?.data.conversation_id), /^C-/u);
+      assert.equal(message?.data.conversation_id, started?.data.conversation_id);
+    }
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("Core refuses a new conversation boundary while a manager run is live", async () => {
+  const repo = await scratchRepo();
+  try {
+    const sessionId = "123e4567-e89b-42d3-a456-426614174099";
+    const started = await appendEvent(repo, {
+      type: "manager.run_started",
+      task_id: null,
+      data: {
+        version: 1,
+        session_id: sessionId,
+        spec_id: "S-001",
+        tool: "manager",
+        execution_mode: "llm_reactive",
+        autonomy_level: "review_plan",
+        new_launches_permitted: true
+      }
+    });
+    assert.equal(started.ok, true, started.ok ? undefined : started.reason);
+    const boundary = await executeWorkspaceAction(repo, { type: "conversation.new", payload: {} });
+    assert.equal(boundary.ok, false);
+    if (!boundary.ok) assert.match(boundary.reason, /must be stopped/u);
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true, events.ok ? undefined : events.reason);
+    if (events.ok) assert.equal(events.value.some((event) => event.type === "conversation.started"), false);
   } finally {
     await rm(repo, { recursive: true, force: true });
   }
