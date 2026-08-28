@@ -5,6 +5,11 @@ import { currentBuildIdentity } from "./build-identity.js";
 import { daemonProcessIsLive, readDaemonState } from "./daemon-state.js";
 import { formatErrorDetail } from "./error-detail.js";
 import { isFailureCode, type FailureCode } from "./failure-code.js";
+import {
+  daemonAuthorization,
+  isDaemonAuthToken,
+  isLoopbackDaemonUrl
+} from "./daemon-auth.js";
 
 export type DaemonCallResult<T> =
   | { routed: false }
@@ -15,6 +20,11 @@ interface DaemonHealth {
   ok: true;
   repo_root: string;
   build_id: string;
+}
+
+interface DaemonConnection {
+  url: string;
+  authToken: string;
 }
 
 type InProcessDaemonResult = { ok: true; value: unknown } | { ok: false; reason: string; code?: FailureCode };
@@ -50,16 +60,20 @@ export async function callDaemonIfConfigured<T>(
       : { routed: true, ok: false, reason: result.reason, ...(result.code === undefined ? {} : { code: result.code }) };
   }
 
-  const addressResult = await resolveDaemonAddress(repoRoot);
-  if (!addressResult.ok) {
-    return { routed: true, ok: false, reason: addressResult.reason };
+  const connectionResult = await resolveDaemonConnection(repoRoot);
+  if (!connectionResult.ok) {
+    return { routed: true, ok: false, reason: connectionResult.reason };
   }
-  if (addressResult.value === null) {
+  if (connectionResult.value === null) {
     return { routed: false };
   }
-  const baseUrl = addressResult.value;
+  const connection = connectionResult.value;
 
-  const healthResult = await requestJson<DaemonHealth>(`${baseUrl}/health`, { method: "GET" });
+  const healthResult = await requestJson<DaemonHealth>(
+    `${connection.url}/health`,
+    { method: "GET" },
+    connection.authToken
+  );
   if (!healthResult.ok) {
     return { routed: true, ok: false, reason: healthResult.reason };
   }
@@ -75,11 +89,15 @@ export async function callDaemonIfConfigured<T>(
     };
   }
 
-  const result = await requestJson<{ ok: true; value: T } | { ok: false; reason: string; code?: FailureCode }>(`${baseUrl}${endpoint}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body)
-  });
+  const result = await requestJson<{ ok: true; value: T } | { ok: false; reason: string; code?: FailureCode }>(
+    `${connection.url}${endpoint}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    },
+    connection.authToken
+  );
   if (!result.ok) {
     return {
       routed: true,
@@ -123,12 +141,41 @@ function normalizeDaemonUrl(value: string | undefined): string | null {
   return trimmed.replace(/\/+$/, "");
 }
 
-async function resolveDaemonAddress(repoRoot: string): Promise<{ ok: true; value: string | null } | { ok: false; reason: string }> {
+async function resolveDaemonConnection(
+  repoRoot: string
+): Promise<{ ok: true; value: DaemonConnection | null } | { ok: false; reason: string }> {
   const configured = normalizeDaemonUrl(process.env.HIVEMIND_DAEMON_URL);
   if (configured !== null) {
-    return { ok: true, value: configured };
+    if (!isLoopbackDaemonUrl(configured)) {
+      return {
+        ok: false,
+        reason: "HIVEMIND_DAEMON_URL must be an HTTP loopback address with an explicit port"
+      };
+    }
+    const configuredToken = process.env.HIVEMIND_DAEMON_TOKEN?.trim();
+    if (isDaemonAuthToken(configuredToken)) {
+      return { ok: true, value: { url: configured, authToken: configuredToken } };
+    }
+    const stateResult = await readDaemonState(repoRoot);
+    if (!stateResult.ok) {
+      return stateResult;
+    }
+    const stateUrl = normalizeDaemonUrl(stateResult.value?.url);
+    if (
+      stateResult.value !== null &&
+      stateUrl === configured &&
+      daemonProcessIsLive(stateResult.value.pid)
+    ) {
+      return {
+        ok: true,
+        value: { url: configured, authToken: stateResult.value.auth_token }
+      };
+    }
+    return {
+      ok: false,
+      reason: "HIVEMIND_DAEMON_TOKEN is required when HIVEMIND_DAEMON_URL does not match this project's live daemon record"
+    };
   }
-
   const stateResult = await readDaemonState(repoRoot);
   if (!stateResult.ok) {
     return stateResult;
@@ -142,16 +189,20 @@ async function resolveDaemonAddress(repoRoot: string): Promise<{ ok: true; value
   const discovered = normalizeDaemonUrl(stateResult.value.url);
   return discovered === null
     ? { ok: false, reason: "live daemon state has an invalid URL" }
-    : { ok: true, value: discovered };
+    : {
+        ok: true,
+        value: { url: discovered, authToken: stateResult.value.auth_token }
+      };
 }
 
 async function requestJson<T>(
   url: string,
-  init: RequestInit
+  init: RequestInit,
+  authToken: string
 ): Promise<{ ok: true; value: T } | { ok: false; reason: string; code?: FailureCode }> {
   let response: Response;
   try {
-    response = await fetch(url, withConnectionClose(init));
+    response = await fetch(url, withDaemonHeaders(init, authToken));
   } catch (error: unknown) {
     return { ok: false, reason: `daemon request failed: ${formatErrorDetail(error, "unknown error")}` };
   }
@@ -170,9 +221,10 @@ async function requestJson<T>(
   return { ok: true, value: parsed as T };
 }
 
-function withConnectionClose(init: RequestInit): RequestInit {
+function withDaemonHeaders(init: RequestInit, authToken: string): RequestInit {
   const headers = new Headers(init.headers);
   headers.set("connection", "close");
+  headers.set("authorization", daemonAuthorization(authToken));
   return { ...init, headers };
 }
 

@@ -2974,3 +2974,46 @@ and exited 1 with the exact containment message. No provider/model call, key
 operation, publication, or public release mutation occurred. The overall
 product remains **NO-GO** for public distribution and valuable repositories.
 Phase 1 begins only in its next dedicated turn.
+
+## Remediation Phase 1: authenticated daemon transport — 2026-08-27
+
+Phase 1 is complete and closes **F6-01**. Every HTTP daemon route now requires a
+fresh per-process 256-bit credential before routing or payload parsing. Core and
+the Rust shell send it as a Bearer header. The React client retains no authority
+or gate logic; it receives the shell-validated connection and uses a query
+credential only for `/events/stream` and `/tasks/:id/output/stream`, the two
+read-only SSE shapes whose browser API cannot set request headers. The helper
+refuses any other path or origin so the query credential cannot be redirected.
+
+The daemon binds only to `127.0.0.1` or `localhost`, rejects non-loopback Host,
+rejects unreviewed Origin, and requires JSON for POST independently after a
+valid credential. Daemon state moved deliberately from format 1 to 2 and now
+requires the credential and an explicit loopback URL. A format-1 process is
+never called: the shell reports the upgrade boundary and reuses the existing
+idle-only restart action. Active or ambiguous legacy work remains non-idle and
+cannot authorize restart. A present state record with an unknown PID is also no
+longer collapsed into the safe `no daemon record` case.
+
+The pre-fix counterexample was an unauthenticated `checks.try` POST carrying an
+untrusted Origin and `text/plain`; it returned 200 and wrote the supplied
+marker. Against installed build **26.827.2222**, that exact mutation returned
+401 and wrote nothing. Wrong credential returned 401, authenticated hostile
+Origin 403, authenticated non-JSON POST 415, authenticated native action 200,
+and authenticated SSE 200. The installed app showed `Live`, the selected
+fixture, and build 26.827.2222 at 1440x900. Severe browser logs were empty and
+the recent-project registry was restored exactly. Evidence is under
+`docs/evidence/remediation-phase1-26.827.2222/`.
+
+Final no-paid validation passed Core (**940 passed, 2 skipped, 942 total**),
+Desktop (**331/331**), Rust (**47/47**), root and desktop production builds, the
+two-lockfile advisory gate with zero findings, all **30/30** reachability
+surfaces, `git diff --check`, and the installed transport probe. The existing
+unreached scanner still reports the same 20 later-phase production debts; this
+phase added none. `cargo fmt --check` remains red on the repository's existing
+whole-file formatting debt, including untouched `main.rs`, so Phase 1 did not
+smuggle in a repository-wide reformat. No provider/model call, key operation,
+publication, or public-channel mutation occurred.
+
+The current remediation ledger is **92 open findings: 10 Critical, 50 High, 30
+Medium, and 2 Low**. G0 and the product's overall **NO-GO** remain in force.
+Phase 2 begins only in its next dedicated turn.

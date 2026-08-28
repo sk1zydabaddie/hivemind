@@ -1102,13 +1102,15 @@ export async function closeTestServer(server: Server): Promise<void> {
 
 export async function postWorkspaceActionForTest(
   daemonUrl: string,
-  action: Record<string, unknown>
+  action: Record<string, unknown>,
+  authToken?: string
 ): Promise<{ ok: true; value: unknown } | { ok: false; reason: string }> {
   const body = JSON.stringify(action);
   return new Promise((resolve, reject) => {
     const request = httpRequest(`${daemonUrl}/workspace/action`, {
       method: "POST",
       headers: {
+        ...(authToken === undefined ? {} : { authorization: `Bearer ${authToken}` }),
         "content-type": "application/json",
         "content-length": Buffer.byteLength(body)
       }
@@ -1132,6 +1134,7 @@ export async function postWorkspaceActionForTest(
 
 export interface RunLifecycleDaemon {
   url: string;
+  authToken: string;
   readonly runRequests: number;
   readonly markFailedRequests: number;
   close: () => Promise<void>;
@@ -1140,8 +1143,13 @@ export interface RunLifecycleDaemon {
 export async function startRunLifecycleDaemon(repo: string, options: { taskId: string; completionDelayMs?: number; quotaPauseAfterStart?: boolean }): Promise<RunLifecycleDaemon> {
   let runRequests = 0;
   let markFailedRequests = 0;
+  const authToken = "R".repeat(43);
   const server = createServer(async (request, response) => {
     try {
+      if (request.headers.authorization !== `Bearer ${authToken}`) {
+        sendJson(response, 401, { ok: false, reason: "daemon authentication required" });
+        return;
+      }
       if (request.method === "GET" && request.url === "/health") {
         sendJson(response, 200, { ok: true, repo_root: repo, build_id: await currentBuildIdentity() });
         return;
@@ -1211,6 +1219,7 @@ export async function startRunLifecycleDaemon(repo: string, options: { taskId: s
   const address = server.address() as AddressInfo;
   return {
     url: `http://127.0.0.1:${address.port}`,
+    authToken,
     get runRequests() {
       return runRequests;
     },

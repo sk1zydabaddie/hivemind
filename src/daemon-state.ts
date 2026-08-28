@@ -4,12 +4,14 @@ import { writeJsonAtomic } from "./atomic.js";
 import { readJsonFile } from "./json.js";
 import { processIsLiveOrUnknown } from "./process-liveness.js";
 import { checkFormatVersion, formatVersions } from "./format-version.js";
+import { isDaemonAuthToken, isLoopbackDaemonUrl } from "./daemon-auth.js";
 
 export interface DaemonState {
-  version: 1;
+  version: 2;
   pid: number;
   url: string;
   repo_root: string;
+  auth_token: string;
   build_id?: string;
   started_at: string;
 }
@@ -37,10 +39,11 @@ export async function writeDaemonState(
   value: Omit<DaemonState, "version" | "started_at" | "build_id"> & { build_id: string }
 ): Promise<void> {
   await writeJsonAtomic(daemonStatePath(repoRoot), {
-    version: 1,
+    version: 2,
     pid: value.pid,
     url: value.url,
     repo_root: value.repo_root,
+    auth_token: value.auth_token,
     build_id: value.build_id,
     started_at: new Date().toISOString()
   });
@@ -65,11 +68,14 @@ function validateDaemonState(value: unknown): { ok: true } | { ok: false; reason
   if (!Number.isSafeInteger(value.pid) || typeof value.pid !== "number" || value.pid <= 0) {
     return { ok: false, reason: "daemon state pid must be a positive safe integer" };
   }
-  if (typeof value.url !== "string" || value.url.trim() === "") {
-    return { ok: false, reason: "daemon state url must be a non-empty string" };
+  if (!isLoopbackDaemonUrl(value.url)) {
+    return { ok: false, reason: "daemon state url must be an HTTP loopback address with an explicit port" };
   }
   if (typeof value.repo_root !== "string" || value.repo_root.trim() === "") {
     return { ok: false, reason: "daemon state repo_root must be a non-empty string" };
+  }
+  if (!isDaemonAuthToken(value.auth_token)) {
+    return { ok: false, reason: "daemon state auth_token must be a 256-bit base64url credential" };
   }
   if (value.build_id !== undefined && (typeof value.build_id !== "string" || !/^[a-f0-9]{64}$/u.test(value.build_id))) {
     return { ok: false, reason: "daemon state build_id must be a lowercase SHA-256 digest when present" };

@@ -1,6 +1,7 @@
 export interface ProjectConnection {
   project_root: string;
   daemon_url: string;
+  daemon_token: string;
   build_id: string;
   shell_build_id: string;
   expected_shell_build_id: string;
@@ -254,6 +255,8 @@ export function validateProjectConnection(value: unknown): ProjectConnection {
     typeof record.daemon_url === "string"
       ? record.daemon_url.trim().replace(/\/+$/u, "")
       : "";
+  const daemonToken =
+    typeof record.daemon_token === "string" ? record.daemon_token.trim() : "";
   const status =
     record.status === "attached" || record.status === "started"
       ? record.status
@@ -264,6 +267,7 @@ export function validateProjectConnection(value: unknown): ProjectConnection {
   if (
     projectRoot === "" ||
     daemonUrl === "" ||
+    !/^[A-Za-z0-9_-]{43}$/u.test(daemonToken) ||
     status === "" ||
     !/^[a-f0-9]{64}$/u.test(buildId) ||
     !/^[a-f0-9]{64}$/u.test(shellBuildId) ||
@@ -283,11 +287,30 @@ export function validateProjectConnection(value: unknown): ProjectConnection {
   return {
     project_root: projectRoot,
     daemon_url: daemonUrl,
+    daemon_token: daemonToken,
     build_id: buildId,
     shell_build_id: shellBuildId,
     expected_shell_build_id: expectedShellBuildId,
     status
   };
+}
+
+/** EventSource cannot attach an Authorization header. The server accepts this
+ * credential only on its two read-only SSE route shapes; every other route
+ * requires the bearer header supplied by Core or the Rust shell. */
+export function projectStreamUrl(
+  connection: ProjectConnection,
+  streamPath: string
+): string {
+  const base = new URL(`${connection.daemon_url}/`);
+  const url = new URL(streamPath, base);
+  const allowedPath = url.pathname === "/events/stream" ||
+    /^\/tasks\/[^/]+\/output\/stream$/u.test(url.pathname);
+  if (url.origin !== base.origin || !allowedPath || url.search !== "" || url.hash !== "") {
+    throw new Error("The desktop client refused an invalid daemon stream path.");
+  }
+  url.searchParams.set("access_token", connection.daemon_token);
+  return url.toString();
 }
 
 export function displayProjectPath(projectPath: string): string {

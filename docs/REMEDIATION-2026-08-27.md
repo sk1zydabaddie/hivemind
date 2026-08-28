@@ -198,6 +198,23 @@ cannot execute a supplied Core/Node override; an unrelated repository never
 receives or executes an update action; key ACL/secret-scanner evidence contains
 metadata only. These are separate exact-boundary tests, not one page-text check.
 
+**Execution status after Phase 1 (2026-08-27):** F6-01 is closed. Installed
+build **26.827.2222** rejected credential-free and wrong-credential requests
+with 401 before dispatch, rejected an authenticated hostile Origin with 403 and
+an authenticated non-JSON POST with 415, and accepted both the native shell's
+authenticated action and the browser's authenticated read-only event stream.
+The credential was absent from daemon-ready output, driver logs, evidence JSON,
+and the screenshot. Legacy version-1 daemon records are migration input only,
+never an unauthenticated client path. Source, regressions, cleanup, installed
+result, and 1440x900 build-labelled capture are recorded under
+`docs/evidence/remediation-phase1-26.827.2222/`.
+
+R0 now has three open findings: F6-02, F6-04, and F6-13. The overall ledger has
+**92 open findings: 10 Critical, 50 High, 30 Medium, and 2 Low**. G0 remains
+open because production executable overrides and the old updater trust root
+have not yet been removed or migrated. No later remediation phase is implied by
+this closure.
+
 ## R1 — Update lifecycle
 
 **Primary areas:** `desktop/src-tauri/src/newer_version.rs`,

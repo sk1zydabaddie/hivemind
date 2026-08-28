@@ -66,8 +66,15 @@ test("every durable format is gated, and the ephemeral ones are deliberately abs
   for (const [name, gate] of Object.entries(formatVersions)) {
     assert.equal(typeof gate.format, "string", `${name} has no human-readable format name`);
     assert.notEqual(gate.format.trim(), "", `${name} has an empty format name`);
-    assert.equal(gate.current, 1);
+    assert.equal(gate.current, name === "daemonState" ? 2 : 1);
   }
+  assert.deepEqual(
+    Object.entries(formatVersions)
+      .filter(([, gate]) => gate.current > 1)
+      .map(([name, gate]) => [name, gate.current]),
+    [["daemonState", 2]],
+    "every durable-format migration must be named and reviewed here"
+  );
   // An unparseable lease lock is already reaped as stale, and an owner record
   // that does not match already means "not mine". Both fail closed in the
   // right direction without a version, so gating them is ceremony.

@@ -137,7 +137,10 @@ test("memory proposals route through the daemon while programmatic daemon promot
       const proposal = JSON.parse(proposed.stdout) as { proposal_id: string };
       const response = await fetch(`${daemon.url}/memory/review`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          authorization: `Bearer ${daemon.authToken}`,
+          "content-type": "application/json"
+        },
         body: JSON.stringify({
           proposal_id: proposal.proposal_id,
           review: { decision: "approve", evidence_reviewed: true, reviewer: "human" }
@@ -336,6 +339,7 @@ function escapeRegExp(value: string): string {
 interface DaemonProcess {
   child: ChildProcessWithoutNullStreams;
   url: string;
+  authToken: string;
 }
 
 async function startDaemon(repo: string): Promise<DaemonProcess> {
@@ -348,7 +352,11 @@ async function startDaemon(repo: string): Promise<DaemonProcess> {
   const ready = JSON.parse(line) as { event?: string; url?: string };
   assert.equal(ready.event, "daemon.ready");
   assert.equal(typeof ready.url, "string");
-  return { child, url: String(ready.url) };
+  const state = JSON.parse(
+    await readFile(path.join(repo, ".hivemind", "daemon.json"), "utf8")
+  ) as { auth_token?: unknown };
+  assert.match(String(state.auth_token ?? ""), /^[A-Za-z0-9_-]{43}$/u);
+  return { child, url: String(ready.url), authToken: String(state.auth_token) };
 }
 
 async function stopDaemon(daemon: DaemonProcess): Promise<void> {

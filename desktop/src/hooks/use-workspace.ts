@@ -19,6 +19,7 @@ import {
   gitSetupFailureFrom,
   PROJECT_FAULT,
   projectFaultFrom,
+  projectStreamUrl,
   validateProjectConnection,
   type GitReadiness,
   type GitSetupFailure,
@@ -233,7 +234,10 @@ export function useWorkspace(): WorkspaceView {
       selectTask(projectionRef.current, taskId);
       const isCurrentProject = streamGuardRef.current.capture();
       const source = new EventSource(
-        `${currentConnection.daemon_url}/tasks/${encodeURIComponent(taskId)}/output/stream`
+        projectStreamUrl(
+          currentConnection,
+          `/tasks/${encodeURIComponent(taskId)}/output/stream`
+        )
       );
       outputSourceRef.current = source;
       /* A-10. The event stream has always had this; the OUTPUT stream did not,
@@ -271,7 +275,7 @@ export function useWorkspace(): WorkspaceView {
       const isCurrentProject = streamGuardRef.current.capture();
       setConnectionState("connecting");
       const source = new EventSource(
-        `${nextConnection.daemon_url}/events/stream`
+        projectStreamUrl(nextConnection, "/events/stream")
       );
       eventSourceRef.current = source;
       source.onopen = () => {
@@ -297,7 +301,7 @@ export function useWorkspace(): WorkspaceView {
          belonging to the wait it is in, so replayed history cannot look live. */
       draftSourceRef.current?.close();
       const activitySource = new EventSource(
-        `${nextConnection.daemon_url}/tasks/activity/output/stream`
+        projectStreamUrl(nextConnection, "/tasks/activity/output/stream")
       );
       draftSourceRef.current = activitySource;
       activitySource.onerror = () => undefined;

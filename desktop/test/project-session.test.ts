@@ -6,12 +6,14 @@ import {
   createProjectStreamGuard,
   displayProjectPath,
   projectNameFromPath,
+  projectStreamUrl,
   validateProjectConnection
 } from "../src/lib/project-session";
 
 describe("project-bound desktop session", () => {
   const buildId = "a".repeat(64);
   const shellBuildId = "b".repeat(64);
+  const daemonToken = "d".repeat(43);
   test("a later selection wins and stale project state is never reconnected", async () => {
     const pending = new Map<
       string,
@@ -34,6 +36,7 @@ describe("project-bound desktop session", () => {
     pending.get("B")?.({
       project_root: "B",
       daemon_url: "http://127.0.0.1:41002",
+      daemon_token: daemonToken,
       build_id: buildId,
       shell_build_id: shellBuildId,
       expected_shell_build_id: shellBuildId,
@@ -43,6 +46,7 @@ describe("project-bound desktop session", () => {
     pending.get("A")?.({
       project_root: "A",
       daemon_url: "http://127.0.0.1:41001",
+      daemon_token: daemonToken,
       build_id: buildId,
       shell_build_id: shellBuildId,
       expected_shell_build_id: shellBuildId,
@@ -59,6 +63,7 @@ describe("project-bound desktop session", () => {
       validateProjectConnection({
         project_root: "D:\\Projects\\A",
         daemon_url: "http://127.0.0.1:8765/",
+        daemon_token: daemonToken,
         build_id: buildId,
         shell_build_id: shellBuildId,
         expected_shell_build_id: shellBuildId,
@@ -67,6 +72,7 @@ describe("project-bound desktop session", () => {
     ).toEqual({
       project_root: "D:\\Projects\\A",
       daemon_url: "http://127.0.0.1:8765",
+      daemon_token: daemonToken,
       build_id: buildId,
       shell_build_id: shellBuildId,
       expected_shell_build_id: shellBuildId,
@@ -76,6 +82,7 @@ describe("project-bound desktop session", () => {
       validateProjectConnection({
         project_root: "D:\\Projects\\A",
         daemon_url: "https://example.com",
+        daemon_token: daemonToken,
         build_id: buildId,
         shell_build_id: shellBuildId,
         expected_shell_build_id: shellBuildId,
@@ -86,6 +93,7 @@ describe("project-bound desktop session", () => {
       validateProjectConnection({
         project_root: "D:\\Projects\\A",
         daemon_url: "http://127.0.0.1:8765",
+        daemon_token: daemonToken,
         build_id: "stale",
         shell_build_id: shellBuildId,
         expected_shell_build_id: shellBuildId,
@@ -96,6 +104,7 @@ describe("project-bound desktop session", () => {
       validateProjectConnection({
         project_root: "D:\\Projects\\A",
         daemon_url: "http://127.0.0.1:8765",
+        daemon_token: daemonToken,
         build_id: buildId,
         shell_build_id: shellBuildId,
         expected_shell_build_id: "c".repeat(64),
@@ -112,6 +121,30 @@ describe("project-bound desktop session", () => {
     const projectB = guard.capture();
     expect(projectA()).toBe(false);
     expect(projectB()).toBe(true);
+  });
+
+  test("stream credentials stay confined to the daemon's read-only stream routes", () => {
+    const connection = validateProjectConnection({
+      project_root: "D:\\Projects\\A",
+      daemon_url: "http://127.0.0.1:8765",
+      daemon_token: daemonToken,
+      build_id: buildId,
+      shell_build_id: shellBuildId,
+      expected_shell_build_id: shellBuildId,
+      status: "attached"
+    });
+    expect(projectStreamUrl(connection, "/events/stream")).toBe(
+      `http://127.0.0.1:8765/events/stream?access_token=${daemonToken}`
+    );
+    expect(projectStreamUrl(connection, "/tasks/T-001/output/stream")).toBe(
+      `http://127.0.0.1:8765/tasks/T-001/output/stream?access_token=${daemonToken}`
+    );
+    expect(() => projectStreamUrl(connection, "https://attacker.example/events/stream"))
+      .toThrow(/invalid daemon stream path/u);
+    expect(() => projectStreamUrl(connection, "/workspace/action"))
+      .toThrow(/invalid daemon stream path/u);
+    expect(() => projectStreamUrl(connection, "/events/stream?forward=true"))
+      .toThrow(/invalid daemon stream path/u);
   });
 
   test("project labels never expose Windows device prefixes", () => {

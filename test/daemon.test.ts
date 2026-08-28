@@ -27,6 +27,7 @@ interface DaemonProcess {
   child: ChildProcessWithoutNullStreams;
   url: string;
   repoRoot: string;
+  authToken: string;
 }
 
 test("a coded daemon failure survives the HTTP round trip", async () => {
@@ -135,7 +136,14 @@ test("lease command discovers a live daemon without HIVEMIND_DAEMON_URL before f
       await stopDaemon(daemon);
     }
 
-    await writeFile(path.join(repo, ".hivemind", "daemon.json"), JSON.stringify({ version: 1, pid: 99999999, url: "http://127.0.0.1:1", repo_root: repo, started_at: new Date().toISOString() }));
+    await writeFile(path.join(repo, ".hivemind", "daemon.json"), JSON.stringify({
+      version: 2,
+      pid: 99999999,
+      url: "http://127.0.0.1:1",
+      repo_root: repo,
+      auth_token: "D".repeat(43),
+      started_at: new Date().toISOString()
+    }));
     const released = await execFileAsync(process.execPath, [cliPath, "lease", "T-001", "--release"], {
       cwd: repo,
       env: { ...process.env, HIVEMIND_DAEMON_URL: "" },
@@ -159,7 +167,7 @@ test("lease command rejects a daemon for a different repo before mutating", asyn
       const daemon = await startDaemon(daemonRepo);
       try {
         await assert.rejects(
-          execCli(commandRepo, daemon.url, ["lease", "T-001"]),
+          execCli(commandRepo, daemon.url, ["lease", "T-001"], daemon.authToken),
           (error: unknown) => {
             assert.equal((error as { code?: number }).code, 1);
             assert.match(String((error as { stderr?: string }).stderr), /daemon repo_root does not match/);
@@ -370,9 +378,23 @@ async function startDaemon(repo: string): Promise<DaemonProcess> {
     windowsHide: true
   });
   const line = await readLine(child);
-  const parsed = JSON.parse(line) as { event: string; url: string; repo_root: string };
+  const parsed = JSON.parse(line) as Record<string, unknown> & {
+    event: string;
+    url: string;
+    repo_root: string;
+  };
   assert.equal(parsed.event, "daemon.ready");
-  return { child, url: parsed.url, repoRoot: parsed.repo_root };
+  assert.equal("auth_token" in parsed, false, "daemon.ready exposed its session credential");
+  const state = JSON.parse(
+    await readFile(path.join(repo, ".hivemind", "daemon.json"), "utf8")
+  ) as { auth_token?: unknown };
+  assert.match(String(state.auth_token ?? ""), /^[A-Za-z0-9_-]{43}$/u);
+  return {
+    child,
+    url: parsed.url,
+    repoRoot: parsed.repo_root,
+    authToken: String(state.auth_token)
+  };
 }
 
 interface EventStreamMessage {
@@ -619,10 +641,14 @@ function readLine(child: ChildProcessWithoutNullStreams): Promise<string> {
   });
 }
 
-async function execCli(repo: string, daemonUrl: string, args: string[]) {
+async function execCli(repo: string, daemonUrl: string, args: string[], authToken?: string) {
   return execFileAsync(process.execPath, [cliPath, ...args], {
     cwd: repo,
-    env: { ...process.env, HIVEMIND_DAEMON_URL: daemonUrl },
+    env: {
+      ...process.env,
+      HIVEMIND_DAEMON_URL: daemonUrl,
+      ...(authToken === undefined ? {} : { HIVEMIND_DAEMON_TOKEN: authToken })
+    },
     windowsHide: true
   });
 }

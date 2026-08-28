@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { PassThrough, type Writable } from "node:stream";
 import { readEvents, type HivemindEvent } from "./events.js";
 import { readTaskOutput, type TaskOutputRecord } from "./output-stream.js";
+import { isAllowedDaemonOrigin } from "./daemon-auth.js";
 
 export interface EventBusMessage {
   kind: "event";
@@ -198,21 +199,11 @@ function readOnlyCorsHeaders(request: IncomingMessage): Record<string, string> {
   if (origin === undefined) {
     return {};
   }
-  if (!isAllowedReadOnlyOrigin(origin)) {
+  if (!isAllowedDaemonOrigin(origin)) {
     return {};
   }
   return {
     "access-control-allow-origin": origin,
     vary: "origin"
   };
-}
-
-function isAllowedReadOnlyOrigin(origin: string): boolean {
-  return (
-    origin === "http://localhost:1420" ||
-    origin === "http://127.0.0.1:1420" ||
-    origin === "http://tauri.localhost" ||
-    origin === "https://tauri.localhost" ||
-    origin === "tauri://localhost"
-  );
 }

@@ -330,21 +330,21 @@ test("the confinement holds over the daemon route, not only in process", async (
     await writeFile(path.join(repo, "..", "outside.txt"), "not yours\n");
     const daemon = await startDaemon(repo);
     try {
-      const escaped = await postAction(daemon.url, {
+      const escaped = await postAction(daemon.url, daemon.authToken, {
         type: "files.read",
         payload: { path: "../outside.txt" }
       });
       assert.equal(escaped.response.status, 400);
       assert.equal(escaped.body.ok, false);
 
-      const record = await postAction(daemon.url, {
+      const record = await postAction(daemon.url, daemon.authToken, {
         type: "files.list",
         payload: { path: ".hivemind" }
       });
       assert.equal(record.response.status, 400);
       assert.equal(record.body.ok, false);
 
-      const crafted = await postAction(daemon.url, {
+      const crafted = await postAction(daemon.url, daemon.authToken, {
         type: "files.read",
         approved: true,
         payload: { path: "README.md" }
@@ -353,7 +353,7 @@ test("the confinement holds over the daemon route, not only in process", async (
       assert.match(String(crafted.body.reason), /cannot supply authority field/u);
 
       /* Not vacuous. */
-      const allowed = await postAction(daemon.url, {
+      const allowed = await postAction(daemon.url, daemon.authToken, {
         type: "files.read",
         payload: { path: "src/app.ts" }
       });
@@ -417,7 +417,7 @@ async function runCli(
   }
 }
 
-async function startDaemon(repo: string): Promise<{ child: ChildProcessWithoutNullStreams; url: string }> {
+async function startDaemon(repo: string): Promise<{ child: ChildProcessWithoutNullStreams; url: string; authToken: string }> {
   const child = spawn(process.execPath, [path.resolve("dist/src/cli.js"), "daemon", "--port", "0"], {
     cwd: repo,
     windowsHide: true,
@@ -445,16 +445,24 @@ async function startDaemon(repo: string): Promise<{ child: ChildProcessWithoutNu
       reject(new Error(`daemon exited during startup (${String(code)}): ${stderr}`));
     });
   });
-  return { child, url };
+  const state = JSON.parse(
+    await readFile(path.join(repo, ".hivemind", "daemon.json"), "utf8")
+  ) as { auth_token?: unknown };
+  assert.match(String(state.auth_token ?? ""), /^[A-Za-z0-9_-]{43}$/u);
+  return { child, url, authToken: String(state.auth_token) };
 }
 
 async function postAction(
   url: string,
+  authToken: string,
   body: unknown
 ): Promise<{ response: Response; body: Record<string, unknown> }> {
   const response = await fetch(`${url}/workspace/action`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      authorization: `Bearer ${authToken}`,
+      "content-type": "application/json"
+    },
     body: JSON.stringify(body)
   });
   return { response, body: (await response.json()) as Record<string, unknown> };

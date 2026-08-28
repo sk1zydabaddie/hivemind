@@ -1091,20 +1091,25 @@ test("daemon workspace dispatcher completes the Core-derived loop without manage
       after_integrate_shadow_ok: proposalFor([])
     }, "manager", 2);
 
-    const daemon = createDaemonServer(repo, await currentBuildIdentity());
+    const authToken = "M".repeat(43);
+    const daemon = createDaemonServer(repo, await currentBuildIdentity(), authToken);
     const observedRoutes: string[] = [];
     daemon.on("request", (request) => observedRoutes.push(request.url ?? ""));
     await listenServer(daemon);
     const address = daemon.address() as AddressInfo;
     const daemonUrl = `http://127.0.0.1:${address.port}`;
     const previousDaemonUrl = process.env.HIVEMIND_DAEMON_URL;
+    const previousDaemonToken = process.env.HIVEMIND_DAEMON_TOKEN;
     process.env.HIVEMIND_DAEMON_URL = daemonUrl;
+    process.env.HIVEMIND_DAEMON_TOKEN = authToken;
     context.after(async () => {
       if (previousDaemonUrl === undefined) delete process.env.HIVEMIND_DAEMON_URL;
       else process.env.HIVEMIND_DAEMON_URL = previousDaemonUrl;
+      if (previousDaemonToken === undefined) delete process.env.HIVEMIND_DAEMON_TOKEN;
+      else process.env.HIVEMIND_DAEMON_TOKEN = previousDaemonToken;
       await closeTestServer(daemon);
     });
-    const dispatch = (action: Record<string, unknown>) => postWorkspaceActionForTest(daemonUrl, action);
+    const dispatch = (action: Record<string, unknown>) => postWorkspaceActionForTest(daemonUrl, action, authToken);
 
     const started = await dispatch({
       type: "manager.start",
@@ -1333,12 +1338,13 @@ test("daemon workspace task.stop interrupts an Auto worker without waiting behin
       after_run_worker_rejected: proposalFor([])
     }, "manager", 2);
 
-    const daemon = createDaemonServer(repo, await currentBuildIdentity());
+    const authToken = "S".repeat(43);
+    const daemon = createDaemonServer(repo, await currentBuildIdentity(), authToken);
     await listenServer(daemon);
     const address = daemon.address() as AddressInfo;
     const daemonUrl = `http://127.0.0.1:${address.port}`;
     context.after(() => closeTestServer(daemon));
-    const dispatch = (action: Record<string, unknown>) => postWorkspaceActionForTest(daemonUrl, action);
+    const dispatch = (action: Record<string, unknown>) => postWorkspaceActionForTest(daemonUrl, action, authToken);
     const started = await dispatch({ type: "manager.start", payload: { message: "Run until stopped.", tool: "manager" } });
     assert.equal(started.ok, true, started.ok ? undefined : started.reason);
     if (!started.ok) return;
@@ -1984,7 +1990,11 @@ test("manager observes delayed daemon worker completion from the event trail aft
       completionDelayMs: simulatedBlockingFetchFailureMs + 650
     });
     try {
-      await withProcessEnv({ HIVEMIND_DAEMON_URL: daemon.url, HIVEMIND_RUN_WAIT_TIMEOUT_MS: "5000" }, async () => {
+      await withProcessEnv({
+        HIVEMIND_DAEMON_URL: daemon.url,
+        HIVEMIND_DAEMON_TOKEN: daemon.authToken,
+        HIVEMIND_RUN_WAIT_TIMEOUT_MS: "5000"
+      }, async () => {
         const startedAt = Date.now();
         const result = await executeManagerAction(repo, sessionResult.value.session_id, { type: "run_worker", task_id: "T-DELAY", tool: "fake-delayed" });
         const elapsedMs = Date.now() - startedAt;
@@ -2034,7 +2044,11 @@ test("manager timeout records durable task.failed for daemon-started runs that n
 
     const daemon = await startRunLifecycleDaemon(repo, { taskId: "T-HANG" });
     try {
-      await withProcessEnv({ HIVEMIND_DAEMON_URL: daemon.url, HIVEMIND_RUN_WAIT_TIMEOUT_MS: "50" }, async () => {
+      await withProcessEnv({
+        HIVEMIND_DAEMON_URL: daemon.url,
+        HIVEMIND_DAEMON_TOKEN: daemon.authToken,
+        HIVEMIND_RUN_WAIT_TIMEOUT_MS: "50"
+      }, async () => {
         const result = await executeManagerAction(repo, sessionResult.value.session_id, { type: "run_worker", task_id: "T-HANG", tool: "fake-hanging" });
 
         assert.equal(result.ok, true);
@@ -2079,7 +2093,11 @@ test("manager observes quota pause without marking a daemon-started run failed",
 
     const daemon = await startRunLifecycleDaemon(repo, { taskId: "T-PAUSE", quotaPauseAfterStart: true });
     try {
-      await withProcessEnv({ HIVEMIND_DAEMON_URL: daemon.url, HIVEMIND_RUN_WAIT_TIMEOUT_MS: "5000" }, async () => {
+      await withProcessEnv({
+        HIVEMIND_DAEMON_URL: daemon.url,
+        HIVEMIND_DAEMON_TOKEN: daemon.authToken,
+        HIVEMIND_RUN_WAIT_TIMEOUT_MS: "5000"
+      }, async () => {
         const result = await executeManagerAction(repo, sessionResult.value.session_id, { type: "run_worker", task_id: "T-PAUSE", tool: "fake-paused" });
 
         assert.equal(result.ok, true);

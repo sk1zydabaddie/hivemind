@@ -377,14 +377,18 @@ test("guidance, forged callers, and unverified sets cannot authorize adoption", 
     await assert.rejects(execFileAsync("node", [cliPath, "workspace", actionPath], { cwd: repo, windowsHide: true }));
     await rm(actionPath);
 
-    const server = createDaemonServer(repo, "adoption-test-build");
+    const authToken = "A".repeat(43);
+    const server = createDaemonServer(repo, "adoption-test-build", authToken);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     try {
       const address = server.address();
       assert.equal(typeof address, "object");
       const response = await fetch(`http://127.0.0.1:${(address as { port: number }).port}/workspace/action`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          authorization: `Bearer ${authToken}`,
+          "content-type": "application/json"
+        },
         body: JSON.stringify({ type: "adoption.execute", payload: forged })
       });
       assert.equal(response.ok, false);

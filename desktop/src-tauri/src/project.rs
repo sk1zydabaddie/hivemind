@@ -24,6 +24,7 @@ const EMBEDDED_SHELL_BUILD_ID: &str = env!(
 pub struct ProjectConnection {
     project_root: String,
     daemon_url: String,
+    daemon_token: String,
     build_id: String,
     shell_build_id: String,
     expected_shell_build_id: String,
@@ -231,12 +232,10 @@ impl From<String> for ProjectFault {
 // field to daemon.json would otherwise stop the shell attaching to its own
 // daemon -- a total outage from a purely additive change.
 //
-// Tolerating unknown fields is safe HERE specifically because daemon.json
-// authorizes nothing. It is a rendezvous record: where the daemon is, and
-// which build it is. `version` is still checked, and `build_id` is still
-// compared against the expected shell build; neither check is weakened by
-// ignoring a field this binary has never heard of. Do not copy this to a
-// format that grants anything.
+// `auth_token` does authorize daemon transport and is therefore required and
+// validated below. Unknown additive fields remain tolerated so Core can add
+// non-authority metadata across the shell/Core version boundary. Do not copy
+// that tolerance to a field that broadens authority.
 #[derive(Debug, Deserialize)]
 struct DaemonState {
     version: u8,
@@ -244,8 +243,22 @@ struct DaemonState {
     pid: Option<u32>,
     url: String,
     repo_root: String,
+    auth_token: String,
     #[serde(default)]
     build_id: Option<String>,
+    started_at: String,
+}
+
+/// Version 1 predates transport authentication. It is never used to send a
+/// request; the shell reads only enough to identify an upgrade boundary and
+/// reuse the existing idle-then-restart recovery without stranding a project.
+#[derive(Debug, Deserialize)]
+struct LegacyDaemonState {
+    version: u8,
+    #[serde(default, deserialize_with = "deserialize_optional_pid")]
+    pid: Option<u32>,
+    url: String,
+    repo_root: String,
     started_at: String,
 }
 
@@ -385,10 +398,10 @@ pub async fn workspace_action(
             query_expected_shell_build_identity(&project_root, Some(&resource_dir))?;
         validate_shell_build(EMBEDDED_SHELL_BUILD_ID, &expected_shell_build_id)?;
         let expected_build_id = query_cli_build_identity(&project_root, Some(&resource_dir))?;
-        let health = query_daemon_health(&state.url)?;
+        let health = query_daemon_health(&state.url, &state.auth_token)?;
         validate_health_project(&project_root, &health.repo_root)?;
         validate_daemon_build(&state, &health, &expected_build_id)?;
-        post_workspace_action(&state.url, &action)
+        post_workspace_action(&state.url, &state.auth_token, &action)
     })
     .await
     .map_err(|error| format!("workspace action task failed: {error}"))?
@@ -406,7 +419,7 @@ fn connect_project_with<L, H, B, S, P>(
 ) -> Result<ProjectConnection, ProjectFault>
 where
     L: FnMut(&Path) -> Result<Option<Child>, String>,
-    H: Fn(&str) -> Result<DaemonHealth, String>,
+    H: Fn(&str, &str) -> Result<DaemonHealth, String>,
     B: Fn(&Path) -> Result<String, String>,
     S: Fn(&Path) -> Result<String, String>,
     P: Fn(Option<u32>) -> ProcessLiveness,
@@ -424,9 +437,17 @@ where
         ));
     }
 
+    if let Some(legacy) = read_legacy_daemon_state(&project_root)? {
+        validate_recorded_project(&project_root, &legacy.repo_root)?;
+        return Err(ProjectFault::new(
+            FAULT_DAEMON_BUILD_MISMATCH,
+            "The background process predates authenticated transport and must be restarted before this project can open.",
+        ));
+    }
+
     if let Some(state) = read_daemon_state(&project_root)? {
         validate_state_project(&project_root, &state)?;
-        match health(&state.url) {
+        match health(&state.url, &state.auth_token) {
             Ok(health_state) => {
                 validate_health_project(&project_root, &health_state.repo_root)?;
                 validate_daemon_build(&state, &health_state, &expected_build_id)
@@ -434,6 +455,7 @@ where
                 return Ok(connection(
                     &project_root,
                     &state.url,
+                    &state.auth_token,
                     &expected_build_id,
                     embedded_shell_build_id,
                     &expected_shell_build_id,
@@ -480,7 +502,7 @@ where
 
         if let Some(state) = read_daemon_state(&project_root)? {
             validate_state_project(&project_root, &state)?;
-            if let Ok(health_state) = health(&state.url) {
+            if let Ok(health_state) = health(&state.url, &state.auth_token) {
                 validate_health_project(&project_root, &health_state.repo_root)?;
                 validate_daemon_build(&state, &health_state, &expected_build_id)
                     .map_err(|message| ProjectFault::new(FAULT_DAEMON_BUILD_MISMATCH, message))?;
@@ -490,6 +512,7 @@ where
                 return Ok(connection(
                     &project_root,
                     &state.url,
+                    &state.auth_token,
                     &expected_build_id,
                     embedded_shell_build_id,
                     &expected_shell_build_id,
@@ -551,8 +574,32 @@ fn read_daemon_state(project_root: &Path) -> Result<Option<DaemonState>, String>
     };
     let state: DaemonState = serde_json::from_str(&raw)
         .map_err(|error| format!("invalid .hivemind/daemon.json: {error}"))?;
-    if state.version != 1 || state.started_at.trim().is_empty() {
+    if state.version != 2
+        || state.started_at.trim().is_empty()
+        || !is_daemon_auth_token(&state.auth_token)
+    {
         return Err("invalid .hivemind/daemon.json fields".to_string());
+    }
+    validate_loopback_url(&state.url)?;
+    Ok(Some(state))
+}
+
+fn read_legacy_daemon_state(project_root: &Path) -> Result<Option<LegacyDaemonState>, String> {
+    let state_path = project_root.join(".hivemind").join("daemon.json");
+    let raw = match fs::read_to_string(&state_path) {
+        Ok(value) => value,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(format!("could not read .hivemind/daemon.json: {error}")),
+    };
+    let value: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|error| format!("invalid .hivemind/daemon.json: {error}"))?;
+    if value.get("version").and_then(serde_json::Value::as_u64) != Some(1) {
+        return Ok(None);
+    }
+    let state: LegacyDaemonState = serde_json::from_value(value)
+        .map_err(|error| format!("invalid legacy .hivemind/daemon.json: {error}"))?;
+    if state.version != 1 || state.pid.is_none() || state.started_at.trim().is_empty() {
+        return Err("invalid legacy .hivemind/daemon.json fields".to_string());
     }
     validate_loopback_url(&state.url)?;
     Ok(Some(state))
@@ -570,7 +617,11 @@ where
 }
 
 fn validate_state_project(project_root: &Path, state: &DaemonState) -> Result<(), String> {
-    let recorded = fs::canonicalize(&state.repo_root)
+    validate_recorded_project(project_root, &state.repo_root)
+}
+
+fn validate_recorded_project(project_root: &Path, recorded_root: &str) -> Result<(), String> {
+    let recorded = fs::canonicalize(recorded_root)
         .map_err(|_| "daemon state repo_root cannot be canonicalized".to_string())?;
     if !same_path(project_root, &recorded) {
         return Err(
@@ -789,7 +840,10 @@ fn node_compatible_path(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
-fn query_daemon_health(url: &str) -> Result<DaemonHealth, String> {
+fn query_daemon_health(url: &str, auth_token: &str) -> Result<DaemonHealth, String> {
+    if !is_daemon_auth_token(auth_token) {
+        return Err("daemon credential is malformed".to_string());
+    }
     let endpoint = parse_loopback_url(url)?;
     let address = endpoint
         .to_socket_addrs()
@@ -804,11 +858,10 @@ fn query_daemon_health(url: &str) -> Result<DaemonHealth, String> {
     stream
         .set_write_timeout(Some(HEALTH_TIMEOUT))
         .map_err(|error| format!("could not configure daemon health timeout: {error}"))?;
-    let host = endpoint.split(':').next().unwrap_or("127.0.0.1");
     stream
         .write_all(
             format!(
-                "GET /health HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\nAccept: application/json\r\n\r\n"
+                "GET /health HTTP/1.1\r\nHost: {endpoint}\r\nAuthorization: Bearer {auth_token}\r\nConnection: close\r\nAccept: application/json\r\n\r\n"
             )
             .as_bytes(),
         )
@@ -833,8 +886,12 @@ fn query_daemon_health(url: &str) -> Result<DaemonHealth, String> {
 
 fn post_workspace_action(
     url: &str,
+    auth_token: &str,
     action: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    if !is_daemon_auth_token(auth_token) {
+        return Err("daemon credential is malformed".to_string());
+    }
     let endpoint = parse_loopback_url(url)?;
     let address = endpoint
         .to_socket_addrs()
@@ -851,9 +908,8 @@ fn post_workspace_action(
         .map_err(|error| format!("could not configure daemon action timeout: {error}"))?;
     let body = serde_json::to_string(action)
         .map_err(|error| format!("workspace action is not JSON serializable: {error}"))?;
-    let host = endpoint.split(':').next().unwrap_or("127.0.0.1");
     stream.write_all(format!(
-        "POST /workspace/action HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+        "POST /workspace/action HTTP/1.1\r\nHost: {endpoint}\r\nAuthorization: Bearer {auth_token}\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
         body.len(), body
     ).as_bytes()).map_err(|error| format!("daemon action request failed: {error}"))?;
     let mut response = String::new();
@@ -915,6 +971,7 @@ fn parse_loopback_url(url: &str) -> Result<String, String> {
 fn connection(
     project_root: &Path,
     daemon_url: &str,
+    daemon_token: &str,
     build_id: &str,
     shell_build_id: &str,
     expected_shell_build_id: &str,
@@ -923,11 +980,19 @@ fn connection(
     ProjectConnection {
         project_root: project_root.to_string_lossy().into_owned(),
         daemon_url: daemon_url.trim_end_matches('/').to_string(),
+        daemon_token: daemon_token.to_string(),
         build_id: build_id.to_string(),
         shell_build_id: shell_build_id.to_string(),
         expected_shell_build_id: expected_shell_build_id.to_string(),
         status: status.to_string(),
     }
+}
+
+fn is_daemon_auth_token(value: &str) -> bool {
+    value.len() == 43
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
 }
 
 fn same_path(left: &Path, right: &Path) -> bool {
@@ -1091,7 +1156,10 @@ mod tests {
         let result = connect_project_with(
             project.to_str().unwrap(),
             &mut launch,
-            &|_| Ok(test_health(&project)),
+            &|_, token| {
+                assert_eq!(token, "T".repeat(43));
+                Ok(test_health(&project))
+            },
             &|_| Ok(test_build_id()),
             &|_| Ok(test_shell_build_id()),
             &test_shell_build_id(),
@@ -1101,8 +1169,49 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.status, "attached");
+        assert_eq!(result.daemon_token, "T".repeat(43));
         assert_eq!(result.shell_build_id, test_shell_build_id());
         assert_eq!(result.expected_shell_build_id, test_shell_build_id());
+        assert_eq!(launch_count.load(Ordering::SeqCst), 0);
+        cleanup_fixture(&project);
+    }
+
+    #[test]
+    fn a_legacy_unauthenticated_daemon_uses_the_existing_restart_recovery() {
+        let project = fixture_project("legacy-daemon-upgrade");
+        write_state(
+            &project,
+            &project,
+            "http://127.0.0.1:40121",
+            std::process::id(),
+        );
+        let state_path = project.join(".hivemind").join("daemon.json");
+        let mut state: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+        state["version"] = serde_json::json!(1);
+        state.as_object_mut().unwrap().remove("auth_token");
+        fs::write(&state_path, state.to_string()).unwrap();
+
+        let launch_count = Arc::new(AtomicUsize::new(0));
+        let launch_count_copy = launch_count.clone();
+        let mut launch = move |_root: &Path| {
+            launch_count_copy.fetch_add(1, Ordering::SeqCst);
+            Ok(None)
+        };
+        let result = connect_project_with(
+            project.to_str().unwrap(),
+            &mut launch,
+            &|_, _| panic!("an unauthenticated legacy daemon must never be queried"),
+            &|_| Ok(test_build_id()),
+            &|_| Ok(test_shell_build_id()),
+            &test_shell_build_id(),
+            &|_| ProcessLiveness::Alive,
+            Duration::from_millis(20),
+        )
+        .unwrap_err();
+
+        assert_eq!(result.code, FAULT_DAEMON_BUILD_MISMATCH);
+        assert!(result.message.contains("predates authenticated transport"));
         assert_eq!(launch_count.load(Ordering::SeqCst), 0);
         cleanup_fixture(&project);
     }
@@ -1120,7 +1229,7 @@ mod tests {
         let result = connect_project_with(
             project.to_str().unwrap(),
             &mut launch,
-            &|_| panic!("daemon health must not be queried for a stale shell"),
+            &|_, _| panic!("daemon health must not be queried for a stale shell"),
             &|_| Ok(test_build_id()),
             &|_| Ok("d".repeat(64)),
             &test_shell_build_id(),
@@ -1181,7 +1290,10 @@ mod tests {
         let result = connect_project_with(
             project.to_str().unwrap(),
             &mut launch,
-            &|_| Ok(test_health(&project)),
+            &|_, token| {
+                assert_eq!(token, "T".repeat(43));
+                Ok(test_health(&project))
+            },
             &|_| Ok(test_build_id()),
             &|_| Ok(test_shell_build_id()),
             &test_shell_build_id(),
@@ -1211,7 +1323,8 @@ mod tests {
         let result = connect_project_with(
             project.to_str().unwrap(),
             &mut launch,
-            &|url| {
+            &|url, token| {
+                assert_eq!(token, "T".repeat(43));
                 if url.ends_with(":40113") {
                     Ok(test_health(&project))
                 } else {
@@ -1234,6 +1347,7 @@ mod tests {
 
         assert_eq!(result.status, "started");
         assert_eq!(result.daemon_url, "http://127.0.0.1:40113");
+        assert_eq!(result.daemon_token, "T".repeat(43));
         assert_eq!(launch_count.load(Ordering::SeqCst), 1);
         cleanup_fixture(&project);
     }
@@ -1258,7 +1372,7 @@ mod tests {
         let result = connect_project_with(
             project.to_str().unwrap(),
             &mut launch,
-            &|_| Ok(test_health(&other)),
+            &|_, _| Ok(test_health(&other)),
             &|_| Ok(test_build_id()),
             &|_| Ok(test_shell_build_id()),
             &test_shell_build_id(),
@@ -1307,7 +1421,7 @@ mod tests {
             let result = connect_project_with(
                 project.to_str().unwrap(),
                 &mut launch,
-                &|_| {
+                &|_, _| {
                     Ok(DaemonHealth {
                         ok: health.ok,
                         repo_root: health.repo_root.clone(),
@@ -1341,7 +1455,7 @@ mod tests {
             let result = connect_project_with(
                 project.to_str().unwrap(),
                 &mut launch,
-                &|_| Err("connection refused".to_string()),
+                &|_, _| Err("connection refused".to_string()),
                 &|_| Ok(test_build_id()),
                 &|_| Ok(test_shell_build_id()),
                 &test_shell_build_id(),
@@ -1399,11 +1513,11 @@ mod tests {
         );
 
         let missing: DaemonState = serde_json::from_str(
-            r#"{"version":1,"url":"http://127.0.0.1:1","repo_root":"C:\\repo","started_at":"now"}"#,
+            r#"{"version":2,"url":"http://127.0.0.1:1","repo_root":"C:\\repo","auth_token":"TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT","started_at":"now"}"#,
         )
         .unwrap();
         let malformed: DaemonState = serde_json::from_str(
-            r#"{"version":1,"pid":"not-a-pid","url":"http://127.0.0.1:1","repo_root":"C:\\repo","started_at":"now"}"#,
+            r#"{"version":2,"pid":"not-a-pid","url":"http://127.0.0.1:1","repo_root":"C:\\repo","auth_token":"TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT","started_at":"now"}"#,
         )
         .unwrap();
         assert_eq!(process_liveness(missing.pid), ProcessLiveness::Unknown);
@@ -1434,10 +1548,11 @@ mod tests {
         fs::write(
             container.join(".hivemind").join("daemon.json"),
             serde_json::json!({
-                "version": 1,
+                "version": 2,
                 "pid": pid,
                 "url": url,
                 "repo_root": repo_root,
+                "auth_token": "T".repeat(43),
                 "build_id": test_build_id(),
                 "started_at": "2026-07-30T00:00:00.000Z"
             })
@@ -1863,22 +1978,27 @@ fn daemon_work_with(
         };
     }
 
-    let daemon = match read_daemon_state(project_root) {
-        Ok(Some(state)) => Some(state),
+    let (daemon_recorded, daemon_pid) = match read_daemon_state(project_root) {
+        Ok(Some(state)) => (true, state.pid),
         /* No daemon is registered for this project, so nothing is running it.
            The shell finds daemons through this record, so one it cannot see is
            one it would start a replacement for anyway. */
-        Ok(None) => None,
-        Err(_) => {
-            return DaemonStanding {
-                work: DaemonWork::Unknown,
-                detail: format!(
-                    "This project has {} task workspace(s) and {} call(s) recorded, and Hivemind cannot read which process holds them.",
-                    worktrees.len(),
-                    reservations.total
-                ),
+        Ok(None) => (false, None),
+        Err(_) => match read_legacy_daemon_state(project_root) {
+            Ok(Some(state)) if validate_recorded_project(project_root, &state.repo_root).is_ok() => {
+                (true, state.pid)
             }
-        }
+            _ => {
+                return DaemonStanding {
+                    work: DaemonWork::Unknown,
+                    detail: format!(
+                        "This project has {} task workspace(s) and {} call(s) recorded, and Hivemind cannot read which process holds them.",
+                        worktrees.len(),
+                        reservations.total
+                    ),
+                }
+            }
+        },
     };
 
     let Ok(trail) = scan_trail(project_root) else {
@@ -1901,17 +2021,17 @@ fn daemon_work_with(
     workers_uncertain.sort();
     workers_uncertain.dedup();
 
-    let daemon_liveness = match daemon.as_ref().map(|state| liveness(state.pid)) {
-        None => ProcessLiveness::Dead,
+    let daemon_liveness = match (daemon_recorded, liveness(daemon_pid)) {
+        (false, _) => ProcessLiveness::Dead,
         /* Same A-39 correction as the attach path: a pid that answers is not
            the recorded daemon unless the process wearing it is old enough to
            have written the record. */
-        Some(ProcessLiveness::Alive)
-            if daemon_record_impostor(project_root, daemon.as_ref().and_then(|state| state.pid)) =>
+        (true, ProcessLiveness::Alive)
+            if daemon_record_impostor(project_root, daemon_pid) =>
         {
             ProcessLiveness::Dead
         }
-        Some(value) => value,
+        (true, value) => value,
     };
     match daemon_liveness {
         ProcessLiveness::Alive => {
@@ -2264,8 +2384,19 @@ pub async fn restart_daemon(
             ));
         }
 
-        if let Some(state) = read_daemon_state(&project_root)? {
-            if let Some(pid) = state.pid {
+        let recorded_pid = match read_daemon_state(&project_root) {
+            Ok(Some(state)) => state.pid,
+            Ok(None) => None,
+            Err(current_error) => match read_legacy_daemon_state(&project_root) {
+                Ok(Some(state)) => {
+                    validate_recorded_project(&project_root, &state.repo_root)?;
+                    state.pid
+                }
+                _ => return Err(ProjectFault::new(FAULT_DAEMON_UNAVAILABLE, current_error)),
+            },
+        };
+        if project_root.join(".hivemind").join("daemon.json").is_file() {
+            if let Some(pid) = recorded_pid {
                 terminate_process(pid).map_err(|message| {
                     ProjectFault::new(FAULT_DAEMON_UNAVAILABLE, message)
                 })?;
@@ -2275,12 +2406,12 @@ pub async fn restart_daemon(
             // refuses, so racing it here would trade one dead end for another.
             let deadline = Instant::now() + Duration::from_secs(10);
             while Instant::now() < deadline {
-                if process_liveness(state.pid) == ProcessLiveness::Dead {
+                if process_liveness(recorded_pid) == ProcessLiveness::Dead {
                     break;
                 }
                 thread::sleep(Duration::from_millis(100));
             }
-            if process_liveness(state.pid) == ProcessLiveness::Alive {
+            if process_liveness(recorded_pid) == ProcessLiveness::Alive {
                 return Err(ProjectFault::new(
                     FAULT_DAEMON_UNAVAILABLE,
                     "The previous version's background process is still running and did not stop."
@@ -3479,8 +3610,20 @@ mod idleness_tests {
         fs::write(
             project.join(".hivemind").join("daemon.json"),
             format!(
+                r#"{{"version":2,"pid":{pid},"url":"http://127.0.0.1:7777","repo_root":"{}","auth_token":"{}","started_at":"now"}}"#,
+                project.to_string_lossy().replace(char::from(92), "/"),
+                "T".repeat(43),
+            ),
+        )
+        .unwrap();
+    }
+
+    fn record_legacy_daemon(project: &Path, pid: u32) {
+        fs::write(
+            project.join(".hivemind").join("daemon.json"),
+            format!(
                 r#"{{"version":1,"pid":{pid},"url":"http://127.0.0.1:7777","repo_root":"{}","started_at":"now"}}"#,
-                project.to_string_lossy().replace(char::from(92), "/")
+                project.to_string_lossy().replace(char::from(92), "/"),
             ),
         )
         .unwrap();
@@ -3540,6 +3683,24 @@ mod idleness_tests {
             standing.work,
             DaemonWork::Busy,
             "a live daemon with an active reservation must never read as idle: {}",
+            standing.detail
+        );
+
+        terminate_fixture_process(child.id());
+        let _ = fs::remove_dir_all(&project);
+    }
+
+    #[test]
+    fn legacy_active_work_keeps_the_restart_guard_closed_during_the_auth_upgrade() {
+        let project = project_with_reservation("legacy-live", "active");
+        let child = spawn_sleeper();
+        record_legacy_daemon(&project, child.id());
+
+        let standing = daemon_work(&project);
+        assert_ne!(
+            standing.work,
+            DaemonWork::Idle,
+            "legacy active work must never authorize a restart: {}",
             standing.detail
         );
 

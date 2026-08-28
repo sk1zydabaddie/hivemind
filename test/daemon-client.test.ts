@@ -6,6 +6,7 @@ import { callDaemonIfConfigured } from "../src/daemon-client.js";
 test("daemon client preserves nested fetch causes instead of collapsing them to fetch failed", async () => {
   const originalFetch = globalThis.fetch;
   const originalUrl = process.env.HIVEMIND_DAEMON_URL;
+  const originalToken = process.env.HIVEMIND_DAEMON_TOKEN;
   const cause = Object.assign(new Error("Headers Timeout Error"), { code: "UND_ERR_HEADERS_TIMEOUT" });
   const failure = new TypeError("fetch failed") as TypeError & { cause?: unknown };
   failure.cause = cause;
@@ -13,6 +14,7 @@ test("daemon client preserves nested fetch causes instead of collapsing them to 
     throw failure;
   }) as typeof fetch;
   process.env.HIVEMIND_DAEMON_URL = "http://127.0.0.1:65535";
+  process.env.HIVEMIND_DAEMON_TOKEN = "T".repeat(43);
 
   try {
     const result = await callDaemonIfConfigured(process.cwd(), "/status", {});
@@ -31,16 +33,21 @@ test("daemon client preserves nested fetch causes instead of collapsing them to 
     } else {
       process.env.HIVEMIND_DAEMON_URL = originalUrl;
     }
+    if (originalToken === undefined) delete process.env.HIVEMIND_DAEMON_TOKEN;
+    else process.env.HIVEMIND_DAEMON_TOKEN = originalToken;
   }
 });
 
 test("daemon client refuses a live daemon from a different Core build before mutation", async () => {
   const originalFetch = globalThis.fetch;
   const originalUrl = process.env.HIVEMIND_DAEMON_URL;
+  const originalToken = process.env.HIVEMIND_DAEMON_TOKEN;
   const calls: string[] = [];
   process.env.HIVEMIND_DAEMON_URL = "http://127.0.0.1:65535";
-  globalThis.fetch = (async (input) => {
+  process.env.HIVEMIND_DAEMON_TOKEN = "T".repeat(43);
+  globalThis.fetch = (async (input, init) => {
     calls.push(String(input));
+    assert.equal(new Headers(init?.headers).get("authorization"), `Bearer ${"T".repeat(43)}`);
     return new Response(JSON.stringify({
       ok: true,
       repo_root: process.cwd(),
@@ -59,5 +66,7 @@ test("daemon client refuses a live daemon from a different Core build before mut
     globalThis.fetch = originalFetch;
     if (originalUrl === undefined) delete process.env.HIVEMIND_DAEMON_URL;
     else process.env.HIVEMIND_DAEMON_URL = originalUrl;
+    if (originalToken === undefined) delete process.env.HIVEMIND_DAEMON_TOKEN;
+    else process.env.HIVEMIND_DAEMON_TOKEN = originalToken;
   }
 });

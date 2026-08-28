@@ -4598,3 +4598,29 @@ the screen exposed no build/install/restart control. The supporting 1440x900
 capture and structured result are in
 `docs/evidence/remediation-phase0-26.827.2050/`.
 
+### Loopback is transport, not identity — 2026-08-27
+
+A daemon action's audited tier answers what an authenticated Hivemind client may
+ask; it does not authenticate the caller. Every HTTP route authenticates before
+route dispatch or body parsing with one fresh 256-bit credential per daemon
+process. Native/Core requests use `Authorization: Bearer`. The browser may use
+`access_token` only on the two read-only SSE route shapes because `EventSource`
+cannot set headers. The client URL helper refuses another origin, route, query,
+or fragment, and credentials never belong in ready output, evidence, UI text,
+or logs.
+
+Authentication does not replace transport checks. Consumer daemons bind only
+to `127.0.0.1` or `localhost`; Host must name loopback, Origin must be absent for
+native callers or exactly one reviewed Tauri origin, and POST must be JSON. A
+valid credential does not redeem a hostile Origin or unsupported content type.
+None of these checks belongs in React: actions still cross the typed Tauri
+bridge to the audited dispatcher, and conversation still cannot approve,
+ratify, integrate, or ship.
+
+Daemon-state format 2 is a deliberate authority migration. Format 1 is never
+used to make a request. It may be read only to identify the old process and use
+the existing idle-only restart recovery; active or ambiguous work keeps that
+recovery closed. An absent daemon record can make abandoned artifacts orphaned,
+but a present record whose owner cannot be proven is not absence and cannot be
+treated as idle.
+

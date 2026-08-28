@@ -304,6 +304,7 @@ class ReplayEventSource {
       return {
         project_root: "D:\\Projects\\trimr-replay",
         daemon_url: "http://127.0.0.1:7777",
+        daemon_token: "R".repeat(43),
         build_id: HEX,
         shell_build_id: HEX,
         expected_shell_build_id: HEX,

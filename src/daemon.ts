@@ -35,6 +35,12 @@ import { createTaskWorktree, removeTaskWorktree } from "./worktree.js";
 import { reconcileLeftoverWorktrees } from "./worktree-standing.js";
 import { withPlainReason } from "./plain-reason.js";
 import { executeWorkspaceAction } from "./workspace-actions.js";
+import {
+  createDaemonAuthToken,
+  daemonTokenMatches,
+  isAllowedDaemonOrigin,
+  isLoopbackDaemonHost
+} from "./daemon-auth.js";
 
 interface DaemonOptions {
   host: string;
@@ -103,7 +109,8 @@ export async function daemonCommand(cwd: string, args: string[]): Promise<number
   }
 
   const buildId = await currentBuildIdentity();
-  const server = createDaemonServer(repoRoot, buildId);
+  const authToken = createDaemonAuthToken();
+  const server = createDaemonServer(repoRoot, buildId, authToken);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(options.value.port, options.value.host, () => {
@@ -118,6 +125,7 @@ export async function daemonCommand(cwd: string, args: string[]): Promise<number
     pid: process.pid,
     url: daemonUrl,
     repo_root: repoRoot,
+    auth_token: authToken,
     build_id: buildId
   });
   console.log(
@@ -142,7 +150,7 @@ export async function daemonCommand(cwd: string, args: string[]): Promise<number
   return 0;
 }
 
-export function createDaemonServer(repoRoot: string, buildId: string) {
+export function createDaemonServer(repoRoot: string, buildId: string, authToken: string) {
   const queue = new SerializedQueue();
   const eventBus = new EventBus();
   /* Every task-output writer publishes through this, registered once rather
@@ -152,15 +160,35 @@ export function createDaemonServer(repoRoot: string, buildId: string) {
   setTaskOutputPublisher((record) => eventBus.publishTaskOutput(record));
   return createServer(async (request, response) => {
     try {
-      if (request.method === "GET" && request.url === "/health") {
+      const target = requestTarget(request.url);
+      if (!requestIsAuthenticated(request, target, authToken)) {
+        writeJson(response, 401, { ok: false, reason: "daemon authentication required" }, {
+          "www-authenticate": "Bearer"
+        });
+        return;
+      }
+      if (!hostIsAllowed(request.headers.host)) {
+        writeJson(response, 403, { ok: false, reason: "daemon Host header is not loopback" });
+        return;
+      }
+      if (!originIsAllowed(request.headers.origin)) {
+        writeJson(response, 403, { ok: false, reason: "daemon Origin is not allowed" });
+        return;
+      }
+      if (request.method === "POST" && !hasJsonContentType(request.headers["content-type"])) {
+        writeJson(response, 415, { ok: false, reason: "daemon POST requests require application/json" });
+        return;
+      }
+
+      if (request.method === "GET" && target.path === "/health") {
         writeJson(response, 200, { ok: true, repo_root: repoRoot, build_id: buildId });
         return;
       }
-      if (request.method === "GET" && request.url === "/events/stream") {
+      if (request.method === "GET" && target.path === "/events/stream") {
         await eventBus.stream(repoRoot, request, response);
         return;
       }
-      const outputStreamTaskId = readOutputStreamTaskId(request);
+      const outputStreamTaskId = readOutputStreamTaskId(request.method, target.path);
       if (outputStreamTaskId !== null) {
         if (!outputStreamTaskId.ok) {
           writeJson(response, 400, { ok: false, reason: outputStreamTaskId.reason });
@@ -170,7 +198,7 @@ export function createDaemonServer(repoRoot: string, buildId: string) {
         return;
       }
 
-      const handler = routeHandler(repoRoot, request.method, request.url);
+      const handler = routeHandler(repoRoot, request.method, target.path);
       if (handler === null) {
         writeJson(response, 404, { ok: false, reason: "unknown daemon route" });
         return;
@@ -199,7 +227,7 @@ export function createDaemonServer(repoRoot: string, buildId: string) {
         invokeInProcess,
         () => handler(payloadResult.value, eventBus)
       );
-      const result = isQueueInterrupt(request, payloadResult.value)
+      const result = isQueueInterrupt(request.method, target.path, payloadResult.value)
         ? await execute()
         : await queue.run(execute);
       await eventBus.publishNewDurableEvents(repoRoot, previousEvents.value.length);
@@ -398,9 +426,9 @@ function routeHandler(repoRoot: string, method: string | undefined, url: string 
   return null;
 }
 
-function isQueueInterrupt(request: IncomingMessage, payload: DaemonPayload): boolean {
-  return request.method === "POST" &&
-    request.url === "/workspace/action" &&
+function isQueueInterrupt(method: string | undefined, path: string, payload: DaemonPayload): boolean {
+  return method === "POST" &&
+    path === "/workspace/action" &&
     (payload.type === "quality.cancel" || payload.type === "task.stop" || payload.type === "run.stop");
 }
 
@@ -425,6 +453,9 @@ function parseDaemonOptions(args: string[]): { ok: true; value: DaemonOptions } 
         return { ok: false, reason: "usage: hivemind daemon [--host <host>] [--port <port>]" };
       }
       host = value;
+      if (!isLoopbackDaemonHost(host)) {
+        return { ok: false, reason: "daemon host must be 127.0.0.1 or localhost" };
+      }
       index += 1;
       continue;
     }
@@ -474,11 +505,11 @@ function readTaskId(payload: DaemonPayload): { ok: true; value: string } | { ok:
   return typeof payload.task_id === "string" ? { ok: true, value: payload.task_id } : { ok: false, reason: "task_id must be a string" };
 }
 
-function readOutputStreamTaskId(request: IncomingMessage): { ok: true; value: string } | { ok: false; reason: string } | null {
-  if (request.method !== "GET" || request.url === undefined) {
+function readOutputStreamTaskId(method: string | undefined, path: string): { ok: true; value: string } | { ok: false; reason: string } | null {
+  if (method !== "GET") {
     return null;
   }
-  const match = /^\/tasks\/([^/]+)\/output\/stream$/u.exec(request.url);
+  const match = /^\/tasks\/([^/]+)\/output\/stream$/u.exec(path);
   if (match === null) {
     return null;
   }
@@ -515,13 +546,78 @@ function readOptionalPositiveInteger(payload: DaemonPayload, field: string): { o
     : { ok: false, reason: `${field} must be a positive integer` };
 }
 
-function writeJson(response: ServerResponse, statusCode: number, value: unknown): void {
+function writeJson(
+  response: ServerResponse,
+  statusCode: number,
+  value: unknown,
+  headers: Record<string, string> = {}
+): void {
   const payload = `${JSON.stringify(value, null, 2)}\n`;
   response.writeHead(statusCode, {
     "content-type": "application/json",
-    "content-length": Buffer.byteLength(payload)
+    "content-length": Buffer.byteLength(payload),
+    ...headers
   });
   response.end(payload);
+}
+
+interface DaemonRequestTarget {
+  path: string;
+  query: URLSearchParams;
+}
+
+function requestTarget(raw: string | undefined): DaemonRequestTarget {
+  const target = raw ?? "";
+  const separator = target.indexOf("?");
+  return separator === -1
+    ? { path: target, query: new URLSearchParams() }
+    : {
+        path: target.slice(0, separator),
+        query: new URLSearchParams(target.slice(separator + 1))
+      };
+}
+
+function requestIsAuthenticated(
+  request: IncomingMessage,
+  target: DaemonRequestTarget,
+  expected: string
+): boolean {
+  const authorization = readSingleHeader(request.headers.authorization);
+  const bearer = authorization?.startsWith("Bearer ")
+    ? authorization.slice("Bearer ".length)
+    : undefined;
+  if (daemonTokenMatches(bearer, expected)) {
+    return true;
+  }
+  if (!isStreamRequest(request.method, target.path)) {
+    return false;
+  }
+  const streamTokens = target.query.getAll("access_token");
+  return streamTokens.length === 1 && daemonTokenMatches(streamTokens[0], expected);
+}
+
+function isStreamRequest(method: string | undefined, path: string): boolean {
+  return method === "GET" &&
+    (path === "/events/stream" || /^\/tasks\/[^/]+\/output\/stream$/u.test(path));
+}
+
+function readSingleHeader(value: string | string[] | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function originIsAllowed(value: string | string[] | undefined): boolean {
+  return !Array.isArray(value) && isAllowedDaemonOrigin(value);
+}
+
+function hostIsAllowed(host: string | undefined): boolean {
+  if (host === undefined) return false;
+  const normalized = host.toLowerCase();
+  return /^(?:127\.0\.0\.1|localhost)(?::\d{1,5})?$/u.test(normalized);
+}
+
+function hasJsonContentType(value: string | string[] | undefined): boolean {
+  if (typeof value !== "string") return false;
+  return value.split(";", 1)[0]?.trim().toLowerCase() === "application/json";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

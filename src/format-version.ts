@@ -127,5 +127,5 @@ export const formatVersions = {
   quotaLedger: { format: "quota ledger", current: 1, whenAbsent: "refuse" },
   meteredReservation: { format: "metered reservation", current: 1, whenAbsent: "refuse" },
   managerSession: { format: "manager session", current: 1, whenAbsent: "refuse" },
-  daemonState: { format: "daemon state", current: 1, whenAbsent: "refuse" }
+  daemonState: { format: "daemon state", current: 2, whenAbsent: "refuse" }
 } as const satisfies Record<string, FormatVersionGate>;
