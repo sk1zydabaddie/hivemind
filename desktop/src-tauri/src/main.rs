@@ -1,9 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod project;
-mod newer_version;
 
-use newer_version::newer_version;
 use project::{
     choose_project_attachment_folder, choose_project_files, choose_project_folder, dismiss_hint,
     dismissed_hints, initialize_git, initialize_project, inspect_daemon_work,
@@ -31,14 +29,7 @@ fn main() {
            `select_project`. This keeps browsing in the OS and authority in the
            existing shell boundary. */
         .plugin(tauri_plugin_dialog::init())
-        /* The updater plugin is used for read-only discovery. Every webview
-           updater command remains denied, and the custom command reports only
-           whether the endpoint offers a newer version. Installation returns in
-           a later phase after one global lease and one provenance verifier
-           exist. */
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            newer_version,
             choose_project_attachment_folder,
             choose_project_files,
             choose_project_folder,

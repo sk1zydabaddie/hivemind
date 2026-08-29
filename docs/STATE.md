@@ -3381,3 +3381,49 @@ The remediation ledger is now **17 open findings: 5 Critical, 10 High, 2
 Medium, and 0 Low**. R3 through R7 and G5 are complete. The product remains
 **NO-GO** because the release workstreams R0, R1, and R2 remain open. Phase 10
 begins only in its next dedicated turn.
+
+## Remediation Phase 10: permanent trust perimeter — 2026-08-29
+
+Phase 10 is complete and closes **F6-04 and F6-13**, completing R0 and release
+gate G0. The production source updater was already removed; this phase deleted
+the remaining read-only updater plugin, Rust and JavaScript dependencies,
+endpoint, compiled legacy public key, capability entries, native discovery
+command, React update bar, and replay fallback. Production now has no path that
+classifies a selected repository as Hivemind source and no updater trust root
+that can be revived through IPC or another client surface.
+
+The exposed local private key was not read or deleted. It was moved out of the
+active filename to `hivemind-updater.key.revoked-2026-08-28`, inheritance was
+disabled, and access now contains only non-inherited full control for the owner,
+SYSTEM, and Administrators. Evidence records metadata only. An old-key bridge
+was deliberately rejected: a key treated as exposed cannot authenticate the
+key that replaces it. The supported client migration is a fresh
+publisher-signed installer from the future protected R2 pipeline. The current
+public release was inspected but not changed and is not a qualified migration
+artifact.
+
+Installed build **26.829.1445** was built, installed, and matched across
+executable, Core, shell, and pinned Node 22.23.2 identities. The installed probe
+initialized and reached `Live` on a disposable repository whose package name
+and Git remote both contained `ai.hivemind.desktop`. Direct invocations of
+`newer_version`, `take_newer_version`, and `build_and_install` each failed as
+unknown commands; the fixture's executable build marker stayed absent; the
+exact update-surface query was empty; the installed executable contained none
+of the retired endpoint, updater dependency name, or removed command names;
+and severe browser logs were empty. The 1440x900 build-labelled capture and
+structured evidence are under
+`docs/evidence/remediation-phase10-26.829.1445/`. The disposable fixture was
+removed and the user's recent-project registry was restored by the installed
+test guard.
+
+Final no-paid validation passed Core (**961 passed, 2 skipped, 963 total**),
+Desktop (**345/345**), Rust (**52/52**), the 5/5 focused trust regressions, both
+advisory audits with zero vulnerabilities, all **44/44** production
+surface/viewport combinations, installed identity verification, and the native
+spoof-repository proof. No provider/model call, signing operation, release
+publication, or public-channel mutation occurred.
+
+The remediation ledger is now **15 open findings: 3 Critical, 10 High, 2
+Medium, and 0 Low**. R0, R3 through R7, G0, and G5 are complete. The product
+remains **NO-GO** because R1 and R2 remain open. Phase 11 begins only in its next
+dedicated turn.

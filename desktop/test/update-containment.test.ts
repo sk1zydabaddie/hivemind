@@ -15,31 +15,33 @@ async function doesNotExist(relativePath: string): Promise<boolean> {
   }
 }
 
-function withoutComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/gu, "");
-}
+describe("permanent update trust containment", () => {
+  test("the consumer has no updater, source classifier, or update execution surface", async () => {
+    const [main, cargo, config, capability, app, packageJson] = await Promise.all([
+      readFile(path.join(desktopRoot, "src-tauri", "src", "main.rs"), "utf8"),
+      readFile(path.join(desktopRoot, "src-tauri", "Cargo.toml"), "utf8"),
+      readFile(path.join(desktopRoot, "src-tauri", "tauri.conf.json"), "utf8"),
+      readFile(path.join(desktopRoot, "src-tauri", "capabilities", "default.json"), "utf8"),
+      readFile(path.join(desktopRoot, "src", "App.tsx"), "utf8"),
+      readFile(path.join(desktopRoot, "package.json"), "utf8")
+    ]);
 
-describe("phase 0 update and release containment", () => {
-  test("the consumer can discover an update but has no install or source-build command", async () => {
-    const main = await readFile(path.join(desktopRoot, "src-tauri", "src", "main.rs"), "utf8");
-    const updater = await readFile(
-      path.join(desktopRoot, "src-tauri", "src", "newer_version.rs"),
-      "utf8"
-    );
-    const bar = await readFile(
-      path.join(desktopRoot, "src", "components", "workspace", "update-bar.tsx"),
-      "utf8"
-    );
+    for (const [name, source] of [
+      ["Rust entrypoint", main],
+      ["Rust manifest", cargo],
+      ["Tauri configuration", config],
+      ["Tauri capability", capability],
+      ["React application", app],
+      ["desktop package", packageJson]
+    ] as const) {
+      expect(source, `${name} must contain no updater authority`).not.toMatch(
+        /tauri.plugin.updater|plugin-updater|updater:|newer_version|take_newer_version|selfbuild/iu
+      );
+    }
 
-    expect(main).toMatch(/\bnewer_version\b/u);
-    expect(main).not.toMatch(/\btake_newer_version\b|\bmod selfbuild\b/u);
-    expect(updater).toMatch(/updater\.check\(\)\.await/u);
-    expect(withoutComments(updater)).not.toMatch(
-      /download_and_install|build_and_install|install_built_and_restart|source_standing|swap_marker/u
-    );
-    expect(bar).toMatch(/Updates are temporarily paused/u);
-    expect(bar).not.toMatch(/take_newer_version|Build and restart|Update and restart/u);
     await expect(doesNotExist("src-tauri/src/selfbuild.rs")).resolves.toBe(true);
+    await expect(doesNotExist("src-tauri/src/newer_version.rs")).resolves.toBe(true);
+    await expect(doesNotExist("src/components/workspace/update-bar.tsx")).resolves.toBe(true);
   });
 
   test("both release commands fail before signing, credential lookup, or publication", async () => {

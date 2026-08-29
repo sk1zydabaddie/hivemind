@@ -8,7 +8,6 @@ import { useCallback, useEffect, useState } from "react";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { SetupScreen } from "@/components/workspace/setup-screen";
 import { SharingBar } from "@/components/workspace/sharing-bar";
-import { UpdateBar } from "@/components/workspace/update-bar";
 import { useAttention } from "@/hooks/use-attention";
 import { WindowControls, trafficLightInset } from "@/components/window-controls";
 import { ProjectTab } from "@/components/workspace/project-tab";
@@ -534,10 +533,6 @@ export default function App(): React.JSX.Element {
           <WindowControls />
         </header>
 
-        {/* Read-only release news sits above project state. It is not gated on
-            `live`, and it carries no installation authority while the release
-            pipeline is contained. */}
-        <UpdateBar />
         {live ? <SharingBar onAction={workspace.performAction} /> : null}
 
         {shellUpdateRequired ? (

@@ -1,0 +1,24 @@
+{
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "fixtureRoot": "C:\\Users\\ethan\\AppData\\Local\\Temp\\ai.hivemind.desktop-spoof-629N2n",
+  "healthyClient": true,
+  "markerAbsent": true,
+  "commandAttempts": {
+    "newer_version": {
+      "error": "Command newer_version not found",
+      "resolved": false
+    },
+    "take_newer_version": {
+      "error": "Command take_newer_version not found",
+      "resolved": false
+    },
+    "build_and_install": {
+      "error": "Command build_and_install not found",
+      "resolved": false
+    }
+  },
+  "updateSurface": [],
+  "buildNumber": "26.829.1445",
+  "severe": [],
+  "screenshotPath": "D:\\Projects\\Hivemind AI\\docs\\evidence\\remediation-phase10-26.829.1445\\installed-1440x900.png"
+}

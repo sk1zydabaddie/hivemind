@@ -292,14 +292,6 @@ class ReplayEventSource {
     /* Removing an entry is shell state the replay has none of, and answering
        is closer to the truth than throwing: there is nothing to forget. */
     if (command === "forget_project") return null;
-    /* The replay has no updater endpoint. Return the ordinary quiet answer so
-       design captures are not dominated by a harness-only network fault. */
-    if (command === "newer_version") {
-      return {
-        source: "none",
-        running: "26.816.1540-replay"
-      };
-    }
     if (command === "dismissed_hints") return { "setup.what-this-is": true };
     if (command === "select_project") {
       return {

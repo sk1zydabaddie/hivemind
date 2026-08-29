@@ -4832,3 +4832,29 @@ reachable, and the installer/installed Core contained no stale output for the
 deleted convention-evidence subsystem. Evidence is under
 `docs/evidence/remediation-phase9-26.828.858/`.
 
+### An exposed updater key cannot authorize its own replacement — 2026-08-29
+
+Key rotation is not a bridge when the old key is already treated as exposed.
+Anything it signs can be forged by the same authority the migration is meant to
+remove. Hivemind therefore fails closed: the consumer carries no updater plugin,
+endpoint, public key, discovery command, capability, dependency, or visual
+surface until the release pipeline owns a protected signing key and Windows
+publisher identity.
+
+Legacy clients do not receive an automatic old-key transition. Their migration
+is a fresh publisher-signed installer from the qualified R2 pipeline. Until
+that artifact exists, the old public release is revoked product state rather
+than a supported update channel. A release build may not reintroduce updater
+authority with a placeholder key, development key, local passwordless file, or
+React-owned refusal.
+
+The local legacy private key is retained only as recoverable revoked evidence:
+not at the active filename, not read by a build, and protected from inherited
+group access. Evidence may record path status, byte length, ACL inheritance,
+and principals; it must never record key contents. Installed build
+**26.829.1445** proves the corresponding client boundary: a healthy
+spoof-identifier project reached `Live`, historical update commands were absent,
+its build marker never appeared, the update surface was empty, and the binary
+contained none of the retired endpoint or updater names. Evidence is under
+`docs/evidence/remediation-phase10-26.829.1445/`.
+

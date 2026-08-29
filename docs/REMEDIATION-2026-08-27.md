@@ -137,6 +137,20 @@ captures and structured no-paid evidence are under
 findings: 5 Critical, 10 High, 2 Medium, and 0 Low**. The product remains NO-GO
 because the release workstreams R0, R1, and R2 remain open.
 
+**Phase 10 permanent trust perimeter completed 2026-08-29.** Installed build
+**26.829.1445** closes F6-04 and F6-13, completing R0 and release gate G0. The
+source updater remains deleted, and the read-only updater plugin, endpoint,
+compiled legacy public key, discovery command, capability entries, React bar,
+and both JavaScript/Rust dependencies are now deleted too. The old private key
+is absent from its active path and retained only as ACL-protected revoked
+evidence; no private material was read or logged. An exposed key cannot safely
+sign a bridge to its successor, so the client migration is a mandatory fresh
+publisher-signed installer from the protected R2 pipeline. The existing public
+release remains unchanged and is not a qualified migration artifact. Installed
+evidence is under `docs/evidence/remediation-phase10-26.829.1445/`. There are
+**15 open findings: 3 Critical, 10 High, 2 Medium, and 0 Low**. The product
+remains NO-GO because R1 and R2 remain open.
+
 ## Reconciliation result
 
 The ledger parser found exactly 93 unique IDs with the expected phase counts:
@@ -328,6 +342,27 @@ findings: 10 Critical, 49 High, 30 Medium, and 2 Low**. G0 remains open because
 the spoofable source identity and old updater trust root have not yet been
 removed or migrated. F6-03 also remains open in R2: packaged Core still depends
 on ambient `node`, which Phase 3 must replace with a pinned installed runtime.
+
+**Execution status after Phase 10 (2026-08-29): COMPLETE.** F6-04 and F6-13
+are closed. The source-update path is absent rather than made more elaborate.
+The current consumer contains no updater crate/package, plugin, capability,
+endpoint, public key, native command, or React surface. The former local key is
+not present at the active path and its revoked copy has no inherited access;
+metadata-only evidence records its 348-byte size and the three full-control
+principals without reading the key. Old-key automatic bridge releases are
+forbidden. Existing legacy clients require a fresh publisher-signed installer
+once R2 supplies the new protected trust root.
+
+Installed build **26.829.1445** reached `Live` on a disposable Git project whose
+package name and remote both contained `ai.hivemind.desktop`. Invocations of
+`newer_version`, `take_newer_version`, and `build_and_install` each returned
+command-not-found; the fixture's executable build marker stayed absent; the
+exact update surface query returned no elements; and severe browser logs were
+empty. The installed executable contained none of the retired endpoint, updater
+crate name, or removed command names. Evidence is under
+`docs/evidence/remediation-phase10-26.829.1445/`. R0 and G0 are complete. The
+ledger now has **15 open findings: 3 Critical, 10 High, 2 Medium, and 0 Low**;
+R1 and R2 remain release blockers.
 
 ## R1 — Update lifecycle
 
