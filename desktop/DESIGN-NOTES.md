@@ -4883,3 +4883,43 @@ test cannot pass by reading unrelated page content. Installed build
 **26.829.1655** is the reference evidence under
 `docs/evidence/remediation-phase11-26.829.1655/`.
 
+### Release trust is exact bytes plus two separate signatures — 2026-08-29
+
+A release descriptor is routing metadata, not proof. Verification downloads
+bounded exact descriptor, manifest, payload, installer, signature, and
+executable bytes; refuses redirects and cross-origin asset URLs; and compares
+every local and remote identity before publication. A plausible signature
+string, a successful HEAD request, or a matching version cannot admit a
+candidate.
+
+Updater authenticity and Windows publisher identity are separate boundaries.
+Minisign authenticates the update payload through the protected updater key.
+Authenticode identifies the Windows publisher at first install and on the
+installed executable. Production requires both. A development key or
+self-signed certificate cannot fill either production trust-policy field, and
+an absent key or publisher fails before network access or signing.
+
+Tauri patches the application's bundle marker before signing and packaging,
+then restores the release-tree executable. The signing hook therefore captures
+and signs that patched application, verifies its exact subject, thumbprint, and
+RFC3161 timestamp, lets NSIS package those bytes, and signs and verifies the
+installer separately. The manifest binds the source executable and installed
+NSIS executable identities instead of pretending the intentional transformation
+did not occur.
+
+Release-only verification binaries are workspace tools, never application
+binaries. The Tauri package has one explicit main binary, and install
+verification treats the application root as a closed allowlist in addition to
+checking the complete Core/runtime inventory. Otherwise a helper or retired
+updater file can remain visible and executable while every managed-payload
+comparison still passes.
+
+Rust advisory evidence is part of the artifact, not a workstation assertion.
+The shared local/signed admission graph fixes the audit tool version, official
+database origin and commit, maximum database age, target platform, Cargo
+lockfile hash, dependency count, and zero-vulnerability result. Unknown or
+unavailable evidence rejects the build. Installed build **416.20588.53470** is
+the Phase 13 reference for this mechanism; it remains intentionally unqualified
+because the production updater key and publisher certificate are absent and
+both Windows files are unsigned.
+

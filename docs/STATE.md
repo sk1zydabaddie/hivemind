@@ -3514,3 +3514,49 @@ and 0 Low**. R2 and G6 remain open for remote signature verification, complete
 advisory/signing coverage, exact publication admission, and final candidate
 qualification. The product remains **NO-GO**. Phase 13 begins only in its next
 dedicated turn.
+
+## Remediation Phase 13: release trust gates — 2026-08-29
+
+Phase 13 is complete and closes **F6-16**. Local ship and the signed-release
+build now enter through one admission graph covering both npm lockfiles, the
+Windows x64 Cargo graph, and all 44 production surface/viewport combinations.
+Rust admission is fail closed: it requires exact `cargo-audit-audit 0.22.2`,
+the official RustSec database no more than seven days old, and zero
+vulnerabilities. The immutable artifact manifest records the database origin,
+commit, update time, lockfile hash, target platform, 483 dependencies, and the
+zero result.
+
+Release verification no longer trusts metadata. It streams bounded exact
+candidate bytes, refuses redirects and cross-origin assets, compares the
+descriptor and local/remote manifests, validates installer and executable
+hashes and sizes, verifies the updater signature through a separate Rust
+release tool, and requires exact timestamped Authenticode publisher identities.
+The release tool is a workspace package rather than a Tauri application binary
+and is absent from the installed product. Install verification now also treats
+the application root as a closed allowlist; the stale helper and updater files
+that exposed the old inventory gap are removed by the installer and rejected
+if they remain.
+
+Installed build **416.20588.53470** was assembled from clean commit
+`663629031cd85034fd86ffef88a088cde240382e` as artifact
+`9ee6b26d9710463417ed24dc31becbefcb85ca23f1caaa36c3a82740ed9748df`.
+All **4,464** managed files and the exact root, Core, shell, and pinned Node
+identities matched. Both installer and installed executable are `NotSigned`.
+Production trust is deliberately unset, so signing preflight and remote
+verification fail before network access with `production updater public key is
+not configured`. No test key or self-signed certificate was substituted.
+Evidence is under `docs/evidence/remediation-phase13-416.20588.53470/`.
+
+Final no-paid validation passed Core (**965 passed, 3 skipped, 968 total**),
+Desktop (**360/360**), Rust (**63/63**), the **22/22** focused release and
+supply-chain regressions, both npm advisory graphs with zero vulnerabilities,
+the Rust advisory gate with zero vulnerabilities, all **44/44** production
+surface/viewport combinations, `ship`, and exact installed-root verification.
+No provider/model call, signing operation, publication, or public-channel
+mutation occurred.
+
+The remediation ledger is now **4 open findings: 1 Critical, 3 High, 0 Medium,
+and 0 Low**. F6-12 and F6-17 remain open until one protected-key,
+publisher-signed candidate passes the gates; F6-11 and F6-14 remain for the
+exact draft/publication transaction. R2, G6, and the product remain **NO-GO**.
+Phase 14 begins only in its next dedicated turn.

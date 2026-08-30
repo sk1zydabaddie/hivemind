@@ -1,0 +1,60 @@
+{
+  "phase": 13,
+  "build": "416.20588.53470",
+  "sourceCommit": "663629031cd85034fd86ffef88a088cde240382e",
+  "artifactId": "9ee6b26d9710463417ed24dc31becbefcb85ca23f1caaa36c3a82740ed9748df",
+  "platform": "windows-x86_64",
+  "installer": {
+    "filename": "Hivemind AI_416.20588.53470_x64-setup.exe",
+    "size": 29461049,
+    "sha256": "34e10324d1e454cc6a96747e250c2a9fbb307079c4ce42debfb9d347a70a8967",
+    "authenticodeStatus": "NotSigned"
+  },
+  "installedExecutable": {
+    "path": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+    "size": 10781696,
+    "sha256": "a1f09a40d0283670109df76210507d4f49b11844abc5589ea363754449110b34",
+    "authenticodeStatus": "NotSigned"
+  },
+  "installedRootEntries": [
+    "artifact",
+    "core",
+    "hivemind_desktop.exe",
+    "runtime",
+    "uninstall.exe"
+  ],
+  "releaseVerifierInstalled": false,
+  "retiredUpdaterFilesInstalled": 0,
+  "managedFileCount": 4464,
+  "rustAdvisory": {
+    "tool": "cargo-audit-audit 0.22.2",
+    "databaseOrigin": "https://github.com/RustSec/advisory-db.git",
+    "databaseCommit": "b331df68b3ed0e99594d259040bdcb9de3c7c8a4",
+    "databaseUpdatedAt": "2026-08-29T08:11:09+02:00",
+    "lockfileSha256": "949cee5ebd40ff1869769ea87588974f88f7c261cb914cd7d52307645e02543b",
+    "dependencyCount": 483,
+    "vulnerabilityCount": 0
+  },
+  "productionTrustConfigured": false,
+  "signingPreflight": {
+    "exitCode": 1,
+    "reason": "production updater public key is not configured"
+  },
+  "remoteVerificationPreNetworkProbe": {
+    "exitCode": 1,
+    "reason": "production updater public key is not configured"
+  },
+  "productionReachability": {
+    "passed": 44,
+    "failed": 0
+  },
+  "tests": {
+    "core": { "passed": 965, "skipped": 3, "total": 968 },
+    "desktop": { "passed": 360, "total": 360 },
+    "rust": { "passed": 63, "total": 63 },
+    "focusedSupplyChain": { "passed": 22, "total": 22 }
+  },
+  "paidProviderCalls": 0,
+  "publicReleasePublished": false,
+  "publicChannelMutated": false
+}

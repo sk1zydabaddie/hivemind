@@ -185,6 +185,28 @@ findings: 1 Critical, 4 High, 0 Medium, and 0 Low**. R2 and the product remain
 NO-GO; signing, complete advisory coverage, remote verification, and exact
 publication admission remain open.
 
+**Phase 13 release trust gates completed 2026-08-29.** Installed build
+**416.20588.53470** closes F6-16. `ship` and the signed-release path now share
+one fail-closed npm, RustSec, and production-surface admission graph. Rust
+advisory evidence binds `cargo-audit-audit 0.22.2`, the official database at
+commit `b331df68b3ed0e99594d259040bdcb9de3c7c8a4`, the Cargo lockfile, Windows
+x64 resolution, 483 dependencies, and zero vulnerabilities into the immutable
+artifact manifest.
+
+The remote verifier now downloads and compares the exact descriptor,
+manifests, installer, and executable; verifies the real updater signature; and
+requires exact timestamped Authenticode publisher identities before a candidate
+can be admitted. Signing preflight proves a matching usable certificate before
+the build. Both are deliberately blocked because the production trust policy
+has no updater public key or publisher certificate and the local artifact is
+unsigned. The installed root is exact and contains neither the release verifier
+tool nor retired updater debris. Evidence is under
+`docs/evidence/remediation-phase13-416.20588.53470/`. There are **4 open
+findings: 1 Critical, 3 High, 0 Medium, and 0 Low**. F6-12 and F6-17 remain
+open until a protected trust root and real publisher certificate prove one
+candidate; F6-11 and F6-14 remain for exact draft/publication sequencing. R2,
+G6, and the product remain NO-GO.
+
 ## Reconciliation result
 
 The ledger parser found exactly 93 unique IDs with the expected phase counts:
@@ -522,6 +544,23 @@ launch passed; TypeScript and `@types/node` are absent. Focused failure-mode
 regressions pass **15/15**, and production reachability passes **44/44**.
 Contracts 4 through 7 and 9 remain open for later dedicated phases; R2 and G6
 remain open, publication remains disabled, and the product remains NO-GO.
+
+**Phase 13 completed 2026-08-29:** Contracts 4, 6, 7, and 9 now have
+fail-closed mechanisms, and contract 6 is proven end to end, closing F6-16.
+The shared admission graph audits both npm lockfiles and the Windows x64 Cargo
+graph before either local or signed build. The exact RustSec tool/database
+identity and zero-vulnerability result are carried into artifact
+`9ee6b26d9710463417ed24dc31becbefcb85ca23f1caaa36c3a82740ed9748df`.
+The bounded remote verifier rejects redirects and cross-origin assets, compares
+downloaded bytes with both immutable manifests, verifies Minisign, and checks
+timestamped Authenticode against the configured publisher. The signing
+preflight requires the corresponding local certificate and private key.
+
+Contracts 4 and 7 are not marked proven because production trust values are
+intentionally absent and build `416.20588.53470` reports `NotSigned` for both
+installer and installed executable. Contract 5 and the final part of contract
+9 remain for the exact draft/publication transaction. Publication stayed
+disabled and no public channel changed. R2 and G6 remain open.
 
 ## R3 — Cancellation, crash recovery, and terminal truth
 
