@@ -1,96 +1,197 @@
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  inventoryManagedRoots,
+  PAYLOAD_SCHEMA_VERSION,
+  sha256,
+  sha256File,
+  stableJson,
+  validatePayloadManifest,
+  WINDOWS_PLATFORM,
+  writeFileAtomically
+} from "./artifact-integrity.mjs";
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(desktopRoot, "..");
+const generatedDir = path.join(desktopRoot, "src-tauri", "gen");
+const bundleDir = path.join(generatedDir, "bundle");
+const candidateDir = path.join(generatedDir, `bundle-candidate-${process.pid}`);
 const npmEntry = process.env.npm_execpath;
 if (!npmEntry) throw new Error("npm_execpath is required to prepare the desktop bundle");
 
+const context = JSON.parse(await readFile(path.join(generatedDir, "build-context.json"), "utf8"));
+assertBuildContext(context);
+assertCurrentSource(context.source_commit);
+
 const runtimeManifestPath = path.join(desktopRoot, "runtime", "node-runtime.json");
 const runtime = JSON.parse(await readFile(runtimeManifestPath, "utf8"));
-if (
-  typeof runtime.version !== "string" ||
-  runtime.platform !== "win32" ||
-  runtime.arch !== "x64" ||
-  !/^https:\/\/nodejs\.org\/dist\/v\d+\.\d+\.\d+\/win-x64\/node\.exe$/u.test(runtime.url) ||
-  !/^[a-f0-9]{64}$/u.test(runtime.sha256)
-) {
-  throw new Error("desktop/runtime/node-runtime.json is malformed or is not pinned to official Windows x64 Node");
-}
+validateRuntime(runtime);
 if (process.platform !== runtime.platform || process.arch !== runtime.arch) {
-  throw new Error(
-    `the consumer bundle currently supports ${runtime.platform}/${runtime.arch}; received ${process.platform}/${process.arch}`
-  );
+  throw new Error(`the qualified consumer bundle supports ${runtime.platform}/${runtime.arch}; received ${process.platform}/${process.arch}`);
 }
 
 const stagedRuntimePath = path.join(desktopRoot, "runtime", "node.exe");
-if (!existsSync(stagedRuntimePath) || await sha256File(stagedRuntimePath) !== runtime.sha256) {
-  const response = await fetch(runtime.url, { signal: AbortSignal.timeout(120_000) });
-  if (!response.ok) {
-    throw new Error(`could not download pinned Node ${runtime.version}: HTTP ${response.status}`);
-  }
-  const bytes = Buffer.from(await response.arrayBuffer());
-  const receivedSha256 = sha256(bytes);
-  if (receivedSha256 !== runtime.sha256) {
-    throw new Error(
-      `pinned Node checksum mismatch: expected ${runtime.sha256}, received ${receivedSha256}`
-    );
-  }
-  const temporaryRuntime = `${stagedRuntimePath}.${process.pid}.tmp`;
-  await writeFile(temporaryRuntime, bytes);
-  await rm(stagedRuntimePath, { force: true });
-  await rename(temporaryRuntime, stagedRuntimePath);
-}
-const stagedRuntimeVersion = execFileSync(stagedRuntimePath, ["--version"], {
+await ensurePinnedRuntime(stagedRuntimePath, runtime);
+
+execNpm(["run", "build"], repoRoot);
+const cli = path.join(repoRoot, "dist", "src", "cli.js");
+const shellBuildId = execFileSync(process.execPath, [cli, "shell-build-id"], {
+  cwd: repoRoot,
   encoding: "utf8",
   windowsHide: true
 }).trim();
-if (stagedRuntimeVersion !== `v${runtime.version}`) {
-  throw new Error(
-    `pinned Node version mismatch: expected v${runtime.version}, received ${stagedRuntimeVersion}`
-  );
+const coreBuildId = execFileSync(process.execPath, [cli, "build-id"], {
+  cwd: repoRoot,
+  encoding: "utf8",
+  windowsHide: true
+}).trim();
+for (const [name, value] of [["Core", coreBuildId], ["desktop shell", shellBuildId]]) {
+  if (!/^[a-f0-9]{64}$/u.test(value)) throw new Error(`${name} returned an invalid build identity`);
 }
 
-execFileSync(process.execPath, [npmEntry, "run", "build"], { cwd: repoRoot, stdio: "inherit" });
-const shellBuildId = execFileSync(
-  process.execPath,
-  [path.join(repoRoot, "dist", "src", "cli.js"), "shell-build-id"],
-  { cwd: repoRoot, encoding: "utf8" }
-).trim();
-const coreBuildId = execFileSync(
-  process.execPath,
-  [path.join(repoRoot, "dist", "src", "cli.js"), "build-id"],
-  { cwd: repoRoot, encoding: "utf8" }
-).trim();
-if (!/^[a-f0-9]{64}$/u.test(shellBuildId)) {
-  throw new Error("Core returned an invalid desktop shell build identity");
+await rm(candidateDir, { recursive: true, force: true });
+try {
+  const core = path.join(candidateDir, "core");
+  const candidateRuntime = path.join(candidateDir, "runtime");
+  await mkdir(core, { recursive: true });
+  await mkdir(candidateRuntime, { recursive: true });
+  for (const filename of ["package.json", "package-lock.json"]) {
+    await cp(path.join(repoRoot, filename), path.join(core, filename));
+  }
+  execNpm(["ci", "--omit=dev", "--no-audit", "--no-fund"], core);
+  const rootPackage = JSON.parse(await readFile(path.join(repoRoot, "package.json"), "utf8"));
+  for (const dependency of Object.keys(rootPackage.devDependencies ?? {})) {
+    try {
+      await stat(path.join(core, "node_modules", ...dependency.split("/")));
+      throw new Error(`clean production staging retained development dependency ${dependency}`);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+  if (await sha256File(path.join(core, "package-lock.json")) !== await sha256File(path.join(repoRoot, "package-lock.json"))) {
+    throw new Error("npm ci changed the admitted Core lockfile");
+  }
+  await cp(path.join(repoRoot, "dist"), path.join(core, "dist"), { recursive: true });
+  await writeFileAtomically(path.join(core, "core-build-id.txt"), `${coreBuildId}\n`);
+  await writeFileAtomically(path.join(core, "shell-build-id.txt"), `${shellBuildId}\n`);
+  await cp(runtimeManifestPath, path.join(candidateRuntime, "node-runtime.json"));
+  await cp(stagedRuntimePath, path.join(candidateRuntime, "node.exe"));
+
+  execNpm(["run", "build"], desktopRoot);
+  assertCurrentSource(context.source_commit);
+
+  const sourceInputs = await buildInputInventory();
+  const lockfiles = {};
+  for (const relative of ["package-lock.json", "desktop/package-lock.json", "desktop/src-tauri/Cargo.lock"]) {
+    lockfiles[relative] = await sha256File(path.join(repoRoot, ...relative.split("/")));
+  }
+  const files = await inventoryManagedRoots(candidateDir);
+  const payload = {
+    schema_version: PAYLOAD_SCHEMA_VERSION,
+    kind: "hivemind-payload",
+    platform: WINDOWS_PLATFORM,
+    version: context.version,
+    generated_at_ms: context.generated_at_ms,
+    source: {
+      commit: context.source_commit,
+      clean: true,
+      input_tree_sha256: sha256(stableJson(sourceInputs)),
+      inputs: sourceInputs,
+      lockfiles
+    },
+    build: {
+      core_build_id: coreBuildId,
+      shell_build_id: shellBuildId,
+      runtime: { version: runtime.version, sha256: runtime.sha256 }
+    },
+    files
+  };
+  validatePayloadManifest(payload);
+  await rm(bundleDir, { recursive: true, force: true });
+  await rename(candidateDir, bundleDir);
+  await writeFileAtomically(path.join(generatedDir, "payload-manifest.json"), stableJson(payload));
+  console.log(`prepared clean payload: ${files.length} files from ${sourceInputs.length} source inputs`);
+} catch (error) {
+  await rm(candidateDir, { recursive: true, force: true });
+  throw error;
 }
-if (!/^[a-f0-9]{64}$/u.test(coreBuildId)) {
-  throw new Error("Core returned an invalid Core build identity");
+
+async function ensurePinnedRuntime(runtimePath, manifest) {
+  let valid = false;
+  try {
+    valid = await sha256File(runtimePath) === manifest.sha256;
+  } catch { /* download below */ }
+  if (!valid) {
+    const response = await fetch(manifest.url, { signal: AbortSignal.timeout(120_000) });
+    if (!response.ok) throw new Error(`could not download pinned Node ${manifest.version}: HTTP ${response.status}`);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (sha256(bytes) !== manifest.sha256) throw new Error("pinned Node checksum mismatch");
+    await writeFileAtomically(runtimePath, bytes);
+  }
+  const version = execFileSync(runtimePath, ["--version"], { encoding: "utf8", windowsHide: true }).trim();
+  if (version !== `v${manifest.version}`) throw new Error(`pinned Node version mismatch: received ${version}`);
 }
 
-const generatedDir = path.join(desktopRoot, "src-tauri", "gen");
-await mkdir(generatedDir, { recursive: true });
-await writeFile(path.join(generatedDir, "shell-build-id.txt"), `${shellBuildId}\n`, "utf8");
-await writeFile(path.join(generatedDir, "core-build-id.txt"), `${coreBuildId}\n`, "utf8");
-
-execFileSync(process.execPath, [npmEntry, "run", "build"], { cwd: desktopRoot, stdio: "inherit" });
-
-async function sha256File(filePath) {
-  return sha256(await readFile(filePath));
+async function buildInputInventory() {
+  const tracked = git(["ls-files", "-z"]).split("\0").filter(Boolean).filter(isBuildInput).sort();
+  const entries = [];
+  for (const relative of tracked) {
+    const file = path.join(repoRoot, ...relative.split("/"));
+    const details = await stat(file);
+    entries.push({ path: relative, size: details.size, sha256: await sha256File(file) });
+  }
+  return entries;
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
+function isBuildInput(relative) {
+  return relative.startsWith("src/") ||
+    relative.startsWith("desktop/src/") ||
+    relative.startsWith("desktop/scripts/") ||
+    relative.startsWith("desktop/runtime/") ||
+    relative.startsWith("desktop/src-tauri/") ||
+    relative === "package.json" || relative === "package-lock.json" ||
+    relative.startsWith("tsconfig") || relative === "tools/clean-dist.mjs" ||
+    relative === "desktop/index.html" ||
+    relative === "desktop/package.json" || relative === "desktop/package-lock.json" ||
+    relative.startsWith("desktop/tsconfig") || relative === "desktop/vite.config.ts";
 }
 
-/* The version is NOT stamped here. It is stamped by `stamp-version.mjs`, which
-   the shipping script runs before invoking the Tauri CLI -- because the CLI
-   validates `--config src-tauri/gen/version.conf.json` while parsing its
-   arguments, which is before it ever runs this file as `beforeBuildCommand`.
-   Generating a tool's own arguments from that tool's build hook cannot work.
-   See the header of `stamp-version.mjs` for what that cost. */
+function assertBuildContext(value) {
+  if (value?.schema_version !== 1 || value?.platform !== WINDOWS_PLATFORM ||
+      typeof value.version !== "string" || !Number.isSafeInteger(value.generated_at_ms) ||
+      !/^[a-f0-9]{40,64}$/u.test(value.source_commit ?? "")) {
+    throw new Error("generated build context is missing or malformed; run bundle:stamp first");
+  }
+}
+
+function assertCurrentSource(sourceCommit) {
+  const current = git(["rev-parse", "HEAD"]).trim();
+  if (current !== sourceCommit) throw new Error("HEAD changed after the release version was allocated");
+  git(["diff", "--quiet"]);
+  git(["diff", "--cached", "--quiet"]);
+  if (git(["ls-files", "--others", "--exclude-standard", "-z"]) !== "") {
+    throw new Error("release source became dirty after the release version was allocated");
+  }
+}
+
+function validateRuntime(value) {
+  if (typeof value.version !== "string" || value.platform !== "win32" || value.arch !== "x64" ||
+      !/^https:\/\/nodejs\.org\/dist\/v\d+\.\d+\.\d+\/win-x64\/node\.exe$/u.test(value.url) ||
+      !/^[a-f0-9]{64}$/u.test(value.sha256)) {
+    throw new Error("node-runtime.json is not an official pinned Windows x64 runtime");
+  }
+}
+
+function execNpm(args, cwd) {
+  execFileSync(process.execPath, [npmEntry, ...args], { cwd, stdio: "inherit", windowsHide: true });
+}
+
+function git(args) {
+  try {
+    return execFileSync("git", args, { cwd: repoRoot, encoding: "utf8", windowsHide: true });
+  } catch {
+    throw new Error(`release source check failed: git ${args.join(" ")}`);
+  }
+}

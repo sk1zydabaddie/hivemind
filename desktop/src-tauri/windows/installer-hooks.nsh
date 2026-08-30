@@ -7,4 +7,5 @@
 !macro NSIS_HOOK_PREINSTALL
   RMDir /r "$INSTDIR\core"
   RMDir /r "$INSTDIR\runtime"
+  RMDir /r "$INSTDIR\artifact"
 !macroend

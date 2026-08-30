@@ -40,15 +40,12 @@ describe("desktop packaging", () => {
 
     expect(config.bundle?.active).toBe(true);
 
-    /* The bundle config must not be shaped for one platform. It used to pin
-       `["nsis"]`, which is Windows-only, and it declared no icon set at all --
-       Windows fell back to a default and the AppImage bundler failed with
-       "couldn't find a square icon" the first time Linux packaging was
-       attempted. `all` lets each host build what it can, and each platform's
-       npm script names the bundles it actually ships. */
-    expect(config.bundle?.targets).toBe("all");
+    /* One qualified product means one platform contract. The prior Linux and
+       macOS command names bypassed stamping and had no install verifier. A
+       command that has never produced the admitted artifact is not support. */
+    expect(config.bundle?.targets).toEqual(["nsis"]);
     expect(config.bundle?.icon).toEqual(
-      expect.arrayContaining(["icons/128x128.png", "icons/icon.ico", "icons/icon.icns"])
+      expect.arrayContaining(["icons/128x128.png", "icons/icon.ico"])
     );
 
     const scripts = (
@@ -57,12 +54,8 @@ describe("desktop packaging", () => {
       }
     ).scripts;
     expect(scripts["tauri:build"]).toContain("nsis");
-    expect(scripts["tauri:build:linux"]).toMatch(/deb|appimage/u);
-    /* Every platform Hivemind claims names its own bundles. macOS is still
-       UNVERIFIED-ON-MACOS -- the script existing is not a claim that the bundle
-       has ever been built, only that the config is no longer shaped for two
-       platforms out of three. See docs/MACOS-CHECKLIST.md item 5. */
-    expect(scripts["tauri:build:mac"]).toMatch(/app|dmg/u);
+    expect(scripts["tauri:build:linux"]).toBeUndefined();
+    expect(scripts["tauri:build:mac"]).toBeUndefined();
 
     /* The version overlay must be generated BEFORE the CLI is invoked, not by
        the `beforeBuildCommand` hook the CLI runs. `--config` is validated while
@@ -88,12 +81,18 @@ describe("desktop packaging", () => {
       "utf8"
     );
     expect(prepare).not.toContain("version.conf.json\",");
-    expect(config.bundle?.resources).toMatchObject({
-      "../../dist": "core/dist",
-      "../../node_modules": "core/node_modules",
-      "gen/shell-build-id.txt": "core/shell-build-id.txt",
-      "../runtime": "runtime"
-    });
+    /* Generated staging is packaging-only. Keeping it in tauri.conf makes a
+       clean `cargo test` fail before prepare-bundle can create the paths. */
+    expect(config.bundle?.resources).toBeUndefined();
+    const stamp = await readFile(
+      path.join(repoRoot, "desktop", "scripts", "stamp-version.mjs"),
+      "utf8"
+    );
+    expect(stamp).toContain('"gen/bundle/core": "core"');
+    expect(stamp).toContain('"gen/bundle/runtime": "runtime"');
+    expect(stamp).toContain('"gen/payload-manifest.json": "artifact/payload-manifest.json"');
+    expect(prepare).toMatch(/"ci", "--omit=dev"/u);
+    expect(prepare).not.toMatch(/repoRoot, "node_modules"|"\.\.\/\.\.\/node_modules"/u);
     expect(config.bundle?.windows?.nsis?.installerHooks).toBe("./windows/installer-hooks.nsh");
     const installerHooks = await readFile(
       path.join(repoRoot, "desktop", "src-tauri", "windows", "installer-hooks.nsh"),
@@ -102,6 +101,7 @@ describe("desktop packaging", () => {
     expect(installerHooks).toMatch(/NSIS_HOOK_PREINSTALL/u);
     expect(installerHooks).toMatch(/RMDir \/r "\$INSTDIR\\core"/u);
     expect(installerHooks).toMatch(/RMDir \/r "\$INSTDIR\\runtime"/u);
+    expect(installerHooks).toMatch(/RMDir \/r "\$INSTDIR\\artifact"/u);
     expect(main).toContain('windows_subsystem = "windows"');
     expect(project).toContain('.join("core")');
     expect(project).toContain('.join("cli.js")');
@@ -119,9 +119,9 @@ describe("desktop packaging", () => {
       url: "https://nodejs.org/dist/v22.23.2/win-x64/node.exe",
       sha256: "0d0f5e39f9f3d9587bc19f73eab3c2c9c4903fd02d6dbf9c853dd81b3d95fad4"
     });
-    expect(prepare).toMatch(/sha256File\(stagedRuntimePath\).*runtime\.sha256/su);
-    expect(prepare).toMatch(/fetch\(runtime\.url/u);
-    expect(prepare).toMatch(/stagedRuntimeVersion !== `v\$\{runtime\.version\}`/u);
+    expect(prepare).toMatch(/sha256File\(runtimePath\).*manifest\.sha256/su);
+    expect(prepare).toMatch(/fetch\(manifest\.url/u);
+    expect(prepare).toMatch(/version !== `v\$\{manifest\.version\}`/u);
   });
 });
 
@@ -162,65 +162,14 @@ describe("shipping", () => {
      because what was wrong was the bytes on disk rather than the app's ability
      to start. */
   expect(installer).toMatch(/VersionInfo\.FileVersion/u);
-  expect(installer).toMatch(/installed !== expected/u);
-  expect(installer).toMatch(/INSTALL DID NOT TAKE/u);
-  expect(installer).toMatch(/installedCoreBuild !== expectedCoreBuild/u);
-  expect(installer).toMatch(/installedShellBuild !== expectedShellBuild/u);
-  expect(installer).toMatch(/installedRuntimeSha256 !== expectedRuntime\.sha256/u);
-  expect(installer).toMatch(/installedRuntimeVersion !== `v\$\{expectedRuntime\.version\}`/u);
+  expect(installer).toMatch(/validateArtifactManifest/u);
+  expect(installer).toMatch(/verifyManagedInventory/u);
+  expect(installer).toMatch(/installedCoreBuild !== payload\.build\.core_build_id/u);
+  expect(installer).toMatch(/installedRuntimeVersion !== `v\$\{payload\.build\.runtime\.version\}`/u);
   expect(installer).toMatch(/execFileSync\(installedRuntime, \[installedCli, "build-id"\]/u);
-  expect(installer).toMatch(/INSTALLED RUNTIME DID NOT MATCH THE BUNDLE/u);
-  /* And it exits non-zero, or the check is decoration. */
-  expect(installer).toMatch(/process\.exit\(1\)/u);
-
-  /* It refuses to claim success when there is nothing to install, which is the
-     state the repository was in the whole time. */
-  expect(installer).toMatch(/No build to install/u);
-  expect(installer).toMatch(/No installer for version/u);
+  expect(installer).toMatch(/installed payload manifest/u);
+  expect(installer).toMatch(/artifact\.artifact_id/u);
 });
-});
-
-/* The version scheme has to be valid semver at every hour of the day.
- *
- * `${pad(hours,2)}${pad(minutes,2)}` produces `0924` before 10am, and a semver
- * identifier may not carry a leading zero -- so `tauri build` refused the config
- * outright and no build was possible between midnight and 10am. Every build in
- * this project's history had happened after 10am, so the scheme was broken for
- * ten hours of every day with nothing ever running in them. Found by shipping
- * at 09:24, which is the only way it could have been found. */
-test("the calendar version is valid semver at every minute of the day", () => {
-  const stamp = (hour: number, minute: number, month: number, day: number): string =>
-    [
-      26,
-      `${month}${String(day).padStart(2, "0")}`,
-      hour * 100 + minute
-    ].join(".");
-
-  /* Semver: no leading zeros in a numeric identifier. */
-  const semver = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
-  const seen: string[] = [];
-  for (let hour = 0; hour < 24; hour += 1) {
-    for (const minute of [0, 5, 9, 30, 59]) {
-      const value = stamp(hour, minute, 8, 15);
-      expect(value, `${hour}:${minute} produced ${value}`).toMatch(semver);
-      seen.push(value);
-    }
-  }
-  /* And the day's stamps still increase, which is the only property the scheme
-     actually needs beyond being parseable. */
-  const numbers = seen.map((value) => Number(value.split(".")[2]));
-  for (let index = 1; index < numbers.length; index += 1) {
-    expect(numbers[index]!).toBeGreaterThan(numbers[index - 1]!);
-  }
-  /* Each field stays under the 65536 the Windows version resource imposes. */
-  expect(Math.max(...numbers)).toBeLessThan(65536);
-  expect(Number(stamp(0, 0, 12, 31).split(".")[1])).toBeLessThan(65536);
-
-  /* The instrument has to be able to fail: the shape that shipped must not
-     pass the same check. */
-  const broken = `26.815.${String(9).padStart(2, "0")}${String(24).padStart(2, "0")}`;
-  expect(broken).toBe("26.815.0924");
-  expect(semver.test(broken)).toBe(false);
 });
 
 /**

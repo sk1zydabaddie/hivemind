@@ -3469,3 +3469,27 @@ call, signing operation, release publication, or public-channel mutation ran.
 The remediation ledger is now **8 open findings: 1 Critical, 6 High, 1 Medium,
 and 0 Low**. R0, R1, R3 through R7, G0, and G5 are complete. The product remains
 **NO-GO** because R2 is open. Phase 12 begins only in its next dedicated turn.
+
+## Remediation Phase 12 implementation checkpoint — 2026-08-29
+
+The local immutable-artifact boundary is implemented and awaits the required
+clean-commit ship/install proof. Bundle preparation now creates a fresh
+production-only Core dependency tree with `npm ci --omit=dev`; the mutable
+development `node_modules` tree is no longer a Tauri resource. A monotonic
+millisecond allocator replaces minute-only versions, and the packaging-only
+Tauri overlay keeps generated resources out of clean-checkout Rust builds.
+
+The payload manifest binds clean HEAD, every tracked build input, all three
+lockfiles, every staged Core/runtime file, Core and shell build identities, and
+the pinned Node identity. The artifact manifest additionally binds the payload,
+built executable, NSIS installer, platform, and source commit. Local install
+verifies those artifact files before execution and then rejects any missing,
+additional, changed, stale, or mixed byte under the installed Core/runtime
+roots. Unsupported Linux/macOS build command names are removed; this contract
+is explicitly Windows x64 only.
+
+Focused regressions pass **14/14**, including deliberate changed, additional,
+missing, identity-tampering, same-millisecond, and clock-rollback cases. The
+desktop production build passes. Findings remain open and the product remains
+**NO-GO** until a clean source commit produces and installs the artifact and the
+installed proof is recorded; Phase 13 has not begun.
