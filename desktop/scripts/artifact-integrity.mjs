@@ -3,7 +3,7 @@ import { lstat, mkdir, open, readFile, readdir, rename, rm } from "node:fs/promi
 import path from "node:path";
 
 export const PAYLOAD_SCHEMA_VERSION = 1;
-export const ARTIFACT_SCHEMA_VERSION = 1;
+export const ARTIFACT_SCHEMA_VERSION = 2;
 export const WINDOWS_PLATFORM = "windows-x86_64";
 
 export async function sha256File(file) {
@@ -29,6 +29,7 @@ export async function nsisExecutableIdentity(file, filename = "hivemind_desktop.
     filename,
     bundle_type: "nsis",
     size: bytes.length,
+    source_size: bytes.length,
     source_sha256: sha256(bytes),
     sha256: sha256(installedBytes)
   };
@@ -138,8 +139,19 @@ export function validateArtifactManifest(manifest) {
       throw new Error(`artifact manifest has an unsafe ${field} filename`);
     }
   }
-  if (manifest.executable.bundle_type !== "nsis" || !fullHash(manifest.executable.source_sha256)) {
+  if (manifest.executable.bundle_type !== "nsis" || !fullHash(manifest.executable.source_sha256) ||
+      !Number.isSafeInteger(manifest.executable.source_size) || manifest.executable.source_size < 1) {
     throw new Error("artifact manifest does not bind the NSIS executable transformation");
+  }
+  const advisory = manifest.rust_advisory;
+  if (!isRecord(advisory) || advisory.schema_version !== 1 || advisory.kind !== "hivemind-rust-advisory-evidence" ||
+      advisory.platform !== WINDOWS_PLATFORM || advisory.tool !== "cargo-audit-audit 0.22.2" ||
+      !isRecord(advisory.database) || !gitHash(advisory.database.commit) ||
+      !/^https:\/\/github\.com\/RustSec\/advisory-db(?:\.git)?$/iu.test(advisory.database.origin) ||
+      typeof advisory.database.updated_at !== "string" || !Number.isFinite(Date.parse(advisory.database.updated_at)) ||
+      !fullHash(advisory.lockfile_sha256) || !Number.isSafeInteger(advisory.dependency_count) ||
+      advisory.dependency_count < 1 || advisory.vulnerability_count !== 0) {
+    throw new Error("artifact manifest does not bind valid Rust advisory evidence");
   }
   const identityInput = { ...manifest };
   delete identityInput.artifact_id;

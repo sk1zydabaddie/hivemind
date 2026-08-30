@@ -76,12 +76,14 @@ describe("managed payload inventory", () => {
       version: "414.1.2",
       generated_at_ms: 1,
       source_commit: sourceCommit,
+      rust_advisory: advisoryEvidence(hash),
       payload_manifest: { filename: "payload.json", size: 1, sha256: hash },
       installer: { filename: "setup.exe", size: 1, sha256: hash },
       executable: {
         filename: "hivemind_desktop.exe",
         bundle_type: "nsis",
         size: 1,
+        source_size: 1,
         source_sha256: hash,
         sha256: hash
       }
@@ -169,4 +171,21 @@ function compare(left: string, right: string): number {
     if (leftFields[index] !== rightFields[index]) return leftFields[index]! - rightFields[index]!;
   }
   return 0;
+}
+
+function advisoryEvidence(hash: string) {
+  return {
+    schema_version: 1,
+    kind: "hivemind-rust-advisory-evidence",
+    platform: WINDOWS_PLATFORM,
+    tool: "cargo-audit-audit 0.22.2",
+    database: {
+      origin: "https://github.com/RustSec/advisory-db.git",
+      commit: "c".repeat(40),
+      updated_at: "2026-08-29T08:11:09+02:00"
+    },
+    lockfile_sha256: hash,
+    dependency_count: 482,
+    vulnerability_count: 0
+  };
 }

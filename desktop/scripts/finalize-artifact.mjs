@@ -23,6 +23,11 @@ const nsisDir = path.join(releaseDir, "bundle", "nsis");
 const context = JSON.parse(await readFile(path.join(generatedDir, "build-context.json"), "utf8"));
 const payloadBytes = await readFile(path.join(generatedDir, "payload-manifest.json"));
 const payload = validatePayloadManifest(JSON.parse(payloadBytes.toString("utf8")));
+const rustAdvisory = JSON.parse(await readFile(path.join(generatedDir, "rust-advisory.json"), "utf8"));
+if (rustAdvisory.lockfile_sha256 !== await sha256File(path.join(desktopRoot, "src-tauri", "Cargo.lock")) ||
+    rustAdvisory.vulnerability_count !== 0) {
+  throw new Error("Rust advisory evidence is stale or did not pass for the admitted Cargo.lock");
+}
 assertCurrentSource(context.source_commit);
 if (payload.version !== context.version || payload.source.commit !== context.source_commit) {
   throw new Error("the built payload does not belong to the current stamped source");
@@ -34,6 +39,7 @@ const payloadFilename = `Hivemind AI_${context.version}_x64-payload.json`;
 const artifactFilename = `Hivemind AI_${context.version}_x64-artifact.json`;
 const installer = path.join(nsisDir, installerFilename);
 const executable = path.join(releaseDir, executableFilename);
+const executableIdentity = await finalExecutableIdentity(executable, context);
 const installedVersion = execFileSync(
   "powershell.exe",
   ["-NoProfile", "-Command", `(Get-Item -LiteralPath '${executable.replaceAll("'", "''")}').VersionInfo.FileVersion`],
@@ -50,9 +56,10 @@ const base = {
   version: context.version,
   generated_at_ms: context.generated_at_ms,
   source_commit: context.source_commit,
+  rust_advisory: rustAdvisory,
   payload_manifest: await fileIdentity(path.join(generatedDir, "payload-manifest.json"), payloadFilename),
   installer: await fileIdentity(installer, installerFilename),
-  executable: await nsisExecutableIdentity(executable, executableFilename)
+  executable: executableIdentity
 };
 const manifest = { ...base, artifact_id: sha256(stableJson(base)) };
 validateArtifactManifest(manifest);
@@ -66,6 +73,28 @@ async function fileIdentity(file, filename) {
   const details = await stat(file);
   if (!details.isFile() || details.size < 1) throw new Error(`artifact file is missing: ${file}`);
   return { filename, size: details.size, sha256: await sha256File(file) };
+}
+
+async function finalExecutableIdentity(file, buildContext) {
+  const source = await nsisExecutableIdentity(file, executableFilename);
+  let signingContext;
+  try {
+    signingContext = JSON.parse(await readFile(path.join(generatedDir, "signing-context.json"), "utf8"));
+  } catch (error) {
+    if (error?.code === "ENOENT") return source;
+    throw error;
+  }
+  if (signingContext.version !== buildContext.version || signingContext.source_commit !== buildContext.source_commit) {
+    return source;
+  }
+  const signedFile = path.join(generatedDir, "signed-hivemind_desktop.exe");
+  const signed = await fileIdentity(signedFile, executableFilename);
+  return {
+    ...signed,
+    bundle_type: "nsis",
+    source_size: source.source_size,
+    source_sha256: source.source_sha256
+  };
 }
 
 function assertCurrentSource(sourceCommit) {

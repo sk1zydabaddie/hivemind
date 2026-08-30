@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "kind": "hivemind-release-trust-policy",
+  "updater_public_key": null,
+  "windows_publisher": {
+    "certificate_subject": null,
+    "certificate_thumbprint": null
+  }
+}

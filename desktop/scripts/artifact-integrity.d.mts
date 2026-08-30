@@ -8,6 +8,7 @@ export interface NsisExecutableIdentity {
   filename: string;
   bundle_type: "nsis";
   size: number;
+  source_size: number;
   source_sha256: string;
   sha256: string;
 }

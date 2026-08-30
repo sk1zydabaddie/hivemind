@@ -36,7 +36,7 @@ for (const [label, file, identity] of [
   await verifyFileIdentity(label, file, identity);
 }
 const builtExecutableIdentity = await nsisExecutableIdentity(builtExecutable, artifact.executable.filename);
-for (const field of ["filename", "bundle_type", "size", "source_sha256", "sha256"]) {
+for (const field of ["filename", "bundle_type", "source_size", "source_sha256"]) {
   if (builtExecutableIdentity[field] !== artifact.executable[field]) {
     throw new Error(`built executable ${field} does not match the admitted NSIS transformation`);
   }

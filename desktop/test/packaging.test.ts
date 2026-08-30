@@ -195,12 +195,12 @@ describe("the reachability check is part of shipping", () => {
         scripts: Record<string, string>;
       }
     ).scripts;
-    expect(scripts.ship).toMatch(/verify:reachable/u);
+    expect(scripts["admit:common"]).toMatch(/verify:reachable/u);
     /* Before, not after. A check that runs once the installer already exists
        is a report, not a gate -- and the ordering is exactly what went wrong
        with the calendar version, where a build hook was asked to produce the
        build's own arguments. */
-    expect(scripts.ship.indexOf("verify:reachable")).toBeLessThan(
+    expect(scripts.ship.indexOf("admit:common")).toBeLessThan(
       scripts.ship.indexOf("tauri:build")
     );
   });
@@ -268,11 +268,13 @@ describe("the advisory gate is part of shipping", () => {
         scripts: Record<string, string>;
       }
     ).scripts;
-    expect(scripts["verify:advisories"]).toBe("node scripts/audit-gate.mjs");
-    expect(scripts.ship).toMatch(/verify:advisories/u);
+    expect(scripts["verify:advisories"]).toBe("node scripts/audit-gate.mjs && node scripts/rust-audit-gate.mjs");
+    expect(scripts["admit:common"]).toBe("npm run verify:advisories && npm run verify:reachable");
+    expect(scripts.ship).toMatch(/admit:common/u);
+    expect(scripts["tauri:build:signed"]).toMatch(/admit:common/u);
     /* Before the build, for the same reason verify:reachable runs first: a
        check that runs once the installer exists is a report, not a gate. */
-    expect(scripts.ship.indexOf("verify:advisories")).toBeLessThan(
+    expect(scripts.ship.indexOf("admit:common")).toBeLessThan(
       scripts.ship.indexOf("tauri:build")
     );
   });
