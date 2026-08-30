@@ -35,6 +35,7 @@ const evidence = {
   incompleteGit: {},
   explicitCheck: {},
   providers: {},
+  projectMenuAttempts: [],
   screenshots: [],
   browserSevereLogs: []
 };
@@ -198,8 +199,28 @@ async function gitInitAndCommit(root) {
 }
 
 async function openDialog() {
-  await driver.findElement(By.css('button[aria-label^="Switch project"]')).click();
-  await driver.wait(until.elementLocated(By.xpath('//*[@role="menuitem" and contains(normalize-space(.), "Open another project")]')), 10_000).then((entry) => entry.click());
+  const trigger = await driver.findElement(By.css('button[aria-label^="Switch project"]'));
+  const beforeExpanded = await trigger.getAttribute("aria-expanded");
+  await trigger.click();
+  const deadline = Date.now() + 10_000;
+  let entry = null;
+  while (Date.now() < deadline) {
+    const entries = await driver.findElements(By.xpath('//*[@role="menuitem" and contains(normalize-space(.), "Open another project")]'));
+    if (entries.length > 0) {
+      entry = entries[0];
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  const afterExpanded = await driver.findElement(By.css('button[aria-label^="Switch project"]')).getAttribute("aria-expanded");
+  const attempt = { beforeExpanded, afterExpanded, itemLocated: entry !== null };
+  evidence.projectMenuAttempts.push(attempt);
+  if (entry === null) {
+    const failureShot = `project-menu-failed-${evidence.projectMenuAttempts.length}-${installedVersion}-1440x900.png`;
+    await writeFile(path.join(evidenceDir, failureShot), Buffer.from(await driver.takeScreenshot(), "base64"));
+    throw new Error(`project menu did not open: before=${beforeExpanded}, after=${afterExpanded}`);
+  }
+  await entry.click();
   await driver.wait(until.elementLocated(By.id("project-path")), 10_000);
 }
 

@@ -3652,3 +3652,26 @@ remain before this phase can close. No provider/model call, paid operation,
 production signing, publication, or public-channel mutation occurred during
 this diagnosis. The three pre-existing High release findings remain open and
 the product remains **NO-GO**.
+
+The resumed one-artifact walk then found two verifier/product defects rather
+than carrying their false failures forward. The conversation failure check had
+waited for any non-empty `role=status`; the ordinary in-progress sentence met
+that condition before the provider failed, so the check sampled the durable log
+too early. It now waits for the exact `spec.draft_failed` detail and the exact
+failed planner round inside the labelled conversation log. Re-running against
+installed build **416.20703.46914** proved the scoped live answer while the
+provider process was still alive, one adapter call for two synchronous submits,
+bounded current-tree and attachment contents, a durable New conversation
+boundary, and the visible `Planner could not prepare a response` terminal.
+
+The provider/project walk exposed a separate visible menu-lifecycle defect.
+Selecting `Open another project…` opened the project dialog but left its
+dropdown open underneath; after a successful project change the menu reappeared,
+so the next click on the project switcher closed it and did nothing. The project
+dropdown now finishes its own selection and focus restoration before the dialog
+opens on the next event-loop turn. An intermediate controlled-menu attempt was
+rejected by installed evidence: overlapping close/open callbacks could drive a
+later click back to `aria-expanded=false`. This changes only transient client
+chrome; project identity and recent-project authority remain shell-owned. The
+installed Phase 7 proof must be rerun on a newly built and installed artifact
+before this correction is counted.

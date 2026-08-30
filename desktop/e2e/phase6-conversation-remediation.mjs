@@ -187,20 +187,20 @@ try {
   const failurePrompt = "FAIL_VISIBLE";
   await typeComposer(failurePrompt);
   await submitOnce();
+  await waitForEventDetail("spec.draft_failed", "PHASE6_VISIBLE_PROVIDER_FAILURE", 12_000);
+  const failureLabel = "Planner could not prepare a response";
+  const conversationLog = await driver.findElement(By.css('[data-testid="conversation-log"]'));
   await driver.wait(
-    async () => {
-      const texts = await Promise.all((await driver.findElements(By.css('[role="status"]'))).map((element) => element.getText()));
-      return texts.some((text) => text.trim() !== "");
-    },
-    12_000
-  ).catch(() => undefined);
-  const statusTexts = await Promise.all((await driver.findElements(By.css('[role="status"]'))).map((element) => element.getText()));
+    async () => (await conversationLog.getText()).includes(failureLabel),
+    12_000,
+    "the exact failed planner round did not become visible in the conversation log"
+  );
   const failureShot = `phase6-visible-failure-${installedVersion}-1440x900.png`;
   await writeFile(path.join(evidenceDir, failureShot), Buffer.from(await driver.takeScreenshot(), "base64"));
   evidence.visibleFailure = {
     build: installedVersion,
     screenshot: failureShot,
-    statusText: statusTexts.filter((text) => text.trim() !== "").join(" | "),
+    statusText: failureLabel,
     durableFailure: (await readEvents()).some((event) =>
       event.type === "spec.draft_failed" && String(event.data?.detail ?? "").includes("PHASE6_VISIBLE_PROVIDER_FAILURE")
     )
@@ -408,6 +408,17 @@ async function waitForEvent(type, text, timeout) {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error(`did not observe durable ${type}`);
+}
+
+async function waitForEventDetail(type, detail, timeout) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if ((await readEvents()).some((event) =>
+      event.type === type && String(event.data?.detail ?? "").includes(detail)
+    )) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`did not observe durable ${type} containing ${detail}`);
 }
 
 function countMessages(events, text) {

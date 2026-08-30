@@ -494,7 +494,15 @@ export default function App(): React.JSX.Element {
                   </p>
                 )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => setProjectOpen(true)}>
+                <DropdownMenuItem onSelect={() => {
+                  /* The project dialog outlives this menu. Leaving the menu
+                     open behind it makes the menu reappear after a successful
+                     project choice. Let Radix complete the menu selection and
+                     focus restoration first, then open the dialog on the next
+                     event-loop turn; synchronously opening both surfaces made
+                     their close/open callbacks race on repeated switches. */
+                  window.setTimeout(() => setProjectOpen(true), 0);
+                }}>
                   <FolderGit2 aria-hidden="true" />
                   Open another project…
                 </DropdownMenuItem>

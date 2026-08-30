@@ -1142,6 +1142,12 @@ describe("React workspace boundary", () => {
     expect(app).toMatch(/forget_project/u);
     expect(app).toMatch(/Nothing in\s+it is deleted/u);
     expect(app).toMatch(/Open another project…/u);
+    const openAnother = app.slice(
+      app.lastIndexOf("<DropdownMenuItem onSelect", app.indexOf("Open another project…")),
+      app.indexOf("</DropdownMenuItem>", app.indexOf("Open another project…"))
+    );
+    expect(openAnother).toContain("window.setTimeout(() => setProjectOpen(true), 0)");
+    expect(openAnother).not.toContain("setProjectOpen(true);\n");
   });
 
   test("navigation keeps only the centered underline selected state", async () => {
