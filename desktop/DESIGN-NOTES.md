@@ -4923,3 +4923,27 @@ the Phase 13 reference for this mechanism; it remains intentionally unqualified
 because the production updater key and publisher certificate are absent and
 both Windows files are unsigned.
 
+### A release is private until every byte proves what it is — 2026-08-29
+
+Publication is a transaction, not a sequence of optimistic commands. The
+approved release path starts from one clean source commit, one immutable
+artifact, and the receipt proving that exact artifact was installed. It checks
+the configured public branch at the start and immediately before publication;
+a local tag or filename is not provenance.
+
+Every asset first lands in a private GitHub draft. The verifier downloads the
+draft's manifest, payload, installer, executable, updater signature, and update
+manifest, verifies both signature systems, and compares their exact identities.
+Only that already-verified draft may become public. The same asset inventory
+must still be present afterward and the public `latest` endpoint must name that
+release. Upload or verification failure deletes the draft. If publication is
+ambiguous or the wrong release becomes latest, the observed release is returned
+to draft. A failed run is never allowed to leave a newly public candidate.
+
+The workflow is manual, serialized, master-only, and assigned to the protected
+`production-release` environment. Repository code never contains production
+keys or a test substitute. Phase 14 proves the transaction and rollback offline
+in installed build **416.20640.31640**; it deliberately does not claim a public
+release because the real updater key and Windows publisher identity are not yet
+configured.
+

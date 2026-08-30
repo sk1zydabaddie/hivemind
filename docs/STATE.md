@@ -3562,3 +3562,61 @@ and 0 Low**. F6-12 and F6-17 remain open until one protected-key,
 publisher-signed candidate passes the gates; F6-11 and F6-14 remain for the
 exact draft/publication transaction. R2, G6, and the product remain **NO-GO**.
 Phase 14 begins only in its next dedicated turn.
+
+## Remediation Phase 14: verified draft publication — 2026-08-29
+
+Phase 14 is complete and closes **F6-11**. The signed release command now uses
+the same build and exact local-install receipt as the local release path. Its
+publisher is callable only from a manual GitHub Actions run on the configured
+repository and `master` branch. Before any credential or artifact work it
+requires that workflow envelope; before upload and again before publication it
+requires clean HEAD, no staged or untracked source, the configured origin, the
+manifest's source commit, and the exact public branch head.
+
+GitHub publication is one fail-closed transaction. It refuses public tag reuse
+and foreign drafts, creates a private draft, uploads the six immutable release
+assets plus their descriptor, and runs the production remote verifier against
+those private asset URLs. The verifier now admits GitHub's one documented API-
+asset redirect without forwarding authorization, and binds the separate
+signature asset and updater manifest to the artifact, source commit, tag, and
+public installer URL. Only then does the transaction publish. It confirms the
+same complete public asset set and requires `/releases/latest` to return that
+exact release. A failed upload or private verification deletes the draft; an
+ambiguous publish or wrong latest result returns an observed public release to
+draft instead of leaving a new public candidate.
+
+The deterministic offline rehearsal passed success ordering, upload failure,
+byte/signature verification failure, ambiguous publication, wrong-latest
+rollback, tag/draft reuse refusal, protected workflow admission, and dirty or
+stale source refusal. The production entrypoint also failed before publication
+with no approved workflow, while signing preflight failed with `production
+updater public key is not configured`. No test key, self-signed publisher, or
+public draft was used.
+
+Installed build **416.20640.31640** was assembled from clean commit
+`441643a2793477ba45591e35b8f4ad34f986af9c` as artifact
+`ddd46616265b74ff299e053e79d2b7c028ab6d6d11c16276c0d7bc29aebbdd9e`.
+Its install receipt, source commit, installer and executable hashes, all
+**4,464** managed files, Core, shell, and pinned Node identities matched. The
+native installed smoke passed. Both Windows files remain `NotSigned`, as
+required while production trust is absent. The public channel was inspected
+read-only after the rehearsal and still contains exactly one release,
+`v26.818.803`, with its two original assets. Evidence is under
+`docs/evidence/remediation-phase14-416.20640.31640/`.
+
+Final no-paid validation passed Core (**966 passed, 2 skipped, 968 total**),
+Desktop (**370/370**), Rust (**61/61** for the required package command and
+**63/63** across the workspace including the separate release verifier), the
+**37/37** focused release regressions, both npm advisory graphs and RustSec
+with zero vulnerabilities, all **44/44** production surface/viewport
+combinations, `ship`, exact installed inventory, and the installed-native
+smoke. The first concurrent Rust attempt collided with Core's deliberate
+output cleanup; the sequential rerun and workspace run both passed. No
+provider/model call, paid operation, production signing, release draft,
+publication, or public-channel mutation occurred.
+
+The remediation ledger is now **3 open findings: 0 Critical, 3 High, 0 Medium,
+and 0 Low**. F6-12 and F6-17 remain until a real protected-key,
+publisher-signed candidate passes the gates; F6-14 remains until the qualified
+artifact is actually present on the public channel. R2, G6, and the product
+remain **NO-GO**. Phase 15 begins only in its next dedicated turn.

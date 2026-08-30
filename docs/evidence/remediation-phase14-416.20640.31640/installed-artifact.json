@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "kind": "hivemind-phase14-installed-artifact-evidence",
+  "version": "416.20640.31640",
+  "artifact_id": "ddd46616265b74ff299e053e79d2b7c028ab6d6d11c16276c0d7bc29aebbdd9e",
+  "source_commit": "441643a2793477ba45591e35b8f4ad34f986af9c",
+  "installer_sha256": "3f54f01542155c2d027f7e1ec0e8b2648ec071334682f5877d0ebfc1277ea83b",
+  "executable_sha256": "b6bb4f019679a0883ca5567631b7d91dff288f7774ef9c0bc9f0e5ebc17250b0",
+  "managed_file_count": 4464,
+  "source_input_count": 318,
+  "install_receipt_matches": true,
+  "installed_native_smoke": "passed",
+  "installed_authenticode_status": "NotSigned",
+  "installer_authenticode_status": "NotSigned"
+}

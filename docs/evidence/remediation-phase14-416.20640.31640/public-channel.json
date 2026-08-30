@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "kind": "hivemind-phase14-read-only-public-channel-evidence",
+  "repository": "sk1zydabaddie/hivemind",
+  "release_count": 1,
+  "latest_release_id": 372441379,
+  "latest_tag": "v26.818.803",
+  "latest_target_commit": "1ba0bcfdfb17c193ddd647b79223d8923f230375",
+  "latest_published_at": "2026-08-18T15:06:41Z",
+  "draft": false,
+  "prerelease": false,
+  "assets": [
+    { "name": "Hivemind-AI_26.818.803_x64-setup.exe", "size": 10870760, "state": "uploaded" },
+    { "name": "latest.json", "size": 733, "state": "uploaded" }
+  ],
+  "mutation_performed": false
+}

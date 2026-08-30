@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "kind": "hivemind-phase14-verification-evidence",
+  "paid_calls": 0,
+  "production_signing_operations": 0,
+  "github_drafts_created": 0,
+  "public_release_mutations": 0,
+  "core": { "passed": 966, "skipped": 2, "total": 968 },
+  "desktop": { "passed": 370, "total": 370 },
+  "rust_required_command": { "passed": 61, "total": 61 },
+  "rust_workspace": { "passed": 63, "total": 63 },
+  "focused_release": { "passed": 37, "total": 37 },
+  "reachability": { "passed": 44, "total": 44 },
+  "npm_advisories": { "root": 0, "desktop": 0 },
+  "rust_advisories": {
+    "vulnerabilities": 0,
+    "dependency_count": 483,
+    "tool": "cargo-audit-audit 0.22.2",
+    "database_commit": "b331df68b3ed0e99594d259040bdcb9de3c7c8a4"
+  },
+  "offline_draft_rehearsal": {
+    "success_order": "passed",
+    "upload_failure_deletes_draft": "passed",
+    "verification_failure_deletes_draft": "passed",
+    "ambiguous_publish_withdraws_release": "passed",
+    "wrong_latest_withdraws_release": "passed",
+    "tag_and_foreign_draft_reuse_refused": "passed",
+    "dirty_or_stale_source_refused": "passed"
+  },
+  "production_negative_gates": {
+    "signing_preflight_exit": 1,
+    "signing_reason": "production updater public key is not configured",
+    "publication_entry_exit": 1,
+    "publication_reason": "public release requires the protected manual GitHub Actions workflow"
+  },
+  "git_diff_check": "passed",
+  "installed_native_smoke": "passed"
+}

@@ -207,6 +207,26 @@ open until a protected trust root and real publisher certificate prove one
 candidate; F6-11 and F6-14 remain for exact draft/publication sequencing. R2,
 G6, and the product remain NO-GO.
 
+**Phase 14 verified draft publication completed 2026-08-29.** Installed build
+**416.20640.31640** closes F6-11. One protected, manual, serialized Windows
+workflow now builds, installs, verifies, and publishes through the same signed
+admission path. Publication binds the immutable artifact and installation
+receipt to clean HEAD and the exact public `master` head before creating a
+private draft. All assets, the updater manifest, both signatures, both Windows
+executables, source commit, tag, and public installer URL are verified while
+the draft is private. Publication succeeds only when GitHub returns the same
+asset set as public and `/releases/latest` resolves to that exact release.
+
+The offline transaction rehearsal proved success order, upload rollback,
+verification rollback, ambiguous-response withdrawal, wrong-latest withdrawal,
+foreign-draft/public-tag refusal, and exact source/branch refusal. Production
+trust remains deliberately unset; both installed files are `NotSigned`, so no
+real draft or public release was created. The live channel remains the single
+old `v26.818.803` release. There are **3 open findings: 0 Critical, 3 High, 0
+Medium, and 0 Low**. F6-12 and F6-17 require a real protected-key,
+publisher-signed candidate; F6-14 requires the qualified public channel. R2,
+G6, and the product remain NO-GO.
+
 ## Reconciliation result
 
 The ledger parser found exactly 93 unique IDs with the expected phase counts:
@@ -561,6 +581,26 @@ intentionally absent and build `416.20588.53470` reports `NotSigned` for both
 installer and installed executable. Contract 5 and the final part of contract
 9 remain for the exact draft/publication transaction. Publication stayed
 disabled and no public channel changed. R2 and G6 remain open.
+
+**Phase 14 completed 2026-08-29:** Contract 5 and the final mechanism for
+contract 9 are complete, closing F6-11. `release:github` consumes the same
+signed build and exact local installation receipt as `release:local`, refuses
+anything except the protected manual workflow on the configured repository and
+branch, and rechecks that the artifact source is the clean public branch head
+before upload and immediately before publication. It creates a draft, uploads
+the immutable assets, verifies every downloaded byte and signature through the
+production verifier, then publishes only that draft and confirms the exact
+public release and `/releases/latest`. Any ambiguous or failed terminal state
+is deleted while private or returned to draft.
+
+The GitHub transaction was rehearsed with a deterministic offline API double;
+the public API was used read-only to confirm the channel remained unchanged.
+Installed artifact `ddd46616265b74ff299e053e79d2b7c028ab6d6d11c16276c0d7bc29aebbdd9e`
+from clean commit `441643a2793477ba45591e35b8f4ad34f986af9c`
+passed local installation and native smoke. Production signing and publication
+correctly remain blocked because the trust policy is empty and the artifact is
+unsigned. Contracts 4 and 7 therefore remain unproven, and the public half of
+contract 5 has not been exercised with production trust. R2 and G6 remain open.
 
 ## R3 — Cancellation, crash recovery, and terminal truth
 
