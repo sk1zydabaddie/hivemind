@@ -5,6 +5,13 @@ import { describe, expect, it, test } from "vitest";
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 
 describe("desktop packaging", () => {
+  test("names the desktop application explicitly when release tools add Rust binaries", async () => {
+    const config = JSON.parse(await readFile(path.join(repoRoot, "desktop", "src-tauri", "tauri.conf.json"), "utf8"));
+    const cargo = await readFile(path.join(repoRoot, "desktop", "src-tauri", "Cargo.toml"), "utf8");
+    expect(config.mainBinaryName).toBe("hivemind_desktop");
+    expect(cargo).toMatch(/^default-run = "hivemind_desktop"$/mu);
+  });
+
   it("permits only Tauri IPC and loopback daemon traffic through connect-src", async () => {
     const config = JSON.parse(
       await readFile(path.join(repoRoot, "desktop", "src-tauri", "tauri.conf.json"), "utf8")

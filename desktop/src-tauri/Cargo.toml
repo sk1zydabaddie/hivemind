@@ -4,6 +4,7 @@ version = "0.0.0"
 description = "Desktop workspace for Hivemind AI."
 authors = ["Hivemind AI"]
 edition = "2021"
+default-run = "hivemind_desktop"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
