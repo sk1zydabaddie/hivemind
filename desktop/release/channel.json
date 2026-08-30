@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "kind": "hivemind-github-release-channel",
+  "repository": "sk1zydabaddie/hivemind",
+  "branch": "master",
+  "api_origin": "https://api.github.com",
+  "remote_url": "https://github.com/sk1zydabaddie/hivemind.git"
+}

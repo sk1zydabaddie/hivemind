@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { writeFileAtomically } from "./artifact-integrity.mjs";
+import { loadReleaseTrustPolicy } from "./release-policy.mjs";
 import { assertAuthenticode, inspectWindowsSignature, validateTrustPolicy } from "./release-verification.mjs";
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -38,7 +39,7 @@ async function main() {
   if (!target.toLowerCase().endsWith(".exe") || !isInside(releaseRoot, target)) {
     throw new Error(`refusing to sign a path outside the Tauri target directory: ${target}`);
   }
-  const trust = validateTrustPolicy(JSON.parse(await readFile(path.join(desktopRoot, "release", "trust-policy.json"), "utf8")));
+  const trust = validateTrustPolicy(await loadReleaseTrustPolicy(desktopRoot));
   if (thumbprint !== trust.publisherThumbprint) throw new Error("signing command thumbprint differs from release trust policy");
   execFileSync(findSignTool(), ["sign", "/sha1", thumbprint, "/fd", "SHA256", "/td", "SHA256", "/tr", timestampUrl, target], {
     stdio: "inherit",

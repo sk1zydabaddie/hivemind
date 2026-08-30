@@ -19,9 +19,11 @@ export interface ReleaseCandidateVerification {
   version: string;
   installer_sha256: string;
   source_commit: string;
+  tag_name: string;
 }
 
 export function validateTrustPolicy(policy: ReleaseTrustPolicy): ValidatedReleaseTrust;
+export function downloadReleaseBytes(fetchImpl: typeof fetch, url: URL, maximum: number): Promise<Buffer>;
 export function verifyRemoteCandidate(options: {
   candidateUrl: string;
   localManifestBytes: NodeJS.ArrayBufferView;

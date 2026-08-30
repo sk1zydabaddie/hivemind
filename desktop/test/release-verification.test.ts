@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { sha256, stableJson } from "../scripts/artifact-integrity.mjs";
-import { validateTrustPolicy, verifyRemoteCandidate } from "../scripts/release-verification.mjs";
+import { downloadReleaseBytes, validateTrustPolicy, verifyRemoteCandidate } from "../scripts/release-verification.mjs";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -69,6 +69,36 @@ describe("release verification", () => {
       inspectAuthenticode: async () => validWindowsSignature()
     })).rejects.toThrow("must share one origin");
   });
+
+  test("only one GitHub API asset redirect is accepted and authorization is not forwarded", async () => {
+    const calls: Array<{ url: string; authorization: string | null }> = [];
+    const fetchImpl = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      const headers = new Headers(init?.headers);
+      calls.push({ url, authorization: headers.get("authorization") });
+      if (url.startsWith("https://api.github.com/")) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: "https://release-assets.githubusercontent.com/fixture?signature=bounded" }
+        });
+      }
+      return new Response("exact", { status: 200, headers: { "Content-Length": "5" } });
+    });
+    const authorizedFetch: typeof fetch = (input, init = {}) => {
+      const headers = new Headers(init.headers);
+      if (new URL(String(input)).origin === "https://api.github.com") headers.set("Authorization", "Bearer fixture");
+      return fetchImpl(input, { ...init, headers }) as ReturnType<typeof fetch>;
+    };
+    await expect(downloadReleaseBytes(
+      authorizedFetch,
+      new URL("https://api.github.com/repos/owner/repo/releases/assets/1"),
+      10
+    )).resolves.toEqual(Buffer.from("exact"));
+    expect(calls).toEqual([
+      { url: "https://api.github.com/repos/owner/repo/releases/assets/1", authorization: "Bearer fixture" },
+      { url: "https://release-assets.githubusercontent.com/fixture?signature=bounded", authorization: null }
+    ]);
+  });
 });
 
 async function candidateFixture(options: { corruptInstaller?: boolean; crossOrigin?: boolean } = {}) {
@@ -76,6 +106,7 @@ async function candidateFixture(options: { corruptInstaller?: boolean; crossOrig
   const payload = Buffer.from(validPayloadManifest());
   const installer = Buffer.from("signed-installer-fixture");
   const executable = Buffer.from("signed-executable-fixture");
+  const signature = "fixture signature";
   const base = {
     schema_version: 2,
     kind: "hivemind-windows-artifact",
@@ -103,22 +134,36 @@ async function candidateFixture(options: { corruptInstaller?: boolean; crossOrig
     writeFile(path.join(root, "artifact.json"), manifestBytes),
     writeFile(path.join(root, "payload.json"), payload),
     writeFile(path.join(root, "setup.exe"), options.corruptInstaller ? Buffer.from("changed") : installer),
-    writeFile(path.join(root, "app.exe"), executable)
+    writeFile(path.join(root, "app.exe"), executable),
+    writeFile(path.join(root, "setup.exe.sig"), signature),
+    writeFile(path.join(root, "latest.json"), JSON.stringify({
+      version: manifest.version,
+      notes: "fixture",
+      pub_date: "2026-08-29T00:00:00.000Z",
+      platforms: {
+        "windows-x86_64": { signature, url: "https://github.com/owner/repo/releases/download/v1.2.3/setup.exe" }
+      }
+    }))
   ]);
   const server = createServer(async (request, response) => {
     const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
     if (request.url === "/candidate.json") {
       const assetOrigin = options.crossOrigin ? "https://example.invalid" : origin;
       response.end(JSON.stringify({
-        schema_version: 1,
+        schema_version: 2,
         kind: "hivemind-release-candidate",
         artifact_id: manifest.artifact_id,
         version: manifest.version,
+        tag_name: `v${manifest.version}`,
+        source_commit: manifest.source_commit,
         artifact_manifest_url: `${assetOrigin}/artifact.json`,
         payload_manifest_url: `${assetOrigin}/payload.json`,
         installer_url: `${assetOrigin}/setup.exe`,
         executable_url: `${assetOrigin}/app.exe`,
-        updater_signature: "fixture signature"
+        updater_signature_url: `${assetOrigin}/setup.exe.sig`,
+        updater_manifest_url: `${assetOrigin}/latest.json`,
+        public_installer_url: "https://github.com/owner/repo/releases/download/v1.2.3/setup.exe",
+        updater_signature: signature
       }));
       return;
     }

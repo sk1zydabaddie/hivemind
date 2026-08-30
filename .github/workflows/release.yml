@@ -1,0 +1,85 @@
+name: Publish verified Windows release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hivemind-production-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/master'
+    runs-on: windows-latest
+    environment: production-release
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      HIVEMIND_PUBLIC_RELEASE_APPROVED: "true"
+      HIVEMIND_WINDOWS_TIMESTAMP_URL: ${{ vars.HIVEMIND_WINDOWS_TIMESTAMP_URL }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.2
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+
+      - name: Install locked dependencies
+        shell: pwsh
+        run: |
+          npm ci
+          npm ci --prefix desktop
+          cargo install cargo-audit --version 0.22.2 --locked
+
+      - name: Load protected publisher identity
+        shell: pwsh
+        env:
+          HIVEMIND_WINDOWS_CERTIFICATE_BASE64: ${{ secrets.HIVEMIND_WINDOWS_CERTIFICATE_BASE64 }}
+          HIVEMIND_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.HIVEMIND_WINDOWS_CERTIFICATE_PASSWORD }}
+          HIVEMIND_UPDATER_PUBLIC_KEY: ${{ vars.HIVEMIND_UPDATER_PUBLIC_KEY }}
+          HIVEMIND_WINDOWS_CERTIFICATE_SUBJECT: ${{ vars.HIVEMIND_WINDOWS_CERTIFICATE_SUBJECT }}
+          HIVEMIND_WINDOWS_CERTIFICATE_THUMBPRINT: ${{ vars.HIVEMIND_WINDOWS_CERTIFICATE_THUMBPRINT }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'hivemind-publisher.pfx'
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:HIVEMIND_WINDOWS_CERTIFICATE_BASE64))
+          $password = ConvertTo-SecureString $env:HIVEMIND_WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $certificate = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          if ($certificate.Thumbprint -ne $env:HIVEMIND_WINDOWS_CERTIFICATE_THUMBPRINT) { throw 'imported publisher certificate thumbprint differs from protected configuration' }
+          $policyPath = Join-Path $env:RUNNER_TEMP 'hivemind-release-trust-policy.json'
+          @{
+            schema_version = 1
+            kind = 'hivemind-release-trust-policy'
+            updater_public_key = $env:HIVEMIND_UPDATER_PUBLIC_KEY
+            windows_publisher = @{
+              certificate_subject = $env:HIVEMIND_WINDOWS_CERTIFICATE_SUBJECT
+              certificate_thumbprint = $env:HIVEMIND_WINDOWS_CERTIFICATE_THUMBPRINT
+            }
+          } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $policyPath -Encoding utf8NoBOM
+          "HIVEMIND_RELEASE_TRUST_POLICY=$policyPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "HIVEMIND_IMPORTED_CERTIFICATE=$($certificate.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build, install, verify draft, and publish the exact artifact
+        working-directory: desktop
+        run: npm run release:github
+
+      - name: Remove ephemeral publisher material
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:HIVEMIND_IMPORTED_CERTIFICATE) {
+            Remove-Item -LiteralPath "Cert:\CurrentUser\My\$env:HIVEMIND_IMPORTED_CERTIFICATE" -Force -ErrorAction SilentlyContinue
+          }
+          Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'hivemind-publisher.pfx') -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'hivemind-release-trust-policy.json') -Force -ErrorAction SilentlyContinue

@@ -7,6 +7,9 @@ import { sha256, sha256File, stableJson, validateArtifactManifest, validatePaylo
 const MAX_DESCRIPTOR_BYTES = 64 * 1024;
 const MAX_MANIFEST_BYTES = 2 * 1024 * 1024;
 const MAX_ARTIFACT_BYTES = 256 * 1024 * 1024;
+const MAX_SIGNATURE_BYTES = 16 * 1024;
+const GITHUB_API_ORIGIN = "https://api.github.com";
+const GITHUB_ASSET_ORIGIN = "https://release-assets.githubusercontent.com";
 
 export function validateTrustPolicy(policy) {
   if (policy?.schema_version !== 1 || policy?.kind !== "hivemind-release-trust-policy") {
@@ -38,20 +41,22 @@ export async function verifyRemoteCandidate({
 }) {
   const trust = validateTrustPolicy(trustPolicy);
   const descriptorUrl = checkedUrl(candidateUrl, undefined, true);
-  const descriptor = parseJson(await download(fetchImpl, descriptorUrl, MAX_DESCRIPTOR_BYTES), "release candidate descriptor");
+  const descriptor = parseJson(await downloadReleaseBytes(fetchImpl, descriptorUrl, MAX_DESCRIPTOR_BYTES), "release candidate descriptor");
   validateDescriptor(descriptor);
   const urls = Object.fromEntries(
-    ["artifact_manifest_url", "payload_manifest_url", "installer_url", "executable_url"]
+    ["artifact_manifest_url", "payload_manifest_url", "installer_url", "executable_url", "updater_signature_url", "updater_manifest_url"]
       .map((field) => [field, checkedUrl(descriptor[field], descriptorUrl.origin, true)])
   );
+  const publicInstallerUrl = checkedUrl(descriptor.public_installer_url, undefined, false);
   const localManifest = validateArtifactManifest(parseJson(localManifestBytes, "local artifact manifest"));
-  if (descriptor.artifact_id !== localManifest.artifact_id || descriptor.version !== localManifest.version) {
+  if (descriptor.artifact_id !== localManifest.artifact_id || descriptor.version !== localManifest.version ||
+      descriptor.source_commit !== localManifest.source_commit || descriptor.tag_name !== `v${localManifest.version}`) {
     throw new Error("remote candidate does not name the admitted local artifact");
   }
 
   const work = await mkdtemp(path.join(tmpdir(), "hivemind-release-verify-"));
   try {
-    const remoteManifestBytes = await download(fetchImpl, urls.artifact_manifest_url, MAX_MANIFEST_BYTES);
+    const remoteManifestBytes = await downloadReleaseBytes(fetchImpl, urls.artifact_manifest_url, MAX_MANIFEST_BYTES);
     if (sha256(remoteManifestBytes) !== sha256(localManifestBytes)) {
       throw new Error("remote artifact manifest bytes differ from the admitted manifest");
     }
@@ -71,7 +76,16 @@ export async function verifyRemoteCandidate({
     await verifyIdentity("payload manifest", files.payload, localManifest.payload_manifest);
     await verifyIdentity("installer", files.installer, localManifest.installer);
     await verifyIdentity("executable", files.executable, localManifest.executable);
-    validatePayloadManifest(parseJson(await readFile(files.payload), "remote payload manifest"));
+    const remotePayload = validatePayloadManifest(parseJson(await readFile(files.payload), "remote payload manifest"));
+    if (remotePayload.version !== localManifest.version || remotePayload.source.commit !== localManifest.source_commit) {
+      throw new Error("remote payload manifest does not belong to the admitted artifact");
+    }
+    const signatureBytes = await downloadReleaseBytes(fetchImpl, urls.updater_signature_url, MAX_SIGNATURE_BYTES);
+    if (signatureBytes.toString("utf8") !== descriptor.updater_signature) {
+      throw new Error("downloaded updater signature differs from the candidate descriptor");
+    }
+    const updaterManifest = parseJson(await downloadReleaseBytes(fetchImpl, urls.updater_manifest_url, MAX_DESCRIPTOR_BYTES), "remote updater manifest");
+    validateUpdaterManifest(updaterManifest, localManifest, descriptor.updater_signature, publicInstallerUrl);
     await writeFile(files.signature, descriptor.updater_signature, { encoding: "utf8", flag: "wx" });
     await verifyUpdaterSignature({ installer: files.installer, signature: files.signature, publicKey: trust.updaterPublicKey });
     for (const [label, file] of [["installer", files.installer], ["executable", files.executable]]) {
@@ -81,7 +95,8 @@ export async function verifyRemoteCandidate({
       artifact_id: localManifest.artifact_id,
       version: localManifest.version,
       installer_sha256: localManifest.installer.sha256,
-      source_commit: localManifest.source_commit
+      source_commit: localManifest.source_commit,
+      tag_name: descriptor.tag_name
     };
   } finally {
     await rm(work, { recursive: true, force: true });
@@ -89,14 +104,24 @@ export async function verifyRemoteCandidate({
 }
 
 function validateDescriptor(value) {
-  if (value?.schema_version !== 1 || value?.kind !== "hivemind-release-candidate" ||
+  if (value?.schema_version !== 2 || value?.kind !== "hivemind-release-candidate" ||
       typeof value.artifact_id !== "string" || !/^[a-f0-9]{64}$/u.test(value.artifact_id) ||
       typeof value.version !== "string" || !/^\d+\.\d+\.\d+$/u.test(value.version) ||
+      value.tag_name !== `v${value.version}` || typeof value.source_commit !== "string" || !/^[a-f0-9]{40}$/u.test(value.source_commit) ||
       typeof value.updater_signature !== "string" || value.updater_signature.length > 16 * 1024 || value.updater_signature.trim() === "") {
     throw new Error("release candidate descriptor is incomplete");
   }
-  for (const field of ["artifact_manifest_url", "payload_manifest_url", "installer_url", "executable_url"]) {
+  for (const field of ["artifact_manifest_url", "payload_manifest_url", "installer_url", "executable_url", "updater_signature_url", "updater_manifest_url", "public_installer_url"]) {
     if (typeof value[field] !== "string") throw new Error(`release candidate descriptor has no ${field}`);
+  }
+}
+
+function validateUpdaterManifest(value, artifact, signature, publicInstallerUrl) {
+  const platform = value?.platforms?.["windows-x86_64"];
+  if (value?.version !== artifact.version || typeof value.notes !== "string" ||
+      typeof value.pub_date !== "string" || !Number.isFinite(Date.parse(value.pub_date)) ||
+      platform?.signature !== signature || platform?.url !== publicInstallerUrl.href) {
+    throw new Error("remote updater manifest does not name the admitted signed installer");
   }
 }
 
@@ -110,11 +135,24 @@ function checkedUrl(value, origin, allowLoopback) {
   return result;
 }
 
-async function download(fetchImpl, url, maximum) {
-  const response = await fetchImpl(url, {
+export async function downloadReleaseBytes(fetchImpl, url, maximum) {
+  let response = await fetchImpl(url, {
     headers: { Accept: "application/octet-stream", "User-Agent": "Hivemind-Release-Verifier" },
-    redirect: "error"
+    redirect: "manual"
   });
+  if (isRedirect(response.status)) {
+    if (url.origin !== GITHUB_API_ORIGIN || !/^\/repos\/[^/]+\/[^/]+\/releases\/assets\/\d+$/u.test(url.pathname)) {
+      throw new Error(`release download refused an unexpected redirect: ${url}`);
+    }
+    const destination = checkedUrl(response.headers.get("location"), undefined, false);
+    if (destination.origin !== GITHUB_ASSET_ORIGIN) {
+      throw new Error(`release download redirected outside GitHub's asset service: ${destination}`);
+    }
+    response = await fetchImpl(destination, {
+      headers: { Accept: "application/octet-stream", "User-Agent": "Hivemind-Release-Verifier" },
+      redirect: "error"
+    });
+  }
   if (!response.ok) throw new Error(`release download returned HTTP ${response.status}: ${url}`);
   const announced = Number(response.headers.get("content-length") ?? 0);
   if (announced > maximum) throw new Error(`release download exceeds its ${maximum}-byte limit: ${url}`);
@@ -136,8 +174,12 @@ async function download(fetchImpl, url, maximum) {
   return Buffer.concat(chunks, received);
 }
 
+function isRedirect(status) {
+  return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+}
+
 async function writeDownloaded(fetchImpl, url, destination, maximum) {
-  await writeFile(destination, await download(fetchImpl, url, maximum), { flag: "wx" });
+  await writeFile(destination, await downloadReleaseBytes(fetchImpl, url, maximum), { flag: "wx" });
 }
 
 async function verifyIdentity(label, file, expected) {

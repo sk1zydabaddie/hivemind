@@ -19,8 +19,8 @@
     "verify:advisories": "node scripts/audit-gate.mjs && node scripts/rust-audit-gate.mjs",
     "bundle:stamp": "node scripts/stamp-version.mjs",
     "verify:reachable": "node tools/check-reachable.mjs",
-    "release:local": "node scripts/release-contained.mjs",
-    "release:github": "node scripts/release-contained.mjs",
+    "release:local": "npm run tauri:build:signed && npm run install:local",
+    "release:github": "npm run tauri:build:signed && npm run install:local && node scripts/publish-github-release.mjs",
     "verify:release": "node scripts/verify-release.mjs"
   },
   "dependencies": {

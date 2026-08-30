@@ -7,10 +7,12 @@ import { promisify } from "node:util";
 import {
   nsisExecutableIdentity,
   sha256File,
+  stableJson,
   validateArtifactManifest,
   validatePayloadManifest,
   verifyInstalledRoot,
-  verifyManagedInventory
+  verifyManagedInventory,
+  writeFileAtomically
 } from "./artifact-integrity.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -78,6 +80,16 @@ if (installedCoreBuild !== payload.build.core_build_id ||
     await sha256File(installedRuntime) !== payload.build.runtime.sha256) {
   throw new Error("installed executable identities do not match the admitted payload");
 }
+
+await writeFileAtomically(path.join(generatedDir, "install-receipt.json"), stableJson({
+  schema_version: 1,
+  kind: "hivemind-local-install-receipt",
+  artifact_id: artifact.artifact_id,
+  version: artifact.version,
+  source_commit: artifact.source_commit,
+  installed_executable_sha256: artifact.executable.sha256,
+  verified_at_ms: Date.now()
+}));
 
 console.log(
   `installed ${artifact.version} — artifact ${artifact.artifact_id}, ${payload.files.length} managed files, Core, shell, and Node identities verified`

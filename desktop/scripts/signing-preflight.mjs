@@ -4,6 +4,7 @@ import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stableJson, writeFileAtomically } from "./artifact-integrity.mjs";
+import { loadReleaseTrustPolicy } from "./release-policy.mjs";
 import { validateTrustPolicy } from "./release-verification.mjs";
 
 const scriptPath = fileURLToPath(import.meta.url);
@@ -43,7 +44,7 @@ function inspectCertificate(thumbprint) {
 
 async function main() {
   const desktopRoot = path.resolve(path.dirname(scriptPath), "..");
-  const policy = validateTrustPolicy(JSON.parse(await readFile(path.join(desktopRoot, "release", "trust-policy.json"), "utf8")));
+  const policy = validateTrustPolicy(await loadReleaseTrustPolicy(desktopRoot));
   const timestampUrl = process.env.HIVEMIND_WINDOWS_TIMESTAMP_URL;
   if (typeof timestampUrl !== "string" || !isSecureTimestampUrl(timestampUrl)) {
     throw new Error("HIVEMIND_WINDOWS_TIMESTAMP_URL must be a credential-free HTTPS URL");
