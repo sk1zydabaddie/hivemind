@@ -4858,3 +4858,28 @@ its build marker never appeared, the update surface was empty, and the binary
 contained none of the retired endpoint or updater names. Evidence is under
 `docs/evidence/remediation-phase10-26.829.1445/`.
 
+### A machine-wide transition needs a machine-wide admission boundary — 2026-08-29
+
+An update is not local to the selected project. Every project daemon and every
+native path that can register, launch, or mutate one participates in one
+durable machine-wide coordinator. State-changing requests hold an atomic
+admission lock for their whole operation. An update may publish its lease only
+after every registered project proves idle, and it repeats that proof at the
+restart handoff. Read-only inspection remains available because observing why
+work is paused does not create the race the lease exists to prevent.
+
+`Restart Hivemind` is an answering control only when native state proves a
+complete admitted handoff. The client periodically reads that state but owns no
+gate. Completion requires a different installed process and equality across
+version, Core identity, shell identity, pinned-runtime version, and runtime
+hash. PID alone is never authority; creation time and nonce distinguish a live
+owner from reuse, and reconciliation removes only Hivemind's marker.
+
+At the minimum window width, current work must retain a non-zero conversation
+viewport. A repeated prompt label in the header may collapse because the same
+prompt remains in the conversation, while the answering controls stay visible.
+Reachability failures report their clipping ancestors and exact grid rows so a
+test cannot pass by reading unrelated page content. Installed build
+**26.829.1655** is the reference evidence under
+`docs/evidence/remediation-phase11-26.829.1655/`.
+

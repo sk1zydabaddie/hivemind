@@ -35,6 +35,7 @@ import { createTaskWorktree, removeTaskWorktree } from "./worktree.js";
 import { reconcileLeftoverWorktrees } from "./worktree-standing.js";
 import { withPlainReason } from "./plain-reason.js";
 import { executeWorkspaceAction } from "./workspace-actions.js";
+import { daemonRequestStartsWork, UPDATE_COORDINATOR_PROTOCOL, withUpdateAdmission } from "./update-lease.js";
 import {
   createDaemonAuthToken,
   daemonTokenMatches,
@@ -182,7 +183,12 @@ export function createDaemonServer(repoRoot: string, buildId: string, authToken:
       }
 
       if (request.method === "GET" && target.path === "/health") {
-        writeJson(response, 200, { ok: true, repo_root: repoRoot, build_id: buildId });
+        writeJson(response, 200, {
+          ok: true,
+          repo_root: repoRoot,
+          build_id: buildId,
+          update_coordinator_protocol: UPDATE_COORDINATOR_PROTOCOL
+        });
         return;
       }
       if (request.method === "GET" && target.path === "/events/stream") {
@@ -223,11 +229,14 @@ export function createDaemonServer(repoRoot: string, buildId: string, authToken:
           ? Promise.resolve({ ok: false as const, reason: `unknown in-process daemon route ${endpoint}` })
           : localHandler(body, eventBus);
       };
-      const execute = () => withInProcessDaemonTransport(
+      const executeAction = () => withInProcessDaemonTransport(
         repoRoot,
         invokeInProcess,
         () => handler(payloadResult.value, eventBus)
       );
+      const execute = () => daemonRequestStartsWork(request.method, target.path, payloadResult.value)
+        ? withUpdateAdmission(executeAction)
+        : executeAction();
       const result = isConcurrentObservation(request.method, target.path, payloadResult.value) || isQueueInterrupt(request.method, target.path, payloadResult.value)
         ? await execute()
         : await queue.run(execute);

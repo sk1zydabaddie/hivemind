@@ -1068,7 +1068,7 @@ export function WorkTab({
                  beside it -- the same card twice, competing for the same
                  glance. The rail is where current work lives, so the thread
                  takes the canvas alone. */
-              <div className="grid min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden">
+              <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden">
                 <RunThread
                   draftText={draftLinesSince(draftStream, promptStartedAt)}
                   pendingSince={promptStartedAt}
@@ -1831,7 +1831,7 @@ function RunHeader({
           They used to be interleaved with an interruption SETTING in a single
           row of middot-separated readings, where a person had no way to tell
           which was status and which was a control they had set. */}
-      <div className="run-header-main relative flex min-h-8 items-start gap-4">
+      <div className={`run-header-main relative flex min-h-8 items-start gap-4 ${subject === null ? "" : "run-header-main--subject"}`}>
         <div
           className={`run-header-heading ${
             subject === null && tasks.length === 0 && !runActive
@@ -1841,10 +1841,13 @@ function RunHeader({
         >
           {subject === null ? null : (
             <>
-              <span className="block text-[11px] font-medium tracking-label text-muted-foreground uppercase">
+              <span className="block text-[11px] font-medium tracking-label text-muted-foreground uppercase max-[900px]:hidden">
                 What you asked for
               </span>
-              <span className="mt-0.5 mb-1.5 block text-[13px] leading-snug break-words text-ink">
+              <span
+                className="run-header-subject mt-0.5 mb-1.5 block text-[13px] leading-snug break-words text-ink max-[900px]:hidden"
+                title={subject}
+              >
                 {subject}
               </span>
             </>
@@ -2564,7 +2567,7 @@ function RunThread({
     }
   };
   return (
-    <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto]">
+    <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto]">
       <div className="flex min-h-7 items-center gap-1.5 border-b border-rule px-5 py-0.5">
         {pageIndex > 0 ? (
           <Button size="xs" type="button" variant="ghost" onClick={() => setPageIndex(pageIndex - 1)}>

@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod project;
+mod update_lifecycle;
 
 use project::{
     choose_project_attachment_folder, choose_project_files, choose_project_folder, dismiss_hint,
@@ -9,9 +10,14 @@ use project::{
     restart_daemon, select_project,
     workspace_action,
 };
+use update_lifecycle::{pending_update_relaunch, restart_after_update};
 
 fn main() {
     tauri::Builder::default()
+        .setup(|app| {
+            update_lifecycle::reconcile_on_start(&app.handle().clone())?;
+            Ok(())
+        })
         /* Notifications exist for one reason: a run is minutes to hours, so a supervisor who has to
            keep the window open is not being supervised by the tool.
 
@@ -37,9 +43,11 @@ fn main() {
             dismissed_hints,
             initialize_git,
             initialize_project,
+            pending_update_relaunch,
             inspect_daemon_work,
             inspect_git_readiness,
             restart_daemon,
+            restart_after_update,
             recent_projects,
             remember_project,
             last_project,

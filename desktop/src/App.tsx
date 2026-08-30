@@ -115,6 +115,25 @@ export default function App(): React.JSX.Element {
     );
   }, [projectPath]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [updateRelaunchReady, setUpdateRelaunchReady] = useState(false);
+  const [updateRelaunchError, setUpdateRelaunchError] = useState("");
+
+  useEffect(() => {
+    const refresh = (): void => {
+      void invoke<boolean>("pending_update_relaunch")
+        .then((ready) => {
+          setUpdateRelaunchReady(ready);
+          setUpdateRelaunchError("");
+        })
+        .catch((cause) => {
+          setUpdateRelaunchReady(false);
+          setUpdateRelaunchError(cause instanceof Error ? cause.message : String(cause));
+        });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -534,6 +553,35 @@ export default function App(): React.JSX.Element {
         </header>
 
         {live ? <SharingBar onAction={workspace.performAction} /> : null}
+
+        {updateRelaunchReady || updateRelaunchError !== "" ? (
+          <section
+            className="flex shrink-0 flex-wrap items-center gap-3 border-b border-sky/25 bg-sky/10 px-4 py-2.5 text-[12px] text-foreground"
+            role={updateRelaunchError === "" ? "status" : "alert"}
+          >
+            <strong className="font-semibold">
+              {updateRelaunchError === "" ? "Update installed" : "Update restart needs attention"}
+            </strong>
+            <span className="min-w-0 flex-1 break-words text-muted-foreground">
+              {updateRelaunchError === ""
+                ? "Restart Hivemind to finish. It will recheck every open project before closing."
+                : updateRelaunchError}
+            </span>
+            {updateRelaunchError === "" ? (
+              <Button
+                size="sm"
+                type="button"
+                onClick={() => {
+                  void invoke("restart_after_update").catch((cause) =>
+                    setUpdateRelaunchError(cause instanceof Error ? cause.message : String(cause))
+                  );
+                }}
+              >
+                Restart Hivemind
+              </Button>
+            ) : null}
+          </section>
+        ) : null}
 
         {shellUpdateRequired ? (
           <section

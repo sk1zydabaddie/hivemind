@@ -151,6 +151,27 @@ evidence is under `docs/evidence/remediation-phase10-26.829.1445/`. There are
 **15 open findings: 3 Critical, 10 High, 2 Medium, and 0 Low**. The product
 remains NO-GO because R1 and R2 remain open.
 
+**Phase 11 update lifecycle completed 2026-08-29.** Installed build
+**26.829.1655** closes F6-05, F6-06, F6-07, F6-08, F6-09, F6-10, and F6-19,
+completing R1. State-changing requests in every installed project daemon and
+native project entry point now serialize against one durable machine-wide
+lease; read-only project inspection remains available. The lease is acquired
+only after every atomically registered project proves idle and is rechecked at
+restart handoff. Relaunch completion requires a new process and the exact
+version, Core, shell, pinned-runtime version, and runtime hash. Abandoned locks
+and reused PIDs are reconciled by PID plus creation time and never terminated.
+The deleted source updater remains deleted, so there is no weaker parallel
+install or timestamp-freshness route.
+
+The installed proof used two real project daemons. Both could list files while
+the lease was held and both refused a new conversation; one active reservation
+refused restart; after it cleared, the UI restarted PID 37512 into PID 36024
+and the recorded identity matched all five admitted fields. Evidence is under
+`docs/evidence/remediation-phase11-26.829.1655/`. There are **8 open findings:
+1 Critical, 6 High, 1 Medium, and 0 Low**. The product remains NO-GO because
+R2 is still open; Phase 11 does not restore update discovery, download,
+installation, signing, or publication authority.
+
 ## Reconciliation result
 
 The ledger parser found exactly 93 unique IDs with the expected phase counts:
@@ -366,9 +387,9 @@ R1 and R2 remain release blockers.
 
 ## R1 — Update lifecycle
 
-**Primary areas:** `desktop/src-tauri/src/newer_version.rs`,
-`desktop/src-tauri/src/selfbuild.rs`, project-daemon discovery, update UI state,
-and the updater helper.
+**Primary areas:** `desktop/src-tauri/src/update_lifecycle.rs`,
+`desktop/src-tauri/src/project.rs`, `src/update-lease.ts`, `src/daemon.ts`, and
+the admitted-relaunch UI state.
 
 **Contracts:**
 
@@ -398,6 +419,25 @@ refused while either owns work, new work is refused while the update lease is
 held, a crash releases/reconciles the lease, the installed app relaunches into
 the expected full identity, and a stale/reused PID cannot terminate an unrelated
 fixture process.
+
+**Execution status after Phase 11 (2026-08-29): COMPLETE.** All seven findings
+owned by R1 are closed. One atomic project registry supplies the machine-wide
+idle set. Native project selection, initialization, Git setup, daemon
+registration, and daemon start hold the same admission lock used by every
+state-changing Core daemon request. A durable lease inhibits new work until a
+new process verifies the complete installed identity; its startup reconciler
+handles Tauri's overlap where the old process is still alive when the new one
+starts. Completion is written before the pending marker is cleared, so a crash
+during reconciliation repeats the proof instead of losing the handoff.
+
+Installed build **26.829.1655** exercised PIDs 36252 and 9068 simultaneously,
+refused restart while one reservation was active, kept `files.list` available
+on both daemons, refused `conversation.submit` on both, and then relaunched PID
+37512 as PID 36024. The expected and completed version, Core build ID, shell
+build ID, Node version, and Node SHA-256 were byte-for-byte equal. The source
+updater, helper, PID marker, timestamp classifier, and weaker build route were
+deleted in Phase 10 and were not reintroduced. R2 alone remains: it must supply
+the immutable artifact that is allowed to acquire this lifecycle lease.
 
 ## R2 — Packaging and release supply chain
 

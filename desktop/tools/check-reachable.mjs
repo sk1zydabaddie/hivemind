@@ -222,6 +222,22 @@ const PROBE = `
       ? center.tagName.toLowerCase() + "." + (center.className?.toString?.().replace(/\\s+/g, ".").slice(0, 100) ?? "")
       : null;
     if (belowFold || offSide || clippedByAncestor || occluded) {
+      const clippingAncestors = [];
+      for (let parent = el.parentElement; parent !== null; parent = parent.parentElement) {
+        const style = getComputedStyle(parent);
+        if (!["auto", "hidden", "scroll", "clip"].includes(style.overflowY)) continue;
+        const value = parent.getBoundingClientRect();
+        clippingAncestors.push({
+          tag: parent.tagName.toLowerCase(),
+          cls: (parent.className || "").toString().slice(0, 90),
+          top: Math.round(value.top),
+          bottom: Math.round(value.bottom),
+          clientHeight: parent.clientHeight,
+          scrollHeight: parent.scrollHeight,
+          scrollTop: parent.scrollTop,
+          overflowY: style.overflowY
+        });
+      }
       unreachable.push({
         label,
         top: Math.round(box.top),
@@ -232,7 +248,8 @@ const PROBE = `
         occluded,
         coveredBy,
         coveredBox: occluded ? (() => { const value = center.getBoundingClientRect(); return { top: Math.round(value.top), bottom: Math.round(value.bottom), left: Math.round(value.left), right: Math.round(value.right) }; })() : null,
-        clippedByAncestor
+        clippedByAncestor,
+        clippingAncestors
       });
     }
   }
@@ -399,7 +416,39 @@ const PROBE = `
       }
     }
   }
-  return { controls: controls.length, unreachable, overlaps, documentOverflow, clipped, brokenImages, inconsistentControls, lowContrastControls };
+  const describeLayout = (element) => {
+    if (element === null) return null;
+    const box = element.getBoundingClientRect();
+    return {
+      tag: element.tagName.toLowerCase(),
+      cls: (element.className || "").toString().slice(0, 120),
+      top: Math.round(box.top),
+      bottom: Math.round(box.bottom),
+      height: Math.round(box.height),
+      left: Math.round(box.left),
+      right: Math.round(box.right),
+      width: Math.round(box.width),
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+      display: getComputedStyle(element).display,
+      text: (element.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 120)
+    };
+  };
+  const conversation = document.querySelector('[data-testid="conversation-log"]');
+  const workPanel = conversation?.closest('[data-slot="panel"]') ?? null;
+  const layoutDiagnostics = workPanel === null ? null : {
+    panel: describeLayout(workPanel),
+    rows: [...workPanel.children].map(describeLayout),
+    runHeader: describeLayout(workPanel.querySelector('.run-header-main')?.parentElement ?? null),
+    runHeaderMain: describeLayout(workPanel.querySelector('.run-header-main')),
+    runHeaderHeading: describeLayout(workPanel.querySelector('.run-header-heading')),
+    runHeaderHeadingRows: [...(workPanel.querySelector('.run-header-heading')?.children ?? [])].map(describeLayout),
+    runHeaderActions: describeLayout(workPanel.querySelector('.run-header-actions')),
+    conversation: describeLayout(conversation),
+    composer: describeLayout(workPanel.querySelector(':scope > footer')),
+    composerRows: [...(workPanel.querySelector(':scope > footer form')?.children ?? [])].map(describeLayout)
+  };
+  return { controls: controls.length, unreachable, overlaps, documentOverflow, clipped, brokenImages, inconsistentControls, lowContrastControls, layoutDiagnostics };
 `;
 
 /* Build the replay through the SAME production transform that Tauri bundles.
@@ -600,10 +649,16 @@ for (const viewport of selectedViewports) {
     }
     failures += 1;
     console.log(`  FAIL ${label}  (${found.controls} controls)`);
+    if (found.layoutDiagnostics !== null) {
+      console.log(`         layout: ${JSON.stringify(found.layoutDiagnostics)}`);
+    }
     for (const entry of found.unreachable) {
       console.log(
         `         unreachable: "${entry.label}" at ${entry.left}..${entry.right},${entry.top}..${entry.bottom} of ${entry.viewport}${entry.occluded ? ` (covered by ${entry.coveredBy ?? "another element"} ${JSON.stringify(entry.coveredBox)})` : entry.clippedByAncestor ? " (clipped by its container)" : ""}`
       );
+      if (entry.clippingAncestors?.length) {
+        console.log(`         clipping ancestors: ${JSON.stringify(entry.clippingAncestors)}`);
+      }
     }
     for (const entry of found.clipped) {
       console.log(`         clipped: <${entry.tag} class="${entry.cls}"> hides ${entry.hidden}px`);

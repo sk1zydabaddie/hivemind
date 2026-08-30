@@ -35,6 +35,7 @@
       "../../dist": "core/dist",
       "../../node_modules": "core/node_modules",
       "../../package.json": "core/package.json",
+      "gen/core-build-id.txt": "core/core-build-id.txt",
       "gen/shell-build-id.txt": "core/shell-build-id.txt",
       "../runtime": "runtime"
     },

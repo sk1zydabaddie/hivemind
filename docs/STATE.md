@@ -3427,3 +3427,45 @@ The remediation ledger is now **15 open findings: 3 Critical, 10 High, 2
 Medium, and 0 Low**. R0, R3 through R7, G0, and G5 are complete. The product
 remains **NO-GO** because R1 and R2 remain open. Phase 11 begins only in its next
 dedicated turn.
+
+## Remediation Phase 11: machine-wide update lifecycle — 2026-08-29
+
+Phase 11 is complete and closes **F6-05, F6-06, F6-07, F6-08, F6-09, F6-10,
+and F6-19**, completing R1. The installed shell now owns one durable update
+coordinator and an atomic registry of every project it has opened. Native
+project mutations hold its admission lock from registration through daemon
+start. Each installed Core daemon receives the coordinator path and holds that
+same admission lock for the full lifetime of every state-changing request;
+read-only inspection bypasses the lease and remains usable.
+
+The update lifecycle proves all registered projects idle before publishing a
+lease and repeats the proof immediately before restart. Pending completion is
+bound to the admitting PID and creation time, lease nonce, and the full
+installed identity: version, Core build ID, shell build ID, pinned Node version,
+and Node SHA-256. Startup distinguishes the new process from Tauri's still-live
+old process, writes completion before clearing pending state, and reconciles
+abandoned locks or reused PIDs without terminating any process. The source
+updater, helper, timestamp classifier, and weaker build path remain deleted.
+
+Installed build **26.829.1655** exercised two disposable project daemons (PIDs
+36252 and 9068). Both returned their root file listing while the lease was held
+and both refused `conversation.submit` with the exact update-in-progress
+reason. A reservation in the second project refused restart. After it cleared,
+the visible `Restart Hivemind` control relaunched PID 37512 as PID 36024; the
+recorded completion identity exactly matched the expected five-field identity,
+and both lease and pending markers were gone. The user's configuration files
+were restored and both fixtures and daemons were removed. The inspected
+1440x900 capture shows `Live`, the admitted restart banner, and no connection
+error. Evidence is under
+`docs/evidence/remediation-phase11-26.829.1655/`.
+
+Final no-paid validation passed Core (**966 passed, 2 skipped, 968 total**),
+Desktop (**345/345**), Rust (**61/61**), the 7/7 focused lifecycle regressions,
+both npm advisory checks with zero vulnerabilities, all **44/44** production
+surface/viewport combinations, installed executable/Core/shell/Node identity
+verification, and the installed two-daemon lifecycle proof. No provider/model
+call, signing operation, release publication, or public-channel mutation ran.
+
+The remediation ledger is now **8 open findings: 1 Critical, 6 High, 1 Medium,
+and 0 Low**. R0, R1, R3 through R7, G0, and G5 are complete. The product remains
+**NO-GO** because R2 is open. Phase 12 begins only in its next dedicated turn.

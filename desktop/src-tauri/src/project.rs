@@ -8,6 +8,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
+use crate::update_lifecycle;
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 const HEALTH_TIMEOUT: Duration = Duration::from_millis(750);
@@ -292,16 +293,22 @@ pub async fn select_project(
     app: tauri::AppHandle,
     project_path: String,
 ) -> Result<ProjectConnection, ProjectFault> {
+    let admission = update_lifecycle::begin_mutation(&app)
+        .map_err(|message| ProjectFault::new(FAULT_DAEMON_UNAVAILABLE, message))?;
+    let coordinator = admission.coordinator_file().to_path_buf();
+    let registered_root = canonical_git_root(&project_path)?;
+    update_lifecycle::register_project(&app, &admission, &registered_root)
+        .map_err(|message| ProjectFault::new(FAULT_UNKNOWN, message))?;
     let resource_dir = app.path().resource_dir().map_err(|error| {
         ProjectFault::new(
             FAULT_UNKNOWN,
             format!("could not resolve desktop resources: {error}"),
         )
     })?;
-    tauri::async_runtime::spawn_blocking(move || {
+    let connection = tauri::async_runtime::spawn_blocking(move || {
         connect_project_with(
             &project_path,
-            &mut |project_root| start_daemon(project_root, Some(&resource_dir)),
+            &mut |project_root| start_daemon(project_root, Some(&resource_dir), &coordinator),
             &query_daemon_health,
             &|project_root| query_cli_build_identity(project_root, Some(&resource_dir)),
             &|project_root| query_expected_shell_build_identity(project_root, Some(&resource_dir)),
@@ -316,7 +323,9 @@ pub async fn select_project(
             FAULT_UNKNOWN,
             format!("project selection task failed: {error}"),
         )
-    })?
+    })??;
+    drop(admission);
+    Ok(connection)
 }
 
 /// Sets a repository up and opens it, without a terminal.
@@ -332,18 +341,24 @@ pub async fn initialize_project(
     app: tauri::AppHandle,
     project_path: String,
 ) -> Result<ProjectConnection, ProjectFault> {
+    let admission = update_lifecycle::begin_mutation(&app)
+        .map_err(|message| ProjectFault::new(FAULT_DAEMON_UNAVAILABLE, message))?;
+    let coordinator = admission.coordinator_file().to_path_buf();
+    let registered_root = canonical_git_root(&project_path)?;
+    update_lifecycle::register_project(&app, &admission, &registered_root)
+        .map_err(|message| ProjectFault::new(FAULT_UNKNOWN, message))?;
     let resource_dir = app.path().resource_dir().map_err(|error| {
         ProjectFault::new(
             FAULT_UNKNOWN,
             format!("could not resolve desktop resources: {error}"),
         )
     })?;
-    tauri::async_runtime::spawn_blocking(move || {
+    let connection = tauri::async_runtime::spawn_blocking(move || {
         let project_root = canonical_git_root(&project_path)?;
         run_core_init(&project_root, Some(&resource_dir))?;
         connect_project_with(
             &project_path,
-            &mut |root| start_daemon(root, Some(&resource_dir)),
+            &mut |root| start_daemon(root, Some(&resource_dir), &coordinator),
             &query_daemon_health,
             &|root| query_cli_build_identity(root, Some(&resource_dir)),
             &|root| query_expected_shell_build_identity(root, Some(&resource_dir)),
@@ -358,7 +373,9 @@ pub async fn initialize_project(
             FAULT_UNKNOWN,
             format!("project initialization task failed: {error}"),
         )
-    })?
+    })??;
+    drop(admission);
+    Ok(connection)
 }
 
 fn run_core_init(project_root: &Path, resource_dir: Option<&Path>) -> Result<(), String> {
@@ -668,11 +685,16 @@ fn validate_shell_build(embedded_build_id: &str, expected_build_id: &str) -> Res
     Ok(())
 }
 
-fn start_daemon(project_root: &Path, resource_dir: Option<&Path>) -> Result<Option<Child>, String> {
+fn start_daemon(
+    project_root: &Path,
+    resource_dir: Option<&Path>,
+    coordinator_file: &Path,
+) -> Result<Option<Child>, String> {
     let mut command = daemon_command(resource_dir)?;
     command
         .args(["daemon", "--port", "0"])
         .current_dir(project_root)
+        .env("HIVEMIND_UPDATE_COORDINATOR", coordinator_file)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -1326,6 +1348,43 @@ mod tests {
     }
 
     #[test]
+    fn project_daemon_entry_holds_one_update_admission_from_registration_through_start() {
+        let source = include_str!("project.rs");
+        let contracts = [
+            ("select_project", "/// Sets a repository up"),
+            ("initialize_project", "fn run_core_init"),
+            ("restart_daemon", "fn chrono_now"),
+        ];
+        for (command, end_marker) in contracts {
+            let start_marker = format!("pub async fn {command}");
+            let section = source
+                .split(&start_marker)
+                .nth(1)
+                .and_then(|value| value.split(end_marker).next())
+                .expect("project daemon command source section");
+            let admission = section.find("begin_mutation").expect("update admission");
+            let registration = section.find("register_project").expect("project registration");
+            let daemon_start = section.find("start_daemon").expect("daemon start");
+            let release = section.find("drop(admission)").expect("admission release");
+            assert!(admission < registration, "admission must precede registration");
+            assert!(registration < daemon_start, "registration must precede daemon start");
+            assert!(daemon_start < release, "admission must cover daemon start");
+        }
+    }
+
+    #[test]
+    fn workspace_action_leaves_read_only_admission_classification_to_core() {
+        let source = include_str!("project.rs");
+        let action = source
+            .split("pub async fn workspace_action")
+            .nth(1)
+            .and_then(|value| value.split("fn connect_project_with").next())
+            .expect("workspace_action source section");
+        assert!(!action.contains("begin_mutation"));
+        assert!(action.contains("post_workspace_action"));
+    }
+
+    #[test]
     fn workspace_action_transport_does_not_abandon_bounded_worker_runs() {
         assert!(WORKSPACE_ACTION_TIMEOUT >= Duration::from_secs(15 * 60));
         let source = include_str!("project.rs");
@@ -1725,19 +1784,21 @@ fn decode_recents(file: &Path, text: &str) -> Result<Vec<RecentProject>, String>
     })
 }
 
-fn replace_file_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn replace_file_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
     use std::io::Write;
-    let parent = path.parent().ok_or_else(|| "recent project list has no parent directory".to_string())?;
+    let parent = path.parent().ok_or_else(|| "state file has no parent directory".to_string())?;
+    std::fs::create_dir_all(parent)
+        .map_err(|error| format!("could not create the state directory: {error}"))?;
     let temp = parent.join(format!(
-        ".recent-projects-{}-{}.tmp",
+        ".hivemind-state-{}-{}.tmp",
         std::process::id(),
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos()
     ));
     let result = (|| -> Result<(), String> {
         let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&temp)
-            .map_err(|error| format!("could not create a temporary recent project list: {error}"))?;
-        file.write_all(bytes).map_err(|error| format!("could not write the temporary recent project list: {error}"))?;
-        file.sync_all().map_err(|error| format!("could not flush the temporary recent project list: {error}"))?;
+            .map_err(|error| format!("could not create a temporary state file: {error}"))?;
+        file.write_all(bytes).map_err(|error| format!("could not write the temporary state file: {error}"))?;
+        file.sync_all().map_err(|error| format!("could not flush the temporary state file: {error}"))?;
         replace_path(&temp, path)?;
         Ok(())
     })();
@@ -1749,7 +1810,7 @@ fn replace_file_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
 
 #[cfg(not(windows))]
 fn replace_path(source: &Path, destination: &Path) -> Result<(), String> {
-    std::fs::rename(source, destination).map_err(|error| format!("could not replace the recent project list: {error}"))
+    std::fs::rename(source, destination).map_err(|error| format!("could not replace the state file: {error}"))
 }
 
 #[cfg(windows)]
@@ -1762,7 +1823,7 @@ fn replace_path(source: &Path, destination: &Path) -> Result<(), String> {
         MoveFileExW(source_wide.as_ptr(), destination_wide.as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
     };
     if moved == 0 {
-        return Err(format!("could not replace the recent project list: {}", std::io::Error::last_os_error()));
+        return Err(format!("could not replace the state file: {}", std::io::Error::last_os_error()));
     }
     Ok(())
 }
@@ -2090,6 +2151,15 @@ fn task_worktrees(project_root: &Path) -> Result<Vec<String>, ()> {
 
 pub(crate) fn daemon_work(project_root: &Path) -> DaemonStanding {
     daemon_work_with(project_root, &liveness_of)
+}
+
+pub(crate) fn prove_daemon_idle_for_update(project_root: &Path) -> Result<(), String> {
+    let standing = daemon_work(project_root);
+    if standing.work == DaemonWork::Idle {
+        Ok(())
+    } else {
+        Err(format!("{} Update was not started.", standing.detail))
+    }
 }
 
 /// The idleness proof, answered by ownership rather than by artefacts.
@@ -2529,13 +2599,19 @@ pub async fn restart_daemon(
     app: tauri::AppHandle,
     project_path: String,
 ) -> Result<ProjectConnection, ProjectFault> {
+    let admission = update_lifecycle::begin_mutation(&app)
+        .map_err(|message| ProjectFault::new(FAULT_DAEMON_UNAVAILABLE, message))?;
+    let coordinator = admission.coordinator_file().to_path_buf();
+    let registered_root = canonical_git_root(&project_path)?;
+    update_lifecycle::register_project(&app, &admission, &registered_root)
+        .map_err(|message| ProjectFault::new(FAULT_UNKNOWN, message))?;
     let resource_dir = app.path().resource_dir().map_err(|error| {
         ProjectFault::new(
             FAULT_UNKNOWN,
             format!("could not resolve desktop resources: {error}"),
         )
     })?;
-    tauri::async_runtime::spawn_blocking(move || {
+    let connection = tauri::async_runtime::spawn_blocking(move || {
         let project_root = canonical_git_root(&project_path)?;
         let standing = daemon_work(&project_root);
         if standing.work != DaemonWork::Idle {
@@ -2585,7 +2661,7 @@ pub async fn restart_daemon(
 
         connect_project_with(
             &project_path,
-            &mut |root| start_daemon(root, Some(&resource_dir)),
+            &mut |root| start_daemon(root, Some(&resource_dir), &coordinator),
             &query_daemon_health,
             &|root| query_cli_build_identity(root, Some(&resource_dir)),
             &|root| query_expected_shell_build_identity(root, Some(&resource_dir)),
@@ -2597,7 +2673,9 @@ pub async fn restart_daemon(
     .await
     .map_err(|error| {
         ProjectFault::new(FAULT_UNKNOWN, format!("daemon restart task failed: {error}"))
-    })?
+    })??;
+    drop(admission);
+    Ok(connection)
 }
 
 fn chrono_now() -> String {
@@ -3290,11 +3368,15 @@ pub async fn initialize_git(
     app: tauri::AppHandle,
     project_path: String,
 ) -> Result<GitReadiness, GitSetupFailure> {
+    let admission = update_lifecycle::begin_mutation(&app)
+        .map_err(GitSetupFailure::untouched)?;
     let resource_dir = app
         .path()
         .resource_dir()
         .map_err(|error| GitSetupFailure::untouched(format!("could not resolve desktop resources: {error}")))?;
-    initialize_git_with(project_path, &|root| run_core_init(root, Some(&resource_dir))).await
+    let result = initialize_git_with(project_path, &|root| run_core_init(root, Some(&resource_dir))).await;
+    drop(admission);
+    result
 }
 
 async fn initialize_git_with(

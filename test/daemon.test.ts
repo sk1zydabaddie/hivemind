@@ -271,6 +271,42 @@ test("daemon streams compact authoritative events separately from per-task worke
   });
 });
 
+test("two project daemons share one update lease and both refuse new work", async () => {
+  await withTempRepo(async ({ repo: firstRepo }) => {
+    await withTempRepo(async ({ repo: secondRepo }) => {
+      const coordinatorRoot = await mkdtemp(path.join(tmpdir(), "hivemind-machine-update-"));
+      const coordinator = path.join(coordinatorRoot, "update-lease.json");
+      const first = await startDaemon(firstRepo, coordinator);
+      const second = await startDaemon(secondRepo, coordinator);
+      try {
+        for (const daemon of [first, second]) {
+          const health = await fetch(`${daemon.url}/health`, {
+            headers: { authorization: `Bearer ${daemon.authToken}` }
+          });
+          assert.equal((await health.json() as { update_coordinator_protocol?: number }).update_coordinator_protocol, 1);
+        }
+        await writeFile(coordinator, `${JSON.stringify({ version: 1, nonce: "installed-update" })}\n`);
+        for (const daemon of [first, second]) {
+          const refused = await postDaemon(daemon, "/workspace/action", {
+            type: "conversation.submit",
+            payload: { prompt: "must not start", tool: "planner", request_id: "00000000-0000-4000-8000-000000000001" }
+          });
+          assert.equal(refused.ok, false);
+          assert.equal(refused.reason, "Hivemind is being updated; new work is paused until the app restarts");
+          const observation = await postDaemon(daemon, "/workspace/action", {
+            type: "files.list",
+            payload: {}
+          });
+          assert.equal(observation.ok, true, "read-only project observation should remain available during handoff");
+        }
+      } finally {
+        await Promise.all([stopDaemon(first), stopDaemon(second)]);
+        await rm(coordinatorRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
 test("read-only inspection remains live while a conversation provider is running", async () => {
   await withTempRepo(async ({ repo }) => {
     const configured = await setProjectConfig(repo, { no_tests_declared: true });
@@ -392,10 +428,14 @@ async function withTempRepo(run: (context: { repo: string; baseCommit: string })
   );
 }
 
-async function startDaemon(repo: string): Promise<DaemonProcess> {
+async function startDaemon(repo: string, updateCoordinator?: string): Promise<DaemonProcess> {
   const child = spawn(process.execPath, [cliPath, "daemon", "--port", "0"], {
     cwd: repo,
-    env: { ...process.env, HIVEMIND_DAEMON_URL: "" },
+    env: {
+      ...process.env,
+      HIVEMIND_DAEMON_URL: "",
+      ...(updateCoordinator === undefined ? {} : { HIVEMIND_UPDATE_COORDINATOR: updateCoordinator })
+    },
     windowsHide: true
   });
   const line = await readLine(child);
