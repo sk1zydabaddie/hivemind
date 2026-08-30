@@ -1118,6 +1118,11 @@ describe("React workspace boundary", () => {
        failure verdict did (A-07). */
     expect(hook).toMatch(/onSwitchStart[\s\S]{0,400}createBoardProjection\(\)/u);
     expect(hook).toMatch(/onSwitchStart[\s\S]{0,400}setGitSetupFailure\(null\)/u);
+    /* A late startup `last_project` answer must not replace a folder selected
+       while that read was in flight. The installed accessibility replay is the
+       behavioural proof; this pins both sides of the generation guard. */
+    expect(hook).toMatch(/switchProject[\s\S]{0,180}explicitProjectSelectionRef\.current \+= 1/u);
+    expect(hook).toMatch(/last_project[\s\S]{0,900}explicitProjectSelectionRef\.current !== explicitSelectionAtStart/u);
     expect(app).toMatch(/recent_projects/u);
     expect(app).toMatch(/aria-label=\{`Switch project, currently \$\{projectName\}`\}/u);
     expect(app).toMatch(/<DropdownMenuLabel>Projects<\/DropdownMenuLabel>/u);

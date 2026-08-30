@@ -115,6 +115,12 @@ export function useWorkspace(): WorkspaceView {
   const replaySettleTimer = useRef<number | null>(null);
   const replayDeadlineRef = useRef(0);
   const renderFrameRef = useRef<number | null>(null);
+  /* Startup reads the last project asynchronously. A person can choose another
+     folder while that shell read is in flight; without an explicit generation,
+     the late startup answer opens second and replaces the folder they just
+     chose. This is client lifecycle ordering only -- project truth remains in
+     the shell/Core connection. */
+  const explicitProjectSelectionRef = useRef(0);
 
   const closeStreams = useCallback(() => {
     eventSourceRef.current?.close();
@@ -507,6 +513,7 @@ export function useWorkspace(): WorkspaceView {
 
   const switchProject = useCallback(
     async (selectedPath: string) => {
+      explicitProjectSelectionRef.current += 1;
       setProjectPath(selectedPath);
       const result = await session.switchProject(selectedPath);
       if (result.ok) return true;
@@ -657,6 +664,7 @@ export function useWorkspace(): WorkspaceView {
 
   useEffect(() => {
     let abandoned = false;
+    const explicitSelectionAtStart = explicitProjectSelectionRef.current;
     /* `setProjectPath` before connecting, on BOTH launch routes.
        `session.switchProject` opens the project; the hook's wrapper is what
        records WHICH project was selected, and the launch path called the
@@ -694,7 +702,14 @@ export function useWorkspace(): WorkspaceView {
         }
         return;
       }
-      if (abandoned) return;
+      /* A manual selection made while `last_project` was answering always wins.
+         The session generation covers the other race (a startup open already
+         begun when the manual open starts); this check covers the late read
+         that had not called into the session yet. */
+      if (
+        abandoned ||
+        explicitProjectSelectionRef.current !== explicitSelectionAtStart
+      ) return;
       if (last === null || last.path.trim() === "") return;
       if (last.missing) {
         /* Say it rather than quietly opening something else. The chooser is

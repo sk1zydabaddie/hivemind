@@ -268,7 +268,28 @@ async function runInstalledPresentationProbe(repo) {
   await waitForBody();
   await driver.manage().window().setRect({ x: 40, y: 40, width: 1440, height: 900 });
   await openProjectDialog(repo);
-  await driver.wait(until.elementLocated(By.id("work-composer")), 45_000);
+  try {
+    await driver.wait(until.elementLocated(By.id("work-composer")), 45_000);
+  } catch (error) {
+    const body = await driver.executeScript("return document.body?.innerText ?? ''");
+    const headings = await driver.findElements(By.css("h1, h2, h3"));
+    const headingText = await Promise.all(headings.map((element) => element.getText()));
+    const image = await driver.takeScreenshot();
+    const failureShot = `phase4-composer-missing-${installedVersion}-1440x900.png`;
+    await writeFile(path.join(evidenceDir, failureShot), Buffer.from(image, "base64"));
+    evidence.installedPresentation = {
+      build: installedVersion,
+      composerLocated: false,
+      screenshot: failureShot,
+      headings: headingText,
+      body
+    };
+    throw new Error(
+      `installed composer was absent after the shell selected ${path.basename(repo)}; ` +
+        `headings were ${JSON.stringify(headingText)}; screenshot ${failureShot}`,
+      { cause: error }
+    );
+  }
   try {
     await driver.wait(async () =>
       (await driver.findElements(By.xpath('//h2[normalize-space(.)="1 agent in this run"]'))).length === 1,
@@ -324,6 +345,33 @@ async function openProjectDialog(wantedPath) {
   );
   await driver.findElement(By.xpath('//button[contains(normalize-space(.), "Open project")]')).click();
   await driver.wait(async () => (await driver.findElements(By.id("project-path"))).length === 0, 30_000);
+  const wantedName = path.basename(wantedPath);
+  try {
+    await driver.wait(async () => {
+      const switcher = await driver.findElement(By.css('button[aria-label^="Switch project"]'));
+      return (await switcher.getAttribute("aria-label")).includes(wantedName);
+    }, 30_000, `the shell did not switch to ${wantedName}`);
+  } catch (error) {
+    const switcher = await driver.findElement(By.css('button[aria-label^="Switch project"]'));
+    const actualLabel = await switcher.getAttribute("aria-label");
+    const body = await driver.executeScript("return document.body?.innerText ?? ''");
+    const image = await driver.takeScreenshot();
+    const failureShot = `phase4-project-switch-failed-${installedVersion}-1440x900.png`;
+    await writeFile(path.join(evidenceDir, failureShot), Buffer.from(image, "base64"));
+    evidence.installedPresentation = {
+      build: installedVersion,
+      projectSelected: false,
+      wantedProject: wantedName,
+      actualProjectLabel: actualLabel,
+      screenshot: failureShot,
+      body
+    };
+    throw new Error(
+      `the dialog closed without selecting ${wantedName}; shell label was ${JSON.stringify(actualLabel)}; ` +
+        `screenshot ${failureShot}`,
+      { cause: error }
+    );
+  }
 }
 
 async function waitForDriver() {

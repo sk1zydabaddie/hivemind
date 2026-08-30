@@ -86,6 +86,11 @@ try {
   await fixture.withTempRepo(async ({ repo }) => {
     project = repo;
     try {
+      /* The expanded provider-help matrix is reachable only after the fixture's
+         verification question is resolved. Record that deterministic setup
+         fact explicitly; otherwise the probe measures a disabled setup step
+         while claiming it exercised the provider surface. */
+      await fixture.setConfigTestCommand(repo, 'node -e "process.exit(0)"');
       await runInstalledSession(repo, false);
       await appendLongConversation(repo);
       await runInstalledSession(repo, true);
@@ -286,24 +291,45 @@ async function auditRemediatedLongConversation(openedAt) {
     90_000,
     "the installed virtual thread did not render the newest durable reply"
   );
-  await driver.wait(
-    async () => {
-      const buttons = await driver.findElements(By.xpath('//button[normalize-space(.)="Older messages"]'));
-      return buttons.length > 0 && await buttons[0].isDisplayed().catch(() => false);
-    },
-    90_000,
-    "the installed conversation never exposed its durable older-page control"
-  );
-  const log = await driver.findElement(By.css('[data-testid="conversation-log"]'));
+  try {
+    await driver.wait(
+      async () => {
+        const buttons = await driver.findElements(By.xpath('//button[normalize-space(.)="Older messages"]'));
+        return buttons.length > 0 && await buttons[0].isDisplayed().catch(() => false);
+      },
+      90_000,
+      "the installed conversation never exposed its durable older-page control"
+    );
+  } catch (error) {
+    const archive = await driver.executeScript(`
+      const log = document.querySelector('[data-testid="conversation-log"]');
+      return {
+        controls: [...document.querySelectorAll("button")]
+          .filter((button) => button.offsetParent !== null)
+          .map((button) => button.innerText || button.getAttribute("aria-label") || ""),
+        region: log?.parentElement?.parentElement?.innerText?.slice(0, 1600) ?? null,
+        body: document.body?.innerText?.slice(0, 4000) ?? null
+      };
+    `);
+    const failureShot = `older-messages-missing-${installedVersion}-1440x900.png`;
+    await writeFile(path.join(evidenceDir, failureShot), Buffer.from(await driver.takeScreenshot(), "base64"));
+    evidence.longConversation.archiveControlFailure = { ...archive, screenshot: failureShot };
+    throw new Error(
+      `the newest durable reply rendered without an older-page control; screenshot ${failureShot}`,
+      { cause: error }
+    );
+  }
   const snapshots = [];
   const sample = async () => {
     const value = await driver.executeScript(`
-      const root = arguments[0];
+      const root = document.querySelector('[data-testid="conversation-log"]');
+      if (!root) return null;
       return {
         articleCount: root.querySelectorAll("article").length,
         documentNodeCount: document.querySelectorAll("*").length,
         text: root.textContent
-      };`, log);
+      };`);
+    assert.ok(value, "the scoped conversation log disappeared while sampling an archive page");
     snapshots.push(value);
     return value;
   };
@@ -348,8 +374,9 @@ async function auditRemediatedLongConversation(openedAt) {
     }
   }
   if (!earliestReachable) {
-    await log.click();
-    await log.sendKeys(Key.HOME);
+    const currentLog = await driver.findElement(By.css('[data-testid="conversation-log"]'));
+    await currentLog.click();
+    await driver.switchTo().activeElement().then((element) => element.sendKeys(Key.HOME));
     await driver.wait(
       async () => (await threadText()).includes("PHASE5-EARLIEST-0"),
       15_000,
@@ -373,15 +400,32 @@ async function auditRemediatedLongConversation(openedAt) {
   await new Promise((resolve) => setTimeout(resolve, 3_100));
   const livenessAfter = await elapsedText();
   await capture("07-reduced-motion-liveness-after-1440x900");
+  const threadAccessibleName = await driver.wait(async () => {
+    try {
+      const name = await (await driver.findElement(By.css('[data-testid="conversation-log"]'))).getAccessibleName();
+      return name.trim() === "" ? false : name;
+    } catch {
+      return false;
+    }
+  }, 10_000, "the conversation log never exposed a stable accessible name");
+  const threadAttributes = await driver.executeScript(`
+    const log = document.querySelector('[data-testid="conversation-log"]');
+    return {
+      role: log?.getAttribute("role") ?? null,
+      ariaLive: log?.getAttribute("aria-live") ?? null,
+      ariaRelevant: log?.getAttribute("aria-relevant") ?? null,
+      tabIndex: log?.getAttribute("tabindex") ?? null
+    };
+  `);
   evidence.longConversation = {
     appendedConversationPairs: longPairCount,
     appendedConversationEvents: longPairCount * 2 + 2,
     projectOpenToLatestRenderedMs: Date.now() - openedAt,
-    threadAccessibleName: await log.getAccessibleName(),
-    threadAriaRole: await log.getAriaRole(),
-    threadAriaLive: await log.getAttribute("aria-live"),
-    threadAriaRelevant: await log.getAttribute("aria-relevant"),
-    viewportTabIndex: await log.getAttribute("tabindex"),
+    threadAccessibleName,
+    threadAriaRole: threadAttributes.role,
+    threadAriaLive: threadAttributes.ariaLive,
+    threadAriaRelevant: threadAttributes.ariaRelevant,
+    viewportTabIndex: threadAttributes.tabIndex,
     pagesVisited,
     earliestReachable,
     latestReachableAgain,
@@ -402,7 +446,6 @@ async function elapsedText() {
 }
 
 async function auditAccessibility() {
-  const composer = await driver.findElement(By.id("work-composer"));
   const elements = await driver.findElements(
     By.css('button, input, textarea, select, [role="button"], [role="tab"], [role="menuitem"]')
   );
@@ -418,13 +461,27 @@ async function auditAccessibility() {
       });
     }
   }
+  const composerAccessibleName = await driver.wait(async () => {
+    try {
+      const name = await (await driver.findElement(By.id("work-composer"))).getAccessibleName();
+      return name.trim() === "" ? false : name;
+    } catch {
+      return false;
+    }
+  }, 10_000, "the composer never exposed a stable accessible name");
+  const composerAttributes = await driver.executeScript(`
+    const composer = document.getElementById("work-composer");
+    return {
+      ariaLabel: composer?.getAttribute("aria-label") ?? null,
+      ariaLabelledBy: composer?.getAttribute("aria-labelledby") ?? null,
+      associatedLabelCount: composer?.labels?.length ?? 0
+    };
+  `);
   evidence.accessibility = {
-    composerAccessibleName: await composer.getAccessibleName(),
-    composerAriaLabel: await composer.getAttribute("aria-label"),
-    composerAriaLabelledBy: await composer.getAttribute("aria-labelledby"),
-    composerAssociatedLabelCount: await driver.executeScript(
-      "return document.getElementById('work-composer').labels?.length ?? 0"
-    ),
+    composerAccessibleName,
+    composerAriaLabel: composerAttributes.ariaLabel,
+    composerAriaLabelledBy: composerAttributes.ariaLabelledBy,
+    composerAssociatedLabelCount: composerAttributes.associatedLabelCount,
     visibleUnnamedControls: unnamed,
     paletteContrast: await driver.executeScript(`
       const sample = (selector) => {
@@ -487,9 +544,16 @@ async function auditKeyboard() {
   }
 
   await selectTab("Work");
-  const settings = await driver.findElement(By.css('button[aria-label="Settings"]'));
-  await settings.click();
-  const dialog = await driver.wait(until.elementLocated(By.css('[role="dialog"]')), 10_000);
+  await driver.wait(async () => {
+    if ((await driver.findElements(By.css('[role="dialog"]'))).length > 0) return true;
+    try {
+      await (await driver.findElement(By.css('button[aria-label="Settings"]'))).click();
+    } catch {
+      return false;
+    }
+    return (await driver.findElements(By.css('[role="dialog"]'))).length > 0;
+  }, 10_000, "Settings did not open from its exact trigger");
+  const dialog = await driver.findElement(By.css('[role="dialog"]'));
   const dialogName = await dialog.getAccessibleName();
   let escapedDialog = false;
   for (let index = 0; index < 30; index += 1) {
@@ -500,12 +564,23 @@ async function auditKeyboard() {
     );
     if (!inside) escapedDialog = true;
   }
-  await driver.actions().sendKeys(Key.ESCAPE).perform();
-  await driver.wait(
-    async () => (await driver.findElements(By.css('[role="dialog"]'))).length === 0,
-    10_000,
-    "Settings did not close with Escape"
-  );
+  await driver.switchTo().activeElement().then((element) => element.sendKeys(Key.ESCAPE));
+  try {
+    await driver.wait(
+      async () => (await driver.findElements(By.css('[role="dialog"]'))).length === 0,
+      10_000,
+      "Settings did not close with Escape"
+    );
+  } catch (error) {
+    const dialogs = await driver.findElements(By.css('[role="dialog"]'));
+    const names = await Promise.all(dialogs.map((element) => element.getAccessibleName()));
+    const failureShot = `settings-escape-failed-${installedVersion}-1440x900.png`;
+    await writeFile(path.join(evidenceDir, failureShot), Buffer.from(await driver.takeScreenshot(), "base64"));
+    throw new Error(
+      `Escape left dialogs ${JSON.stringify(names)} on screen; screenshot ${failureShot}`,
+      { cause: error }
+    );
+  }
   await new Promise((resolve) => setTimeout(resolve, 300));
   const focusAfterDialog = await driver.executeScript(`
     const node = document.activeElement;
@@ -772,16 +847,64 @@ async function openProjectDialog(wantedPath) {
     30_000,
     "the project dialog did not close"
   );
+  const wantedName = path.basename(wantedPath);
+  try {
+    await driver.wait(async () => {
+      try {
+        const switcher = await driver.findElement(By.css('button[aria-label^="Switch project"]'));
+        return (await switcher.getAttribute("aria-label")).includes(wantedName);
+      } catch {
+        return false;
+      }
+    }, 30_000, `the shell did not finish selecting ${wantedName}`);
+  } catch (error) {
+    const switcher = await driver.findElement(By.css('button[aria-label^="Switch project"]'));
+    const actualLabel = await switcher.getAttribute("aria-label");
+    const body = await driver.executeScript("return document.body?.innerText ?? ''");
+    const failureShot = `project-switch-failed-${installedVersion}.png`;
+    await writeFile(path.join(evidenceDir, failureShot), Buffer.from(await driver.takeScreenshot(), "base64"));
+    throw new Error(
+      `the dialog closed for ${wantedName}, but the shell label was ${JSON.stringify(actualLabel)}; ` +
+        `body was ${JSON.stringify(body.slice(0, 1200))}; screenshot ${failureShot}`,
+      { cause: error }
+    );
+  }
 }
 
 async function selectTab(name) {
-  const element = await tab(name);
-  await element.click();
-  await driver.wait(
-    async () => (await element.getAttribute("aria-selected")) === "true",
-    10_000,
-    `${name} tab did not become selected`
-  );
+  await driver.wait(async () => {
+    try {
+      await (await tab(name)).click();
+      return true;
+    } catch {
+      return false;
+    }
+  }, 10_000, `${name} tab could not be clicked while the shell was settling`);
+  try {
+    await driver.wait(
+      async () => {
+        try {
+          return (await (await tab(name)).getAttribute("aria-selected")) === "true";
+        } catch {
+          return false;
+        }
+      },
+      10_000,
+      `${name} tab did not become selected`
+    );
+  } catch (error) {
+    const tabs = await driver.findElements(By.css('[role="tab"]'));
+    const states = await Promise.all(tabs.map(async (element) => ({
+      name: await element.getText().catch(() => ""),
+      selected: await element.getAttribute("aria-selected").catch(() => null)
+    })));
+    const failureShot = `tab-selection-failed-${name.toLowerCase().replaceAll(" ", "-")}-${installedVersion}.png`;
+    await writeFile(path.join(evidenceDir, failureShot), Buffer.from(await driver.takeScreenshot(), "base64"));
+    throw new Error(
+      `${name} did not remain selected; tab states were ${JSON.stringify(states)}; screenshot ${failureShot}`,
+      { cause: error }
+    );
+  }
 }
 
 async function tab(name) {

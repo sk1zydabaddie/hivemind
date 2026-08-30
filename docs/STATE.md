@@ -3620,3 +3620,34 @@ and 0 Low**. F6-12 and F6-17 remain until a real protected-key,
 publisher-signed candidate passes the gates; F6-14 remains until the qualified
 artifact is actually present on the public channel. R2, G6, and the product
 remain **NO-GO**. Phase 15 begins only in its next dedicated turn.
+
+## Remediation Phase 15: final qualification — in progress 2026-08-29
+
+The one-artifact installed replay found a project-selection ordering defect
+before qualification could proceed. If somebody chose a project while the
+startup `last_project` shell read was still in flight, that late startup answer
+opened second and replaced the explicit choice. The failure was reproduced in
+the installed build: the chooser accepted a fresh
+`hivemind-manager-test-*` fixture, then the chrome and setup surface changed to
+the older `ai.hivemind.desktop-spoof-*` project. The same race had presented as
+intermittent missing composers, tabs that would not remain selected, and archive
+controls that never appeared because those checks were reading the wrong
+project.
+
+The client now gives an explicit project choice a generation. A startup answer
+may open only if no explicit choice occurred while its shell read was pending;
+the existing project-session generation still rejects an older connection that
+was already opening. No project truth moved into React, no daemon is stopped on
+switch, and no Core gate changed. The installed probes now also wait for the
+exact project identity and capture the scoped screen state on failure instead
+of treating a closed chooser as proof of selection. The accessibility fixture
+records its deterministic verification command so its provider-help viewport
+really reaches the surface it claims to inspect, and dynamic DOM checks
+reacquire elements after React replaces them.
+
+Targeted Desktop validation passed **35/35**. A fresh committed build, full
+Core/Desktop/Rust validation, installed replay, and final G6/G7 reconciliation
+remain before this phase can close. No provider/model call, paid operation,
+production signing, publication, or public-channel mutation occurred during
+this diagnosis. The three pre-existing High release findings remain open and
+the product remains **NO-GO**.
