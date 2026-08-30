@@ -48,6 +48,13 @@
     "passed": 44,
     "failed": 0
   },
+  "installedSmoke": {
+    "pid": 27748,
+    "path": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+    "version": "416.20588.53470",
+    "responding": true,
+    "stoppedAfterProbe": true
+  },
   "tests": {
     "core": { "passed": 965, "skipped": 3, "total": 968 },
     "desktop": { "passed": 360, "total": 360 },

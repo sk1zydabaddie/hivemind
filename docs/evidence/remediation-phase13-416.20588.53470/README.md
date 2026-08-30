@@ -39,3 +39,6 @@ Desktop (**360/360**), Rust (**63/63**: 61 application plus 2 release-tool
 tests), the **22/22** focused supply-chain regressions, both npm advisory
 graphs with zero vulnerabilities, the Rust advisory gate with zero
 vulnerabilities, and all **44/44** production surface/viewport combinations.
+The exact installed executable was also started hidden as PID 27748, remained
+responsive at version `416.20588.53470`, and only that verified process was
+stopped after the smoke check.

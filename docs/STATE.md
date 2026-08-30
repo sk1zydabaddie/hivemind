@@ -3552,6 +3552,8 @@ Desktop (**360/360**), Rust (**63/63**), the **22/22** focused release and
 supply-chain regressions, both npm advisory graphs with zero vulnerabilities,
 the Rust advisory gate with zero vulnerabilities, all **44/44** production
 surface/viewport combinations, `ship`, and exact installed-root verification.
+The exact installed executable also started and remained responsive at the
+admitted version before its fixture-owned smoke process was stopped.
 No provider/model call, signing operation, publication, or public-channel
 mutation occurred.
 
