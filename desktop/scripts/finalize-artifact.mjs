@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   ARTIFACT_SCHEMA_VERSION,
+  nsisExecutableIdentity,
   sha256,
   sha256File,
   stableJson,
@@ -51,7 +52,7 @@ const base = {
   source_commit: context.source_commit,
   payload_manifest: await fileIdentity(path.join(generatedDir, "payload-manifest.json"), payloadFilename),
   installer: await fileIdentity(installer, installerFilename),
-  executable: await fileIdentity(executable, executableFilename)
+  executable: await nsisExecutableIdentity(executable, executableFilename)
 };
 const manifest = { ...base, artifact_id: sha256(stableJson(base)) };
 validateArtifactManifest(manifest);

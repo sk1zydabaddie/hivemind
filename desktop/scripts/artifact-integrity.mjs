@@ -10,6 +10,30 @@ export async function sha256File(file) {
   return createHash("sha256").update(await readFile(file)).digest("hex");
 }
 
+/**
+ * Tauri patches this embedded marker from UNK to NSS while constructing an
+ * NSIS bundle, then restores the release-tree executable. Bind both byte
+ * identities so the installer input and the installed executable are each
+ * verified without treating the intentional three-byte patch as arbitrary.
+ */
+export async function nsisExecutableIdentity(file, filename = "hivemind_desktop.exe") {
+  const bytes = await readFile(file);
+  const marker = Buffer.from("__TAURI_BUNDLE_TYPE_VAR_UNK", "ascii");
+  const first = bytes.indexOf(marker);
+  if (first < 0 || bytes.indexOf(marker, first + 1) >= 0) {
+    throw new Error("built executable does not contain exactly one Tauri bundle-type marker");
+  }
+  const installedBytes = Buffer.from(bytes);
+  installedBytes.write("NSS", first + marker.length - 3, 3, "ascii");
+  return {
+    filename,
+    bundle_type: "nsis",
+    size: bytes.length,
+    source_sha256: sha256(bytes),
+    sha256: sha256(installedBytes)
+  };
+}
+
 export function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -113,6 +137,9 @@ export function validateArtifactManifest(manifest) {
     if (path.basename(entry.filename) !== entry.filename || entry.filename === "." || entry.filename === "..") {
       throw new Error(`artifact manifest has an unsafe ${field} filename`);
     }
+  }
+  if (manifest.executable.bundle_type !== "nsis" || !fullHash(manifest.executable.source_sha256)) {
+    throw new Error("artifact manifest does not bind the NSIS executable transformation");
   }
   const identityInput = { ...manifest };
   delete identityInput.artifact_id;

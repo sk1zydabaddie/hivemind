@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
+  nsisExecutableIdentity,
   sha256File,
   validateArtifactManifest,
   validatePayloadManifest,
@@ -30,10 +31,15 @@ if (payload.version !== artifact.version || payload.source.commit !== artifact.s
 }
 for (const [label, file, identity] of [
   ["payload manifest", payloadFile, artifact.payload_manifest],
-  ["installer", installer, artifact.installer],
-  ["executable", builtExecutable, artifact.executable]
+  ["installer", installer, artifact.installer]
 ]) {
   await verifyFileIdentity(label, file, identity);
+}
+const builtExecutableIdentity = await nsisExecutableIdentity(builtExecutable, artifact.executable.filename);
+for (const field of ["filename", "bundle_type", "size", "source_sha256", "sha256"]) {
+  if (builtExecutableIdentity[field] !== artifact.executable[field]) {
+    throw new Error(`built executable ${field} does not match the admitted NSIS transformation`);
+  }
 }
 
 console.log(`installing admitted artifact ${artifact.artifact_id} (${artifact.version})`);

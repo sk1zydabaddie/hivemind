@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   ARTIFACT_SCHEMA_VERSION,
   inventoryManagedRoots,
+  nsisExecutableIdentity,
   sha256,
   stableJson,
   validateArtifactManifest,
@@ -77,11 +78,36 @@ describe("managed payload inventory", () => {
       source_commit: sourceCommit,
       payload_manifest: { filename: "payload.json", size: 1, sha256: hash },
       installer: { filename: "setup.exe", size: 1, sha256: hash },
-      executable: { filename: "hivemind_desktop.exe", size: 1, sha256: hash }
+      executable: {
+        filename: "hivemind_desktop.exe",
+        bundle_type: "nsis",
+        size: 1,
+        source_sha256: hash,
+        sha256: hash
+      }
     };
     const manifest = { ...base, artifact_id: sha256(stableJson(base)) };
     expect(validateArtifactManifest(manifest)).toBe(manifest);
     expect(() => validateArtifactManifest({ ...manifest, version: "414.1.3" })).toThrow(/identity/u);
+  });
+
+  it("binds Tauri's exact NSIS marker transformation and rejects ambiguous inputs", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "hivemind-nsis-test-"));
+    temporaryDirectories.push(root);
+    const executable = path.join(root, "app.exe");
+    await writeFile(executable, "before__TAURI_BUNDLE_TYPE_VAR_UNKafter");
+    const identity = await nsisExecutableIdentity(executable, "app.exe");
+    expect(identity.source_sha256).toBe(sha256("before__TAURI_BUNDLE_TYPE_VAR_UNKafter"));
+    expect(identity.sha256).toBe(sha256("before__TAURI_BUNDLE_TYPE_VAR_NSSafter"));
+    expect(identity.source_sha256).not.toBe(identity.sha256);
+
+    await writeFile(executable, "no marker");
+    await expect(nsisExecutableIdentity(executable)).rejects.toThrow(/exactly one/u);
+    await writeFile(
+      executable,
+      "__TAURI_BUNDLE_TYPE_VAR_UNK__TAURI_BUNDLE_TYPE_VAR_UNK"
+    );
+    await expect(nsisExecutableIdentity(executable)).rejects.toThrow(/exactly one/u);
   });
 
   it("requires clean source inputs and all three lockfiles to agree with their identities", () => {

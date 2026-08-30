@@ -3488,8 +3488,9 @@ additional, changed, stale, or mixed byte under the installed Core/runtime
 roots. Unsupported Linux/macOS build command names are removed; this contract
 is explicitly Windows x64 only.
 
-Focused regressions pass **14/14**, including deliberate changed, additional,
-missing, identity-tampering, same-millisecond, and clock-rollback cases. The
+Focused regressions pass **15/15**, including deliberate changed, additional,
+missing, identity-tampering, NSIS transformation, same-millisecond, and
+clock-rollback cases. The
 desktop production build passes. Findings remain open and the product remains
 **NO-GO** until a clean source commit produces and installs the artifact and the
 installed proof is recorded; Phase 13 has not begun.

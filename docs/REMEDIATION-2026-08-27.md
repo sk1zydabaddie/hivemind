@@ -504,7 +504,7 @@ staging tree is production-only; monotonic millisecond versions and payload/
 artifact manifests bind clean source, inputs, lockfiles, staged bytes,
 identities, executable, installer, and Windows x64 platform; installation uses
 the manifest as an exact allowlist; unsupported platform command names are
-removed. Focused failure-mode regressions pass **14/14**. No finding is closed
+removed. Focused failure-mode regressions pass **15/15**. No finding is closed
 at this checkpoint, and contracts 4 through 7 and 9 remain for later dedicated
 phases. R2 and G6 remain open.
 
