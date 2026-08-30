@@ -1,0 +1,73 @@
+{
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "buildNumber": "416.20732.14163",
+  "projectDaemons": [
+    38428,
+    31716
+  ],
+  "readOnlyObservations": [
+    {
+      "ok": true,
+      "value": {
+        "path": ".",
+        "entries": [
+          {
+            "name": "README.md",
+            "path": "README.md",
+            "kind": "file"
+          }
+        ]
+      }
+    },
+    {
+      "ok": true,
+      "value": {
+        "path": ".",
+        "entries": [
+          {
+            "name": "README.md",
+            "path": "README.md",
+            "kind": "file"
+          }
+        ]
+      }
+    }
+  ],
+  "workRefusals": [
+    {
+      "ok": false,
+      "reason": "Hivemind is being updated; new work is paused until the app restarts"
+    },
+    {
+      "ok": false,
+      "reason": "Hivemind is being updated; new work is paused until the app restarts"
+    }
+  ],
+  "busyRefusal": {
+    "error": "This project still has 1 call(s) in progress. Update was not started.",
+    "resolved": false
+  },
+  "oldProcess": {
+    "pid": 30256,
+    "startedAtMs": 1788065591396
+  },
+  "relaunchedProcess": {
+    "pid": 25204,
+    "startedAtMs": 1788065597169
+  },
+  "expectedIdentity": {
+    "version": "416.20732.14163",
+    "core_build_id": "1bc5df5bcb7eea87a71c2bfcbdd4ce657aad31aa4214775ea26dcf6a201c427d",
+    "shell_build_id": "3b7022be8bbba1d4521666dac6ad70cca01a78235ca1d5424ff93736cc0cbc0c",
+    "runtime_version": "22.23.2",
+    "runtime_sha256": "0d0f5e39f9f3d9587bc19f73eab3c2c9c4903fd02d6dbf9c853dd81b3d95fad4"
+  },
+  "completedIdentity": {
+    "core_build_id": "1bc5df5bcb7eea87a71c2bfcbdd4ce657aad31aa4214775ea26dcf6a201c427d",
+    "runtime_sha256": "0d0f5e39f9f3d9587bc19f73eab3c2c9c4903fd02d6dbf9c853dd81b3d95fad4",
+    "runtime_version": "22.23.2",
+    "shell_build_id": "3b7022be8bbba1d4521666dac6ad70cca01a78235ca1d5424ff93736cc0cbc0c",
+    "version": "416.20732.14163"
+  },
+  "screenshot": "D:\\Projects\\Hivemind AI\\docs\\evidence\\remediation-phase15-416.20732.14163\\update-lifecycle\\installed-416.20732.14163-1440x900.png"
+}

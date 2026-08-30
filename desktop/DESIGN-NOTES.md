@@ -4947,3 +4947,20 @@ in installed build **416.20640.31640**; it deliberately does not claim a public
 release because the real updater key and Windows publisher identity are not yet
 configured.
 
+### Adjacent transient layers must finish in order — 2026-08-29
+
+A dropdown item that opens a dialog owns two sequential interactions, not two
+overlapping layers. The dropdown must finish selection, close, and restore its
+focus contract before the dialog opens. Opening the dialog from the same
+close/select callback can leave the menu under the dialog, reopen it after a
+project change, or turn the next press into a close-only action. A controlled
+menu does not cure that ordering defect if overlapping open-state callbacks can
+still invert the requested state.
+
+Defer the dialog opening until the dropdown's selection turn has completed.
+Project identity remains shell-owned; this sequencing rule changes only
+transient client chrome. Installed verification repeats the whole menu-dialog-
+project cycle, begins each attempt from `aria-expanded=false`, requires the
+exact item while `aria-expanded=true`, and proves the next attempt opens again.
+Build **416.20732.14163** passed that exact cycle four consecutive times.
+

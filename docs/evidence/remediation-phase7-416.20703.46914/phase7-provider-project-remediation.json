@@ -1,0 +1,71 @@
+{
+  "installedVersion": "416.20703.46914",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "paidProviderCalls": 0,
+  "missingProviders": {
+    "providers": [
+      {
+        "provider_id": "codex-cli",
+        "status": "missing",
+        "detail": "The provider CLI is not installed or is not on PATH.",
+        "installed": false
+      },
+      {
+        "provider_id": "claude",
+        "status": "missing",
+        "detail": "The provider CLI is not installed or is not on PATH.",
+        "installed": false
+      },
+      {
+        "provider_id": "opencode",
+        "status": "missing",
+        "detail": "The provider CLI is not installed or is not on PATH.",
+        "installed": false
+      },
+      {
+        "provider_id": "grok",
+        "status": "missing",
+        "detail": "The provider CLI is not installed or is not on PATH.",
+        "installed": false
+      },
+      {
+        "provider_id": "kimi",
+        "status": "missing",
+        "detail": "The provider CLI is not installed or is not on PATH.",
+        "installed": false
+      }
+    ]
+  },
+  "failedManualPath": {
+    "dialogStillOpen": true,
+    "retained": "C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase7-0t8g0n\\does-not-exist"
+  },
+  "nestedProject": {
+    "sourceListed": true,
+    "generatedExcluded": true,
+    "projectFactsListed": true
+  },
+  "secretRefusal": {
+    "namesSecret": true,
+    "setupOffered": false
+  },
+  "incompleteGit": {},
+  "explicitCheck": {},
+  "providers": {},
+  "screenshots": [
+    {
+      "item": "01-nested-project-preview",
+      "build": "416.20703.46914",
+      "file": "01-nested-project-preview-416.20703.46914-1440x900.png"
+    },
+    {
+      "item": "02-secret-refusal",
+      "build": "416.20703.46914",
+      "file": "02-secret-refusal-416.20703.46914-1440x900.png"
+    }
+  ],
+  "browserSevereLogs": []
+}

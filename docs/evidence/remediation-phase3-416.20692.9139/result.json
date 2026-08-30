@@ -1,0 +1,38 @@
+{
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "installedVersion": "416.20692.9139",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "paidProviderCalls": 0,
+  "ambientNodeAvailable": false,
+  "runtime": {
+    "path": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\runtime\\node.exe",
+    "version": "v22.23.2",
+    "sha256": "0d0f5e39f9f3d9587bc19f73eab3c2c9c4903fd02d6dbf9c853dd81b3d95fad4",
+    "manifest": {
+      "version": "22.23.2",
+      "platform": "win32",
+      "arch": "x64",
+      "url": "https://nodejs.org/dist/v22.23.2/win-x64/node.exe",
+      "sha256": "0d0f5e39f9f3d9587bc19f73eab3c2c9c4903fd02d6dbf9c853dd81b3d95fad4"
+    }
+  },
+  "projectReachedLive": true,
+  "selectedProjectVisible": true,
+  "daemon": {
+    "pid": 10100,
+    "executable": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\runtime\\node.exe"
+  },
+  "browserSevereLogs": [],
+  "recentProjects": {
+    "beforeSha256": "2f8a449278f7e8b93d9b5b4f3063d1aff6a7d99a7349873d53d4c0a9feffdd4c",
+    "afterSha256": "2f8a449278f7e8b93d9b5b4f3063d1aff6a7d99a7349873d53d4c0a9feffdd4c",
+    "restoredExactly": true
+  },
+  "screenshots": [
+    "D:\\Projects\\Hivemind AI\\docs\\evidence\\remediation-phase3-416.20692.9139\\installed-pinned-runtime-416.20692.9139-1440x900.png"
+  ],
+  "error": null
+}

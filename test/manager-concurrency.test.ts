@@ -363,8 +363,13 @@ test("a spawn-time session reservation refusal stops new lanes without disturbin
     assert.equal(started.ok, true, started.ok ? undefined : started.reason);
     if (!started.ok) return;
 
-    const continuation = continueAutonomousManagerLoop(repo, started.value.session_id, { tool: "manager", maxSteps: 100 });
-    await waitForDurableEvent(repo, "scheduler.wave_started", null);
+    /* Establish the competing reservation before the wave begins. Waiting for
+       scheduler.wave_started raced this one-token reservation against both
+       worker spawns; under full-suite load the second worker could reserve
+       first, so the test sometimes exercised three successful admissions
+       instead of the spawn-time refusal it named. With one token already held,
+       the first worker still fits and the second deterministically crosses the
+       exact session ceiling. */
     const competingReservation = await reserveMeteredCall(repo, {
       provider: "external-metered-call",
       session_id: started.value.session_id,
@@ -375,6 +380,7 @@ test("a spawn-time session reservation refusal stops new lanes without disturbin
     });
     assert.equal(competingReservation.ok, true, competingReservation.ok ? undefined : competingReservation.reason);
 
+    const continuation = continueAutonomousManagerLoop(repo, started.value.session_id, { tool: "manager", maxSteps: 100 });
     const result = await continuation;
     assert.equal(result.ok, true, result.ok ? undefined : result.reason);
     if (!result.ok) return;

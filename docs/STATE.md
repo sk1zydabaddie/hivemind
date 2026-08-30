@@ -3621,7 +3621,7 @@ publisher-signed candidate passes the gates; F6-14 remains until the qualified
 artifact is actually present on the public channel. R2, G6, and the product
 remain **NO-GO**. Phase 15 begins only in its next dedicated turn.
 
-## Remediation Phase 15: final qualification — in progress 2026-08-29
+## Remediation Phase 15: final qualification — completed NO-GO 2026-08-29
 
 The one-artifact installed replay found a project-selection ordering defect
 before qualification could proceed. If somebody chose a project while the
@@ -3675,3 +3675,50 @@ later click back to `aria-expanded=false`. This changes only transient client
 chrome; project identity and recent-project authority remain shell-owned. The
 installed Phase 7 proof must be rerun on a newly built and installed artifact
 before this correction is counted.
+
+That rerun and the complete no-paid qualification replay are now finished on
+one immutable installed artifact. Build **416.20732.14163** came from source
+commit `9d4389a0040b7136c4616dbfd5e56fee2f12332d` and artifact
+`f91cda54f8e346018bbdca1881969d8f339e2dab85fbc51ecf481e2ae99a42f4`.
+`ship` admitted, built, installed, and verified all **4,464** managed files and
+the exact Core, shell, and pinned Node identities. The final installed replay
+proved the retired update commands and surface absent; authenticated daemon
+transport; production override refusal; ambient-Node-free pinned runtime;
+owned-process cancellation; crash/restart terminal truth; live conversation,
+current-tree and attachment contents; safe provider/project/Git entry; update
+lease/relaunch identity; and the bounded keyboard-accessible archive at 800x620,
+1280x720, 1366x768, and 1440x900. The project menu opened correctly in all four
+repeated attempts, and every installed driver restored the recent-project
+registry exactly. Final evidence is under the build-labelled Phase 1 through 7,
+Phase 8 UI/accessibility, and `remediation-phase15-416.20732.14163` directories.
+Intermediate build evidence is retained as diagnostic evidence and is not used
+to qualify the final artifact.
+
+The replay also corrected one test-only race rather than blessing a rerun. The
+spawn-time session-ceiling regression had waited for `scheduler.wave_started`
+before taking its competing reservation, racing that reservation against both
+worker spawns under full-suite load. The competing reservation is now
+established before the wave, so exactly one worker can fit and the second must
+hit the named refusal. The exact test passed three consecutive isolated runs
+and passed as test 445 in the full concurrent suite. No runtime scheduling or
+budget policy changed.
+
+Final validation passed Core (**966 passed, 2 skipped, 968 total**), Desktop
+(**370/370**), Rust (**61/61** for the application package and **63/63** for the
+workspace), the root and desktop production builds, action/event reachability
+with zero unexplained production gaps, `git diff --check`, both npm advisory
+graphs with zero vulnerabilities, and RustSec with zero vulnerabilities across
+483 Windows x64 dependencies. The installed shipping pass included all
+**44/44** production surface/viewport combinations. No provider/model call,
+paid operation, production signing, draft creation, publication, or public-
+channel mutation occurred.
+
+This is a completed qualification decision, not a qualified release. Production
+signing preflight still fails closed with `production updater public key is not
+configured`; both the installer and installed executable are `NotSigned`; and
+the public latest release remains `v26.818.803`. Therefore **G0 through G5 pass,
+G6 and G7 do not pass**, and F6-12, F6-14, and F6-17 remain open. The ledger is
+still **3 open findings: 0 Critical, 3 High, 0 Medium, and 0 Low**. A protected
+updater key, real Windows code-signing certificate, and separately authorized
+qualified publication are external prerequisites. Until they exist, R2 and the
+product remain **NO-GO for public distribution**.

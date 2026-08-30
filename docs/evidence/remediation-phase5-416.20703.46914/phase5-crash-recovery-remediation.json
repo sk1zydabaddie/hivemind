@@ -1,0 +1,39 @@
+{
+  "installedVersion": "416.20703.46914",
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "paidProviderCalls": 0,
+  "roundIdentity": {
+    "openIds": [
+      "Q-PHASE5/D-002",
+      "W-PHASE5-B"
+    ],
+    "distinctOpenRounds": 2
+  },
+  "orphanReservation": {
+    "status": "settled",
+    "reason": "orphaned_unbound_full_charge",
+    "accountingSource": "full_reservation",
+    "activeReservationCount": 0
+  },
+  "interruptedResume": {
+    "queueKind": "task_attention",
+    "action": "task.resume",
+    "detail": "Hivemind restarted before the resumed worker began. Continuing uses the same saved checkpoint; no completed work was claimed."
+  },
+  "installedPresentation": {
+    "build": "416.20703.46914",
+    "screenshot": "phase5-recovery-needs-you-416.20703.46914-1440x900.png",
+    "exactRecoveryTitleCount": 1,
+    "exactFailedStopTitleCount": 1
+  },
+  "browserSevereLogs": [],
+  "recentProjects": {
+    "beforeSha256": "2f8a449278f7e8b93d9b5b4f3063d1aff6a7d99a7349873d53d4c0a9feffdd4c",
+    "afterSha256": "2f8a449278f7e8b93d9b5b4f3063d1aff6a7d99a7349873d53d4c0a9feffdd4c",
+    "restoredExactly": true
+  }
+}

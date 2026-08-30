@@ -1,0 +1,688 @@
+{
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "installedVersion": "416.20640.31640",
+  "paidProviderCalls": 0,
+  "baseline": {
+    "viewport": {
+      "bodyScrollHeight": 900,
+      "bodyScrollWidth": 1440,
+      "documentClientHeight": 900,
+      "documentClientWidth": 1440,
+      "documentScrollHeight": 900,
+      "documentScrollWidth": 1440,
+      "horizontalOverflowPx": 0,
+      "innerHeight": 900,
+      "innerWidth": 1440,
+      "verticalOverflowPx": 0
+    },
+    "documentNodeCount": 151,
+    "projectOpenToComposerMs": 8024
+  },
+  "minimumWindow": {
+    "configuredSize": {
+      "width": 800,
+      "height": 620
+    },
+    "actualWindowRect": {
+      "height": 620,
+      "width": 800,
+      "x": -1636,
+      "y": 157
+    },
+    "surfaces": {
+      "Work": {
+        "bodyScrollHeight": 620,
+        "bodyScrollWidth": 800,
+        "clippedContainers": [
+          {
+            "className": "relative inline-flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md border border-transp",
+            "hiddenX": 29,
+            "hiddenY": 0,
+            "slot": "button",
+            "tag": "button"
+          },
+          {
+            "className": "relative inline-flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md border border-transp",
+            "hiddenX": 60,
+            "hiddenY": 0,
+            "slot": "button",
+            "tag": "button"
+          },
+          {
+            "className": "relative inline-flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md border border-transp",
+            "hiddenX": 56,
+            "hiddenY": 0,
+            "slot": "button",
+            "tag": "button"
+          }
+        ],
+        "documentClientHeight": 620,
+        "documentClientWidth": 800,
+        "documentScrollHeight": 620,
+        "documentScrollWidth": 800,
+        "horizontalOverflowPx": 0,
+        "innerHeight": 620,
+        "innerWidth": 800,
+        "offscreenControls": [],
+        "verticalOverflowPx": 0
+      },
+      "Set up": {
+        "bodyScrollHeight": 620,
+        "bodyScrollWidth": 800,
+        "clippedContainers": [
+          {
+            "className": "hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block",
+            "hiddenX": 62,
+            "hiddenY": 0,
+            "slot": null,
+            "tag": "span"
+          },
+          {
+            "className": "hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block",
+            "hiddenX": 12,
+            "hiddenY": 0,
+            "slot": null,
+            "tag": "span"
+          }
+        ],
+        "documentClientHeight": 620,
+        "documentClientWidth": 800,
+        "documentScrollHeight": 620,
+        "documentScrollWidth": 800,
+        "horizontalOverflowPx": 0,
+        "innerHeight": 620,
+        "innerWidth": 800,
+        "offscreenControls": [
+          {
+            "bottom": 719,
+            "left": 52,
+            "name": "Include Codex when connecting",
+            "right": 70,
+            "top": 701
+          },
+          {
+            "bottom": 722,
+            "left": 479,
+            "name": "Open Codex sign-in",
+            "right": 548,
+            "top": 698
+          },
+          {
+            "bottom": 722,
+            "left": 652,
+            "name": "What is unverified about Codex",
+            "right": 676,
+            "top": 698
+          },
+          {
+            "bottom": 760,
+            "left": 52,
+            "name": "Include Grok Build when connecting",
+            "right": 70,
+            "top": 742
+          },
+          {
+            "bottom": 763,
+            "left": 479,
+            "name": "Open Grok Build sign-in",
+            "right": 548,
+            "top": 739
+          },
+          {
+            "bottom": 763,
+            "left": 652,
+            "name": "What is unverified about Grok Build",
+            "right": 676,
+            "top": 739
+          },
+          {
+            "bottom": 801,
+            "left": 52,
+            "name": "Include Claude Code when connecting",
+            "right": 70,
+            "top": 783
+          },
+          {
+            "bottom": 804,
+            "left": 479,
+            "name": "Open Claude Code sign-in",
+            "right": 548,
+            "top": 780
+          },
+          {
+            "bottom": 804,
+            "left": 652,
+            "name": "What is unverified about Claude Code",
+            "right": 676,
+            "top": 780
+          },
+          {
+            "bottom": 842,
+            "left": 52,
+            "name": "Include OpenCode when connecting",
+            "right": 70,
+            "top": 824
+          },
+          {
+            "bottom": 845,
+            "left": 479,
+            "name": "Open OpenCode sign-in",
+            "right": 548,
+            "top": 821
+          },
+          {
+            "bottom": 845,
+            "left": 652,
+            "name": "What is unverified about OpenCode",
+            "right": 676,
+            "top": 821
+          },
+          {
+            "bottom": 883,
+            "left": 52,
+            "name": "Include Kimi Code when connecting",
+            "right": 70,
+            "top": 865
+          },
+          {
+            "bottom": 886,
+            "left": 479,
+            "name": "Open Kimi Code sign-in",
+            "right": 548,
+            "top": 862
+          },
+          {
+            "bottom": 886,
+            "left": 652,
+            "name": "What is unverified about Kimi Code",
+            "right": 676,
+            "top": 862
+          },
+          {
+            "bottom": 934,
+            "left": 52,
+            "name": "Don't see your provider?",
+            "right": 676,
+            "top": 916
+          },
+          {
+            "bottom": 991,
+            "left": 41,
+            "name": "Continue",
+            "right": 150,
+            "top": 955
+          }
+        ],
+        "verticalOverflowPx": 0
+      },
+      "Agents": {
+        "bodyScrollHeight": 620,
+        "bodyScrollWidth": 800,
+        "clippedContainers": [
+          {
+            "className": "relative inline-flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md border border-transp",
+            "hiddenX": 29,
+            "hiddenY": 0,
+            "slot": "button",
+            "tag": "button"
+          },
+          {
+            "className": "relative inline-flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md border border-transp",
+            "hiddenX": 60,
+            "hiddenY": 0,
+            "slot": "button",
+            "tag": "button"
+          },
+          {
+            "className": "relative inline-flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md border border-transp",
+            "hiddenX": 56,
+            "hiddenY": 0,
+            "slot": "button",
+            "tag": "button"
+          }
+        ],
+        "documentClientHeight": 620,
+        "documentClientWidth": 800,
+        "documentScrollHeight": 620,
+        "documentScrollWidth": 800,
+        "horizontalOverflowPx": 0,
+        "innerHeight": 620,
+        "innerWidth": 800,
+        "offscreenControls": [],
+        "verticalOverflowPx": 0
+      },
+      "Project": {
+        "bodyScrollHeight": 620,
+        "bodyScrollWidth": 800,
+        "clippedContainers": [],
+        "documentClientHeight": 620,
+        "documentClientWidth": 800,
+        "documentScrollHeight": 620,
+        "documentScrollWidth": 800,
+        "horizontalOverflowPx": 0,
+        "innerHeight": 620,
+        "innerWidth": 800,
+        "offscreenControls": [],
+        "verticalOverflowPx": 0
+      }
+    }
+  },
+  "keyboard": {
+    "tabArrowNavigation": {
+      "selectedAfterRight": "Agents",
+      "selectedAfterLeft": "Work"
+    },
+    "focusTrail": [
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.120958) 0px 0px 0px 1.4515px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.120958) 0px 0px 0px 1.4515px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Switch project, currently ai.hivemind.desktop-spoof-kThN0x",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 864,
+        "y": 6
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.120958) 0px 0px 0px 1.4515px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.120958) 0px 0px 0px 1.4515px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Commands",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1150,
+        "y": 6
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.175101) 0px 0px 0px 2.10122px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.175101) 0px 0px 0px 2.10122px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Settings",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1250,
+        "y": 6
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Minimise window",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1302,
+        "y": 0
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Maximise window",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1348,
+        "y": 0
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Close window",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1394,
+        "y": 0
+      },
+      {
+        "boxShadow": "none",
+        "focusVisual": {
+          "boxShadow": "none",
+          "outlineStyle": "solid",
+          "outlineWidth": "2px",
+          "tag": "div"
+        },
+        "name": "NEEDS YOU\nProject updates stopped\n\nWork stopped and has not picked up again.\n\nShow me\nNothing running\nChecks\nNew conversation\nInterruptions\n\nNothing has happened yet. Describe what you want below and Hivemind will prepare a plan.\n\nAgents\nAsk anything, or describe a change. A question is answered here; a change becomes a plan you approve before anything runs.",
+        "outlineStyle": "solid",
+        "outlineWidth": "2px",
+        "tag": "div",
+        "x": 0,
+        "y": 44
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0445306) 0px 0px 0px 0.534367px, rgba(0, 0, 0, 0.24) 0px 1px 2px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0445306) 0px 0px 0px 0.534367px, rgba(0, 0, 0, 0.24) 0px 1px 2px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Show me",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1272,
+        "y": 69
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0854079) 0px 0px 0px 1.02489px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0854079) 0px 0px 0px 1.02489px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Set this aside",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1379,
+        "y": 69
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0455622) 0px 0px 0px 0.546746px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0455622) 0px 0px 0px 0.546746px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Checks",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1016,
+        "y": 170
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0445306) 0px 0px 0px 0.534367px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0445306) 0px 0px 0px 0.534367px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "New conversation",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1110,
+        "y": 170
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0455622) 0px 0px 0px 0.546746px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0455622) 0px 0px 0px 0.546746px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "How often Hivemind interrupts you",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1267,
+        "y": 170
+      },
+      {
+        "boxShadow": "none",
+        "focusVisual": {
+          "boxShadow": "none",
+          "outlineStyle": "solid",
+          "outlineWidth": "2px",
+          "tag": "div"
+        },
+        "name": "Conversation",
+        "outlineStyle": "solid",
+        "outlineWidth": "2px",
+        "tag": "div",
+        "x": 13,
+        "y": 243
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0863178) 0px 0px 0px 1.03581px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0863178) 0px 0px 0px 1.03581px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Add files or a folder",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 349,
+        "y": 815
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0445306) 0px 0px 0px 0.534367px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0445306) 0px 0px 0px 0.534367px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Choose planner, manager, and worker models",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 385,
+        "y": 815
+      },
+      {
+        "boxShadow": "none",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.2) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "3px",
+          "tag": "div"
+        },
+        "name": "Message Hivemind",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "textarea",
+        "x": 498,
+        "y": 786
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0 0 0 / 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Send",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1051,
+        "y": 807
+      },
+      {
+        "boxShadow": "none",
+        "focusVisual": null,
+        "name": "Hivemind\nSet up\nWork\nAgents\nProject\nConnection error\nai.hivemind.desktop-spoof-kThN0x\nCtrl+K\nNEEDS YOU\nProject updates stopped\n\nWork stopped and has not picked up again.\n\nShow me\nNothing running\nChecks\nNew conversation\nInterruptions\n\nNothing has happened yet. Describe what you want below and Hivemind will prepare a plan.\n\nAgents\nAsk anything, or describe a change. A question is answered here; a change becomes a plan you approve before anything runs.\nCommands\n\nJump to a section or open a project",
+        "outlineStyle": "none",
+        "outlineWidth": "3px",
+        "tag": "body",
+        "x": 0,
+        "y": 0
+      },
+      {
+        "boxShadow": "none",
+        "focusVisual": {
+          "boxShadow": "none",
+          "outlineStyle": "solid",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Work",
+        "outlineStyle": "solid",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 192,
+        "y": 0
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0445306) 0px 0px 0px 0.534367px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0445306) 0px 0px 0px 0.534367px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Switch project, currently ai.hivemind.desktop-spoof-kThN0x",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 864,
+        "y": 6
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0455622) 0px 0px 0px 0.546746px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.0455622) 0px 0px 0px 0.546746px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Commands",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1150,
+        "y": 6
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.120958) 0px 0px 0px 1.4515px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.120958) 0px 0px 0px 1.4515px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Settings",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1250,
+        "y": 6
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Minimise window",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1302,
+        "y": 0
+      },
+      {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focusVisual": {
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.45) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "outlineStyle": "none",
+          "outlineWidth": "2px",
+          "tag": "button"
+        },
+        "name": "Maximise window",
+        "outlineStyle": "none",
+        "outlineWidth": "2px",
+        "tag": "button",
+        "x": 1348,
+        "y": 0
+      }
+    ],
+    "focusTrailMissingVisibleOutline": [],
+    "pressableRestStyle": {
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(255, 255, 255, 0.12) 0px 1px 0px 0px inset, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px",
+      "outlineStyle": "none",
+      "outlineWidth": "3px",
+      "wasDisabled": true
+    },
+    "pressableFocus": {
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.727378 -0.022048 -0.0952236 / 0.25) 0px 0px 0px 3px, rgba(255, 255, 255, 0.12) 0px 1px 0px 0px inset, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px",
+      "name": "Include Codex when connecting",
+      "outlineStyle": "none",
+      "outlineWidth": "2px",
+      "slot": "checkbox"
+    },
+    "settingsDialogAccessibleName": "Settings",
+    "settingsDialogFocusEscaped": false,
+    "settingsDialogEscapeClosed": true,
+    "settingsDialogFocusAfterClose": {
+      "name": "Settings",
+      "tag": "button"
+    },
+    "settingsDialogFocusReturnedToTrigger": true
+  },
+  "accessibility": {
+    "composerAccessibleName": "Message Hivemind",
+    "composerAriaLabel": "Message Hivemind",
+    "composerAriaLabelledBy": null,
+    "composerAssociatedLabelCount": 0,
+    "visibleUnnamedControls": [],
+    "paletteContrast": {
+      "body": {
+        "background": "rgb(7, 17, 28)",
+        "color": "rgb(244, 247, 251)"
+      },
+      "ink": {
+        "background": "rgba(0, 0, 0, 0)",
+        "color": "rgb(244, 247, 251)"
+      },
+      "muted": {
+        "background": "rgba(0, 0, 0, 0)",
+        "color": "rgb(150, 163, 181)"
+      },
+      "navy": null
+    }
+  },
+  "longConversation": {},
+  "browserSevereLogs": [],
+  "error": {
+    "message": "the installed thread did not finish rendering the newest long-history reply\nWait timed out after 90127ms",
+    "stack": "TimeoutError: the installed thread did not finish rendering the newest long-history reply\nWait timed out after 90127ms\n    at D:\\Projects\\Hivemind AI\\desktop\\node_modules\\selenium-webdriver\\lib\\webdriver.js:929:22\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)"
+  },
+  "recentProjects": {
+    "beforeSha256": "2f8a449278f7e8b93d9b5b4f3063d1aff6a7d99a7349873d53d4c0a9feffdd4c",
+    "afterSha256": "2f8a449278f7e8b93d9b5b4f3063d1aff6a7d99a7349873d53d4c0a9feffdd4c",
+    "restoredExactly": true
+  }
+}

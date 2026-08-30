@@ -227,6 +227,40 @@ Medium, and 0 Low**. F6-12 and F6-17 require a real protected-key,
 publisher-signed candidate; F6-14 requires the qualified public channel. R2,
 G6, and the product remain NO-GO.
 
+**Phase 15 final qualification completed with a NO-GO decision 2026-08-29.**
+Build **416.20732.14163**, source commit
+`9d4389a0040b7136c4616dbfd5e56fee2f12332d`, and artifact
+`f91cda54f8e346018bbdca1881969d8f339e2dab85fbc51ecf481e2ae99a42f4`
+form the one immutable installed candidate used for the final no-paid replay.
+`ship` installed and verified all 4,464 managed files and the exact Core, shell,
+and pinned-runtime identities. Build-labelled installed evidence re-proved G0
+through G5: trust containment, authenticated transport, production executable
+and runtime confinement, cancellation and crash recovery, conversation
+liveness and contents, safe project/provider/Git entry, update lifecycle,
+minimum-window accessibility, and bounded archive behavior. A project-selection
+startup race, project-session stale closure, weak conversation-failure probe,
+and dropdown/dialog sequencing defect were corrected before the final artifact;
+the failed intermediate builds remain diagnostic evidence only.
+
+Final validation passed Core **966/968** with 2 intentional skips, Desktop
+**370/370**, Rust **61/61** for the application and **63/63** for the workspace,
+both production builds, both npm advisory graphs, RustSec across 483 Windows x64
+dependencies, action/event consumer checks, cleanup scans, `git diff --check`,
+and all **44/44** production surface/viewport combinations. The full-suite-only
+manager concurrency race was corrected in its test setup and passed three
+isolated repetitions plus the full concurrent suite; production scheduling did
+not change. No provider call, paid action, production signature, draft,
+publication, or public-channel mutation ran.
+
+G6 and G7 correctly remain red. Production preflight fails closed because the
+updater public key and Windows publisher identity are not configured, both
+Windows files are `NotSigned`, and the public channel still serves
+`v26.818.803`. F6-12, F6-14, and F6-17 therefore remain open; R2 and the product
+remain NO-GO. Phase 15 is complete as a qualification decision, while the
+remediation program cannot complete without a protected updater key, a real
+Windows code-signing certificate, and a separately authorized publication of
+the exact qualified candidate.
+
 ## Reconciliation result
 
 The ledger parser found exactly 93 unique IDs with the expected phase counts:

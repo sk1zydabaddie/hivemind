@@ -1,0 +1,66 @@
+{
+  "installedVersion": "416.20703.46914",
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "paidProviderCalls": 0,
+  "liveConversation": {
+    "build": "416.20703.46914",
+    "screenshot": "phase6-live-conversation-416.20703.46914-1440x900.png",
+    "typed": "Describe what this project does, in one sentence.",
+    "reply": "This installed fixture reports a deterministic TypeScript project status.",
+    "durableMessageVisibleWhileRunning": true,
+    "scopedActivityWhileRunning": "Planner is reading your request\n2s elapsed\nThis installed fixture reports a deterministic TypeScript project status.",
+    "scopedAnswerWhileRunning": "This installed fixture reports a deterministic TypeScript project status.",
+    "providerStillAliveWhenAnswerSampled": true,
+    "readOnlyStatusSettledWhileRunning": true,
+    "readOnlyStatusMs": 16,
+    "adapterCalls": 1
+  },
+  "duplicateSubmit": {
+    "synchronousSubmits": 2,
+    "adapterCalls": 1,
+    "durableMessages": 1
+  },
+  "projectContext": {
+    "readmeContentIncluded": true,
+    "sourceContentIncluded": true,
+    "untrackedNameIncluded": true,
+    "untrackedContentIncluded": false
+  },
+  "attachmentContext": {
+    "structuredAttachments": [
+      {
+        "kind": "folder",
+        "path": "notes"
+      },
+      {
+        "kind": "file",
+        "path": "UNTRACKED-CURRENT.md"
+      }
+    ],
+    "childNameIncluded": true,
+    "childContentIncluded": true,
+    "untrackedFileContentIncluded": true,
+    "markerTextAppendedToPrompt": false
+  },
+  "newConversation": {
+    "activeSpecBefore": "S-001",
+    "activeSpecAfter": null,
+    "archivedPointers": 1
+  },
+  "visibleFailure": {
+    "build": "416.20703.46914",
+    "screenshot": "phase6-visible-failure-416.20703.46914-1440x900.png",
+    "statusText": "Planner could not prepare a response",
+    "durableFailure": true
+  },
+  "browserSevereLogs": [],
+  "recentProjects": {
+    "beforeSha256": "2f8a449278f7e8b93d9b5b4f3063d1aff6a7d99a7349873d53d4c0a9feffdd4c",
+    "afterSha256": "2f8a449278f7e8b93d9b5b4f3063d1aff6a7d99a7349873d53d4c0a9feffdd4c",
+    "restoredExactly": true
+  }
+}

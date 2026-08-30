@@ -1,0 +1,39 @@
+{
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "installedVersion": "416.20692.9139",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "paidProviderCalls": 0,
+  "projectConnection": {
+    "eventStreamOpened": true,
+    "rustWorkspaceActionSucceeded": true,
+    "selectedProjectNameVisible": true
+  },
+  "daemonState": {
+    "version": 2,
+    "credentialPresent": true,
+    "credentialShapeValid": true,
+    "credentialBytes": 32,
+    "loopbackUrl": true,
+    "pidPresent": true
+  },
+  "routeBoundary": {
+    "credentialFreeMutationStatus": 401,
+    "credentialFreeMutationExecuted": false,
+    "wrongCredentialStatus": 401,
+    "authenticatedHostileOriginStatus": 403,
+    "authenticatedUnsupportedContentTypeStatus": 415,
+    "authenticatedActionStatus": 200,
+    "authenticatedEventStreamStatus": 200
+  },
+  "browserSevereLogs": [],
+  "recentProjects": {
+    "beforeSha256": "2f8a449278f7e8b93d9b5b4f3063d1aff6a7d99a7349873d53d4c0a9feffdd4c",
+    "afterSha256": "2f8a449278f7e8b93d9b5b4f3063d1aff6a7d99a7349873d53d4c0a9feffdd4c",
+    "restoredExactly": true
+  },
+  "screenshot": "D:\\Projects\\Hivemind AI\\docs\\evidence\\remediation-phase1-416.20692.9139\\installed-authenticated-416.20692.9139-1440x900.png",
+  "error": null
+}
