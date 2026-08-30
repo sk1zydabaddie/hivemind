@@ -74,6 +74,7 @@ export function useWorkspace(): WorkspaceView {
    * shows a chooser rather than the wreckage of an attempt nobody asked for. */
   const requestedPath = new URLSearchParams(window.location.search).get("project");
   const [projectPath, setProjectPath] = useState(requestedPath ?? "");
+  const projectPathRef = useRef(requestedPath ?? "");
   const [connection, setConnection] = useState<ProjectConnection | null>(null);
   const [connectionState, setConnectionState] = useState("selecting project");
   const [connectionCode, setConnectionCode] = useState<string>(
@@ -410,9 +411,10 @@ export function useWorkspace(): WorkspaceView {
     if (recoveringRef.current) return;
     recoveringRef.current = true;
     try {
+      const recoveryProject = connectionRef.current?.project_root ?? projectPathRef.current;
       const standing = await invoke<{ work: string; detail: string }>(
         "inspect_daemon_work",
-        { projectPath: connectionRef.current?.project_root ?? projectPath }
+        { projectPath: recoveryProject }
       );
       /* Only `idle` is provable. `unknown` is deliberately not treated as safe:
          the reason the daemon outlives the app is to avoid orphaning workers,
@@ -420,7 +422,7 @@ export function useWorkspace(): WorkspaceView {
       if (standing.work !== "idle") return;
       const next = validateProjectConnection(
         await invoke("restart_daemon", {
-          projectPath: connectionRef.current?.project_root ?? projectPath
+          projectPath: recoveryProject
         })
       );
       sessionRef.current?.adopt(next);
@@ -430,7 +432,7 @@ export function useWorkspace(): WorkspaceView {
     } finally {
       recoveringRef.current = false;
     }
-  }, [projectPath]);
+  }, []);
 
   const session = useMemo(
     () =>
@@ -471,6 +473,7 @@ export function useWorkspace(): WorkspaceView {
         },
         onConnected: (nextConnection) => {
           connectionRef.current = nextConnection;
+          projectPathRef.current = nextConnection.project_root;
           setConnection(nextConnection);
           setProjectPath(nextConnection.project_root);
           setConnectionState(
@@ -514,6 +517,7 @@ export function useWorkspace(): WorkspaceView {
   const switchProject = useCallback(
     async (selectedPath: string) => {
       explicitProjectSelectionRef.current += 1;
+      projectPathRef.current = selectedPath;
       setProjectPath(selectedPath);
       const result = await session.switchProject(selectedPath);
       if (result.ok) return true;
@@ -675,6 +679,7 @@ export function useWorkspace(): WorkspaceView {
        that replaces it. */
     const openSomething = async (): Promise<void> => {
       if (requestedPath !== null && requestedPath.trim() !== "") {
+        projectPathRef.current = requestedPath;
         setProjectPath(requestedPath);
         await session.switchProject(requestedPath);
         return;
@@ -715,12 +720,14 @@ export function useWorkspace(): WorkspaceView {
         /* Say it rather than quietly opening something else. The chooser is
            already the screen for "no project open"; what was missing was the
            reason it is showing. */
+        projectPathRef.current = "";
         setProjectPath("");
         recordActionError(
           `The last project you had open is no longer there: ${last.path}. Choose a folder, or remove it from the list.`
         );
         return;
       }
+      projectPathRef.current = last.path;
       setProjectPath(last.path);
       await session.switchProject(last.path);
     };

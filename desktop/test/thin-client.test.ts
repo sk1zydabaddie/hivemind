@@ -1123,6 +1123,12 @@ describe("React workspace boundary", () => {
        behavioural proof; this pins both sides of the generation guard. */
     expect(hook).toMatch(/switchProject[\s\S]{0,180}explicitProjectSelectionRef\.current \+= 1/u);
     expect(hook).toMatch(/last_project[\s\S]{0,900}explicitProjectSelectionRef\.current !== explicitSelectionAtStart/u);
+    expect(hook).toMatch(/const recoveryProject = connectionRef\.current\?\.project_root \?\? projectPathRef\.current/u);
+    const recovery = hook.slice(
+      hook.indexOf("const recoverFromBuildMismatch"),
+      hook.indexOf("const session = useMemo")
+    );
+    expect(recovery).toContain("}, []);");
     expect(app).toMatch(/recent_projects/u);
     expect(app).toMatch(/aria-label=\{`Switch project, currently \$\{projectName\}`\}/u);
     expect(app).toMatch(/<DropdownMenuLabel>Projects<\/DropdownMenuLabel>/u);

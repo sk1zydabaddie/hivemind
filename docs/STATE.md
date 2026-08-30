@@ -3636,9 +3636,10 @@ project.
 
 The client now gives an explicit project choice a generation. A startup answer
 may open only if no explicit choice occurred while its shell read was pending;
-the existing project-session generation still rejects an older connection that
-was already opening. No project truth moved into React, no daemon is stopped on
-switch, and no Core gate changed. The installed probes now also wait for the
+the project session is kept stable across path changes by reading the selected
+path from a ref, so its existing generation also rejects an older connection
+that was already opening. No project truth moved into React, no daemon is
+stopped on switch, and no Core gate changed. The installed probes now also wait for the
 exact project identity and capture the scoped screen state on failure instead
 of treating a closed chooser as proof of selection. The accessibility fixture
 records its deterministic verification command so its provider-help viewport
