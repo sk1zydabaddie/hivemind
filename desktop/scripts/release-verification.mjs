@@ -155,7 +155,7 @@ function verifyMinisign({ installer, signature, publicKey }) {
   const desktopRoot = path.resolve(import.meta.dirname, "..");
   execFileSync("cargo", [
     "run", "--locked", "--quiet", "--manifest-path", path.join(desktopRoot, "src-tauri", "Cargo.toml"),
-    "--bin", "release_signature_verify", "--", installer, signature, publicKey
+    "--package", "release_signature_verify", "--bin", "release_signature_verify", "--", installer, signature, publicKey
   ], { stdio: "pipe", windowsHide: true });
 }
 

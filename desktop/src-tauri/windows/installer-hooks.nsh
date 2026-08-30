@@ -8,4 +8,13 @@
   RMDir /r "$INSTDIR\core"
   RMDir /r "$INSTDIR\runtime"
   RMDir /r "$INSTDIR\artifact"
+  ; Retired pre-immutable-payload updater files and the accidentally bundled
+  ; Phase 13 verifier are app-owned installation debris, never project data.
+  Delete "$INSTDIR\payload-manifest.json"
+  Delete "$INSTDIR\update-helper.pid"
+  Delete "$INSTDIR\update-spawn.err"
+  Delete "$INSTDIR\update-spawn.out"
+  Delete "$INSTDIR\update-swap.cmd"
+  Delete "$INSTDIR\update-swap.log"
+  Delete "$INSTDIR\release_signature_verify.exe"
 !macroend

@@ -10,6 +10,7 @@ import {
   stableJson,
   validateArtifactManifest,
   validatePayloadManifest,
+  verifyInstalledRoot,
   verifyManagedInventory,
   WINDOWS_PLATFORM
 } from "../scripts/artifact-integrity.mjs";
@@ -49,6 +50,16 @@ describe("release version allocation", () => {
 });
 
 describe("managed payload inventory", () => {
+  it("rejects stale or accidentally bundled files at the installation root", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "hivemind-installed-root-"));
+    temporaryDirectories.push(root);
+    for (const directory of ["artifact", "core", "runtime"]) await mkdir(path.join(root, directory));
+    for (const file of ["hivemind_desktop.exe", "uninstall.exe"]) await writeFile(path.join(root, file), "fixture");
+    await expect(verifyInstalledRoot(root)).resolves.toBeUndefined();
+    await writeFile(path.join(root, "release_signature_verify.exe"), "fixture");
+    await expect(verifyInstalledRoot(root)).rejects.toThrow(/unexpected: release_signature_verify\.exe/u);
+  });
+
   it("rejects changed, additional, and missing installed bytes", async () => {
     const root = await payloadRoot();
     const expected = await inventoryManagedRoots(root);

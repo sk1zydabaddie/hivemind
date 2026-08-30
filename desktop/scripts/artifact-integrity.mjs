@@ -90,6 +90,36 @@ export async function verifyManagedInventory(root, expectedEntries, managedRoots
   }
 }
 
+export async function verifyInstalledRoot(root) {
+  const expected = new Map([
+    ["artifact", "directory"],
+    ["core", "directory"],
+    ["runtime", "directory"],
+    ["hivemind_desktop.exe", "file"],
+    ["uninstall.exe", "file"]
+  ]);
+  const actual = await readdir(root);
+  actual.sort((left, right) => left.localeCompare(right, "en"));
+  const unexpected = actual.filter((entry) => !expected.has(entry));
+  const missing = [...expected.keys()].filter((entry) => !actual.includes(entry));
+  const wrongType = [];
+  for (const [entry, type] of expected) {
+    if (!actual.includes(entry)) continue;
+    const details = await lstat(path.join(root, entry));
+    if ((type === "file" && !details.isFile()) || (type === "directory" && !details.isDirectory()) || details.isSymbolicLink()) {
+      wrongType.push(entry);
+    }
+  }
+  if (unexpected.length || missing.length || wrongType.length) {
+    throw new Error([
+      "installed application root does not match the admitted layout",
+      unexpected.length ? `unexpected: ${unexpected.join(", ")}` : "",
+      missing.length ? `missing: ${missing.join(", ")}` : "",
+      wrongType.length ? `wrong type: ${wrongType.join(", ")}` : ""
+    ].filter(Boolean).join("\n"));
+  }
+}
+
 export function validatePayloadManifest(manifest) {
   if (!isRecord(manifest) || manifest.schema_version !== PAYLOAD_SCHEMA_VERSION || manifest.kind !== "hivemind-payload") {
     throw new Error("payload manifest has an unsupported schema");

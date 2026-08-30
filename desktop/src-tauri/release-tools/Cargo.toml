@@ -1,0 +1,8 @@
+[package]
+name = "release_signature_verify"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[dependencies]
+minisign-verify = "0.2.5"

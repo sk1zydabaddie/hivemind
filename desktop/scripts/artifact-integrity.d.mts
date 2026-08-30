@@ -30,5 +30,6 @@ export function verifyManagedInventory(
   expectedEntries: FileIdentity[],
   managedRoots?: string[]
 ): Promise<void>;
+export function verifyInstalledRoot(root: string): Promise<void>;
 export function validatePayloadManifest<T>(manifest: T): T;
 export function validateArtifactManifest<T>(manifest: T): T;

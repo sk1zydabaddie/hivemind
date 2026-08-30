@@ -9,6 +9,7 @@ import {
   sha256File,
   validateArtifactManifest,
   validatePayloadManifest,
+  verifyInstalledRoot,
   verifyManagedInventory
 } from "./artifact-integrity.mjs";
 
@@ -47,6 +48,7 @@ execFileSync(installer, ["/S"], { stdio: "inherit", windowsHide: true });
 
 const installedRoot = path.join(process.env.LOCALAPPDATA ?? "", "Hivemind AI");
 const installedExe = path.join(installedRoot, "hivemind_desktop.exe");
+await verifyInstalledRoot(installedRoot);
 await verifyFileIdentity("installed executable", installedExe, artifact.executable);
 const installedPayloadFile = path.join(installedRoot, "artifact", "payload-manifest.json");
 await verifyFileIdentity("installed payload manifest", installedPayloadFile, artifact.payload_manifest);

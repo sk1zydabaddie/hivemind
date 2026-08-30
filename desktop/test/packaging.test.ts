@@ -10,6 +10,8 @@ describe("desktop packaging", () => {
     const cargo = await readFile(path.join(repoRoot, "desktop", "src-tauri", "Cargo.toml"), "utf8");
     expect(config.mainBinaryName).toBe("hivemind_desktop");
     expect(cargo).toMatch(/^default-run = "hivemind_desktop"$/mu);
+    expect(cargo).toMatch(/^members = \["release-tools"\]$/mu);
+    expect(cargo).not.toMatch(/^minisign-verify\s*=/mu);
   });
 
   it("permits only Tauri IPC and loopback daemon traffic through connect-src", async () => {
