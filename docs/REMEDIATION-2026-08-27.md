@@ -172,6 +172,19 @@ and the recorded identity matched all five admitted fields. Evidence is under
 R2 is still open; Phase 11 does not restore update discovery, download,
 installation, signing, or publication authority.
 
+**Phase 12 local immutable artifact completed 2026-08-29.** Installed build
+**416.20515.20713** closes F6-15, F6-18, and F6-20. One payload manifest binds
+clean source, build inputs, all three lockfiles, every production-only staged
+file, and runtime identities; its artifact manifest additionally binds the
+installer and both measured Tauri executable identities. `ship` installed and
+verified all 4,464 managed files, and an ambient-Node-free installed launch
+reached `Live`. Unsupported platform command names are removed and the current
+contract is Windows x64 only. Evidence is under
+`docs/evidence/remediation-phase12-416.20515.20713/`. There are **5 open
+findings: 1 Critical, 4 High, 0 Medium, and 0 Low**. R2 and the product remain
+NO-GO; signing, complete advisory coverage, remote verification, and exact
+publication admission remain open.
+
 ## Reconciliation result
 
 The ledger parser found exactly 93 unique IDs with the expected phase counts:
@@ -498,15 +511,17 @@ no provider call ran. R2 now has eight open findings; the overall ledger has
 close F6-15 or the later immutable-artifact work: Core dependencies are still
 copied from the mutable development tree until the release-supply-chain phase.
 
-**Phase 12 implementation checkpoint (2026-08-29):** Contracts 1, 2, 3, and 8
-are implemented locally and await the clean-commit ship/install proof. The
-staging tree is production-only; monotonic millisecond versions and payload/
-artifact manifests bind clean source, inputs, lockfiles, staged bytes,
-identities, executable, installer, and Windows x64 platform; installation uses
-the manifest as an exact allowlist; unsupported platform command names are
-removed. Focused failure-mode regressions pass **15/15**. No finding is closed
-at this checkpoint, and contracts 4 through 7 and 9 remain for later dedicated
-phases. R2 and G6 remain open.
+**Phase 12 completed 2026-08-29:** Contracts 1, 2, 3, and 8 are proven in
+installed build **416.20515.20713**, closing F6-15, F6-18, and F6-20. The
+production-only stage, monotonic version, and payload/artifact manifests bind
+clean commit `bb0690d8fa080360c5e6f31819cac64626f1e323`, 305 source inputs,
+three lockfiles, 4,464 managed files, Core/shell/pinned-Node identities, the
+NSIS installer, and both sides of Tauri's measured three-byte NSIS executable
+transformation. Exact install verification and an ambient-Node-free installed
+launch passed; TypeScript and `@types/node` are absent. Focused failure-mode
+regressions pass **15/15**, and production reachability passes **44/44**.
+Contracts 4 through 7 and 9 remain open for later dedicated phases; R2 and G6
+remain open, publication remains disabled, and the product remains NO-GO.
 
 ## R3 — Cancellation, crash recovery, and terminal truth
 

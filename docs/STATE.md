@@ -3470,27 +3470,47 @@ The remediation ledger is now **8 open findings: 1 Critical, 6 High, 1 Medium,
 and 0 Low**. R0, R1, R3 through R7, G0, and G5 are complete. The product remains
 **NO-GO** because R2 is open. Phase 12 begins only in its next dedicated turn.
 
-## Remediation Phase 12 implementation checkpoint — 2026-08-29
+## Remediation Phase 12: local immutable artifact — 2026-08-29
 
-The local immutable-artifact boundary is implemented and awaits the required
-clean-commit ship/install proof. Bundle preparation now creates a fresh
-production-only Core dependency tree with `npm ci --omit=dev`; the mutable
-development `node_modules` tree is no longer a Tauri resource. A monotonic
-millisecond allocator replaces minute-only versions, and the packaging-only
-Tauri overlay keeps generated resources out of clean-checkout Rust builds.
+Phase 12 is complete and closes **F6-15, F6-18, and F6-20**. Bundle preparation
+creates a fresh production-only Core dependency tree with
+`npm ci --omit=dev`; the mutable development `node_modules` tree is no longer a
+Tauri resource. A monotonic millisecond allocator replaces minute-only
+versions. Unsupported Linux/macOS build command names are removed and the
+qualified local artifact contract is explicitly Windows x64 only.
 
-The payload manifest binds clean HEAD, every tracked build input, all three
+The payload manifest binds clean HEAD, 305 tracked build inputs, all three
 lockfiles, every staged Core/runtime file, Core and shell build identities, and
 the pinned Node identity. The artifact manifest additionally binds the payload,
-built executable, NSIS installer, platform, and source commit. Local install
-verifies those artifact files before execution and then rejects any missing,
-additional, changed, stale, or mixed byte under the installed Core/runtime
-roots. Unsupported Linux/macOS build command names are removed; this contract
-is explicitly Windows x64 only.
+NSIS installer, platform, source commit, and both executable identities around
+Tauri's deliberate three-byte `UNK` to `NSS` bundle-type transformation. Local
+install verifies the candidate before execution and then rejects any missing,
+additional, changed, stale, or mixed managed installed byte.
 
-Focused regressions pass **15/15**, including deliberate changed, additional,
-missing, identity-tampering, NSIS transformation, same-millisecond, and
-clock-rollback cases. The
-desktop production build passes. Findings remain open and the product remains
-**NO-GO** until a clean source commit produces and installs the artifact and the
-installed proof is recorded; Phase 13 has not begun.
+Installed build **416.20515.20713** was assembled from clean commit
+`bb0690d8fa080360c5e6f31819cac64626f1e323` as artifact
+`ac4799849c00621388b74226e9c73ace34b9e8cb09a3d84f8a851160047dd3e7`.
+The installer landed all **4,464** admitted managed files exactly. The installed
+Core contains neither TypeScript nor `@types/node`; its complete 4,462-file tree
+is 70,432,752 bytes, below the pre-fix development `node_modules` tree alone at
+89,222,900 bytes.
+
+The installed app then opened a disposable Git project at 1440x900 with ambient
+Node absent, reached the exact `Live` state, and launched its daemon from the
+installed pinned Node 22.23.2. Browser severe logs were empty and the user's
+recent-project registry was restored byte-for-byte. The build-labelled capture
+and manifests are under
+`docs/evidence/remediation-phase12-416.20515.20713/`.
+
+Final no-paid validation passed Core (**966 passed, 2 skipped, 968 total**),
+Desktop (**350/350**), Rust (**61/61**), the **15/15** focused artifact
+regressions, both npm advisory graphs with zero vulnerabilities, all **44/44**
+production reachability combinations, `ship`, exact installed inventory, and
+the ambient-Node-free installed probe. No provider/model call, signing
+operation, release publication, or public-channel mutation occurred.
+
+The remediation ledger is now **5 open findings: 1 Critical, 4 High, 0 Medium,
+and 0 Low**. R2 and G6 remain open for remote signature verification, complete
+advisory/signing coverage, exact publication admission, and final candidate
+qualification. The product remains **NO-GO**. Phase 13 begins only in its next
+dedicated turn.

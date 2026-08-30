@@ -1,0 +1,58 @@
+{
+  "phase": 12,
+  "build": "416.20515.20713",
+  "platform": "windows-x86_64",
+  "source_commit": "bb0690d8fa080360c5e6f31819cac64626f1e323",
+  "artifact_id": "ac4799849c00621388b74226e9c73ace34b9e8cb09a3d84f8a851160047dd3e7",
+  "installer": {
+    "filename": "Hivemind AI_416.20515.20713_x64-setup.exe",
+    "size": 29462413,
+    "sha256": "1ac79f66ff553bea83c54f685386b2e046847eae49df1ac2fabb17401adb0d9f"
+  },
+  "payload_manifest": {
+    "size": 886848,
+    "sha256": "f4da4f782636586e7b560faa6e0c9b20fe268068d34d77bba7e1d2470f4592ea",
+    "source_inputs": 305,
+    "managed_files": 4464
+  },
+  "executable": {
+    "size": 10780672,
+    "build_tree_sha256": "f5084a7b89cddefd9526f77bef16a76f5dfb7a883d7281776d3c6605becacb7b",
+    "installed_nsis_sha256": "4a9467da89b843072f9d43e10627d4a5e11bf4626ba0bfb3ee87bf92d8d644bf",
+    "tauri_bundle_marker": "UNK -> NSS",
+    "differing_bytes": 3
+  },
+  "production_staging": {
+    "npm_packages_reported_by_clean_ci": 98,
+    "installed_core_files": 4462,
+    "installed_core_bytes": 70432752,
+    "typescript_present": false,
+    "types_node_present": false
+  },
+  "installed_runtime": {
+    "ambient_node_available": false,
+    "version": "v22.23.2",
+    "sha256": "0d0f5e39f9f3d9587bc19f73eab3c2c9c4903fd02d6dbf9c853dd81b3d95fad4",
+    "project_reached_live": true,
+    "daemon_executable": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\runtime\\node.exe",
+    "browser_severe_logs": [],
+    "recent_projects_restored_exactly": true
+  },
+  "pre_fix_counterexamples": {
+    "two_stamps_20ms_apart": ["26.829.1709", "26.829.1709"],
+    "installed_typescript_present": true,
+    "installed_types_node_present": true,
+    "installed_node_modules_files": 3952,
+    "installed_node_modules_bytes": 89222900
+  },
+  "verification": {
+    "focused": "15/15",
+    "core": "966 passed, 2 skipped, 968 total",
+    "desktop": "350/350",
+    "rust": "61/61",
+    "reachability": "44/44",
+    "npm_advisories": "0 vulnerabilities in both graphs",
+    "paid_provider_calls": 0
+  },
+  "screenshot": "installed-phase12-artifact-416.20515.20713-1440x900.png"
+}
