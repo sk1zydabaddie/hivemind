@@ -3864,3 +3864,38 @@ verification regressions and both production builds. A deliberately concurrent
 first Rust invocation overlapped Core's clean-build step and therefore found no
 Core `dist`; the ordered rerun after Core rebuilt that required input passed
 64/64. No provider/model or other paid call ran.
+
+## Protected unsigned beta published — 2026-08-31
+
+Protected GitHub Actions run **33412850214** completed the entire accepted beta
+transaction from clean commit
+`fa14cbcaacfea709a7065932aefaafe6b31ddc2c`. It admitted, built, installed, and
+verified version **416.22689.46153** as artifact
+`77b24ce31efd5fd1b924eccbcef52814132b90ad92fa1588a7b04057da3630f9`,
+including all **4,464** managed files and the exact Core, shell, and pinned-Node
+identities. RustSec reported zero vulnerabilities across 483 Windows x64
+dependencies and the production reachability replay passed all 44 surface and
+viewport combinations under the Tauri CSP.
+
+The protected updater key signed the exact 29,435,581-byte installer. The
+private-draft verifier downloaded every candidate asset, matched the immutable
+manifests and exact bytes, verified the wrapped Tauri/Minisign signature, and
+required both Windows files to be exactly `NotSigned`. Only then did release
+**379900300** become public latest tag **v416.22689.46153**. The public release
+contains the exact SmartScreen disclosure, official-source warning, **More info
+→ Run anyway** path, and installer SHA-256
+`03778201cd7ae4ca65e860e88b63239e9a52f94f9f49dc8da430095d68f2f90a`.
+
+Independent anonymous verification found seven uploaded product assets plus
+GitHub's two source archives, matching source commit
+`fa14cbcaacfea709a7065932aefaafe6b31ddc2c`, candidate descriptor, updater
+manifest, artifact ID, sizes, and digests. A separate full public installer
+download reproduced the exact size and SHA-256. The authenticated release list
+contains the new release and the previous `v26.818.803`, with no leftover
+draft. This closes F6-12 and F6-14 for the accepted unsigned-beta tier. The
+ledger is now **1 open finding: 0 Critical, 1 High, 0 Medium, and 0 Low**.
+
+F6-17 remains open by explicit product policy: the beta has no Windows
+publisher identity until Hivemind exceeds **$200 MRR**. Production G6/G7 and
+production distribution therefore remain **NO-GO**; the disclosed, updater-
+signed unsigned beta is **GO**. No provider/model or other paid call ran.

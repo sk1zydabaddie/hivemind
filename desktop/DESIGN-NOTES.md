@@ -5044,3 +5044,14 @@ candidate must both bind the canonical post-publication route. Protected run
 **33409828628** exposed this distinction after exact installation of version
 **416.22660.12621** and rolled the draft back without changing public latest.
 
+Protected run **33412850214** proved the complete corrected lifecycle on exact
+installed build **416.22689.46153**. Artifact
+`77b24ce31efd5fd1b924eccbcef52814132b90ad92fa1588a7b04057da3630f9`
+was privately downloaded and verified, then became public release `379900300`
+under `v416.22689.46153`. The updater manifest and candidate both name the
+canonical tag URL; the authenticated and anonymous release surfaces agree on
+the exact source commit, seven product assets, warning, and installer digest.
+The publisher boundary is still deliberately unsigned and disclosed. This is
+a successful unsigned-beta transaction, not evidence that production
+Authenticode policy has passed.
+
