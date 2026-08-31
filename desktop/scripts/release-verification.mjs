@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -248,13 +249,57 @@ function verifyMinisign({ installer, signature, publicKey }) {
   ], { stdio: "pipe", windowsHide: true });
 }
 
-export function inspectWindowsSignature(file) {
+export function inspectWindowsSignature(file, runPowerShell = execFileSync) {
+  if (!hasEmbeddedWindowsCertificate(file)) {
+    return {
+      Status: "NotSigned",
+      Subject: null,
+      Thumbprint: null,
+      TimestampSubject: null,
+      TimestampThumbprint: null
+    };
+  }
   const escaped = file.replaceAll("'", "''");
   const script = [
     `$signature = Get-AuthenticodeSignature -LiteralPath '${escaped}'`,
     "[pscustomobject]@{ Status = [string]$signature.Status; Subject = $signature.SignerCertificate.Subject; Thumbprint = $signature.SignerCertificate.Thumbprint; TimestampSubject = $signature.TimeStamperCertificate.Subject; TimestampThumbprint = $signature.TimeStamperCertificate.Thumbprint } | ConvertTo-Json -Compress"
   ].join("\n");
-  return JSON.parse(execFileSync("powershell.exe", ["-NoProfile", "-Command", script], { encoding: "utf8", windowsHide: true }));
+  return JSON.parse(runPowerShell("powershell.exe", ["-NoProfile", "-Command", script], { encoding: "utf8", windowsHide: true }));
+}
+
+function hasEmbeddedWindowsCertificate(file) {
+  const bytes = readFileSync(file);
+  if (bytes.length < 64 || bytes.toString("ascii", 0, 2) !== "MZ") {
+    throw new Error("Windows signature inspection refused a malformed PE image");
+  }
+  const peOffset = bytes.readUInt32LE(0x3c);
+  if (peOffset > bytes.length - 24 || bytes.toString("ascii", peOffset, peOffset + 4) !== "PE\0\0") {
+    throw new Error("Windows signature inspection refused a malformed PE image");
+  }
+  const optionalHeaderSize = bytes.readUInt16LE(peOffset + 20);
+  const optionalHeader = peOffset + 24;
+  if (optionalHeader > bytes.length - optionalHeaderSize) {
+    throw new Error("Windows signature inspection refused a truncated PE optional header");
+  }
+  const magic = bytes.readUInt16LE(optionalHeader);
+  const numberOfDirectoriesOffset = magic === 0x10b ? 92 : magic === 0x20b ? 108 : -1;
+  const directoriesOffset = magic === 0x10b ? 96 : magic === 0x20b ? 112 : -1;
+  if (numberOfDirectoriesOffset < 0 || optionalHeaderSize < numberOfDirectoriesOffset + 4) {
+    throw new Error("Windows signature inspection refused an unsupported PE optional header");
+  }
+  const numberOfDirectories = bytes.readUInt32LE(optionalHeader + numberOfDirectoriesOffset);
+  if (numberOfDirectories <= 4) return false;
+  const certificateEntry = directoriesOffset + (4 * 8);
+  if (optionalHeaderSize < certificateEntry + 8) {
+    throw new Error("Windows signature inspection refused a truncated PE certificate directory");
+  }
+  const certificateOffset = bytes.readUInt32LE(optionalHeader + certificateEntry);
+  const certificateSize = bytes.readUInt32LE(optionalHeader + certificateEntry + 4);
+  if (certificateOffset === 0 && certificateSize === 0) return false;
+  if (certificateOffset === 0 || certificateSize < 8 || certificateOffset > bytes.length - certificateSize) {
+    throw new Error("Windows signature inspection refused an invalid PE certificate directory");
+  }
+  return true;
 }
 
 export function assertAuthenticode(label, signature, trust) {

@@ -5013,3 +5013,14 @@ four-file key bundle was deleted after GitHub confirmed all three entries. This
 provisions the beta transaction but does not publish a release or change the
 public channel; publication remains a separate authorized action.
 
+The first protected beta run reached the real Windows runner and found that
+absence of an Authenticode signature was coupled to the PowerShell security
+module. That module failed to autoload after the exact installer had already
+built, installed, and matched all managed identities. Absence is now checked at
+the format boundary instead: the verifier reads the PE32/PE32+ data-directory
+count and certificate-table entry, accepts only a wholly absent table as
+`NotSigned`, and refuses truncated, malformed, partial, or non-empty entries.
+Production still resolves and checks the full Authenticode certificate and
+timestamp identity. A runner convenience can no longer silence the distinct
+unsigned-beta fact, and it cannot weaken production publisher verification.
+

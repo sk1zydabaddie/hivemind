@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { sha256, stableJson } from "../scripts/artifact-integrity.mjs";
 import {
   downloadReleaseBytes,
+  inspectWindowsSignature,
   UNSIGNED_BETA_INSTALL_NOTICE,
   validateTrustPolicy,
   validateUnsignedBetaTrustPolicy,
@@ -18,6 +19,40 @@ afterEach(async () => {
 });
 
 describe("release verification", () => {
+  test("an unsigned PE is identified without loading the PowerShell security module", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "hivemind-unsigned-pe-test-"));
+    const file = path.join(root, "unsigned.exe");
+    cleanups.push(() => rm(root, { recursive: true, force: true }));
+    await writeFile(file, unsignedPeFixture());
+    const runPowerShell = vi.fn(() => { throw new Error("PowerShell security module is unavailable"); });
+
+    expect(inspectWindowsSignature(file, runPowerShell)).toEqual(unsignedWindowsSignature());
+    expect(runPowerShell).not.toHaveBeenCalled();
+  });
+
+  test("a PE certificate table still requires the full PowerShell signature identity", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "hivemind-signed-pe-test-"));
+    const file = path.join(root, "signed.exe");
+    cleanups.push(() => rm(root, { recursive: true, force: true }));
+    await writeFile(file, peFixture({ certificateOffset: 0x180, certificateSize: 8 }));
+    const expected = validWindowsSignature();
+    const runPowerShell = vi.fn(() => JSON.stringify(expected));
+
+    expect(inspectWindowsSignature(file, runPowerShell)).toEqual(expected);
+    expect(runPowerShell).toHaveBeenCalledTimes(1);
+  });
+
+  test("a partial PE certificate directory fails closed", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "hivemind-invalid-pe-test-"));
+    const file = path.join(root, "partial.exe");
+    cleanups.push(() => rm(root, { recursive: true, force: true }));
+    await writeFile(file, peFixture({ certificateOffset: 0x180, certificateSize: 0 }));
+    const runPowerShell = vi.fn();
+
+    expect(() => inspectWindowsSignature(file, runPowerShell)).toThrow("invalid PE certificate directory");
+    expect(runPowerShell).not.toHaveBeenCalled();
+  });
+
   test("the production policy fails closed instead of carrying placeholder trust", async () => {
     const policy = JSON.parse(await readFile(path.resolve(import.meta.dirname, "..", "release", "trust-policy.json"), "utf8"));
     expect(() => validateTrustPolicy(policy)).toThrow("production updater public key is not configured");
@@ -251,6 +286,27 @@ function validWindowsSignature() {
 
 function unsignedWindowsSignature() {
   return { Status: "NotSigned", Subject: null, Thumbprint: null, TimestampSubject: null, TimestampThumbprint: null };
+}
+
+function unsignedPeFixture() {
+  return peFixture();
+}
+
+function peFixture(
+  { certificateOffset = 0, certificateSize = 0 }: { certificateOffset?: number; certificateSize?: number } = {}
+) {
+  const bytes = Buffer.alloc(0x200);
+  bytes.write("MZ", 0, "ascii");
+  bytes.writeUInt32LE(0x80, 0x3c);
+  bytes.write("PE\0\0", 0x80, "ascii");
+  bytes.writeUInt16LE(0x8664, 0x84);
+  bytes.writeUInt16LE(0xf0, 0x94);
+  const optionalHeader = 0x98;
+  bytes.writeUInt16LE(0x20b, optionalHeader);
+  bytes.writeUInt32LE(16, optionalHeader + 108);
+  bytes.writeUInt32LE(certificateOffset, optionalHeader + 112 + (4 * 8));
+  bytes.writeUInt32LE(certificateSize, optionalHeader + 112 + (4 * 8) + 4);
+  return bytes;
 }
 
 function validPayloadManifest() {

@@ -3773,3 +3773,34 @@ but not published. F6-14 remains open until an exact verified artifact is
 actually public. The desktop updater consumer also remains retired, so this key
 protects release artifacts and a future trust root; it does not claim existing
 clients can update themselves.
+
+### First protected beta run exposed a runner-only signature dependency — 2026-08-31
+
+GitHub Actions run **33399249931** proved the live `beta-release` reviewer gate,
+the `master` deployment restriction, both protected secrets, and the public-key
+variable were reachable together. It built and installed version
+**416.22559.4546** as artifact
+`78531fa0b4ce8ad4bc59b8cf7d1361cc764db77d797f19929f2eaf2f64046eef`,
+verified all **4,464** managed files, and then failed before draft creation.
+The runner's Windows PowerShell could not autoload
+`Microsoft.PowerShell.Security`, so `Get-AuthenticodeSignature` could not report
+the already-unsigned installer. The authenticated release list remained exactly
+the old public `v26.818.803`; no failed candidate or draft was left behind.
+
+The unsigned-beta decision no longer asks PowerShell to prove absence. The
+release verifier parses the PE optional header and certificate directory
+directly: a missing certificate table is deterministically `NotSigned`, while a
+malformed or non-empty table fails closed and production publisher verification
+still uses the full Authenticode identity path. A regression injects a
+PowerShell implementation that always throws and proves an unsigned PE never
+invokes it. The actual installed executable and installer both returned
+`NotSigned` through that path.
+
+Focused release validation passed **24/24**. Full pinned-runtime validation
+passed Core (**966 passed, 2 skipped, 968 total**), Desktop (**377/377**), and
+Rust (**61/61** for the application and **63/63** for the workspace), plus the
+root and desktop production builds. An ambient Node 24.20.0 run failed the
+Node-runner timeout instrument; the artifact's pinned Node 22.23.2 passed that
+test three consecutive isolated runs and the complete suite. The corrected
+source must still be committed, pushed, and pass a new protected workflow run
+before F6-14 or the beta-publication state changes.

@@ -48,6 +48,13 @@ export function verifyRemoteCandidate(options: {
   inspectAuthenticode?: (file: string) => Promise<Record<string, unknown>> | Record<string, unknown>;
   fetchImpl?: typeof fetch;
 }): Promise<ReleaseCandidateVerification>;
-export function inspectWindowsSignature(file: string): Record<string, unknown>;
+export function inspectWindowsSignature(
+  file: string,
+  runPowerShell?: (
+    executable: string,
+    args: readonly string[],
+    options: { encoding: "utf8"; windowsHide: boolean }
+  ) => string
+): Record<string, unknown>;
 export function assertAuthenticode(label: string, signature: Record<string, unknown>, trust: ValidatedReleaseTrust): void;
 export function assertUnsignedBeta(label: string, signature: Record<string, unknown>): void;
