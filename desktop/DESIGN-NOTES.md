@@ -4964,3 +4964,36 @@ project cycle, begins each attempt from `aria-expanded=false`, requires the
 exact item while `aria-expanded=true`, and proves the next attempt opens again.
 Build **416.20732.14163** passed that exact cycle four consecutive times.
 
+### Unsigned beta is a named distribution tier, not weakened production trust — 2026-08-31
+
+The product owner accepted the first-install SmartScreen cost until Hivemind
+exceeds **$200 MRR**, rather than buying the separate Windows signing service
+before there is traction. That decision does not change the production trust
+contract above: production still requires both the protected updater signature
+and exact timestamped Authenticode identities. The unsigned exception is a
+separate manual `beta-release` workflow and an explicit `unsigned-beta` trust
+tier.
+
+The beta still admits one clean source commit, runs the complete local shipping
+graph, installs and verifies the exact artifact, signs the installer with the
+protected updater key, uploads into a private draft, downloads and verifies all
+exact bytes, and rolls back a failed or ambiguous publication. Its changed
+predicate is narrow and positive: both the installer and published executable
+must report `NotSigned`. A signed or indeterminate file does not silently pass
+as the advertised unsigned beta.
+
+The warning must exist before execution, so it belongs on the GitHub download
+surface rather than inside the application that Windows may block from opening.
+The release body names the actual **More info → Run anyway** path, tells the user
+to download only from the official release, prints the admitted installer
+SHA-256, and says not to run mismatched bytes. This is disclosure of an accepted
+trust limitation, not a claim that SmartScreen is wrong or that an updater
+signature identifies the Windows publisher.
+
+The updater consumer remains retired. Provisioning the new key protects release
+assets and establishes the future trust root, but does not restore automatic
+updates to existing installations. Reintroducing update authority remains a
+separate, installed-and-verified product change. At the revenue threshold, the
+beta exception is retired and the existing production workflow—not the beta
+workflow—must pass with the purchased publisher identity.
+

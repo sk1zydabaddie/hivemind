@@ -10,10 +10,17 @@ const MAX_ARTIFACT_BYTES = 256 * 1024 * 1024;
 const MAX_SIGNATURE_BYTES = 16 * 1024;
 const GITHUB_API_ORIGIN = "https://api.github.com";
 const GITHUB_ASSET_ORIGIN = "https://release-assets.githubusercontent.com";
+export const PRODUCTION_RELEASE_TIER = "production";
+export const UNSIGNED_BETA_RELEASE_TIER = "unsigned-beta";
+export const UNSIGNED_BETA_MRR_THRESHOLD_USD = 200;
+export const UNSIGNED_BETA_INSTALL_NOTICE = "Hivemind AI beta is not yet signed with a Windows publisher certificate. Windows may show ‘Microsoft Defender SmartScreen prevented an unrecognized app.’ Download only from the official Hivemind GitHub release, verify the installer SHA-256 shown below, then choose More info → Run anyway. If the source or checksum differs, do not run it.";
 
 export function validateTrustPolicy(policy) {
   if (policy?.schema_version !== 1 || policy?.kind !== "hivemind-release-trust-policy") {
     throw new Error("release trust policy has an unsupported schema");
+  }
+  if (policy.release_tier !== PRODUCTION_RELEASE_TIER) {
+    throw new Error("production release requires the production trust tier");
   }
   if (typeof policy.updater_public_key !== "string" || policy.updater_public_key.trim().length < 40) {
     throw new Error("production updater public key is not configured");
@@ -25,9 +32,33 @@ export function validateTrustPolicy(policy) {
     throw new Error("Windows publisher identity is not configured");
   }
   return {
+    releaseTier: PRODUCTION_RELEASE_TIER,
     updaterPublicKey: policy.updater_public_key.trim(),
     publisherSubject: subject.trim(),
     publisherThumbprint: thumbprint
+  };
+}
+
+export function validateUnsignedBetaTrustPolicy(policy) {
+  if (policy?.schema_version !== 1 || policy?.kind !== "hivemind-release-trust-policy" ||
+      policy.release_tier !== UNSIGNED_BETA_RELEASE_TIER) {
+    throw new Error("unsigned beta trust policy has an unsupported schema or tier");
+  }
+  if (typeof policy.updater_public_key !== "string" || policy.updater_public_key.trim().length < 40) {
+    throw new Error("beta updater public key is not configured");
+  }
+  if (policy.windows_publisher?.status !== "deferred" ||
+      policy.windows_publisher?.certificate_subject !== null ||
+      policy.windows_publisher?.certificate_thumbprint !== null ||
+      policy.windows_publisher?.revisit_when_mrr_usd !== UNSIGNED_BETA_MRR_THRESHOLD_USD ||
+      policy.install_notice !== UNSIGNED_BETA_INSTALL_NOTICE) {
+    throw new Error("unsigned beta publisher deferral or install notice is not configured exactly");
+  }
+  return {
+    releaseTier: UNSIGNED_BETA_RELEASE_TIER,
+    updaterPublicKey: policy.updater_public_key.trim(),
+    installNotice: policy.install_notice,
+    revisitWhenMrrUsd: policy.windows_publisher.revisit_when_mrr_usd
   };
 }
 
@@ -35,14 +66,20 @@ export async function verifyRemoteCandidate({
   candidateUrl,
   localManifestBytes,
   trustPolicy,
+  releaseTier = PRODUCTION_RELEASE_TIER,
   verifyUpdaterSignature = verifyMinisign,
   inspectAuthenticode = inspectWindowsSignature,
   fetchImpl = fetch
 }) {
-  const trust = validateTrustPolicy(trustPolicy);
+  if (releaseTier !== PRODUCTION_RELEASE_TIER && releaseTier !== UNSIGNED_BETA_RELEASE_TIER) {
+    throw new Error("release verification received an unsupported trust tier");
+  }
+  const trust = releaseTier === UNSIGNED_BETA_RELEASE_TIER
+    ? validateUnsignedBetaTrustPolicy(trustPolicy)
+    : validateTrustPolicy(trustPolicy);
   const descriptorUrl = checkedUrl(candidateUrl, undefined, true);
   const descriptor = parseJson(await downloadReleaseBytes(fetchImpl, descriptorUrl, MAX_DESCRIPTOR_BYTES), "release candidate descriptor");
-  validateDescriptor(descriptor);
+  validateDescriptor(descriptor, releaseTier, trust);
   const urls = Object.fromEntries(
     ["artifact_manifest_url", "payload_manifest_url", "installer_url", "executable_url", "updater_signature_url", "updater_manifest_url"]
       .map((field) => [field, checkedUrl(descriptor[field], descriptorUrl.origin, true)])
@@ -85,40 +122,50 @@ export async function verifyRemoteCandidate({
       throw new Error("downloaded updater signature differs from the candidate descriptor");
     }
     const updaterManifest = parseJson(await downloadReleaseBytes(fetchImpl, urls.updater_manifest_url, MAX_DESCRIPTOR_BYTES), "remote updater manifest");
-    validateUpdaterManifest(updaterManifest, localManifest, descriptor.updater_signature, publicInstallerUrl);
+    validateUpdaterManifest(updaterManifest, localManifest, descriptor.updater_signature, publicInstallerUrl, releaseTier, trust);
     await writeFile(files.signature, descriptor.updater_signature, { encoding: "utf8", flag: "wx" });
     await verifyUpdaterSignature({ installer: files.installer, signature: files.signature, publicKey: trust.updaterPublicKey });
     for (const [label, file] of [["installer", files.installer], ["executable", files.executable]]) {
-      assertAuthenticode(label, await inspectAuthenticode(file), trust);
+      const signature = await inspectAuthenticode(file);
+      if (releaseTier === UNSIGNED_BETA_RELEASE_TIER) assertUnsignedBeta(label, signature);
+      else assertAuthenticode(label, signature, trust);
     }
     return {
       artifact_id: localManifest.artifact_id,
       version: localManifest.version,
       installer_sha256: localManifest.installer.sha256,
       source_commit: localManifest.source_commit,
-      tag_name: descriptor.tag_name
+      tag_name: descriptor.tag_name,
+      release_tier: releaseTier
     };
   } finally {
     await rm(work, { recursive: true, force: true });
   }
 }
 
-function validateDescriptor(value) {
-  if (value?.schema_version !== 2 || value?.kind !== "hivemind-release-candidate" ||
+function validateDescriptor(value, releaseTier, trust) {
+  if (value?.schema_version !== 3 || value?.kind !== "hivemind-release-candidate" ||
+      value.release_tier !== releaseTier ||
       typeof value.artifact_id !== "string" || !/^[a-f0-9]{64}$/u.test(value.artifact_id) ||
       typeof value.version !== "string" || !/^\d+\.\d+\.\d+$/u.test(value.version) ||
       value.tag_name !== `v${value.version}` || typeof value.source_commit !== "string" || !/^[a-f0-9]{40}$/u.test(value.source_commit) ||
       typeof value.updater_signature !== "string" || value.updater_signature.length > 16 * 1024 || value.updater_signature.trim() === "") {
     throw new Error("release candidate descriptor is incomplete");
   }
+  if (releaseTier === UNSIGNED_BETA_RELEASE_TIER && value.install_notice !== trust.installNotice) {
+    throw new Error("unsigned beta candidate does not carry the exact install notice");
+  }
   for (const field of ["artifact_manifest_url", "payload_manifest_url", "installer_url", "executable_url", "updater_signature_url", "updater_manifest_url", "public_installer_url"]) {
     if (typeof value[field] !== "string") throw new Error(`release candidate descriptor has no ${field}`);
   }
 }
 
-function validateUpdaterManifest(value, artifact, signature, publicInstallerUrl) {
+function validateUpdaterManifest(value, artifact, signature, publicInstallerUrl, releaseTier, trust) {
   const platform = value?.platforms?.["windows-x86_64"];
-  if (value?.version !== artifact.version || typeof value.notes !== "string" ||
+  const expectedNotes = releaseTier === UNSIGNED_BETA_RELEASE_TIER
+    ? `Unsigned beta. ${trust.installNotice}`
+    : `Immutable Windows x64 artifact ${artifact.artifact_id}`;
+  if (value?.version !== artifact.version || value.notes !== expectedNotes ||
       typeof value.pub_date !== "string" || !Number.isFinite(Date.parse(value.pub_date)) ||
       platform?.signature !== signature || platform?.url !== publicInstallerUrl.href) {
     throw new Error("remote updater manifest does not name the admitted signed installer");
@@ -215,5 +262,15 @@ export function assertAuthenticode(label, signature, trust) {
       typeof signature.TimestampSubject !== "string" || signature.TimestampSubject === "" ||
       typeof signature.TimestampThumbprint !== "string" || signature.TimestampThumbprint === "") {
     throw new Error(`${label} does not carry the required valid, timestamped Windows publisher signature`);
+  }
+}
+
+export function assertUnsignedBeta(label, signature) {
+  if (signature?.Status !== "NotSigned" ||
+      (signature.Subject !== null && signature.Subject !== "") ||
+      (signature.Thumbprint !== null && signature.Thumbprint !== "") ||
+      (signature.TimestampSubject !== null && signature.TimestampSubject !== "") ||
+      (signature.TimestampThumbprint !== null && signature.TimestampThumbprint !== "")) {
+    throw new Error(`${label} does not match the explicitly unsigned beta policy`);
   }
 }

@@ -11,8 +11,8 @@ export function validateReleaseChannel(channel) {
   return channel;
 }
 
-export function validateReleaseEnvironment(environment, channel, sourceCommit) {
-  validateWorkflowEnvelope(environment);
+export function validateReleaseEnvironment(environment, channel, sourceCommit, releaseTier = "production") {
+  validateWorkflowEnvelope(environment, releaseTier);
   const token = environment.GITHUB_TOKEN;
   if (environment.GITHUB_REPOSITORY !== channel.repository || environment.GITHUB_REF !== `refs/heads/${channel.branch}` ||
       environment.GITHUB_SHA !== sourceCommit) {
@@ -22,9 +22,10 @@ export function validateReleaseEnvironment(environment, channel, sourceCommit) {
   return token;
 }
 
-export function validateWorkflowEnvelope(environment) {
+export function validateWorkflowEnvelope(environment, releaseTier = "production") {
   if (environment.GITHUB_ACTIONS !== "true" || environment.GITHUB_EVENT_NAME !== "workflow_dispatch" ||
-      environment.HIVEMIND_PUBLIC_RELEASE_APPROVED !== "true") {
+      environment.HIVEMIND_PUBLIC_RELEASE_APPROVED !== "true" ||
+      environment.HIVEMIND_RELEASE_TIER !== releaseTier) {
     throw new Error("public release requires the protected manual GitHub Actions workflow");
   }
 }
@@ -158,7 +159,35 @@ export function createGitHubApi({ channel, token, fetchImpl = fetch }) {
   };
 }
 
-export async function publishDraftTransaction({ api, manifest, assets, buildDescriptor, verifyDraft }) {
+export function buildReleasePresentation(manifest, { releaseTier, installNotice } = {}) {
+  const source = `Source: ${manifest.source_commit}`;
+  if (releaseTier === "unsigned-beta") {
+    if (typeof installNotice !== "string" || installNotice.trim() === "") {
+      throw new Error("unsigned beta release presentation requires an install notice");
+    }
+    return {
+      name: `Hivemind ${manifest.version} — unsigned beta`,
+      body: [
+        "## Windows beta install notice",
+        "",
+        installNotice,
+        "",
+        `Installer SHA-256: \`${manifest.installer.sha256}\``,
+        "",
+        `Immutable Windows x64 artifact: \`${manifest.artifact_id}\``,
+        source
+      ].join("\n")
+    };
+  }
+  if (releaseTier !== "production") throw new Error("release presentation has an unsupported tier");
+  return {
+    name: `Hivemind ${manifest.version}`,
+    body: `Immutable Windows x64 artifact ${manifest.artifact_id}\n\n${source}`
+  };
+}
+
+export async function publishDraftTransaction({ api, manifest, assets, buildDescriptor, verifyDraft, presentation }) {
+  validatePresentation(presentation);
   const tag = `v${manifest.version}`;
   const releases = await api.listReleases();
   const sameTag = releases.filter((release) => release?.tag_name === tag);
@@ -176,10 +205,10 @@ export async function publishDraftTransaction({ api, manifest, assets, buildDesc
   const draft = await api.createDraft({
     tag,
     sourceCommit: manifest.source_commit,
-    name: `Hivemind ${manifest.version}`,
-    body: `Immutable Windows x64 artifact ${manifest.artifact_id}\n\nSource: ${manifest.source_commit}`
+    name: presentation.name,
+    body: presentation.body
   });
-  assertDraft(draft, tag, manifest.source_commit);
+  assertDraft(draft, tag, manifest.source_commit, presentation);
   let expectedAssets;
   try {
     const uploaded = new Map();
@@ -200,14 +229,14 @@ export async function publishDraftTransaction({ api, manifest, assets, buildDesc
     expectedAssets = [...assets, descriptorAsset];
 
     await verifyDraft(uploadedDescriptor.url);
-    assertRelease(await api.getRelease(draft.id), { draft: true, tag, sourceCommit: manifest.source_commit, assets: expectedAssets });
+    assertRelease(await api.getRelease(draft.id), { draft: true, tag, sourceCommit: manifest.source_commit, assets: expectedAssets, presentation });
 
     const published = await api.updateRelease(draft.id, { draft: false, prerelease: false, make_latest: "true" });
-    assertRelease(published, { draft: false, tag, sourceCommit: manifest.source_commit, assets: expectedAssets });
-    assertRelease(await api.getRelease(draft.id), { draft: false, tag, sourceCommit: manifest.source_commit, assets: expectedAssets });
+    assertRelease(published, { draft: false, tag, sourceCommit: manifest.source_commit, assets: expectedAssets, presentation });
+    assertRelease(await api.getRelease(draft.id), { draft: false, tag, sourceCommit: manifest.source_commit, assets: expectedAssets, presentation });
     const latest = await api.getLatestRelease();
     if (latest?.id !== draft.id) throw new Error("GitHub latest release is not the verified immutable candidate");
-    assertRelease(latest, { draft: false, tag, sourceCommit: manifest.source_commit, assets: expectedAssets });
+    assertRelease(latest, { draft: false, tag, sourceCommit: manifest.source_commit, assets: expectedAssets, presentation });
     return { release_id: draft.id, tag_name: tag, artifact_id: manifest.artifact_id };
   } catch (error) {
     await recoverFailedPublication(api, draft.id);
@@ -215,9 +244,17 @@ export async function publishDraftTransaction({ api, manifest, assets, buildDesc
   }
 }
 
-function assertDraft(release, tag, sourceCommit) {
+function validatePresentation(presentation) {
+  if (typeof presentation?.name !== "string" || presentation.name.trim() === "" ||
+      typeof presentation?.body !== "string" || presentation.body.trim() === "") {
+    throw new Error("release presentation is incomplete");
+  }
+}
+
+function assertDraft(release, tag, sourceCommit, presentation) {
   if (!Number.isSafeInteger(release?.id) || release.draft !== true || release.tag_name !== tag ||
-      release.target_commitish !== sourceCommit || typeof release.upload_url !== "string") {
+      release.target_commitish !== sourceCommit || release.name !== presentation.name ||
+      release.body !== presentation.body || typeof release.upload_url !== "string") {
     throw new Error("GitHub did not create the exact requested draft release");
   }
 }
@@ -236,7 +273,8 @@ function assertRelease(release, expected) {
   const exactAssets = expectedByName.size === actualByName.size &&
     [...expectedByName].every(([name, size]) => actualByName.get(name) === size);
   if (release?.draft !== expected.draft || release.tag_name !== expected.tag ||
-      release.target_commitish !== expected.sourceCommit || !exactAssets) {
+      release.target_commitish !== expected.sourceCommit ||
+      release.name !== expected.presentation.name || release.body !== expected.presentation.body || !exactAssets) {
     throw new Error("GitHub release state differs from the verified immutable candidate");
   }
 }

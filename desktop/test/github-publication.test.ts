@@ -1,17 +1,21 @@
 import { describe, expect, test, vi } from "vitest";
 import {
   assertCurrentReleaseSource,
+  buildReleasePresentation,
   publishDraftTransaction,
   validateReleaseChannel,
   validateReleaseEnvironment,
   validateWorkflowEnvelope
 } from "../scripts/github-publication.mjs";
+import { UNSIGNED_BETA_INSTALL_NOTICE } from "../scripts/release-verification.mjs";
 
 const manifest = {
   version: "416.1.2",
   artifact_id: "a".repeat(64),
-  source_commit: "b".repeat(40)
+  source_commit: "b".repeat(40),
+  installer: { sha256: "c".repeat(64) }
 };
+const presentation = buildReleasePresentation(manifest, { releaseTier: "production" });
 const assets = [
   { role: "installer", name: "setup.exe", contentType: "application/octet-stream", bytes: Buffer.from("installer") },
   { role: "updater", name: "latest.json", contentType: "application/json", bytes: Buffer.from("{}") }
@@ -28,6 +32,7 @@ describe("GitHub draft publication", () => {
       api: fixture.api,
       manifest,
       assets,
+      presentation,
       buildDescriptor: descriptor,
       verifyDraft
     });
@@ -46,6 +51,7 @@ describe("GitHub draft publication", () => {
       api: fixture.api,
       manifest,
       assets,
+      presentation,
       buildDescriptor: descriptor,
       verifyDraft: async () => undefined
     })).rejects.toThrow(/upload failed/u);
@@ -60,6 +66,7 @@ describe("GitHub draft publication", () => {
       api: fixture.api,
       manifest,
       assets,
+      presentation,
       buildDescriptor: descriptor,
       verifyDraft: async () => { throw new Error("candidate bytes differ"); }
     })).rejects.toThrow("candidate bytes differ");
@@ -73,6 +80,7 @@ describe("GitHub draft publication", () => {
       api: fixture.api,
       manifest,
       assets,
+      presentation,
       buildDescriptor: descriptor,
       verifyDraft: async () => undefined
     })).rejects.toThrow(/connection lost after publish/u);
@@ -87,6 +95,7 @@ describe("GitHub draft publication", () => {
       api: fixture.api,
       manifest,
       assets,
+      presentation,
       buildDescriptor: descriptor,
       verifyDraft: async () => undefined
     })).rejects.toThrow(/latest release is not/u);
@@ -97,10 +106,10 @@ describe("GitHub draft publication", () => {
 
   test("a public tag or a foreign draft is never reused", async () => {
     const published = fakeApi({ existing: { id: 8, draft: false, tag_name: "v416.1.2", target_commitish: manifest.source_commit } });
-    await expect(publishDraftTransaction({ api: published.api, manifest, assets, buildDescriptor: descriptor, verifyDraft: async () => undefined }))
+    await expect(publishDraftTransaction({ api: published.api, manifest, assets, presentation, buildDescriptor: descriptor, verifyDraft: async () => undefined }))
       .rejects.toThrow(/already public/u);
     const foreign = fakeApi({ existing: { id: 9, draft: true, tag_name: "v416.1.2", target_commitish: "c".repeat(40) } });
-    await expect(publishDraftTransaction({ api: foreign.api, manifest, assets, buildDescriptor: descriptor, verifyDraft: async () => undefined }))
+    await expect(publishDraftTransaction({ api: foreign.api, manifest, assets, presentation, buildDescriptor: descriptor, verifyDraft: async () => undefined }))
       .rejects.toThrow(/another source commit/u);
   });
 
@@ -117,6 +126,7 @@ describe("GitHub draft publication", () => {
       GITHUB_ACTIONS: "true",
       GITHUB_EVENT_NAME: "workflow_dispatch",
       HIVEMIND_PUBLIC_RELEASE_APPROVED: "true",
+      HIVEMIND_RELEASE_TIER: "production",
       GITHUB_REPOSITORY: "owner/repo",
       GITHUB_REF: "refs/heads/master",
       GITHUB_SHA: manifest.source_commit,
@@ -128,6 +138,17 @@ describe("GitHub draft publication", () => {
     expect(() => validateReleaseEnvironment({ ...environment, GITHUB_ACTIONS: "false" }, channel, manifest.source_commit))
       .toThrow(/protected manual/u);
     expect(() => validateWorkflowEnvelope({})).toThrow(/protected manual/u);
+  });
+
+  test("the unsigned beta warning names the Windows action and exact installer checksum", () => {
+    const beta = buildReleasePresentation(manifest, {
+      releaseTier: "unsigned-beta",
+      installNotice: UNSIGNED_BETA_INSTALL_NOTICE
+    });
+    expect(beta.name).toContain("unsigned beta");
+    expect(beta.body).toContain("More info → Run anyway");
+    expect(beta.body).toContain(manifest.installer.sha256);
+    expect(beta.body).toContain("do not run it");
   });
 
   test("the artifact source must be clean and the exact public branch head", () => {
@@ -175,6 +196,8 @@ function fakeApi(options: {
       draft: true,
       tag_name: "v416.1.2",
       target_commitish: manifest.source_commit,
+      name: "",
+      body: "",
       upload_url: "https://uploads.github.test/release{?name,label}",
       assets: [] as Array<Record<string, unknown>>
     }
@@ -184,7 +207,12 @@ function fakeApi(options: {
     api: {
       async listReleases() { state.events.push("list"); return options.existing ? [options.existing] : []; },
       async tagExists() { state.events.push("tag"); return false; },
-      async createDraft() { state.events.push("draft"); return state.release; },
+      async createDraft(input: { name: string; body: string }) {
+        state.events.push("draft");
+        state.release.name = input.name;
+        state.release.body = input.body;
+        return state.release;
+      },
       async uploadAsset(_url: string, asset: { name: string; bytes: Buffer }) {
         state.events.push(`upload:${asset.name}`);
         if (asset.name === options.failUpload) throw new Error(`upload failed: ${asset.name}`);

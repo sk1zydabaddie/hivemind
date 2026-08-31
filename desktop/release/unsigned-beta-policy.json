@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "kind": "hivemind-release-trust-policy",
+  "release_tier": "unsigned-beta",
+  "updater_public_key": null,
+  "windows_publisher": {
+    "status": "deferred",
+    "certificate_subject": null,
+    "certificate_thumbprint": null,
+    "revisit_when_mrr_usd": 200
+  },
+  "install_notice": "Hivemind AI beta is not yet signed with a Windows publisher certificate. Windows may show ‘Microsoft Defender SmartScreen prevented an unrecognized app.’ Download only from the official Hivemind GitHub release, verify the installer SHA-256 shown below, then choose More info → Run anyway. If the source or checksum differs, do not run it."
+}

@@ -1,4 +1,4 @@
-/** Publish one already-built, installed, signed, immutable artifact through a verified draft. */
+/** Publish one already-built, installed, immutable artifact through a verified draft. */
 import { execFileSync } from "node:child_process";
 import { copyFile, mkdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
@@ -11,6 +11,7 @@ import {
 } from "./artifact-integrity.mjs";
 import {
   assertCurrentReleaseSource,
+  buildReleasePresentation,
   createGitHubApi,
   publishDraftTransaction,
   validateReleaseChannel,
@@ -20,8 +21,12 @@ import {
 import { loadReleaseTrustPolicy } from "./release-policy.mjs";
 import {
   assertAuthenticode,
+  assertUnsignedBeta,
   inspectWindowsSignature,
+  PRODUCTION_RELEASE_TIER,
+  UNSIGNED_BETA_RELEASE_TIER,
   validateTrustPolicy,
+  validateUnsignedBetaTrustPolicy,
   verifyRemoteCandidate
 } from "./release-verification.mjs";
 
@@ -31,15 +36,18 @@ const generatedDir = path.join(desktopRoot, "src-tauri", "gen");
 const releaseDir = path.join(desktopRoot, "src-tauri", "target", "release");
 const nsisDir = path.join(releaseDir, "bundle", "nsis");
 
-validateWorkflowEnvelope(process.env);
+const releaseTier = parseReleaseTier(process.argv.slice(2));
+validateWorkflowEnvelope(process.env, releaseTier);
 const channel = validateReleaseChannel(JSON.parse(await readFile(path.join(desktopRoot, "release", "channel.json"), "utf8")));
 const manifestBytes = await readFile(path.join(generatedDir, "artifact-manifest.json"));
 const manifest = validateArtifactManifest(JSON.parse(manifestBytes.toString("utf8")));
-const token = validateReleaseEnvironment(process.env, channel, manifest.source_commit);
+const token = validateReleaseEnvironment(process.env, channel, manifest.source_commit, releaseTier);
 assertCurrentReleaseSource(manifest.source_commit, channel, git);
 
 const trustPolicy = await loadReleaseTrustPolicy(desktopRoot);
-const trust = validateTrustPolicy(trustPolicy);
+const trust = releaseTier === UNSIGNED_BETA_RELEASE_TIER
+  ? validateUnsignedBetaTrustPolicy(trustPolicy)
+  : validateTrustPolicy(trustPolicy);
 await validateInstallReceipt(manifest);
 
 const publicationDir = path.join(generatedDir, "publication");
@@ -50,15 +58,19 @@ const sourceFiles = {
   artifact: path.join(generatedDir, "artifact-manifest.json"),
   payload: path.join(nsisDir, manifest.payload_manifest.filename),
   installer: path.join(nsisDir, manifest.installer.filename),
-  executable: path.join(generatedDir, "signed-hivemind_desktop.exe")
+  executable: releaseTier === UNSIGNED_BETA_RELEASE_TIER
+    ? path.join(process.env.LOCALAPPDATA ?? "", "Hivemind AI", "hivemind_desktop.exe")
+    : path.join(generatedDir, "signed-hivemind_desktop.exe")
 };
 await Promise.all([
   verifyIdentity("payload manifest", sourceFiles.payload, manifest.payload_manifest),
   verifyIdentity("installer", sourceFiles.installer, manifest.installer),
-  verifyIdentity("signed executable", sourceFiles.executable, manifest.executable)
+  verifyIdentity(releaseTier === UNSIGNED_BETA_RELEASE_TIER ? "installed beta executable" : "signed executable", sourceFiles.executable, manifest.executable)
 ]);
 for (const [label, file] of [["installer", sourceFiles.installer], ["executable", sourceFiles.executable]]) {
-  assertAuthenticode(label, inspectWindowsSignature(file), trust);
+  const signature = inspectWindowsSignature(file);
+  if (releaseTier === UNSIGNED_BETA_RELEASE_TIER) assertUnsignedBeta(label, signature);
+  else assertAuthenticode(label, signature, trust);
 }
 
 const publicInstaller = path.join(publicationDir, names.installer);
@@ -67,7 +79,9 @@ const signature = await signUpdater(publicInstaller, trust.updaterPublicKey);
 const publicInstallerUrl = `https://github.com/${channel.repository}/releases/download/v${manifest.version}/${names.installer}`;
 const updaterManifestBytes = Buffer.from(stableJson({
   version: manifest.version,
-  notes: `Immutable Windows x64 artifact ${manifest.artifact_id}`,
+  notes: releaseTier === UNSIGNED_BETA_RELEASE_TIER
+    ? `Unsigned beta. ${trust.installNotice}`
+    : `Immutable Windows x64 artifact ${manifest.artifact_id}`,
   pub_date: new Date(manifest.generated_at_ms).toISOString(),
   platforms: {
     "windows-x86_64": { signature, url: publicInstallerUrl }
@@ -83,14 +97,20 @@ const assets = [
   { role: "updater", name: "latest.json", contentType: "application/json", bytes: updaterManifestBytes }
 ];
 const api = createGitHubApi({ channel, token });
+const presentation = buildReleasePresentation(manifest, {
+  releaseTier,
+  installNotice: trust.installNotice
+});
 const result = await publishDraftTransaction({
   api,
   manifest,
   assets,
+  presentation,
   buildDescriptor(uploaded) {
     return {
-      schema_version: 2,
+      schema_version: 3,
       kind: "hivemind-release-candidate",
+      release_tier: releaseTier,
       artifact_id: manifest.artifact_id,
       version: manifest.version,
       tag_name: `v${manifest.version}`,
@@ -102,7 +122,8 @@ const result = await publishDraftTransaction({
       updater_signature_url: uploaded.get("signature").url,
       updater_manifest_url: uploaded.get("updater").url,
       public_installer_url: uploaded.get("installer").browser_download_url,
-      updater_signature: signature
+      updater_signature: signature,
+      ...(releaseTier === UNSIGNED_BETA_RELEASE_TIER ? { install_notice: trust.installNotice } : {})
     };
   },
   async verifyDraft(candidateUrl) {
@@ -110,6 +131,7 @@ const result = await publishDraftTransaction({
       candidateUrl,
       localManifestBytes: manifestBytes,
       trustPolicy,
+      releaseTier,
       fetchImpl: api.authorizedFetch
     });
     assertCurrentReleaseSource(manifest.source_commit, channel, git);
@@ -119,10 +141,17 @@ await writeFileAtomically(path.join(generatedDir, "publication-receipt.json"), s
   schema_version: 1,
   kind: "hivemind-github-publication-receipt",
   ...result,
+  release_tier: releaseTier,
   source_commit: manifest.source_commit,
   published_at_ms: Date.now()
 }));
 console.log(`published verified release ${result.tag_name}: artifact ${result.artifact_id}, release ${result.release_id}`);
+
+function parseReleaseTier(argumentsList) {
+  if (argumentsList.length === 0) return PRODUCTION_RELEASE_TIER;
+  if (argumentsList.length === 1 && argumentsList[0] === "--unsigned-beta") return UNSIGNED_BETA_RELEASE_TIER;
+  throw new Error("release publisher accepts only the explicit --unsigned-beta tier override");
+}
 
 function publicNames(version) {
   return {

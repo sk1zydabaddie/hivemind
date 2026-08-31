@@ -3722,3 +3722,43 @@ still **3 open findings: 0 Critical, 3 High, 0 Medium, and 0 Low**. A protected
 updater key, real Windows code-signing certificate, and separately authorized
 qualified publication are external prerequisites. Until they exist, R2 and the
 product remain **NO-GO for public distribution**.
+
+## Unsigned beta release policy — prepared 2026-08-31
+
+The product owner has explicitly accepted an unsigned Windows beta until
+Hivemind exceeds **$200 MRR**. Windows publisher signing is deferred until that
+threshold; the existing production gate remains unchanged and still refuses a
+release without both updater and timestamped Authenticode signatures.
+
+A separate manual `beta-release` workflow now implements the accepted beta
+contract. It uses the same admission, build, exact local install, immutable
+draft, bounded remote download, updater-signature verification, source-head
+check, and rollback transaction as production. The beta verifier additionally
+requires the installer and executable to be exactly `NotSigned`; it cannot
+quietly treat another signature state as the disclosed beta. The GitHub release
+body carries the exact SmartScreen explanation, **More info → Run anyway**
+steps, official-source warning, and the admitted installer SHA-256.
+
+A fresh password-protected updater key pair was generated locally. The private
+key is not in the repository or this evidence record. Repository secret
+provisioning is pending the final sensitive-data transmission confirmation;
+until GitHub confirms both secrets and the public-key variable are stored, the
+beta workflow remains intentionally unusable. No beta was published and the
+public channel was not changed in this phase.
+
+No-paid validation passed Core (**966 passed, 2 skipped, 968 total**), Desktop
+(**374/374**), Rust (**61/61** for the application and **63/63** across the
+workspace), the **21/21** focused beta/publication regressions, both npm
+advisory graphs and RustSec with zero vulnerabilities across 483 Windows x64
+dependencies, the root and desktop production builds, all **44/44** production
+surface/viewport combinations, and `git diff --check`. No provider/model call,
+paid operation, signing operation, release draft, publication, or public-channel
+mutation ran.
+
+This changes the release decision from one undifferentiated NO-GO to two named
+states: **production distribution remains NO-GO** under G6/G7 and F6-17, while
+the separately disclosed unsigned beta path is code-complete but not yet
+provisioned or published. F6-14 remains open until an exact verified artifact is
+actually public. The desktop updater consumer also remains retired, so this key
+protects release artifacts and a future trust root; it does not claim existing
+clients can update themselves.

@@ -21,6 +21,7 @@
     "verify:reachable": "node tools/check-reachable.mjs",
     "release:local": "npm run tauri:build:signed && npm run install:local",
     "release:github": "npm run tauri:build:signed && npm run install:local && node scripts/publish-github-release.mjs",
+    "release:github:beta": "npm run ship && node scripts/publish-github-release.mjs --unsigned-beta",
     "verify:release": "node scripts/verify-release.mjs"
   },
   "dependencies": {

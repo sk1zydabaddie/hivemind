@@ -4,7 +4,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { sha256, stableJson } from "../scripts/artifact-integrity.mjs";
-import { downloadReleaseBytes, validateTrustPolicy, verifyRemoteCandidate } from "../scripts/release-verification.mjs";
+import {
+  downloadReleaseBytes,
+  UNSIGNED_BETA_INSTALL_NOTICE,
+  validateTrustPolicy,
+  validateUnsignedBetaTrustPolicy,
+  verifyRemoteCandidate
+} from "../scripts/release-verification.mjs";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -31,6 +37,35 @@ describe("release verification", () => {
     expect(result.artifact_id).toBe(fixture.manifest.artifact_id);
     expect(verifyUpdaterSignature).toHaveBeenCalledOnce();
     expect(inspectAuthenticode).toHaveBeenCalledTimes(2);
+  });
+
+  test("an updater-signed beta is admitted only when both Windows files are explicitly unsigned", async () => {
+    const fixture = await candidateFixture({ releaseTier: "unsigned-beta" });
+    const verifyUpdaterSignature = vi.fn(async () => undefined);
+    const inspectAuthenticode = vi.fn(async () => unsignedWindowsSignature());
+    const result = await verifyRemoteCandidate({
+      candidateUrl: fixture.url,
+      localManifestBytes: fixture.manifestBytes,
+      trustPolicy: configuredBetaPolicy(),
+      releaseTier: "unsigned-beta",
+      verifyUpdaterSignature,
+      inspectAuthenticode
+    });
+    expect(result.release_tier).toBe("unsigned-beta");
+    expect(verifyUpdaterSignature).toHaveBeenCalledOnce();
+    expect(inspectAuthenticode).toHaveBeenCalledTimes(2);
+  });
+
+  test("the beta policy cannot hide a Windows signature mismatch", async () => {
+    const fixture = await candidateFixture({ releaseTier: "unsigned-beta" });
+    await expect(verifyRemoteCandidate({
+      candidateUrl: fixture.url,
+      localManifestBytes: fixture.manifestBytes,
+      trustPolicy: configuredBetaPolicy(),
+      releaseTier: "unsigned-beta",
+      verifyUpdaterSignature: async () => undefined,
+      inspectAuthenticode: async () => validWindowsSignature()
+    })).rejects.toThrow("explicitly unsigned beta policy");
   });
 
   test("changed downloaded bytes never reach either signature check", async () => {
@@ -101,7 +136,7 @@ describe("release verification", () => {
   });
 });
 
-async function candidateFixture(options: { corruptInstaller?: boolean; crossOrigin?: boolean } = {}) {
+async function candidateFixture(options: { corruptInstaller?: boolean; crossOrigin?: boolean; releaseTier?: "production" | "unsigned-beta" } = {}) {
   const root = await mkdtemp(path.join(tmpdir(), "hivemind-release-test-"));
   const payload = Buffer.from(validPayloadManifest());
   const installer = Buffer.from("signed-installer-fixture");
@@ -138,7 +173,9 @@ async function candidateFixture(options: { corruptInstaller?: boolean; crossOrig
     writeFile(path.join(root, "setup.exe.sig"), signature),
     writeFile(path.join(root, "latest.json"), JSON.stringify({
       version: manifest.version,
-      notes: "fixture",
+      notes: (options.releaseTier ?? "production") === "unsigned-beta"
+        ? `Unsigned beta. ${UNSIGNED_BETA_INSTALL_NOTICE}`
+        : `Immutable Windows x64 artifact ${manifest.artifact_id}`,
       pub_date: "2026-08-29T00:00:00.000Z",
       platforms: {
         "windows-x86_64": { signature, url: "https://github.com/owner/repo/releases/download/v1.2.3/setup.exe" }
@@ -150,8 +187,9 @@ async function candidateFixture(options: { corruptInstaller?: boolean; crossOrig
     if (request.url === "/candidate.json") {
       const assetOrigin = options.crossOrigin ? "https://example.invalid" : origin;
       response.end(JSON.stringify({
-        schema_version: 2,
+        schema_version: 3,
         kind: "hivemind-release-candidate",
+        release_tier: options.releaseTier ?? "production",
         artifact_id: manifest.artifact_id,
         version: manifest.version,
         tag_name: `v${manifest.version}`,
@@ -163,7 +201,8 @@ async function candidateFixture(options: { corruptInstaller?: boolean; crossOrig
         updater_signature_url: `${assetOrigin}/setup.exe.sig`,
         updater_manifest_url: `${assetOrigin}/latest.json`,
         public_installer_url: "https://github.com/owner/repo/releases/download/v1.2.3/setup.exe",
-        updater_signature: signature
+        updater_signature: signature,
+        ...((options.releaseTier ?? "production") === "unsigned-beta" ? { install_notice: UNSIGNED_BETA_INSTALL_NOTICE } : {})
       }));
       return;
     }
@@ -182,13 +221,36 @@ function configuredPolicy() {
   return {
     schema_version: 1,
     kind: "hivemind-release-trust-policy",
+    release_tier: "production" as const,
     updater_public_key: "R".repeat(40),
     windows_publisher: { certificate_subject: "CN=Hivemind AI", certificate_thumbprint: "A".repeat(40) }
   };
 }
 
+function configuredBetaPolicy() {
+  const policy = {
+    schema_version: 1,
+    kind: "hivemind-release-trust-policy",
+    release_tier: "unsigned-beta" as const,
+    updater_public_key: "R".repeat(40),
+    windows_publisher: {
+      status: "deferred" as const,
+      certificate_subject: null,
+      certificate_thumbprint: null,
+      revisit_when_mrr_usd: 200
+    },
+    install_notice: UNSIGNED_BETA_INSTALL_NOTICE
+  };
+  expect(() => validateUnsignedBetaTrustPolicy(policy)).not.toThrow();
+  return policy;
+}
+
 function validWindowsSignature() {
   return { Status: "Valid", Subject: "CN=Hivemind AI", Thumbprint: "A".repeat(40), TimestampSubject: "CN=Timestamp Authority", TimestampThumbprint: "C".repeat(40) };
+}
+
+function unsignedWindowsSignature() {
+  return { Status: "NotSigned", Subject: null, Thumbprint: null, TimestampSubject: null, TimestampThumbprint: null };
 }
 
 function validPayloadManifest() {

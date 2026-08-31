@@ -53,6 +53,9 @@ describe("permanent update trust containment", () => {
     expect(packageJson.scripts["release:github"]).toBe(
       "npm run tauri:build:signed && npm run install:local && node scripts/publish-github-release.mjs"
     );
+    expect(packageJson.scripts["release:github:beta"]).toBe(
+      "npm run ship && node scripts/publish-github-release.mjs --unsigned-beta"
+    );
     const scriptPath = path.join(desktopRoot, "scripts", "publish-github-release.mjs");
     const result = spawnSync(process.execPath, [scriptPath], {
       cwd: desktopRoot,
@@ -76,7 +79,20 @@ describe("permanent update trust containment", () => {
     expect(workflow).toMatch(/^\s*cancel-in-progress: false\s*$/mu);
     expect(workflow).toMatch(/^\s*contents: write\s*$/mu);
     expect(workflow).toMatch(/^\s*run: npm run release:github\s*$/mu);
+    expect(workflow).toMatch(/^\s*HIVEMIND_RELEASE_TIER: "production"\s*$/mu);
     expect(workflow).toMatch(/Remove ephemeral publisher material/u);
     expect(workflow).toMatch(/if: always\(\)/u);
+  });
+
+  test("the unsigned beta is a separate manual protected workflow with no publisher-certificate substitute", async () => {
+    const workflow = await readFile(path.join(repoRoot, ".github", "workflows", "release-beta.yml"), "utf8");
+    expect(workflow).toMatch(/^\s*workflow_dispatch:\s*$/mu);
+    expect(workflow).not.toMatch(/^\s*(push|pull_request|schedule):/mu);
+    expect(workflow).toMatch(/^\s*if: github\.ref == 'refs\/heads\/master'\s*$/mu);
+    expect(workflow).toMatch(/^\s*environment: beta-release\s*$/mu);
+    expect(workflow).toMatch(/^\s*HIVEMIND_RELEASE_TIER: "unsigned-beta"\s*$/mu);
+    expect(workflow).toMatch(/^\s*run: npm run release:github:beta\s*$/mu);
+    expect(workflow).toMatch(/TAURI_SIGNING_PRIVATE_KEY/u);
+    expect(workflow).not.toMatch(/WINDOWS_CERTIFICATE_(BASE64|PASSWORD)|Import-PfxCertificate/u);
   });
 });
