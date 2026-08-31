@@ -5004,3 +5004,12 @@ The local artifact remains unsigned by design; updater signing occurs only
 inside the protected beta publication transaction, after exact installation
 has been proven.
 
+GitHub repository Actions provisioning completed on 2026-08-31 after explicit
+product-owner approval. The protected workflow now has the two repository
+secrets `TAURI_SIGNING_PRIVATE_KEY` and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, plus the non-secret repository variable
+`HIVEMIND_UPDATER_PUBLIC_KEY`. Verification was name-only. The temporary local
+four-file key bundle was deleted after GitHub confirmed all three entries. This
+provisions the beta transaction but does not publish a release or change the
+public channel; publication remains a separate authorized action.
+

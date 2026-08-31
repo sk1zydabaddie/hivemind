@@ -3740,11 +3740,13 @@ body carries the exact SmartScreen explanation, **More info → Run anyway**
 steps, official-source warning, and the admitted installer SHA-256.
 
 A fresh password-protected updater key pair was generated locally. The private
-key is not in the repository or this evidence record. Repository secret
-provisioning is pending the final sensitive-data transmission confirmation;
-until GitHub confirms both secrets and the public-key variable are stored, the
-beta workflow remains intentionally unusable. No beta was published and the
-public channel was not changed in this phase.
+key is not in the repository or this evidence record. On 2026-08-31, after the
+product owner's explicit transmission approval, GitHub confirmed the repository
+Actions secrets `TAURI_SIGNING_PRIVATE_KEY` and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` and the repository Actions variable
+`HIVEMIND_UPDATER_PUBLIC_KEY`. Verification inspected names and presence only,
+never secret values. The four-file temporary local key bundle was then deleted.
+No beta was published and the public channel was not changed in this phase.
 
 No-paid validation passed Core (**966 passed, 2 skipped, 968 total**), Desktop
 (**374/374**), Rust (**61/61** for the application and **63/63** across the
@@ -3766,8 +3768,8 @@ the exact installed artifact passes admission.
 
 This changes the release decision from one undifferentiated NO-GO to two named
 states: **production distribution remains NO-GO** under G6/G7 and F6-17, while
-the separately disclosed unsigned beta path is code-complete but not yet
-provisioned or published. F6-14 remains open until an exact verified artifact is
+the separately disclosed unsigned beta path is code-complete and provisioned
+but not published. F6-14 remains open until an exact verified artifact is
 actually public. The desktop updater consumer also remains retired, so this key
 protects release artifacts and a future trust root; it does not claim existing
 clients can update themselves.
