@@ -3755,6 +3755,15 @@ surface/viewport combinations, and `git diff --check`. No provider/model call,
 paid operation, signing operation, release draft, publication, or public-channel
 mutation ran.
 
+The committed source then passed the complete installed shipping path. Clean
+commit `e43c986f8b80` produced build **416.22458.41218** and immutable artifact
+`9d56195bf675f551875af16c2ef3fb8b7ddeba3de134c8d69fb47819abff2b63`.
+`ship` rebuilt the 4,464-file payload from 318 source inputs, produced the NSIS
+installer, installed it, and verified the installed Core, shell, pinned Node,
+and all managed bytes. This installed artifact is still intentionally unsigned;
+the beta signing key is used only by the protected publication workflow after
+the exact installed artifact passes admission.
+
 This changes the release decision from one undifferentiated NO-GO to two named
 states: **production distribution remains NO-GO** under G6/G7 and F6-17, while
 the separately disclosed unsigned beta path is code-complete but not yet

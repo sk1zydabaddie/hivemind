@@ -4997,3 +4997,10 @@ separate, installed-and-verified product change. At the revenue threshold, the
 beta exception is retired and the existing production workflow—not the beta
 workflow—must pass with the purchased publisher identity.
 
+Clean commit `e43c986f8b80` was also built and installed as
+**416.22458.41218**, artifact
+`9d56195bf675f551875af16c2ef3fb8b7ddeba3de134c8d69fb47819abff2b63`.
+The local artifact remains unsigned by design; updater signing occurs only
+inside the protected beta publication transaction, after exact installation
+has been proven.
+
