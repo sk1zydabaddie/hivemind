@@ -14,6 +14,7 @@ export function buildReleasePresentation(manifest: Record<string, any>, options:
   releaseTier: "production" | "unsigned-beta";
   installNotice?: string;
 }): { name: string; body: string };
+export function canonicalGitHubAssetUrl(repository: string, tag: string, assetName: string): string;
 export function assertCurrentReleaseSource(sourceCommit: string, channel: ReleaseChannel, runGit: (args: string[]) => string): void;
 export function createGitHubApi(options: { channel: ReleaseChannel; token: string; fetchImpl?: typeof fetch }): Record<string, (...args: any[]) => any>;
 export function publishDraftTransaction(options: {

@@ -5035,3 +5035,12 @@ gap before draft creation, after version **416.22606.14023** had built and
 installed successfully. The release tool now has positive wrapped-format,
 changed-byte, and unwrapped-format refusal tests.
 
+A GitHub draft's asset `browser_download_url` is not the future updater URL.
+Before publication GitHub names that route with a temporary `untagged-*` alias;
+after publication the stable route is derived from the admitted repository,
+version tag, and exact asset name. The private verifier downloads draft bytes
+through authenticated asset API URLs, but the updater manifest and release
+candidate must both bind the canonical post-publication route. Protected run
+**33409828628** exposed this distinction after exact installation of version
+**416.22660.12621** and rolled the draft back without changing public latest.
+

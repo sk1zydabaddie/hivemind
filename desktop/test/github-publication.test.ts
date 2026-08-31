@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   assertCurrentReleaseSource,
   buildReleasePresentation,
+  canonicalGitHubAssetUrl,
   publishDraftTransaction,
   validateReleaseChannel,
   validateReleaseEnvironment,
@@ -149,6 +150,14 @@ describe("GitHub draft publication", () => {
     expect(beta.body).toContain("More info → Run anyway");
     expect(beta.body).toContain(manifest.installer.sha256);
     expect(beta.body).toContain("do not run it");
+  });
+
+  test("the updater URL names the final tag rather than GitHub's temporary draft alias", () => {
+    const draftAlias = "https://github.com/owner/repo/releases/download/untagged-123/setup.exe";
+    const canonical = canonicalGitHubAssetUrl("owner/repo", "v416.1.2", "setup.exe");
+    expect(canonical).toBe("https://github.com/owner/repo/releases/download/v416.1.2/setup.exe");
+    expect(canonical).not.toBe(draftAlias);
+    expect(() => canonicalGitHubAssetUrl("owner/repo", "v416.1.2", "../setup.exe")).toThrow(/invalid/u);
   });
 
   test("the artifact source must be clean and the exact public branch head", () => {

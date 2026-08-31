@@ -3833,3 +3833,34 @@ the workspace), along with both production builds. The two Core daemon suites
 that remained alive during one interrupted concurrent run passed **17/17** in
 isolation; the clean full rerun then exited zero with the complete count above.
 No provider/model or other paid call ran.
+
+GitHub Actions run **33409828628** then built, admitted, and installed version
+**416.22660.12621** as artifact
+`08bdd20dd98c07352566202e97ac2f7046acc517e3aa781b97e8a2ec6e1127a5`,
+verifying all **4,464** managed files and the exact Core, shell, and pinned-Node
+identities. The wrapped Tauri signature passed the independent verifier. The
+private-draft verifier instead found a GitHub lifecycle distinction: an asset
+uploaded to a draft has a temporary `untagged-*` browser URL, while the updater
+manifest already and correctly names the immutable `v<version>` URL that exists
+after publication. The candidate descriptor had copied the temporary draft URL,
+so exact URL comparison failed with `remote updater manifest does not name the
+admitted signed installer`. The rollback transaction deleted the draft; the
+authenticated and anonymous release surfaces both remained exactly the old
+public `v26.818.803`.
+
+The release candidate now derives its public installer URL from the admitted
+repository, version tag, and exact asset name instead of trusting draft response
+metadata. Draft downloads used for byte verification remain authenticated asset
+API URLs. A regression distinguishes the temporary draft alias from the final
+tag URL and rejects path-bearing asset names. This correction is not counted as
+publication until a fresh protected run completes the private verification,
+publication, public-latest, and exact-asset checks.
+
+Pinned-runtime validation for the canonical-URL correction passed Core
+(**966 passed, 2 skipped, 968 total**), Desktop (**378/378**), and Rust
+(**61/61** application tests plus **3/3** release-tool tests, **64/64** across
+the workspace), including the **21/21** focused publication and release
+verification regressions and both production builds. A deliberately concurrent
+first Rust invocation overlapped Core's clean-build step and therefore found no
+Core `dist`; the ordered rerun after Core rebuilt that required input passed
+64/64. No provider/model or other paid call ran.

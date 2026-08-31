@@ -186,6 +186,15 @@ export function buildReleasePresentation(manifest, { releaseTier, installNotice 
   };
 }
 
+export function canonicalGitHubAssetUrl(repository, tag, assetName) {
+  if (typeof repository !== "string" || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository) ||
+      typeof tag !== "string" || tag.trim() === "" || tag.includes("/") ||
+      typeof assetName !== "string" || assetName.trim() === "" || assetName.includes("/") || assetName.includes("\\")) {
+    throw new Error("canonical GitHub asset URL received an invalid repository, tag, or asset name");
+  }
+  return `https://github.com/${repository}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(assetName)}`;
+}
+
 export async function publishDraftTransaction({ api, manifest, assets, buildDescriptor, verifyDraft, presentation }) {
   validatePresentation(presentation);
   const tag = `v${manifest.version}`;

@@ -12,6 +12,7 @@ import {
 import {
   assertCurrentReleaseSource,
   buildReleasePresentation,
+  canonicalGitHubAssetUrl,
   createGitHubApi,
   publishDraftTransaction,
   validateReleaseChannel,
@@ -76,7 +77,7 @@ for (const [label, file] of [["installer", sourceFiles.installer], ["executable"
 const publicInstaller = path.join(publicationDir, names.installer);
 await copyFile(sourceFiles.installer, publicInstaller);
 const signature = await signUpdater(publicInstaller, trust.updaterPublicKey);
-const publicInstallerUrl = `https://github.com/${channel.repository}/releases/download/v${manifest.version}/${names.installer}`;
+const publicInstallerUrl = canonicalGitHubAssetUrl(channel.repository, `v${manifest.version}`, names.installer);
 const updaterManifestBytes = Buffer.from(stableJson({
   version: manifest.version,
   notes: releaseTier === UNSIGNED_BETA_RELEASE_TIER
@@ -121,7 +122,10 @@ const result = await publishDraftTransaction({
       executable_url: uploaded.get("executable").url,
       updater_signature_url: uploaded.get("signature").url,
       updater_manifest_url: uploaded.get("updater").url,
-      public_installer_url: uploaded.get("installer").browser_download_url,
+      // Draft assets use a temporary `untagged-*` browser URL. The updater
+      // manifest and candidate must bind the immutable URL that exists after
+      // this exact draft is published under its admitted version tag.
+      public_installer_url: publicInstallerUrl,
       updater_signature: signature,
       ...(releaseTier === UNSIGNED_BETA_RELEASE_TIER ? { install_notice: trust.installNotice } : {})
     };
