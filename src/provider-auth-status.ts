@@ -81,12 +81,13 @@ export async function inspectProviderAuthentication(
       const spec = PROVIDER_AUTHENTICATION_STATUS_SPECS[provider.id];
       const authentication = providerAuthentication(provider.id);
       const command = authentication?.command[0] ?? null;
-      const installed = command === null ? null : await availability(command, { env: process.env });
+      const executableEnvironment = spawnEnvironment(process.env);
+      const installed = command === null ? null : await availability(command, { env: executableEnvironment });
       if (installed === false) {
         return {
           provider_id: provider.id,
           status: "missing",
-          detail: "The provider CLI is not installed or is not on PATH.",
+          detail: "The provider CLI could not be found. A desktop app by itself is not the command-line provider Hivemind runs.",
           installed: false
         };
       }
@@ -253,7 +254,7 @@ function runAuthenticationStatusProcess(
             error === null
               ? null
               : error.message.includes("ENOENT")
-                ? "The provider CLI is not installed or is not on PATH."
+                ? "The provider CLI could not be found on this computer."
                 : error.killed
                   ? "The provider login-status check took too long and was stopped."
                   : "The provider CLI could not report its login status."

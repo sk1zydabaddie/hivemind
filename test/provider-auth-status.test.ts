@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import {
   inspectProviderAuthentication,
-  parseAuthenticationStatus
+  parseAuthenticationStatus,
+  providerCommandAvailable
 } from "../src/provider-auth-status.js";
+import {
+  PROVIDER_AUTHENTICATION_STATUS_SPECS,
+  providerAuthentication
+} from "../src/agent-catalogue.js";
 
 test("provider login-status parsers keep malformed output distinct from sign-out", () => {
   assert.equal(parseAuthenticationStatus("codex-cli", "login-text", "Logged in using ChatGPT\n").status, "signed_in");
@@ -57,7 +62,7 @@ test("missing provider executables are detected before the wrapper status comman
   try {
     let statusCalls = 0;
     const view = await inspectProviderAuthentication(repo, {
-      availability: async (command) => command !== (process.platform === "win32" ? "codex.cmd" : "codex"),
+      availability: async (command) => command !== "codex",
       runner: async () => {
         statusCalls += 1;
         return { ok: true, stdout: "Logged in", stderr: "", reason: null };
@@ -69,5 +74,25 @@ test("missing provider executables are detected before the wrapper status comman
     assert.equal(statusCalls, 2, "the missing provider reached the cmd.exe wrapper status process");
   } finally {
     await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("Windows provider commands accept either vendor executables or package-manager shims", async (context) => {
+  if (process.platform !== "win32") {
+    context.skip("Windows PATHEXT behaviour");
+    return;
+  }
+  const root = await mkdtemp(path.join(tmpdir(), "hivemind-provider-command-test-"));
+  const bin = path.join(root, "bin");
+  try {
+    await mkdir(bin);
+    await writeFile(path.join(bin, "codex.exe"), "fixture", "utf8");
+    assert.equal(await providerCommandAvailable("codex", { env: { PATH: bin, PATHEXT: ".COM;.EXE;.BAT;.CMD" } }), true);
+    assert.equal(await providerCommandAvailable("codex.cmd", { env: { PATH: bin, PATHEXT: ".COM;.EXE;.BAT;.CMD" } }), false);
+    assert.equal(providerAuthentication("codex-cli")?.command[0], "codex");
+    assert.equal(PROVIDER_AUTHENTICATION_STATUS_SPECS["codex-cli"]?.invocation.includes("codex"), true);
+    assert.equal(PROVIDER_AUTHENTICATION_STATUS_SPECS["codex-cli"]?.invocation.includes("codex.cmd"), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });

@@ -43,10 +43,10 @@ export function corpusInvoke(model: string): string[] {
     "--json",
     "-"
   ];
-  /* Windows installs `codex.cmd` and cannot spawn it without an interpreter;
-     every other platform installs an executable `codex` on PATH. */
+  /* Windows may install either a shim or an executable. `cmd` resolves the
+     extensionless name through PATHEXT and can launch both. */
   return process.platform === "win32"
-    ? ["cmd.exe", "/d", "/s", "/c", "codex.cmd", ...args]
+    ? ["cmd.exe", "/d", "/s", "/c", "codex", ...args]
     : ["codex", ...args];
 }
 

@@ -67,8 +67,9 @@ export interface CatalogueAgent {
   invoke: string[] | null;
 }
 
-/* Windows spawns the CLI through cmd.exe because the installed entry points are
-   .cmd shims; POSIX invokes the binary directly. */
+/* Windows spawns the CLI through cmd.exe because some installed entry points
+   are .cmd shims. The command itself deliberately has no extension: cmd's
+   PATHEXT resolution then accepts either a shim or a vendor .exe. */
 /**
  * WHY THERE ARE NO `-c` OVERRIDES HERE ANY MORE. Measured 2026-08-23.
  *
@@ -156,7 +157,7 @@ function codexInvoke(model: string): string[] {
     "-"
   ];
   return process.platform === "win32"
-    ? ["cmd.exe", "/d", "/s", "/c", "codex.cmd", ...args]
+    ? ["cmd.exe", "/d", "/s", "/c", "codex", ...args]
     : ["codex", ...args];
 }
 
@@ -239,7 +240,7 @@ function claudeInvoke(model = "sonnet"): string[] {
     "acceptEdits"
   ];
   return process.platform === "win32"
-    ? ["cmd.exe", "/d", "/s", "/c", "claude.cmd", ...args]
+    ? ["cmd.exe", "/d", "/s", "/c", "claude", ...args]
     : ["claude", ...args];
 }
 
@@ -274,7 +275,7 @@ function openCodeInvoke(model = "opencode/deepseek-v4-flash-free"): string[] {
      Hivemind is supposed to have bounded. */
   const args = ["run", "--pure", "--format", "json", "--model", model];
   return process.platform === "win32"
-    ? ["cmd.exe", "/d", "/s", "/c", "opencode.cmd", ...args]
+    ? ["cmd.exe", "/d", "/s", "/c", "opencode", ...args]
     : ["opencode", ...args];
 }
 
@@ -343,7 +344,7 @@ function grokInvoke(model = "grok-4.6"): string[] {
     "{prompt_file}"
   ];
   return process.platform === "win32"
-    ? ["cmd.exe", "/d", "/s", "/c", "grok.cmd", ...args]
+    ? ["cmd.exe", "/d", "/s", "/c", "grok", ...args]
     : ["grok", ...args];
 }
 
@@ -358,7 +359,7 @@ function kimiInvoke(model = "kimi-code/kimi-for-coding"): string[] {
     "--prompt"
   ];
   return process.platform === "win32"
-    ? ["cmd.exe", "/d", "/s", "/c", "kimi.cmd", ...args]
+    ? ["cmd.exe", "/d", "/s", "/c", "kimi", ...args]
     : ["kimi", ...args];
 }
 
@@ -895,6 +896,36 @@ const PROVIDER_LABELS: Record<string, string> = {
   kimi: "Kimi Code"
 };
 
+/**
+ * Documented per-user Windows CLI locations that are not reliably inherited
+ * by a desktop-launched process. This belongs in the catalogue with the argv:
+ * both are provider-specific executable knowledge, and the rest of Core must
+ * remain provider-neutral.
+ */
+export const WINDOWS_PROVIDER_BIN_ENVIRONMENT: ReadonlyArray<{
+  variable: string;
+  suffix?: readonly string[];
+}> = [
+  { variable: "OPENCODE_INSTALL_DIR" },
+  { variable: "GROK_BIN_DIR" },
+  { variable: "KIMI_INSTALL_DIR" }
+];
+
+export const WINDOWS_PROVIDER_EXECUTABLE_LOCATIONS: ReadonlyArray<{
+  root: "user" | "local";
+  segments: readonly string[];
+  nestedExecutable?: string;
+}> = [
+  { root: "user", segments: [".opencode", "bin"] },
+  { root: "user", segments: [".grok", "bin"] },
+  { root: "user", segments: [".kimi-code", "bin"] },
+  {
+    root: "local",
+    segments: ["OpenAI", "Codex", "bin"],
+    nestedExecutable: "codex.exe"
+  }
+];
+
 /* Authentication belongs beside invocation because both are provider-specific
    executable knowledge. The command is intentionally fixed: the audited
    action accepts only a provider id and cannot turn this into a general shell.
@@ -905,27 +936,27 @@ const PROVIDER_LABELS: Record<string, string> = {
    that the provider can actually satisfy Hivemind's runtime contract. */
 const PROVIDER_AUTHENTICATION: Record<string, ProviderAuthentication> = {
   "codex-cli": {
-    command: [process.platform === "win32" ? "codex.cmd" : "codex", "login"],
+    command: ["codex", "login"],
     experience: "browser",
     detail: "Codex opens its ChatGPT sign-in in your browser. Finish there, then return to Hivemind and run the check."
   },
   claude: {
-    command: [process.platform === "win32" ? "claude.cmd" : "claude", "auth", "login"],
+    command: ["claude", "auth", "login"],
     experience: "browser",
     detail: "Claude Code opens its own account sign-in. Finish there, then return to Hivemind and run the check."
   },
   opencode: {
-    command: [process.platform === "win32" ? "opencode.cmd" : "opencode", "auth", "login"],
+    command: ["opencode", "auth", "login"],
     experience: "interactive",
     detail: "OpenCode asks which model provider to use in its own terminal and stores that provider's credential itself."
   },
   grok: {
-    command: [process.platform === "win32" ? "grok.cmd" : "grok", "login", "--oauth"],
+    command: ["grok", "login", "--oauth"],
     experience: "browser",
     detail: "Grok opens X.AI's OAuth sign-in in your browser. Finish there, then return to Hivemind and run the check."
   },
   kimi: {
-    command: [process.platform === "win32" ? "kimi.cmd" : "kimi", "login"],
+    command: ["kimi", "login"],
     experience: "device_code",
     detail: "Kimi starts its device-code sign-in in a separate terminal. The code and confirmation remain between Kimi and your browser."
   }
@@ -936,7 +967,7 @@ function readOnlyCliInvocation(
   args: readonly string[]
 ): readonly [string, ...string[]] {
   return process.platform === "win32"
-    ? ["cmd.exe", "/d", "/s", "/c", `${executable}.cmd`, ...args]
+    ? ["cmd.exe", "/d", "/s", "/c", executable, ...args]
     : [executable, ...args];
 }
 

@@ -178,7 +178,7 @@ async function resolveLayeredEndpoint(input: {
   let inspect: unknown;
   try {
     const argv = process.platform === "win32"
-      ? ["cmd.exe", ["/d", "/s", "/c", `${input.tool}.cmd`, "inspect", "--json"]] as const
+      ? ["cmd.exe", ["/d", "/s", "/c", input.tool, "inspect", "--json"]] as const
       : [input.tool, ["inspect", "--json"]] as const;
     const result = await execFileAsync(argv[0], argv[1], {
       cwd: input.repoRoot,

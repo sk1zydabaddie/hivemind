@@ -1,6 +1,9 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
+import { resolveAdapterInvocation } from "./adapter-command.js";
+import { spawnEnvironment } from "./spawn-environment.js";
+
 const execFileAsync = promisify(execFile);
 
 /**
@@ -78,14 +81,16 @@ export async function readAdapterVersion(
   cwd: string,
   timeoutMs = 20_000
 ): Promise<string | null> {
-  const argv = versionInvocation(invoke);
+  const environment = spawnEnvironment(process.env);
+  const argv = versionInvocation(resolveAdapterInvocation(invoke, environment));
   if (argv === null) return null;
   try {
     const result = await execFileAsync(argv[0]!, argv.slice(1), {
       cwd,
       timeout: timeoutMs,
       windowsHide: true,
-      maxBuffer: 1024 * 1024
+      maxBuffer: 1024 * 1024,
+      env: environment
     });
     return normalizeVersionOutput(`${result.stdout}\n${result.stderr}`);
   } catch (error: unknown) {

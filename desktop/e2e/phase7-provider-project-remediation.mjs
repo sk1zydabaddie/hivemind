@@ -19,6 +19,10 @@ const installedRoot = path.join(process.env.LOCALAPPDATA ?? "", "Hivemind AI");
 const installedBinary = path.join(installedRoot, "hivemind_desktop.exe");
 const installedAuth = path.join(installedRoot, "core", "dist", "src", "provider-auth-status.js");
 const evidenceDir = path.resolve("..", "docs", "evidence", `remediation-phase7-${installedVersion}`);
+const expectedInstalledProviders = (process.env.HIVEMIND_E2E_EXPECT_INSTALLED_PROVIDERS ?? "")
+  .split(",")
+  .map((entry) => entry.trim())
+  .filter(Boolean);
 
 let fixtureRoot;
 let driver;
@@ -28,7 +32,8 @@ const evidence = {
   installedVersion,
   viewport: { width: 1440, height: 900 },
   paidProviderCalls: 0,
-  missingProviders: {},
+  providerDiscovery: {},
+  expectedInstalledProviders,
   failedManualPath: {},
   nestedProject: {},
   secretRefusal: {},
@@ -55,7 +60,7 @@ try {
     windowsHide: true,
     env: { ...process.env, PATH: path.join(process.env.SystemRoot ?? "C:\\Windows", "System32") }
   });
-  evidence.missingProviders = JSON.parse(authOutput);
+  evidence.providerDiscovery = JSON.parse(authOutput);
 
   tauriDriver = spawn("tauri-driver", [], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   tauriDriver.stdout.on("data", (chunk) => driverLog.push(`stdout ${chunk}`));
@@ -125,7 +130,7 @@ try {
     markerBeforeControl: existsSync(path.join(fixtures.checkProject, "unexpected-auto-check.txt")),
     controlVisible: true
   };
-  const selection = await driver.executeScript(`return [...document.querySelectorAll('[aria-label^="Include "]')].map((node)=>({label:node.getAttribute('aria-label'),checked:node.getAttribute('aria-checked'),disabled:node.hasAttribute('disabled')}));`);
+  const selection = await driver.executeScript(`return [...document.querySelectorAll('[aria-label^="Include "]')].map((node)=>({label:node.getAttribute('aria-label'),checked:node.getAttribute('aria-checked'),disabled:node.hasAttribute('disabled'),rowText:node.closest('.border-b')?.innerText ?? null}));`);
   evidence.providers = {
     selection,
     noPreselection: selection.every((entry) => entry.checked === "false"),
@@ -150,9 +155,13 @@ try {
   await writeFile(path.join(evidenceDir, "driver.log"), driverLog.join(""), "utf8").catch(() => undefined);
 }
 
-const providerRows = Array.isArray(evidence.missingProviders.providers) ? evidence.missingProviders.providers : [];
+const providerRows = Array.isArray(evidence.providerDiscovery.providers) ? evidence.providerDiscovery.providers : [];
 assert.ok(providerRows.length >= 5);
-assert.ok(providerRows.every((entry) => entry.status === "missing" && entry.installed === false));
+for (const providerId of expectedInstalledProviders) {
+  const row = providerRows.find((entry) => entry.provider_id === providerId);
+  assert.equal(row?.installed, true, `${providerId} was not discovered from the installed app's minimal PATH`);
+  assert.notEqual(row?.status, "missing", `${providerId} was still reported missing`);
+}
 assert.equal(evidence.failedManualPath.dialogStillOpen, true);
 assert.equal(evidence.failedManualPath.retained.endsWith("does-not-exist"), true);
 assert.deepEqual(evidence.nestedProject, { sourceListed: true, generatedExcluded: true, projectFactsListed: true });

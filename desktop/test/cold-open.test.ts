@@ -295,7 +295,7 @@ describe("cold open", () => {
     expect(source).toMatch(/Not signed in/u);
     /* Missing, unreadable and unverifiable are different states; none is
        allowed to borrow the verified styling or the signed-out claim. */
-    expect(source).toMatch(/Not installed/u);
+    expect(source).toMatch(/CLI not found/u);
     expect(source).toMatch(/Sign-in not readable/u);
     /* And the reason is shown rather than found by clicking. The per-provider
        caveats are the capability contract made visible and are the best thing

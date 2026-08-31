@@ -52,7 +52,7 @@ export function providerStanding(
   provider: CatalogueProvider,
   authenticationStatus: ProviderAuthenticationStanding["status"]
 ): string {
-  return ["Checked here", "Signed in", "Not signed in", "Sign-in not readable", "Not installed", "Unreadable response", "Not checked yet", "Status check failed"][
+  return ["Checked here", "Signed in", "Not signed in", "Sign-in not readable", "CLI not found", "Unreadable response", "Not checked yet", "Status check failed"][
     providerStandingRank(provider, authenticationStatus)
   ]!;
 }
@@ -184,7 +184,7 @@ export function ProviderListRow({
             ) : (
               <ExternalLink aria-hidden="true" />
             )}
-            {authenticationBusy ? "Opening…" : authenticationStatus === "missing" || authenticationInstalled === false ? "Not installed" : "Sign in"}
+            {authenticationBusy ? "Opening…" : authenticationStatus === "missing" || authenticationInstalled === false ? "CLI not found" : "Sign in"}
           </Button>
         )}
         <span

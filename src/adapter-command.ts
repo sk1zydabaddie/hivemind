@@ -8,12 +8,10 @@ import path from "node:path";
  * is not the same everywhere the app can be started from.
  *
  * A terminal gets your shell's `PATH`, including whatever npm, Homebrew or nvm
- * added. A GUI launch does not. Windows hides this completely, because Explorer
- * hands GUI processes the full user `PATH` from the registry; macOS launchd
- * gives a Finder-launched `.app` four system directories and nothing else, and
- * a Linux `.desktop` launch inherits whatever the session manager had. So the
- * agent that works when you test it from a terminal is exactly the agent that
- * cannot be found when a person double-clicks the icon.
+ * added. A GUI launch may not. On Windows, Explorer can retain a stale PATH and
+ * Codex Desktop keeps its CLI in a versioned app directory that is not on the
+ * registered PATH at all. macOS launchd and Linux session managers have their
+ * own minimal-environment variants of the same problem.
  *
  * `node` already had an escape hatch on the shell side (`HIVEMIND_NODE_PATH`).
  * The agent had none, and it is the one that matters: without it the failure is
@@ -34,7 +32,7 @@ export interface AdapterCommandTarget {
  * `invoke[0]` is the program, except on Windows where it is `cmd.exe`.
  *
  * Windows cannot spawn a `.cmd` directly, so every generated Windows profile
- * reads `["cmd.exe", "/d", "/s", "/c", "codex.cmd", …]`. Overriding element
+ * reads `["cmd.exe", "/d", "/s", "/c", "codex", …]`. Overriding element
  * zero there would replace the interpreter rather than the agent, so the
  * element after the `/c` is the one that counts.
  */

@@ -210,7 +210,7 @@ describe("multiplier tier surfaces", () => {
        unchanged: the row states which fact it has and never a bare
        "Connected". */
     expect(providerList).toMatch(/providerStanding\(provider, authenticationStatus\)/u);
-    expect(providerList).toMatch(/"Checked here", "Signed in", "Not signed in", "Sign-in not readable", "Not installed", "Unreadable response", "Not checked yet", "Status check failed"/u);
+    expect(providerList).toMatch(/"Checked here", "Signed in", "Not signed in", "Sign-in not readable", "CLI not found", "Unreadable response", "Not checked yet", "Status check failed"/u);
     /* The weaker state says out loud that a model here may still refuse. */
     expect(providerList).toMatch(/a model here may still refuse/u);
     /* And the old unqualified claim is gone. */

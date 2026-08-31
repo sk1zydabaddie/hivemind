@@ -1,4 +1,11 @@
-import { REFUSED_ENVIRONMENT } from "./agent-catalogue.js";
+import { existsSync, readdirSync, statSync } from "node:fs";
+import path from "node:path";
+
+import {
+  REFUSED_ENVIRONMENT,
+  WINDOWS_PROVIDER_BIN_ENVIRONMENT,
+  WINDOWS_PROVIDER_EXECUTABLE_LOCATIONS
+} from "./agent-catalogue.js";
 
 export { REFUSED_ENVIRONMENT };
 
@@ -77,7 +84,86 @@ export function spawnEnvironment(
     if (refused.has(name) && !keepsAuthentication(name)) continue;
     built[name] = value;
   }
-  return { ...built, ...chosen };
+  return withProviderExecutablePath({ ...built, ...chosen });
+}
+
+/**
+ * Add the vendor-owned user bin directories a desktop-launched Windows app
+ * cannot reliably inherit.
+ *
+ * The existing PATH remains first: this is fallback discovery, not a way for
+ * Hivemind to override the command a person already runs. Every added path is
+ * either a documented per-user CLI install directory or the exact directory
+ * containing Codex Desktop's bundled `codex.exe`. No repository path is ever
+ * searched, and no executable is run during discovery.
+ */
+export function withProviderExecutablePath(
+  environment: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform
+): NodeJS.ProcessEnv {
+  if (platform !== "win32") return environment;
+
+  const result = { ...environment };
+  const existingPathKey = Object.keys(result).find((name) => name.toUpperCase() === "PATH");
+  const pathKey = existingPathKey ?? "PATH";
+  const current = (result[pathKey] ?? "").split(";").filter(Boolean);
+  const seen = new Set(current.map(normalizeWindowsDirectory));
+  const append = (directory: string | undefined): void => {
+    if (directory === undefined || !path.win32.isAbsolute(directory) || !existsSync(directory)) return;
+    const normalized = normalizeWindowsDirectory(directory);
+    if (seen.has(normalized)) return;
+    seen.add(normalized);
+    current.push(directory);
+  };
+
+  const home = environment.USERPROFILE;
+  const local = environment.LOCALAPPDATA;
+  for (const location of WINDOWS_PROVIDER_BIN_ENVIRONMENT) {
+    const base = environment[location.variable];
+    append(base === undefined || location.suffix === undefined
+      ? base
+      : path.win32.join(base, ...location.suffix));
+  }
+  append(environment.NVM_SYMLINK);
+  append(environment.PNPM_HOME);
+  append(environment.BUN_INSTALL === undefined ? undefined : path.win32.join(environment.BUN_INSTALL, "bin"));
+  append(environment.ChocolateyInstall === undefined ? undefined : path.win32.join(environment.ChocolateyInstall, "bin"));
+  append(environment.APPDATA === undefined ? undefined : path.win32.join(environment.APPDATA, "npm"));
+  append(home === undefined ? undefined : path.win32.join(home, "scoop", "shims"));
+  append(home === undefined ? undefined : path.win32.join(home, "bin"));
+  append(home === undefined ? undefined : path.win32.join(home, ".local", "bin"));
+  append(local === undefined ? undefined : path.win32.join(local, "Microsoft", "WindowsApps"));
+
+  for (const location of WINDOWS_PROVIDER_EXECUTABLE_LOCATIONS) {
+    const root = location.root === "user" ? home : local;
+    if (root === undefined) continue;
+    const directory = path.win32.join(root, ...location.segments);
+    if (location.nestedExecutable === undefined) append(directory);
+    else {
+      for (const nested of nestedExecutableDirectories(directory, location.nestedExecutable)) append(nested);
+    }
+  }
+
+  if (existingPathKey !== undefined || current.length > 0) result[pathKey] = current.join(";");
+  return result;
+}
+
+function nestedExecutableDirectories(root: string, executable: string): string[] {
+  try {
+    return readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.win32.join(root, entry.name))
+      .filter((directory) => existsSync(path.win32.join(directory, executable)))
+      .map((directory) => ({ directory, modified: statSync(path.win32.join(directory, executable)).mtimeMs }))
+      .sort((left, right) => right.modified - left.modified || left.directory.localeCompare(right.directory))
+      .map((entry) => entry.directory);
+  } catch {
+    return [];
+  }
+}
+
+function normalizeWindowsDirectory(directory: string): string {
+  return path.win32.resolve(directory).replace(/[\\/]+$/u, "").toLowerCase();
 }
 
 /**

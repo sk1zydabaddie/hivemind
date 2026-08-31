@@ -346,7 +346,7 @@ test("provider sign-in launches only the catalogue-owned command and returns no 
     assert.deepEqual(
       launched,
       process.platform === "win32"
-        ? ["grok.cmd", "login", "--oauth"]
+        ? ["grok", "login", "--oauth"]
         : ["grok", "login", "--oauth"]
     );
     assert.equal(launchedFrom, repo);

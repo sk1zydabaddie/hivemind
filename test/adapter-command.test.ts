@@ -18,7 +18,7 @@ import {
  */
 
 const POSIX = ["codex", "exec", "--model", "gpt-5.6-terra", "-"];
-const WINDOWS = ["cmd.exe", "/d", "/s", "/c", "codex.cmd", "exec", "--model", "gpt-5.6-terra", "-"];
+const WINDOWS = ["cmd.exe", "/d", "/s", "/c", "codex", "exec", "--model", "gpt-5.6-terra", "-"];
 
 test("the program that has to exist is the agent, not the interpreter in front of it", () => {
   assert.deepEqual(adapterCommandTarget(POSIX), {
@@ -31,7 +31,7 @@ test("the program that has to exist is the agent, not the interpreter in front o
      overriding it would replace the interpreter rather than the agent. */
   assert.deepEqual(adapterCommandTarget(WINDOWS), {
     index: 4,
-    program: "codex.cmd",
+    program: "codex",
     envVar: "HIVEMIND_CODEX_PATH"
   });
 });
@@ -89,7 +89,7 @@ test("Windows is told to run where rather than which", () => {
   const message = explainMissingAdapterProgram(WINDOWS, "win32");
   assert.notEqual(message, null);
   if (message === null) return;
-  assert.match(message, /`where codex\.cmd`/u);
+  assert.match(message, /`where codex`/u);
   /* The command, not the relative pronoun the sentence around it uses. */
   assert.equal(message.includes("`which"), false);
 });

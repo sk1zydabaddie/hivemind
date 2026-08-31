@@ -980,19 +980,20 @@ export async function startProviderAuthentication(
     data: { provider_id: providerId, operation: "sign_in" }
   });
   if (!started.ok) return { ok: false, reason: `could not record provider sign-in start: ${started.reason}` };
-  if (options.launcher === undefined && !(await providerCommandAvailable(command[0], { env: process.env }))) {
+  const authenticationEnvironment = spawnEnvironment(process.env, accountEnvironment(selected));
+  if (options.launcher === undefined && !(await providerCommandAvailable(command[0], { env: authenticationEnvironment }))) {
     const failed = await appendEvent(repoRoot, {
       type: "provider.setup_failed",
       task_id: null,
       data: { provider_id: providerId, operation: "sign_in", reason_code: "provider_cli_missing" }
     });
     if (!failed.ok) return { ok: false, reason: `the provider CLI is missing, and that failure could not be recorded: ${failed.reason}` };
-    return { ok: false, reason: `${providerId} is not installed or is not on PATH; no sign-in window was opened` };
+    return { ok: false, reason: `${providerId}'s command-line provider could not be found; no sign-in window was opened` };
   }
   try {
     await (options.launcher ?? launchAuthentication)(command, {
       cwd: repoRoot,
-      env: spawnEnvironment(process.env, accountEnvironment(selected))
+      env: authenticationEnvironment
     });
   } catch (cause) {
     const failed = await appendEvent(repoRoot, {

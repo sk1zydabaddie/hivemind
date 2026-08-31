@@ -939,7 +939,7 @@ function ConnectStep({
                           availableForProof
                             ? `Include ${provider.label} when connecting`
                             : standing?.status === "missing"
-                              ? `Install ${provider.label} before connecting it.`
+                              ? `Install the ${provider.label} CLI before connecting it.`
                               : `Sign in to ${provider.label} first — connecting runs it once, and it cannot run without a session.`
                         }
                         onCheckedChange={() => toggle(provider.id)}

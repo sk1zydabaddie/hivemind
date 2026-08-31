@@ -5055,3 +5055,27 @@ The publisher boundary is still deliberately unsigned and disclosed. This is
 a successful unsigned-beta transaction, not evidence that production
 Authenticode policy has passed.
 
+## A provider is present only when its CLI is reachable by the installed app
+
+The product does not orchestrate provider desktop applications. It starts the
+provider's command-line interface, so the provider board must describe that
+exact dependency. **CLI not found** is the absent state; **Not installed** is
+too broad and is false when a separate desktop application is installed.
+
+On Windows, provider commands are extensionless and run behind `cmd.exe`.
+PATHEXT then resolves either a package-manager `.cmd` shim or a vendor `.exe`;
+hard-coding one packaging format is forbidden. A desktop launch also cannot
+assume Explorer supplied the terminal's current PATH. The shared spawn
+environment may append existing documented per-user CLI directories and an
+exact vendor application bin that contains the expected executable, but:
+
+- the inherited PATH stays first;
+- project and current-working directories are never searched;
+- discovery itself runs nothing; and
+- status, sign-in, version, probing, endpoint inspection, and the real run use
+  the same resolution path.
+
+That last item is the guard against the recurring reachable-mechanism failure:
+if one surface can see a provider and another execution path cannot, the
+provider is not integrated yet.
+

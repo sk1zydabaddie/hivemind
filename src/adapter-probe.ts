@@ -877,11 +877,11 @@ export async function readGrokSession(
 async function grokIntegrationsEmpty(repoRoot: string, grokHome?: string): Promise<boolean> {
   try {
     const argv = process.platform === "win32"
-      ? ["cmd.exe", ["/d", "/s", "/c", "grok.cmd", "inspect", "--json"]] as const
+      ? ["cmd.exe", ["/d", "/s", "/c", "grok", "inspect", "--json"]] as const
       : ["grok", ["inspect", "--json"]] as const;
     const result = await execFileAsync(argv[0], argv[1], {
       cwd: repoRoot,
-      env: grokHome === undefined ? process.env : { ...process.env, GROK_HOME: grokHome },
+      env: spawnEnvironment(process.env, grokHome === undefined ? {} : { GROK_HOME: grokHome }),
       windowsHide: true,
       timeout: 60_000,
       maxBuffer: 8 * 1024 * 1024
@@ -1048,17 +1048,16 @@ async function readResolvedOpenCodeRules(
 ): Promise<Map<string, OpenCodeRule[]> | null> {
   let printed: string;
   try {
-    /* Windows installs the CLI as a .cmd shim, which cannot be spawned
-       directly -- the same trap that made a Linux clone hold three unusable
-       profiles. The platform branch belongs here for the same reason it
-       belongs in the invocation: it is a property of how the harness is
-       installed, not of what it does. */
+    /* Windows may install either a .cmd shim or a vendor executable. The
+       interpreter resolves the extensionless name through PATHEXT, using the
+       same desktop-safe provider environment as the real run. */
     const argv =
       process.platform === "win32"
-        ? ["cmd.exe", ["/d", "/s", "/c", "opencode.cmd", "agent", "list"]]
+        ? ["cmd.exe", ["/d", "/s", "/c", "opencode", "agent", "list"]]
         : ["opencode", ["agent", "list"]];
     const result = await execFileAsync(argv[0] as string, argv[1] as string[], {
       cwd: repoRoot,
+      env: spawnEnvironment(process.env),
       windowsHide: true,
       timeout: 60_000,
       maxBuffer: 4 * 1024 * 1024

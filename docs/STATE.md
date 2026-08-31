@@ -3899,3 +3899,32 @@ F6-17 remains open by explicit product policy: the beta has no Windows
 publisher identity until Hivemind exceeds **$200 MRR**. Production G6/G7 and
 production distribution therefore remain **NO-GO**; the disclosed, updater-
 signed unsigned beta is **GO**. No provider/model or other paid call ran.
+
+## Installed provider discovery follows the CLI, not the desktop app — 2026-08-31
+
+The Setup and Settings provider board could report **Not installed** for a CLI
+that the same person could run successfully. Two Windows assumptions caused the
+false negative: every provider command was forced to a `.cmd` package-manager
+shim even when the vendor shipped an `.exe`, and the desktop process trusted the
+PATH inherited from Explorer even though that PATH can be stale or omit a
+vendor-owned per-user bin directory. Codex Desktop additionally keeps
+`codex.exe` under a versioned application directory that is not registered on
+PATH.
+
+Provider commands are now extensionless behind `cmd.exe`, so Windows PATHEXT
+resolution accepts both package-manager shims and vendor executables. The one
+shared spawn environment keeps the inherited PATH first, then adds only
+existing, known per-user CLI locations and the exact nested Codex Desktop
+directory containing `codex.exe`. Status inspection, sign-in, version reads,
+capability probes, endpoint inspection, and real provider runs all consume that
+same environment instead of disagreeing about whether the CLI exists. No
+repository directory is searched and discovery does not execute a candidate.
+
+The label is now **CLI not found**. That is deliberately narrower than **Not
+installed**: Hivemind runs command-line providers, so an OpenCode desktop
+installation without the OpenCode CLI does not satisfy the runtime contract.
+On the verification machine, direct filesystem and command checks found Codex,
+Claude Code, and Grok CLIs; OpenCode Desktop was present but its CLI was not,
+and the Kimi CLI was not present. The installed screen must therefore show the
+first three as present/auth-checkable and the latter two as **CLI not found**.
+No provider or model call is required to establish any of those facts.
