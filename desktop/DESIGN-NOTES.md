@@ -5024,3 +5024,14 @@ Production still resolves and checks the full Authenticode certificate and
 timestamp identity. A runner convenience can no longer silence the distinct
 unsigned-beta fact, and it cannot weaken production publisher verification.
 
+Tauri's updater identity has two encoding layers. The public value embedded in
+configuration and the signature value carried by `latest.json` are base64
+envelopes around complete minisign text documents; they are not themselves raw
+minisign records. An independent verifier must first decode the Tauri envelope,
+require UTF-8, parse the inner key/signature document, and only then verify the
+artifact bytes. Accepting raw minisign text at that boundary would test a format
+the real updater never consumes. Protected run **33404166621** found this exact
+gap before draft creation, after version **416.22606.14023** had built and
+installed successfully. The release tool now has positive wrapped-format,
+changed-byte, and unwrapped-format refusal tests.
+

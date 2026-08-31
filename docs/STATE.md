@@ -3804,3 +3804,32 @@ Node-runner timeout instrument; the artifact's pinned Node 22.23.2 passed that
 test three consecutive isolated runs and the complete suite. The corrected
 source must still be committed, pushed, and pass a new protected workflow run
 before F6-14 or the beta-publication state changes.
+
+GitHub Actions run **33404166621** then proved that correction against commit
+`054e598ad8f7b7b4cdf6e91b231e15cf7c3cf143`. It passed dependency admission,
+the protected updater identity, all **44/44** reachability combinations, the
+Tauri/NSIS build, and exact local installation of version
+**416.22606.14023** as artifact
+`bf40c2f11f01f8aac1c72c27c9b430fb5625e1c995aaea7a8ce50042d9da7e99`
+with all **4,464** managed files verified. It exposed a second pre-publication
+boundary defect: the independent Rust verifier parsed the Tauri updater public
+key and `.sig` file as raw minisign text, but Tauri's wire format base64-wraps
+the complete minisign key and signature documents. Verification therefore
+refused valid signer output with `Invalid encoding in minisign data`. No draft
+was created and the public release list remained exactly `v26.818.803`.
+
+The independent verifier now decodes the Tauri base64 envelope, requires UTF-8,
+then parses and cryptographically verifies the inner minisign documents while
+streaming the artifact. Raw/unwrapped minisign input is deliberately refused at
+that boundary. Known wrapped bytes pass, changed artifact bytes fail, and
+unwrapped inputs fail in the release-tool regression suite. This correction is
+not counted as publication until it is committed and a fresh protected run
+passes the complete private-draft and public-latest transaction.
+
+Pinned-runtime validation after the wire-format correction passed Core
+(**966 passed, 2 skipped, 968 total**), Desktop (**377/377**), and Rust
+(**61/61** application tests plus **3/3** release-tool tests, **64/64** across
+the workspace), along with both production builds. The two Core daemon suites
+that remained alive during one interrupted concurrent run passed **17/17** in
+isolation; the clean full rerun then exited zero with the complete count above.
+No provider/model or other paid call ran.
