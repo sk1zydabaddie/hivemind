@@ -3928,3 +3928,14 @@ Claude Code, and Grok CLIs; OpenCode Desktop was present but its CLI was not,
 and the Kimi CLI was not present. The installed screen must therefore show the
 first three as present/auth-checkable and the latter two as **CLI not found**.
 No provider or model call is required to establish any of those facts.
+
+Clean commit `b2875f76a196` built and installed as **416.23056.31977**,
+artifact `e430525f2b2de2e38e86ddbc244b863f5136fe3433b080d88a51a2319f1927e4`,
+with all **4,464** managed files plus Core, shell, and pinned Node identities
+verified. The installed app was then launched with a minimal system PATH at
+1440x900. Its provider-scoped evidence reported Codex and Claude Code **Signed
+in**, Grok present with **Sign-in not readable**, and OpenCode and Kimi Code
+**CLI not found**. This matches the executables actually present on the
+machine. The run recorded zero severe WebView console entries and made zero
+provider/model calls. Screenshots and the row-level JSON are retained in
+`docs/evidence/remediation-phase7-416.23056.31977/`.
