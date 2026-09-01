@@ -4009,4 +4009,16 @@ passed that instrument **4/4** and the complete Core suite. No provider/model or
 other paid call ran. The installed reproduction correctly prevented a false
 closure. The boot-proof correction then passed Core (**961 passed, 2 skipped,
 963 total**), Desktop (**377/377**), and Rust (**64/64**) on the shipped pinned
-runtime. Its installed-artifact proof is still required.
+runtime.
+
+Clean commit `cb7f0354e00d` built and installed as **416.23196.55488**,
+artifact `f688465393e419ea8ae03b94c756c4aeecabc5dbfd86ecf5043f792e4756d7d4`,
+with all **4,458** managed files plus Core, shell, and pinned Node identities
+verified. The installed app opened the unchanged `D:\Projects\Test Game`
+record at 1440x900. The service error disappeared, **Set up the folder** reached
+**Done**, and the app wrote authenticated daemon record version 2 for a new
+`node.exe` PID 103596. PID 3028 remained the same live `svchost.exe` after the
+whole recovery. This proves both visible success and the negative safety
+condition: Hivemind retired only the stale record and never terminated the
+unrelated protected process. No provider/model or other paid call ran. The
+reused-PID setup dead end is closed.
