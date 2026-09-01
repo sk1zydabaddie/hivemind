@@ -5103,6 +5103,9 @@ same creation-time-versus-record-time disproof as attach and idleness:
 
 - a process created more than the bounded slack after `daemon.json` was written
   is provably not the daemon and receives no termination signal;
+- a record written more than that slack before the current operating-system
+  boot is also stale by construction, even when a protected process prevents
+  reading the creation time of the stranger now wearing its PID;
 - unreadable or ambiguous identity is not a disproof and therefore keeps the
   fail-closed path;
 - a process that was asked to stop must be definitely **Dead** before its record

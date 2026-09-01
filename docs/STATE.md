@@ -3989,10 +3989,24 @@ than ignored. Three focused Rust regressions cover the reused-PID, uncertain-
 liveness, and confirmed-death directions; the reused-PID check keeps the real
 unrelated fixture process alive while removing only `daemon.json`.
 
-Pinned-runtime validation passed Core (**961 passed, 2 skipped, 963 total**),
-Desktop (**377/377**), Rust (**63/63**), and all **44** production reachability
+Installed build **416.23175.59964** exposed a second layer before this finding
+could be closed. `svchost.exe` is protected from this unelevated app, so Windows
+refused the process-creation query as well as termination. The creation-time
+proof therefore returned “cannot tell,” and the first correction still reached
+the forbidden termination call. The same record also predated the current
+Windows boot by seven days—an independent proof the recorded daemon cannot
+still exist, because no process survives an OS boot. Restart now accepts either
+proof: a later process creation time, or a record written before the current
+boot, both with the existing two-minute clock slack. A fourth regression uses
+protected PID 4 with unreadable liveness and proves the termination callback is
+never reached when the record predates boot.
+
+Pinned-runtime validation for the first correction passed Core (**961 passed,
+2 skipped, 963 total**), Desktop (**377/377**), Rust (**63/63**), and all **44** production reachability
 surface/viewport combinations. The machine-wide Node 24 runner failed the
 pre-existing nested test-timeout instrument; the shipped pinned Node 22.23.2
 passed that instrument **4/4** and the complete Core suite. No provider/model or
-other paid call ran. Installed-artifact proof remains required before this
-finding is closed.
+other paid call ran. The installed reproduction correctly prevented a false
+closure. The boot-proof correction then passed Core (**961 passed, 2 skipped,
+963 total**), Desktop (**377/377**), and Rust (**64/64**) on the shipped pinned
+runtime. Its installed-artifact proof is still required.

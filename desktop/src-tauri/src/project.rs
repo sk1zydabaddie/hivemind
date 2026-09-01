@@ -487,7 +487,8 @@ where
                    (A-39), and refusing to write past a stranger forever is
                    the dead-end shape. Provably-an-impostor reads as dead;
                    anything unverifiable keeps the refusal. */
-                ProcessLiveness::Alive if daemon_record_impostor(&project_root, state.pid) => {}
+                ProcessLiveness::Alive
+                    if daemon_record_is_stale_or_impostor(&project_root, state.pid) => {}
                 ProcessLiveness::Alive | ProcessLiveness::Unknown => {
                     return Err(ProjectFault::new(
                         FAULT_DAEMON_UNAVAILABLE,
@@ -2258,7 +2259,7 @@ fn daemon_work_with(
            the recorded daemon unless the process wearing it is old enough to
            have written the record. */
         (true, ProcessLiveness::Alive)
-            if daemon_record_impostor(project_root, daemon_pid) =>
+            if daemon_record_is_stale_or_impostor(project_root, daemon_pid) =>
         {
             ProcessLiveness::Dead
         }
@@ -2453,14 +2454,15 @@ fn liveness_of(pid: Option<u32>) -> ProcessLiveness {
 /// already on disk and unconsulted: the daemon writes its record moments
 /// AFTER its own process starts, so a genuine daemon's process creation
 /// precedes the record. A process that started well after the record was
-/// written cannot be the daemon it names.
+/// written cannot be the daemon it names. Nor can a daemon whose record
+/// predates the current operating-system boot still be running.
 ///
-/// The asymmetry: this can only ever say "provably an impostor". A creation
-/// time that cannot be read, a record that cannot be statted, or anything
-/// within the slack keeps today's answer -- being wrong toward "not an
-/// impostor" merely preserves the existing refusal, while being wrong the
-/// other way reclaims a live daemon's project.
-fn daemon_record_impostor(project_root: &Path, pid: Option<u32>) -> bool {
+/// The asymmetry: this can only ever say "provably stale or an impostor". If
+/// neither creation time nor boot time proves that, a record that cannot be
+/// statted, or anything within the slack keeps today's answer -- being wrong
+/// toward "not disproven" merely preserves the existing refusal, while being
+/// wrong the other way reclaims a live daemon's project.
+fn daemon_record_is_stale_or_impostor(project_root: &Path, pid: Option<u32>) -> bool {
     let Some(pid) = pid else { return false };
     let record = project_root.join(".hivemind").join("daemon.json");
     let Ok(metadata) = fs::metadata(&record) else {
@@ -2469,13 +2471,25 @@ fn daemon_record_impostor(project_root: &Path, pid: Option<u32>) -> bool {
     let Ok(recorded_at) = metadata.modified() else {
         return false;
     };
-    let Some(process_started) = process_start_time(pid) else {
-        return false;
+    daemon_identity_is_disproven(recorded_at, process_start_time(pid), system_boot_time())
+}
+
+fn daemon_identity_is_disproven(
+    recorded_at: std::time::SystemTime,
+    process_started: Option<std::time::SystemTime>,
+    system_booted: Option<std::time::SystemTime>,
+) -> bool {
+    let well_after_record = |time: std::time::SystemTime| {
+        time.duration_since(recorded_at)
+            .map(|after| after > Duration::from_secs(120))
+            .unwrap_or(false)
     };
-    match process_started.duration_since(recorded_at) {
-        Ok(after) => after > Duration::from_secs(120),
-        Err(_) => false,
-    }
+    /* A process cannot survive an operating-system boot. This independent
+       proof matters for protected Windows services: PROCESS_QUERY can be
+       denied for the stranger wearing the reused PID even though the stale
+       daemon record predates the current boot by days. */
+    system_booted.map(well_after_record).unwrap_or(false)
+        || process_started.map(well_after_record).unwrap_or(false)
 }
 
 #[cfg(windows)]
@@ -2540,6 +2554,29 @@ fn process_start_time(pid: u32) -> Option<std::time::SystemTime> {
 
 #[cfg(not(any(windows, target_os = "linux")))]
 fn process_start_time(_pid: u32) -> Option<std::time::SystemTime> {
+    None
+}
+
+#[cfg(windows)]
+fn system_boot_time() -> Option<std::time::SystemTime> {
+    use windows_sys::Win32::System::SystemInformation::GetTickCount64;
+    std::time::SystemTime::now().checked_sub(Duration::from_millis(unsafe { GetTickCount64() }))
+}
+
+#[cfg(target_os = "linux")]
+fn system_boot_time() -> Option<std::time::SystemTime> {
+    let boot = fs::read_to_string("/proc/stat").ok()?;
+    let seconds: u64 = boot
+        .lines()
+        .find_map(|line| line.strip_prefix("btime "))?
+        .trim()
+        .parse()
+        .ok()?;
+    Some(std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(seconds))
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+fn system_boot_time() -> Option<std::time::SystemTime> {
     None
 }
 
@@ -2608,7 +2645,7 @@ where
        Identity is disproved before termination so recovery can never kill the
        stranger wearing that PID. Anything short of that proof keeps PL-1's
        fail-closed liveness handling. */
-    if !daemon_record_impostor(project_root, recorded_pid) {
+    if !daemon_record_is_stale_or_impostor(project_root, recorded_pid) {
         if let Some(pid) = recorded_pid {
             terminate(pid)
                 .map_err(|message| ProjectFault::new(FAULT_DAEMON_UNAVAILABLE, message))?;
@@ -4482,6 +4519,32 @@ mod idleness_tests {
             record.is_file(),
             "uncertain shutdown must keep the record and refuse a second writer"
         );
+        let _ = fs::remove_dir_all(&project);
+    }
+
+    #[test]
+    fn restart_after_reboot_never_terminates_the_protected_reused_pid() {
+        let project = project_with_reservation("restart-after-reboot", "settled");
+        record_daemon(&project, 4);
+        let record = project.join(".hivemind").join("daemon.json");
+        let before_boot = system_boot_time()
+            .and_then(|booted| booted.checked_sub(Duration::from_secs(3_600)))
+            .expect("supported test platform exposes a boot time");
+        let file = fs::OpenOptions::new().write(true).open(&record).unwrap();
+        file.set_modified(before_boot).unwrap();
+        drop(file);
+
+        retire_daemon_record_with(
+            &project,
+            Some(4),
+            &|_| panic!("a record from before this boot must not terminate its reused PID"),
+            &|_| ProcessLiveness::Unknown,
+            Duration::ZERO,
+            Duration::ZERO,
+        )
+        .unwrap();
+
+        assert!(!record.exists());
         let _ = fs::remove_dir_all(&project);
     }
 
