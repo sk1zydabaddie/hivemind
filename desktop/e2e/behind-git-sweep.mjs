@@ -144,7 +144,7 @@ async function main() {
 
   /* ── a provider that is refused by name ── */
   console.log("\n=== 5. pressing a provider whose model is prohibited");
-  for (const label of ["Use OpenCode", "Use Kimi Code"]) {
+  for (const label of ["Use OpenCode"]) {
     if (await click(label)) {
       console.log(`  clicked ${label}`);
       await new Promise((resolve) => setTimeout(resolve, 3500));

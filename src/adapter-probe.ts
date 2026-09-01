@@ -417,8 +417,6 @@ export async function probeAdapter(
           ? async (out: string) => readOpenCodePermissions(out, repoRoot)
           : agent.readback === "grok-session"
             ? async (out: string) => readGrokSession(out, repoRoot)
-            : agent.readback === "kimi-session"
-              ? async (out: string) => readKimiSession(out, repoRoot)
           : async () => null);
   const readback = observation.stdout === "" ? null : await readbackFn(observation.stdout);
 
@@ -466,16 +464,13 @@ export async function probeAdapter(
      sandbox, because a read-only run reports success and writes nothing. */
   const wantedSandbox = requestedSandbox(profile.invoke);
   capabilities.push(
-    observation.wroteNonceFile &&
-      (readback?.sandbox === "workspace-write" || readback?.sandbox === "hivemind-bounded-files")
+    observation.wroteNonceFile && readback?.sandbox === "workspace-write"
       ? capability(
           "confined_to_project",
           "Can write in this project, and only here",
           true,
           "verified",
-          readback.sandbox === "hivemind-bounded-files"
-            ? "It reported exactly Hivemind's project-bounded file tools with the built-ins denied, and the canary write through that server is on disk."
-            : `It reported a ${readback.sandbox} sandbox rooted at this project, and the file it was asked to write is on disk.`,
+          `It reported a ${readback.sandbox} sandbox rooted at this project, and the file it was asked to write is on disk.`,
           wantedSandbox,
           readback.sandbox,
           "readback"
@@ -637,9 +632,8 @@ export async function probeAdapter(
     tool: agent.harness,
     invoke: profile.invoke,
     /* The same selected account home and scrubbed environment the provider
-       actually received. Looking at `process.env` here verified the default
-       Kimi endpoint while the run itself used an alternate provider from a
-       different account home. */
+       actually received. Looking at `process.env` here can verify a default
+       endpoint while the run itself uses an alternate account home. */
     environment: spawnEnvironment(process.env, options.accountEnv ?? {}),
     repoRoot
   });
@@ -895,54 +889,6 @@ async function grokIntegrationsEmpty(repoRoot: string, grokHome?: string): Promi
   }
 }
 
-/**
- * Kimi reports the exact bound profile and tool snapshot in wire.jsonl.
- * Its file tools nevertheless accept absolute paths outside cwd, so this
- * readback can prove the shell/sub-agent denial but must not call cwd a
- * workspace sandbox.
- */
-export async function readKimiSession(stdout: string, repoRoot?: string): Promise<ProbeReadback | null> {
-  const session = jsonLineRecords(stdout).reverse().find((record) => record.type === "hivemind.kimi.session");
-  if (session === undefined || !isRecord(session.state) || !isRecord(session.profile) || !isRecord(session.tools)) return null;
-  const profile = session.profile;
-  const state = session.state;
-  const active = Array.isArray(profile.activeToolNames)
-    ? profile.activeToolNames.filter((entry): entry is string => typeof entry === "string").sort()
-    : [];
-  const snapshot = Array.isArray(session.tools.tools)
-    ? session.tools.tools
-        .filter(isRecord)
-        .map((tool) => tool.name)
-        .filter((name): name is string => typeof name === "string")
-        .sort()
-    : [];
-  const expected = [
-    "mcp__hivemind_files__list_files",
-    "mcp__hivemind_files__read_file",
-    "mcp__hivemind_files__replace_in_file",
-    "mcp__hivemind_files__search_files",
-    "mcp__hivemind_files__write_file"
-  ];
-  const denied = Array.isArray(profile.disallowedTools)
-    ? profile.disallowedTools.filter((entry): entry is string => typeof entry === "string")
-    : [];
-  const subagents = Array.isArray(profile.subagents) ? profile.subagents : null;
-  const exact = active.length === expected.length && active.every((tool, index) => tool === expected[index]) &&
-    snapshot.length === expected.length && snapshot.every((tool, index) => tool === expected[index]) &&
-    ["Bash", "Agent", "AgentSwarm", "Read", "Write", "Edit", "Grep", "Glob"].every((tool) => denied.includes(tool)) && subagents?.length === 0;
-  const cwd = typeof state.cwd === "string" ? state.cwd : null;
-  const rootedHere = cwd !== null && (repoRoot === undefined || path.resolve(cwd) === path.resolve(repoRoot));
-  return {
-    source: "Kimi wire profile.bind + llm.tools_snapshot",
-    model: typeof profile.modelAlias === "string" ? profile.modelAlias : null,
-    sandbox: exact && rootedHere ? "hivemind-bounded-files" : null,
-    approvalPolicy: exact && rootedHere ? "exact bounded MCP tools; built-ins denied" : null,
-    workspaceRoots: cwd === null ? [] : [cwd],
-    subagents: exact ? "none" : null,
-    version: jsonLineRecords(stdout).find((record) => record.type === "system.version" && typeof record.version === "string")?.version as string | undefined
-  };
-}
-
 function jsonLineRecords(stdout: string): Record<string, unknown>[] {
   const records: Record<string, unknown>[] = [];
   for (const line of stdout.split(/\r?\n/u)) {
@@ -1165,17 +1111,6 @@ export function readModelAttribution(
         models.push({ model, tokens: total });
       }
       return models.length === 0 ? null : models;
-    }
-    return null;
-  }
-  if (parser === "kimi-wire") {
-    for (const record of jsonLineRecords(stdout).reverse()) {
-      if (record.type !== "hivemind.kimi.session" || !Array.isArray(record.requests) || !isRecord(record.usage)) continue;
-      const models = new Set(
-        record.requests.filter(isRecord).map((request) => request.model).filter((model): model is string => typeof model === "string")
-      );
-      const total = typeof record.usage.total_tokens === "number" ? record.usage.total_tokens : 0;
-      return models.size === 1 ? [{ model: [...models][0]!, tokens: total }] : null;
     }
     return null;
   }

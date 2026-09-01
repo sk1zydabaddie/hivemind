@@ -37,17 +37,6 @@ const providers: CatalogueProvider[] = [
     connectable: true,
     authentication: { experience: "browser", detail: "Provider-owned sign-in" },
     checked_here: false
-  },
-  {
-    id: "kimi",
-    label: "Kimi Code",
-    subscription: "Kimi",
-    status: "unverified",
-    caveat: "No invocation",
-    pins_model: false,
-    connectable: false,
-    authentication: { experience: "device_code", detail: "Provider-owned sign-in" },
-    checked_here: false
   }
 ];
 
@@ -70,17 +59,6 @@ const models: CatalogueModelView[] = [
     label: "Whatever the harness chooses",
     routing_tier: "standard",
     context_window: 200000,
-    price: null,
-    price_stale: null,
-    price_age_days: null
-  },
-  {
-    agent_id: "kimi-code",
-    provider_id: "kimi",
-    slug: null,
-    label: "Whatever the harness chooses",
-    routing_tier: "standard",
-    context_window: 256000,
     price: null,
     price_stale: null,
     price_age_days: null
@@ -116,31 +94,20 @@ describe("provider connection planning", () => {
     ]);
   });
 
-  test("an unavailable provider never becomes a dead probe action", () => {
-    const plan = planProviderConnections({
-      chosen: new Set(["kimi"]),
-      providers,
-      models,
-      recommendations,
-      remainingRoles: ["planner", "manager", "worker"]
-    });
-    expect(plan).toEqual([]);
-  });
-
   test("no provider is preselected for a paid check", () => {
     expect([...initialProviderSelection()]).toEqual([]);
   });
 
-  test("an installed unverifiable provider can receive an explicit bounded proof without becoming signed in", () => {
+  test("an installed signed-out provider asks for sign-in instead of offering a paid proof", () => {
     const grok = { ...providers[1]!, id: "grok", label: "Grok Build" };
     expect(providerCanBeSelectedForProof(grok, {
       provider_id: "grok",
-      status: "unverifiable",
+      status: "signed_out",
       installed: true,
-      detail: "No safe status command"
-    })).toBe(true);
-    expect(providerIsConnected(grok, "unverifiable")).toBe(false);
-    expect(providerStanding(grok, "unverifiable")).toBe("Sign-in not readable");
+      detail: "The CLI reports no active sign-in"
+    })).toBe(false);
+    expect(providerIsConnected(grok, "signed_out")).toBe(false);
+    expect(providerStanding(grok, "signed_out")).toBe("Not signed in");
     expect(providerCanBeSelectedForProof(grok, {
       provider_id: "grok",
       status: "missing",

@@ -17,6 +17,21 @@ needs review, budget ran low.
 Every layout decision below follows from that. When a surface starts asking for
 a third decision, it is probably in the wrong place.
 
+## Provider presence and sign-in are separate facts
+
+The setup list contains the four supported CLI harnesses: Codex, Claude Code,
+OpenCode and Grok Build. Kimi Code is retired as a direct harness and must not
+remain as a hidden catalogue entry, stale mark, generated profile, or inactive
+connection path. Moonshot appearing inside OpenCode's provider picker is an
+OpenCode backend and not a fifth Hivemind harness.
+
+For Grok, executable presence still comes from shared CLI discovery. Sign-in
+comes from the CLI's read-only model-list response. The signed-out sentence
+wins over cached model headings; otherwise both expected headings are required
+before the UI may say `Signed in`. Unrecognised output is `malformed`, never a
+guess. This keeps the sign-in button and checkmark driven by Core's typed
+standing rather than React inference, and it reads no credential material.
+
 ## Why the Work tab is a thread
 
 The Work tab was a monitoring dashboard with a prompt bolted on. Two passes of

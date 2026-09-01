@@ -60,17 +60,7 @@ test("a harness that denies on the command line is left alone", async () => {
     assert.equal(outcome.written, null, `${harness} should need no project file`);
     assert.equal(outcome.keptExisting, null);
   }
-  assert.deepEqual(Object.keys(HARNESS_PROJECT_CONFIG), ["opencode", "kimi"]);
-});
-
-test("Kimi gets a launch-specific file-only agent profile", async () => {
-  const root = await scratch();
-  const outcome = await ensureHarnessProjectConfig(root, "kimi");
-  assert.equal(outcome.written, ".hivemind/kimi-agent.md");
-  const profile = await readFile(path.join(root, ".hivemind", "kimi-agent.md"), "utf8");
-  assert.match(profile, /tools:\s+[\s\S]*mcp__hivemind_files__read_file[\s\S]*mcp__hivemind_files__write_file/u);
-  assert.match(profile, /disallowedTools:\s+[\s\S]*- Bash[\s\S]*- Agent[\s\S]*- AgentSwarm[\s\S]*- Read[\s\S]*- Write/u);
-  assert.match(profile, /subagents: \[\]/u);
+  assert.deepEqual(Object.keys(HARNESS_PROJECT_CONFIG), ["opencode"]);
 });
 
 /* The write is a side effect on somebody's source tree, so it has to be

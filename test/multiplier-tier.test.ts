@@ -97,7 +97,7 @@ test("judgement: prohibited refuses by name, unchecked warns, unknown stays unch
 
 test("the two support claims are distinguishable and attached to the right harnesses", () => {
   assert.equal(supportTierForHarness("opencode"), "multiplier");
-  for (const harness of ["codex-cli", "claude", "grok", "kimi"]) {
+  for (const harness of ["codex-cli", "claude", "grok"]) {
     assert.equal(supportTierForHarness(harness), "integrated", harness);
   }
   const providers = catalogueProviders();
@@ -328,18 +328,26 @@ test("installed is a typed fact from the executable itself, not from a wrapper s
         if (spec.kind === "credential-count") {
           return { ok: false, stdout: "", stderr: "", reason: "The provider CLI is not installed or is not on PATH.", notInstalled: true };
         }
-        return { ok: true, stdout: spec.kind === "login-text" ? "Logged in\n" : '{"loggedIn":true}', stderr: "", reason: null };
+        return {
+          ok: true,
+          stdout: spec.kind === "login-text"
+            ? "Logged in\n"
+            : spec.kind === "headed-model-list"
+              ? "Default model: grok-4.6\nAvailable models:\n  grok-4.6\n"
+              : '{"loggedIn":true}',
+          stderr: "",
+          reason: null
+        };
       },
       availability: async (command) => command[0]?.toLowerCase().includes("opencode") !== true
     });
     const byId = new Map(view.providers.map((provider) => [provider.provider_id, provider]));
     assert.equal(byId.get("opencode")?.installed, false);
     assert.equal(byId.get("codex-cli")?.installed, true);
-    /* A provider with no safe account-status command can still prove whether
-       its actual executable is present; only its SIGN-IN standing remains
-       unverifiable. */
+    /* Grok's own read-only model listing proves both executable presence and
+       sign-in standing without reading its credential store. */
     assert.equal(byId.get("grok")?.installed, true);
-    assert.equal(byId.get("grok")?.status, "unverifiable");
+    assert.equal(byId.get("grok")?.status, "signed_in");
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

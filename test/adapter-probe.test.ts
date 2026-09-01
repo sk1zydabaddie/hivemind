@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { probeAdapter, probeInvocation, readGrokSession, readKimiSession, requestedModel, type ProbeObservation } from "../src/adapter-probe.js";
+import { probeAdapter, probeInvocation, readGrokSession, requestedModel, type ProbeObservation } from "../src/adapter-probe.js";
 import { findCatalogueAgent } from "../src/agent-catalogue.js";
 import { buildProfileForAgent, connectAdapter } from "../src/config-actions.js";
 import type { AdapterProfile } from "../src/adapter.js";
@@ -39,39 +39,6 @@ test("Grok readback requires the exact file tools, empty integrations, and works
   const terminal = stdout.replace('"write"]', '"write","run_terminal_command"]');
   assert.equal((await readGrokSession(terminal, "D:/repo", async () => true))?.sandbox, null);
   assert.equal((await readGrokSession(stdout, "D:/repo", async () => false))?.sandbox, null);
-});
-
-test("Kimi readback verifies only the exact Hivemind-bounded tool snapshot", async () => {
-  const bounded = [
-    "mcp__hivemind_files__read_file",
-    "mcp__hivemind_files__write_file",
-    "mcp__hivemind_files__replace_in_file",
-    "mcp__hivemind_files__list_files",
-    "mcp__hivemind_files__search_files"
-  ];
-  const stdout = [
-    JSON.stringify({ type: "system.version", version: "0.36.1" }),
-    JSON.stringify({
-      type: "hivemind.kimi.session",
-      state: { cwd: "D:/repo" },
-      profile: {
-        modelAlias: "kimi-code/kimi-for-coding",
-        activeToolNames: bounded,
-        disallowedTools: ["Bash", "Agent", "AgentSwarm", "Read", "Write", "Edit", "Grep", "Glob"],
-        subagents: []
-      },
-      tools: { tools: bounded.map((name) => ({ name })) }
-    })
-  ].join("\n");
-  const readback = await readKimiSession(stdout);
-  assert.equal(readback?.model, "kimi-code/kimi-for-coding");
-  assert.equal(readback?.sandbox, "hivemind-bounded-files");
-  assert.match(readback?.approvalPolicy ?? "", /exact bounded MCP tools/u);
-  assert.equal(readback?.subagents, "none");
-  assert.equal(readback?.version, "0.36.1");
-
-  const unsafe = stdout.replace("mcp__hivemind_files__read_file", "Read");
-  assert.equal((await readKimiSession(unsafe))?.sandbox, null);
 });
 
 /* A clean harness home for the whole file.
@@ -310,22 +277,6 @@ test("a passed probe writes the profile and the capabilities it proved", async (
     ) as { agent_id: string; capabilities: unknown[] };
     assert.equal(record.agent_id, "codex-terra");
     assert.ok(record.capabilities.length >= 5);
-  } finally {
-    await rm(repo, { recursive: true, force: true });
-  }
-});
-
-/* A complete profile is not a claim that the hosted account exists. */
-test("Kimi remains fail-closed when its account-backed run cannot start", async () => {
-  const repo = await scratch();
-  try {
-    const kimi = await connectAdapter(repo, "worker", "kimi-code", {
-      runner: async () => observation({ ok: false, reason: "no Kimi provider is configured", exitCode: 1, wroteNonceFile: false }),
-      readback: async () => null
-    });
-    assert.equal(kimi.ok, false);
-    assert.match(kimi.reason, /could not be connected|no Kimi provider/u);
-    assert.equal(await readFile(path.join(repo, ".hivemind", "kimi-agent.md"), "utf8").then(() => true), true);
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

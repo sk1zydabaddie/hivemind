@@ -156,11 +156,6 @@ async function main(argv: string[]): Promise<number> {
     return mcpCommand(process.cwd(), rest);
   }
 
-  if (command === "files-mcp" && rest.length === 0) {
-    const { boundedFilesMcpCommand } = await import("./bounded-files-mcp.js");
-    return boundedFilesMcpCommand(process.cwd());
-  }
-
   if (command === "lease") {
     return leaseCommand(process.cwd(), rest);
   }

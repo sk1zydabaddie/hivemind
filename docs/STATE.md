@@ -11,6 +11,26 @@ The rule this file exists to serve: **a claim without evidence is a plan.**
 
 ## 1. What works, with the evidence
 
+### Grok sign-in is readable; the direct Kimi integration is retired
+
+Grok CLI 1.0.4 has no dedicated status command, but its read-only `models`
+command reports `You are not authenticated.` when signed out. It may print a
+cached model catalogue in the same response, so that explicit negative marker
+must win; only a successful response containing both the default-model and
+available-model headings without the negative marker counts as signed in.
+Hivemind reduces that provider-owned output to typed standing and never reads
+or returns the CLI's credential file. The regression fixture includes the
+misleading cached-list-plus-signed-out response. No model-generation call is
+needed to refresh the setup screen.
+
+The direct Kimi Code provider has been removed by product decision. This is a
+catalogue removal, not a hidden row: its adapter profile, invocation, session
+readback and usage parsers, generated project profile, account-home surface,
+dedicated bounded-file MCP command/server, Windows discovery path, brand asset,
+and active desktop checks were removed together. Moonshot remains available as
+an explicitly sanctioned inner provider selected inside OpenCode; that does not
+restore the retired Kimi CLI harness.
+
 ### A clean install reaches a shipped commit with no terminal
 
 `docs/evidence/e2e-2026-08-11-firstrun-noterminal/`

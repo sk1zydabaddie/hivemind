@@ -553,7 +553,7 @@ describe("React workspace boundary", () => {
        see the provenance rule in DESIGN-NOTES. */
     expect(catalogue).toMatch(/live Claude Code 2\.1\.233 probe verified all nine/u);
     expect(catalogue).toMatch(/completed paid 4\.6 probe[\s\S]{0,160}verified all nine capabilities/u);
-    expect(catalogue).toMatch(/project-bounded file server[\s\S]{0,300}hosted provider run/u);
+    expect(catalogue).not.toMatch(/id: "kimi-code"|harness: "kimi"/u);
 
     /* Hivemind is an ADE: the agent is a harness plus the subscription that
        pays for it, and Hivemind never asks for a key of its own. */

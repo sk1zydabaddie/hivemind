@@ -59,7 +59,7 @@ test("safe plain-text progress remains visible", () => {
   assert.deepEqual(decoder.push("Inspecting project files"), [{ activity: "Inspecting project files" }]);
 });
 
-test("Claude, Grok-compatible, OpenCode, and Kimi shapes normalize without leaking envelopes", () => {
+test("Claude, Grok-compatible, and OpenCode shapes normalize without leaking envelopes", () => {
   const decoder = new AgentStreamDecoder();
   const visible = [
     ...decoder.push('{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read"}]}}\n'),

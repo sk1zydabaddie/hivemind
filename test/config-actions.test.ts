@@ -325,7 +325,7 @@ test("provider rows distinguish product evidence from a current project check", 
     assert.equal(providers.find((provider) => provider.id === "codex-cli")?.checked_here, true);
     assert.equal(providers.find((provider) => provider.id === "claude")?.checked_here, false);
     assert.equal(providers.find((provider) => provider.id === "grok")?.connectable, true);
-    assert.equal(providers.find((provider) => provider.id === "kimi")?.connectable, true);
+    assert.equal(providers.some((provider) => provider.id === "kimi"), false);
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

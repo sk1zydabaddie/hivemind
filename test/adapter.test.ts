@@ -169,7 +169,7 @@ test("validateAdapterProfile rejects unknown provider usage parsers", () => {
       },
       "fake"
     ),
-    ["usage_parser must be one of codex-jsonl, codex-text, claude-json, opencode-json, grok-json, kimi-wire when provided"]
+    ["usage_parser must be one of codex-jsonl, codex-text, claude-json, opencode-json, grok-json when provided"]
   );
 });
 
@@ -312,7 +312,7 @@ test("Claude structured output crosses the adapter boundary as validated JSON", 
   assert.deepEqual(JSON.parse(extractAdapterModelOutput("claude-json", stdout)), structured);
 });
 
-test("Grok and Kimi persisted-session usage is normalized without self-measured guesses", () => {
+test("Grok persisted-session usage is normalized without self-measured guesses", () => {
   assert.deepEqual(
     parseAdapterProviderUsage(
       "grok-json",
@@ -323,17 +323,6 @@ test("Grok and Kimi persisted-session usage is normalized without self-measured 
       ""
     ),
     { input_tokens: 900, cached_input_tokens: 200, output_tokens: 100, reasoning_tokens: 40, total_tokens: 1000 }
-  );
-  assert.deepEqual(
-    parseAdapterProviderUsage(
-      "kimi-wire",
-      JSON.stringify({
-        type: "hivemind.kimi.session",
-        usage: { input_tokens: 280, cached_input_tokens: 20, output_tokens: 30, total_tokens: 330 }
-      }),
-      ""
-    ),
-    { input_tokens: 280, cached_input_tokens: 20, output_tokens: 30, reasoning_tokens: null, total_tokens: 330 }
   );
 });
 

@@ -362,8 +362,8 @@ export const CAPABILITY_CONTRACT: CapabilityDefinition[] = [
      * something of its own choosing. A provider that reports one total cannot
      * show that, so the question was never being asked of it -- Codex passed
      * `reports_usage` while the same thing could have been happening
-     * invisibly. Kimi documents a secondary model for helper agents by design,
-     * so this is not one harness's quirk.
+     * invisibly. This is not one harness's quirk: any provider may use an
+     * unreported helper model internally.
      *
      * The distinction is: "reports what it spent" is about whether a CEILING
      * can hold, and "reports what each model cost" is about whether a PRICE

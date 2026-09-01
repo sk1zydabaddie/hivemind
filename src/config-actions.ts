@@ -71,8 +71,8 @@ type AuthenticationLauncher = (
  * Put a fixed provider command in a terminal the provider owns.
  *
  * The daemon has no interactive console, so starting the CLI directly would
- * make OpenCode's provider picker and Kimi's device code invisible. Each
- * platform wrapper therefore opens an external terminal. The wrapped argv is
+ * make OpenCode's provider picker invisible. Each platform wrapper therefore
+ * opens an external terminal. The wrapped argv is
  * not supplied by the client: it comes only from `agent-catalogue.ts`.
  */
 function externalTerminalInvocation(

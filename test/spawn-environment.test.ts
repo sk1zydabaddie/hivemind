@@ -114,11 +114,10 @@ test("a Windows desktop launch discovers documented provider bins and Codex Desk
   const appData = path.join(root, "AppData", "Roaming");
   const localAppData = path.join(root, "AppData", "Local");
   const grokBin = path.join(root, ".grok", "bin");
-  const kimiBin = path.join(root, ".kimi-code", "bin");
   const nvmLink = path.join(root, "nvm", "nodejs");
   const codexBin = path.join(localAppData, "OpenAI", "Codex", "bin", "release-hash");
   try {
-    for (const directory of [path.join(appData, "npm"), grokBin, kimiBin, nvmLink, codexBin]) {
+    for (const directory of [path.join(appData, "npm"), grokBin, nvmLink, codexBin]) {
       await mkdir(directory, { recursive: true });
     }
     await writeFile(path.join(codexBin, "codex.exe"), "fixture", "utf8");
@@ -133,7 +132,6 @@ test("a Windows desktop launch discovers documented provider bins and Codex Desk
     assert.equal(directories[0], "C:\\Windows\\System32", "the person's existing command wins");
     assert.ok(directories.includes(path.join(appData, "npm")));
     assert.ok(directories.includes(grokBin));
-    assert.ok(directories.includes(kimiBin));
     assert.ok(directories.includes(nvmLink));
     assert.ok(directories.includes(codexBin));
   } finally {

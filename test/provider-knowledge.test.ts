@@ -43,7 +43,7 @@ const NAMED_BUT_NOT_BRANCHING = new Set([
   "capability-corpus-evidence.ts"
 ]);
 
-const PROVIDER_NAMES = [/\bcodex\b/iu, /\bclaude[-_ ]?code\b/iu, /\bopencode\b/iu, /\bgrok\b/iu, /\bkimi\b/iu];
+const PROVIDER_NAMES = [/\bcodex\b/iu, /\bclaude[-_ ]?code\b/iu, /\bopencode\b/iu, /\bgrok\b/iu];
 
 test("only three files may know a provider by name", async () => {
   const entries = await readdir(SRC);

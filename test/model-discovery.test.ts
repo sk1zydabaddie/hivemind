@@ -65,9 +65,6 @@ test("discovery reports empty and failed providers without inventing fallback mo
         if (spec.kind === "headed-list") {
           return { ok: false, stdout: "", stderr: "", reason: "not signed in" };
         }
-        if (spec.kind === "alias-config") {
-          return { ok: true, stdout: '{"providers":{},"models":{}}', stderr: "", reason: null };
-        }
         return { ok: true, stdout: "", stderr: "", reason: null };
       }
     });
@@ -78,8 +75,7 @@ test("discovery reports empty and failed providers without inventing fallback mo
       [{ slug: "gpt-a", label: "GPT A", inner_provider: null, selectable: true }]
     );
     assert.equal(result.providers.find((entry) => entry.provider_id === "grok")?.status, "unavailable");
-    assert.equal(result.providers.find((entry) => entry.provider_id === "kimi")?.status, "empty");
-    assert.deepEqual(result.providers.find((entry) => entry.provider_id === "kimi")?.models, []);
+    assert.equal(result.providers.some((entry) => entry.provider_id === "kimi"), false);
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

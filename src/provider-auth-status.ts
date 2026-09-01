@@ -152,6 +152,14 @@ export function parseAuthenticationStatus(
     return malformed(providerId);
   }
   const plain = output.replaceAll(/\u001b\[[0-9;]*m/gu, "");
+  if (kind === "headed-model-list") {
+    /* This output shape prints its cached model catalogue even while signed
+       out, so the explicit negative sentence must win over the headings. A
+       successful signed-in response has both headings and no negative sentence. */
+    if (/you are not authenticated/iu.test(plain)) return signedOut(providerId);
+    if (/default model:/iu.test(plain) && /available models:/iu.test(plain)) return signedIn(providerId);
+    return malformed(providerId);
+  }
   const match = /\b(\d+) credentials?\b/iu.exec(plain);
   if (match === null) return malformed(providerId);
   const standing = Number(match[1]) > 0 ? signedIn(providerId) : signedOut(providerId);

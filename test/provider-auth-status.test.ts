@@ -21,6 +21,20 @@ test("provider login-status parsers keep malformed output distinct from sign-out
   assert.equal(parseAuthenticationStatus("claude", "logged-in-json", '{"loggedIn":false}').status, "signed_out");
   assert.equal(parseAuthenticationStatus("opencode", "credential-count", "— 2 credentials\n").status, "signed_in");
   assert.equal(parseAuthenticationStatus("opencode", "credential-count", "— 0 credentials\n").status, "signed_out");
+  assert.equal(
+    parseAuthenticationStatus(
+      "grok",
+      "headed-model-list",
+      "You are not authenticated.\nDefault model: grok-4.6\nAvailable models:\n  grok-4.6\n"
+    ).status,
+    "signed_out",
+    "the explicit signed-out marker wins over the cached model catalogue"
+  );
+  assert.equal(
+    parseAuthenticationStatus("grok", "headed-model-list", "Default model: grok-4.6\nAvailable models:\n  grok-4.6\n").status,
+    "signed_in"
+  );
+  assert.equal(parseAuthenticationStatus("grok", "headed-model-list", "grok-4.6\n").status, "malformed");
   assert.equal(parseAuthenticationStatus("codex-cli", "login-text", "something changed upstream").status, "malformed");
   assert.equal(parseAuthenticationStatus("claude", "logged-in-json", "not json").status, "malformed");
 });
@@ -42,14 +56,17 @@ test("authentication inspection never returns raw provider account output", asyn
         if (spec.kind === "login-text") {
           return { ok: true, stdout: "", stderr: "Logged in using ChatGPT", reason: null };
         }
-        return { ok: true, stdout: "— 0 credentials", stderr: "", reason: null };
+        if (spec.kind === "credential-count") {
+          return { ok: true, stdout: "— 0 credentials", stderr: "", reason: null };
+        }
+        return { ok: true, stdout: "You are not authenticated.\nDefault model: grok-4.6\nAvailable models:\n  grok-4.6", stderr: "", reason: null };
       }
     });
     assert.equal(view.providers.find((entry) => entry.provider_id === "codex-cli")?.status, "signed_in");
     assert.equal(view.providers.find((entry) => entry.provider_id === "claude")?.status, "signed_in");
     assert.equal(view.providers.find((entry) => entry.provider_id === "opencode")?.status, "signed_out");
-    assert.equal(view.providers.find((entry) => entry.provider_id === "grok")?.status, "unverifiable");
-    assert.equal(view.providers.find((entry) => entry.provider_id === "kimi")?.status, "unverifiable");
+    assert.equal(view.providers.find((entry) => entry.provider_id === "grok")?.status, "signed_out");
+    assert.equal(view.providers.some((entry) => entry.provider_id === "kimi"), false);
     assert.equal(JSON.stringify(view).includes("private@example.test"), false);
     assert.equal(JSON.stringify(view).includes("Private Org"), false);
   } finally {
@@ -71,7 +88,7 @@ test("missing provider executables are detected before the wrapper status comman
     const codex = view.providers.find((entry) => entry.provider_id === "codex-cli");
     assert.equal(codex?.status, "missing");
     assert.equal(codex?.installed, false);
-    assert.equal(statusCalls, 2, "the missing provider reached the cmd.exe wrapper status process");
+    assert.equal(statusCalls, 3, "only the missing provider skips its status process");
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

@@ -129,7 +129,7 @@ export function decodeAgentRecord(raw: string): AgentVisibleOutput | null {
     return decodeItem(item, type === "item.completed");
   }
 
-  /* Anthropic Messages events (Grok Build and compatible Kimi/OpenCode
+  /* Anthropic Messages events (Grok Build and compatible OpenCode
      adapters may expose this wire shape) plus Claude Code stream-json. */
   if (type === "message_start" || type === "message_delta") return { activity: "Thinking" };
   if (type === "content_block_start") {
@@ -162,7 +162,7 @@ export function decodeAgentRecord(raw: string): AgentVisibleOutput | null {
     return answer === "" ? { activity: "Thinking" } : { answer, answer_mode: "complete" };
   }
 
-  /* OpenCode/Kimi event variants. Their versions have used both a top-level
+  /* OpenCode event variants. Its versions have used both a top-level
      part and a nested part payload. Unknown records remain hidden. */
   if (type === "step_start" || type === "step-start" || type === "session.start") {
     return { activity: "Thinking" };

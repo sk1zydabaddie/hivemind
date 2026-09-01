@@ -252,7 +252,6 @@ try {
 
   const providerState = await driver.executeScript(`
     const checkbox = document.querySelector('[aria-label="Include Grok Build when connecting"]');
-    const kimiCheckbox = document.querySelector('[aria-label="Include Kimi Code when connecting"]');
     const rowText = (control) => control?.closest(".border-b")?.innerText ?? null;
     const continueButton = [...document.querySelectorAll("button")].find((node) =>
       node.textContent?.trim() === "Continue"
@@ -262,11 +261,6 @@ try {
         checked: checkbox?.getAttribute("aria-checked") ?? null,
         disabled: checkbox?.hasAttribute("disabled") ?? null,
         rowText: rowText(checkbox)
-      },
-      kimi: {
-        checked: kimiCheckbox?.getAttribute("aria-checked") ?? null,
-        disabled: kimiCheckbox?.hasAttribute("disabled") ?? null,
-        rowText: rowText(kimiCheckbox)
       },
       continueDisabled: continueButton?.hasAttribute("disabled") ?? null,
       spendCopy: [...document.querySelectorAll("span")]

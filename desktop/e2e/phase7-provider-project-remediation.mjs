@@ -137,7 +137,7 @@ try {
     exactEstimate: (await bodyText()).includes("0 tokens on your own subscription")
   };
   await capture("04-explicit-check-and-provider-state");
-  await driver.executeScript(`document.querySelector('[aria-label="Include Kimi Code when connecting"]')?.scrollIntoView({block:"end"});`);
+  await driver.executeScript(`document.querySelector('[aria-label="Include Grok Build when connecting"]')?.scrollIntoView({block:"end"});`);
   await capture("05-provider-selection");
 
   const browserLogs = await driver.manage().logs().get(logging.Type.BROWSER).catch(() => []);
@@ -156,7 +156,7 @@ try {
 }
 
 const providerRows = Array.isArray(evidence.providerDiscovery.providers) ? evidence.providerDiscovery.providers : [];
-assert.ok(providerRows.length >= 5);
+assert.equal(providerRows.length, 4, "the installed catalogue must contain exactly the four supported providers");
 for (const providerId of expectedInstalledProviders) {
   const row = providerRows.find((entry) => entry.provider_id === providerId);
   assert.equal(row?.installed, true, `${providerId} was not discovered from the installed app's minimal PATH`);

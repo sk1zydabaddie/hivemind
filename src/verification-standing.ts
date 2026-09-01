@@ -14,7 +14,7 @@ import type { AdapterProfile } from "./adapter.js";
  * That is the capability contract accepting a declaration again. The contract
  * exists because a flag being ACCEPTED is not a flag being APPLIED; a record
  * arriving by `git pull` is the same category of claim, made by somebody else's
- * computer instead of by a config file. It is the kimi-wrapper shape exactly:
+ * computer instead of by a config file. It is the stale-wrapper shape exactly:
  * evidence gathered against one binary, applied to a different one, with
  * nothing in the record able to tell them apart.
  *

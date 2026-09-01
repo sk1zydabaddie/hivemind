@@ -269,7 +269,7 @@ test("the hostile-settings mechanism is still wired, and empty by intent", async
   try {
     /* No harness declares anything, so every answer is empty rather than
        throwing -- an empty table must not become a broken code path. */
-    for (const harness of ["codex-cli", "claude", "opencode", "grok", "kimi"]) {
+    for (const harness of ["codex-cli", "claude", "opencode", "grok"]) {
       assert.deepEqual(await findHostileHarnessSettings(harness, home), []);
     }
     /* Connect still consults it before the probe, so a future declaration

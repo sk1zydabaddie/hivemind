@@ -173,12 +173,11 @@ test("no credential-shaped variable can be reached, by allowlist or by name", as
 
   /* And the allowlist is exactly the three measured variables -- not a shape
      that a config file could widen. */
-  assert.deepEqual(Object.keys(ACCOUNT_HOME_VARIABLES).sort(), ["claude", "codex-cli", "grok", "kimi", "opencode"]);
+  assert.deepEqual(Object.keys(ACCOUNT_HOME_VARIABLES).sort(), ["claude", "codex-cli", "grok", "opencode"]);
   assert.equal(accountHomeVariable("codex-cli"), "CODEX_HOME");
   assert.equal(accountHomeVariable("claude"), "CLAUDE_CONFIG_DIR");
   assert.equal(accountHomeVariable("opencode"), "OPENCODE_CONFIG_DIR");
   assert.equal(accountHomeVariable("grok"), "GROK_HOME");
-  assert.equal(accountHomeVariable("kimi"), "KIMI_CODE_HOME");
 });
 
 test("the spawn re-checks the environment rather than trusting its caller", async () => {

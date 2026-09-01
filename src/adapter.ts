@@ -4,7 +4,6 @@ import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { readdir, readFile, stat, unlink } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { explainMissingAdapterProgram, resolveAdapterInvocation } from "./adapter-command.js";
 import { writeFileAtomic } from "./atomic.js";
 import { loadAndValidateContract, TaskContract } from "./contract.js";
@@ -35,7 +34,7 @@ import {
 
 export type PromptArgMode = "stdin" | "arg" | "file";
 export type ProviderRoutingTier = "local" | "cheap" | "standard" | "strong";
-export type AdapterUsageParser = "codex-jsonl" | "codex-text" | "claude-json" | "opencode-json" | "grok-json" | "kimi-wire";
+export type AdapterUsageParser = "codex-jsonl" | "codex-text" | "claude-json" | "opencode-json" | "grok-json";
 
 /**
  * What a profile may be *selected* for.
@@ -395,7 +394,7 @@ export function validateAdapterProfile(raw: unknown, expectedTool?: string): str
     problems.push("cost_rank must be a positive integer when provided");
   }
   if ("usage_parser" in raw && !isAdapterUsageParser(raw.usage_parser)) {
-    problems.push("usage_parser must be one of codex-jsonl, codex-text, claude-json, opencode-json, grok-json, kimi-wire when provided");
+    problems.push("usage_parser must be one of codex-jsonl, codex-text, claude-json, opencode-json, grok-json when provided");
   }
   if ("roles" in raw) {
     // An empty list would mean "selectable for nothing", which is a profile
@@ -506,10 +505,6 @@ export async function runAdapterProcess(
   const resolvedAccountEnv = safeAccountEnvironment(
     options.accountEnv ?? (await accountEnvironmentForTool(repoRoot, profile.tool))
   );
-  if (profile.usage_parser === "kimi-wire") {
-    const boundary = await ensureBoundedFilesAccountConfig(resolvedAccountEnv);
-    if (!boundary.ok) return boundary;
-  }
   const usageSessionId = options.usageSessionId ?? `standalone-${randomUUID()}`;
   const providerSessionId = randomUUID();
   const promptFilePath = profile.prompt_arg === "file"
@@ -790,70 +785,10 @@ function buildUnmeteredQuotaRequest(
 }
 
 /**
- * Kimi 0.36.1 auto-loads only its account-level `mcp.json`; its documented
- * per-launch MCP flag is not accepted by the released binary. That makes this
- * file part of the executable boundary, not cosmetic configuration. We create
- * it only when absent and otherwise require byte-for-meaning equality. An
- * existing or additional server is refused rather than merged because merely
- * starting an ambient MCP command would execute code outside Hivemind's scope.
- */
-export async function ensureBoundedFilesAccountConfig(
-  accountEnv: Record<string, string>
-): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const home = accountEnv.KIMI_CODE_HOME ?? path.join(homedir(), ".kimi-code");
-  const file = path.join(home, "mcp.json");
-  const cliPath = fileURLToPath(new URL("./cli.js", import.meta.url));
-  const wanted = {
-    mcpServers: {
-      hivemind_files: {
-        command: process.execPath,
-        args: [cliPath, "files-mcp"]
-      }
-    }
-  };
-  let existing: unknown;
-  try {
-    existing = JSON.parse(await readFile(file, "utf8"));
-  } catch (error: unknown) {
-    const code = isRecord(error) && typeof error.code === "string" ? error.code : null;
-    if (code !== "ENOENT") {
-      return { ok: false, reason: `Kimi tool boundary refused: ${file} is unreadable or invalid JSON; Hivemind will not overwrite it.` };
-    }
-    try {
-      await writeFileAtomic(file, `${JSON.stringify(wanted, null, 2)}\n`);
-      return { ok: true };
-    } catch (writeError: unknown) {
-      return { ok: false, reason: `Kimi tool boundary could not be written: ${formatErrorDetail(writeError, "unknown write failure")}` };
-    }
-  }
-  if (!isExactBoundedFilesConfig(existing, process.execPath, cliPath)) {
-    return {
-      ok: false,
-      reason: `Kimi tool boundary refused: ${file} contains a different or additional MCP server. Use a dedicated Kimi account home containing only Hivemind's bounded file server.`
-    };
-  }
-  return { ok: true };
-}
-
-function isExactBoundedFilesConfig(value: unknown, command: string, cliPath: string): boolean {
-  if (!isRecord(value) || Object.keys(value).length !== 1 || !isRecord(value.mcpServers)) return false;
-  if (Object.keys(value.mcpServers).length !== 1 || !isRecord(value.mcpServers.hivemind_files)) return false;
-  const server = value.mcpServers.hivemind_files;
-  return Object.keys(server).length === 2 &&
-    server.command === command &&
-    Array.isArray(server.args) &&
-    server.args.length === 2 &&
-    server.args[0] === cliPath &&
-    server.args[1] === "files-mcp";
-}
-
-/**
  * Some harnesses keep the strongest run facts in their durable session trail
  * rather than duplicating them on stdout. The invocation carries a unique
- * session id where the harness permits one; Kimi prints its generated id in a
- * structural resume record. We copy only the bounded readback fields into the
- * adapter stream so the existing parser/probe path can assess the run that
- * just closed without guessing which session was newest.
+ * session id, which lets this path copy only the bounded readback fields into
+ * the adapter stream without guessing which session was newest.
  */
 async function enrichPersistedProviderOutput(
   parser: AdapterUsageParser | undefined,
@@ -878,43 +813,11 @@ async function enrichPersistedProviderOutput(
     });
   }
 
-  if (parser === "kimi-wire") {
-    const sessionId = kimiSessionId(stdout);
-    if (sessionId === null) return stdout;
-    const home = accountEnv.KIMI_CODE_HOME ?? path.join(homedir(), ".kimi-code");
-    const sessionDir = await findDirectoryNamed(path.join(home, "sessions"), sessionId);
-    if (sessionDir === null) return stdout;
-    const state = await readJsonRecord(path.join(sessionDir, "state.json"));
-    const wirePath = path.join(sessionDir, "agents", "main", "wire.jsonl");
-    const records = await readJsonLinesFile(wirePath);
-    const profile = records.find((record) => record.type === "profile.bind") ?? null;
-    const tools = records.find((record) => record.type === "llm.tools_snapshot") ?? null;
-    const requests = records.filter((record) => record.type === "llm.request");
-    const usageRecords = records.filter((record) => record.type === "usage.record" && isRecord(record.usage));
-    if (state === null || profile === null || tools === null || requests.length === 0) return stdout;
-    const usage = sumKimiUsage(usageRecords);
-    return appendJsonLine(stdout, {
-      type: "hivemind.kimi.session",
-      session_id: sessionId,
-      state,
-      profile,
-      tools,
-      requests,
-      ...(usage === null ? {} : { usage })
-    });
-  }
   return stdout;
 }
 
 function appendJsonLine(stdout: string, record: Record<string, unknown>): string {
   return `${stdout}${stdout.endsWith("\n") || stdout === "" ? "" : "\n"}${JSON.stringify(record)}\n`;
-}
-
-function kimiSessionId(stdout: string): string | null {
-  for (const record of parseJsonLines(stdout)) {
-    if (record.type === "session.resume_hint" && typeof record.session_id === "string") return record.session_id;
-  }
-  return null;
 }
 
 async function findDirectoryNamed(root: string, name: string, depth = 0): Promise<string | null> {
@@ -966,26 +869,6 @@ async function lastNestedRecord(
     if (nested !== null) return nested;
   }
   return null;
-}
-
-function sumKimiUsage(records: Record<string, unknown>[]): Record<string, number> | null {
-  let input = 0;
-  let cached = 0;
-  let output = 0;
-  let found = false;
-  for (const record of records) {
-    const usage = isRecord(record.usage) ? record.usage : null;
-    if (usage === null) continue;
-    const other = tokenField(usage, "inputOther") ?? 0;
-    const cacheRead = tokenField(usage, "inputCacheRead") ?? 0;
-    const cacheCreation = tokenField(usage, "inputCacheCreation") ?? 0;
-    const out = tokenField(usage, "output") ?? 0;
-    input += other;
-    cached += cacheRead + cacheCreation;
-    output += out;
-    found = true;
-  }
-  return found ? { input_tokens: input, cached_input_tokens: cached, output_tokens: output, total_tokens: input + cached + output } : null;
 }
 
 function collectRefusedModeValues(value: unknown, location: string, refused: Set<string>): void {
@@ -1112,22 +995,6 @@ export function parseAdapterProviderUsage(
       if (total !== null) {
         return reportedUsage({ input_tokens: input, cached_input_tokens: cached, output_tokens: output, reasoning_tokens: reasoning, total_tokens: total });
       }
-    }
-    return null;
-  }
-
-  if (parser === "kimi-wire") {
-    for (const record of parseJsonLines(stdout).reverse()) {
-      if (record.type !== "hivemind.kimi.session" || !isRecord(record.usage)) continue;
-      const usage = record.usage;
-      const total = tokenField(usage, "total_tokens");
-      if (total === null) return null;
-      return reportedUsage({
-        input_tokens: tokenField(usage, "input_tokens"),
-        cached_input_tokens: tokenField(usage, "cached_input_tokens"),
-        output_tokens: tokenField(usage, "output_tokens"),
-        total_tokens: total
-      });
     }
     return null;
   }
@@ -1607,14 +1474,6 @@ export function extractAdapterModelOutput(parser: AdapterUsageParser, stdout: st
     return latest;
   }
 
-  if (parser === "kimi-wire") {
-    let latest = "";
-    for (const record of parseJsonLines(stdout)) {
-      if (record.role === "assistant" && typeof record.content === "string") latest = record.content;
-    }
-    return latest;
-  }
-
   if (parser === "claude-json") {
     /* Claude's `--output-format stream-json` writes one JSON record per line.
        The final `result` record is the same authoritative reply that the
@@ -1750,8 +1609,7 @@ function isAdapterUsageParser(value: unknown): value is AdapterUsageParser {
     value === "codex-text" ||
     value === "claude-json" ||
     value === "opencode-json" ||
-    value === "grok-json" ||
-    value === "kimi-wire"
+    value === "grok-json"
   );
 }
 

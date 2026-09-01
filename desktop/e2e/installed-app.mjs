@@ -264,7 +264,7 @@ async function connectClaudeAndGrok(wantedPath) {
     return;
   }
   const selected = new Set(["Claude Code", "Grok Build"]);
-  for (const label of ["Codex", "Claude Code", "OpenCode", "Grok Build", "Kimi Code"]) {
+  for (const label of ["Codex", "Claude Code", "OpenCode", "Grok Build"]) {
     const checkbox = await driver.wait(
       until.elementLocated(By.css(`button[role="checkbox"][aria-label="Use ${cssAttribute(label)}"]`)),
       10_000,

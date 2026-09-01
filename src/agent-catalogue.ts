@@ -32,7 +32,7 @@ export interface CatalogueAgent {
   cost_rank: number;
   context_window: number;
   timeout_ms: number;
-  usage_parser: "codex-jsonl" | "codex-text" | "claude-json" | "opencode-json" | "grok-json" | "kimi-wire" | null;
+  usage_parser: "codex-jsonl" | "codex-text" | "claude-json" | "opencode-json" | "grok-json" | null;
   /** Whether the task prompt is written to stdin or appended to argv. */
   prompt_arg: "stdin" | "arg" | "file";
   /** Whether the desktop may offer a probe that can presently be admitted. */
@@ -62,7 +62,7 @@ export interface CatalogueAgent {
    * can compare a request against, and every capability that needs a readback
    * comes back `unverified` rather than `verified`.
    */
-  readback: "codex-rollout" | "claude-init" | "opencode-permissions" | "grok-session" | "kimi-session" | "none";
+  readback: "codex-rollout" | "claude-init" | "opencode-permissions" | "grok-session" | "none";
   /** Argv template. `{cwd}` is replaced with the project root at connect time. */
   invoke: string[] | null;
 }
@@ -348,21 +348,6 @@ function grokInvoke(model = "grok-4.6"): string[] {
     : ["grok", ...args];
 }
 
-function kimiInvoke(model = "kimi-code/kimi-for-coding"): string[] {
-  const args = [
-    "--model",
-    model,
-    "--output-format",
-    "stream-json",
-    "--agent-file",
-    ".hivemind/kimi-agent.md",
-    "--prompt"
-  ];
-  return process.platform === "win32"
-    ? ["cmd.exe", "/d", "/s", "/c", "kimi", ...args]
-    : ["kimi", ...args];
-}
-
 export const agentCatalogue: CatalogueAgent[] = [
   {
     id: "codex-terra",
@@ -546,31 +531,6 @@ export const agentCatalogue: CatalogueAgent[] = [
     /* Kept probeable so the missing readbacks can be re-tested when the CLI or
        Core changes. A failed probe records nothing in the project. */
     invoke: grokInvoke()
-  },
-  {
-    id: "kimi-code",
-    label: "Kimi Code",
-    harness: "kimi",
-    subscription: "a Kimi account or a Moonshot API key",
-    status: "unverified",
-    caveat:
-      "Kimi 0.36.1 now receives only Hivemind's project-bounded file server: its unsafe built-in file tools, shell, and helper agents are denied, and any other account-level MCP server causes a pre-launch refusal. It remains unverified until a hosted provider run confirms the exact runtime tool snapshot and real quota reporting; consumer Codex or Claude subscriptions cannot supply that provider credential.",
-    model: "kimi-code/kimi-for-coding",
-    routing_tier: "standard",
-    cost_rank: 10,
-    context_window: 256_000,
-    timeout_ms: 900_000,
-    usage_parser: "kimi-wire",
-    prompt_arg: "arg",
-    connectable: true,
-    readback: "kimi-session",
-    shell_denial: {
-      mechanism: "tool-allowlist",
-      confirmed_by: "runtime-readback",
-      detail:
-        "A launch-specific agent file allows only Hivemind's five project-bounded MCP file tools and denies Kimi's built-in file tools, shell, and helper agents. The session's profile and tool snapshot must report that exact set, while adapter startup refuses any additional account-level MCP server.",
-    },
-    invoke: kimiInvoke()
   }
 ];
 
@@ -614,8 +574,6 @@ function invocationForDiscoveredModel(providerId: string, slug: string): string[
       return openCodeInvoke(slug);
     case "grok":
       return grokInvoke(slug);
-    case "kimi":
-      return kimiInvoke(slug);
     default:
       return null;
   }
@@ -768,7 +726,7 @@ export interface ProviderAuthentication {
  * such a command; those remain `unknown` until a capability probe succeeds.
  */
 export interface ProviderAuthenticationStatusSpec {
-  kind: "login-text" | "logged-in-json" | "credential-count";
+  kind: "login-text" | "logged-in-json" | "credential-count" | "headed-model-list";
   invocation: readonly [string, ...string[]];
 }
 
@@ -892,8 +850,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   "codex-cli": "Codex",
   claude: "Claude Code",
   opencode: "OpenCode",
-  grok: "Grok Build",
-  kimi: "Kimi Code"
+  grok: "Grok Build"
 };
 
 /**
@@ -907,8 +864,7 @@ export const WINDOWS_PROVIDER_BIN_ENVIRONMENT: ReadonlyArray<{
   suffix?: readonly string[];
 }> = [
   { variable: "OPENCODE_INSTALL_DIR" },
-  { variable: "GROK_BIN_DIR" },
-  { variable: "KIMI_INSTALL_DIR" }
+  { variable: "GROK_BIN_DIR" }
 ];
 
 export const WINDOWS_PROVIDER_EXECUTABLE_LOCATIONS: ReadonlyArray<{
@@ -918,7 +874,6 @@ export const WINDOWS_PROVIDER_EXECUTABLE_LOCATIONS: ReadonlyArray<{
 }> = [
   { root: "user", segments: [".opencode", "bin"] },
   { root: "user", segments: [".grok", "bin"] },
-  { root: "user", segments: [".kimi-code", "bin"] },
   {
     root: "local",
     segments: ["OpenAI", "Codex", "bin"],
@@ -954,11 +909,6 @@ const PROVIDER_AUTHENTICATION: Record<string, ProviderAuthentication> = {
     command: ["grok", "login", "--oauth"],
     experience: "browser",
     detail: "Grok opens X.AI's OAuth sign-in in your browser. Finish there, then return to Hivemind and run the check."
-  },
-  kimi: {
-    command: ["kimi", "login"],
-    experience: "device_code",
-    detail: "Kimi starts its device-code sign-in in a separate terminal. The code and confirmation remain between Kimi and your browser."
   }
 };
 
@@ -986,6 +936,10 @@ export const PROVIDER_AUTHENTICATION_STATUS_SPECS: Record<
   opencode: {
     kind: "credential-count",
     invocation: readOnlyCliInvocation("opencode", ["auth", "list"])
+  },
+  grok: {
+    kind: "headed-model-list",
+    invocation: readOnlyCliInvocation("grok", ["models"])
   }
 };
 
@@ -1017,12 +971,6 @@ export const MODEL_DISCOVERY_SPECS: Record<string, ModelDiscoverySpec> = {
     kind: "headed-list",
     invocation: readOnlyCliInvocation("grok", ["models"]),
     source: "Grok models for the selected X.AI account"
-  },
-  kimi: {
-    kind: "alias-config",
-    invocation: readOnlyCliInvocation("kimi", ["provider", "list", "--json"]),
-    source: "Models configured in the installed Kimi Code CLI",
-    emptyDetail: "Kimi Code has no configured model aliases yet. Add a provider in Kimi, then refresh this list."
   }
 };
 
@@ -1036,8 +984,7 @@ export function providerAuthentication(providerId: string): ProviderAuthenticati
  * The provenance rule, applied: Hivemind does not download or execute another
  * vendor's installer. It shows the command the vendor documents, with the
  * page it was read from and the date, and the person runs it themselves in
- * their own terminal. The kimi-code npm wrapper is why a bare registry name
- * is not enough: the command below is the one OpenCode's own docs publish.
+ * their own terminal. The command below is the one OpenCode's own docs publish.
  */
 export interface ProviderInstallGuidance {
   /** The vendor's documentation page the command was read from. */
@@ -1247,7 +1194,7 @@ const INNER_PROVIDER_SANCTIONS: readonly InnerProviderStanding[] = [
     id: "moonshot",
     label: "Moonshot AI",
     sanction: "blessed",
-    why: "Kimi subscriptions issue API keys expressly for third-party tools, with named setup guides; the one stated violation is tampering with a client's identity, which running the real harness cannot do.",
+    why: "Moonshot subscriptions issue API keys expressly for third-party tools, with named setup guides; the one stated violation is tampering with a client's identity, which running the real harness cannot do.",
     checked: "2026-08-22",
     access: "api_key"
   },
@@ -1485,8 +1432,7 @@ export const ACCOUNT_HOME_VARIABLES: Record<string, string> = {
   "codex-cli": "CODEX_HOME",
   claude: "CLAUDE_CONFIG_DIR",
   opencode: "OPENCODE_CONFIG_DIR",
-  grok: "GROK_HOME",
-  kimi: "KIMI_CODE_HOME"
+  grok: "GROK_HOME"
 };
 
 /**
@@ -1560,13 +1506,6 @@ export const ENDPOINT_SURFACE: Record<
     configKeys: ["base_url"],
     inspection: "resolved-layers",
     vendorHost: "cli-chat-proxy.grok.com"
-  },
-  kimi: {
-    variables: ["KIMI_MODEL_BASE_URL"],
-    flags: [],
-    configFile: "config.toml",
-    configKeys: ["base_url"],
-    vendorHost: "api.kimi.com"
   }
 };
 
@@ -1600,34 +1539,6 @@ export const HARNESS_PROJECT_CONFIG: Record<
     },
     because:
       "OpenCode takes its shell denial from the project's config rather than from the command line, so Hivemind writes one. Without it the resolved table is a wildcard allow and the shell is permitted."
-  },
-  kimi: {
-    file: ".hivemind/kimi-agent.md",
-    contents: `---
-name: hivemind-worker
-description: File-only worker governed by Hivemind
-tools:
-  - mcp__hivemind_files__read_file
-  - mcp__hivemind_files__write_file
-  - mcp__hivemind_files__replace_in_file
-  - mcp__hivemind_files__list_files
-  - mcp__hivemind_files__search_files
-disallowedTools:
-  - Bash
-  - Agent
-  - AgentSwarm
-  - Read
-  - Write
-  - Edit
-  - Grep
-  - Glob
-subagents: []
----
-
-\${base_prompt}
-`,
-    because:
-      "Kimi takes its launch-specific tool and sub-agent boundary from an agent file. Hivemind writes a profile that exposes only its project-bounded MCP file server and explicitly denies Kimi's built-in file, shell, and helper-agent tools."
   }
 };
 
@@ -1654,13 +1565,6 @@ export const HARNESS_CONFIG_INPUTS: Record<string, { home: string[]; project: st
   opencode: {
     home: ["opencode.json", "opencode.jsonc"],
     project: ["opencode.json", "opencode.jsonc"]
-  },
-  kimi: {
-    /* `mcp.json` is executable configuration: changing it can start another
-       command before the model answers. The project agent file is the second
-       half of the same boundary and must stale the verdict if edited. */
-    home: ["config.toml", "mcp.json"],
-    project: [".hivemind/kimi-agent.md"]
   }
 };
 
@@ -1767,6 +1671,5 @@ export const HARNESS_DEFAULT_HOME: Record<string, string> = {
   "codex-cli": ".codex",
   claude: ".claude",
   opencode: ".config/opencode",
-  grok: ".grok",
-  kimi: ".kimi-code"
+  grok: ".grok"
 };
