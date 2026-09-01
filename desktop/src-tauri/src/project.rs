@@ -2587,6 +2587,72 @@ fn terminate_process(_pid: u32) -> Result<(), String> {
     Err("stopping a background process is not supported on this platform".to_string())
 }
 
+fn retire_daemon_record_with<T, P>(
+    project_root: &Path,
+    recorded_pid: Option<u32>,
+    terminate: &T,
+    liveness: &P,
+    timeout: Duration,
+    poll_interval: Duration,
+) -> Result<(), ProjectFault>
+where
+    T: Fn(u32) -> Result<(), String>,
+    P: Fn(Option<u32>) -> ProcessLiveness,
+{
+    let record = project_root.join(".hivemind").join("daemon.json");
+    if !record.is_file() {
+        return Ok(());
+    }
+
+    /* A stale record can name a completely unrelated process after PID reuse.
+       Identity is disproved before termination so recovery can never kill the
+       stranger wearing that PID. Anything short of that proof keeps PL-1's
+       fail-closed liveness handling. */
+    if !daemon_record_impostor(project_root, recorded_pid) {
+        if let Some(pid) = recorded_pid {
+            terminate(pid)
+                .map_err(|message| ProjectFault::new(FAULT_DAEMON_UNAVAILABLE, message))?;
+        }
+
+        // Wait for it to actually be gone. Starting a second writer while
+        // the first is still up is the exact condition `connect_project_with`
+        // refuses, so racing it here would trade one dead end for another.
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            if liveness(recorded_pid) == ProcessLiveness::Dead {
+                break;
+            }
+            thread::sleep(poll_interval);
+        }
+        match liveness(recorded_pid) {
+            ProcessLiveness::Dead => {}
+            ProcessLiveness::Alive => {
+                return Err(ProjectFault::new(
+                    FAULT_DAEMON_UNAVAILABLE,
+                    "The previous version's background process is still running and did not stop."
+                        .to_string(),
+                ));
+            }
+            ProcessLiveness::Unknown => {
+                return Err(ProjectFault::new(
+                    FAULT_DAEMON_UNAVAILABLE,
+                    "The previous version's background process could not be proven stopped; refusing to start a second writer."
+                        .to_string(),
+                ));
+            }
+        }
+    }
+
+    // Its rendezvous record either names a daemon that no longer exists or a
+    // process proven not to be that daemon.
+    fs::remove_file(&record).map_err(|error| {
+        ProjectFault::new(
+            FAULT_DAEMON_UNAVAILABLE,
+            format!("could not remove the stale background-process record: {error}"),
+        )
+    })
+}
+
 /// Stop the daemon this project is running and open it again on the matching
 /// build.
 ///
@@ -2632,32 +2698,14 @@ pub async fn restart_daemon(
                 _ => return Err(ProjectFault::new(FAULT_DAEMON_UNAVAILABLE, current_error)),
             },
         };
-        if project_root.join(".hivemind").join("daemon.json").is_file() {
-            if let Some(pid) = recorded_pid {
-                terminate_process(pid).map_err(|message| {
-                    ProjectFault::new(FAULT_DAEMON_UNAVAILABLE, message)
-                })?;
-            }
-            // Wait for it to actually be gone. Starting a second writer while
-            // the first is still up is the exact condition `connect_project_with`
-            // refuses, so racing it here would trade one dead end for another.
-            let deadline = Instant::now() + Duration::from_secs(10);
-            while Instant::now() < deadline {
-                if process_liveness(recorded_pid) == ProcessLiveness::Dead {
-                    break;
-                }
-                thread::sleep(Duration::from_millis(100));
-            }
-            if process_liveness(recorded_pid) == ProcessLiveness::Alive {
-                return Err(ProjectFault::new(
-                    FAULT_DAEMON_UNAVAILABLE,
-                    "The previous version's background process is still running and did not stop."
-                        .to_string(),
-                ));
-            }
-            // Its rendezvous record names a daemon that no longer exists.
-            let _ = fs::remove_file(project_root.join(".hivemind").join("daemon.json"));
-        }
+        retire_daemon_record_with(
+            &project_root,
+            recorded_pid,
+            &terminate_process,
+            &process_liveness,
+            Duration::from_secs(10),
+            Duration::from_millis(100),
+        )?;
 
         connect_project_with(
             &project_path,
@@ -4080,6 +4128,7 @@ mod git_readiness_tests {
 mod idleness_tests {
     use super::tests::terminate_fixture_process;
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn project_with_reservation(label: &str, status: &str) -> PathBuf {
@@ -4374,7 +4423,90 @@ mod idleness_tests {
             standing.detail
         );
 
+        let terminate_count = AtomicUsize::new(0);
+        retire_daemon_record_with(
+            &project,
+            Some(stranger.id()),
+            &|_| {
+                terminate_count.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+            &|_| ProcessLiveness::Alive,
+            Duration::ZERO,
+            Duration::ZERO,
+        )
+        .unwrap();
+        assert_eq!(
+            terminate_count.load(Ordering::SeqCst),
+            0,
+            "restart must not terminate a process proven not to be the daemon"
+        );
+        assert!(
+            !record.exists(),
+            "only the stale rendezvous record is retired"
+        );
+        assert_eq!(
+            process_liveness(Some(stranger.id())),
+            ProcessLiveness::Alive,
+            "the unrelated process must still be running"
+        );
+
         terminate_fixture_process(stranger.id());
+        let _ = fs::remove_dir_all(&project);
+    }
+
+    #[test]
+    fn restart_keeps_the_record_when_shutdown_liveness_is_uncertain() {
+        let project = project_with_reservation("restart-unknown", "settled");
+        record_daemon(&project, 42_424);
+        let record = project.join(".hivemind").join("daemon.json");
+        let terminate_count = AtomicUsize::new(0);
+
+        let fault = retire_daemon_record_with(
+            &project,
+            Some(42_424),
+            &|_| {
+                terminate_count.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+            &|_| ProcessLiveness::Unknown,
+            Duration::ZERO,
+            Duration::ZERO,
+        )
+        .unwrap_err();
+
+        assert_eq!(fault.code, FAULT_DAEMON_UNAVAILABLE);
+        assert!(fault.message.contains("could not be proven stopped"));
+        assert_eq!(terminate_count.load(Ordering::SeqCst), 1);
+        assert!(
+            record.is_file(),
+            "uncertain shutdown must keep the record and refuse a second writer"
+        );
+        let _ = fs::remove_dir_all(&project);
+    }
+
+    #[test]
+    fn restart_removes_the_record_only_after_confirmed_shutdown() {
+        let project = project_with_reservation("restart-dead", "settled");
+        record_daemon(&project, 42_425);
+        let record = project.join(".hivemind").join("daemon.json");
+        let terminate_count = AtomicUsize::new(0);
+
+        retire_daemon_record_with(
+            &project,
+            Some(42_425),
+            &|_| {
+                terminate_count.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+            &|_| ProcessLiveness::Dead,
+            Duration::ZERO,
+            Duration::ZERO,
+        )
+        .unwrap();
+
+        assert_eq!(terminate_count.load(Ordering::SeqCst), 1);
+        assert!(!record.exists());
         let _ = fs::remove_dir_all(&project);
     }
 

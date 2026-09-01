@@ -3969,3 +3969,30 @@ in**, Grok present with **Sign-in not readable**, and OpenCode and Kimi Code
 machine. The run recorded zero severe WebView console entries and made zero
 provider/model calls. Screenshots and the row-level JSON are retained in
 `docs/evidence/remediation-phase7-416.23056.31977/`.
+
+## Restart recovery proves daemon identity before termination — 2026-08-31
+
+Opening `D:\Projects\Test Game` reached restart recovery and failed with
+`could not open the background process to stop it`. The project's rendezvous
+record was written on 2026-08-21 and named PID 3028. Windows had since reused
+PID 3028 for `svchost.exe`, created on 2026-08-28. The existing A-39 identity
+check already proved that process could not be the daemon, and attach/idleness
+used that proof, but the reachable restart command bypassed it and attempted
+termination unconditionally.
+
+Restart now retires a rendezvous record without sending any termination signal
+when the recorded PID is provably an impostor. If identity cannot be disproved,
+PL-1 remains fail closed: the recorded process is asked to stop, the shell waits
+for definite death, and both **Alive** and **Unknown** preserve the record and
+refuse a second writer. Failure to remove a stale record is also surfaced rather
+than ignored. Three focused Rust regressions cover the reused-PID, uncertain-
+liveness, and confirmed-death directions; the reused-PID check keeps the real
+unrelated fixture process alive while removing only `daemon.json`.
+
+Pinned-runtime validation passed Core (**961 passed, 2 skipped, 963 total**),
+Desktop (**377/377**), Rust (**63/63**), and all **44** production reachability
+surface/viewport combinations. The machine-wide Node 24 runner failed the
+pre-existing nested test-timeout instrument; the shipped pinned Node 22.23.2
+passed that instrument **4/4** and the complete Core suite. No provider/model or
+other paid call ran. Installed-artifact proof remains required before this
+finding is closed.

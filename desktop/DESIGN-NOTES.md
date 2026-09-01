@@ -5094,3 +5094,22 @@ That last item is the guard against the recurring reachable-mechanism failure:
 if one surface can see a provider and another execution path cannot, the
 provider is not integrated yet.
 
+## Daemon restart treats a PID as a reusable name, not an identity
+
+The restart surface is allowed to stop the project's idle daemon, but it may
+never infer daemon identity from PID liveness alone. Windows can reuse a dead
+daemon's PID for an unrelated process. Before termination, restart applies the
+same creation-time-versus-record-time disproof as attach and idleness:
+
+- a process created more than the bounded slack after `daemon.json` was written
+  is provably not the daemon and receives no termination signal;
+- unreadable or ambiguous identity is not a disproof and therefore keeps the
+  fail-closed path;
+- a process that was asked to stop must be definitely **Dead** before its record
+  is removed; **Alive** and **Unknown** both refuse a second writer; and
+- record removal failure is a visible restart failure, never ignored cleanup.
+
+The regression has to assert the process under test remains alive after stale-
+record retirement. Merely asserting that restart returned would permit the most
+dangerous implementation: killing the unrelated process and then succeeding.
+
