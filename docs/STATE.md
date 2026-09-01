@@ -31,6 +31,16 @@ and active desktop checks were removed together. Moonshot remains available as
 an explicitly sanctioned inner provider selected inside OpenCode; that does not
 restore the retired Kimi CLI harness.
 
+Installed build **416.23132.11302**, stamped from clean commit `6b6802f`, was
+then driven at 1440x900 through the real installed WebView. The setup surface
+contained exactly Codex, Grok Build, Claude Code and OpenCode; no Kimi row or
+asset rendered. Grok showed `Signed in`, agreeing with the installed Core's
+typed `signed_in` result. Codex and Claude were also signed in, OpenCode was
+accurately `CLI not found`, no provider was preselected, browser severe logs
+were empty, and the run made **zero paid provider calls**. Evidence, including
+the build-numbered screenshot and machine-readable result, is in
+`docs/evidence/remediation-phase7-416.23132.11302/`.
+
 ### A clean install reaches a shipped commit with no terminal
 
 `docs/evidence/e2e-2026-08-11-firstrun-noterminal/`
