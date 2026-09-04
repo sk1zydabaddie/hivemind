@@ -1,10 +1,11 @@
+import { isNodeError } from "./error-detail.js";
 import { createHash } from "node:crypto";
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { writeJsonAtomic } from "./atomic.js";
-import { loadSpecDocument, isNodeError, type SpecResult } from "./spec-format.js";
+import { loadSpecDocument, type SpecResult } from "./spec-format.js";
 
 /**
  * The human half of ratification.

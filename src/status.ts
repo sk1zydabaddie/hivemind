@@ -1,17 +1,17 @@
-import { readdir, stat } from "node:fs/promises";
+import { isNodeError } from "./error-detail.js";
+import { stat } from "node:fs/promises";
 import path from "node:path";
-import { loadAndValidateContract } from "./contract.js";
+import { listTaskIds, loadAndValidateContract } from "./contract.js";
 import { readEvents, type HivemindEvent } from "./events.js";
 import {
   integratedTaskIdsFromEvents,
-  loadIntegrationQueue,
+  readIntegrationTaskIds,
+  readIntegrationStatus,
   type IntegrationStatus
 } from "./integration-state.js";
-import { readJsonFile } from "./json.js";
 import { readActiveLeases, type LeaseStore } from "./lease.js";
 import { listReplanStatuses, type ReplanStatus } from "./replan.js";
 import { findGitRoot } from "./repo.js";
-import { hasFailureCode } from "./failure-code.js";
 
 export interface HivemindStatus {
   tasks: StatusTask[];
@@ -87,7 +87,7 @@ export async function getStatus(repoRoot: string): Promise<{ ok: true; value: Hi
     return leaseResult;
   }
 
-  const queueResult = await readStatusQueue(repoRoot);
+  const queueResult = await readIntegrationTaskIds(repoRoot);
   if (!queueResult.ok) {
     return queueResult;
   }
@@ -258,51 +258,6 @@ function patchEventReason(event: HivemindEvent): string {
   return typeof event.data.reason === "string" ? event.data.reason : `${event.type} event did not include a reason`;
 }
 
-async function readStatusQueue(repoRoot: string): Promise<{ ok: true; value: string[] } | { ok: false; reason: string }> {
-  const result = await loadIntegrationQueue(repoRoot);
-  if (!result.ok) {
-    // No queue FILE means no queued work. An unreadable or malformed queue is
-    // a real failure and must not read as empty.
-    return hasFailureCode(result, "integration_queue_not_found") ? { ok: true, value: [] } : result;
-  }
-
-  return { ok: true, value: result.value.map((entry) => entry.task_id) };
-}
-
-async function readIntegrationStatus(repoRoot: string): Promise<{ ok: true; value: IntegrationStatus | null } | { ok: false; reason: string }> {
-  try {
-    const raw = await readJsonFile(path.join(repoRoot, ".hivemind", "integration", "status.json"));
-    if (!isIntegrationStatus(raw)) {
-      return { ok: false, reason: "integration status must contain branch, applied, tests, and report" };
-    }
-    return { ok: true, value: raw };
-  } catch (error: unknown) {
-    if (isNodeError(error, "ENOENT")) {
-      return { ok: true, value: null };
-    }
-    if (error instanceof SyntaxError) {
-      return { ok: false, reason: "invalid JSON in .hivemind/integration/status.json" };
-    }
-    throw error;
-  }
-}
-
-async function listTaskIds(repoRoot: string): Promise<string[]> {
-  const tasksDir = path.join(repoRoot, ".hivemind", "tasks");
-  try {
-    const entries = await readdir(tasksDir, { withFileTypes: true });
-    return entries
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".contract.json"))
-      .map((entry) => entry.name.slice(0, -".contract.json".length))
-      .sort((left, right) => left.localeCompare(right));
-  } catch (error: unknown) {
-    if (isNodeError(error, "ENOENT")) {
-      return [];
-    }
-    throw error;
-  }
-}
-
 async function exists(filePath: string): Promise<boolean> {
   try {
     await stat(filePath);
@@ -313,23 +268,4 @@ async function exists(filePath: string): Promise<boolean> {
     }
     throw error;
   }
-}
-
-function isIntegrationStatus(value: unknown): value is IntegrationStatus {
-  return (
-    isRecord(value) &&
-    typeof value.branch === "string" &&
-    Array.isArray(value.applied) &&
-    value.applied.every((entry) => typeof entry === "string") &&
-    (value.tests === "pass" || value.tests === "fail" || value.tests === "blocked") &&
-    typeof value.report === "string"
-  );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { callDaemonIfConfigured } from "./daemon-client.js";
@@ -133,10 +134,6 @@ async function readProposalInput(filePath: string): Promise<MemoryResult<MemoryP
 
 function memoryUsage(): string {
   return "usage: hivemind memory propose <proposal-json-file> | review <proposal-id> --approve | consolidate --tool <tool>";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function errorMessage(error: unknown): string {

@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 import { execFile } from "node:child_process";
 import { chmod, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
@@ -217,8 +218,4 @@ async function exists(filePath: string): Promise<boolean> {
     }
     throw error;
   }
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

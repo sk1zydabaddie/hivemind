@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { execFile } from "node:child_process";
 import { access } from "node:fs/promises";
 import path from "node:path";
@@ -229,10 +230,6 @@ export async function providerCommandAvailable(
     }
   }
   return false;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function runAuthenticationStatusProcess(

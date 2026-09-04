@@ -19,7 +19,7 @@ import { createTaskContract, type CreateTaskContractResult } from "./contract.js
 import { loadAndValidateContract, normalizeAllowedFileIntents, normalizeContract, validateContract, type TaskContract } from "./contract.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
 import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
-import { formatErrorDetail } from "./error-detail.js";
+import { isNodeError, formatErrorDetail } from "./error-detail.js";
 import {
   captureIntegrationQueueExpectation,
   enqueueIntegrationPatch,
@@ -30,7 +30,7 @@ import {
 } from "./integrate.js";
 import { checkWriteIntent, type WriteIntentPass } from "./intent.js";
 import { requirePassedWriteIntent } from "./intent.js";
-import { extractJsonObject } from "./json.js";
+import { isRecord, extractJsonObject } from "./json.js";
 import { markHumanGuidanceConsumed, readHumanGuidanceStanding } from "./human-guidance.js";
 import { applyOrchestratorContextBudget } from "./orchestrator-context.js";
 import { requestLeaseForContract, type LeaseGrantResult } from "./lease.js";
@@ -4284,12 +4284,4 @@ function parseAutoLoopOptions(args: string[]): SpecResult<{ maxSteps: number }> 
 
 function managerContextEvents(events: HivemindEvent[]): HivemindEvent[] {
   return events.filter((event) => event.type !== "human.guidance_recorded" && event.type !== "human.guidance_consumed");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

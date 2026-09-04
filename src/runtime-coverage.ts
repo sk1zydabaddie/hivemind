@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstat, readFile, unlink } from "node:fs/promises";
@@ -610,8 +611,4 @@ function compareText(left: string, right: string): number {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import path from "node:path";
 import {
   appendTrailLine,
@@ -364,8 +365,4 @@ function eventQueueKey(eventPath: string): string {
 
 function isEventType(value: unknown): value is HivemindEventType {
   return typeof value === "string" && (eventTypes as readonly string[]).includes(value);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
@@ -24,7 +25,7 @@ import { normalizeAllowedFileIntents, type AgentRole, type AllowedFileIntent, ty
 import { appendEvent, readEvents } from "./events.js";
 import { matchesAny } from "./glob.js";
 import { integratedTaskIdsFromEvents } from "./integration-state.js";
-import { extractJsonObject } from "./json.js";
+import { isRecord, extractJsonObject } from "./json.js";
 import { buildPlanningGenerationPrompt, tentativePlanJsonSchema } from "./planning-prompt.js";
 import { assertNoKnownFailedScopeRepeat, evaluateThrashForPlan, type ReplanEvaluationResult } from "./replan.js";
 import { findGitRoot } from "./repo.js";
@@ -2559,14 +2560,6 @@ function isAgentRole(value: unknown): value is AgentRole {
 
 function isTentativePlanSource(value: unknown): value is TentativePlanSource {
   return value === "cli-json" || value === "adapter-generated";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 async function exists(filePath: string): Promise<boolean> {

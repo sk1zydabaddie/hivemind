@@ -104,6 +104,51 @@ behavior-focused regressions, full Core/Desktop/Rust suites, builds,
 reachability and installed proof where runtime behavior could be affected.
 Record net implementation reduction separately from generated data and docs.
 
+Implemented scope:
+
+- 57 identical structural object guards now use `src/json.ts`; 38 equivalent
+  Node-error guards use `src/error-detail.ts`, including the formerly exported
+  spec-format helper. Its callers now import the owner directly; no shim remains.
+- Cache and status share integration-queue/status observation in
+  `src/integration-state.ts`, including the original legacy validator. Task-file
+  enumeration lives once in `src/contract.ts`. The required integration gate
+  still refuses a missing queue; only the observational reader maps it to empty.
+- Removed four exports with no named caller in production, tests or tools:
+  `probeDirectoryExists`, `adapterDirectoryNames`, `writeTextFile` and
+  `endpointSurfaceKnown`, together with their unused imports. The package is
+  private with a CLI entrypoint, not a published TypeScript export contract.
+- No new production module or parallel replacement path. Existing tests remain,
+  with five added regressions covering object/prototype semantics, strict and
+  inherited error codes, getter exceptions, missing/malformed/legacy disk state,
+  real non-ENOENT filesystem failures and task-file selection/order.
+
+The audit deliberately retained Git wrappers with different buffer/trim/error
+semantics, domain-specific lease-store narrowing, and the ten tests-only export
+leads that are not sufficient evidence of dead behavior. Broader validation,
+schema migration, gates, concurrency and routing were not rewritten. The four
+shared state-reader bodies were token-compared before moving; only names,
+ownership and call sites changed. No fallback was relaxed or test removed.
+
+Measured implementation reduction: Core `src/` falls from **43,909 to 43,637
+nonblank/noncomment lines** (272 fewer); its physical-line reduction is **377**.
+This excludes generated JSON, documentation and added test code. The source
+audit reports **zero unconsumed audited actions and zero unproduced durable
+events**, with dead-export leads reduced from 14 to 10. Targeted guard/cache/
+status checks pass **15/15**, and the production no-unused build passes.
+An AST-based review compared all 1,229 retained top-level function bodies in
+changed production files, allowing only the three named reader-call renames:
+no unexpected body changes. It accounts for 107 removed declarations (95
+guards, eight duplicated observations and four dead exports) and six shared
+declarations. CRLF/LF normalization is excluded from that source comparison;
+the first raw-text pass correctly required that distinction rather than
+mistaking line-ending changes for rewritten logic.
+Final Core suite: **967 passed, 2 skipped, 969 total**, zero failures or
+cancellations, exit 0. Rust: **64/64**, exit 0. Desktop: **380/380** across 42
+files; production typecheck/build and all **44** surface/viewport combinations
+passed, exit 0. The build retains its existing bundle-size and mixed-import
+warnings. Final dead-path scans and staged/unstaged whitespace checks passed.
+Installed qualification follows the clean phase commit required by stamping.
+
 Completion requires scoped commits, a clean worktree, measured before/after
 counts, explicit retained compatibility paths, and no unsupported promise that
 passing tests proves equivalence for every possible input.

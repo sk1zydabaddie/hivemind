@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
 import { getProcessLiveness, type ProcessLiveness } from "./process-liveness.js";
 import { parseQualityRunId } from "./value-quality.js";
@@ -254,8 +255,4 @@ function openDraftStages(
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

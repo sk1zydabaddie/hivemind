@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -93,8 +94,4 @@ async function exists(filePath: string): Promise<boolean> {
     }
     throw error;
   }
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

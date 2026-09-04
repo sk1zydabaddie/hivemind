@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { writeJsonAtomic } from "./atomic.js";
@@ -407,8 +408,4 @@ function activeLeasePath(repoRoot: string): string {
 
 function isRecord(value: unknown): value is LeaseStore {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

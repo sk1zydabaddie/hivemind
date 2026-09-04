@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { loadConfig } from "./config.js";
 import { loadAndValidateContract } from "./contract.js";
 import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
@@ -122,8 +123,4 @@ function lastEventIndex(events: HivemindEvent[], type: HivemindEvent["type"]): n
 
 function arrayOfStrings(value: unknown): string[] | null {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

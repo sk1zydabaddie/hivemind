@@ -1,7 +1,8 @@
+import { isNodeError } from "./error-detail.js";
 import { stat } from "node:fs/promises";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic.js";
 import { checkIdeationRatifiable } from "./ideation.js";
-import { readJsonFile } from "./json.js";
+import { isRecord, readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
 import { checkFormatVersion, formatVersions } from "./format-version.js";
 import { codedFailure } from "./failure-code.js";
@@ -9,7 +10,6 @@ import {
   activeSpecPath,
   buildSpecTemplate,
   hasSection,
-  isNodeError,
   loadSpecDocument,
   nonGoalsPresent,
   openQuestionsEmpty,
@@ -285,10 +285,6 @@ export async function readActiveSpec(repoRoot: string): Promise<SpecResult<{ spe
 
 async function writeActiveSpec(repoRoot: string, specId: string): Promise<void> {
   await writeJsonAtomic(activeSpecPath(repoRoot), { version: 1, spec_id: specId });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function exists(filePath: string): Promise<boolean> {

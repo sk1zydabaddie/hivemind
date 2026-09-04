@@ -1,3 +1,5 @@
+import { isRecord } from "./json.js";
+import { isNodeError } from "./error-detail.js";
 import { copyFile, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
@@ -419,16 +421,8 @@ function startedWithoutTerminal(events: HivemindEvent[]): string[] {
   return [...running].sort((left, right) => left.localeCompare(right));
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 async function removeTaskWorktreeAfterProcessExit(

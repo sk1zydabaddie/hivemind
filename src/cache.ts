@@ -1,14 +1,13 @@
+import { isNodeError } from "./error-detail.js";
 import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
-import { loadAndValidateContract, type TaskContract } from "./contract.js";
+import { listTaskIds, loadAndValidateContract, type TaskContract } from "./contract.js";
 import { readEvents, type HivemindEvent } from "./events.js";
-import { loadIntegrationQueue, type IntegrationStatus } from "./integration-state.js";
-import { readJsonFile } from "./json.js";
+import { readIntegrationTaskIds, readIntegrationStatus, type IntegrationStatus } from "./integration-state.js";
 import { readActiveLeases, type LeaseStore } from "./lease.js";
 import { findGitRoot } from "./repo.js";
 import { validateRequestedTaskId } from "./task-id.js";
-import { hasFailureCode } from "./failure-code.js";
 
 const schemaVersion = 1;
 
@@ -207,12 +206,12 @@ async function readCacheSourceState(repoRoot: string): Promise<{ ok: true; value
     return eventResult;
   }
 
-  const queueResult = await readCacheIntegrationQueue(repoRoot);
+  const queueResult = await readIntegrationTaskIds(repoRoot);
   if (!queueResult.ok) {
     return queueResult;
   }
 
-  const statusResult = await readCacheIntegrationStatus(repoRoot);
+  const statusResult = await readIntegrationStatus(repoRoot);
   if (!statusResult.ok) {
     return statusResult;
   }
@@ -241,33 +240,6 @@ async function readTaskContracts(repoRoot: string): Promise<{ ok: true; value: T
     tasks.push(result.contract);
   }
   return { ok: true, value: tasks };
-}
-
-async function readCacheIntegrationQueue(repoRoot: string): Promise<{ ok: true; value: string[] } | { ok: false; reason: string }> {
-  const result = await loadIntegrationQueue(repoRoot);
-  if (!result.ok) {
-    // No queue FILE means no queued work; anything else is a real failure.
-    return hasFailureCode(result, "integration_queue_not_found") ? { ok: true, value: [] } : result;
-  }
-  return { ok: true, value: result.value.map((entry) => entry.task_id) };
-}
-
-async function readCacheIntegrationStatus(repoRoot: string): Promise<{ ok: true; value: IntegrationStatus | null } | { ok: false; reason: string }> {
-  try {
-    const raw = await readJsonFile(path.join(repoRoot, ".hivemind", "integration", "status.json"));
-    if (!isIntegrationStatus(raw)) {
-      return { ok: false, reason: "integration status must contain branch, applied, tests, and report" };
-    }
-    return { ok: true, value: raw };
-  } catch (error: unknown) {
-    if (isNodeError(error, "ENOENT")) {
-      return { ok: true, value: null };
-    }
-    if (error instanceof SyntaxError) {
-      return { ok: false, reason: "invalid JSON in .hivemind/integration/status.json" };
-    }
-    throw error;
-  }
 }
 
 async function readPatchRows(repoRoot: string, taskIds: string[]): Promise<CachePatchRow[]> {
@@ -430,22 +402,6 @@ function readNullableNumberColumn(row: Record<string, unknown>, key: string): nu
   return value;
 }
 
-async function listTaskIds(repoRoot: string): Promise<string[]> {
-  const tasksDir = path.join(repoRoot, ".hivemind", "tasks");
-  try {
-    const entries = await readdir(tasksDir, { withFileTypes: true });
-    return entries
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".contract.json"))
-      .map((entry) => entry.name.slice(0, -".contract.json".length))
-      .sort((left, right) => left.localeCompare(right));
-  } catch (error: unknown) {
-    if (isNodeError(error, "ENOENT")) {
-      return [];
-    }
-    throw error;
-  }
-}
-
 async function listPatchTaskIds(repoRoot: string): Promise<string[]> {
   const patchesDir = path.join(repoRoot, ".hivemind", "patches");
   try {
@@ -483,23 +439,4 @@ async function exists(filePath: string): Promise<boolean> {
 
 function countDiffFileHeaders(diff: string): number {
   return diff.split(/\r?\n/).filter((line) => line.startsWith("diff --git ")).length;
-}
-
-function isIntegrationStatus(value: unknown): value is IntegrationStatus {
-  return (
-    isRecord(value) &&
-    typeof value.branch === "string" &&
-    Array.isArray(value.applied) &&
-    value.applied.every((entry) => typeof entry === "string") &&
-    (value.tests === "pass" || value.tests === "fail" || value.tests === "blocked") &&
-    typeof value.report === "string"
-  );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

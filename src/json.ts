@@ -1,6 +1,11 @@
 import { readFile } from "node:fs/promises";
 import type { SpecResult } from "./spec-format.js";
 
+// A structural object check, not validation of its properties or prototype.
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export async function readJsonFile(filePath: string): Promise<unknown> {
   return JSON.parse(stripUtf8Bom(await readFile(filePath, "utf8")));
 }

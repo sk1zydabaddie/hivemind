@@ -1,7 +1,8 @@
+import { isNodeError } from "./error-detail.js";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { writeJsonAtomic } from "./atomic.js";
-import { readJsonFile } from "./json.js";
+import { isRecord, readJsonFile } from "./json.js";
 import { processIsLiveOrUnknown } from "./process-liveness.js";
 import { checkFormatVersion, formatVersions } from "./format-version.js";
 import { isDaemonAuthToken, isLoopbackDaemonUrl } from "./daemon-auth.js";
@@ -88,12 +89,4 @@ function validateDaemonState(value: unknown): { ok: true } | { ok: false; reason
 
 function daemonStatePath(repoRoot: string): string {
   return path.join(repoRoot, ".hivemind", "daemon.json");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

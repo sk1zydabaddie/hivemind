@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { execFile } from "node:child_process";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -194,6 +195,3 @@ async function resolveCurrentBranch(
  * reported rather than absorbed -- absence of a package.json stays silent,
  * because that is a project with nothing to detect rather than a broken one.
  */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}

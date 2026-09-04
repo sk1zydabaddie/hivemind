@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { spawn } from "node:child_process";
 
 import {
@@ -365,8 +366,4 @@ async function runDiscoveryProcess(
       child.stdin.end();
     }
   });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

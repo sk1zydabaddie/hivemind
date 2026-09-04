@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { mkdir, readdir, rename } from "node:fs/promises";
@@ -27,7 +28,6 @@ import {
 import {
   activeSpecPath,
   buildDraftedSpec,
-  isNodeError,
   specFilePath,
   type SpecResult
 } from "./spec-format.js";

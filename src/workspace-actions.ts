@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { applyAgentsFileAction, proposeAgentsFileAction } from "./agents-file.js";
@@ -696,8 +697,4 @@ function exactStrings(
     output[field] = value[field];
   }
   return { ok: true, value: output };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

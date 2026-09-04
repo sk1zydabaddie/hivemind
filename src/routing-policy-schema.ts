@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { isRoutingTaskType, type RoutingTaskType } from "./routing-task-type.js";
 import { checkFormatVersion, formatVersions } from "./format-version.js";
 
@@ -259,8 +260,4 @@ function isNonNegativeInteger(value: unknown): value is number {
 
 function isNonNegativeFinite(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

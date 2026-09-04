@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 import { randomUUID } from "node:crypto";
 import { link, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -22,8 +23,4 @@ export async function writeImmutableJsonArtifact(
   } finally {
     await rm(tempPath, { force: true });
   }
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

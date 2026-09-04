@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -651,10 +652,6 @@ function artifactRelativePath(repoRoot: string, artifactPath: string): string {
 
 function hashText(value: string): string {
   return createHash("sha256").update(value).digest("hex");
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 function errorMessage(error: unknown): string {

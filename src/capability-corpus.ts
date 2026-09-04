@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, rename, stat, writeFile } from "node:fs/promises";
@@ -953,10 +954,6 @@ function errorMessage(error: unknown): string {
     return `${error.message}: ${error.errors.map(errorMessage).join("; ")}`;
   }
   return error instanceof Error ? error.message : String(error);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 const corpusCheckSource = String.raw`import { deepStrictEqual, notStrictEqual, strictEqual } from "node:assert";

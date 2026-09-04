@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { realpath } from "node:fs/promises";
 import path from "node:path";
@@ -254,8 +255,4 @@ function readReason(value: unknown): string {
 
 function readCode(value: unknown): FailureCode | undefined {
   return isRecord(value) && isFailureCode(value.code) ? value.code : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

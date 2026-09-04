@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -785,10 +786,6 @@ function parseLeaseRequirements(value: unknown): TaskLeaseRequirement[] | null {
     parsed.push({ task_id: entry.task_id, files: entry.files as string[] });
   }
   return parsed;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function requiredEventString(event: HivemindEvent, field: string): AdoptionResult<string> {

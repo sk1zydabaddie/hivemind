@@ -1,4 +1,4 @@
-import { extractJsonObject } from "./json.js";
+import { isRecord, extractJsonObject } from "./json.js";
 import type { SpecResult } from "./spec-format.js";
 
 /**
@@ -344,10 +344,6 @@ export function parseDraftedSpec(modelOutput: string): SpecResult<DraftedSpecPro
       self_critique: { weakest_point: weakest, cut_or_change: change }
     }
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function readAlternatives(value: unknown): DraftedAlternative[] | null {

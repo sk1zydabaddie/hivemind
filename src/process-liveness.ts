@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 export type ProcessLiveness = "alive" | "dead" | "unknown";
 
 export function createCachedProcessLivenessProbe(
@@ -80,8 +81,4 @@ export function getProcessGroupLiveness(
     if (isNodeError(error, "EPERM")) return "alive";
     return "unknown";
   }
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

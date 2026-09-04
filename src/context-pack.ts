@@ -1,9 +1,10 @@
+import { isNodeError } from "./error-detail.js";
 import { appendFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { CachedReadResult } from "./prompt-cache.js";
 import { writeJsonAtomic } from "./atomic.js";
 import type { TaskContract } from "./contract.js";
-import { readJsonFile } from "./json.js";
+import { isRecord, readJsonFile } from "./json.js";
 import { validateRequestedTaskId } from "./task-id.js";
 
 const contextPackVersion = 1;
@@ -224,12 +225,4 @@ function isContextPackFile(value: unknown): value is ContextPackFile {
 
 function isSafeCount(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

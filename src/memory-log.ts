@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { randomUUID } from "node:crypto";
 import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
 import { isMemoryProposalId, type MemoryResult } from "./memory-types.js";
@@ -152,10 +153,6 @@ function validateMemoryProposalInput(
       verification_policy: verificationPolicy.value
     }
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseMemoryProposalEvent(event: HivemindEvent): MemoryResult<MemoryProposal> {

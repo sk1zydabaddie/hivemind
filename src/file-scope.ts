@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { canonicalizeIntentPath } from "./canonicalize.js";
@@ -56,8 +57,4 @@ async function rejectExistingDirectory(repoRoot: string, filePath: string): Prom
     }
     throw error;
   }
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

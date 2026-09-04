@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -350,8 +351,4 @@ function formatHostForUrl(host: string): string {
 function writeJson(response: ServerResponse, statusCode: number, value: unknown): void {
   response.writeHead(statusCode, { "content-type": "application/json" });
   response.end(`${JSON.stringify(value, null, 2)}\n`);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -1,3 +1,5 @@
+import { isRecord } from "./json.js";
+import { isNodeError } from "./error-detail.js";
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -503,14 +505,6 @@ async function exists(filePath: string): Promise<boolean> {
     }
     throw error;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 function errorMessage(error: unknown): string {

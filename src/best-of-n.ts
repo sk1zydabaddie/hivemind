@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { buildAgentPrompt } from "./adapter.js";
@@ -373,10 +374,6 @@ function bestOfNUsage(): string {
 
 function formatDraftId(value: number): string {
   return `D-${String(value).padStart(3, "0")}`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function errorMessage(error: unknown): string {

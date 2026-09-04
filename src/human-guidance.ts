@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { randomUUID } from "node:crypto";
 import { appendEvent, readEvents } from "./events.js";
 
@@ -172,8 +173,4 @@ export async function markHumanGuidanceConsumed(
     }
   });
   return appended.ok ? { ok: true, value: undefined } : appended;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

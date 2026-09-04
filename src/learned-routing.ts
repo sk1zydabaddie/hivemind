@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { createHash } from "node:crypto";
 import { stat } from "node:fs/promises";
 import path from "node:path";
@@ -875,8 +876,4 @@ function compareText(left: string, right: string): number {
 
 function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

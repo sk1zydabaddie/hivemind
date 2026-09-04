@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -78,11 +79,6 @@ export interface EndpointFinding {
   detail: string;
 }
 
-
-/** Whether Hivemind knows how to inspect this harness at all. */
-export function endpointSurfaceKnown(tool: string): boolean {
-  return Object.hasOwn(ENDPOINT_SURFACE, tool.toLowerCase());
-}
 
 /**
  * Determine where a harness will send prompts.
@@ -304,10 +300,6 @@ async function findConfiguredUrl(
 
 function isMissing(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** The host part, for showing a person. Falls back to the whole value. */

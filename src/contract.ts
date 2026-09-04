@@ -1,9 +1,10 @@
-import { stat } from "node:fs/promises";
+import { isNodeError } from "./error-detail.js";
+import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { observableInterfaceKind, observableValidityCheckProblem } from "./acceptance-conformance.js";
 import { writeJsonAtomic } from "./atomic.js";
 import { appendTaskCreatedIfMissing } from "./events.js";
-import { readJsonFile } from "./json.js";
+import { isRecord, readJsonFile } from "./json.js";
 import { normalizeRepoPathPattern, validateRepoRelativePathOrGlob } from "./path-pattern.js";
 import { requireContractFromLintedPlan } from "./plan.js";
 import { findGitRoot } from "./repo.js";
@@ -11,6 +12,22 @@ import { requireActiveSpecRatified } from "./spec.js";
 import { validateRequestedTaskId, validateTaskId } from "./task-id.js";
 import { isRoutingTaskType, type RoutingTaskType, routingTaskTypeExpectation } from "./routing-task-type.js";
 import { CONTRACT_FORMAT_VERSION, upcastContract } from "./contract-version.js";
+
+export async function listTaskIds(repoRoot: string): Promise<string[]> {
+  const tasksDir = path.join(repoRoot, ".hivemind", "tasks");
+  try {
+    const entries = await readdir(tasksDir, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".contract.json"))
+      .map((entry) => entry.name.slice(0, -".contract.json".length))
+      .sort((left, right) => left.localeCompare(right));
+  } catch (error: unknown) {
+    if (isNodeError(error, "ENOENT")) {
+      return [];
+    }
+    throw error;
+  }
+}
 
 export type AgentRole = "coordinator" | "scout" | "builder" | "reviewer";
 export type AllowedFileIntent = "create" | "modify";
@@ -413,10 +430,6 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function isAgentRole(value: unknown): value is AgentRole {
   return value === "coordinator" || value === "scout" || value === "builder" || value === "reviewer";
 }
@@ -426,10 +439,6 @@ function isReadOnlyContractShape(raw: Record<string, unknown>): boolean {
     Array.isArray(raw.allowed_files) && raw.allowed_files.length === 0 &&
     Array.isArray(raw.read_only_files) && raw.read_only_files.length > 0 &&
     isRecord(raw.allowed_file_intents) && Object.keys(raw.allowed_file_intents).length === 0;
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 async function exists(filePath: string): Promise<boolean> {

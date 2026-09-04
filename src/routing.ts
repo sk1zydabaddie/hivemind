@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -458,10 +459,6 @@ function compareStrongest(left: ProviderCandidate, right: ProviderCandidate): nu
     left.costRank - right.costRank ||
     left.tool.localeCompare(right.tool)
   );
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 /**

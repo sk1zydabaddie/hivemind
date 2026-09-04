@@ -1,3 +1,5 @@
+import { isRecord } from "./json.js";
+import { isNodeError } from "./error-detail.js";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { isMemoryProposalId, type MemoryResult } from "./memory-types.js";
@@ -148,14 +150,6 @@ function validateCanonMemoryEntry(value: unknown): MemoryResult<CanonMemoryEntry
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 function errorMessage(error: unknown): string {

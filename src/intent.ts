@@ -1,8 +1,9 @@
+import { isNodeError } from "./error-detail.js";
 import path from "node:path";
 import { writeJsonAtomic } from "./atomic.js";
 import { appendEvent } from "./events.js";
 import { canonicalizeConcreteFileScope } from "./file-scope.js";
-import { readJsonFile } from "./json.js";
+import { isRecord, readJsonFile } from "./json.js";
 import { readActiveLeases } from "./lease.js";
 import { findGitRoot } from "./repo.js";
 import { validateRequestedTaskId, validateTaskId } from "./task-id.js";
@@ -296,12 +297,4 @@ function passedIntentPath(repoRoot: string, taskId: string): string {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

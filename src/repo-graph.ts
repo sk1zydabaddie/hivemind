@@ -1,3 +1,5 @@
+import { isRecord } from "./json.js";
+import { isNodeError } from "./error-detail.js";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
@@ -576,10 +578,6 @@ function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function isSymbolKind(value: unknown): value is RepoSymbolKind {
   return (
     value === "function" ||
@@ -595,10 +593,6 @@ function isSymbolKind(value: unknown): value is RepoSymbolKind {
 
 function isDependencyKind(value: unknown): value is RepoDependencyKind {
   return value === "import" || value === "reexport" || value === "require" || value === "dynamic_import";
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === code;
 }
 
 function errorMessage(error: unknown): string {

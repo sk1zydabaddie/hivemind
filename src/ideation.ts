@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic.js";
@@ -8,7 +9,7 @@ import {
   loadAdapterProfile,
   runAdapterProcess
 } from "./adapter.js";
-import { extractJsonObject, readJsonFile } from "./json.js";
+import { isRecord, extractJsonObject, readJsonFile } from "./json.js";
 import { findGitRoot } from "./repo.js";
 import { checkFormatVersion, formatVersions } from "./format-version.js";
 import { hasFailureCode } from "./failure-code.js";
@@ -24,7 +25,6 @@ import {
 import {
   activeSpecPath,
   buildSpecTemplate,
-  isNodeError,
   loadSpecDocument,
   nonGoalsPresent,
   openQuestionsEmpty,
@@ -820,10 +820,6 @@ function isSpecSection(value: string): value is SpecSection {
 
 function isIdeationStatus(value: unknown): value is IdeationStatus {
   return value === "diverging" || value === "refining" || value === "awaiting_user_convergence" || value === "ratifiable";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function exists(filePath: string): Promise<boolean> {

@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { randomUUID } from "node:crypto";
 import { loadConfig } from "./config.js";
 import { loadAndValidateContract } from "./contract.js";
@@ -410,8 +411,4 @@ function isValidAdmittedDecision(taskId: string | null, data: Record<string, unk
     return false;
   }
   return true;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

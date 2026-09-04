@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, stat } from "node:fs/promises";
@@ -775,8 +776,4 @@ async function requireDependenciesIfPlanBacked(repoRoot: string, taskId: string)
 
 function integrationTimestamp(): string {
   return new Date().toISOString().replace(/[-:.]/g, "").replace("T", "-").replace("Z", "Z");
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

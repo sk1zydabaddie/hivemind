@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { AgentStreamDecoder, activityLines, type AgentVisibleOutput } from "./agent-activity.js";
 import type { AdapterStreamChunk } from "./adapter.js";
 import path from "node:path";
@@ -309,8 +310,4 @@ function validateTaskOutputShape(value: unknown, expectedTaskId: string): { ok: 
     return { ok: false, reason: "task output answer_mode must be complete or delta when present" };
   }
   return { ok: true };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

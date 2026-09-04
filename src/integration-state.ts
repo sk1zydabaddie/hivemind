@@ -1,7 +1,8 @@
+import { isNodeError } from "./error-detail.js";
 import path from "node:path";
 import { readEvents, type HivemindEvent } from "./events.js";
-import { codedFailure, type CodedFailure } from "./failure-code.js";
-import { readJsonFile } from "./json.js";
+import { codedFailure, hasFailureCode, type CodedFailure } from "./failure-code.js";
+import { isRecord, readJsonFile } from "./json.js";
 import { validateRequestedTaskId } from "./task-id.js";
 
 export interface IntegrationStatus {
@@ -166,6 +167,48 @@ export async function loadIntegrationQueue(
   return { ok: true, value: pendingQueueEntries(entries, events.value) };
 }
 
+// Read-model helpers: missing files mean no observed state, never authority to run.
+export async function readIntegrationTaskIds(repoRoot: string): Promise<{ ok: true; value: string[] } | { ok: false; reason: string }> {
+  const result = await loadIntegrationQueue(repoRoot);
+  if (!result.ok) {
+    // No queue FILE means no queued work. An unreadable or malformed queue is
+    // a real failure and must not read as empty.
+    return hasFailureCode(result, "integration_queue_not_found") ? { ok: true, value: [] } : result;
+  }
+
+  return { ok: true, value: result.value.map((entry) => entry.task_id) };
+}
+
+export async function readIntegrationStatus(repoRoot: string): Promise<{ ok: true; value: IntegrationStatus | null } | { ok: false; reason: string }> {
+  try {
+    const raw = await readJsonFile(path.join(repoRoot, ".hivemind", "integration", "status.json"));
+    if (!isIntegrationStatus(raw)) {
+      return { ok: false, reason: "integration status must contain branch, applied, tests, and report" };
+    }
+    return { ok: true, value: raw };
+  } catch (error: unknown) {
+    if (isNodeError(error, "ENOENT")) {
+      return { ok: true, value: null };
+    }
+    if (error instanceof SyntaxError) {
+      return { ok: false, reason: "invalid JSON in .hivemind/integration/status.json" };
+    }
+    throw error;
+  }
+}
+
+// Preserve legacy observation semantics; shipping validates its own provenance.
+function isIntegrationStatus(value: unknown): value is IntegrationStatus {
+  return (
+    isRecord(value) &&
+    typeof value.branch === "string" &&
+    Array.isArray(value.applied) &&
+    value.applied.every((entry) => typeof entry === "string") &&
+    (value.tests === "pass" || value.tests === "fail" || value.tests === "blocked") &&
+    typeof value.report === "string"
+  );
+}
+
 function hasAcceptedCurrentPatch(trail: PatchTrail | undefined): boolean {
   return trail !== undefined && trail.submittedIndex >= 0 && trail.acceptedIndex > trail.submittedIndex && trail.acceptedIndex > trail.rejectedIndex;
 }
@@ -178,12 +221,4 @@ function eventAppliedTaskIds(event: HivemindEvent): string[] {
 function eventTaskIds(event: HivemindEvent): string[] {
   const taskIds = event.data.task_ids;
   return Array.isArray(taskIds) ? taskIds.filter((entry): entry is string => typeof entry === "string") : [];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

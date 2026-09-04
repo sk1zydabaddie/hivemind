@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
@@ -143,10 +144,6 @@ async function readLease(file: string): Promise<UpdateAdmissionResult<boolean>> 
       ? { ok: true, value: false }
       : { ok: false, reason: "the machine-wide update lease could not be read; refusing new work" };
   }
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 function delay(milliseconds: number): Promise<void> {

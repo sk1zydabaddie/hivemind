@@ -6,7 +6,7 @@ import {
   runAdapterProcess
 } from "./adapter.js";
 import { readEvents, type HivemindEvent } from "./events.js";
-import { extractJsonObject } from "./json.js";
+import { isRecord, extractJsonObject } from "./json.js";
 import { proposeMemoryLesson, type MemoryProposal, type MemoryProposalInput } from "./memory-log.js";
 import type { MemoryResult } from "./memory-types.js";
 import { withProjectTempDirectory } from "./project-temp.js";
@@ -193,8 +193,4 @@ function parseConsolidationOutput(
     proposals.push({ title, lesson, evidence: evidenceRefs });
   }
   return { ok: true, value: proposals };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

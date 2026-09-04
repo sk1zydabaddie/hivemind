@@ -4,7 +4,7 @@ import path from "node:path";
 import { writeJsonAtomic } from "./atomic.js";
 import { loadConfig } from "./config.js";
 import { appendEvent } from "./events.js";
-import { readJsonFile } from "./json.js";
+import { isRecord, readJsonFile } from "./json.js";
 import type { SpecResult } from "./spec.js";
 import { autonomyLevels, DEFAULT_AUTONOMY_LEVEL, type AutonomyLevel } from "./autonomy-level.js";
 
@@ -78,8 +78,4 @@ export async function recordAutonomyDecision(
 
 function hashJson(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

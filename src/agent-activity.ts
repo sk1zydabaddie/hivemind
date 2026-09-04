@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 /**
  * Provider-neutral user-visible output.
  *
@@ -270,10 +271,6 @@ function parsesAsRecord(value: string): boolean {
   } catch {
     return false;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function string(value: unknown): string | null {

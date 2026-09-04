@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
@@ -9,7 +10,7 @@ import { loadContextPackForContract, taskKnowledgePath } from "./context-pack.js
 import type { TaskContract } from "./contract.js";
 import { observableInterfaceKind } from "./acceptance-conformance.js";
 import { appendEvent } from "./events.js";
-import { readJsonFile } from "./json.js";
+import { isRecord, readJsonFile } from "./json.js";
 import { resolveTaskAuthoringBase } from "./task-authoring-base.js";
 
 const readCacheVersion = 1;
@@ -479,12 +480,4 @@ async function gitStdout(cwd: string, args: string[]): Promise<{ ok: true; stdou
     const stdout = typeof error === "object" && error !== null && "stdout" in error ? String(error.stdout).trim() : "";
     return { ok: false, reason: stderr || stdout || "git command failed" };
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

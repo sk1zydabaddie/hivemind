@@ -1,4 +1,5 @@
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { isRecord } from "./json.js";
+import { mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
 
@@ -1298,23 +1299,6 @@ async function connectCatalogueAgent(
 function modelFromInvoke(invoke: string[]): string | null {
   const at = invoke.findIndex((arg) => arg === "--model" || arg === "-m");
   return at >= 0 && at + 1 < invoke.length ? invoke[at + 1]! : null;
-}
-
-export async function adapterDirectoryNames(repoRoot: string): Promise<string[]> {
-  try {
-    return await readdir(path.join(repoRoot, ".hivemind", "adapters"));
-  } catch {
-    return [];
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-export async function writeTextFile(file: string, text: string): Promise<void> {
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, text, "utf8");
 }
 
 /**

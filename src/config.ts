@@ -1,7 +1,8 @@
+import { isNodeError } from "./error-detail.js";
 import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { checkFormatVersion, formatVersions } from "./format-version.js";
-import { readJsonFile } from "./json.js";
+import { isRecord, readJsonFile } from "./json.js";
 import { parseTaskTypePreferences } from "./routing-preferences.js";
 import { isAutonomyLevel, type AutonomyLevel } from "./autonomy-level.js";
 import { normalizeRepoPathPattern, validateRepoRelativePathOrGlob } from "./path-pattern.js";
@@ -648,17 +649,9 @@ function normalizeRepoRelativePath(value: unknown): string | null {
     : canonical;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function normalizeForComparison(pathValue: string): string {
   const normalized = path.resolve(pathValue);
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 /** Drops anything the routing validator refuses, rather than throwing here. */

@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { codedFailure, type FailureCode } from "./failure-code.js";
@@ -281,8 +282,4 @@ export function specFilePath(repoRoot: string, specId: string): string {
 
 export function activeSpecPath(repoRoot: string): string {
   return path.join(repoRoot, ".hivemind", "spec", "active.json");
-}
-
-export function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

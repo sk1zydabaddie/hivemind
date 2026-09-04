@@ -1,3 +1,5 @@
+import { isRecord } from "./json.js";
+import { isNodeError } from "./error-detail.js";
 import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
@@ -454,12 +456,4 @@ function relativePath(repoRoot: string, absolutePath: string): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "unexpected error";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

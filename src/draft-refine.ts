@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -460,8 +461,4 @@ function errorMessage(error: unknown): string {
   return error instanceof Error && error.message.trim() !== ""
     ? error.message
     : "unknown error";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

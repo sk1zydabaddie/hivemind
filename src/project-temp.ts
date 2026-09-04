@@ -1,3 +1,5 @@
+import { isRecord } from "./json.js";
+import { isNodeError } from "./error-detail.js";
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import type { BigIntStats } from "node:fs";
@@ -594,14 +596,6 @@ function sameFileIdentity(left: FileIdentity, right: FileIdentity): boolean {
 
 function isProjectTempPurpose(value: unknown): value is ProjectTempPurpose {
   return value === "checkout" || value === "changeset" || value === "consolidation" || value === "capability";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 function errorMessage(error: unknown): string {

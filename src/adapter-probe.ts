@@ -1,5 +1,6 @@
+import { isRecord } from "./json.js";
 import { execFile } from "node:child_process";
-import { mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -750,18 +751,6 @@ export async function probeAdapter(
     readback_source: readback?.source ?? null,
     provider_version: providerVersion
   };
-}
-
-export async function probeDirectoryExists(repoRoot: string): Promise<boolean> {
-  try {
-    return (await stat(path.join(repoRoot, PROBE_DIR))).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**

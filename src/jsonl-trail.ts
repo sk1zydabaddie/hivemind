@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, open, readFile, stat, truncate } from "node:fs/promises";
 import path from "node:path";
@@ -443,8 +444,4 @@ export async function repairTrail(
     },
     { timeoutMs: appendLockTimeoutMs }
   );
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

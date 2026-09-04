@@ -11,6 +11,8 @@ import { cacheDbPath, readCacheSnapshot, rebuildCache } from "../src/cache.js";
 import { initProject } from "../src/init.js";
 import { requestLease } from "../src/lease.js";
 import { getStatus } from "../src/status.js";
+import { listTaskIds } from "../src/contract.js";
+import { loadIntegrationQueue, readIntegrationStatus, readIntegrationTaskIds } from "../src/integration-state.js";
 import { createRatifiedSpec } from "./support/spec.js";
 import { withTemplateRepo } from "./support/fixture-repo.js";
 
@@ -100,6 +102,61 @@ test("guarantee and status paths continue to read disk state when cache is corru
     assert.deepEqual(status.value.leases, { "README.md": "T-001" });
     assert.equal(status.value.tasks.length, 1);
     assert.equal(status.value.tasks[0].task_id, "T-001");
+  });
+});
+
+test("shared read models distinguish absent state from required authority and malformed files", async () => {
+  await withTempRepo(async ({ repo }) => {
+    assert.deepEqual(await readIntegrationTaskIds(repo), { ok: true, value: [] });
+    assert.deepEqual(await readIntegrationStatus(repo), { ok: true, value: null });
+    const required = await loadIntegrationQueue(repo);
+    assert.equal(required.ok, false);
+    if (!required.ok) assert.equal(required.code, "integration_queue_not_found");
+
+    const dir = path.join(repo, ".hivemind", "integration");
+    await mkdir(dir, { recursive: true });
+    for (const [file, contents, reason] of [
+      ["queue.json", "{", "invalid JSON in .hivemind/integration/queue.json"],
+      ["queue.json", "{}", "integration queue must be an array"],
+      ["status.json", "{", "invalid JSON in .hivemind/integration/status.json"],
+      ["status.json", "{}", "integration status must contain branch, applied, tests, and report"]
+    ]) {
+      await writeFile(path.join(dir, file), contents);
+      const expected = { ok: false, reason };
+      assert.deepEqual(await getStatus(repo), expected);
+      assert.deepEqual(await rebuildCache(repo), expected);
+      await rm(path.join(dir, file));
+    }
+  });
+});
+
+test("shared observations preserve legacy status fields and task-file ordering", async () => {
+  await withTempRepo(async ({ repo }) => {
+    const legacy = { branch: "hivemind/integration", applied: [], tests: "pass", report: "legacy capture", extra: "retained" };
+    const dir = path.join(repo, ".hivemind", "integration");
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, "status.json"), JSON.stringify(legacy));
+    assert.deepEqual(await readIntegrationStatus(repo), { ok: true, value: legacy });
+    const status = await getStatus(repo);
+    assert.equal(status.ok, true);
+    if (status.ok) assert.deepEqual(status.value.integration.status, legacy);
+    assert.equal((await rebuildCache(repo)).ok, true);
+    assert.deepEqual((await readCacheSnapshot(repo)).integration_status, legacy);
+
+    const tasks = path.join(repo, ".hivemind", "tasks");
+    assert.deepEqual(await listTaskIds(repo), []);
+    await mkdir(tasks, { recursive: true });
+    await mkdir(path.join(tasks, "directory.contract.json"));
+    for (const name of ["B.contract.json", "A.contract.json", "ignored.json"]) await writeFile(path.join(tasks, name), "{}");
+    assert.deepEqual(await listTaskIds(repo), ["A", "B"]);
+    await rm(path.join(dir, "status.json"));
+    await mkdir(path.join(dir, "status.json"));
+    await mkdir(path.join(dir, "queue.json"));
+    await assert.rejects(readIntegrationStatus(repo));
+    await assert.rejects(readIntegrationTaskIds(repo));
+    await rm(tasks, { recursive: true });
+    await writeFile(tasks, "not a directory");
+    await assert.rejects(listTaskIds(repo));
   });
 });
 

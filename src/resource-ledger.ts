@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, open, rm } from "node:fs/promises";
 import path from "node:path";
@@ -5,7 +6,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { writeJsonAtomic } from "./atomic.js";
 import { loadConfig, type HivemindConfig } from "./config.js";
 import { callDaemonIfConfigured } from "./daemon-client.js";
-import { readJsonFile } from "./json.js";
+import { isRecord, readJsonFile } from "./json.js";
 import { getProcessLiveness, type ProcessLiveness } from "./process-liveness.js";
 import { findGitRoot } from "./repo.js";
 import { checkFormatVersion, formatVersions } from "./format-version.js";
@@ -1560,14 +1561,6 @@ function validateReconciliation(label: string, value: unknown): { ok: true } | {
     }
   }
   return { ok: true };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 function isRetryableLockError(error: unknown): boolean {

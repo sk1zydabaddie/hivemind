@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -231,10 +232,6 @@ function artifactPath(repoRoot: string, absolutePath: string): string {
 function isWithin(candidate: string, parent: string): boolean {
   const relative = path.relative(parent, candidate);
   return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function errorMessage(error: unknown): string {

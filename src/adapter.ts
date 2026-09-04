@@ -7,9 +7,9 @@ import path from "node:path";
 import { explainMissingAdapterProgram, resolveAdapterInvocation } from "./adapter-command.js";
 import { writeFileAtomic } from "./atomic.js";
 import { loadAndValidateContract, TaskContract } from "./contract.js";
-import { formatErrorDetail } from "./error-detail.js";
+import { isNodeError, formatErrorDetail } from "./error-detail.js";
 import { appendEvent } from "./events.js";
-import { readJsonFile } from "./json.js";
+import { isRecord, readJsonFile } from "./json.js";
 import { terminateProcessTreeAndVerify, type DurableProcessIdentity } from "./process-control.js";
 import { assembleAgentPrompt, buildAgentPromptFromContract } from "./prompt-cache.js";
 import type { FailureCode } from "./failure-code.js";
@@ -1595,10 +1595,6 @@ async function exists(filePath: string): Promise<boolean> {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function isProviderRoutingTier(value: unknown): value is ProviderRoutingTier {
   return value === "local" || value === "cheap" || value === "standard" || value === "strong";
 }
@@ -1611,10 +1607,6 @@ function isAdapterUsageParser(value: unknown): value is AdapterUsageParser {
     value === "opencode-json" ||
     value === "grok-json"
   );
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 /* ── What a provider says is LEFT ──────────────────────────────────────────

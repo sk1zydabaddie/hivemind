@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { mkdir, stat } from "node:fs/promises";
@@ -9,7 +10,7 @@ import { loadAndValidateContract, type TaskContract } from "./contract.js";
 import { contextPackRelativePath, loadContextPackForContract, taskKnowledgeRelativePath } from "./context-pack.js";
 import { captureWorktreeDiff } from "./diff-capture.js";
 import { appendEvent, readEvents } from "./events.js";
-import { readJsonFile } from "./json.js";
+import { isRecord, readJsonFile } from "./json.js";
 import { verifyLeaseCoverage } from "./lease.js";
 import { loadCurrentRatifiedPlan } from "./plan.js";
 import { findGitRoot } from "./repo.js";
@@ -564,12 +565,4 @@ function sha256(value: string): string {
 
 function isSafeCount(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

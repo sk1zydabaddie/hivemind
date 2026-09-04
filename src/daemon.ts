@@ -1,3 +1,4 @@
+import { isRecord } from "./json.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { analyzeTask } from "./analyze.js";
@@ -653,10 +654,6 @@ function hostIsAllowed(host: string | undefined): boolean {
 function hasJsonContentType(value: string | string[] | undefined): boolean {
   if (typeof value !== "string") return false;
   return value.split(";", 1)[0]?.trim().toLowerCase() === "application/json";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 class SerializedQueue {

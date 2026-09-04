@@ -1,3 +1,4 @@
+import { isNodeError } from "./error-detail.js";
 import { createCachedProcessLivenessProbe } from "./process-liveness.js";
 import { openRounds, roundIsReporting, type OpenRound } from "./open-rounds.js";
 import { readFile, readdir } from "node:fs/promises";
@@ -31,7 +32,7 @@ import { latestTaskRunState } from "./run-state.js";
 import type { LearnedRoutingPolicy, RoutingProviderScorecard } from "./routing-policy-schema.js";
 import type { ValueQualityPolicy } from "./value-quality-policy-schema.js";
 import { inferAllowedFilesTier, type TaskTier } from "./routing.js";
-import { readJsonFile } from "./json.js";
+import { isRecord, readJsonFile } from "./json.js";
 import { readActiveSpec } from "./spec.js";
 import { loadSpecDocument } from "./spec-format.js";
 import { getStatus, type HivemindStatus } from "./status.js";
@@ -1795,14 +1796,6 @@ function adoptionReasonTitle(reason: string): string {
 
 function compareQueueItems(left: WorkspaceQueueItem, right: WorkspaceQueueItem): number {
   return right.created_at.localeCompare(left.created_at) || left.id.localeCompare(right.id);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 
