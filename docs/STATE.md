@@ -38,7 +38,10 @@ to disclose, not assumptions that deterministic gates may trust.
 
 - [Codebase reduction](CODEBASE-REDUCTION.md): generated-data cleanup,
   current-document consolidation and behavior-preserving implementation audit;
-  measured counts and validation belong there.
+  all three implementation phases committed through `5c69d80`. Full suites and
+  reachability passed, but ship stopped before installation on existing Core
+  dependency advisories. Dependency maintenance and installed verification remain
+  open; measured counts and validation belong in that report.
 - [Desktop design](../desktop/DESIGN-NOTES.md): current visual and interaction
   contract, without superseded design narratives.
 - [User guide](USER_GUIDE.md): installation, setup and provider-mode limits.

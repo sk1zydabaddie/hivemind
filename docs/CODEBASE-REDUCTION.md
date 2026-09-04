@@ -147,7 +147,23 @@ cancellations, exit 0. Rust: **64/64**, exit 0. Desktop: **380/380** across 42
 files; production typecheck/build and all **44** surface/viewport combinations
 passed, exit 0. The build retains its existing bundle-size and mixed-import
 warnings. Final dead-path scans and staged/unstaged whitespace checks passed.
-Installed qualification follows the clean phase commit required by stamping.
+Implementation committed as `5c69d80` (Phase 1 `abd4ee8`, Phase 2 `0e3a674`).
+
+The subsequent `npm run ship` stopped at admission, **exit 1**, before build or
+installation: existing Core dependency `fast-uri@3.1.5` has four high-severity
+advisories. The audit also reports moderate advisories for `qs@6.15.2`; Desktop
+production dependencies are clean. Both arrive transitively through the MCP
+SDK. No dependency manifest or lockfile changed in these three phases.
+`npm explain` confirmed the installed chains; registry lookup shows a newer
+compatible fast-uri 3.x release. This is a dependency-maintenance follow-up,
+not evidence that the consolidation introduced the advisory or proof of an
+exploitable application path. No reproduction or paid calls were attempted.
+
+The safety gate was not bypassed. The installed app remains the previous build;
+no installed qualification or new release is claimed. Completing installation
+requires a separately approved dependency update, fresh validation, then ship
+and observation of the installed result. The three code/document phases are
+committed, but that delivery requirement remains open.
 
 Completion requires scoped commits, a clean worktree, measured before/after
 counts, explicit retained compatibility paths, and no unsupported promise that
