@@ -80,6 +80,20 @@ contracts, raw evidence and current invariants. Check links, preserved archive
 content, source references and the full validation suite before committing.
 Moving history improves orientation; it is not counted as repository LOC saved.
 
+Completed: current STATE is 138 lines and DESIGN-NOTES is 172, replacing 9,142
+lines of mixed current/historical entrypoints. Their full original bodies were
+moved into dated archives; both normalized SHA-256 hashes match the originals.
+All 33 local Markdown links in changed documents resolve. The user guide now
+describes ship/install and bundled Node accurately, and the remediation record
+labels its initial NO-GO as historical rather than today's verdict.
+
+No contract or raw evidence was deleted. No executable files changed in this
+phase; the preceding green Core (962 passed, 2 skipped), Desktop (380/380), Rust
+(64/64), builds and 44-case replay apply to the identical executable tree.
+Source checks found no test/runtime consumer that parses the changed documents.
+This phase adds a short current index while retaining history; it does not
+claim net repository-line savings. No paid calls or runtime changes.
+
 ## Phase 3 — redundant implementation
 
 Audit active callers, exports and duplicated behavior before selecting changes.

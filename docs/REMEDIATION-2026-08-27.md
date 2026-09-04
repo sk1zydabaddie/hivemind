@@ -1,6 +1,11 @@
 # Hivemind full-audit remediation program — 2026-08-27
 
-## Decision
+This is a chronological remediation record. Early verdicts below describe their
+dated audit targets; they are not the current release verdict. Read
+[current state](STATE.md) and the [finding ledger](AUDIT-2026-08-26.md) first.
+Original findings and execution evidence remain unchanged below.
+
+## Original decision — 2026-08-27
 
 The current product is **NO-GO for public distribution** and **NO-GO for normal
 development against a valuable repository**. Installed build **26.826.1622** is
