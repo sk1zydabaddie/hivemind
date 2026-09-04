@@ -31,6 +31,28 @@ interface DaemonProcess {
   authToken: string;
 }
 
+test("failed startup stops its daemon before releasing the fixture", async () => {
+  await withTempRepo(async ({ repo }) => {
+    let failedChild: ChildProcessWithoutNullStreams | undefined;
+    try {
+      await assert.rejects(startDaemon(repo, undefined, async (child) => {
+        failedChild = child;
+        await readLine(child);
+        throw new Error("injected startup failure");
+      }), /injected startup failure/);
+      assert.ok(failedChild?.pid);
+      if (process.platform === "win32") {
+        const { stdout } = await execFileAsync("tasklist", ["/FI", `PID eq ${failedChild.pid}`, "/FO", "CSV", "/NH"], { windowsHide: true });
+        assert.equal(stdout.split(/\r?\n/u).some((line) => new RegExp(`^\"[^\"]*\",\"${failedChild!.pid}\"(?:,|$)`, "u").test(line)), false);
+      } else {
+        assert.throws(() => process.kill(failedChild!.pid!, 0), { code: "ESRCH" });
+      }
+    } finally {
+      if (failedChild) await stopChildProcess(failedChild);
+    }
+  });
+});
+
 test("a coded daemon failure survives the HTTP round trip", async () => {
   await withTempRepo(async ({ repo }) => {
     const daemon = await startDaemon(repo);
@@ -428,7 +450,7 @@ async function withTempRepo(run: (context: { repo: string; baseCommit: string })
   );
 }
 
-async function startDaemon(repo: string, updateCoordinator?: string): Promise<DaemonProcess> {
+async function startDaemon(repo: string, updateCoordinator?: string, readReadyLine = readLine): Promise<DaemonProcess> {
   const child = spawn(process.execPath, [cliPath, "daemon", "--port", "0"], {
     cwd: repo,
     env: {
@@ -438,24 +460,30 @@ async function startDaemon(repo: string, updateCoordinator?: string): Promise<Da
     },
     windowsHide: true
   });
-  const line = await readLine(child);
-  const parsed = JSON.parse(line) as Record<string, unknown> & {
-    event: string;
-    url: string;
-    repo_root: string;
-  };
-  assert.equal(parsed.event, "daemon.ready");
-  assert.equal("auth_token" in parsed, false, "daemon.ready exposed its session credential");
-  const state = JSON.parse(
-    await readFile(path.join(repo, ".hivemind", "daemon.json"), "utf8")
-  ) as { auth_token?: unknown };
-  assert.match(String(state.auth_token ?? ""), /^[A-Za-z0-9_-]{43}$/u);
-  return {
-    child,
-    url: parsed.url,
-    repoRoot: parsed.repo_root,
-    authToken: String(state.auth_token)
-  };
+  try {
+    const line = await readReadyLine(child);
+    const parsed = JSON.parse(line) as Record<string, unknown> & {
+      event: string;
+      url: string;
+      repo_root: string;
+    };
+    assert.equal(parsed.event, "daemon.ready");
+    assert.equal("auth_token" in parsed, false, "daemon.ready exposed its session credential");
+    const state = JSON.parse(
+      await readFile(path.join(repo, ".hivemind", "daemon.json"), "utf8")
+    ) as { auth_token?: unknown };
+    assert.match(String(state.auth_token ?? ""), /^[A-Za-z0-9_-]{43}$/u);
+    return {
+      child,
+      url: parsed.url,
+      repoRoot: parsed.repo_root,
+      authToken: String(state.auth_token)
+    };
+  } catch (error) {
+    // Startup has not transferred ownership to the caller's finally block yet.
+    await stopChildProcess(child, "daemon whose startup failed");
+    throw error;
+  }
 }
 
 interface EventStreamMessage {

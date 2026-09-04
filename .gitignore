@@ -6,3 +6,7 @@ npm-debug.log*
 desktop/src-tauri/gen/
 desktop/src-tauri/target/
 desktop/runtime/node.exe
+
+# Derived from captured evidence by the desktop development/test/build commands.
+desktop/tools/replay-data.json
+desktop/tools/replay-data.json.*.tmp

@@ -1,7 +1,7 @@
 /* Replay harness. Drives the real App against a captured event trail and the
  * projection Core actually produced for it. Not part of the app.
  *
- *   node tools/collect-replay.mjs
+ *   npm run replay:collect
  *   npm run dev   ->  /replay.html?scenario=<id>
  *
  * Read-only: the collector never writes to docs/evidence, and this page never
@@ -66,7 +66,7 @@ const settings = await fetch("/tools/settings-live.json")
 const response = await fetch("/tools/replay-data.json");
 if (!response.ok) {
   document.body.textContent =
-    "No replay data. Run: node tools/collect-replay.mjs";
+    "No replay data. Run: npm run replay:collect";
   throw new Error("replay data missing");
 }
 const data = (await response.json()) as {
@@ -289,6 +289,8 @@ class ReplayEventSource {
       return { path: "D:\\Projects\\trimr-replay", opened_at: "0", missing: false };
     }
     if (command === "remember_project") return null;
+    // This replay has no installer handoff or pending restart.
+    if (command === "pending_update_relaunch") return false;
     /* Removing an entry is shell state the replay has none of, and answering
        is closer to the truth than throwing: there is nothing to forget. */
     if (command === "forget_project") return null;

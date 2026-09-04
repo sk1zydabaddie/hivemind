@@ -5,7 +5,7 @@
  * `inspectWorkspace` over it. The output is what the daemon would actually have
  * told the desktop for that run — not a hand-written fixture.
  *
- *   node tools/collect-replay.mjs
+ *   npm run replay:collect
  *
  * Writes tools/replay-data.json, which replay.html loads. That file is derived
  * data: regenerate it rather than editing it.
@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { writeJsonAtomic } from "../../dist/src/atomic.js";
 
 const execFileAsync = promisify(execFile);
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -340,7 +341,12 @@ async function inspect(events, trailPath) {
         `file://${path.join(repoRoot, "dist", "src", "workspace-inspection.js").replaceAll("\\", "/")}`
       )
     );
-    const result = await inspectWorkspace(repo);
+    // Replay the captured instant, not the age of the evidence on this machine.
+    // Historical PIDs cannot establish current process identity.
+    const result = await inspectWorkspace(repo, {
+      now: new Date(events.at(-1).ts),
+      processLiveness: () => "unknown"
+    });
     return result.ok
       ? { ok: true, inspection: result.value }
       : { ok: false, reason: result.reason };
@@ -398,7 +404,10 @@ async function inspectTimeline(run, trailPath) {
         `${prefix.map((event) => JSON.stringify(event)).join("\n")}\n`,
         "utf8"
       );
-      const result = await inspectWorkspace(repo);
+      const result = await inspectWorkspace(repo, {
+        now: new Date(run[cut].ts),
+        processLiveness: () => "unknown"
+      });
       if (!result.ok) continue;
       frames.push({
         event_index: cut,
@@ -872,13 +881,8 @@ console.log(
 );
 
 scenarios.sort((left, right) => right.events.length - left.events.length);
-await writeFile(
+await writeJsonAtomic(
   path.join(desktopRoot, "tools", "replay-data.json"),
-  `${JSON.stringify(
-    { generated_from: "docs/evidence", scenarios, project_files: projectFiles, check_output: checkOutput },
-    null,
-    2
-  )}\n`,
-  "utf8"
+  { generated_from: "docs/evidence", scenarios, project_files: projectFiles, check_output: checkOutput }
 );
 console.log(`\n${scenarios.length} scenarios -> tools/replay-data.json`);

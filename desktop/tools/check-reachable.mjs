@@ -170,6 +170,16 @@ async function open() {
 
 const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Only the recorded planner stage may satisfy this liveness assertion.
+const PLANNER_ELAPSED = `
+  const stage = [...document.querySelectorAll('[data-testid="conversation-log"] article')]
+    .find((article) => [...article.querySelectorAll("span")]
+      .some((span) => span.textContent === "Planner is reading your request"));
+  return [...(stage?.querySelectorAll("span") ?? [])]
+    .map((span) => span.textContent?.trim() ?? "")
+    .find((text) => text.endsWith(" elapsed")) ?? null;
+`;
+
 /* Every visible control, scrolled to and then measured. `scrollIntoView` is the
    same thing a keyboard user's focus does, so a control it cannot bring into
    the viewport is one nobody can reach by any means. */
@@ -613,17 +623,9 @@ for (const viewport of selectedViewports) {
     });
     const label = `${viewport.width}x${viewport.height}  ${surface.name}`;
     if (surface.liveness === true) {
-      const before = await page.evaluate(`
-        return [...document.querySelectorAll("span")]
-          .map((element) => element.textContent?.trim() ?? "")
-          .find((text) => text.endsWith(" elapsed")) ?? null;
-      `);
+      const before = await page.evaluate(PLANNER_ELAPSED);
       await settle(3_100);
-      const after = await page.evaluate(`
-        return [...document.querySelectorAll("span")]
-          .map((element) => element.textContent?.trim() ?? "")
-          .find((text) => text.endsWith(" elapsed")) ?? null;
-      `);
+      const after = await page.evaluate(PLANNER_ELAPSED);
       if (before === null || after === null || before === after) {
         const visibleText = await page.evaluate(
           `return (document.body.innerText ?? "").replace(/\\s+/g, " ").trim().slice(0, 500);`
