@@ -1,0 +1,138 @@
+{
+  "installedVersion": "416.28392.32244",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "paidProviderCalls": 0,
+  "providerDiscovery": {
+    "providers": [
+      {
+        "provider_id": "codex-cli",
+        "status": "signed_in",
+        "detail": "The provider CLI reports an active sign-in.",
+        "installed": true
+      },
+      {
+        "provider_id": "claude",
+        "status": "signed_in",
+        "detail": "The provider CLI reports an active sign-in.",
+        "installed": true
+      },
+      {
+        "provider_id": "opencode",
+        "status": "missing",
+        "detail": "The provider CLI could not be found. A desktop app by itself is not the command-line provider Hivemind runs.",
+        "installed": false
+      },
+      {
+        "provider_id": "grok",
+        "status": "signed_out",
+        "detail": "The provider CLI reports that it is not signed in.",
+        "installed": true
+      }
+    ]
+  },
+  "expectedInstalledProviders": [],
+  "failedManualPath": {
+    "dialogStillOpen": true,
+    "retained": "C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase7-NSCE9Z\\does-not-exist"
+  },
+  "nestedProject": {
+    "sourceListed": true,
+    "generatedExcluded": true,
+    "projectFactsListed": true
+  },
+  "secretRefusal": {
+    "namesSecret": true,
+    "setupOffered": false
+  },
+  "incompleteGit": {
+    "refused": true,
+    "setupOffered": false
+  },
+  "explicitCheck": {
+    "markerBeforeControl": false,
+    "controlVisible": true
+  },
+  "providers": {
+    "selection": [
+      {
+        "checked": "false",
+        "disabled": false,
+        "label": "Include Codex when connecting",
+        "rowText": "Codex\nChatGPT Plus, Pro or Business\nSigned in\nSigned in"
+      },
+      {
+        "checked": "false",
+        "disabled": false,
+        "label": "Include Grok Build when connecting",
+        "rowText": "Grok Build\nan X.AI plan or an XAI_API_KEY\nSigned in\nSigned in"
+      },
+      {
+        "checked": "false",
+        "disabled": false,
+        "label": "Include Claude Code when connecting",
+        "rowText": "Claude Code\nClaude Pro or Max\nSigned in\nSigned in"
+      },
+      {
+        "checked": "false",
+        "disabled": true,
+        "label": "Include OpenCode when connecting",
+        "rowText": "OpenCodeMULTIPLIER\nOpenCode's free model or a connected provider\nCLI not found\nCLI not found"
+      }
+    ],
+    "noPreselection": true,
+    "exactEstimate": true
+  },
+  "projectMenuAttempts": [
+    {
+      "beforeExpanded": "false",
+      "afterExpanded": "true",
+      "itemLocated": true
+    },
+    {
+      "beforeExpanded": "false",
+      "afterExpanded": "true",
+      "itemLocated": true
+    },
+    {
+      "beforeExpanded": "false",
+      "afterExpanded": "true",
+      "itemLocated": true
+    },
+    {
+      "beforeExpanded": "false",
+      "afterExpanded": "true",
+      "itemLocated": true
+    }
+  ],
+  "screenshots": [
+    {
+      "item": "01-nested-project-preview",
+      "build": "416.28392.32244",
+      "file": "01-nested-project-preview-416.28392.32244-1440x900.png"
+    },
+    {
+      "item": "02-secret-refusal",
+      "build": "416.28392.32244",
+      "file": "02-secret-refusal-416.28392.32244-1440x900.png"
+    },
+    {
+      "item": "03-incomplete-git-refusal",
+      "build": "416.28392.32244",
+      "file": "03-incomplete-git-refusal-416.28392.32244-1440x900.png"
+    },
+    {
+      "item": "04-explicit-check-and-provider-state",
+      "build": "416.28392.32244",
+      "file": "04-explicit-check-and-provider-state-416.28392.32244-1440x900.png"
+    },
+    {
+      "item": "05-provider-selection",
+      "build": "416.28392.32244",
+      "file": "05-provider-selection-416.28392.32244-1440x900.png"
+    }
+  ],
+  "browserSevereLogs": []
+}

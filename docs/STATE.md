@@ -20,12 +20,14 @@ lookup. Updater signing and Windows publisher signing are separate checks.
 The retired in-app source/public update execution path remains disabled;
 publication of an installer does not restore that consumer authority.
 
-Latest recorded installed functional fix: **416.23196.55488**, source
-`cb7f0354e00d`, artifact
-`f688465393e419ea8ae03b94c756c4aeecabc5dbfd86ecf5043f792e4756d7d4`.
-Opening Test Game retired a pre-boot daemon record, reached **Set up the folder:
-Done**, and left the unrelated live `svchost.exe` PID untouched. Evidence and
-earlier validation remain in the [dated state archive](archive/STATE-2026-09-04.md).
+Latest installed maintenance build: **416.28392.32244**, source `b9858afcf378`,
+artifact `496daf6a156442ada5fb770dd5df05761354d4741532609c1e4bb4feb4c4daa3`.
+All 4,471 managed files and Core/shell/Node identities matched. The no-paid
+installed check visibly reached setup Done and exercised project previews and
+refusals. [Evidence and limits](evidence/remediation-phase7-416.28392.32244/README.md)
+include a transient Grok status disagreement, not a paid-provider qualification.
+The earlier pre-boot daemon fix and its protected-PID evidence remain in the
+[dated state archive](archive/STATE-2026-09-04.md).
 
 The real-project, real-provider prompt-to-shipped run is older than that fix.
 Do not describe a no-paid installed check, replay or unit suite as a fresh
@@ -38,10 +40,10 @@ to disclose, not assumptions that deterministic gates may trust.
 
 - [Codebase reduction](CODEBASE-REDUCTION.md): generated-data cleanup,
   current-document consolidation and behavior-preserving implementation audit;
-  all three implementation phases committed through `5c69d80`. The approved
-  two-package dependency follow-up clears the advisory blocker; fresh Core,
-  Desktop and Rust suites pass. Packaging and installed verification remain
-  open; measured counts and validation belong in that report.
+  all three implementation phases committed through `5c69d80`; approved
+  dependency follow-up `b9858af` clears the advisory blocker and is installed.
+  Fresh Core, Desktop, Rust, advisory and viewport checks passed. Measured
+  counts and the installed observation scope belong in that report.
 - [Desktop design](../desktop/DESIGN-NOTES.md): current visual and interaction
   contract, without superseded design narratives.
 - [User guide](USER_GUIDE.md): installation, setup and provider-mode limits.

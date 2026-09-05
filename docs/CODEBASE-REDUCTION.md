@@ -159,11 +159,9 @@ compatible fast-uri 3.x release. This is a dependency-maintenance follow-up,
 not evidence that the consolidation introduced the advisory or proof of an
 exploitable application path. No reproduction or paid calls were attempted.
 
-The safety gate was not bypassed. The installed app remains the previous build;
-no installed qualification or new release is claimed. Completing installation
-requires a separately approved dependency update, fresh validation, then ship
-and observation of the installed result. The three code/document phases are
-committed, but that delivery requirement remains open.
+At that point the safety gate was not bypassed and the installed app remained
+the previous build. The three code/document phases were committed, but delivery
+awaited the separately approved dependency follow-up recorded below.
 
 Completion requires scoped commits, a clean worktree, measured before/after
 counts, explicit retained compatibility paths, and no unsupported promise that
@@ -189,5 +187,27 @@ zero failures or cancellations, exit 0. Desktop passed **380/380** across 42
 files, and its production typecheck/build passed with the existing chunk-size
 and mixed-import warnings. The exact lockfile delta was asserted to contain
 only the two named packages; installed-tree dependency inspection, dead-path
-audit and whitespace checks passed. Clean-source packaging and installed
-observation follow the dependency commit.
+audit and whitespace checks passed. Dependency commit: `b9858af`.
+
+`npm run ship` subsequently passed, including both advisory gates, all **44**
+production-CSP viewport cases, clean production dependency staging, release
+build, installation and managed-file identity verification. Installed build:
+**416.28392.32244**, source `b9858afcf378ae6da52d69c7b85b7483a6cf57a2`, artifact
+`496daf6a156442ada5fb770dd5df05761354d4741532609c1e4bb4feb4c4daa3`.
+All 4,471 managed files and Core/shell/Node identities matched; the installed
+executable version and both updated installed dependency versions were also
+read back separately.
+
+The existing no-paid installed-project test passed. All five real 1440x900
+captures were opened and inspected: source preview, secret-file refusal,
+incomplete-Git refusal, setup Done and explicit check controls were visible.
+The user's recent-project registry was restored to the same SHA-256, and the
+test app/driver exited. [Installed evidence and limits](evidence/remediation-phase7-416.28392.32244/README.md)
+preserve the initial Grok status discrepancy: app signed in / minimal-PATH
+probe signed out, followed by matching signed-in readbacks. Its cause is not
+established; the Grok parser and discovery paths were not changed. This smoke
+does not claim fresh paid-provider or prompt-to-shipped qualification.
+
+All three approved phases and their installation follow-up are delivered.
+No safety gate, legacy compatibility behavior or existing test was removed;
+no paid model calls, public release publication or publisher-signing change.
