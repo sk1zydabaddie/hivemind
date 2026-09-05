@@ -40,10 +40,11 @@ to disclose, not assumptions that deterministic gates may trust.
 
 - [Conversation reliability repair](CONVERSATION-REPAIR.md): the reported
   space-game-to-garden drift was traced to missing prior turns in the drafter's
-  input. Checkpoint 1 implements durable, bounded conversation history and
-  no-paid provider-input regression coverage. Core's final rerun passed 976
-  tests with 2 skipped; installation is pending. Duplicate activity, planner
-  cancellation, phase reporting and
+  input. Checkpoint 1 is committed as `d9e1ed2`: durable, bounded conversation
+  history and no-paid provider-input regression coverage. Core passed 976 tests
+  with 2 skipped; Desktop 380, Rust 64, viewport 44. Installation awaits approval
+  to close two installed background services; the installed app still has the
+  old path. Duplicate activity, planner cancellation, phase reporting and
   transcript alignment remain open checkpoints, not fixed by this Core change.
 - [Codebase reduction](CODEBASE-REDUCTION.md): generated-data cleanup,
   current-document consolidation and behavior-preserving implementation audit;

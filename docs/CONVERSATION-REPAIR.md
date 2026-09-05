@@ -4,7 +4,7 @@ Approved scope: the four defects reported on 2026-09-04, plus the associated
 missing Stop and unclear agent-role controls. Execute one checkpoint at a time;
 report validation and obtain approval before the next major checkpoint.
 
-## 1. Durable conversation continuity (implemented; installation pending)
+## 1. Durable conversation continuity (committed; installation pending)
 
 Acceptance: the actual second provider input for the space-game follow-up contains
 the first user request and actual assistant reply, in order, exactly once; a new
@@ -145,3 +145,21 @@ remain recorded proposals requiring explicit review, replacement or a new thread
 - No paid model calls, credentials, OS changes, or user-project edits. Final
   installed identity and live-model behavioral qualification remain pending;
   the latter requires separate paid-call approval.
+
+### Checkpoint handoff
+
+- Implementation commit: `d9e1ed2`. Final production reachability check passed
+  all 44 surface/size cases, including loaded-resource/CSP checks. This unchanged
+  UI suite does not prove the still-open duplicate activity/layout defects fixed.
+- Installation was **not attempted**: preflight found installed-runtime daemons
+  99600 (Test Game) and 102148 (an old desktop verification fixture). Read-only
+  records showed no active reservations or task worktrees in Test Game; the old
+  fixture has neither a ledger nor a worktree directory. No installed process
+  was stopped. Approval to close those services and install was requested.
+- The installed maintenance artifact remains **416.28392.32244**, not this fix.
+  No installed-app/model response is claimed for this checkpoint. The asynchronous
+  phase-approval question also remains pending; checkpoints 2 and 3 are untouched.
+- Original history and the incorrect garden proposal remain intact. One ignored
+  intermediate test compilation remains under `node_modules/.cache`; optional
+  deletion was denied by the execution policy and was not retried via another
+  mechanism. This is not a production code path or a tracked repository change.
