@@ -24,6 +24,33 @@ const testDir = dirname(fileURLToPath(import.meta.url));
 const cliPath = path.resolve(testDir, "../src/cli.js");
 const expectedToolNames = mcpToolDefinitions.map((tool) => tool.name).sort((left, right) => left.localeCompare(right));
 
+test("MCP startup failures stop the owned HTTP server and daemon before returning to fixture cleanup", async () => {
+  await withTempRepo(async ({ repo }) => {
+    for (const kind of ["http", "daemon"] as const) {
+      for (const malformed of [false, true]) {
+        let owned: ChildProcessWithoutNullStreams | undefined;
+        const failReady = async (child: ChildProcessWithoutNullStreams): Promise<string> => {
+          owned = child;
+          await readLine(child);
+          if (malformed) return "invalid ready JSON";
+          throw new Error("injected readiness failure");
+        };
+        try {
+          await assert.rejects(
+            kind === "http" ? startHttpMcp(repo, {}, failReady) : startDaemon(repo, failReady),
+            malformed ? /JSON/u : /injected readiness failure/u
+          );
+          assert.ok(owned?.pid);
+          assert.ok(owned.exitCode !== null || owned.signalCode !== null, `${kind} startup failure left its child running`);
+        } finally {
+          // Also clean up when the regression intentionally removes the guard.
+          if (owned !== undefined) await stopChildProcess(owned, "MCP startup regression child");
+        }
+      }
+    }
+  });
+});
+
 test("MCP stdio transport lists the M4.4 tool surface", async () => {
   await withTempRepo(async ({ repo }) => {
     const client = new Client({ name: "hivemind-stdio-test", version: "0.0.0" }, { capabilities: {} });
@@ -497,33 +524,43 @@ async function withTempRepo(run: (context: { repo: string; baseCommit: string })
   );
 }
 
-async function startHttpMcp(repo: string, env: Record<string, string> = { HIVEMIND_DAEMON_URL: "" }): Promise<HttpMcpProcess> {
+async function startHttpMcp(repo: string, env: Record<string, string> = { HIVEMIND_DAEMON_URL: "" }, readReadyLine = readLine): Promise<HttpMcpProcess> {
   const child = spawn(process.execPath, [cliPath, "mcp", "--http", "--port", "0"], {
     cwd: repo,
     env: { ...process.env, ...env },
     windowsHide: true
   });
-  const line = await readLine(child);
-  const parsed = JSON.parse(line) as { event: string; transport: string; url: string; repo_root: string };
-  assert.equal(parsed.event, "mcp.ready");
-  assert.equal(parsed.transport, "http");
-  return { child, url: parsed.url, repoRoot: parsed.repo_root };
+  return readReadyProcess(child, "mcp.ready", readReadyLine);
 }
 
 async function stopHttpMcp(server: HttpMcpProcess): Promise<void> {
   await stopProcess(server);
 }
 
-async function startDaemon(repo: string): Promise<DaemonProcess> {
+async function startDaemon(repo: string, readReadyLine = readLine): Promise<DaemonProcess> {
   const child = spawn(process.execPath, [cliPath, "daemon", "--port", "0"], {
     cwd: repo,
     env: { ...process.env, HIVEMIND_DAEMON_URL: "" },
     windowsHide: true
   });
-  const line = await readLine(child);
-  const parsed = JSON.parse(line) as { event: string; url: string; repo_root: string };
-  assert.equal(parsed.event, "daemon.ready");
-  return { child, url: parsed.url, repoRoot: parsed.repo_root };
+  return readReadyProcess(child, "daemon.ready", readReadyLine);
+}
+
+async function readReadyProcess(
+  child: ChildProcessWithoutNullStreams,
+  expectedEvent: "mcp.ready" | "daemon.ready",
+  readReadyLine: typeof readLine
+): Promise<DaemonProcess> {
+  try {
+    const parsed = JSON.parse(await readReadyLine(child)) as { event: string; transport?: string; url: string; repo_root: string };
+    assert.equal(parsed.event, expectedEvent);
+    if (expectedEvent === "mcp.ready") assert.equal(parsed.transport, "http");
+    return { child, url: parsed.url, repoRoot: parsed.repo_root };
+  } catch (error) {
+    // The caller does not own the process until startup successfully returns.
+    await stopChildProcess(child, "MCP test process whose startup failed");
+    throw error;
+  }
 }
 
 async function stopProcess(processInfo: { child: ChildProcessWithoutNullStreams }): Promise<void> {

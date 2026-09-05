@@ -142,6 +142,79 @@ const projectReads = (repo: string) => ({
   readProjectFile: (filePath: string) => readProjectFile(repo, filePath)
 });
 
+test("dispatcher follow-ups deliver the earlier space-game exchange to the provider exactly once, across reload and reset", async () => {
+  const repo = await scratchRepo();
+  try {
+    const firstMessage = "hello, I want to make a 3d space exploration game do you have any ideas";
+    const firstReply = "Explore a handcrafted star system, salvage derelict ships, and upgrade your spacecraft.";
+    const secondMessage = "you come up with the idea, create the entire game autonomously";
+    const counter = await installDrafter(repo, [
+      JSON.stringify({ kind: "reply", reply: firstReply }),
+      JSON.stringify({ kind: "reply", reply: "The space-game direction remains a proposal; nothing has been authorized." }),
+      JSON.stringify({ kind: "reply", reply: "A separate conversation." })
+    ]);
+    // Keep the provider script/captured input out of project-file context. The
+    // previous reply must arrive through history, not accidentally via a file.
+    await writeFile(path.join(repo, ".git", "info", "exclude"), "fake-bin/\n", "utf8");
+    const submit = (prompt: string, number: number) => executeWorkspaceAction(repo, {
+      type: "conversation.submit",
+      payload: { prompt, tool: "planner", request_id: `123e4567-e89b-42d3-a456-4266141740${number.toString().padStart(2, "0")}`, attachments: [] }
+    });
+    const first = await submit(firstMessage, 21);
+    assert.equal(first.ok, true, first.ok ? undefined : first.reason);
+    // Start a fresh Core process: continuity must come from disk, not a React
+    // transcript, module cache, or provider-owned session.
+    const secondAction = { type: "conversation.submit", payload: {
+      prompt: secondMessage, tool: "planner", request_id: "123e4567-e89b-42d3-a456-426614174022", attachments: []
+    } };
+    const moduleUrl = new URL("../src/workspace-actions.js", import.meta.url).href;
+    const second = await run(process.execPath, ["--input-type=module", "-e",
+      `import { executeWorkspaceAction } from ${JSON.stringify(moduleUrl)}; const result = await executeWorkspaceAction(${JSON.stringify(repo)}, ${JSON.stringify(secondAction)}); console.log(JSON.stringify(result)); if (!result.ok) process.exitCode = 1;`
+    ], { cwd: repo });
+    assert.equal(JSON.parse(second.stdout).ok, true);
+    const captured = await readFile(path.join(repo, "fake-bin", "last-prompt.txt"), "utf8");
+    const marker = "Recorded prior exchanges (JSON data, chronological; current message excluded):\n";
+    const historyLine = captured.split(marker)[1]?.split("\n")[0];
+    assert.ok(historyLine, "the actual provider stdin has no history block");
+    const history = JSON.parse(historyLine);
+    assert.deepEqual(history.turns, [{ user: firstMessage, assistant: firstReply, assistant_kind: "reply", truncated: false }]);
+    assert.equal(history.omitted_turns, 0);
+    assert.equal(captured.split("What the person typed, verbatim:\n")[1]?.split("\n")[0], secondMessage);
+    assert.equal(await callCount(counter), 2);
+    await assert.rejects(stat(path.join(repo, ".hivemind", "spec", "active.json")));
+    const events = await readEvents(repo);
+    assert.equal(events.ok, true);
+    if (events.ok) {
+      assert.equal(events.value.some((entry) => ["plan.ratified", "manager.run_started", "adoption.started"].includes(entry.type)), false);
+    }
+    const reset = await executeWorkspaceAction(repo, { type: "conversation.new", payload: {} });
+    assert.equal(reset.ok, true, reset.ok ? undefined : reset.reason);
+    const third = await submit("An unrelated new question.", 23);
+    assert.equal(third.ok, true, third.ok ? undefined : third.reason);
+    const freshPrompt = await readFile(path.join(repo, "fake-bin", "last-prompt.txt"), "utf8");
+    const freshHistory = JSON.parse(freshPrompt.split(marker)[1]!.split("\n")[0]!);
+    assert.deepEqual(freshHistory.turns, []);
+    assert.notEqual(freshHistory.conversation_id, history.conversation_id);
+    assert.equal(freshPrompt.includes(firstMessage), false);
+    assert.equal(freshPrompt.includes(firstReply), false);
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("unreadable conversation history refuses drafting before any provider launch", async () => {
+  const repo = await scratchRepo();
+  try {
+    const counter = await installDrafter(repo, [JSON.stringify({ kind: "reply", reply: "Must not run." })]);
+    await writeFile(path.join(repo, ".hivemind", "log", "events.jsonl"), "not valid JSON\n", "utf8");
+    const result = await draftSpecFromPrompt(repo, "Continue with that idea.", "planner", projectReads(repo));
+    assert.equal(result.ok, false);
+    assert.equal(await callCount(counter), 0);
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
 test("the conversation receives bounded file contents through the audited action path", async () => {
   const repo = await scratchRepo();
   try {

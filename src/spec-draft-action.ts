@@ -16,13 +16,14 @@ import { writeFileAtomic, writeJsonAtomic } from "./atomic.js";
 import { loadConfig } from "./config.js";
 import { plainReason } from "./plain-reason.js";
 import { ACTIVITY_STREAM_ID, createLiveOutputWriter } from "./output-stream.js";
-import { appendEvent, readEvents } from "./events.js";
+import { appendEvent, readEvents, type HivemindEvent } from "./events.js";
 import { recordIdeationRound, startIdeationSession } from "./ideation.js";
 import {
   buildSpecDraftingPrompt,
   draftedSpecJsonSchema,
   parseDraftedAnswer,
   type ConversationProjectContext,
+  type ConversationHistory,
   type DraftedAnswer
 } from "./spec-drafting.js";
 import {
@@ -165,6 +166,13 @@ export async function draftSpecFromPrompt(
     return { ok: false, reason: "describe what you want built before drafting a spec" };
   }
 
+  // Use one successful durable snapshot for both context and conversation identity.
+  // A damaged trail must not turn a continuation into a fresh, context-free call.
+  const events = await readEvents(repoRoot);
+  if (!events.ok) return events;
+  const history = buildConversationHistory(events.value);
+  if (!history.ok) return history;
+
   const profile = await loadAdapterProfile(repoRoot, tool);
   if (!profile.ok) return profile;
   const dangerous = findDangerousAdapterArgs(profile.profile.invoke);
@@ -219,7 +227,7 @@ export async function draftSpecFromPrompt(
     task_id: null,
     data: {
       message_id: turnId,
-      conversation_id: await currentConversationId(repoRoot),
+      conversation_id: history.value.conversation_id,
       ...(options.requestId === undefined ? {} : { request_id: options.requestId }),
       text: prompt.trim(),
       attachments: options.attachments ?? []
@@ -247,6 +255,7 @@ export async function draftSpecFromPrompt(
     trackedFiles: visibleProjectFiles,
     testCommand: config.config.test_command ?? null,
     projectContext,
+    history: history.value,
     answerOnly: options.answerOnly === true
   });
   const drafted = await draftOnce(repoRoot, profile.profile, tool, turnId, drafting);
@@ -557,11 +566,102 @@ async function currentProjectFiles(
   });
 }
 
-async function currentConversationId(repoRoot: string): Promise<string> {
-  const events = await readEvents(repoRoot);
-  if (!events.ok) return "legacy";
-  const boundary = [...events.value].reverse().find((event) => event.type === "conversation.started");
-  return typeof boundary?.data.conversation_id === "string" ? boundary.data.conversation_id : "legacy";
+export const CONVERSATION_HISTORY_MAX_TURNS = 24;
+export const CONVERSATION_HISTORY_MAX_BYTES = 48 * 1024;
+const CONVERSATION_HISTORY_MESSAGE_BYTES = 4 * 1024;
+
+/** Project only paired conversation data, never arbitrary log/tool output. */
+export function buildConversationHistory(events: HivemindEvent[]): SpecResult<ConversationHistory> {
+  let start = 0;
+  let conversationId = "legacy";
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]!;
+    if (event.type !== "conversation.started") continue;
+    const id = event.data.conversation_id;
+    if (typeof id !== "string" || id.trim() === "" || id.length > 128) {
+      return { ok: false, reason: "the current conversation boundary has no valid identity; history cannot be reconstructed" };
+    }
+    conversationId = id;
+    start = index + 1;
+    break;
+  }
+
+  const turns: ConversationHistory["turns"] = [];
+  const messages = new Map<string, ConversationHistory["turns"][number]>();
+  const drafts = new Map<string, string>();
+  const boundedText = (text: string): string => {
+    const buffer = Buffer.from(text, "utf8");
+    let low = 0;
+    let high = Math.min(buffer.length, CONVERSATION_HISTORY_MESSAGE_BYTES);
+    // Also bound JSON escaping, so a control-character-heavy message cannot
+    // consume the entire history budget and exclude the newest exchange.
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if (Buffer.byteLength(JSON.stringify(utf8Prefix(buffer, middle)), "utf8") <= CONVERSATION_HISTORY_MESSAGE_BYTES) low = middle;
+      else high = middle - 1;
+    }
+    return utf8Prefix(buffer, low);
+  };
+  for (let index = start; index < events.length; index += 1) {
+    const event = events[index]!;
+    const data = event.data;
+    // Missing IDs are the historical format; explicit foreign IDs are never ours.
+    if (data.conversation_id !== undefined && data.conversation_id !== conversationId) continue;
+    const messageId = typeof data.message_id === "string" ? data.message_id : null;
+    const specId = typeof data.spec_id === "string" ? data.spec_id : null;
+    if (event.type === "conversation.message_recorded" && messageId !== null &&
+        typeof data.text === "string" && !messages.has(messageId)) {
+      const user = boundedText(data.text);
+      const turn = { user, truncated: user !== data.text };
+      turns.push(turn);
+      messages.set(messageId, turn);
+    } else if (event.type === "spec.draft_started" && specId !== null) {
+      // Replace even an unmatched start: spec IDs can be reused after a reply.
+      drafts.delete(specId);
+      if (messageId !== null && messages.has(messageId)) drafts.set(specId, messageId);
+    } else if (event.type === "spec.draft_failed" && specId !== null) {
+      drafts.delete(specId);
+    } else if (event.type === "conversation.reply_recorded" || event.type === "spec.draft_completed") {
+      const isReply = event.type === "conversation.reply_recorded";
+      const owner = messageId ?? (isReply || specId === null ? null : drafts.get(specId));
+      const turn = owner === null || owner === undefined ? undefined : messages.get(owner);
+      const text = isReply ? data.text : data.goal;
+      if (turn !== undefined && turn.assistant === undefined && typeof text === "string") {
+        turn.assistant = boundedText(text);
+        turn.assistant_kind = isReply ? "reply" : "draft";
+        turn.truncated ||= turn.assistant !== text;
+      }
+      if (!isReply && specId !== null) drafts.delete(specId);
+    }
+  }
+
+  // Keep the opening goal, then a recent suffix. Count serialized UTF-8 bytes,
+  // including JSON escaping, rather than mistaking characters for prompt size.
+  const selected = new Set<number>();
+  const history: ConversationHistory = {
+    conversation_id: conversationId,
+    turns: [],
+    omitted_turns: turns.length,
+    max_turns: CONVERSATION_HISTORY_MAX_TURNS,
+    max_bytes: CONVERSATION_HISTORY_MAX_BYTES
+  };
+  let bytes = Buffer.byteLength(JSON.stringify(history), "utf8");
+  const include = (index: number): boolean => {
+    const size = Buffer.byteLength(JSON.stringify(turns[index]), "utf8") + 1;
+    if (bytes + size > CONVERSATION_HISTORY_MAX_BYTES) return false;
+    selected.add(index);
+    bytes += size;
+    return true;
+  };
+  if (turns.length > 0) include(0);
+  for (let index = turns.length - 1; index > 0 && selected.size < CONVERSATION_HISTORY_MAX_TURNS; index -= 1) {
+    if (!include(index)) break;
+  }
+  return { ok: true, value: {
+    ...history,
+    turns: [...selected].sort((left, right) => left - right).map((index) => turns[index]!),
+    omitted_turns: turns.length - selected.size
+  } };
 }
 
 function isPrivateProjectRoot(filePath: string): boolean {

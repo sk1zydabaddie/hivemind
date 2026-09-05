@@ -38,6 +38,13 @@ to disclose, not assumptions that deterministic gates may trust.
 
 ## Current work and where to look
 
+- [Conversation reliability repair](CONVERSATION-REPAIR.md): the reported
+  space-game-to-garden drift was traced to missing prior turns in the drafter's
+  input. Checkpoint 1 implements durable, bounded conversation history and
+  no-paid provider-input regression coverage. Core's final rerun passed 976
+  tests with 2 skipped; installation is pending. Duplicate activity, planner
+  cancellation, phase reporting and
+  transcript alignment remain open checkpoints, not fixed by this Core change.
 - [Codebase reduction](CODEBASE-REDUCTION.md): generated-data cleanup,
   current-document consolidation and behavior-preserving implementation audit;
   all three implementation phases committed through `5c69d80`; approved
@@ -76,6 +83,12 @@ to disclose, not assumptions that deterministic gates may trust.
   16 read attempts and 10,000 inventory entries. Explicitly requested paths
   take priority. Limits/omissions are reported; do not silently feed a whole
   repository. Reads are root-confined and refuse `.git` and `.hivemind`.
+- Conversation history is rebuilt from the current thread's durable events,
+  not client memory or provider sessions. The input keeps the opening exchange
+  and a recent suffix: at most 24 prior turns and 48 KiB serialized UTF-8, with
+  individual message text bounded to 4 KiB including JSON escaping. Shortening
+  and omissions are explicit; original events remain intact. Assistant proposals
+  carry no approval authority. Unreadable history refuses before provider spawn.
 - Supported direct CLI harnesses: Codex, Claude Code, Grok Build and OpenCode.
   Kimi Code is retired, including its direct paths and mark. Moonshot selected
   inside OpenCode is a backend, not a restored fifth harness. Presence, sign-in,
