@@ -168,3 +168,26 @@ committed, but that delivery requirement remains open.
 Completion requires scoped commits, a clean worktree, measured before/after
 counts, explicit retained compatibility paths, and no unsupported promise that
 passing tests proves equivalence for every possible input.
+
+## Approved dependency follow-up — 2026-09-04
+
+The user approved resolving the installation blocker. Targeted npm update with
+lifecycle scripts disabled changed only `fast-uri` 3.1.5 to 3.1.7 and `qs`
+6.15.2 to 6.16.0 in the root lockfile. Both satisfy existing transitive ranges;
+no direct dependency, override, application path or audit policy was added.
+The two installed package versions were checked against that lockfile.
+
+The official npm gate reports zero vulnerabilities in both production graphs
+and both full reports. The pinned RustSec gate reports zero vulnerabilities
+across 483 Windows x64 dependencies, database
+`5a0ebedfe8bdd2e295b171f4162f8c977bcad9a5`. The initial sandboxed Rust run was
+63 passed / 1 failed because test-owned process termination was denied. That
+run ended; its test processes were gone when inspected. The unchanged suite
+rerun with process-control access passed **64/64**, exit 0. Fresh Core validation
+against the updated dependencies passed **967 tests, 2 skipped, 969 total**,
+zero failures or cancellations, exit 0. Desktop passed **380/380** across 42
+files, and its production typecheck/build passed with the existing chunk-size
+and mixed-import warnings. The exact lockfile delta was asserted to contain
+only the two named packages; installed-tree dependency inspection, dead-path
+audit and whitespace checks passed. Clean-source packaging and installed
+observation follow the dependency commit.
