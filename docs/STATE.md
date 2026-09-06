@@ -55,6 +55,12 @@ to disclose, not assumptions that deterministic gates may trust.
 
 ## Current work and where to look
 
+- The 17-finding real-world-use remediation is active. U10 is installed and
+  closed; U3's project/conversation-owned unsent-draft replacement is being
+  implemented and tested. It is not yet installed or qualified. U1 still needs
+  the spec-ratification/tentative-planning product-rule decision; independent
+  findings continue. [Per-finding evidence and open scope](REAL-WORLD-USE-AUDIT.md).
+
 - [Conversation reliability repair](CONVERSATION-REPAIR.md): the approved
   history, cancellation, phase-reporting and transcript-alignment checkpoints
   are implemented and installed with no-paid behavioral proof. Final source

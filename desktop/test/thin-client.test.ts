@@ -43,7 +43,9 @@ describe("React workspace boundary", () => {
 
     expect(work).toMatch(/invoke<PromptAttachment\[\]?>\("choose_project_files"/u);
     expect(work).toMatch(/invoke<PromptAttachment\[\]?>\("choose_project_attachment_folder"/u);
-    expect(work).toMatch(/request_id: requestId[\s\S]{0,100}attachments/u);
+    const drafts = await readFile(path.join(desktopRoot, "src", "lib", "composer-draft.ts"), "utf8");
+    expect(drafts).toMatch(/request_id: requestId, prompt: view\.draft\.text\.trim\(\), attachments: view\.draft\.attachments/u);
+    expect(work).toMatch(/const submitted = await draftSession\.beginSubmission\(\)[\s\S]*type: "conversation\.submit",[\s\S]*\.\.\.submitted/u);
     expect(work).not.toMatch(/Project references:/u);
     expect(work).toMatch(/aria-label="Attached project items"/u);
     expect(shell).toMatch(/choose_project_files/u);
@@ -446,11 +448,13 @@ describe("React workspace boundary", () => {
 
     const submit = work.slice(work.indexOf("const submitPrompt"), work.indexOf("const [newConversationBusy"));
     expect(submit).toMatch(/type: "conversation\.submit"/u);
-    expect(submit).toMatch(/request_id: requestId/u);
-    expect(submit).toMatch(/attachments/u);
+    const drafts = await readFile(path.join(desktopRoot, "src", "lib", "composer-draft.ts"), "utf8");
+    expect(submit).toMatch(/await draftSession\.beginSubmission\(\)/u);
+    expect(submit).toMatch(/\.\.\.submitted/u);
+    expect(drafts).toMatch(/request_id: requestId, prompt: view\.draft\.text\.trim\(\), attachments: view\.draft\.attachments/u);
     expect(submit).not.toMatch(/type: "(?:spec\.draft|plan\.prepare|manager\.start)"/u);
     expect(submit).not.toMatch(/planHasWorkLeft|inspection\?\.active_spec_id|runActive\)/u);
-    expect(work).toMatch(/submitInFlightRef\.current/u);
+    expect(drafts).toMatch(/this\.snapshot\.sending \|\| this\.snapshot\.selecting\) return null/u);
     expect(work).toMatch(/Start over with a different plan/u);
     expect(work).toMatch(/onStartOver/u);
 
@@ -856,7 +860,10 @@ describe("React workspace boundary", () => {
     /* Drafting has no honest total. Its separate textual elapsed indicator is
        functional liveness for reduced-motion users, not task progress. */
     expect(work).toMatch(/function LiveElapsed[\s\S]*setInterval[\s\S]*elapsed/u);
-    expect(work).toMatch(/setPromptStartedAt\(Date\.now\(\)\)[\s\S]*LiveElapsed startedAt/u);
+    const drafts = await readFile(path.join(desktopRoot, "src", "lib", "composer-draft.ts"), "utf8");
+    expect(drafts).toMatch(/sending: true, startedAt: Date\.now\(\)/u);
+    expect(work).toMatch(/const promptStartedAt = draftSnapshot\.startedAt/u);
+    expect(work).toMatch(/LiveElapsed startedAt/u);
     expect(styles).toMatch(/animation:\s*artifact-advance/u);
     expect(styles).toMatch(/prefers-reduced-motion[\s\S]*\.artifact-marker\s*\{\s*display:\s*none/u);
   });

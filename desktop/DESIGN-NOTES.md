@@ -87,6 +87,12 @@ the current skin. Preserve the attention hierarchy and remeasure a palette chang
 - The composer has a real attachment action and project-role selection. Keep
   the draft and attachments until Core accepts the request. Durable request IDs
   make retries idempotent; block duplicate submission rather than guessing state.
+- Unsent drafts are project/conversation-owned, above the tab lifecycle. Save
+  text, attachment references and submission identity through Core's advisory
+  draft actions in the project's ignored `.hivemind/ui/` directory. Never use
+  global browser storage. Report loading, saving and failure; an accepted send
+  clears only that exact submitted content, never a newer draft. Tab changes,
+  project changes and reload do not grant execution or cancel a running request.
 - One centered reading column aligns transcript, live activity and docked
   composer. Do not pin a duplicate activity row below the conversation. Put
   prompt text above the attachment/model controls with a consistent inset.

@@ -24,6 +24,44 @@ remain open; the next independent checkpoint is U3's project-owned draft state.
   Neither rule is silently changed while that decision is unresolved.
 - U2–U9 and U11–U17 remain open; independent fixes continue under the full goal.
 
+### U3 in progress — project/conversation-owned unsent draft
+
+The current change replaces WorkTab-local text, attachment and submission
+ownership with an App-owned advisory session and Core `draft.inspect` / `draft.save`.
+Persistence is a hash-named, 256 KiB-bounded record under the project's ignored
+`.hivemind/ui/conversation-drafts/`, not global browser storage or an authority
+record. The existing cross-process lock and atomic writer protect revision-
+checked saves. Core derives conversation identity and submission receipts from
+the full durable trail. The prior unconditional attachment clears and duplicate
+conversation-boundary scan are removed. Saved old-conversation drafts remain
+on disk; no archive restoration or execution authority is added in U3.
+
+Targeted results: **9/9 Core draft tests** and **8/8 desktop draft-session
+tests** pass. They cover round trips, delayed/concurrent saves, project and
+conversation separation, full-trail acceptance reconciliation, retained next
+drafts, errors, limits and idempotency. The shared attachment-selection owner
+also prevents late native completions from being attached to another project.
+Two stale desktop source-shape assertions were updated to follow the new owner
+while retaining the same boundary checks. Normal Desktop validation passed
+**390/390** across 43 files, Rust **65/65**, and production viewport checks
+**52/52** including draft-load failure at all four window sizes. The build
+passed with the existing large-bundle warning. The new draft tests plus existing
+conversation-history regressions passed **28/28**. The first full Core run
+reported **1,000 total, 997 passed, 1 failed, 2 skipped**: the new CLI test
+incorrectly expected a result envelope, although the CLI returns its value
+directly. After correcting the assertion, final full Core validation passed
+**1,001 total, 999 passed, 2 skipped, 0 failed/cancelled**, exit 0, 716.733 seconds.
+The skips remain the two live POSIX process-group checks on Windows.
+
+A further desktop regression reproduced a provisional request identity being
+retained after a save failed, even though no dispatch payload had been returned.
+The corrected owner rolls back that provisional identity without discarding
+new edits or an earlier genuinely uncertain send. The regression now passes;
+the latest full Desktop suite still passes **390/390**. Attachment selection
+also blocks submission until it completes. Source validation is complete;
+commit, installation and installed tab/project/reload proof are pending.
+**U3 remains open**. No paid calls.
+
 ### U10 fixed and installed — 416.29883.15117
 
 The pre-fix instrumented regression failed as intended: `wholeFileReads: 1`,
@@ -41,7 +79,7 @@ bundle warning. Static action/event checks and `git diff --check` passed;
 10 pre-existing export leads remain unproven dead code. Full Core validation
 passed **992 total, 990 passed, 2 skipped, 0 failed/cancelled**, exit 0,
 641.90 seconds. The skips are the existing live POSIX process-group checks on
-Windows. Commit and installed verification are pending. No paid calls were made.
+Windows. Installation evidence follows. No paid calls were made.
 
 The same bounded-handle test was also executed from the installed `core`
 directory, so its isolated child imported that installation's

@@ -77,6 +77,7 @@ function visibleText(markup: string): string {
 function renderWork(scenario: Scenario, stage: "thread" | "graph"): string {
   return renderToStaticMarkup(
     createElement(WorkTab, {
+      composerDraft: { session: null, snapshot: { view: null, saving: false, sending: false, selecting: false, startedAt: null, error: "" } },
       actionError: "",
       connectionDetail: "",
       connectionState: "connected",

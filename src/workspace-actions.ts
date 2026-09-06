@@ -1,4 +1,5 @@
 import { isRecord } from "./json.js";
+import { inspectConversationDraft, saveConversationDraft } from "./conversation-draft.js";
 import { conversationCancelled, currentConversationOperation, stopConversation } from "./conversation-control.js";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -26,7 +27,7 @@ import { requestTaskStop } from "./task-control.js";
 import { inspectWorkspace } from "./workspace-inspection.js";
 
 import { resumeTask } from "./task-resume.js";
-import { startNewConversation, draftSpecFromPrompt, type ConversationAttachment } from "./spec-draft-action.js";
+import { startNewConversation, draftSpecFromPrompt, parseConversationAttachments, type ConversationAttachment } from "./spec-draft-action.js";
 import { adapterRoleNames, findCatalogueAgent, isAdapterRoleName, type AdapterRoleName } from "./agent-catalogue.js";
 import { discoverProviderModels } from "./model-discovery.js";
 import {
@@ -54,6 +55,8 @@ export const workspaceActionTypes = [
   "plan.ratify",
   "conversation.submit",
   "conversation.stop",
+  "draft.inspect",
+  "draft.save",
   "spec.review",
   "spec.adopt",
   "plan.amend",
@@ -171,6 +174,8 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
       : { ok: false, reason: parsed.ok ? "autonomy level must be auto, review_plan, or review_everything" : parsed.reason };
   }
   if (raw.type === "guidance.record") return recordHumanGuidance(repoRoot, payload);
+  if (raw.type === "draft.inspect") return inspectConversationDraft(repoRoot, payload);
+  if (raw.type === "draft.save") return saveConversationDraft(repoRoot, payload);
   if (raw.type === "conversation.stop") {
     const parsed = exactStrings(payload, ["request_id"]);
     return parsed.ok ? stopConversation(repoRoot, parsed.value.request_id) : parsed;
@@ -629,23 +634,6 @@ async function prepareConversationResponse(
   return prepared.ok
     ? { ok: true, value: { status: "planned", request_id: requestId, draft: drafted.value, plan: prepared.value } }
     : prepared;
-}
-
-function parseConversationAttachments(value: unknown): { ok: true; value: ConversationAttachment[] } | { ok: false; reason: string } {
-  if (value === undefined) return { ok: true, value: [] };
-  if (!Array.isArray(value) || value.length > 20) {
-    return { ok: false, reason: "conversation.submit attachments must be a list of at most 20 project items" };
-  }
-  const attachments: ConversationAttachment[] = [];
-  for (const entry of value) {
-    if (!isRecord(entry) || (entry.kind !== "file" && entry.kind !== "folder") ||
-        typeof entry.path !== "string" || entry.path.trim() === "" ||
-        Object.keys(entry).some((key) => key !== "kind" && key !== "path")) {
-      return { ok: false, reason: "each conversation attachment must contain only a file/folder kind and project-relative path" };
-    }
-    attachments.push({ kind: entry.kind, path: entry.path });
-  }
-  return { ok: true, value: attachments };
 }
 
 /**

@@ -318,6 +318,15 @@ class ReplayEventSource {
         }
         return inspection;
       }
+      /* Unsent drafts were not captured in these historical runs. This is an
+         explicitly empty layout fixture, not persistence evidence. Installed
+         tests exercise the actual project-local reader and writer. */
+      if (action.type === "draft.inspect") {
+        const conversationId = currentInspection()?.conversation_id;
+        if (typeof conversationId !== "string") throw new Error("No captured conversation identity for the draft fixture.");
+        return { conversation_id: conversationId, revision: null, receipt: null,
+          draft: { content_id: crypto.randomUUID(), text: "", attachments: [], submission: null } };
+      }
       if (action.type === "trail.inspect") return scenario.events.slice(0, delivered);
       /* The settings surface, served from a REAL capture: `config.inspect` and
          `adapter.connect` recorded from a project that was actually

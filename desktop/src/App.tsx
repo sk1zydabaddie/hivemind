@@ -46,6 +46,7 @@ import {
   TooltipTrigger
 } from "@/components/ui/tooltip";
 import { useWorkspace } from "@/hooks/use-workspace";
+import { useComposerDraft } from "@/hooks/use-composer-draft";
 import {
   displayProjectPath,
   projectNameFromPath,
@@ -92,6 +93,7 @@ export default function App(): React.JSX.Element {
   const [recentsError, setRecentsError] = useState("");
   /* The CONNECTED root, for everything that needs a live project. */
   const projectPath = workspace.connection?.project_root ?? "";
+  const composerDraft = useComposerDraft(projectPath, workspace.inspection?.conversation_id ?? null, workspace.projection.eventCount);
   /* And the SELECTED one, which survives a failed connection. The update bar
      needs this: a daemon left over from the previous build fails the
      connection, which emptied `projectPath`, which removed the source route --
@@ -674,13 +676,13 @@ export default function App(): React.JSX.Element {
             onStartWorking={() => setSection("work")}
           />
         </TabsContent>
-        {/* One component renders both stages, which is what keeps the single
-            inspector single: the rail, the attention bar, the ship bar and the
-            composer are the same instances either way, so shipping never
-            depends on which view you happen to be looking at. */}
+        {/* The two tab instances share the project/conversation-owned draft.
+            Authoritative run state still comes only from the workspace. */}
         {(["work", "agents"] as const).map((value) => (
         <TabsContent key={value} value={value}>
           <WorkTab
+            key={JSON.stringify([projectPath, workspace.inspection?.conversation_id])}
+            composerDraft={composerDraft}
             actionError={workspace.actionError}
             connectionDetail={workspace.connectionDetail}
             connectionState={workspace.connectionState}

@@ -122,6 +122,7 @@ import type {
 } from "@/lib/workspace-actions";
 
 interface WorkTabProps {
+  composerDraft: ReturnType<typeof import("@/hooks/use-composer-draft").useComposerDraft>;
   projection: BoardProjection;
   inspection: WorkspaceInspection | null;
   projectRoot: string;
@@ -201,6 +202,7 @@ const toneDot: Record<ThreadTone, string> = {
 };
 
 export function WorkTab({
+  composerDraft,
   projection,
   inspection,
   projectRoot,
@@ -236,9 +238,14 @@ export function WorkTab({
      client decides nothing about it. */
   const [specReview, setSpecReview] = useState<SpecReview | null>(null);
   const [nonGoals, setNonGoals] = useState<NonGoalEntry[]>([]);
-  const [composer, setComposer] = useState("");
-  const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
-  const [attachmentBusy, setAttachmentBusy] = useState(false);
+  const { session: draftSession, snapshot: draftSnapshot } = composerDraft;
+  const composer = draftSnapshot.view?.draft.text ?? "";
+  const attachments = draftSnapshot.view?.draft.attachments ?? [];
+  const setComposer = (text: string): void => { draftSession?.update(current => ({ ...current, text })); };
+  const setAttachments = (change: (current: PromptAttachment[]) => PromptAttachment[]): void => {
+    draftSession?.update(current => ({ ...current, attachments: change(current.attachments) }));
+  };
+  const attachmentBusy = draftSnapshot.selecting;
   const [attachmentError, setAttachmentError] = useState("");
   const [composerHasMoved, setComposerHasMoved] = useState(false);
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
@@ -249,10 +256,8 @@ export function WorkTab({
   const [rolePickerError, setRolePickerError] = useState("");
   const [feedback, setFeedback] = useState("");
   const [busy, setBusy] = useState(false);
-  const submitInFlightRef = useRef(false);
-  const submittedTextRef = useRef<string | null>(null);
-  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
-  const [promptStartedAt, setPromptStartedAt] = useState<number | null>(null);
+  const pendingRequestId = draftSnapshot.view?.draft.submission?.request_id ?? null;
+  const promptStartedAt = draftSnapshot.startedAt;
   const [amendment, setAmendment] = useState<{
     kind: "add_task" | "edit_task";
     draft: AmendmentDraft;
@@ -284,18 +289,6 @@ export function WorkTab({
     activityEndRef.current?.scrollIntoView({ block: "nearest" });
   }, [projection.eventCount]);
 
-  useEffect(() => {
-    if (pendingRequestId === null) return;
-    const accepted = projection.recentEvents.some((event) =>
-      event.type === "conversation.message_recorded" && event.data.request_id === pendingRequestId
-    );
-    if (!accepted || submittedTextRef.current === null) return;
-    const submitted = submittedTextRef.current;
-    submittedTextRef.current = null;
-    setComposer((current) => current === submitted ? "" : current);
-    setAttachments([]);
-  }, [pendingRequestId, projection.eventCount, projection.recentEvents]);
-
   /* Moving the composer is presentation state, not project truth. Reset it
      when this surface disconnects from a project; otherwise a newly selected
      empty folder could inherit the previous project's bottom placement. */
@@ -304,7 +297,6 @@ export function WorkTab({
   }, [connectionState]);
 
   useEffect(() => {
-    setAttachments([]);
     setAttachmentError("");
     setRolePickerOpen(false);
     setRolePickerView(null);
@@ -393,7 +385,7 @@ export function WorkTab({
   };
 
   const addAttachments = async (kind: PromptAttachment["kind"]): Promise<void> => {
-    setAttachmentBusy(true);
+    if (draftSession === null || !draftSession.beginAttachmentSelection()) return;
     setAttachmentError("");
     try {
       const selected =
@@ -414,7 +406,7 @@ export function WorkTab({
     } catch (error) {
       setAttachmentError(plainActionError(error));
     } finally {
-      setAttachmentBusy(false);
+      draftSession.finishAttachmentSelection();
     }
   };
 
@@ -476,14 +468,10 @@ export function WorkTab({
     managerSession.status !== "stopped";
   const continuationAvailable = managerSession?.continuation_available === true;
   const conversationOperation = inspection?.conversation_operation ?? null;
-  const responseRequestId = conversationOperation?.request_id ?? (promptStartedAt !== null ? pendingRequestId : null);
-  const responseSince = conversationOperation ? Date.parse(conversationOperation.started_at) : promptStartedAt;
+  const awaitingResponse = promptStartedAt !== null && draftSnapshot.view?.receipt?.finished !== true;
+  const responseRequestId = conversationOperation?.request_id ?? (awaitingResponse ? pendingRequestId : null);
+  const responseSince = conversationOperation ? Date.parse(conversationOperation.started_at) : awaitingResponse ? promptStartedAt : null;
   const responsePhase = conversationOperation?.phase ?? "reading";
-  useEffect(() => {
-    if (pendingRequestId !== null && projection.recentEvents.some((event) =>
-      event.type === "conversation.operation_finished" && event.data.request_id === pendingRequestId
-    )) setPendingRequestId(null);
-  }, [pendingRequestId, projection.recentEvents]);
   const stopResponse = async (): Promise<void> => {
     if (responseRequestId === null) return;
     setStopBusy(true);
@@ -547,33 +535,23 @@ export function WorkTab({
     event: React.FormEvent<HTMLFormElement>
   ): Promise<void> => {
     event.preventDefault();
-    if (submitInFlightRef.current || conversationOperation !== null) return;
-    const typedMessage = composer.trim();
-    if (typedMessage === "") return;
-    const requestId = pendingRequestId ?? crypto.randomUUID();
-    submittedTextRef.current = composer;
-    setPendingRequestId(requestId);
-    submitInFlightRef.current = true;
+    if (draftSession === null || draftSnapshot.sending || draftSnapshot.selecting || conversationOperation !== null) return;
+    if (composer.trim() === "") return;
     setComposerHasMoved(true);
     setBusy(true);
-    setPromptStartedAt(Date.now());
     setFeedback("");
+    let submittedRequest = false;
     try {
+      const submitted = await draftSession.beginSubmission();
+      if (submitted === null) return;
+      submittedRequest = true;
       await onAction({
         type: "conversation.submit",
         payload: {
-          prompt: typedMessage,
+          ...submitted,
           tool: "planner",
-          request_id: requestId,
-          attachments
         }
       });
-      /* A successful response can only follow Core's durable message append.
-         Clearing here preserves the request through transport/provider failure
-         before acceptance while avoiding a second client-side authority test. */
-      setComposer((current) => current === composer ? "" : current);
-      setAttachments([]);
-      setPendingRequestId(null);
       setFeedback("");
     } catch (error) {
       const explanation = plainActionError(error);
@@ -583,8 +561,7 @@ export function WorkTab({
           : "That request stopped before a plan was ready. See the conversation above for details."
       );
     } finally {
-      submitInFlightRef.current = false;
-      setPromptStartedAt(null);
+      if (submittedRequest) await draftSession.finishSubmission();
       setBusy(false);
     }
   };
@@ -622,6 +599,7 @@ export function WorkTab({
     setNewConversationBusy(true);
     setNewConversationAsk(false);
     try {
+      await draftSession?.flush();
       if (responseRequestId !== null) {
         await onAction({ type: "conversation.stop", payload: { request_id: responseRequestId } });
       }
@@ -634,6 +612,8 @@ export function WorkTab({
           payload: { session_id: managerSession.session_id, reason: "Starting a new conversation" }
         });
       }
+      // A next draft may have been edited while Stop was being acknowledged.
+      await draftSession?.flush();
       await onAction({ type: "conversation.new", payload: {} });
       setReplanOpen(false);
       setReplanText("");
@@ -914,11 +894,15 @@ export function WorkTab({
 
   const promptDock = (
     <PromptDock
+      draftReady={draftSnapshot.view !== null}
+      draftSaving={draftSnapshot.saving}
+      draftError={draftSnapshot.error}
+      onRetryDraft={() => { void (draftSession === null ? onReconnect() : draftSession.unsaved ? draftSession.flush().catch(() => undefined) : draftSession.refresh()); }}
       activeAgents={inspection?.active_agents ?? []}
       attachmentBusy={attachmentBusy}
       attachmentError={attachmentError}
       attachments={attachments}
-      busy={busy || conversationOperation !== null}
+      busy={busy || draftSnapshot.sending || conversationOperation !== null}
       responseActive={responseRequestId !== null}
       stopBusy={stopBusy}
       onStopResponse={stopResponse}
@@ -939,7 +923,7 @@ export function WorkTab({
       onAddAttachments={addAttachments}
       onChange={setComposer}
       onRemoveAttachment={(attachment) =>
-        setAttachments((current) => current.filter((entry) => entry !== attachment))
+        setAttachments((current) => current.filter((entry) => entry.kind !== attachment.kind || entry.path !== attachment.path))
       }
       onContinue={continueRun}
       onChooseRoleModel={chooseRoleModel}
@@ -1353,7 +1337,6 @@ export function WorkTab({
             setReplanText("");
             setReplanOpen(false);
             setReviewOpen(false);
-            setComposer("");
           } catch (error) {
             setFeedback(plainActionError(error));
           } finally {
@@ -3024,6 +3007,10 @@ function ShippedCard({
 /* ── Decision 1, centered first and then anchored at the bottom ───────────── */
 
 function PromptDock({
+  draftReady,
+  draftSaving,
+  draftError,
+  onRetryDraft,
   value,
   composerRef,
   centered,
@@ -3055,6 +3042,10 @@ function PromptDock({
   onContinue,
   onStartManager
 }: {
+  draftReady: boolean;
+  draftSaving: boolean;
+  draftError: string;
+  onRetryDraft: () => void;
   value: string;
   composerRef: React.RefObject<HTMLTextAreaElement | null>;
   centered: boolean;
@@ -3092,7 +3083,7 @@ function PromptDock({
       <DropdownMenuTrigger asChild>
         <Button
           aria-label="Add files or a folder"
-          disabled={busy || attachmentBusy}
+          disabled={!draftReady || busy || attachmentBusy}
           size="icon-sm"
           title="Add files or a folder"
           type="button"
@@ -3140,7 +3131,11 @@ function PromptDock({
    * no reason when disabled, which is the first control a person meets. */
   const sendLabel = runActive ? "Send to this run" : "Send";
   const sendReason =
-    busy
+    !draftReady
+      ? "Wait for the saved draft to load"
+      : attachmentBusy
+        ? "Finish choosing project context first"
+      : busy
       ? "Hivemind is still working on your last message"
       : value.trim() === ""
         ? "Type something first"
@@ -3152,7 +3147,7 @@ function PromptDock({
   ) : (
     <Button
       aria-label={sendLabel}
-      disabled={busy || value.trim() === ""}
+      disabled={!draftReady || attachmentBusy || busy || value.trim() === ""}
       disabledReason={sendReason}
       size="icon-round"
       type="submit"
@@ -3217,6 +3212,8 @@ function PromptDock({
         )}
         <textarea
           aria-label="Message Hivemind"
+          aria-describedby="composer-draft-status"
+          readOnly={!draftReady}
           className="max-h-[180px] min-h-[44px] w-full resize-none border-0 bg-transparent px-2 py-1.5 text-[15px] leading-relaxed text-ink outline-none placeholder:text-muted-foreground focus-visible:outline-none"
           id="work-composer"
           placeholder={
@@ -3248,6 +3245,12 @@ function PromptDock({
           {leftActions}
           {sendButton}
         </div>
+      </div>
+      <div className="flex items-center gap-2 text-[11px] leading-snug text-muted-foreground" id="composer-draft-status" data-testid="composer-draft-status">
+        <span className={draftError ? "min-w-0 break-words text-clay" : "min-w-0"} role={draftError ? "alert" : "status"}>
+          {draftError || (!draftReady ? "Loading saved draft…" : draftSaving ? "Saving draft…" : "Draft saved in this project")}
+        </span>
+        {draftError ? <Button disabled={draftSaving} size="sm" type="button" variant="ghost" onClick={onRetryDraft}>Retry</Button> : null}
       </div>
       {attachmentError ? (
         <p className="m-0 text-[12px] leading-snug text-clay" role="alert">

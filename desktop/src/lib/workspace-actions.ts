@@ -92,6 +92,7 @@ export interface ActiveAgentView {
 }
 
 export interface WorkspaceInspection {
+  conversation_id?: string | null;
   conversation_operation?: import("../../../src/conversation-control").ConversationOperation | null;
   tasks: TaskProjection[];
   /* Rounds Core has judged no longer reporting. Optional: a daemon older than
@@ -695,6 +696,8 @@ export type WorkspaceAction = {
     | "manager.retry_blocked"
     | "guidance.record"
     | "conversation.submit"
+    | "draft.inspect"
+    | "draft.save"
     | "conversation.stop"
     | "plan.prepare"
     | "plan.review"

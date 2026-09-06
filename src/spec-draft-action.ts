@@ -1,4 +1,5 @@
 import { isNodeError } from "./error-detail.js";
+import { isRecord } from "./json.js";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { mkdir, readdir, rename } from "node:fs/promises";
@@ -11,7 +12,7 @@ import {
   loadAdapterProfile,
   type AdapterProfile
 } from "./adapter.js";
-import { conversationCancelled, runConversationAdapter } from "./conversation-control.js";
+import { conversationCancelled, currentConversationBoundary, runConversationAdapter } from "./conversation-control.js";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic.js";
 import { loadConfig } from "./config.js";
 import { plainReason } from "./plain-reason.js";
@@ -570,24 +571,31 @@ async function currentProjectFiles(
 }
 
 export const CONVERSATION_HISTORY_MAX_TURNS = 24;
+
+export function parseConversationAttachments(value: unknown): { ok: true; value: ConversationAttachment[] } | { ok: false; reason: string } {
+  if (value === undefined) return { ok: true, value: [] };
+  if (!Array.isArray(value) || value.length > 20) {
+    return { ok: false, reason: "conversation.submit attachments must be a list of at most 20 project items" };
+  }
+  const attachments: ConversationAttachment[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry) || (entry.kind !== "file" && entry.kind !== "folder") ||
+        typeof entry.path !== "string" || entry.path.trim() === "" ||
+        Object.keys(entry).some((key) => key !== "kind" && key !== "path")) {
+      return { ok: false, reason: "each conversation attachment must contain only a file/folder kind and project-relative path" };
+    }
+    attachments.push({ kind: entry.kind, path: entry.path });
+  }
+  return { ok: true, value: attachments };
+}
 export const CONVERSATION_HISTORY_MAX_BYTES = 48 * 1024;
 const CONVERSATION_HISTORY_MESSAGE_BYTES = 4 * 1024;
 
 /** Project only paired conversation data, never arbitrary log/tool output. */
 export function buildConversationHistory(events: HivemindEvent[]): SpecResult<ConversationHistory> {
-  let start = 0;
-  let conversationId = "legacy";
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index]!;
-    if (event.type !== "conversation.started") continue;
-    const id = event.data.conversation_id;
-    if (typeof id !== "string" || id.trim() === "" || id.length > 128) {
-      return { ok: false, reason: "the current conversation boundary has no valid identity; history cannot be reconstructed" };
-    }
-    conversationId = id;
-    start = index + 1;
-    break;
-  }
+  const boundary = currentConversationBoundary(events);
+  if (!boundary.ok) return boundary;
+  const { start, conversation_id: conversationId } = boundary.value;
 
   const turns: ConversationHistory["turns"] = [];
   const messages = new Map<string, ConversationHistory["turns"][number]>();

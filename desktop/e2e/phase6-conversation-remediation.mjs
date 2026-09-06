@@ -24,6 +24,7 @@ const evidenceDir = path.resolve("..", "docs", "evidence", `conversation-repair-
 let driver;
 let tauriDriver;
 let project;
+let otherProject;
 let recentProjectsBefore = null;
 let recentProjectsExisted = false;
 const driverLog = [];
@@ -207,7 +208,14 @@ try {
   await driver.navigate().refresh();
   await driver.wait(until.elementLocated(By.css('[aria-label="Stop response"]')), 10000);
   assert.equal((await driver.findElements(By.css('[data-testid="conversation-progress"]'))).length, 1, "reload duplicated or lost the active operation");
+  await waitForDraftSaved();
+  assert.equal(await driver.findElement(By.id("work-composer")).getAttribute("value"), "", "reload restored the accepted message as an unsent draft");
   await typeComposer("This is my next unsent message.");
+  await waitForDraftSaved();
+  assert.equal(isPidAlive(responseChildPid), true, "next draft saved only after the provider finished");
+  await driver.findElement(By.xpath("//*[@role='tab' and normalize-space(.)='Agents']")).click();
+  await driver.findElement(By.xpath("//*[@role='tab' and normalize-space(.)='Work']")).click();
+  assert.equal(await driver.findElement(By.id("work-composer")).getAttribute("value"), "This is my next unsent message.", "tab switch lost the next draft while responding");
   await driver.findElement(By.css('[aria-label="Stop response"]')).click();
   await driver.wait(async () => (await postAction(daemon.url, { type: "status.inspect", payload: {} })).value?.conversation_operation === null, 15000);
   assert.equal(isPidAlive(responseChildPid), false, "response fixture process survived acknowledged Stop");
@@ -317,15 +325,78 @@ try {
     )
   };
 
-  // Findings-only probe: this is an unsent draft, not another provider call.
+  // U3: real installed text/chip consumers over the installed draft actions.
+  // Native picker behavior is unchanged and not simulated as qualified here:
+  // seed attachment references through Core, then exercise UI removal and
+  // navigation/reload. No production project or provider is used.
+  const navigationCallsBefore = (await readCalls()).length;
   const navigationDraft = "Keep this unsent draft while I inspect Agents.";
   await typeComposer(navigationDraft);
+  await waitForDraftSaved();
+  const currentConversation = (await postAction(daemon.url, { type: "status.inspect", payload: {} })).value.conversation_id;
+  const readDraft = await postAction(daemon.url, { type: "draft.inspect", payload: { conversation_id: currentConversation } });
+  assert.equal(readDraft.ok, true, readDraft.reason);
+  const selectedAttachments = [{ kind: "folder", path: "notes" }, { kind: "file", path: "UNTRACKED-CURRENT.md" }];
+  const seeded = await postAction(daemon.url, { type: "draft.save", payload: {
+    conversation_id: currentConversation, expected_revision: readDraft.value.revision,
+    draft: { ...readDraft.value.draft, content_id: randomUUID(), attachments: selectedAttachments }
+  } });
+  assert.equal(seeded.ok, true, seeded.reason);
+  await driver.navigate().refresh();
+  await waitForDraftSaved();
   assert.equal(await driver.findElement(By.id("work-composer")).getAttribute("value"), navigationDraft);
+  await assertAttachmentChips(["notes", "UNTRACKED-CURRENT.md"]);
   await driver.findElement(By.xpath("//*[@role='tab' and normalize-space(.)='Agents']")).click();
   await driver.findElement(By.xpath("//*[@role='tab' and normalize-space(.)='Work']")).click();
   const draftAfterTabs = await driver.wait(until.elementLocated(By.id("work-composer")), 5000);
+  assert.equal(await draftAfterTabs.getAttribute("value"), navigationDraft);
+  await assertAttachmentChips(["notes", "UNTRACKED-CURRENT.md"]);
   evidence.usabilityObservations.draftAcrossTabs = {
-    typed: navigationDraft, after: await draftAfterTabs.getAttribute("value")
+    typed: navigationDraft, after: await draftAfterTabs.getAttribute("value"), attachments: selectedAttachments
+  };
+  otherProject = await createFixture(initModule);
+  await openProjectDialog(otherProject);
+  await waitForDraftSaved();
+  assert.equal(await driver.findElement(By.id("work-composer")).getAttribute("value"), "", "project B inherited A's text");
+  await assertAttachmentChips([]);
+  const otherDraft = "This draft belongs only to project B.";
+  await typeComposer(otherDraft);
+  await waitForDraftSaved();
+  await openProjectDialog(project);
+  await waitForDraftSaved();
+  assert.equal(await driver.findElement(By.id("work-composer")).getAttribute("value"), navigationDraft);
+  await assertAttachmentChips(["notes", "UNTRACKED-CURRENT.md"]);
+  await driver.findElement(By.css('button[aria-label="Remove UNTRACKED-CURRENT.md"]')).click();
+  await waitForDraftSaved();
+  await driver.navigate().refresh();
+  await waitForDraftSaved();
+  assert.equal(await driver.findElement(By.id("work-composer")).getAttribute("value"), navigationDraft);
+  await assertAttachmentChips(["notes"]);
+  const draftScreenshot = `draft-restored-${installedVersion}-1440x900.png`;
+  await writeFile(path.join(evidenceDir, draftScreenshot), Buffer.from(await driver.takeScreenshot(), "base64"));
+  await openProjectDialog(otherProject);
+  await waitForDraftSaved();
+  assert.equal(await driver.findElement(By.id("work-composer")).getAttribute("value"), otherDraft);
+  await assertAttachmentChips([]);
+  await openProjectDialog(project);
+  await waitForDraftSaved();
+  await driver.findElement(By.css('button[aria-label="New conversation"]')).click();
+  await driver.wait(async () => {
+    const state = await postAction(daemon.url, { type: "status.inspect", payload: {} });
+    return state.ok && state.value.conversation_id !== currentConversation;
+  }, 10000, "the UI did not create a new durable conversation boundary");
+  await driver.wait(async () => {
+    const box = await driver.findElement(By.id("work-composer"));
+    return (await box.getAttribute("value")) === "" && (await box.getAttribute("readonly")) === null;
+  }, 10000, "new conversation retained the old draft");
+  await waitForDraftSaved();
+  await assertAttachmentChips([]);
+  evidence.usabilityObservations.draftPersistence = {
+    screenshot: draftScreenshot, projectAText: navigationDraft, projectBText: otherDraft,
+    attachmentsSeededThroughCore: selectedAttachments, removedAttachmentStayedRemovedAfterReload: true,
+    projectSwitchPreservedBothDrafts: true, newConversationStartedEmpty: true,
+    acceptedMessageDidNotReturnAfterReload: true, nextDraftSavedWhileProviderAlive: true,
+    adapterCallsDuringNavigation: (await readCalls()).length - navigationCallsBefore
   };
 
   const browserLogs = await driver.manage().logs().get(logging.Type.BROWSER).catch(() => []);
@@ -356,7 +427,9 @@ try {
   tauriDriver?.kill();
   await waitForProcessExit("hivemind_desktop.exe", 15_000).catch(() => undefined);
   if (project !== undefined) await stopFixtureDaemon(project);
+  if (otherProject !== undefined) await stopFixtureDaemon(otherProject);
   if (project !== undefined) await rm(project, { recursive: true, force: true, maxRetries: 5, retryDelay: 250 }).catch(() => undefined);
+  if (otherProject !== undefined) await rm(otherProject, { recursive: true, force: true, maxRetries: 5, retryDelay: 250 }).catch(() => undefined);
   if (recentProjectsExisted && recentProjectsBefore !== null) {
     await mkdir(path.dirname(recentProjectsPath), { recursive: true });
     await writeFile(recentProjectsPath, recentProjectsBefore);
@@ -402,6 +475,7 @@ assert.notEqual(evidence.visibleFailure.statusText, "");
 assert.equal(evidence.visibleFailure.durableFailure, true);
 assert.deepEqual(evidence.browserSevereLogs, []);
 assert.equal(evidence.recentProjects.restoredExactly, true);
+assert.equal(evidence.usabilityObservations.draftPersistence.adapterCallsDuringNavigation, 0);
 console.log(JSON.stringify(evidence, null, 2));
 console.log(`evidence: ${evidenceDir}`);
 
@@ -469,8 +543,27 @@ async function openProjectDialog(wantedPath) {
 }
 
 async function typeComposer(value) {
+  await driver.wait(async () => {
+    const boxes = await driver.findElements(By.id("work-composer"));
+    return boxes.length === 1 && (await boxes[0].getAttribute("readonly")) === null;
+  }, 10000, "the project draft did not finish loading before typing");
   const changed = await driver.executeScript(`const box=document.getElementById("work-composer");if(!box)return false;const setter=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,"value").set;setter.call(box,arguments[0]);box.dispatchEvent(new Event("input",{bubbles:true}));return true;`, value);
   assert.equal(changed, true);
+}
+
+async function waitForDraftSaved() {
+  await driver.wait(async () => {
+    const statuses = await driver.findElements(By.css('[data-testid="composer-draft-status"]'));
+    return statuses.length === 1 && (await statuses[0].getText()) === "Draft saved in this project";
+  }, 15000, "the exact composer draft did not report a completed save");
+}
+
+async function assertAttachmentChips(paths) {
+  const groups = await driver.findElements(By.css('[aria-label="Attached project items"]'));
+  if (paths.length === 0) { assert.equal(groups.length, 0); return; }
+  assert.equal(groups.length, 1);
+  const controls = await groups[0].findElements(By.css('button[aria-label^="Remove "]'));
+  assert.deepEqual(await Promise.all(controls.map(control => control.getAttribute("aria-label"))), paths.map(item => `Remove ${item}`));
 }
 
 function isPidAlive(pid) {

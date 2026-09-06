@@ -240,7 +240,8 @@ export function createDaemonServer(repoRoot: string, buildId: string, authToken:
       const execute = () => !isQueueInterrupt(request.method, target.path, payloadResult.value) && daemonRequestStartsWork(request.method, target.path, payloadResult.value)
         ? withUpdateAdmission(executeAction)
         : executeAction();
-      const result = isConcurrentObservation(request.method, target.path, payloadResult.value) || isQueueInterrupt(request.method, target.path, payloadResult.value)
+      const result = isConcurrentObservation(request.method, target.path, payloadResult.value) || isQueueInterrupt(request.method, target.path, payloadResult.value) ||
+        isAdvisoryDraftSave(request.method, target.path, payloadResult.value)
         ? await execute()
         : await queue.run(execute);
       await eventBus.publishNewDurableEvents(repoRoot, previousEvents.value.length);
@@ -447,6 +448,7 @@ function isQueueInterrupt(method: string | undefined, path: string, payload: Dae
 
 const concurrentWorkspaceObservations = new Set([
   "status.inspect",
+  "draft.inspect",
   "trail.inspect",
   "change.inspect",
   "spec.review",
@@ -468,6 +470,12 @@ function isConcurrentObservation(method: string | undefined, path: string, paylo
   return path === "/workspace/action" &&
     typeof payload.type === "string" &&
     concurrentWorkspaceObservations.has(payload.type);
+}
+
+/** Unsent user input must save during generation. This is a separately locked
+ * advisory file write, not a read-only observation or an execution action. */
+function isAdvisoryDraftSave(method: string | undefined, path: string, payload: DaemonPayload): boolean {
+  return method === "POST" && path === "/workspace/action" && payload.type === "draft.save";
 }
 
 function parseIntegrationQueueExpectation(payload: DaemonPayload) {

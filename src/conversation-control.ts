@@ -11,6 +11,21 @@ export interface ConversationOperation {
   phase: "reading" | "planning" | "stopping" | "interrupted";
 }
 
+/** Identity comes from the complete durable trail, never a UI event page. */
+export function currentConversationBoundary(events: HivemindEvent[]):
+  { ok: true; value: { conversation_id: string; start: number } } | { ok: false; reason: string } {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]!;
+    if (event.type !== "conversation.started") continue;
+    const id = event.data.conversation_id;
+    if (typeof id !== "string" || id.trim() === "" || id.length > 128) {
+      return { ok: false, reason: "the current conversation boundary has no valid identity; history cannot be reconstructed" };
+    }
+    return { ok: true, value: { conversation_id: id, start: index + 1 } };
+  }
+  return { ok: true, value: { conversation_id: "legacy", start: 0 } };
+}
+
 export function currentConversationOperation(events: HivemindEvent[]): ConversationOperation | null {
   const finished = new Set(events.filter((event) => event.type === "conversation.operation_finished").map((event) => event.data.request_id));
   const start = events.find((event) => event.type === "conversation.operation_started" && !finished.has(event.data.request_id));

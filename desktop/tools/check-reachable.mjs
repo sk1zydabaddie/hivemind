@@ -43,6 +43,11 @@ const DESKTOP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 /** The surfaces a person MUST be able to finish. */
 const SURFACES = [
   {
+    name: "work — draft read failure",
+    url: `${BASE}/replay.html?scenario=empty-project&section=work&failAction=draft.inspect`,
+    expectText: ["Injected draft.inspect read failure", "Retry"]
+  },
+  {
     name: "work — cancellable conversation",
     url: `${BASE}/replay.html?scenario=conversation-operation-live&section=work`,
     liveness: true,

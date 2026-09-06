@@ -1,5 +1,5 @@
 import { isNodeError } from "./error-detail.js";
-import { currentConversationOperation, type ConversationOperation } from "./conversation-control.js";
+import { currentConversationBoundary, currentConversationOperation, type ConversationOperation } from "./conversation-control.js";
 import { createCachedProcessLivenessProbe } from "./process-liveness.js";
 import { openRounds, roundIsReporting, type OpenRound } from "./open-rounds.js";
 import { readFile, readdir } from "node:fs/promises";
@@ -104,6 +104,7 @@ export interface ActiveAgentView {
 
 export interface WorkspaceInspection {
   conversation_operation: ConversationOperation | null;
+  conversation_id: string | null;
   status: HivemindStatus;
   tasks: WorkspaceTaskProjection[];
   execution_groups: WorkspaceExecutionGroupProjection[];
@@ -343,6 +344,7 @@ export async function inspectWorkspace(
   if (!config.ok) return config;
   const events = await readEvents(repoRoot);
   if (!events.ok) return events;
+  const conversationBoundary = currentConversationBoundary(events.value);
   const activeSpec = await readActiveSpec(repoRoot);
   if (!activeSpec.ok && !hasFailureCode(activeSpec, "no_active_spec")) return activeSpec;
   const specId = activeSpec.ok ? activeSpec.value.spec_id : null;
@@ -476,6 +478,7 @@ export async function inspectWorkspace(
         .filter((id): id is string => id !== null),
       active_agents: activeAgents,
       conversation_operation: currentConversationOperation(events.value),
+      conversation_id: conversationBoundary.ok ? conversationBoundary.value.conversation_id : null,
       active_spec_id: specId,
       active_spec_title: specTitle,
       manager_session: session.value,

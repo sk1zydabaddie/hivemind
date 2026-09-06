@@ -364,7 +364,7 @@ test("two project daemons share one update lease and both refuse new work", asyn
   });
 });
 
-test("read-only inspection remains live while a conversation provider is running", async () => {
+test("read-only inspection and advisory draft saves remain live while a conversation provider is running", async () => {
   await withTempRepo(async ({ repo }) => {
     const configured = await setProjectConfig(repo, { no_tests_declared: true });
     assert.equal(configured.ok, true, configured.ok ? undefined : configured.reason);
@@ -390,6 +390,25 @@ test("read-only inspection remains live while a conversation provider is running
       });
       assert.equal(inspection.ok, true);
       assert.ok(Date.now() - started < 1_000, `inspection waited ${Date.now() - started}ms`);
+      await waitForEvent(repo, event => event.type === "conversation.process_started" && event.data.request_id === "123e4567-e89b-42d3-a456-426614174010");
+      const beforeSave = await readEvents(repo);
+      assert.ok(beforeSave.ok);
+      const processEvent = beforeSave.value.find(event => event.type === "conversation.process_started" && event.data.request_id === "123e4567-e89b-42d3-a456-426614174010");
+      const providerPid = (processEvent?.data.process_identity as { pid: number }).pid;
+      assert.ok(Number.isSafeInteger(providerPid) && providerPid > 0);
+      assert.doesNotThrow(() => process.kill(providerPid, 0));
+      const saved = await postDaemon(daemon, "/workspace/action", { type: "draft.save", payload: {
+        conversation_id: "legacy", expected_revision: null,
+        draft: { content_id: "123e4567-e89b-42d3-a456-426614174011", text: "Next unsent draft", attachments: [], submission: null }
+      } });
+      assert.equal(saved.ok, true, JSON.stringify(saved));
+      const readback = await postDaemon(daemon, "/workspace/action", { type: "draft.inspect", payload: { conversation_id: "legacy" } });
+      assert.equal(readback.ok, true);
+      assert.deepEqual(readback.value, saved.value);
+      assert.doesNotThrow(() => process.kill(providerPid, 0), "draft save/read must finish while the actual provider process is alive");
+      const duringSave = await readEvents(repo);
+      assert.ok(duringSave.ok);
+      assert.equal(duringSave.value.some(event => event.type === "conversation.operation_finished" && event.data.request_id === "123e4567-e89b-42d3-a456-426614174010"), false);
       assert.equal((await conversation).ok, true);
     } finally {
       await stopDaemon(daemon);
