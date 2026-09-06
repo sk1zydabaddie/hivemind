@@ -87,7 +87,7 @@ if (!scenario) throw new Error("no replay scenarios");
 const banner = document.createElement("div");
 banner.style.cssText =
   "position:fixed;z-index:999;right:8px;bottom:8px;padding:4px 8px;border-radius:6px;background:#1F2328;color:#fff;font:11px ui-monospace,monospace;opacity:.75";
-banner.textContent = `replay: ${scenario.id} · ${scenario.events.length} events · ${scenario.source}`;
+banner.textContent = params.has("scrollFixture") ? "virtual-list geometry fixture — no live project" : `replay: ${scenario.id} · ${scenario.events.length} events · ${scenario.source}`;
 document.addEventListener("DOMContentLoaded", () => {
   if (!playing) return;
   /* A recording still has to admit what it is, but a paragraph of provenance
@@ -554,4 +554,8 @@ const drive = (): void => {
   }, 100);
 };
 
-void import("../src/main").then(() => window.setTimeout(drive, 300));
+if (params.has("scrollFixture")) {
+  void import("./virtual-list-fixture");
+} else {
+  void import("../src/main").then(() => window.setTimeout(drive, 300));
+}

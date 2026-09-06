@@ -11,7 +11,7 @@ hash to `6896e08b1ac0028c35c1514756c0608e5cbee780414fc30237d099edadd1fd22`.
 
 ## Actual installed acceptance
 
-`node desktop/e2e/phase6-conversation-remediation.mjs` exited **0** using the
+`node e2e/phase6-conversation-remediation.mjs` from `desktop` exited **0** using the
 installed executable, a real local Core daemon and no-paid Node fixture
 providers. The Core suite was not running alongside this check. Exact results
 are in `phase6-conversation-remediation.json`; all seven PNGs were inspected.
@@ -88,7 +88,7 @@ desktop runtime on PATH; commands are relative to the repository unless noted):
 - `cargo test` in `desktop/src-tauri`: native tests.
 - `npm run ship` in `desktop`: dependency audits, 52 production viewport checks,
   clean artifact build and verified local installation, not public publication.
-- `node desktop/e2e/phase6-conversation-remediation.mjs`: installed acceptance.
+- `node e2e/phase6-conversation-remediation.mjs` in `desktop`: installed acceptance.
 - `node tools/audit-unreached.mjs`, `node --check desktop/e2e/phase6-conversation-remediation.mjs`
   and `git diff --check`: cleanup/static checks.
 

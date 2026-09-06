@@ -24,6 +24,9 @@ interface VirtualListProps<T> {
   relevant?: "additions" | "additions text";
   testId?: string;
   followEnd?: boolean;
+  onPinnedChange?: (pinned: boolean) => void;
+  /** An explicit Latest action, not a request to follow every new item. */
+  scrollToEndRequest?: number;
 }
 
 interface RowLayout {
@@ -53,13 +56,18 @@ export function VirtualList<T>({
   live = "off",
   relevant,
   testId,
-  followEnd = false
+  followEnd = false,
+  onPinnedChange,
+  scrollToEndRequest = 0
 }: VirtualListProps<T>): React.JSX.Element {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const sizesRef = useRef(new Map<string, number>());
   const rowObserversRef = useRef(new Map<string, ResizeObserver>());
   const [measureVersion, setMeasureVersion] = useState(0);
   const [viewport, setViewport] = useState({ top: 0, height: 1 });
+  const pinnedRef = useRef(true);
+  const anchorRef = useRef<{ key: string; offset: number } | null>(null);
+  const scrollRequestRef = useRef(scrollToEndRequest);
 
   const layout = useMemo(() => {
     let start = 0;
@@ -72,6 +80,7 @@ export function VirtualList<T>({
     });
     return { rows, total: start };
   }, [estimateSize, itemKey, items, measureVersion]);
+  const layoutRef = useRef(layout);
 
   const visible = useMemo(() => {
     if (layout.rows.length === 0) return [];
@@ -83,8 +92,26 @@ export function VirtualList<T>({
   const sampleViewport = useCallback(() => {
     const element = viewportRef.current;
     if (element === null) return;
-    setViewport({ top: element.scrollTop, height: Math.max(1, element.clientHeight) });
+    const top = element.scrollTop;
+    const height = Math.max(1, element.clientHeight);
+    const row = layoutRef.current.rows.find((entry) => entry.start + entry.size > top);
+    anchorRef.current = row === undefined ? null : { key: row.key, offset: top - row.start };
+    setViewport((previous) => previous.top === top && previous.height === height ? previous : { top, height });
   }, []);
+
+  const handleScroll = useCallback(() => {
+    const element = viewportRef.current;
+    if (element === null) return;
+    // Only actual scrolling changes the reader's intent. Recomputing this
+    // after appending content would mistake a formerly pinned reader for one
+    // who scrolled away. Two short lines (48px) count as near the end.
+    const pinned = element.scrollHeight - element.clientHeight - element.scrollTop <= 48;
+    if (pinnedRef.current !== pinned) {
+      pinnedRef.current = pinned;
+      onPinnedChange?.(pinned);
+    }
+    sampleViewport();
+  }, [onPinnedChange, sampleViewport]);
 
   useLayoutEffect(() => {
     sampleViewport();
@@ -96,10 +123,30 @@ export function VirtualList<T>({
   }, [sampleViewport]);
 
   useLayoutEffect(() => {
-    if (!followEnd || viewportRef.current === null) return;
-    viewportRef.current.scrollTop = layout.total;
+    const element = viewportRef.current;
+    if (element === null) return;
+    const requested = scrollRequestRef.current !== scrollToEndRequest;
+    scrollRequestRef.current = scrollToEndRequest;
+    if (requested) pinnedRef.current = true;
+    if (requested || (followEnd && pinnedRef.current)) {
+      element.scrollTop = layout.total;
+    } else {
+      // Keep the first visible row at the same viewport offset when measured
+      // heights above it change or items are inserted before it. Native scroll
+      // anchoring is disabled below so it cannot apply a second adjustment.
+      const anchor = anchorRef.current;
+      const row = anchor === null ? undefined : layout.rows.find((entry) => entry.key === anchor.key);
+      if (row !== undefined && anchor !== null) {
+        element.scrollTop = row.start + Math.min(anchor.offset, Math.max(0, row.size - 1));
+      }
+    }
+    layoutRef.current = layout;
     sampleViewport();
-  }, [followEnd, layout.total, sampleViewport]);
+    onPinnedChange?.(pinnedRef.current);
+    // Latest disappears after activation. Keep keyboard focus in the named
+    // log so the next PageUp/End operates on it, not the whole window.
+    if (requested) element.focus({ preventScroll: true });
+  }, [followEnd, layout, onPinnedChange, sampleViewport, scrollToEndRequest, viewport.height]);
 
   const measure = useCallback((key: string, element: HTMLDivElement | null) => {
     rowObserversRef.current.get(key)?.disconnect();
@@ -129,20 +176,21 @@ export function VirtualList<T>({
       aria-live={live}
       aria-relevant={relevant}
       className={cn(
-        "relative min-h-0 overflow-auto focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-navy focus-visible:outline-offset-[-2px]",
+        "relative min-h-0 overflow-auto [overflow-anchor:none] focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-navy focus-visible:outline-offset-[-2px]",
         className
       )}
       data-testid={testId}
       ref={viewportRef}
       role={role}
       tabIndex={0}
-      onScroll={sampleViewport}
+      onScroll={handleScroll}
     >
       <div className="relative w-full" style={{ height: `${String(layout.total)}px` }}>
         {visible.map((row) => (
           <div
             className="absolute inset-x-0 top-0"
             data-virtual-index={row.index}
+            data-virtual-key={row.key}
             key={row.key}
             ref={(element) => measure(row.key, element)}
             style={{ transform: `translateY(${String(row.start)}px)` }}

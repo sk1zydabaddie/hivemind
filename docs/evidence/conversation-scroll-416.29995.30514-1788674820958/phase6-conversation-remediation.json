@@ -1,0 +1,1111 @@
+{
+  "installedVersion": "416.29995.30514",
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "viewport": {
+    "devicePixelRatio": 1,
+    "height": 900,
+    "width": 1440
+  },
+  "paidProviderCalls": 0,
+  "liveConversation": {},
+  "duplicateSubmit": {},
+  "projectContext": {},
+  "conversationHistory": {},
+  "attachmentContext": {},
+  "newConversation": {},
+  "visibleFailure": {},
+  "stopResponse": {},
+  "stopPlanning": {},
+  "usabilityObservations": {},
+  "browserSevereLogs": [],
+  "recentProjects": {
+    "beforeSha256": "9f6c478f93cb98f488fc5e3a1f113abc746e4da228b62ef405a15970e0639d06",
+    "afterSha256": "9f6c478f93cb98f488fc5e3a1f113abc746e4da228b62ef405a15970e0639d06",
+    "restoredExactly": true
+  },
+  "installedIdentity": {
+    "artifact_id": "fd62d2919d83269c989f49eeb821c14a213f0703891d504abaf433624e51330c",
+    "installed_executable_sha256": "d8c698d8cfbfc6c024b2e0645895b34327bfb0f6638ebed43ccf4c377183b65f",
+    "kind": "hivemind-local-install-receipt",
+    "schema_version": 1,
+    "source_commit": "b33049c8d841c08723d8476860ff58aa5ad4a737",
+    "verified_at_ms": 1788672496616,
+    "version": "416.29995.30514",
+    "installedExecutableSha256": "d8c698d8cfbfc6c024b2e0645895b34327bfb0f6638ebed43ccf4c377183b65f",
+    "installedPayloadSource": "b33049c8d841c08723d8476860ff58aa5ad4a737"
+  },
+  "nativeDriver": "C:\\Users\\ethan\\.cache\\selenium\\msedgedriver\\win64\\152.0.4191.66\\msedgedriver.exe",
+  "outerWindow": {
+    "height": 900,
+    "width": 1440,
+    "x": 74,
+    "y": 67
+  },
+  "scrollReading": {
+    "providerPid": 76544,
+    "anchor": {
+      "distance": 240,
+      "index": "44",
+      "text": "Earlier question 22: Keep this project history readable while the response arrives. Keep this projec",
+      "top": -165
+    },
+    "samples": [
+      {
+        "anchorTop": -165,
+        "answerLength": 255,
+        "distance": 240,
+        "height": 7035,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 255,
+        "distance": 240,
+        "height": 7035,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -428,
+        "answerLength": 340,
+        "distance": 0,
+        "height": 7058,
+        "top": 6484,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -428,
+        "answerLength": 340,
+        "distance": 0,
+        "height": 7058,
+        "top": 6484,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -428,
+        "answerLength": 340,
+        "distance": 0,
+        "height": 7058,
+        "top": 6484,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -451,
+        "answerLength": 425,
+        "distance": 0,
+        "height": 7081,
+        "top": 6507,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -451,
+        "answerLength": 425,
+        "distance": 0,
+        "height": 7081,
+        "top": 6507,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -451,
+        "answerLength": 425,
+        "distance": 0,
+        "height": 7081,
+        "top": 6507,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -473,
+        "answerLength": 510,
+        "distance": 0,
+        "height": 7103,
+        "top": 6529,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -473,
+        "answerLength": 510,
+        "distance": 0,
+        "height": 7103,
+        "top": 6529,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -473,
+        "answerLength": 510,
+        "distance": 0,
+        "height": 7103,
+        "top": 6529,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -496,
+        "answerLength": 595,
+        "distance": 0,
+        "height": 7126,
+        "top": 6552,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -496,
+        "answerLength": 595,
+        "distance": 0,
+        "height": 7126,
+        "top": 6552,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -496,
+        "answerLength": 595,
+        "distance": 0,
+        "height": 7126,
+        "top": 6552,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -519,
+        "answerLength": 680,
+        "distance": 0,
+        "height": 7149,
+        "top": 6575,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -519,
+        "answerLength": 680,
+        "distance": 0,
+        "height": 7149,
+        "top": 6575,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -519,
+        "answerLength": 680,
+        "distance": 0,
+        "height": 7149,
+        "top": 6575,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -542,
+        "answerLength": 765,
+        "distance": 0,
+        "height": 7172,
+        "top": 6598,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -542,
+        "answerLength": 765,
+        "distance": 0,
+        "height": 7172,
+        "top": 6598,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -542,
+        "answerLength": 765,
+        "distance": 0,
+        "height": 7172,
+        "top": 6598,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -564,
+        "answerLength": 850,
+        "distance": 0,
+        "height": 7194,
+        "top": 6620,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -564,
+        "answerLength": 850,
+        "distance": 0,
+        "height": 7194,
+        "top": 6620,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -564,
+        "answerLength": 850,
+        "distance": 0,
+        "height": 7194,
+        "top": 6620,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -587,
+        "answerLength": 936,
+        "distance": 0,
+        "height": 7217,
+        "top": 6643,
+        "viewport": 574
+      }
+    ],
+    "chunksBefore": 3,
+    "chunksAfter": 11,
+    "maxAnchorShift": 422,
+    "readingScreenshot": "reading-history-416.29995.30514-1440x900.png"
+  },
+  "failure": {
+    "message": "AssertionError [ERR_ASSERTION]: new output moved the reader's anchor by 422px",
+    "composer": {
+      "composers": 1,
+      "form": true,
+      "readOnly": false,
+      "sendAriaDisabled": null,
+      "sendDisabled": null,
+      "value": ""
+    },
+    "surfaceText": "Hivemind\nWork\nAgents\nProject\nLive\nhivemind-phase6-remediation-F2O8T7\nCtrl+K\nConversation\nChecks\nNew conversation\nInterruptions\n\nEarlier question 22: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives.\n\nHIVEMIND\n11:07 PM\n\nEarlier answer 22: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. \n\nEarlier question 23: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives.\n\nHIVEMIND\n11:07 PM\n\nEarlier answer 23: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. \n\nSCROLL_LIVE\n\nPlanner is preparing your response\n4s elapsed\n\nLive scroll line 0: This text is arriving while the reader inspects earlier history.\nLive scroll line 1: This text is arriving while the reader inspects earlier history.\nLive scroll line 2: This text is arriving while the reader inspects earlier history.\nLive scroll line 3: This text is arriving while the reader inspects earlier history.\nLive scroll line 4: This text is arriving while the reader inspects earlier history.\nLive scroll line 5: This text is arriving while the reader inspects earlier history.\nLive scroll line 6: This text is arriving while the reader inspects earlier history.\nLive scroll line 7: This text is arriving while the reader inspects earlier history.\nLive scroll line 8: This text is arriving while the reader inspects earlier history.\nLive scroll line 9: This text is arriving while the reader inspects earlier history.\nLive scroll line 10: This text is arriving while the reader inspects earlier history.\n\n\nModels\nDraft saved in this project\nAsk anything, or describe a change. A question is answered here; a change becomes a plan you approve before anything runs.\nplanner\nCommands\n\nJump to a section or open a project",
+    "screenshot": "failed-attempt-416.29995.30514-1440x900.png",
+    "operation": {
+      "request_id": "59521199-d62d-4cf0-8fe7-4741c9af8dbf",
+      "started_at": "2026-09-06T06:07:10.207Z",
+      "phase": "reading"
+    },
+    "calls": [
+      {
+        "at": "2026-09-06T06:07:10.428Z",
+        "pid": 76544,
+        "kind": "draft"
+      }
+    ],
+    "durableEvents": [
+      {
+        "ts": "2026-09-06T06:07:01.997Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "0d5dc427-ba3f-470f-9aec-ab614b8d0da4",
+          "message_id": "0d5dc427-ba3f-470f-9aec-ab614b8d0da4",
+          "text": "Earlier question 0: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.010Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "0d5dc427-ba3f-470f-9aec-ab614b8d0da4",
+          "message_id": "0d5dc427-ba3f-470f-9aec-ab614b8d0da4",
+          "text": "Earlier answer 0: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.021Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "9d675537-bbf6-4f83-88d3-82bb2a9f1c83",
+          "message_id": "9d675537-bbf6-4f83-88d3-82bb2a9f1c83",
+          "text": "Earlier question 1: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.033Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "9d675537-bbf6-4f83-88d3-82bb2a9f1c83",
+          "message_id": "9d675537-bbf6-4f83-88d3-82bb2a9f1c83",
+          "text": "Earlier answer 1: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.042Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "374e5ed4-025a-407b-bea1-71665d87780b",
+          "message_id": "374e5ed4-025a-407b-bea1-71665d87780b",
+          "text": "Earlier question 2: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.053Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "374e5ed4-025a-407b-bea1-71665d87780b",
+          "message_id": "374e5ed4-025a-407b-bea1-71665d87780b",
+          "text": "Earlier answer 2: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.065Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "34c698fe-2023-4838-83e9-376a57029613",
+          "message_id": "34c698fe-2023-4838-83e9-376a57029613",
+          "text": "Earlier question 3: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.075Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "34c698fe-2023-4838-83e9-376a57029613",
+          "message_id": "34c698fe-2023-4838-83e9-376a57029613",
+          "text": "Earlier answer 3: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.086Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "0464dc67-b8b2-41bf-a1e2-91448a0845f6",
+          "message_id": "0464dc67-b8b2-41bf-a1e2-91448a0845f6",
+          "text": "Earlier question 4: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.097Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "0464dc67-b8b2-41bf-a1e2-91448a0845f6",
+          "message_id": "0464dc67-b8b2-41bf-a1e2-91448a0845f6",
+          "text": "Earlier answer 4: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.108Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "2dca7431-fdee-4273-a173-715cceef973a",
+          "message_id": "2dca7431-fdee-4273-a173-715cceef973a",
+          "text": "Earlier question 5: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.119Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "2dca7431-fdee-4273-a173-715cceef973a",
+          "message_id": "2dca7431-fdee-4273-a173-715cceef973a",
+          "text": "Earlier answer 5: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.130Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "d22c8190-1536-4c8f-ab7b-3e24cf79c92f",
+          "message_id": "d22c8190-1536-4c8f-ab7b-3e24cf79c92f",
+          "text": "Earlier question 6: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.139Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "d22c8190-1536-4c8f-ab7b-3e24cf79c92f",
+          "message_id": "d22c8190-1536-4c8f-ab7b-3e24cf79c92f",
+          "text": "Earlier answer 6: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.149Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "6d6cbdce-b336-4e0a-aedf-236d11adeb6b",
+          "message_id": "6d6cbdce-b336-4e0a-aedf-236d11adeb6b",
+          "text": "Earlier question 7: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.159Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "6d6cbdce-b336-4e0a-aedf-236d11adeb6b",
+          "message_id": "6d6cbdce-b336-4e0a-aedf-236d11adeb6b",
+          "text": "Earlier answer 7: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.170Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "265c336f-b441-42ee-85df-34f0950f4834",
+          "message_id": "265c336f-b441-42ee-85df-34f0950f4834",
+          "text": "Earlier question 8: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.182Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "265c336f-b441-42ee-85df-34f0950f4834",
+          "message_id": "265c336f-b441-42ee-85df-34f0950f4834",
+          "text": "Earlier answer 8: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.191Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "77fdad9d-b1ef-4ef3-a33e-313f245cdeed",
+          "message_id": "77fdad9d-b1ef-4ef3-a33e-313f245cdeed",
+          "text": "Earlier question 9: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.203Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "77fdad9d-b1ef-4ef3-a33e-313f245cdeed",
+          "message_id": "77fdad9d-b1ef-4ef3-a33e-313f245cdeed",
+          "text": "Earlier answer 9: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.214Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "30d62ae9-2027-4fd3-80a3-1218e01b31e9",
+          "message_id": "30d62ae9-2027-4fd3-80a3-1218e01b31e9",
+          "text": "Earlier question 10: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.225Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "30d62ae9-2027-4fd3-80a3-1218e01b31e9",
+          "message_id": "30d62ae9-2027-4fd3-80a3-1218e01b31e9",
+          "text": "Earlier answer 10: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.235Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "536eb2ea-5283-4672-9442-6a7633b89038",
+          "message_id": "536eb2ea-5283-4672-9442-6a7633b89038",
+          "text": "Earlier question 11: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.245Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "536eb2ea-5283-4672-9442-6a7633b89038",
+          "message_id": "536eb2ea-5283-4672-9442-6a7633b89038",
+          "text": "Earlier answer 11: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.257Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "f8c04c0c-7a53-49a8-8fc8-f9b58ec45b06",
+          "message_id": "f8c04c0c-7a53-49a8-8fc8-f9b58ec45b06",
+          "text": "Earlier question 12: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.268Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "f8c04c0c-7a53-49a8-8fc8-f9b58ec45b06",
+          "message_id": "f8c04c0c-7a53-49a8-8fc8-f9b58ec45b06",
+          "text": "Earlier answer 12: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.278Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "211ca7f5-9186-439d-8b8f-d92b86eff5db",
+          "message_id": "211ca7f5-9186-439d-8b8f-d92b86eff5db",
+          "text": "Earlier question 13: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.288Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "211ca7f5-9186-439d-8b8f-d92b86eff5db",
+          "message_id": "211ca7f5-9186-439d-8b8f-d92b86eff5db",
+          "text": "Earlier answer 13: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.298Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "f0922ec6-e0b4-493e-b4a0-179df2946a34",
+          "message_id": "f0922ec6-e0b4-493e-b4a0-179df2946a34",
+          "text": "Earlier question 14: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.308Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "f0922ec6-e0b4-493e-b4a0-179df2946a34",
+          "message_id": "f0922ec6-e0b4-493e-b4a0-179df2946a34",
+          "text": "Earlier answer 14: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.317Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "c3a84e07-7182-41bc-ae73-5fce651d2103",
+          "message_id": "c3a84e07-7182-41bc-ae73-5fce651d2103",
+          "text": "Earlier question 15: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.330Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "c3a84e07-7182-41bc-ae73-5fce651d2103",
+          "message_id": "c3a84e07-7182-41bc-ae73-5fce651d2103",
+          "text": "Earlier answer 15: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.340Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "b66b9d46-2d5b-4d72-90de-6e8de21f0ec6",
+          "message_id": "b66b9d46-2d5b-4d72-90de-6e8de21f0ec6",
+          "text": "Earlier question 16: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.350Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "b66b9d46-2d5b-4d72-90de-6e8de21f0ec6",
+          "message_id": "b66b9d46-2d5b-4d72-90de-6e8de21f0ec6",
+          "text": "Earlier answer 16: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.362Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "82fcfbb3-5b3f-4432-9a61-54709c0b1041",
+          "message_id": "82fcfbb3-5b3f-4432-9a61-54709c0b1041",
+          "text": "Earlier question 17: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.372Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "82fcfbb3-5b3f-4432-9a61-54709c0b1041",
+          "message_id": "82fcfbb3-5b3f-4432-9a61-54709c0b1041",
+          "text": "Earlier answer 17: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.384Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "6522b3bc-9861-40be-8462-532ba12dd99d",
+          "message_id": "6522b3bc-9861-40be-8462-532ba12dd99d",
+          "text": "Earlier question 18: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.395Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "6522b3bc-9861-40be-8462-532ba12dd99d",
+          "message_id": "6522b3bc-9861-40be-8462-532ba12dd99d",
+          "text": "Earlier answer 18: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.406Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "1e553b62-e377-44fe-9fe2-35b0a096b1b2",
+          "message_id": "1e553b62-e377-44fe-9fe2-35b0a096b1b2",
+          "text": "Earlier question 19: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.417Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "1e553b62-e377-44fe-9fe2-35b0a096b1b2",
+          "message_id": "1e553b62-e377-44fe-9fe2-35b0a096b1b2",
+          "text": "Earlier answer 19: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.430Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "aa6710cc-fcbf-4d16-be8a-aa41132a4ce3",
+          "message_id": "aa6710cc-fcbf-4d16-be8a-aa41132a4ce3",
+          "text": "Earlier question 20: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.444Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "aa6710cc-fcbf-4d16-be8a-aa41132a4ce3",
+          "message_id": "aa6710cc-fcbf-4d16-be8a-aa41132a4ce3",
+          "text": "Earlier answer 20: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.455Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "e1e2e24e-9c30-419c-a174-579f16dff148",
+          "message_id": "e1e2e24e-9c30-419c-a174-579f16dff148",
+          "text": "Earlier question 21: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.467Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "e1e2e24e-9c30-419c-a174-579f16dff148",
+          "message_id": "e1e2e24e-9c30-419c-a174-579f16dff148",
+          "text": "Earlier answer 21: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.478Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "9713434f-99b1-46db-b999-eb37435c4eaa",
+          "message_id": "9713434f-99b1-46db-b999-eb37435c4eaa",
+          "text": "Earlier question 22: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.489Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "9713434f-99b1-46db-b999-eb37435c4eaa",
+          "message_id": "9713434f-99b1-46db-b999-eb37435c4eaa",
+          "text": "Earlier answer 22: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.498Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "f226df68-2d01-4d97-839a-4cda32f6597a",
+          "message_id": "f226df68-2d01-4d97-839a-4cda32f6597a",
+          "text": "Earlier question 23: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:02.508Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "conversation_id": "legacy",
+          "request_id": "f226df68-2d01-4d97-839a-4cda32f6597a",
+          "message_id": "f226df68-2d01-4d97-839a-4cda32f6597a",
+          "text": "Earlier answer 23: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:10.207Z",
+        "type": "conversation.operation_started",
+        "task_id": null,
+        "data": {
+          "request_id": "59521199-d62d-4cf0-8fe7-4741c9af8dbf",
+          "phase": "reading",
+          "tool": "planner",
+          "process_identity": {
+            "pid": 101744,
+            "process_instance_id": "59521199-d62d-4cf0-8fe7-4741c9af8dbf"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:10.300Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "message_id": "M-550cbe91-ec0a-4e1a-ab71-5ef3bdc20d50",
+          "conversation_id": "legacy",
+          "request_id": "59521199-d62d-4cf0-8fe7-4741c9af8dbf",
+          "text": "SCROLL_LIVE",
+          "attachments": []
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:10.314Z",
+        "type": "spec.draft_started",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "tool": "planner",
+          "message_id": "M-550cbe91-ec0a-4e1a-ab71-5ef3bdc20d50",
+          "process_identity": {
+            "pid": 101744,
+            "process_instance_id": "M-550cbe91-ec0a-4e1a-ab71-5ef3bdc20d50"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:07:10.364Z",
+        "type": "conversation.process_started",
+        "task_id": null,
+        "data": {
+          "request_id": "59521199-d62d-4cf0-8fe7-4741c9af8dbf",
+          "process_id": "c803b95d-ff1b-4c4e-b47c-852443d20cf1",
+          "process_identity": {
+            "pid": 76544,
+            "process_instance_id": "c803b95d-ff1b-4c4e-b47c-852443d20cf1",
+            "process_group_id": null
+          }
+        }
+      }
+    ],
+    "nativeTrail": {
+      "events": [
+        {
+          "data": {
+            "process_id": "c803b95d-ff1b-4c4e-b47c-852443d20cf1",
+            "process_identity": {
+              "pid": 76544,
+              "process_group_id": null,
+              "process_instance_id": "c803b95d-ff1b-4c4e-b47c-852443d20cf1"
+            },
+            "request_id": "59521199-d62d-4cf0-8fe7-4741c9af8dbf"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:07:10.364Z",
+          "type": "conversation.process_started"
+        },
+        {
+          "data": {
+            "message_id": "M-550cbe91-ec0a-4e1a-ab71-5ef3bdc20d50",
+            "process_identity": {
+              "pid": 101744,
+              "process_instance_id": "M-550cbe91-ec0a-4e1a-ab71-5ef3bdc20d50"
+            },
+            "spec_id": "S-001",
+            "tool": "planner"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:07:10.314Z",
+          "type": "spec.draft_started"
+        },
+        {
+          "data": {
+            "attachments": [],
+            "conversation_id": "legacy",
+            "message_id": "M-550cbe91-ec0a-4e1a-ab71-5ef3bdc20d50",
+            "request_id": "59521199-d62d-4cf0-8fe7-4741c9af8dbf",
+            "text": "SCROLL_LIVE"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:07:10.300Z",
+          "type": "conversation.message_recorded"
+        },
+        {
+          "data": {
+            "phase": "reading",
+            "process_identity": {
+              "pid": 101744,
+              "process_instance_id": "59521199-d62d-4cf0-8fe7-4741c9af8dbf"
+            },
+            "request_id": "59521199-d62d-4cf0-8fe7-4741c9af8dbf",
+            "tool": "planner"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:07:10.207Z",
+          "type": "conversation.operation_started"
+        },
+        {
+          "data": {
+            "conversation_id": "legacy",
+            "message_id": "f226df68-2d01-4d97-839a-4cda32f6597a",
+            "request_id": "f226df68-2d01-4d97-839a-4cda32f6597a",
+            "text": "Earlier answer 23: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:07:02.508Z",
+          "type": "conversation.reply_recorded"
+        },
+        {
+          "data": {
+            "conversation_id": "legacy",
+            "message_id": "f226df68-2d01-4d97-839a-4cda32f6597a",
+            "request_id": "f226df68-2d01-4d97-839a-4cda32f6597a",
+            "text": "Earlier question 23: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:07:02.498Z",
+          "type": "conversation.message_recorded"
+        },
+        {
+          "data": {
+            "conversation_id": "legacy",
+            "message_id": "9713434f-99b1-46db-b999-eb37435c4eaa",
+            "request_id": "9713434f-99b1-46db-b999-eb37435c4eaa",
+            "text": "Earlier answer 22: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:07:02.489Z",
+          "type": "conversation.reply_recorded"
+        },
+        {
+          "data": {
+            "conversation_id": "legacy",
+            "message_id": "9713434f-99b1-46db-b999-eb37435c4eaa",
+            "request_id": "9713434f-99b1-46db-b999-eb37435c4eaa",
+            "text": "Earlier question 22: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:07:02.478Z",
+          "type": "conversation.message_recorded"
+        },
+        {
+          "data": {
+            "conversation_id": "legacy",
+            "message_id": "e1e2e24e-9c30-419c-a174-579f16dff148",
+            "request_id": "e1e2e24e-9c30-419c-a174-579f16dff148",
+            "text": "Earlier answer 21: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:07:02.467Z",
+          "type": "conversation.reply_recorded"
+        },
+        {
+          "data": {
+            "conversation_id": "legacy",
+            "message_id": "e1e2e24e-9c30-419c-a174-579f16dff148",
+            "request_id": "e1e2e24e-9c30-419c-a174-579f16dff148",
+            "text": "Earlier question 21: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:07:02.455Z",
+          "type": "conversation.message_recorded"
+        },
+        {
+          "data": {
+            "conversation_id": "legacy",
+            "message_id": "aa6710cc-fcbf-4d16-be8a-aa41132a4ce3",
+            "request_id": "aa6710cc-fcbf-4d16-be8a-aa41132a4ce3",
+            "text": "Earlier answer 20: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:07:02.444Z",
+          "type": "conversation.reply_recorded"
+        },
+        {
+          "data": {
+            "conversation_id": "legacy",
+            "message_id": "aa6710cc-fcbf-4d16-be8a-aa41132a4ce3",
+            "request_id": "aa6710cc-fcbf-4d16-be8a-aa41132a4ce3",
+            "text": "Earlier question 20: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:07:02.430Z",
+          "type": "conversation.message_recorded"
+        },
+        {
+          "data": {
+            "conversation_id": "legacy",
+            "message_id": "1e553b62-e377-44fe-9fe2-35b0a096b1b2",
+            "request_id": "1e553b62-e377-44fe-9fe2-35b0a096b1b2",
+            "text": "Earlier answer 19: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:07:02.417Z",
+          "type": "conversation.reply_recorded"
+        },
+        {
+          "data": {
+            "conversation_id": "legacy",
+            "message_id": "1e553b62-e377-44fe-9fe2-35b0a096b1b2",
+            "request_id": "1e553b62-e377-44fe-9fe2-35b0a096b1b2",
+            "text": "Earlier question 19: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:07:02.406Z",
+          "type": "conversation.message_recorded"
+        },
+        {
+          "data": {
+            "conversation_id": "legacy",
+            "message_id": "6522b3bc-9861-40be-8462-532ba12dd99d",
+            "request_id": "6522b3bc-9861-40be-8462-532ba12dd99d",
+            "text": "Earlier answer 18: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:07:02.395Z",
+          "type": "conversation.reply_recorded"
+        },
+        {
+          "data": {
+            "conversation_id": "legacy",
+            "message_id": "6522b3bc-9861-40be-8462-532ba12dd99d",
+            "request_id": "6522b3bc-9861-40be-8462-532ba12dd99d",
+            "text": "Earlier question 18: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:07:02.384Z",
+          "type": "conversation.message_recorded"
+        },
+        {
+          "data": {
+            "conversation_id": "legacy",
+            "message_id": "82fcfbb3-5b3f-4432-9a61-54709c0b1041",
+            "request_id": "82fcfbb3-5b3f-4432-9a61-54709c0b1041",
+            "text": "Earlier answer 17: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:07:02.372Z",
+          "type": "conversation.reply_recorded"
+        },
+        {
+          "data": {
+            "conversation_id": "legacy",
+            "message_id": "82fcfbb3-5b3f-4432-9a61-54709c0b1041",
+            "request_id": "82fcfbb3-5b3f-4432-9a61-54709c0b1041",
+            "text": "Earlier question 17: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:07:02.362Z",
+          "type": "conversation.message_recorded"
+        },
+        {
+          "data": {
+            "conversation_id": "legacy",
+            "message_id": "b66b9d46-2d5b-4d72-90de-6e8de21f0ec6",
+            "request_id": "b66b9d46-2d5b-4d72-90de-6e8de21f0ec6",
+            "text": "Earlier answer 16: This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. This is a seeded history row, not a live model result. "
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:07:02.350Z",
+          "type": "conversation.reply_recorded"
+        },
+        {
+          "data": {
+            "conversation_id": "legacy",
+            "message_id": "b66b9d46-2d5b-4d72-90de-6e8de21f0ec6",
+            "request_id": "b66b9d46-2d5b-4d72-90de-6e8de21f0ec6",
+            "text": "Earlier question 16: Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. Keep this project history readable while the response arrives. "
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:07:02.340Z",
+          "type": "conversation.message_recorded"
+        }
+      ],
+      "next_before": 32
+    },
+    "savedDrafts": [
+      {
+        "version": 1,
+        "conversation_id": "legacy",
+        "revision": "ce05096c-4bcf-4f7a-bc2c-b0a7fee92878",
+        "draft": {
+          "content_id": "ee81bfe4-dc0d-46a5-88a3-20bc6df652c0",
+          "text": "SCROLL_LIVE",
+          "attachments": [],
+          "submission": {
+            "content_id": "ee81bfe4-dc0d-46a5-88a3-20bc6df652c0",
+            "request_id": "59521199-d62d-4cf0-8fe7-4741c9af8dbf"
+          }
+        }
+      }
+    ]
+  }
+}

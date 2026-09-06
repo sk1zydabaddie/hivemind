@@ -719,6 +719,18 @@ describe("React workspace boundary", () => {
     );
   });
 
+  test("conversation scroll has one presentation owner and no event-count force-scroll path", async () => {
+    const work = await readFile(path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"), "utf8");
+    const list = await readFile(path.join(desktopRoot, "src", "components", "ui", "virtual-list.tsx"), "utf8");
+    expect(work).not.toMatch(/activityEndRef|scrollIntoView/u);
+    expect(work).toMatch(/onPinnedChange=\{setFollowingLatest\}/u);
+    expect(work).toMatch(/scrollToEndRequest=\{latestRequest\}/u);
+    expect(list).toMatch(/\[overflow-anchor:none\]/u);
+    expect(list).not.toMatch(/invokeWorkspaceAction|fetch\(|localStorage|sessionStorage/u);
+    // Geometry, wrapping, live output and keyboard behavior are exercised by
+    // check-reachable and the installed --scroll-only test, not inferred here.
+  });
+
   test("the run thread is built from durable daemon events, not client memory", async () => {
     const work = await readFile(
       path.join(desktopRoot, "src", "components", "workspace", "work-tab.tsx"),

@@ -75,6 +75,12 @@ to disclose, not assumptions that deterministic gates may trust.
   installed testing and final full Core validation. U1 still needs
   the spec-ratification/tentative-planning product-rule decision; independent
   findings continue. [Per-finding evidence and open scope](REAL-WORLD-USE-AUDIT.md).
+  U4's reader-owned scrolling is now in source: one virtual-list owner replaces
+  unconditional/event-count scrolling. The old installed check reproduces a
+  422px anchor shift during live output; controlled geometry passes at all four
+  sizes, Desktop passes 392/392 and Rust 65/65. Full Core passes 999 tests with
+  two platform skips and no failures; new installed proof is pending, so this
+  is not an installed U4 closure.
 
 - [Conversation reliability repair](CONVERSATION-REPAIR.md): the approved
   history, cancellation, phase-reporting and transcript-alignment checkpoints

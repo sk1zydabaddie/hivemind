@@ -281,13 +281,8 @@ export function WorkTab({
   const [changeSetPatchError, setChangeSetPatchError] = useState("");
   const [changeSetPatchLoading, setChangeSetPatchLoading] = useState(false);
   const [stopBusy, setStopBusy] = useState(false);
-  const activityEndRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const attentionIdRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    activityEndRef.current?.scrollIntoView({ block: "nearest" });
-  }, [projection.eventCount]);
 
   /* Moving the composer is presentation state, not project truth. Reset it
      when this surface disconnects from a project; otherwise a newly selected
@@ -1085,7 +1080,6 @@ export function WorkTab({
                   pendingPhase={responsePhase}
                   workerStream={workerStream}
                   silentRounds={inspection?.silent_rounds ?? []}
-                  endRef={activityEndRef}
                   events={projection.recentEvents}
                   plan={displayedPlan}
                   taskTitles={inspection?.task_titles ?? {}}
@@ -2491,7 +2485,6 @@ function RunThread({
   events,
   taskTitles,
   plan,
-  endRef,
   draftText,
   silentRounds,
   pendingSince,
@@ -2505,7 +2498,6 @@ function RunThread({
   events: BoardProjection["recentEvents"];
   taskTitles: Record<string, string>;
   plan: WorkspacePlanReview | null;
-  endRef: React.RefObject<HTMLDivElement | null>;
   draftText: string | null;
   /** Round ids Core says nothing is reporting on. */
   silentRounds: string[];
@@ -2530,6 +2522,8 @@ function RunThread({
   const [pageIndex, setPageIndex] = useState(0);
   const [archiveError, setArchiveError] = useState("");
   const [archiveLoading, setArchiveLoading] = useState(false);
+  const [followingLatest, setFollowingLatest] = useState(true);
+  const [latestRequest, setLatestRequest] = useState(0);
   useEffect(() => {
     let cancelled = false;
     setPages([]);
@@ -2611,30 +2605,46 @@ function RunThread({
         ) : null}
         {archiveError === "" ? null : <span className="text-[12px] text-clay">{archiveError}</span>}
       </div> : null}
-      <VirtualList
-        ariaLabel="Conversation"
-        className="min-h-0 flex-1"
-        estimateSize={104}
-        followEnd={pageIndex === 0}
-        itemKey={(entry) => entry.id}
-        items={entries}
-        live={pageIndex === 0 ? "polite" : "off"}
-        relevant="additions"
-        role="log"
-        testId="conversation-log"
-        renderItem={(entry) => (
-          <div className="mx-auto w-full max-w-[800px] px-5 py-2.5" data-testid="conversation-row">
-            <ThreadRow
-              draftText={pageIndex === 0 ? draftText : null}
-              entry={entry}
-              plan={plan}
-              taskTitles={taskTitles}
-              onOpenPlan={onOpenPlan}
-            />
-          </div>
-        )}
-      />
-      <div aria-hidden="true" className="sr-only" ref={endRef} />
+      <div className="relative min-h-0 flex-1">
+        <VirtualList
+          key={`${projectRoot}:${String(pageIndex)}`}
+          ariaLabel="Conversation"
+          className="h-full"
+          estimateSize={104}
+          followEnd={pageIndex === 0}
+          onPinnedChange={setFollowingLatest}
+          scrollToEndRequest={latestRequest}
+          itemKey={(entry) => entry.id}
+          items={entries}
+          live={pageIndex === 0 ? "polite" : "off"}
+          relevant="additions"
+          role="log"
+          testId="conversation-log"
+          renderItem={(entry) => (
+            <div className="mx-auto w-full max-w-[800px] px-5 py-2.5" data-testid="conversation-row">
+              <ThreadRow
+                draftText={pageIndex === 0 ? draftText : null}
+                entry={entry}
+                plan={plan}
+                taskTitles={taskTitles}
+                onOpenPlan={onOpenPlan}
+              />
+            </div>
+          )}
+        />
+        {pageIndex === 0 && !followingLatest ? (
+          <Button
+            aria-label="Latest messages"
+            className="absolute right-5 bottom-3"
+            size="sm"
+            type="button"
+            variant="secondary"
+            onClick={() => setLatestRequest((value) => value + 1)}
+          >
+            Latest
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }

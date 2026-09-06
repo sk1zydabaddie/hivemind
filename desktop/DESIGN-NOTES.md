@@ -160,6 +160,11 @@ Conversation is a named, focusable log with polite additions; users must be able
 to enter and scroll it with a keyboard. Virtual rendering and durable paging
 bound large archives (Work 320 events/page, Project 160), with older content
 reachable rather than silently discarded. Archive size must not become DOM size.
+On the current conversation page, follow growing output only while the reader
+is within 48px of the end. Otherwise retain the keyed first-visible row and its
+viewport offset across new rows and height measurements. A Latest control
+resumes following and returns keyboard focus to the log; its appearance must
+not resize the reading viewport. Do not add event-driven `scrollIntoView` paths.
 
 Dialogs choose initial focus, trap it and return it to the opening interaction.
 Transient layers close in order. Inputs retain accessible labels; disabled

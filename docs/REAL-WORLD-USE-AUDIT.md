@@ -128,6 +128,44 @@ consumers; existing test-only export leads are unrelated to U3.
 **U3 is closed** with source `b33049c` and the installed proof above.
 No paid calls; no public release publication.
 
+### U4 in progress — reader-owned scroll position
+
+The bounded change covers `desktop/src/components/ui/virtual-list.tsx`, Work's
+scroll wiring, the existing installed/browser verification harnesses and their
+isolated test-only `desktop/tools/virtual-list-fixture.tsx`, plus the desktop
+design/status documentation. Core authority and event contracts do not change.
+Remove the event-count `scrollIntoView` path; replace unconditional
+height-change following with near-end pinning and keyed-row anchor retention.
+An explicit Latest action resumes following without a layout shift or lost
+keyboard focus. Project's non-following lists must retain normal scrolling.
+
+Acceptance requires an old-installed negative control and a new-installed pass
+while a no-paid provider emits growing text: earlier content stays within a
+2px anchor tolerance, Latest follows subsequent growth, and Stop terminates the
+owned provider. Controlled browser checks cover row-height changes and list
+updates that would otherwise mask anchoring errors. Keep the existing strict
+streaming/Stop/draft check, full suites, production build, viewport checks and
+cleanup scans. Do not close U4 from an after-the-fact page-text assertion.
+
+The old installed **416.29995.30514** check fails as intended: the reader starts
+240px from the end, and its earlier-history anchor moves **422px** while provider
+chunks increase **3 → 11** and the actual UI answer grows **255 → 936 characters**.
+The provider is checked alive during the observation, and the screenshot was
+inspected. [Negative control](evidence/conversation-scroll-416.29995.30514-1788674820958/README.md).
+The corrected shared list passes controlled production-browser geometry checks
+at all four required sizes, including a measured 90px growth above the anchor,
+append/prepend compensation, Latest/focus, viewport resizing, near-end behavior
+and a non-following Project-style list. Focused Desktop regressions pass
+**62/62**; full Desktop passes **392/392** across 43 files and Rust **65/65**.
+Production typecheck/build passes with the existing large-chunk warning
+(714.04 kB). The 21st review retains zero errors and 15 pre-existing warnings;
+no catalogue code, additional library or paid generation was used. Full Core
+also passes: **1,001 total, 999 passed, 2 platform skips, 0 failed/cancelled**,
+exit 0, **472.142 seconds**. The obsolete end ref, hidden sentinel and separate
+event-count force-scroll effect are removed. Diff/syntax and dead-path scans
+pass; the new geometry controller is absent from the actual production bundle.
+New installed qualification remains required; **U4 is still open**.
+
 ### U10 fixed and installed — 416.29883.15117
 
 The pre-fix instrumented regression failed as intended: `wholeFileReads: 1`,

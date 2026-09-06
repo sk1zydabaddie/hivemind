@@ -13,13 +13,15 @@ import { promisify } from "node:util";
 import { Builder, By, Capabilities, logging, until } from "selenium-webdriver";
 
 const run = promisify(execFile);
+const scrollOnly = process.argv.includes("--scroll-only");
+const targetViewport = scrollOnly && process.argv.includes("--minimum") ? { width: 790, height: 610 } : { width: 1440, height: 900 };
 const driverUrl = "http://127.0.0.1:4444";
 const installedVersion = (await readFile(path.resolve("src-tauri", "gen", "app-version.txt"), "utf8")).trim();
 const installedRoot = path.join(process.env.LOCALAPPDATA ?? "", "Hivemind AI");
 const installedBinary = path.join(installedRoot, "hivemind_desktop.exe");
 const installedCore = path.join(installedRoot, "core", "dist", "src");
 const recentProjectsPath = path.join(process.env.APPDATA ?? "", "ai.hivemind.desktop", "recent-projects.json");
-const evidenceDir = path.resolve("..", "docs", "evidence", `conversation-repair-${installedVersion}-${Date.now()}`);
+const evidenceDir = path.resolve("..", "docs", "evidence", `${scrollOnly ? "conversation-scroll" : "conversation-repair"}-${installedVersion}-${Date.now()}`);
 
 let driver;
 let tauriDriver;
@@ -31,7 +33,7 @@ const driverLog = [];
 const evidence = {
   installedVersion,
   installedBinary,
-  viewport: { width: 1440, height: 900 },
+  viewport: targetViewport,
   paidProviderCalls: 0,
   liveConversation: {},
   duplicateSubmit: {},
@@ -69,6 +71,22 @@ try {
 
   const initModule = await import(pathToFileURL(path.join(installedCore, "init.js")).href);
   project = await createFixture(initModule);
+  if (scrollOnly) {
+    // Seed only this disposable project's historical inputs before its daemon
+    // starts. They qualify rendering, not a provider's past conversation quality.
+    const { appendEvent } = await import(pathToFileURL(path.join(installedCore, "events.js")).href);
+    for (let index = 0; index < 24; index += 1) {
+      const messageId = randomUUID();
+      for (const [type, text] of [
+        ["conversation.message_recorded", `Earlier question ${index}: ${"Keep this project history readable while the response arrives. ".repeat(9)}`],
+        ["conversation.reply_recorded", `Earlier answer ${index}: ${"This is a seeded history row, not a live model result. ".repeat(9)}`]
+      ]) {
+        const appended = await appendEvent(project, { type, task_id: null,
+          data: { conversation_id: "legacy", request_id: messageId, message_id: messageId, text } });
+        assert.equal(appended.ok, true, appended.reason);
+      }
+    }
+  }
   const driverResolution = await run(path.resolve("node_modules", "selenium-webdriver", "bin", "windows", "selenium-manager.exe"),
     ["--browser", "webview2", "--avoid-browser-download", "--skip-driver-in-path", "--avoid-stats", "--output", "JSON"], { windowsHide: true });
   const nativeDriver = JSON.parse(driverResolution.stdout).result;
@@ -86,21 +104,24 @@ try {
   capabilities.setLoggingPrefs({ browser: "ALL" });
   driver = await new Builder().usingServer(driverUrl).withCapabilities(capabilities).build();
   await waitForBody();
-  await driver.manage().window().setRect({ x: 40, y: 40, width: 1440, height: 900 });
+  await driver.manage().window().setRect({ x: 40, y: 40, ...targetViewport });
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const viewport = await driver.executeScript("return { width: innerWidth, height: innerHeight, devicePixelRatio };");
-    if (viewport.width === 1440 && viewport.height === 900) break;
+    if (viewport.width === targetViewport.width && viewport.height === targetViewport.height) break;
     const rect = await driver.manage().window().getRect();
-    await driver.manage().window().setRect({ width: rect.width + 1440 - viewport.width, height: rect.height + 900 - viewport.height });
+    await driver.manage().window().setRect({ width: rect.width + targetViewport.width - viewport.width, height: rect.height + targetViewport.height - viewport.height });
   }
   evidence.viewport = await driver.executeScript("return { width: innerWidth, height: innerHeight, devicePixelRatio };");
-  assert.equal(evidence.viewport.width, 1440);
-  assert.equal(evidence.viewport.height, 900);
+  assert.equal(evidence.viewport.width, targetViewport.width);
+  assert.equal(evidence.viewport.height, targetViewport.height);
   evidence.outerWindow = await driver.manage().window().getRect();
   await openProjectDialog(project);
   await driver.wait(until.elementLocated(By.id("work-composer")), 45_000);
   const daemon = await waitForDaemon(project);
 
+  if (scrollOnly) {
+    await checkReadingDuringStream(daemon);
+  } else {
   const question = "Describe what this project does, in one sentence.";
   await typeComposer(question);
   const callsBefore = (await readCalls()).length;
@@ -419,6 +440,7 @@ try {
     adapterCallsDuringNavigation: (await readCalls()).length - navigationCallsBefore,
     projectBAdapterCallsDuringNavigation: otherProjectCalls.length
   };
+  }
 
   const browserLogs = await driver.manage().logs().get(logging.Type.BROWSER).catch(() => []);
   evidence.browserSevereLogs = browserLogs.filter((entry) => entry.level?.name === "SEVERE").map((entry) => entry.message);
@@ -427,7 +449,7 @@ try {
   if (driver) {
     evidence.failure.composer = await driver.executeScript(`const box=document.getElementById("work-composer");const send=document.querySelector('button[aria-label="Send"]');return {value:box?.value,readOnly:box?.readOnly,form:!!box?.form,sendDisabled:send?.disabled,sendAriaDisabled:send?.getAttribute("aria-disabled"),composers:document.querySelectorAll('#work-composer').length};`).catch(() => null);
     evidence.failure.surfaceText = await driver.executeScript("return document.body?.innerText ?? '';").catch(() => "unavailable");
-    const failureScreenshot = `failed-attempt-${installedVersion}-1440x900.png`;
+    const failureScreenshot = `failed-attempt-${installedVersion}-${targetViewport.width}x${targetViewport.height}.png`;
     await writeFile(path.join(evidenceDir, failureScreenshot), Buffer.from(await driver.takeScreenshot(), "base64")).catch(() => undefined);
     evidence.failure.screenshot = failureScreenshot;
   }
@@ -470,6 +492,7 @@ try {
 }
 
 assert.equal(evidence.paidProviderCalls, 0);
+if (!scrollOnly) {
 assert.equal(evidence.liveConversation.providerStillAliveWhenAnswerSampled, true);
 assert.equal(evidence.liveConversation.durableMessageVisibleWhileRunning, true);
 assert.equal(evidence.liveConversation.readOnlyStatusSettledWhileRunning, true);
@@ -498,9 +521,12 @@ assert.equal(evidence.newConversation.activeSpecAfter, null);
 assert.equal(evidence.newConversation.archivedPointers, 1);
 assert.notEqual(evidence.visibleFailure.statusText, "");
 assert.equal(evidence.visibleFailure.durableFailure, true);
+assert.equal(evidence.usabilityObservations.draftPersistence.adapterCallsDuringNavigation, 0);
+} else {
+  assert.equal(evidence.scrollReading.stoppedOwnedProvider, true);
+}
 assert.deepEqual(evidence.browserSevereLogs, []);
 assert.equal(evidence.recentProjects.restoredExactly, true);
-assert.equal(evidence.usabilityObservations.draftPersistence.adapterCallsDuringNavigation, 0);
 console.log(JSON.stringify(evidence, null, 2));
 console.log(`evidence: ${evidenceDir}`);
 
@@ -543,6 +569,16 @@ appendFileSync(path.join(process.cwd(),".hivemind","phase6-calls.jsonl"),JSON.st
 const progress=JSON.stringify({type:"item.completed",item:{type:"reasoning"}})+"\\n";
 process.stderr.write(progress.slice(0,Math.floor(progress.length/2)));await new Promise(r=>setTimeout(r,180));process.stderr.write(progress.slice(Math.floor(progress.length/2)));
 await new Promise(r=>setTimeout(r,700));
+if(current==="SCROLL_LIVE"){
+  process.stdout.write('{"kind":"reply","reply":"');
+  for(let index=0;index<50;index+=1){
+    const line="Live scroll line "+index+": This text is arriving while the reader inspects earlier history.\\n";
+    process.stdout.write(JSON.stringify(line).slice(1,-1));
+    appendFileSync(path.join(process.cwd(),".hivemind","phase6-scroll-chunks.jsonl"),JSON.stringify({index,pid:process.pid,at:Date.now()})+"\\n");
+    await new Promise(r=>setTimeout(r,300));
+  }
+  process.stdout.write('"}');await new Promise(r=>setTimeout(r,8000));rmSync(marker,{force:true});process.exit(0);
+}
 if(current==="FAIL_VISIBLE"){process.stderr.write("PHASE6_VISIBLE_PROVIDER_FAILURE\\n");rmSync(marker,{force:true});process.exit(7);}
 if(current==="STOP_RESPONSE" || kind==="plan"){await new Promise(r=>setTimeout(r,25000));process.stderr.write("PHASE6_DETERMINISTIC_PLAN_REFUSAL\\n");rmSync(marker,{force:true});process.exit(7);}
 let result;
@@ -551,6 +587,93 @@ else if(current.includes("Give me the fixture name"))result={kind:"reply",reply:
 else if(current.includes("attached notes folder"))result={kind:"reply",reply:"The attached notes describe current behavior."};
 else result={kind:"reply",reply:"This installed fixture reports a deterministic TypeScript project status."};
 const text=JSON.stringify(result);const split=Math.floor(text.length/2);process.stdout.write(text.slice(0,split));await new Promise(r=>setTimeout(r,2000));process.stdout.write(text.slice(split));await new Promise(r=>setTimeout(r,current.startsWith("Describe what")?6000:1400));rmSync(marker,{force:true});`;
+}
+
+async function checkReadingDuringStream(daemon) {
+  await typeComposer("SCROLL_LIVE");
+  await submitOnce();
+  await waitForCallCount(1, 10000);
+  const providerPid = (await readCalls()).at(-1).pid;
+  await driver.wait(async () => {
+    const answers = await driver.findElements(By.css('[data-testid="conversation-live-answer"]'));
+    return answers.length === 1 && (await answers[0].getText()).includes("Live scroll line 2:");
+  }, 10000, "the actual streamed answer did not arrive");
+  assert.equal(isPidAlive(providerPid), true);
+  const sample = `
+    const log=document.querySelector('[data-testid="conversation-log"]');
+    const box=log.getBoundingClientRect();
+    const row=log.querySelector('[data-virtual-index="'+anchorIndex+'"]');
+    return {top:log.scrollTop,height:log.scrollHeight,viewport:log.clientHeight,
+      distance:log.scrollHeight-log.clientHeight-log.scrollTop,
+      anchorTop:row?row.getBoundingClientRect().top-box.top:null,
+      answerLength:log.querySelector('[data-testid="conversation-live-answer"]')?.textContent?.length??0};
+  `;
+  const anchor = await driver.executeAsyncScript(`
+    const done=arguments[arguments.length-1];
+    const log=document.querySelector('[data-testid="conversation-log"]');
+    log.scrollTop=log.scrollHeight-log.clientHeight-240;
+    log.dispatchEvent(new Event('scroll',{bubbles:true}));
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      const top=log.getBoundingClientRect().top;
+      const row=[...log.querySelectorAll('[data-virtual-index]')].find(el=>{
+        const box=el.getBoundingClientRect();return box.top<=top+1&&box.bottom>top+1;
+      });
+      done({index:row?.getAttribute('data-virtual-index'),text:row?.textContent?.slice(0,100),
+        top:row?row.getBoundingClientRect().top-top:null,
+        distance:log.scrollHeight-log.clientHeight-log.scrollTop});
+    }));
+  `);
+  evidence.scrollReading = { providerPid, anchor, samples: [] };
+  assert.notEqual(anchor.index, undefined, "the reader's visible anchor was not located");
+  assert.ok(anchor.distance > 150, "the live list did not allow the reader to leave the bottom");
+  const chunksBefore = (await readFile(path.join(project, ".hivemind", "phase6-scroll-chunks.jsonl"), "utf8")).trim().split("\n").length;
+  const samples = await driver.executeAsyncScript(`
+    const anchorIndex=arguments[0],done=arguments[arguments.length-1];
+    const samples=[];let count=0;
+    const timer=setInterval(()=>{
+      samples.push((()=>{${sample}})());count+=1;
+      if(count===24){clearInterval(timer);done(samples);}
+    },100);
+  `, anchor.index);
+  evidence.scrollReading.samples = samples;
+  evidence.scrollReading.chunksBefore = chunksBefore;
+  evidence.scrollReading.chunksAfter = (await readFile(path.join(project, ".hivemind", "phase6-scroll-chunks.jsonl"), "utf8")).trim().split("\n").length;
+  assert.equal(isPidAlive(providerPid), true, "reading was sampled only after the provider ended");
+  assert.ok(evidence.scrollReading.chunksAfter > chunksBefore + 3, "no new provider output arrived during the reading check");
+  assert.ok(samples.at(-1).answerLength > samples[0].answerLength, "the mounted answer did not grow during the reading check");
+  const maxAnchorShift = Math.max(...samples.map(entry => entry.anchorTop === null ? Infinity : Math.abs(entry.anchorTop-anchor.top)));
+  evidence.scrollReading.maxAnchorShift = maxAnchorShift;
+  const readingShot = `reading-history-${installedVersion}-${targetViewport.width}x${targetViewport.height}.png`;
+  await writeFile(path.join(evidenceDir, readingShot), Buffer.from(await driver.takeScreenshot(), "base64"));
+  evidence.scrollReading.readingScreenshot = readingShot;
+  assert.ok(maxAnchorShift <= 2, `new output moved the reader's anchor by ${maxAnchorShift}px`);
+  const latest = await driver.findElement(By.css('button[aria-label="Latest messages"]'));
+  assert.equal(await latest.isDisplayed(), true);
+  const latestReachable = await driver.executeScript(`const button=arguments[0],box=button.getBoundingClientRect();return box.width>0&&box.height>0&&box.left>=0&&box.top>=0&&box.right<=innerWidth&&box.bottom<=innerHeight&&button.contains(document.elementFromPoint(box.left+box.width/2,box.top+box.height/2));`, latest);
+  assert.equal(latestReachable, true, "Latest is clipped or obscured in the actual installed viewport");
+  // Enter exercises the visible control's keyboard activation; its action
+  // must return focus to the log rather than leave it on an unmounted button.
+  await latest.sendKeys("\uE007");
+  await driver.wait(async () => driver.executeScript(`const log=document.querySelector('[data-testid="conversation-log"]');return document.activeElement===log&&log.scrollHeight-log.clientHeight-log.scrollTop<=2;`), 5000, "Latest did not restore following and log focus");
+  const following = await driver.executeAsyncScript(`
+    const anchorIndex=arguments[0],done=arguments[arguments.length-1];
+    const samples=[];let count=0;
+    const timer=setInterval(()=>{samples.push((()=>{${sample}})());count+=1;
+      if(count===20){clearInterval(timer);done(samples);}},100);
+  `, anchor.index);
+  evidence.scrollReading.followingSamples = following;
+  assert.equal(isPidAlive(providerPid), true, "Latest was sampled after provider exit");
+  assert.ok(following.at(-1).answerLength > following[0].answerLength, "no UI output arrived after Latest");
+  assert.ok(following.every(entry => entry.distance <= 2), "Latest did not stay pinned while output grew");
+  assert.equal((await driver.findElements(By.css('button[aria-label="Latest messages"]'))).length, 0);
+  const latestShot = `following-latest-${installedVersion}-${targetViewport.width}x${targetViewport.height}.png`;
+  await writeFile(path.join(evidenceDir, latestShot), Buffer.from(await driver.takeScreenshot(), "base64"));
+  evidence.scrollReading.latestScreenshot = latestShot;
+  await driver.findElement(By.css('[aria-label="Stop response"]')).click();
+  await driver.wait(async () => (await postAction(daemon.url, { type: "status.inspect", payload: {} })).value?.conversation_operation === null, 15000);
+  assert.equal(isPidAlive(providerPid), false, "the owned provider survived Stop");
+  assert.equal((await readCalls()).length, 1);
+  evidence.scrollReading.stoppedOwnedProvider = true;
 }
 
 async function openProjectDialog(wantedPath) {

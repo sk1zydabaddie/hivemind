@@ -43,6 +43,11 @@ const DESKTOP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 /** The surfaces a person MUST be able to finish. */
 const SURFACES = [
   {
+    name: "virtual list — reader-owned scroll anchor",
+    url: `${BASE}/replay.html?scenario=empty-project&scrollFixture=1`,
+    scrollAnchoring: true
+  },
+  {
     name: "work — draft read failure",
     url: `${BASE}/replay.html?scenario=empty-project&section=work&failAction=draft.inspect`,
     expectText: ["Injected draft.inspect read failure", "Retry"]
@@ -181,6 +186,90 @@ async function open() {
 }
 
 const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function checkScrollAnchoring(page) {
+  return page.evaluate(`return (async () => {
+    const wait = () => new Promise(resolve => setTimeout(resolve, 140));
+    const require = (condition, message) => { if (!condition) throw new Error(message); };
+    const list = () => document.querySelector('[data-testid="virtual-fixture-list"]');
+    const fixture = () => document.querySelector('[data-testid="virtual-fixture"]');
+    const row = key => [...list().querySelectorAll('[data-virtual-key]')].find(el => el.dataset.virtualKey === key);
+    const distance = () => list().scrollHeight-list().clientHeight-list().scrollTop;
+    const offset = key => row(key)?.getBoundingClientRect().top-list().getBoundingClientRect().top;
+    const api = window.virtualListFixture;
+    require(!!api, 'virtual list geometry fixture is absent');
+    require(distance() <= 2, 'a follow-enabled list did not initially reach its end');
+    const mounted = list().querySelectorAll('[data-virtual-key]').length;
+    require(mounted < 30 && Number(fixture().dataset.count) === 200, 'virtualization mounted the complete 200-row fixture');
+
+    list().scrollTop = list().scrollHeight/2;
+    list().dispatchEvent(new Event('scroll', {bubbles:true}));
+    await wait();
+    const top = list().getBoundingClientRect().top;
+    const mountedRows = [...list().querySelectorAll('[data-virtual-key]')];
+    const anchor = mountedRows.find(el => el.getBoundingClientRect().top <= top+1 && el.getBoundingClientRect().bottom > top+1);
+    require(!!anchor, 'no visible row at the reader viewport anchor');
+    const key = anchor.dataset.virtualKey, before = offset(key);
+    require(distance() > 500, 'the reader is not away from the end');
+    const above = mountedRows[mountedRows.indexOf(anchor)-1];
+    require(!!above, 'no mounted overscan row above the anchor');
+    const aboveKey = above.dataset.virtualKey;
+    const oldHeight = above.getBoundingClientRect().height;
+    const oldTop = list().scrollTop;
+    api.resizeRow(aboveKey, oldHeight+90);
+    await wait();
+    require(row(aboveKey)?.getBoundingClientRect().height >= oldHeight+89, 'the row above the anchor did not really grow');
+    require(Math.abs(offset(key)-before) <= 2, 'measuring a growing row above moved the visible anchor');
+    require(list().scrollTop >= oldTop+89, 'no compensating scroll adjustment was observed');
+
+    const beforeAppendHeight = list().scrollHeight;
+    api.append();
+    await wait();
+    require(Number(fixture().dataset.count) === 205 && list().scrollHeight > beforeAppendHeight+300, 'the append did not reach the list');
+    require(Math.abs(offset(key)-before) <= 2, 'appending rows pulled the reader to the end');
+    const beforePrependTop = list().scrollTop;
+    api.prepend();
+    await wait();
+    require(Number(fixture().dataset.count) === 210 && list().scrollTop > beforePrependTop+300, 'the prepend was not anchor-compensated');
+    require(Math.abs(offset(key)-before) <= 2, 'prepending rows moved the visible anchor');
+
+    const latest = document.querySelector('button[aria-label="Latest fixture rows"]');
+    require(!!latest, 'a scrolled reader has no Latest control');
+    const buttonBox = latest.getBoundingClientRect();
+    require(buttonBox.width > 0 && buttonBox.height > 0 && buttonBox.left >= 0 && buttonBox.top >= 0 && buttonBox.right <= innerWidth && buttonBox.bottom <= innerHeight && latest.contains(document.elementFromPoint(buttonBox.left+buttonBox.width/2,buttonBox.top+buttonBox.height/2)), 'Latest is outside the viewport or obscured');
+    latest.click();
+    await wait();
+    require(distance() <= 2 && document.activeElement === list(), 'Latest did not restore following and log focus');
+    const followingHeight = list().scrollHeight;
+    api.append();
+    await wait();
+    require(list().scrollHeight > followingHeight+300 && distance() <= 2, 'Latest did not follow a subsequent append');
+    api.resizeViewport(180);
+    await wait();
+    require(list().clientHeight === 180 && distance() <= 2, 'a pinned viewport resize lost the end');
+
+    list().scrollTop -= 24;
+    list().dispatchEvent(new Event('scroll', {bubbles:true}));
+    await wait();
+    api.append();
+    await wait();
+    require(distance() <= 2, 'a reader within the 48px near-end bound did not follow');
+    api.setFollow(false);
+    api.reset();
+    await wait();
+    require(list().scrollTop === 0, 'a fresh non-following archive jumped to the bottom');
+    list().scrollTop = 800;
+    list().dispatchEvent(new Event('scroll', {bubbles:true}));
+    await wait();
+    const archiveTop = list().scrollTop;
+    api.append();
+    await wait();
+    require(Math.abs(list().scrollTop-archiveTop) <= 2, 'a non-following Project-style list started following');
+    return { mountedRows: mounted, seededRows: 200, anchorKey: key, growingRowCompensation: 90,
+      appendedRows: true, prependedRows: true, latestAndFocus: true, viewportResize: true,
+      nearEnd: true, nonFollowingArchive: true };
+  })();`);
+}
 
 // Only the recorded planner stage may satisfy this liveness assertion.
 const PLANNER_ELAPSED = `
@@ -575,6 +664,11 @@ for (const viewport of selectedViewports) {
     }
     if (!ready) throw new Error(`${surface.name} never rendered`);
     await settle(1200);
+
+    if (surface.scrollAnchoring === true) {
+      const result = await checkScrollAnchoring(page);
+      console.log(`         scroll anchor checks: ${JSON.stringify(result)}`);
+    }
 
     if (surface.expectText !== undefined) {
       const missing = await page.evaluate(`
