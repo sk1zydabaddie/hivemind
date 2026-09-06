@@ -425,8 +425,10 @@ try {
     return state.ok && state.value.conversation_id !== currentConversation;
   }, 10000, "the UI did not create a new durable conversation boundary");
   await driver.wait(async () => {
-    const box = await driver.findElement(By.id("work-composer"));
-    return (await box.getAttribute("value")) === "" && (await box.getAttribute("readonly")) === null;
+    // New conversation replaces this node. Read both fields from the currently
+    // mounted composer in one sample, not from a handle invalidated between
+    // separate WebDriver calls during the expected replacement.
+    return driver.executeScript(`const box=document.getElementById("work-composer");return !!box && box.value === "" && !box.readOnly;`);
   }, 10000, "new conversation retained the old draft");
   await waitForDraftSaved();
   await assertAttachmentChips([]);
@@ -677,7 +679,30 @@ async function checkReadingDuringStream(daemon) {
 }
 
 async function openProjectDialog(wantedPath) {
+  const navigation = { wantedName: path.basename(wantedPath) };
+  (evidence.projectNavigation ??= []).push(navigation);
+  navigation.beforeClick = await driver.executeScript(`
+    const button=document.querySelector('button[aria-label^="Switch project"]');
+    const rect=button.getBoundingClientRect();
+    const hit=document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2);
+    return {expanded:button.getAttribute('aria-expanded'),state:button.dataset.state,
+      hitInside:button.contains(hit),hitTag:hit?.tagName,hitLabel:hit?.getAttribute('aria-label'),
+      bodyPointerEvents:getComputedStyle(document.body).pointerEvents,
+      menus:[...document.querySelectorAll('[role="menu"]')].map(e=>({state:e.dataset.state,text:e.innerText})),
+      dialogs:[...document.querySelectorAll('[role="dialog"]')].map(e=>({state:e.dataset.state,text:e.innerText}))};
+  `);
+  // A successful project switch can precede the old menu's exit animation.
+  // Start the next interaction only once that actual surface has unmounted;
+  // never retry a click or weaken the menu-open deadline after clicking it.
+  await driver.wait(async () => (await driver.findElements(By.css('[role="menu"][data-state="closed"], [role="dialog"][data-state="closed"]'))).length === 0,
+    5000, "the previous project surface did not finish closing");
+  navigation.previousSurfaceClosed = true;
   await driver.findElement(By.css('button[aria-label^="Switch project"]')).click();
+  navigation.afterClick = await driver.executeScript(`
+    const button=document.querySelector('button[aria-label^="Switch project"]');
+    return {expanded:button.getAttribute('aria-expanded'),state:button.dataset.state,
+      menus:[...document.querySelectorAll('[role="menu"]')].map(e=>({state:e.dataset.state,text:e.innerText}))};
+  `);
   await driver.wait(until.elementLocated(By.xpath('//*[@role="menuitem" and contains(normalize-space(.), "Open another project")]')), 10_000).then((element) => element.click());
   await driver.wait(until.elementLocated(By.id("project-path")), 10_000);
   await driver.executeScript(`const input=document.getElementById("project-path");const setter=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,"value").set;setter.call(input,arguments[0]);input.dispatchEvent(new Event("input",{bubbles:true}));`, wantedPath);

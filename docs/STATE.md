@@ -20,7 +20,21 @@ lookup. Updater signing and Windows publisher signing are separate checks.
 The retired in-app source/public update execution path remains disabled;
 publication of an installer does not restore that consumer authority.
 
-Latest installed candidate: **416.29995.30514**, source `b33049c8d841c`,
+Latest installed candidate: **416.30061.58188**, source `c8ecdf0ae865f`,
+artifact `6829361a0553d5f6e955d639b48045c798d3d99e4ef521c612b3500ed5a45ff8`.
+All 4,480 managed files and Core/shell/Node identities matched. **U4 is closed**:
+installed live-stream checks measure **0px** reading-anchor movement at 1440×900
+and 790×610, versus 422px on the preceding build. Latest resumes following,
+restores keyboard focus, and Stop terminates the owned provider. The complete
+installed conversation/draft/Stop regression passes. Full Core: **999 passed,
+2 platform skips, 0 failed/cancelled** (1,001 total); Desktop **392/392**, Rust
+**65/65**, production viewport checks **56/56**. No paid calls or public release.
+[Installed qualification and limits](evidence/conversation-repair-416.30061.58188-1788677425018/README.md).
+The real-world audit has **3/17 closed (U3, U4, U10), 14 open**. Additional
+minimum-width header clipping and ignored rapid menu clicks during closing
+transitions are recorded as open observations; this is not whole-UI qualification.
+
+Earlier installed candidate: **416.29995.30514**, source `b33049c8d841c`,
 artifact `fd62d2919d83269c989f49eeb821c14a213f0703891d504abaf433624e51330c`.
 All 4,480 managed files and Core/shell/Node identities matched. The strict
 installed check now passes draft/attachment persistence across tabs, projects

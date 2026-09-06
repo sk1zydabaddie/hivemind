@@ -1,0 +1,415 @@
+{
+  "installedVersion": "416.30061.58188",
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "viewport": {
+    "devicePixelRatio": 1,
+    "height": 900,
+    "width": 1440
+  },
+  "paidProviderCalls": 0,
+  "liveConversation": {},
+  "duplicateSubmit": {},
+  "projectContext": {},
+  "conversationHistory": {},
+  "attachmentContext": {},
+  "newConversation": {},
+  "visibleFailure": {},
+  "stopResponse": {},
+  "stopPlanning": {},
+  "usabilityObservations": {},
+  "browserSevereLogs": [],
+  "recentProjects": {
+    "beforeSha256": "9f6c478f93cb98f488fc5e3a1f113abc746e4da228b62ef405a15970e0639d06",
+    "afterSha256": "9f6c478f93cb98f488fc5e3a1f113abc746e4da228b62ef405a15970e0639d06",
+    "restoredExactly": true
+  },
+  "installedIdentity": {
+    "artifact_id": "6829361a0553d5f6e955d639b48045c798d3d99e4ef521c612b3500ed5a45ff8",
+    "installed_executable_sha256": "24214d7e2db7b12c1798c8727797a50c034f5b3ce8a5eea799ddefa983c67df9",
+    "kind": "hivemind-local-install-receipt",
+    "schema_version": 1,
+    "source_commit": "c8ecdf0ae865f208d2a839aa4449541cd51acb24",
+    "verified_at_ms": 1788676770912,
+    "version": "416.30061.58188",
+    "installedExecutableSha256": "24214d7e2db7b12c1798c8727797a50c034f5b3ce8a5eea799ddefa983c67df9",
+    "installedPayloadSource": "c8ecdf0ae865f208d2a839aa4449541cd51acb24"
+  },
+  "nativeDriver": "C:\\Users\\ethan\\.cache\\selenium\\msedgedriver\\win64\\152.0.4191.66\\msedgedriver.exe",
+  "outerWindow": {
+    "height": 900,
+    "width": 1440,
+    "x": 230,
+    "y": 212
+  },
+  "scrollReading": {
+    "providerPid": 93792,
+    "anchor": {
+      "distance": 240,
+      "index": "44",
+      "text": "Earlier question 22: Keep this project history readable while the response arrives. Keep this projec",
+      "top": -165
+    },
+    "samples": [
+      {
+        "anchorTop": -165,
+        "answerLength": 255,
+        "distance": 240,
+        "height": 7035,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 255,
+        "distance": 240,
+        "height": 7035,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 340,
+        "distance": 263,
+        "height": 7058,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 340,
+        "distance": 263,
+        "height": 7058,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 340,
+        "distance": 263,
+        "height": 7058,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 425,
+        "distance": 286,
+        "height": 7081,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 425,
+        "distance": 286,
+        "height": 7081,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 425,
+        "distance": 286,
+        "height": 7081,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 425,
+        "distance": 286,
+        "height": 7081,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 510,
+        "distance": 308,
+        "height": 7103,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 510,
+        "distance": 308,
+        "height": 7103,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 510,
+        "distance": 308,
+        "height": 7103,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 595,
+        "distance": 331,
+        "height": 7126,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 595,
+        "distance": 331,
+        "height": 7126,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 595,
+        "distance": 331,
+        "height": 7126,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 680,
+        "distance": 354,
+        "height": 7149,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 680,
+        "distance": 354,
+        "height": 7149,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 680,
+        "distance": 354,
+        "height": 7149,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 765,
+        "distance": 377,
+        "height": 7172,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 765,
+        "distance": 377,
+        "height": 7172,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 765,
+        "distance": 377,
+        "height": 7172,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 850,
+        "distance": 399,
+        "height": 7194,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 850,
+        "distance": 399,
+        "height": 7194,
+        "top": 6221,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -165,
+        "answerLength": 850,
+        "distance": 399,
+        "height": 7194,
+        "top": 6221,
+        "viewport": 574
+      }
+    ],
+    "chunksBefore": 3,
+    "chunksAfter": 10,
+    "maxAnchorShift": 0,
+    "readingScreenshot": "reading-history-416.30061.58188-1440x900.png",
+    "followingSamples": [
+      {
+        "anchorTop": -587,
+        "answerLength": 936,
+        "distance": 0,
+        "height": 7217,
+        "top": 6643,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -587,
+        "answerLength": 936,
+        "distance": 0,
+        "height": 7217,
+        "top": 6643,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -610,
+        "answerLength": 1022,
+        "distance": 0,
+        "height": 7240,
+        "top": 6666,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -610,
+        "answerLength": 1022,
+        "distance": 0,
+        "height": 7240,
+        "top": 6666,
+        "viewport": 574
+      },
+      {
+        "anchorTop": -610,
+        "answerLength": 1022,
+        "distance": 0,
+        "height": 7240,
+        "top": 6666,
+        "viewport": 574
+      },
+      {
+        "anchorTop": null,
+        "answerLength": 1108,
+        "distance": 0,
+        "height": 7263,
+        "top": 6689,
+        "viewport": 574
+      },
+      {
+        "anchorTop": null,
+        "answerLength": 1108,
+        "distance": 0,
+        "height": 7263,
+        "top": 6689,
+        "viewport": 574
+      },
+      {
+        "anchorTop": null,
+        "answerLength": 1108,
+        "distance": 0,
+        "height": 7263,
+        "top": 6689,
+        "viewport": 574
+      },
+      {
+        "anchorTop": null,
+        "answerLength": 1194,
+        "distance": 0,
+        "height": 7285,
+        "top": 6711,
+        "viewport": 574
+      },
+      {
+        "anchorTop": null,
+        "answerLength": 1194,
+        "distance": 0,
+        "height": 7285,
+        "top": 6711,
+        "viewport": 574
+      },
+      {
+        "anchorTop": null,
+        "answerLength": 1194,
+        "distance": 0,
+        "height": 7285,
+        "top": 6711,
+        "viewport": 574
+      },
+      {
+        "anchorTop": null,
+        "answerLength": 1280,
+        "distance": 0,
+        "height": 7308,
+        "top": 6734,
+        "viewport": 574
+      },
+      {
+        "anchorTop": null,
+        "answerLength": 1280,
+        "distance": 0,
+        "height": 7308,
+        "top": 6734,
+        "viewport": 574
+      },
+      {
+        "anchorTop": null,
+        "answerLength": 1280,
+        "distance": 0,
+        "height": 7308,
+        "top": 6734,
+        "viewport": 574
+      },
+      {
+        "anchorTop": null,
+        "answerLength": 1366,
+        "distance": 0,
+        "height": 7331,
+        "top": 6757,
+        "viewport": 574
+      },
+      {
+        "anchorTop": null,
+        "answerLength": 1366,
+        "distance": 0,
+        "height": 7331,
+        "top": 6757,
+        "viewport": 574
+      },
+      {
+        "anchorTop": null,
+        "answerLength": 1366,
+        "distance": 0,
+        "height": 7331,
+        "top": 6757,
+        "viewport": 574
+      },
+      {
+        "anchorTop": null,
+        "answerLength": 1366,
+        "distance": 0,
+        "height": 7331,
+        "top": 6757,
+        "viewport": 574
+      },
+      {
+        "anchorTop": null,
+        "answerLength": 1452,
+        "distance": 0,
+        "height": 7354,
+        "top": 6780,
+        "viewport": 574
+      },
+      {
+        "anchorTop": null,
+        "answerLength": 1452,
+        "distance": 0,
+        "height": 7354,
+        "top": 6780,
+        "viewport": 574
+      }
+    ],
+    "latestScreenshot": "following-latest-416.30061.58188-1440x900.png",
+    "stoppedOwnedProvider": true
+  }
+}

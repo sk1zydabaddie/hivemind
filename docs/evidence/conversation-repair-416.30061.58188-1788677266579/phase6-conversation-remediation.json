@@ -1,0 +1,1266 @@
+{
+  "installedVersion": "416.30061.58188",
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "viewport": {
+    "devicePixelRatio": 1,
+    "height": 900,
+    "width": 1440
+  },
+  "paidProviderCalls": 0,
+  "liveConversation": {
+    "build": "416.30061.58188",
+    "screenshot": "phase6-live-conversation-416.30061.58188-1440x900.png",
+    "partialScreenshot": "partial-answer-416.30061.58188-1440x900.png",
+    "typed": "Describe what this project does, in one sentence.",
+    "reply": "This installed fixture reports a deterministic TypeScript project status.",
+    "durableMessageVisibleWhileRunning": true,
+    "scopedActivityWhileRunning": "Planner is preparing your response\n3s elapsed\nThis installed fixture reports a deterministic TypeScript project status.",
+    "headerWhileRunning": "Conversation",
+    "scopedActivityLater": "Planner is preparing your response\n6s elapsed\nThis installed fixture reports a deterministic TypeScript project status.",
+    "scopedClockWhileRunning": "3s elapsed",
+    "scopedClockLater": "6s elapsed",
+    "scopedAnswerWhileRunning": "This installed fixture reports a deterministic TypeScript project status.",
+    "scopedPartialAnswerWhileRunning": "This installed fixture re",
+    "providerStillAliveWhenAnswerSampled": true,
+    "readOnlyStatusSettledWhileRunning": true,
+    "readOnlyStatusMs": 29,
+    "adapterCalls": 1
+  },
+  "duplicateSubmit": {
+    "synchronousSubmits": 2,
+    "adapterCalls": 1,
+    "durableMessages": 1
+  },
+  "projectContext": {
+    "readmeContentIncluded": true,
+    "sourceContentIncluded": true,
+    "untrackedNameIncluded": true,
+    "untrackedContentIncluded": false
+  },
+  "conversationHistory": {
+    "followup": {
+      "conversation_id": "legacy",
+      "turns": [
+        {
+          "user": "Describe what this project does, in one sentence.",
+          "truncated": false,
+          "assistant": "This installed fixture reports a deterministic TypeScript project status.",
+          "assistant_kind": "reply"
+        }
+      ],
+      "omitted_turns": 0,
+      "max_turns": 24,
+      "max_bytes": 49152
+    },
+    "afterNewConversation": {
+      "conversation_id": "C-b01d9c7d-ab22-4f30-ab59-2505a237d527",
+      "turns": [],
+      "omitted_turns": 0,
+      "max_turns": 24,
+      "max_bytes": 49152
+    }
+  },
+  "attachmentContext": {
+    "structuredAttachments": [
+      {
+        "kind": "folder",
+        "path": "notes"
+      },
+      {
+        "kind": "file",
+        "path": "UNTRACKED-CURRENT.md"
+      }
+    ],
+    "childNameIncluded": true,
+    "childContentIncluded": true,
+    "untrackedFileContentIncluded": true,
+    "markerTextAppendedToPrompt": false
+  },
+  "newConversation": {
+    "activeSpecBefore": "S-001",
+    "activeSpecAfter": null,
+    "archivedPointers": 1
+  },
+  "visibleFailure": {
+    "build": "416.30061.58188",
+    "screenshot": "phase6-visible-failure-416.30061.58188-1440x900.png",
+    "statusText": "Response could not finish",
+    "scopedOutcomeText": "Response could not finish\nspec drafter \"planner\" exited 7; output log: C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase6-remediation-0JZiFQ\\.hivemind\\log\\runs\\2026-09-06T06-48-30-970Z-drafting-M-292f59aa-cf9f-4c0f-bb98-05e9c7fa00a1-1-6ae4d149-d7af-44bb-a313-f346d90fa2bd.adapter.log: {\"type\":\"item.completed\",\"item\":{\"type\":\"reasoning\"}}\nPHASE6_VISIBLE_PROVIDER_FAILURE",
+    "durableFailure": true
+  },
+  "stopResponse": {
+    "screenshot": "stopped-response-416.30061.58188-1440x900.png",
+    "retainedDraft": "This is my next unsent message.",
+    "modelMenuOpenedWhileRunning": true,
+    "stopRecoveredAfterReload": true,
+    "responseChildPid": 32160,
+    "childAbsentAfterStop": true,
+    "adapterCalls": 1
+  },
+  "stopPlanning": {
+    "screenshot": "planning-handoff-416.30061.58188-1440x900.png",
+    "status": "stopped",
+    "planningChildPid": 79392,
+    "childAbsentAfterStop": true,
+    "adapterCalls": 2
+  },
+  "usabilityObservations": {
+    "draftAcrossTabs": {
+      "typed": "Keep this unsent draft while I inspect Agents.",
+      "after": "Keep this unsent draft while I inspect Agents.",
+      "attachments": [
+        {
+          "kind": "folder",
+          "path": "notes"
+        },
+        {
+          "kind": "file",
+          "path": "UNTRACKED-CURRENT.md"
+        }
+      ]
+    }
+  },
+  "browserSevereLogs": [],
+  "recentProjects": {
+    "beforeSha256": "9f6c478f93cb98f488fc5e3a1f113abc746e4da228b62ef405a15970e0639d06",
+    "afterSha256": "9f6c478f93cb98f488fc5e3a1f113abc746e4da228b62ef405a15970e0639d06",
+    "restoredExactly": true
+  },
+  "installedIdentity": {
+    "artifact_id": "6829361a0553d5f6e955d639b48045c798d3d99e4ef521c612b3500ed5a45ff8",
+    "installed_executable_sha256": "24214d7e2db7b12c1798c8727797a50c034f5b3ce8a5eea799ddefa983c67df9",
+    "kind": "hivemind-local-install-receipt",
+    "schema_version": 1,
+    "source_commit": "c8ecdf0ae865f208d2a839aa4449541cd51acb24",
+    "verified_at_ms": 1788676770912,
+    "version": "416.30061.58188",
+    "installedExecutableSha256": "24214d7e2db7b12c1798c8727797a50c034f5b3ce8a5eea799ddefa983c67df9",
+    "installedPayloadSource": "c8ecdf0ae865f208d2a839aa4449541cd51acb24"
+  },
+  "nativeDriver": "C:\\Users\\ethan\\.cache\\selenium\\msedgedriver\\win64\\152.0.4191.66\\msedgedriver.exe",
+  "outerWindow": {
+    "height": 900,
+    "width": 1440,
+    "x": 230,
+    "y": 212
+  },
+  "projectNavigation": [
+    {
+      "wantedName": "hivemind-phase6-remediation-0JZiFQ",
+      "beforeClick": {
+        "bodyPointerEvents": "auto",
+        "dialogs": [],
+        "expanded": "false",
+        "hitInside": true,
+        "hitLabel": null,
+        "hitTag": "SPAN",
+        "menus": [],
+        "state": "closed"
+      },
+      "previousSurfaceClosed": true,
+      "afterClick": {
+        "expanded": "true",
+        "menus": [
+          {
+            "state": "open",
+            "text": "PROJECTS\nTest Game\nD:\\Projects\\Test Game\nai.hivemind.desktop-spoof-kThN0x\nC:\\Users\\ethan\\AppData\\Local\\Temp\\ai.hivemind.desktop-spoof-kThN0x\nai.hivemind.desktop-spoof-kThN0x\nC:\\Users\\ethan\\AppData\\Local\\Temp\\ai.hivemind.desktop-spoof-kThN0x\n\nRemoving an entry forgets the folder here only. Nothing in it is deleted — its plans, history and settings stay where they are, and opening it again brings it back.\n\nOpen another project…"
+          }
+        ],
+        "state": "open"
+      }
+    },
+    {
+      "wantedName": "hivemind-phase6-remediation-KADxRk",
+      "beforeClick": {
+        "bodyPointerEvents": "auto",
+        "dialogs": [],
+        "expanded": "false",
+        "hitInside": true,
+        "hitLabel": null,
+        "hitTag": "SPAN",
+        "menus": [],
+        "state": "closed"
+      },
+      "previousSurfaceClosed": true,
+      "afterClick": {
+        "expanded": "true",
+        "menus": [
+          {
+            "state": "open",
+            "text": "PROJECTS\nhivemind-phase6-remediation-0JZiFQ\nC:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase6-remediation-0JZiFQ\nTest Game\nD:\\Projects\\Test Game\nai.hivemind.desktop-spoof-kThN0x\nC:\\Users\\ethan\\AppData\\Local\\Temp\\ai.hivemind.desktop-spoof-kThN0x\nai.hivemind.desktop-spoof-kThN0x\nC:\\Users\\ethan\\AppData\\Local\\Temp\\ai.hivemind.desktop-spoof-kThN0x\n\nRemoving an entry forgets the folder here only. Nothing in it is deleted — its plans, history and settings stay where they are, and opening it again brings it back.\n\nOpen another project…"
+          }
+        ],
+        "state": "open"
+      }
+    },
+    {
+      "wantedName": "hivemind-phase6-remediation-0JZiFQ",
+      "beforeClick": {
+        "bodyPointerEvents": "auto",
+        "dialogs": [],
+        "expanded": "false",
+        "hitInside": true,
+        "hitLabel": null,
+        "hitTag": "SPAN",
+        "menus": [],
+        "state": "closed"
+      },
+      "previousSurfaceClosed": true,
+      "afterClick": {
+        "expanded": "true",
+        "menus": [
+          {
+            "state": "open",
+            "text": "PROJECTS\nhivemind-phase6-remediation-KADxRk\nC:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase6-remediation-KADxRk\nhivemind-phase6-remediation-0JZiFQ\nC:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase6-remediation-0JZiFQ\nTest Game\nD:\\Projects\\Test Game\nai.hivemind.desktop-spoof-kThN0x\nC:\\Users\\ethan\\AppData\\Local\\Temp\\ai.hivemind.desktop-spoof-kThN0x\nai.hivemind.desktop-spoof-kThN0x\nC:\\Users\\ethan\\AppData\\Local\\Temp\\ai.hivemind.desktop-spoof-kThN0x\n\nRemoving an entry forgets the folder here only. Nothing in it is deleted — its plans, history and settings stay where they are, and opening it again brings it back.\n\nOpen another project…"
+          }
+        ],
+        "state": "open"
+      }
+    },
+    {
+      "wantedName": "hivemind-phase6-remediation-KADxRk",
+      "beforeClick": {
+        "bodyPointerEvents": "auto",
+        "dialogs": [],
+        "expanded": "false",
+        "hitInside": true,
+        "hitLabel": null,
+        "hitTag": "SPAN",
+        "menus": [],
+        "state": "closed"
+      },
+      "previousSurfaceClosed": true,
+      "afterClick": {
+        "expanded": "true",
+        "menus": [
+          {
+            "state": "open",
+            "text": "PROJECTS\nhivemind-phase6-remediation-0JZiFQ\nC:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase6-remediation-0JZiFQ\nhivemind-phase6-remediation-KADxRk\nC:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase6-remediation-KADxRk\nTest Game\nD:\\Projects\\Test Game\nai.hivemind.desktop-spoof-kThN0x\nC:\\Users\\ethan\\AppData\\Local\\Temp\\ai.hivemind.desktop-spoof-kThN0x\nai.hivemind.desktop-spoof-kThN0x\nC:\\Users\\ethan\\AppData\\Local\\Temp\\ai.hivemind.desktop-spoof-kThN0x\n\nRemoving an entry forgets the folder here only. Nothing in it is deleted — its plans, history and settings stay where they are, and opening it again brings it back.\n\nOpen another project…"
+          }
+        ],
+        "state": "open"
+      }
+    },
+    {
+      "wantedName": "hivemind-phase6-remediation-0JZiFQ",
+      "beforeClick": {
+        "bodyPointerEvents": "auto",
+        "dialogs": [],
+        "expanded": "false",
+        "hitInside": true,
+        "hitLabel": null,
+        "hitTag": "SPAN",
+        "menus": [
+          {
+            "state": "closed",
+            "text": "PROJECTS\nhivemind-phase6-remediation-KADxRk\nC:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase6-remediation-KADxRk\nhivemind-phase6-remediation-0JZiFQ\nC:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase6-remediation-0JZiFQ\nTest Game\nD:\\Projects\\Test Game\nai.hivemind.desktop-spoof-kThN0x\nC:\\Users\\ethan\\AppData\\Local\\Temp\\ai.hivemind.desktop-spoof-kThN0x\nai.hivemind.desktop-spoof-kThN0x\nC:\\Users\\ethan\\AppData\\Local\\Temp\\ai.hivemind.desktop-spoof-kThN0x\n\nRemoving an entry forgets the folder here only. Nothing in it is deleted — its plans, history and settings stay where they are, and opening it again brings it back.\n\nOpen another project…"
+          }
+        ],
+        "state": "closed"
+      },
+      "previousSurfaceClosed": true,
+      "afterClick": {
+        "expanded": "true",
+        "menus": [
+          {
+            "state": "open",
+            "text": "PROJECTS\nhivemind-phase6-remediation-KADxRk\nC:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase6-remediation-KADxRk\nhivemind-phase6-remediation-0JZiFQ\nC:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase6-remediation-0JZiFQ\nTest Game\nD:\\Projects\\Test Game\nai.hivemind.desktop-spoof-kThN0x\nC:\\Users\\ethan\\AppData\\Local\\Temp\\ai.hivemind.desktop-spoof-kThN0x\nai.hivemind.desktop-spoof-kThN0x\nC:\\Users\\ethan\\AppData\\Local\\Temp\\ai.hivemind.desktop-spoof-kThN0x\n\nRemoving an entry forgets the folder here only. Nothing in it is deleted — its plans, history and settings stay where they are, and opening it again brings it back.\n\nOpen another project…"
+          }
+        ],
+        "state": "open"
+      }
+    }
+  ],
+  "failure": {
+    "message": "StaleElementReferenceError: stale element reference: stale element not found in the current frame\n  (Session info: MicrosoftEdge=152.0.4191.66)",
+    "composer": {
+      "composers": 1,
+      "form": true,
+      "readOnly": true,
+      "sendAriaDisabled": "true",
+      "sendDisabled": false,
+      "value": ""
+    },
+    "surfaceText": "Hivemind\nWork\nAgents\nProject\nLive\nhivemind-phase6-remediation-0JZiFQ\nCtrl+K\nNothing running\nChecks\nNew conversation\nInterruptions\nModels\nLoading saved draft…\nAsk anything, or describe a change. A question is answered here; a change becomes a plan you approve before anything runs.\nCommands\n\nJump to a section or open a project",
+    "screenshot": "failed-attempt-416.30061.58188-1440x900.png",
+    "operation": null,
+    "calls": [
+      {
+        "at": "2026-09-06T06:47:53.331Z",
+        "pid": 53916,
+        "kind": "draft"
+      },
+      {
+        "at": "2026-09-06T06:48:04.858Z",
+        "pid": 11852,
+        "kind": "draft"
+      },
+      {
+        "at": "2026-09-06T06:48:12.188Z",
+        "pid": 32160,
+        "kind": "draft"
+      },
+      {
+        "at": "2026-09-06T06:48:18.320Z",
+        "pid": 39048,
+        "kind": "draft"
+      },
+      {
+        "at": "2026-09-06T06:48:22.945Z",
+        "pid": 50112,
+        "kind": "draft"
+      },
+      {
+        "at": "2026-09-06T06:48:27.504Z",
+        "pid": 79392,
+        "kind": "plan"
+      },
+      {
+        "at": "2026-09-06T06:48:31.051Z",
+        "pid": 108928,
+        "kind": "draft"
+      }
+    ],
+    "durableEvents": [
+      {
+        "ts": "2026-09-06T06:47:53.139Z",
+        "type": "conversation.operation_started",
+        "task_id": null,
+        "data": {
+          "request_id": "5af302ff-8340-4ee5-924e-3bf214e4e992",
+          "phase": "reading",
+          "tool": "planner",
+          "process_identity": {
+            "pid": 90028,
+            "process_instance_id": "5af302ff-8340-4ee5-924e-3bf214e4e992"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:47:53.218Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "message_id": "M-06cc2e6b-dd44-4631-a895-07880b13f859",
+          "conversation_id": "legacy",
+          "request_id": "5af302ff-8340-4ee5-924e-3bf214e4e992",
+          "text": "Describe what this project does, in one sentence.",
+          "attachments": []
+        }
+      },
+      {
+        "ts": "2026-09-06T06:47:53.229Z",
+        "type": "spec.draft_started",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "tool": "planner",
+          "message_id": "M-06cc2e6b-dd44-4631-a895-07880b13f859",
+          "process_identity": {
+            "pid": 90028,
+            "process_instance_id": "M-06cc2e6b-dd44-4631-a895-07880b13f859"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:47:53.269Z",
+        "type": "conversation.process_started",
+        "task_id": null,
+        "data": {
+          "request_id": "5af302ff-8340-4ee5-924e-3bf214e4e992",
+          "process_id": "17ac0d95-d441-4818-8c11-212690399b35",
+          "process_identity": {
+            "pid": 53916,
+            "process_instance_id": "17ac0d95-d441-4818-8c11-212690399b35",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:02.246Z",
+        "type": "conversation.process_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "5af302ff-8340-4ee5-924e-3bf214e4e992",
+          "process_id": "17ac0d95-d441-4818-8c11-212690399b35",
+          "process_identity": {
+            "pid": 53916,
+            "process_instance_id": "17ac0d95-d441-4818-8c11-212690399b35",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:02.260Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "version": 1,
+          "message_id": "M-06cc2e6b-dd44-4631-a895-07880b13f859",
+          "text": "This installed fixture reports a deterministic TypeScript project status.",
+          "tool": "planner",
+          "advisory_only": true,
+          "authorization_effect": "none"
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:02.270Z",
+        "type": "spec.draft_failed",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "outcome": "answered",
+          "reason": "the message was answered rather than drafted from; it did not ask for anything to be built"
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:02.285Z",
+        "type": "conversation.operation_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "5af302ff-8340-4ee5-924e-3bf214e4e992",
+          "status": "completed"
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:04.692Z",
+        "type": "conversation.operation_started",
+        "task_id": null,
+        "data": {
+          "request_id": "bff858a4-6d24-4efd-ab26-d9c0099f40a8",
+          "phase": "reading",
+          "tool": "planner",
+          "process_identity": {
+            "pid": 90028,
+            "process_instance_id": "bff858a4-6d24-4efd-ab26-d9c0099f40a8"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:04.764Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "message_id": "M-6e986292-3b52-4fe9-b317-764906334c9d",
+          "conversation_id": "legacy",
+          "request_id": "bff858a4-6d24-4efd-ab26-d9c0099f40a8",
+          "text": "Give me the fixture name.",
+          "attachments": []
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:04.774Z",
+        "type": "spec.draft_started",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "tool": "planner",
+          "message_id": "M-6e986292-3b52-4fe9-b317-764906334c9d",
+          "process_identity": {
+            "pid": 90028,
+            "process_instance_id": "M-6e986292-3b52-4fe9-b317-764906334c9d"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:04.805Z",
+        "type": "conversation.process_started",
+        "task_id": null,
+        "data": {
+          "request_id": "bff858a4-6d24-4efd-ab26-d9c0099f40a8",
+          "process_id": "405214fd-378b-4bf0-8cb8-2480ea6e02b3",
+          "process_identity": {
+            "pid": 11852,
+            "process_instance_id": "405214fd-378b-4bf0-8cb8-2480ea6e02b3",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:09.186Z",
+        "type": "conversation.process_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "bff858a4-6d24-4efd-ab26-d9c0099f40a8",
+          "process_id": "405214fd-378b-4bf0-8cb8-2480ea6e02b3",
+          "process_identity": {
+            "pid": 11852,
+            "process_instance_id": "405214fd-378b-4bf0-8cb8-2480ea6e02b3",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:09.201Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "version": 1,
+          "message_id": "M-6e986292-3b52-4fe9-b317-764906334c9d",
+          "text": "phase-six-conversation-fixture",
+          "tool": "planner",
+          "advisory_only": true,
+          "authorization_effect": "none"
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:09.211Z",
+        "type": "spec.draft_failed",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "outcome": "answered",
+          "reason": "the message was answered rather than drafted from; it did not ask for anything to be built"
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:09.228Z",
+        "type": "conversation.operation_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "bff858a4-6d24-4efd-ab26-d9c0099f40a8",
+          "status": "completed"
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:12.001Z",
+        "type": "conversation.operation_started",
+        "task_id": null,
+        "data": {
+          "request_id": "ad8efe60-48e3-4dfd-96ac-f831e5261923",
+          "phase": "reading",
+          "tool": "planner",
+          "process_identity": {
+            "pid": 90028,
+            "process_instance_id": "ad8efe60-48e3-4dfd-96ac-f831e5261923"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:12.074Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "message_id": "M-5d0af34c-c787-4ddd-a8fa-1aaf5598c8c1",
+          "conversation_id": "legacy",
+          "request_id": "ad8efe60-48e3-4dfd-96ac-f831e5261923",
+          "text": "STOP_RESPONSE",
+          "attachments": []
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:12.085Z",
+        "type": "spec.draft_started",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "tool": "planner",
+          "message_id": "M-5d0af34c-c787-4ddd-a8fa-1aaf5598c8c1",
+          "process_identity": {
+            "pid": 90028,
+            "process_instance_id": "M-5d0af34c-c787-4ddd-a8fa-1aaf5598c8c1"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:12.120Z",
+        "type": "conversation.process_started",
+        "task_id": null,
+        "data": {
+          "request_id": "ad8efe60-48e3-4dfd-96ac-f831e5261923",
+          "process_id": "8c6f7a92-8d0a-4347-b1c7-6c6ed899c4f5",
+          "process_identity": {
+            "pid": 32160,
+            "process_instance_id": "8c6f7a92-8d0a-4347-b1c7-6c6ed899c4f5",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:17.353Z",
+        "type": "conversation.cancel_requested",
+        "task_id": null,
+        "data": {
+          "request_id": "ad8efe60-48e3-4dfd-96ac-f831e5261923",
+          "requested_by": "human"
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:17.584Z",
+        "type": "conversation.process_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "ad8efe60-48e3-4dfd-96ac-f831e5261923",
+          "process_id": "8c6f7a92-8d0a-4347-b1c7-6c6ed899c4f5",
+          "process_identity": {
+            "pid": 32160,
+            "process_instance_id": "8c6f7a92-8d0a-4347-b1c7-6c6ed899c4f5",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:17.596Z",
+        "type": "spec.draft_failed",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "message": null,
+          "detail": "spec drafter \"planner\" exited 130; output log: C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase6-remediation-0JZiFQ\\.hivemind\\log\\runs\\2026-09-06T06-48-12-096Z-drafting-M-5d0af34c-c787-4ddd-a8fa-1aaf5598c8c1-1-7d8d6388-6a07-4f98-a604-31388a6b7562.adapter.log: {\"type\":\"item.completed\",\"item\":{\"type\":\"reasoning\"}}\n\nadapter cancelled by durable request"
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:17.615Z",
+        "type": "conversation.operation_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "ad8efe60-48e3-4dfd-96ac-f831e5261923",
+          "status": "stopped"
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:18.146Z",
+        "type": "conversation.operation_started",
+        "task_id": null,
+        "data": {
+          "request_id": "ded825cb-8561-4edb-9373-f950427b62f0",
+          "phase": "reading",
+          "tool": "planner",
+          "process_identity": {
+            "pid": 90028,
+            "process_instance_id": "ded825cb-8561-4edb-9373-f950427b62f0"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:18.218Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "message_id": "M-a903d50a-e7b3-4db5-8b58-c0d5ab26d3b3",
+          "conversation_id": "legacy",
+          "request_id": "ded825cb-8561-4edb-9373-f950427b62f0",
+          "text": "Summarize the attached notes folder.",
+          "attachments": [
+            {
+              "kind": "folder",
+              "path": "notes"
+            },
+            {
+              "kind": "file",
+              "path": "UNTRACKED-CURRENT.md"
+            }
+          ]
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:18.227Z",
+        "type": "spec.draft_started",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "tool": "planner",
+          "message_id": "M-a903d50a-e7b3-4db5-8b58-c0d5ab26d3b3",
+          "process_identity": {
+            "pid": 90028,
+            "process_instance_id": "M-a903d50a-e7b3-4db5-8b58-c0d5ab26d3b3"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:18.258Z",
+        "type": "conversation.process_started",
+        "task_id": null,
+        "data": {
+          "request_id": "ded825cb-8561-4edb-9373-f950427b62f0",
+          "process_id": "44dd7043-a8a2-4c6f-a2b8-206bad2dea30",
+          "process_identity": {
+            "pid": 39048,
+            "process_instance_id": "44dd7043-a8a2-4c6f-a2b8-206bad2dea30",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:22.641Z",
+        "type": "conversation.process_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "ded825cb-8561-4edb-9373-f950427b62f0",
+          "process_id": "44dd7043-a8a2-4c6f-a2b8-206bad2dea30",
+          "process_identity": {
+            "pid": 39048,
+            "process_instance_id": "44dd7043-a8a2-4c6f-a2b8-206bad2dea30",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:22.655Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "version": 1,
+          "message_id": "M-a903d50a-e7b3-4db5-8b58-c0d5ab26d3b3",
+          "text": "The attached notes describe current behavior.",
+          "tool": "planner",
+          "advisory_only": true,
+          "authorization_effect": "none"
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:22.666Z",
+        "type": "spec.draft_failed",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "outcome": "answered",
+          "reason": "the message was answered rather than drafted from; it did not ask for anything to be built"
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:22.685Z",
+        "type": "conversation.operation_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "ded825cb-8561-4edb-9373-f950427b62f0",
+          "status": "completed"
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:22.710Z",
+        "type": "conversation.operation_started",
+        "task_id": null,
+        "data": {
+          "request_id": "36cbbae4-2b45-4ff6-ba4c-09e403958833",
+          "phase": "reading",
+          "tool": "planner",
+          "process_identity": {
+            "pid": 90028,
+            "process_instance_id": "36cbbae4-2b45-4ff6-ba4c-09e403958833"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:22.786Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "message_id": "M-c916b5ab-7baf-4fce-87de-5823da26d055",
+          "conversation_id": "legacy",
+          "request_id": "36cbbae4-2b45-4ff6-ba4c-09e403958833",
+          "text": "Build a tiny status label for this fixture.",
+          "attachments": []
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:22.796Z",
+        "type": "spec.draft_started",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "tool": "planner",
+          "message_id": "M-c916b5ab-7baf-4fce-87de-5823da26d055",
+          "process_identity": {
+            "pid": 90028,
+            "process_instance_id": "M-c916b5ab-7baf-4fce-87de-5823da26d055"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:22.827Z",
+        "type": "conversation.process_started",
+        "task_id": null,
+        "data": {
+          "request_id": "36cbbae4-2b45-4ff6-ba4c-09e403958833",
+          "process_id": "0fae6d8e-ef55-4f53-9162-f71bcd45f534",
+          "process_identity": {
+            "pid": 50112,
+            "process_instance_id": "0fae6d8e-ef55-4f53-9162-f71bcd45f534",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:27.266Z",
+        "type": "conversation.process_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "36cbbae4-2b45-4ff6-ba4c-09e403958833",
+          "process_id": "0fae6d8e-ef55-4f53-9162-f71bcd45f534",
+          "process_identity": {
+            "pid": 50112,
+            "process_instance_id": "0fae6d8e-ef55-4f53-9162-f71bcd45f534",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:27.292Z",
+        "type": "spec.draft_completed",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "title": "Add fixture status label",
+          "goal": "Show one status label.",
+          "open_questions": []
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:27.309Z",
+        "type": "conversation.phase_changed",
+        "task_id": null,
+        "data": {
+          "request_id": "36cbbae4-2b45-4ff6-ba4c-09e403958833",
+          "phase": "planning",
+          "tool": "planner"
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:27.447Z",
+        "type": "conversation.process_started",
+        "task_id": null,
+        "data": {
+          "request_id": "36cbbae4-2b45-4ff6-ba4c-09e403958833",
+          "process_id": "cc38c5a0-0729-441c-8752-30f1ec32aaba",
+          "process_identity": {
+            "pid": 79392,
+            "process_instance_id": "cc38c5a0-0729-441c-8752-30f1ec32aaba",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:28.227Z",
+        "type": "conversation.cancel_requested",
+        "task_id": null,
+        "data": {
+          "request_id": "36cbbae4-2b45-4ff6-ba4c-09e403958833",
+          "requested_by": "human"
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:28.479Z",
+        "type": "conversation.process_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "36cbbae4-2b45-4ff6-ba4c-09e403958833",
+          "process_id": "cc38c5a0-0729-441c-8752-30f1ec32aaba",
+          "process_identity": {
+            "pid": 79392,
+            "process_instance_id": "cc38c5a0-0729-441c-8752-30f1ec32aaba",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:28.496Z",
+        "type": "conversation.operation_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "36cbbae4-2b45-4ff6-ba4c-09e403958833",
+          "status": "stopped"
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:28.561Z",
+        "type": "conversation.started",
+        "task_id": null,
+        "data": {
+          "version": 1,
+          "conversation_id": "C-b01d9c7d-ab22-4f30-ab59-2505a237d527",
+          "active_request_archived": true,
+          "advisory_only": true,
+          "authorization_effect": "none"
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:30.815Z",
+        "type": "conversation.operation_started",
+        "task_id": null,
+        "data": {
+          "request_id": "9bb693d0-c916-46c0-89d0-5aa4b2bd30de",
+          "phase": "reading",
+          "tool": "planner",
+          "process_identity": {
+            "pid": 90028,
+            "process_instance_id": "9bb693d0-c916-46c0-89d0-5aa4b2bd30de"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:30.949Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "message_id": "M-292f59aa-cf9f-4c0f-bb98-05e9c7fa00a1",
+          "conversation_id": "C-b01d9c7d-ab22-4f30-ab59-2505a237d527",
+          "request_id": "9bb693d0-c916-46c0-89d0-5aa4b2bd30de",
+          "text": "FAIL_VISIBLE",
+          "attachments": []
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:30.959Z",
+        "type": "spec.draft_started",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-002",
+          "tool": "planner",
+          "message_id": "M-292f59aa-cf9f-4c0f-bb98-05e9c7fa00a1",
+          "process_identity": {
+            "pid": 90028,
+            "process_instance_id": "M-292f59aa-cf9f-4c0f-bb98-05e9c7fa00a1"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:30.993Z",
+        "type": "conversation.process_started",
+        "task_id": null,
+        "data": {
+          "request_id": "9bb693d0-c916-46c0-89d0-5aa4b2bd30de",
+          "process_id": "123bf36c-71b9-41c0-9ae4-bab1b15d9c05",
+          "process_identity": {
+            "pid": 108928,
+            "process_instance_id": "123bf36c-71b9-41c0-9ae4-bab1b15d9c05",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:31.960Z",
+        "type": "conversation.process_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "9bb693d0-c916-46c0-89d0-5aa4b2bd30de",
+          "process_id": "123bf36c-71b9-41c0-9ae4-bab1b15d9c05",
+          "process_identity": {
+            "pid": 108928,
+            "process_instance_id": "123bf36c-71b9-41c0-9ae4-bab1b15d9c05",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:31.971Z",
+        "type": "spec.draft_failed",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-002",
+          "message": null,
+          "detail": "spec drafter \"planner\" exited 7; output log: C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase6-remediation-0JZiFQ\\.hivemind\\log\\runs\\2026-09-06T06-48-30-970Z-drafting-M-292f59aa-cf9f-4c0f-bb98-05e9c7fa00a1-1-6ae4d149-d7af-44bb-a313-f346d90fa2bd.adapter.log: {\"type\":\"item.completed\",\"item\":{\"type\":\"reasoning\"}}\nPHASE6_VISIBLE_PROVIDER_FAILURE"
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:31.987Z",
+        "type": "conversation.operation_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "9bb693d0-c916-46c0-89d0-5aa4b2bd30de",
+          "status": "failed",
+          "reason": "spec drafter \"planner\" exited 7; output log: C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase6-remediation-0JZiFQ\\.hivemind\\log\\runs\\2026-09-06T06-48-30-970Z-drafting-M-292f59aa-cf9f-4c0f-bb98-05e9c7fa00a1-1-6ae4d149-d7af-44bb-a313-f346d90fa2bd.adapter.log: {\"type\":\"item.completed\",\"item\":{\"type\":\"reasoning\"}}\nPHASE6_VISIBLE_PROVIDER_FAILURE"
+        }
+      },
+      {
+        "ts": "2026-09-06T06:48:51.436Z",
+        "type": "conversation.started",
+        "task_id": null,
+        "data": {
+          "version": 1,
+          "conversation_id": "C-a2a1d046-d19f-469f-a80a-c14ddf5a9a9a",
+          "active_request_archived": false,
+          "advisory_only": true,
+          "authorization_effect": "none"
+        }
+      }
+    ],
+    "nativeTrail": {
+      "events": [
+        {
+          "data": {
+            "active_request_archived": false,
+            "advisory_only": true,
+            "authorization_effect": "none",
+            "conversation_id": "C-a2a1d046-d19f-469f-a80a-c14ddf5a9a9a",
+            "version": 1
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:48:51.436Z",
+          "type": "conversation.started"
+        },
+        {
+          "data": {
+            "reason": "spec drafter \"planner\" exited 7; output log: C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase6-remediation-0JZiFQ\\.hivemind\\log\\runs\\2026-09-06T06-48-30-970Z-drafting-M-292f59aa-cf9f-4c0f-bb98-05e9c7fa00a1-1-6ae4d149-d7af-44bb-a313-f346d90fa2bd.adapter.log: {\"type\":\"item.completed\",\"item\":{\"type\":\"reasoning\"}}\nPHASE6_VISIBLE_PROVIDER_FAILURE",
+            "request_id": "9bb693d0-c916-46c0-89d0-5aa4b2bd30de",
+            "status": "failed"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:48:31.987Z",
+          "type": "conversation.operation_finished"
+        },
+        {
+          "data": {
+            "detail": "spec drafter \"planner\" exited 7; output log: C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase6-remediation-0JZiFQ\\.hivemind\\log\\runs\\2026-09-06T06-48-30-970Z-drafting-M-292f59aa-cf9f-4c0f-bb98-05e9c7fa00a1-1-6ae4d149-d7af-44bb-a313-f346d90fa2bd.adapter.log: {\"type\":\"item.completed\",\"item\":{\"type\":\"reasoning\"}}\nPHASE6_VISIBLE_PROVIDER_FAILURE",
+            "message": null,
+            "spec_id": "S-002"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:48:31.971Z",
+          "type": "spec.draft_failed"
+        },
+        {
+          "data": {
+            "process_id": "123bf36c-71b9-41c0-9ae4-bab1b15d9c05",
+            "process_identity": {
+              "pid": 108928,
+              "process_group_id": null,
+              "process_instance_id": "123bf36c-71b9-41c0-9ae4-bab1b15d9c05"
+            },
+            "request_id": "9bb693d0-c916-46c0-89d0-5aa4b2bd30de"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:48:31.960Z",
+          "type": "conversation.process_finished"
+        },
+        {
+          "data": {
+            "process_id": "123bf36c-71b9-41c0-9ae4-bab1b15d9c05",
+            "process_identity": {
+              "pid": 108928,
+              "process_group_id": null,
+              "process_instance_id": "123bf36c-71b9-41c0-9ae4-bab1b15d9c05"
+            },
+            "request_id": "9bb693d0-c916-46c0-89d0-5aa4b2bd30de"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:48:30.993Z",
+          "type": "conversation.process_started"
+        },
+        {
+          "data": {
+            "message_id": "M-292f59aa-cf9f-4c0f-bb98-05e9c7fa00a1",
+            "process_identity": {
+              "pid": 90028,
+              "process_instance_id": "M-292f59aa-cf9f-4c0f-bb98-05e9c7fa00a1"
+            },
+            "spec_id": "S-002",
+            "tool": "planner"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:48:30.959Z",
+          "type": "spec.draft_started"
+        },
+        {
+          "data": {
+            "attachments": [],
+            "conversation_id": "C-b01d9c7d-ab22-4f30-ab59-2505a237d527",
+            "message_id": "M-292f59aa-cf9f-4c0f-bb98-05e9c7fa00a1",
+            "request_id": "9bb693d0-c916-46c0-89d0-5aa4b2bd30de",
+            "text": "FAIL_VISIBLE"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:48:30.949Z",
+          "type": "conversation.message_recorded"
+        },
+        {
+          "data": {
+            "phase": "reading",
+            "process_identity": {
+              "pid": 90028,
+              "process_instance_id": "9bb693d0-c916-46c0-89d0-5aa4b2bd30de"
+            },
+            "request_id": "9bb693d0-c916-46c0-89d0-5aa4b2bd30de",
+            "tool": "planner"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:48:30.815Z",
+          "type": "conversation.operation_started"
+        },
+        {
+          "data": {
+            "active_request_archived": true,
+            "advisory_only": true,
+            "authorization_effect": "none",
+            "conversation_id": "C-b01d9c7d-ab22-4f30-ab59-2505a237d527",
+            "version": 1
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:48:28.561Z",
+          "type": "conversation.started"
+        },
+        {
+          "data": {
+            "request_id": "36cbbae4-2b45-4ff6-ba4c-09e403958833",
+            "status": "stopped"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:48:28.496Z",
+          "type": "conversation.operation_finished"
+        },
+        {
+          "data": {
+            "process_id": "cc38c5a0-0729-441c-8752-30f1ec32aaba",
+            "process_identity": {
+              "pid": 79392,
+              "process_group_id": null,
+              "process_instance_id": "cc38c5a0-0729-441c-8752-30f1ec32aaba"
+            },
+            "request_id": "36cbbae4-2b45-4ff6-ba4c-09e403958833"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:48:28.479Z",
+          "type": "conversation.process_finished"
+        },
+        {
+          "data": {
+            "request_id": "36cbbae4-2b45-4ff6-ba4c-09e403958833",
+            "requested_by": "human"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:48:28.227Z",
+          "type": "conversation.cancel_requested"
+        },
+        {
+          "data": {
+            "process_id": "cc38c5a0-0729-441c-8752-30f1ec32aaba",
+            "process_identity": {
+              "pid": 79392,
+              "process_group_id": null,
+              "process_instance_id": "cc38c5a0-0729-441c-8752-30f1ec32aaba"
+            },
+            "request_id": "36cbbae4-2b45-4ff6-ba4c-09e403958833"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:48:27.447Z",
+          "type": "conversation.process_started"
+        },
+        {
+          "data": {
+            "phase": "planning",
+            "request_id": "36cbbae4-2b45-4ff6-ba4c-09e403958833",
+            "tool": "planner"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:48:27.309Z",
+          "type": "conversation.phase_changed"
+        },
+        {
+          "data": {
+            "goal": "Show one status label.",
+            "open_questions": [],
+            "spec_id": "S-001",
+            "title": "Add fixture status label"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:48:27.292Z",
+          "type": "spec.draft_completed"
+        },
+        {
+          "data": {
+            "process_id": "0fae6d8e-ef55-4f53-9162-f71bcd45f534",
+            "process_identity": {
+              "pid": 50112,
+              "process_group_id": null,
+              "process_instance_id": "0fae6d8e-ef55-4f53-9162-f71bcd45f534"
+            },
+            "request_id": "36cbbae4-2b45-4ff6-ba4c-09e403958833"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:48:27.266Z",
+          "type": "conversation.process_finished"
+        },
+        {
+          "data": {
+            "process_id": "0fae6d8e-ef55-4f53-9162-f71bcd45f534",
+            "process_identity": {
+              "pid": 50112,
+              "process_group_id": null,
+              "process_instance_id": "0fae6d8e-ef55-4f53-9162-f71bcd45f534"
+            },
+            "request_id": "36cbbae4-2b45-4ff6-ba4c-09e403958833"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:48:22.827Z",
+          "type": "conversation.process_started"
+        },
+        {
+          "data": {
+            "message_id": "M-c916b5ab-7baf-4fce-87de-5823da26d055",
+            "process_identity": {
+              "pid": 90028,
+              "process_instance_id": "M-c916b5ab-7baf-4fce-87de-5823da26d055"
+            },
+            "spec_id": "S-001",
+            "tool": "planner"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:48:22.796Z",
+          "type": "spec.draft_started"
+        },
+        {
+          "data": {
+            "attachments": [],
+            "conversation_id": "legacy",
+            "message_id": "M-c916b5ab-7baf-4fce-87de-5823da26d055",
+            "request_id": "36cbbae4-2b45-4ff6-ba4c-09e403958833",
+            "text": "Build a tiny status label for this fixture."
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:48:22.786Z",
+          "type": "conversation.message_recorded"
+        },
+        {
+          "data": {
+            "phase": "reading",
+            "process_identity": {
+              "pid": 90028,
+              "process_instance_id": "36cbbae4-2b45-4ff6-ba4c-09e403958833"
+            },
+            "request_id": "36cbbae4-2b45-4ff6-ba4c-09e403958833",
+            "tool": "planner"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T06:48:22.710Z",
+          "type": "conversation.operation_started"
+        }
+      ],
+      "next_before": 32
+    },
+    "savedDrafts": [
+      {
+        "version": 1,
+        "conversation_id": "C-b01d9c7d-ab22-4f30-ab59-2505a237d527",
+        "revision": "d33d1365-1d79-43f6-866a-4a3b7516fd4a",
+        "draft": {
+          "content_id": "42df7e65-fcca-4d1b-a225-efdd9b5112d2",
+          "text": "Keep this unsent draft while I inspect Agents.",
+          "attachments": [
+            {
+              "kind": "folder",
+              "path": "notes"
+            }
+          ],
+          "submission": {
+            "content_id": "42bf2ede-bb7f-487a-b4be-984a9b197919",
+            "request_id": "9bb693d0-c916-46c0-89d0-5aa4b2bd30de"
+          }
+        }
+      },
+      {
+        "version": 1,
+        "conversation_id": "legacy",
+        "revision": "d10cba96-76cc-46b2-859d-07f94f2935da",
+        "draft": {
+          "content_id": "ea5ea915-ca24-484d-a3ae-6b713d7f2319",
+          "text": "This is my next unsent message.",
+          "attachments": [],
+          "submission": {
+            "content_id": "a53f2547-016e-4a9a-a49e-419b097cd501",
+            "request_id": "ad8efe60-48e3-4dfd-96ac-f831e5261923"
+          }
+        }
+      }
+    ]
+  }
+}

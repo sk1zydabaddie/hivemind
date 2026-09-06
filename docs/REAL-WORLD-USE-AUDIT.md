@@ -10,8 +10,8 @@ installed reproductions; runtime observations are recorded separately.
 
 The user has now requested fixes for all 17 findings. The historical findings
 below retain their original evidence; a finding closes only after its own
-acceptance evidence is recorded here. **2 of 17 are closed: U3 and U10.** The
-other 15 remain open and remain part of the authorized goal.
+acceptance evidence is recorded here. **3 of 17 are closed: U3, U4 and U10.** The
+other 14 remain open and remain part of the authorized goal.
 
 - **U10 closed:** updated only the existing `src/project-files.ts` reader and
   `test/project-files.test.ts`, with this ledger and STATE. Acceptance: actual
@@ -25,7 +25,10 @@ other 15 remain open and remain part of the authorized goal.
 - **U3 closed:** project/conversation-owned draft persistence is installed and
   qualified below; saved text/attachments survive navigation and reload without
   resending accepted content or discarding a next draft during Stop.
-- U2, U4–U9 and U11–U17 remain open; independent fixes continue under the full goal.
+- **U4 closed:** installed live-stream checks retain the earlier-history anchor
+  with zero measured movement at both required native test sizes; Latest
+  resumes following and restores keyboard focus. See the evidence below.
+- U2, U5–U9 and U11–U17 remain open; independent fixes continue under the full goal.
 
 ### U3 fixed and installed — 416.29995.30514
 
@@ -128,7 +131,7 @@ consumers; existing test-only export leads are unrelated to U3.
 **U3 is closed** with source `b33049c` and the installed proof above.
 No paid calls; no public release publication.
 
-### U4 in progress — reader-owned scroll position
+### U4 fixed and installed — 416.30061.58188
 
 The bounded change covers `desktop/src/components/ui/virtual-list.tsx`, Work's
 scroll wiring, the existing installed/browser verification harnesses and their
@@ -164,7 +167,34 @@ also passes: **1,001 total, 999 passed, 2 platform skips, 0 failed/cancelled**,
 exit 0, **472.142 seconds**. The obsolete end ref, hidden sentinel and separate
 event-count force-scroll effect are removed. Diff/syntax and dead-path scans
 pass; the new geometry controller is absent from the actual production bundle.
-New installed qualification remains required; **U4 is still open**.
+The corrected source `c8ecdf0` is installed as **416.30061.58188**, artifact
+`6829361a0553d5f6e955d639b48045c798d3d99e4ef521c612b3500ed5a45ff8`.
+All 4,480 managed files and Core/shell/Node identities match. The installed
+1440×900 and 790×610 checks both pass, exit 0: **0px maximum anchor movement**
+across 24 live samples while the mounted answer grows **255 → 850 characters**.
+Latest restores log focus and remains exactly at the end through 20 further
+live samples; Stop terminates each owned provider. Both pairs of screenshots
+were inspected. [Desktop scroll proof](evidence/conversation-scroll-416.30061.58188-1788676826860/README.md),
+[minimum-size proof and visual limit](evidence/conversation-scroll-416.30061.58188-1788676886706/README.md).
+
+The full installed conversation/draft/Stop regression also passes, exit 0,
+with all seven screenshots inspected. Earlier attempts are retained as failures:
+rapid repeat project navigation clicked during the previous menu's closing
+transition, and a later test retained a stale composer handle during actual
+New conversation replacement. The harness now waits for the specific old
+surface to unmount and samples the current composer atomically. No clicks are
+retried, text retyped, or menu/message/anchor acceptance thresholds relaxed.
+[Regression evidence and diagnostic links](evidence/conversation-repair-416.30061.58188-1788677425018/README.md).
+Shipping passes **56/56** production viewport checks; npm and RustSec report
+zero vulnerabilities (483 Windows dependencies). No paid calls or public release
+publication occurred. **U4 is closed.**
+
+Two additional observations remain open and are not erased by the original
+17-finding count: header-label fragments are visibly clipped at 790×610, and
+rapid project-menu clicks during the old closing transition can be ignored.
+The relevant header/CSS and project-menu production paths were unchanged by
+U4. Their precise causes and corrections need separate bounded work; the
+viewport checks and settled-navigation pass do not qualify those behaviors.
 
 ### U10 fixed and installed — 416.29883.15117
 
