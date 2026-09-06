@@ -1,5 +1,6 @@
-import { readFile, readdir, stat } from "node:fs/promises";
+import { open, readdir, stat } from "node:fs/promises";
 import path from "node:path";
+import { StringDecoder } from "node:string_decoder";
 
 import { canonicalize } from "./canonicalize.js";
 import { foldPath } from "./path-identity.js";
@@ -40,7 +41,7 @@ import { foldPath } from "./path-identity.js";
  * what earns a refusal.
  */
 
-/** How much of a file a single read will return. */
+/** Maximum file-content bytes loaded or returned by a single read. */
 export const PROJECT_FILE_READ_LIMIT_BYTES = 512 * 1024;
 
 export interface ProjectDirectoryEntry {
@@ -211,27 +212,49 @@ export async function readProjectFile(
   if (stats.isDirectory()) return { ok: false, reason: "path is a directory" };
   if (!stats.isFile()) return { ok: false, reason: "path is not a regular file" };
 
-  let buffer;
   try {
-    buffer = await readFile(absolute);
+    const handle = await open(absolute, "r");
+    try {
+      const opened = await handle.stat();
+      if (!opened.isFile() || opened.dev !== stats.dev || opened.ino !== stats.ino) {
+        return { ok: false, reason: "file changed while opening; retry the read" };
+      }
+      if (!Number.isSafeInteger(opened.size) || opened.size < 0) {
+        return { ok: false, reason: "file size cannot be represented safely" };
+      }
+      const buffer = Buffer.alloc(Math.min(opened.size, PROJECT_FILE_READ_LIMIT_BYTES));
+      let offset = 0;
+      while (offset < buffer.length) {
+        const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, offset);
+        if (bytesRead === 0) break;
+        offset += bytesRead;
+      }
+      const after = await handle.stat();
+      if (offset !== buffer.length || after.size !== opened.size ||
+          after.mtimeMs !== opened.mtimeMs || after.ctimeMs !== opened.ctimeMs) {
+        return { ok: false, reason: "file changed while reading; retry the read" };
+      }
+
+      /* Keep the existing first-block binary heuristic. Never scan the rest
+         of a large file merely to classify content we will not return. */
+      if (buffer.subarray(0, Math.min(buffer.length, 8000)).includes(0)) {
+        return { ok: false, reason: "file is not text" };
+      }
+      const truncated = opened.size > buffer.length;
+      return {
+        ok: true,
+        value: {
+          path: resolved.value,
+          // An unfinished UTF-8 character at the cap belongs to the omitted tail.
+          text: truncated ? new StringDecoder("utf8").write(buffer) : buffer.toString("utf8"),
+          bytes: opened.size,
+          truncated
+        }
+      };
+    } finally {
+      await handle.close();
+    }
   } catch {
     return { ok: false, reason: "file cannot be read" };
   }
-
-  /* A NUL in the first block is the same heuristic git uses to call a file
-     binary. Said plainly rather than returning mojibake a viewer would render
-     as damage. */
-  const head = buffer.subarray(0, Math.min(buffer.length, 8000));
-  if (head.includes(0)) return { ok: false, reason: "file is not text" };
-
-  const truncated = buffer.length > PROJECT_FILE_READ_LIMIT_BYTES;
-  return {
-    ok: true,
-    value: {
-      path: resolved.value,
-      text: buffer.subarray(0, PROJECT_FILE_READ_LIMIT_BYTES).toString("utf8"),
-      bytes: buffer.length,
-      truncated
-    }
-  };
 }

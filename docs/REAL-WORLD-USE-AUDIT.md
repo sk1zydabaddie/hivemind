@@ -6,6 +6,49 @@ review does not authorize an architectural rewrite or weaken approval gates.
 No paid providers were invoked. Source findings below are not presented as
 installed reproductions; runtime observations are recorded separately.
 
+## Remediation status — authorized 2026-09-05
+
+The user has now requested fixes for all 17 findings. The historical findings
+below retain their original evidence; a finding closes only after its own
+acceptance evidence is recorded here. None is closed yet.
+
+- **U10 active:** update only the existing `src/project-files.ts` reader and
+  `test/project-files.test.ts`, with this ledger and STATE. Acceptance: actual
+  content reads stay within 512 KiB, full size is stat-derived, short reads and
+  UTF-8 boundaries are correct, errors/changes release the handle, and existing
+  dispatcher/root-confinement regressions pass. Remove whole-file loading;
+  keep the public action/response shape and all authorization checks unchanged.
+- **U1 decision pending:** Overview's spec-ratification-before-planning rule
+  conflicts with current Core's tentative-proposal-before-ratification rule.
+  Neither rule is silently changed while that decision is unresolved.
+- U2–U9 and U11–U17 remain open; independent fixes continue under the full goal.
+
+### U10 source verified; installation pending
+
+The pre-fix instrumented regression failed as intended: `wholeFileReads: 1`,
+`opened: 0`; the old reader attempted full-file loading. The corrected source
+passed **18/18** file-reader tests. On the 64 MiB fixture, the isolated child
+instrument records one opened/closed handle and exactly **524,288 content bytes
+requested and returned**. This measures filesystem calls, not process RSS or
+an inferred memory saving. The total file size is separately stat-derived.
+Short-read, changing-file, injected-error and UTF-8-boundary checks also pass.
+The whole-file import/path is removed, and the response/action shape is unchanged.
+
+Normal Desktop tests passed **382/382** across 42 files; Rust passed **65/65**.
+The production Desktop build/typecheck passed with the existing 706.88 kB
+bundle warning. Static action/event checks and `git diff --check` passed;
+10 pre-existing export leads remain unproven dead code. Full Core validation
+passed **992 total, 990 passed, 2 skipped, 0 failed/cancelled**, exit 0,
+641.90 seconds. The skips are the existing live POSIX process-group checks on
+Windows. Commit and installed verification are pending. No paid calls were made.
+
+The same bounded-handle test was also executed from the installed `core`
+directory, so its isolated child imported that installation's
+`dist/src/project-files.js`. It failed on build **416.29838.49352** with
+`wholeFileReads: 1`, `opened: 0`. This is an installed pre-fix negative control,
+not a failing result for the corrected source. The identical invocation must
+pass after replacement installation before U10 is closed.
+
 ## Highest-priority workflow findings
 
 ### U1 — Having a spec disables conversational revision (High, confirmed code)

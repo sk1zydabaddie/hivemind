@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
-import { mkdir, readFile, readdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
@@ -254,6 +255,142 @@ test("a file larger than the read limit is truncated and says so", async () => {
     }
   });
 });
+
+test("the project reader uses a bounded handle read even for a 64 MiB file", async () => {
+  await withRepo(async (repo) => {
+    const file = path.join(repo, "large-text.txt");
+    const handle = await open(file, "w");
+    try {
+      await handle.write(Buffer.alloc(PROJECT_FILE_READ_LIMIT_BYTES, "x"));
+      await handle.truncate(64 * 1024 * 1024);
+    } finally {
+      await handle.close();
+    }
+    const measured = await instrumentProjectRead(repo, "large-text.txt", "normal");
+    assert.equal(measured.result.ok, true, JSON.stringify(measured));
+    assert.deepEqual(measured.result.value, {
+      path: "large-text.txt", textLength: PROJECT_FILE_READ_LIMIT_BYTES,
+      prefix: "x".repeat(16), bytes: 64 * 1024 * 1024, truncated: true
+    });
+    assert.equal(measured.wholeFileReads, 0, "reader attempted to load the whole file");
+    assert.equal(measured.opened, 1);
+    assert.equal(measured.closed, 1);
+    assert.equal(measured.requestedBytes, PROJECT_FILE_READ_LIMIT_BYTES);
+    assert.equal(measured.returnedBytes, PROJECT_FILE_READ_LIMIT_BYTES);
+  });
+});
+
+test("the bounded file reader fills short reads and closes its handle", async () => {
+  await withRepo(async (repo) => {
+    const content = "x".repeat(1024);
+    await writeFile(path.join(repo, "short-reads.txt"), content);
+    const measured = await instrumentProjectRead(repo, "short-reads.txt", "short");
+    assert.equal(measured.result.ok, true, JSON.stringify(measured));
+    assert.equal(measured.result.value?.textLength, content.length);
+    assert.equal(measured.result.value?.truncated, false);
+    assert.equal(measured.result.value?.bytes, content.length);
+    assert.ok(measured.readCalls > 1, "the read instrument did not force partial reads");
+    assert.equal(measured.returnedBytes, content.length);
+    assert.equal(measured.closed, 1);
+  });
+});
+
+test("a changing or failed file read refuses and releases its handle", async () => {
+  await withRepo(async (repo) => {
+    for (const mode of ["change", "error"] as const) {
+      await writeFile(path.join(repo, "changing.txt"), "x".repeat(1024));
+      const measured = await instrumentProjectRead(repo, "changing.txt", mode);
+      assert.equal(measured.result.ok, false, JSON.stringify(measured));
+      assert.match(measured.result.reason ?? "", mode === "change" ? /changed.*retry/u : /cannot be read/u);
+      assert.equal(measured.opened, 1);
+      assert.equal(measured.closed, 1);
+    }
+  });
+});
+
+test("bounded text preserves empty and exact-limit files and never splits UTF-8", async () => {
+  await withRepo(async (repo) => {
+    for (const content of ["", "x".repeat(PROJECT_FILE_READ_LIMIT_BYTES)]) {
+      await writeFile(path.join(repo, "boundary.txt"), content);
+      const result = await readProjectFile(repo, "boundary.txt");
+      assert.equal(result.ok, true);
+      if (result.ok) assert.deepEqual(result.value, {
+        path: "boundary.txt", text: content, bytes: Buffer.byteLength(content), truncated: false
+      });
+    }
+    for (const character of ["é", "€", "🛰"]) {
+      for (let received = 1; received < Buffer.byteLength(character); received += 1) {
+        const prefix = "x".repeat(PROJECT_FILE_READ_LIMIT_BYTES - received);
+        const content = prefix + character + "tail";
+        await writeFile(path.join(repo, "boundary.txt"), content);
+        const result = await readProjectFile(repo, "boundary.txt");
+        assert.equal(result.ok, true);
+        if (result.ok) assert.deepEqual(result.value, {
+          path: "boundary.txt", text: prefix, bytes: Buffer.byteLength(content), truncated: true
+        });
+      }
+    }
+  });
+});
+
+interface ProjectReadMeasurement {
+  result: { ok: boolean; value?: { path: string; textLength: number; prefix: string; bytes: number; truncated: boolean }; reason?: string };
+  wholeFileReads: number;
+  opened: number;
+  closed: number;
+  readCalls: number;
+  requestedBytes: number;
+  returnedBytes: number;
+}
+
+/** Instrument actual filesystem calls in an isolated process, not the reader's
+ * claimed metadata. A whole-file read is refused before allocating its payload. */
+async function instrumentProjectRead(
+  repo: string, requested: string, mode: "normal" | "short" | "change" | "error"
+): Promise<ProjectReadMeasurement> {
+  const script = `
+    import fs from "node:fs/promises";
+    import { syncBuiltinESMExports } from "node:module";
+    const target = ${JSON.stringify(path.join(repo, requested))};
+    const mode = ${JSON.stringify(mode)};
+    const trace = { wholeFileReads: 0, opened: 0, closed: 0, readCalls: 0, requestedBytes: 0, returnedBytes: 0 };
+    const originalReadFile = fs.readFile.bind(fs), originalOpen = fs.open.bind(fs);
+    fs.readFile = async (file, ...args) => {
+      if (String(file) === target) {
+        trace.wholeFileReads += 1;
+        throw new Error("whole-file loading is forbidden by this test");
+      }
+      return originalReadFile(file, ...args);
+    };
+    fs.open = async (file, ...args) => {
+      const handle = await originalOpen(file, ...args);
+      if (String(file) !== target) return handle;
+      trace.opened += 1;
+      const read = handle.read.bind(handle), close = handle.close.bind(handle);
+      handle.read = async (buffer, offset, length, position) => {
+        trace.readCalls += 1;
+        trace.requestedBytes += length;
+        if (mode === "error") throw new Error("injected read error");
+        const result = await read(buffer, offset, mode === "short" ? Math.min(97, length) : length, position);
+        trace.returnedBytes += result.bytesRead;
+        if (mode === "change" && trace.readCalls === 1) await fs.appendFile(target, "changed");
+        return result;
+      };
+      handle.close = async () => { trace.closed += 1; return close(); };
+      return handle;
+    };
+    syncBuiltinESMExports();
+    const { readProjectFile } = await import(${JSON.stringify(pathToFileURL(path.resolve("dist/src/project-files.js")).href)});
+    const result = await readProjectFile(${JSON.stringify(repo)}, ${JSON.stringify(requested)});
+    if (result.ok) {
+      const { text, ...metadata } = result.value;
+      result.value = { ...metadata, textLength: text.length, prefix: text.slice(0, 16) };
+    }
+    console.log(JSON.stringify({ ...trace, result }));
+  `;
+  const measured = await execFileAsync(process.execPath, ["--input-type=module", "--eval", script], { windowsHide: true });
+  return JSON.parse(measured.stdout) as ProjectReadMeasurement;
+}
 
 test("the file actions add no write path", async () => {
   await withRepo(async (repo) => {

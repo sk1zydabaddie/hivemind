@@ -59,7 +59,12 @@ to disclose, not assumptions that deterministic gates may trust.
   Legacy history rendering remains for old trails. Duplicate footer/header
   progress and the obsolete route-local merge path have been removed.
 - [Real-world use review](REAL-WORLD-USE-AUDIT.md): 15 product/scale findings
-  plus two verification gaps, not automatically marked fixed. Highest priority:
+  plus two verification gaps. The user authorized fixing all 17; U10's bounded
+  file reader is source-verified: 18 focused tests, Core 990 passed/2 platform
+  skips, Desktop 382, Rust 65 and production build passed. Its installed
+  pre-fix check fails as expected; replacement installation is pending. U1 awaits the
+  documented planning/ratification contract decision. No audit finding is yet
+  marked fixed. Highest priority:
   active-spec answer-only routing prevents normal conversational revision, and
   the conversation lacks a typed live-run/check context. Draft loss across tabs
   is now reproduced in the installed app. Draft persistence, scroll stability
