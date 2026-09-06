@@ -90,6 +90,7 @@ import {
 import { PHASES, filesInFlight, runStanding, taskPhase } from "@/lib/phases";
 import {
   buildRunThread,
+  mergeNewestEvents,
   runSpanMs,
   taskLabel,
   type ThreadEntry,
@@ -2664,19 +2665,6 @@ function RunThread({
       <div aria-hidden="true" className="sr-only" ref={endRef} />
     </div>
   );
-}
-
-function mergeNewestEvents(
-  live: BoardProjection["recentEvents"],
-  durable: DurableTrailPage["events"]
-): BoardProjection["recentEvents"] {
-  const seen = new Set<string>();
-  return [...live, ...durable].filter((event) => {
-    const key = JSON.stringify(event);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }).sort((left, right) => right.ts.localeCompare(left.ts));
 }
 
 /** Textual liveness remains useful when Windows or the browser disables

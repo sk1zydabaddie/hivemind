@@ -10,7 +10,7 @@ installed reproductions; runtime observations are recorded separately.
 
 ### U1 — Having a spec disables conversational revision (High, confirmed code)
 
-`src/workspace-actions.ts:609` selects answer-only whenever `active_spec_id` is
+`src/workspace-actions.ts:608` selects answer-only whenever `active_spec_id` is
 non-null. `src/spec-drafting.ts:157` then orders the provider to reply instead
 of drafting, whatever the message says, and claims a plan is waiting. Existence
 of a spec is not evidence that a plan is still awaiting review. After a prepared,
@@ -38,7 +38,7 @@ provenance-bearing status context; never turn an answer into a gate verdict.
 `desktop/src/App.tsx:681` mounts separate WorkTab instances for Work and Agents.
 `desktop/src/components/ui/tabs.tsx:59` does not retain inactive tab content;
 the installed Radix primitive uses `forceMount || isSelected`. Composer and
-attachments are local state at `work-tab.tsx:237`. Changing tabs therefore has
+attachments are local state at `work-tab.tsx:239`. Changing tabs therefore has
 no shared draft owner; reconnect/project transitions can also unmount that state.
 The code comment describing these as “the same instances” is inaccurate.
 Preserve a project/conversation-keyed draft above the tab lifecycle, separately
@@ -48,7 +48,7 @@ from authoritative Core state. Test tab switch, project switch and reload.
 
 `desktop/src/components/ui/virtual-list.tsx:99` sets scrollTop to the end on
 every measured total-height change. Work passes `followEnd={pageIndex === 0}`
-at `work-tab.tsx:2648`; it never considers whether the reader scrolled up.
+at `work-tab.tsx:2646`; it never considers whether the reader scrolled up.
 New rows and streamed wrapping can pull the user away from a message being read.
 Follow only while pinned near the end; preserve the viewport anchor otherwise
 and offer a “Latest” control. Test while output is arriving, not after it stops.
@@ -67,7 +67,7 @@ active request needs its own validated Core action, not client pointer edits.
 ### U6 — Live worker focus can remain on a finished task (Medium)
 
 `desktop/src/hooks/use-workspace.ts:390` auto-selects output only when no task
-is selected. `work-tab.tsx:889` shows that selected task's live output only if
+is selected. `work-tab.tsx:893` shows that selected task's live output only if
 it is still running. Once it finishes, later running workers do not automatically
 replace it, so Work can appear quiet while work continues elsewhere. Distinguish
 user-pinned inspection from automatic live focus; show other active workers and
@@ -96,7 +96,7 @@ a specific omitted file should not look successfully attached and understood.
 
 ### U9 — Generic attachments do not support screenshots (Medium)
 
-The menu at `work-tab.tsx:3106` says Files/Folder. Core attachments are only
+The menu at `work-tab.tsx:3108` says Files/Folder. Core attachments are only
 project-relative file/folder references (`workspace-actions.ts:635`), and
 `src/project-files.ts:223` rejects binary content. There is no image input path.
 For UI development, attaching a screenshot is an ordinary expectation, but the
@@ -113,14 +113,14 @@ total size; retain root confinement and truncation reporting.
 
 ### U11 — Long prompts are trapped in a fixed-height field (Medium)
 
-`work-tab.tsx:3235` uses resize-none, fixed rows of 2 or 3 and no autosize logic.
+`work-tab.tsx:3220` uses resize-none, fixed rows of 2 or 3 and no autosize logic.
 The 180px maximum does not itself grow a textarea. A multi-paragraph development
 request becomes a tiny internal scroll area. Use measured autosizing to a cap,
 then explicit expansion, while keeping Send/Stop and attachments reachable.
 
 ### U12 — Answers are plain paragraphs, even when they contain code (Medium)
 
-`work-tab.tsx:2815` renders the answer as text inside a paragraph. Newlines survive,
+`work-tab.tsx:2801` renders the answer as text inside a paragraph. Newlines survive,
 but Markdown lists, links and code fences have no structured rendering or copy
 affordance. This is especially awkward when discussing code without an editor.
 Use one safe Markdown renderer (no raw HTML), accessible links and code copy;
@@ -128,7 +128,7 @@ test long code lines, tables, focus and malicious markup without executing it.
 
 ### U13 — A missing roster is deliberately hidden (Medium)
 
-`work-tab.tsx:339` catches the configuration roster error and renders nothing;
+`work-tab.tsx:342` explains why a configuration roster error renders nothing;
 the comment explicitly prefers silence. A person cannot distinguish no agents
 from failed inspection. Show a compact unavailable/retry state; do not infer
 “disconnected” or “not installed” from a read failure.
@@ -155,7 +155,20 @@ the replay response with the current contract and test a multi-page trail whose
 target message is outside the live event buffer. This is a verification gap,
 not evidence that the installed Core endpoint returns the wrong shape.
 
-The review records 14 product/scale findings plus this verification finding.
+### Verification finding U16 — The native spawn scan counts braces inside strings
+
+`desktop/src-tauri/src/project.rs`, test
+`no_production_spawn_bypasses_the_hidden_command_helper`, identifies test modules
+by counting raw `{` and `}` characters per line. It does not tokenize comments
+or string literals. During reconnect verification, a test string containing a
+closing brace made it leave the test module early and flag an unchanged
+non-Windows test spawn as production (64 tests passed, this one failed).
+Changing that test's delimiter to a non-brace anchor restored 65/65; the scanner
+was not fixed. This is a reproduced false-positive weakness, not evidence of a
+production console flash. Use a Rust-aware scan or explicit per-function tests
+before treating it as exhaustive production-spawn coverage.
+
+The review records 14 product/scale findings plus two verification findings.
 Only the installed observations below should be called runtime reproductions.
 
 ## Recommended order, not implementation authorization

@@ -293,12 +293,12 @@ pub async fn select_project(
     app: tauri::AppHandle,
     project_path: String,
 ) -> Result<ProjectConnection, ProjectFault> {
-    let admission = update_lifecycle::begin_mutation(&app)
-        .map_err(|message| ProjectFault::new(FAULT_DAEMON_UNAVAILABLE, message))?;
-    let coordinator = admission.coordinator_file().to_path_buf();
     let registered_root = canonical_git_root(&project_path)?;
-    update_lifecycle::register_project(&app, &admission, &registered_root)
+    let already_registered = update_lifecycle::registered_projects(&app)
         .map_err(|message| ProjectFault::new(FAULT_UNKNOWN, message))?;
+    let already_registered = already_registered
+        .iter()
+        .any(|known| same_path(known, &registered_root));
     let resource_dir = app.path().resource_dir().map_err(|error| {
         ProjectFault::new(
             FAULT_UNKNOWN,
@@ -306,16 +306,32 @@ pub async fn select_project(
         )
     })?;
     let connection = tauri::async_runtime::spawn_blocking(move || {
-        connect_project_with(
-            &project_path,
-            &mut |project_root| start_daemon(project_root, Some(&resource_dir), &coordinator),
+        // Attaching to a registered, healthy daemon is a read, not a new writer.
+        // A response may hold admission for minutes; reconnect must still expose
+        // its Stop control. Registration and every launch remain admitted, and
+        // the existing connector rechecks project, shell, Core and health.
+        let mut admission = None;
+        if !already_registered {
+            admit_project_selection(&app, &mut admission, &registered_root)
+                .map_err(|message| ProjectFault::new(FAULT_DAEMON_UNAVAILABLE, message))?;
+        }
+        let connection = connect_project_with(
+            registered_root.to_str().ok_or_else(|| {
+                ProjectFault::new(FAULT_UNKNOWN, "canonical project path is not UTF-8")
+            })?,
+            &mut |project_root| {
+                let coordinator = admit_project_selection(&app, &mut admission, project_root)?;
+                start_daemon(project_root, Some(&resource_dir), &coordinator)
+            },
             &query_daemon_health,
             &|project_root| query_cli_build_identity(project_root, Some(&resource_dir)),
             &|project_root| query_expected_shell_build_identity(project_root, Some(&resource_dir)),
             EMBEDDED_SHELL_BUILD_ID,
             &process_liveness,
             STARTUP_TIMEOUT,
-        )
+        );
+        drop(admission);
+        connection
     })
     .await
     .map_err(|error| {
@@ -324,8 +340,22 @@ pub async fn select_project(
             format!("project selection task failed: {error}"),
         )
     })??;
-    drop(admission);
     Ok(connection)
+}
+
+fn admit_project_selection(
+    app: &tauri::AppHandle,
+    admission: &mut Option<update_lifecycle::AdmissionGuard>,
+    project_root: &Path,
+) -> Result<PathBuf, String> {
+    if admission.is_none() {
+        *admission = Some(update_lifecycle::begin_mutation(app)?);
+    }
+    let guard = admission
+        .as_ref()
+        .ok_or("project selection has no update admission")?;
+    update_lifecycle::register_project(app, guard, project_root)?;
+    Ok(guard.coordinator_file().to_path_buf())
 }
 
 /// Sets a repository up and opens it, without a terminal.
@@ -1352,7 +1382,6 @@ mod tests {
     fn project_daemon_entry_holds_one_update_admission_from_registration_through_start() {
         let source = include_str!("project.rs");
         let contracts = [
-            ("select_project", "/// Sets a repository up"),
             ("initialize_project", "fn run_core_init"),
             ("restart_daemon", "fn chrono_now"),
         ];
@@ -1371,6 +1400,28 @@ mod tests {
             assert!(registration < daemon_start, "registration must precede daemon start");
             assert!(daemon_start < release, "admission must cover daemon start");
         }
+    }
+
+    #[test]
+    fn selection_admits_unregistered_projects_and_every_launch_but_not_known_attachment() {
+        // The installed reload test must supply behavioral proof while Core
+        // holds real admission. This guard pins the narrow routing around it.
+        let source = include_str!("project.rs");
+        let selection = source.split("pub async fn select_project").nth(1).unwrap()
+            .split("fn admit_project_selection").next().unwrap();
+        assert!(selection.contains("update_lifecycle::registered_projects(&app)"));
+        let registration = selection.find("if !already_registered").unwrap();
+        let preflight = selection.find("admit_project_selection(&app, &mut admission, &registered_root)").unwrap();
+        let connect = selection.find("connect_project_with(").unwrap();
+        assert!(registration < preflight && preflight < connect);
+        let launch = selection.split("&mut |project_root|").nth(1).unwrap().split("&query_daemon_health").next().unwrap();
+        assert!(launch.find("admit_project_selection").unwrap() < launch.find("start_daemon").unwrap());
+        assert_eq!(selection.matches("start_daemon(").count(), 1);
+        assert!(selection.find("drop(admission)").unwrap() > selection.find("start_daemon").unwrap());
+        let admission = source.split("fn admit_project_selection(").nth(1).unwrap()
+            .split("/// Sets a repository up").next().unwrap();
+        assert!(admission.find("begin_mutation").unwrap() < admission.find("register_project").unwrap());
+        assert!(admission.find("register_project").unwrap() < admission.find("coordinator_file").unwrap());
     }
 
     #[test]

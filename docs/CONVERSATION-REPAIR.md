@@ -258,3 +258,46 @@ remain recorded proposals requiring explicit review, replacement or a new thread
   negative control. `git diff --check` and static action/event scans passed;
   the same 10 export leads remain unproven dead code. The 21st rerun reports
   0 errors and 15 unchanged warnings. Replacement ship/installed proof follows.
+
+### Reconnect and transport overlap correction (2026-09-05)
+
+- Source `2e5474c` was installed as **416.29801.33924**, artifact
+  `1ae4648c72f87f6b82bf8ea47e0384cc9e7c68cdcc21cc9f1bbc413b8bd0993d`.
+  All 4,474 managed files matched. The installed fixture independently matched
+  the executable hash and payload source to the install receipt.
+- Strict installed checks proved actual partial text, full text before provider
+  exit, advancing transcript elapsed time, the neutral header, duplicate-submit
+  prevention and exact first-exchange delivery in the second provider input.
+  The overall run still failed: Stop did not recover after reload. A separate
+  attempt also captured duplicate transcript rows from overlapping transports.
+- Native selection acquired mutation admission even for read-only attachment.
+  The active response held that lock; reload therefore reported connection
+  failure while Core remained healthy and reading. Selection now attaches an
+  already-registered healthy project without mutation admission. Registration
+  and every launch still obtain and retain the same guard through startup.
+  Root, shell, Core identity and daemon-health checks are unchanged. Unknown
+  registration/identity/liveness still refuses; no update gate was removed.
+- Native history reordered JSON keys. Captured transports contain the same
+  20 events, but the old merge produced 40. The existing merge moved from the
+  component into the shared thread projection and now normalizes object-key
+  order, including nested data. Equal timestamps with different data remain
+  distinct. The old route-local identity implementation is removed.
+- Rust initially failed its old inline-structure guard (63 passed, 1 failed);
+  the guard now checks admitted registration and every launch separately from
+  known read-only attachment. Its first revision exposed a pre-existing lexical
+  weakness in the spawn scanner (64 passed, 1 failed): braces inside a test
+  string altered its module count. The guard now uses a non-brace anchor; the
+  scanner itself is not rewritten. Final Rust: **65/65**. Normal Desktop:
+  **382/382** across 42 files; focused merge/thin-client checks: **52/52**.
+- A fresh full Core run, final viewport/build checks and another installation
+  are pending. The three failed installed runs are retained with explanations.
+  No paid providers or user-project history/spec edits were made.
+- Fresh full Core validation after the native/merge correction: **988 total,
+  986 passed, 2 skipped, 0 failed or cancelled**, exit 0, 470.21 seconds.
+  Final native rerun after cleanup: **65/65**. The 21st rerun remains at
+  0 errors and 15 unchanged warnings. Static action/event checks and
+  `git diff --check` passed; the 10 export leads remain unproven dead code.
+- Final production viewport/build check: **48/48** passed at the four stated
+  sizes, including active operation/header/elapsed assertions. No installed
+  processes were running at the replacement-install preflight. The correction
+  is ready to commit and install; behavior on that replacement is not yet claimed.

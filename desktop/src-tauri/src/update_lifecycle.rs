@@ -93,7 +93,6 @@ pub(crate) fn register_project(
     Ok(())
 }
 
-#[allow(dead_code)] // The R2 admitted installer is the sole future consumer of this R1 boundary.
 pub(crate) fn registered_projects(app: &tauri::AppHandle) -> Result<Vec<PathBuf>, String> {
     read_registered_projects(&daemon_registry_file(app)?)
 }

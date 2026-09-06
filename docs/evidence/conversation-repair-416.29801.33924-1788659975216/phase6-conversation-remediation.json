@@ -1,0 +1,61 @@
+{
+  "installedVersion": "416.29801.33924",
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "viewport": {
+    "devicePixelRatio": 1,
+    "height": 900,
+    "width": 1440
+  },
+  "paidProviderCalls": 0,
+  "liveConversation": {},
+  "duplicateSubmit": {},
+  "projectContext": {},
+  "conversationHistory": {},
+  "attachmentContext": {},
+  "newConversation": {},
+  "visibleFailure": {},
+  "stopResponse": {},
+  "stopPlanning": {},
+  "usabilityObservations": {},
+  "browserSevereLogs": [],
+  "recentProjects": {
+    "beforeSha256": "9f6c478f93cb98f488fc5e3a1f113abc746e4da228b62ef405a15970e0639d06",
+    "afterSha256": "9f6c478f93cb98f488fc5e3a1f113abc746e4da228b62ef405a15970e0639d06",
+    "restoredExactly": true
+  },
+  "installedIdentity": {
+    "artifact_id": "1ae4648c72f87f6b82bf8ea47e0384cc9e7c68cdcc21cc9f1bbc413b8bd0993d",
+    "installed_executable_sha256": "9813eecc3985b51ad8144ce035b27b3fd96ea611dfcbcf88ff0ec276d53ece8f",
+    "kind": "hivemind-local-install-receipt",
+    "schema_version": 1,
+    "source_commit": "2e5474c41dd69eedabcc28caf57ddfe9472d0de5",
+    "verified_at_ms": 1788659791244,
+    "version": "416.29801.33924",
+    "installedExecutableSha256": "9813eecc3985b51ad8144ce035b27b3fd96ea611dfcbcf88ff0ec276d53ece8f",
+    "installedPayloadSource": "2e5474c41dd69eedabcc28caf57ddfe9472d0de5"
+  },
+  "nativeDriver": "C:\\Users\\ethan\\.cache\\selenium\\msedgedriver\\win64\\152.0.4191.66\\msedgedriver.exe",
+  "outerWindow": {
+    "height": 900,
+    "width": 1440,
+    "x": 230,
+    "y": 212
+  },
+  "failure": {
+    "message": "AssertionError [ERR_ASSERTION]: duplicate live operation rows\n\n2 !== 1\n",
+    "surfaceText": "Hivemind\nWork\nAgents\nProject\nLive\nhivemind-phase6-remediation-CPZ8Ot\nCtrl+K\nConversation\nChecks\nNew conversation\nInterruptions\nPlanner is preparing your response\n3s elapsed\n\nThis installed fixture reports a deterministic TypeScript project status.\n\nDescribe what this project does, in one sentence.\n\nPlanner is preparing your response\n3s elapsed\n\nThis installed fixture reports a deterministic TypeScript project status.\n\nModels\nAsk anything, or describe a change. A question is answered here; a change becomes a plan you approve before anything runs.\nplanner\nCommands\n\nJump to a section or open a project",
+    "screenshot": "failed-attempt-416.29801.33924-1440x900.png",
+    "operation": {
+      "request_id": "081142ac-bd90-4ef5-9225-a3811b1152c9",
+      "started_at": "2026-09-06T01:59:42.854Z",
+      "phase": "reading"
+    },
+    "calls": [
+      {
+        "at": "2026-09-06T01:59:43.055Z",
+        "pid": 60164,
+        "kind": "draft"
+      }
+    ]
+  }
+}

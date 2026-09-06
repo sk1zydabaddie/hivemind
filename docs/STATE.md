@@ -51,12 +51,17 @@ to disclose, not assumptions that deterministic gates may trust.
   passed Core 986/988 (2 platform skips) and Rust 64/64. Screenshot review also
   caught a duplicate header progress label/clock, now removed with header-scoped
   regressions. Desktop 381/381 and production viewport 48/48 passed;
-  replacement installation and behavioral proof remain pending.
+  replacement installation reached **416.29801.33924** with exact-byte checks.
+  Strict installed checks then caught native reload admission blocking Stop
+  and key-order-sensitive event merging. Those corrections passed Desktop
+  382/382, Rust 65/65 and a fresh Core 986/988 (2 platform skips);
+  final production viewport checks passed 48/48. Replacement installation and
+  its strict behavioral check are pending.
   The older maintenance evidence above remains historical. Legacy rendering
   remains for old trails;
   the duplicate live footer has been removed.
 - [Real-world use review](REAL-WORLD-USE-AUDIT.md): 14 product/scale findings
-  plus one verification gap, not automatically marked fixed. Highest priority:
+  plus two verification gaps, not automatically marked fixed. Highest priority:
   active-spec answer-only routing prevents normal conversational revision, and
   the conversation lacks a typed live-run/check context. Draft persistence and
   scroll stability also need a separate approved usability phase.

@@ -1,11 +1,29 @@
 import { describe, expect, test } from "vitest";
 
 import type { HivemindEvent } from "../src/lib/projection";
-import { buildRunThread, runSpanMs } from "../src/lib/work-thread";
+import { buildRunThread, mergeNewestEvents, runSpanMs } from "../src/lib/work-thread";
 
 const TITLES = { "T-001": "Dark mode toggle", "T-002": "Theme tokens" };
 
 describe("run thread", () => {
+  test("native history and live events merge by content, not object key order", () => {
+    const live = newestFirst([
+      event("conversation.operation_started", null, { request_id: "request", phase: "reading", process_identity: { pid: 42, process_instance_id: "request" } }),
+      event("conversation.message_recorded", null, { request_id: "request", message_id: "message", text: "Hello" }),
+      event("spec.draft_started", null, { message_id: "message", spec_id: "S-001" })
+    ]);
+    const native: HivemindEvent[] = JSON.parse(JSON.stringify(live, (_key, value: unknown) =>
+      value !== null && typeof value === "object" && !Array.isArray(value)
+        ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)))
+        : value
+    ));
+    expect(JSON.stringify(native)).not.toEqual(JSON.stringify(live));
+    const merged = mergeNewestEvents(live, native);
+    expect(merged).toHaveLength(live.length);
+    expect(buildRunThread(merged, {}).map(entry => entry.kind)).toEqual(["request", "operation"]);
+    const distinct = { ...live[0], data: { ...live[0].data, spec_id: "S-002" } };
+    expect(mergeNewestEvents([live[0]], [distinct])).toHaveLength(2);
+  });
   test("one operation replaces its draft indicator and follows the actual planning handoff", () => {
     const start = [
       event("conversation.operation_started", null, { request_id: "request" }),

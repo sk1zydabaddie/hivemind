@@ -1,6 +1,22 @@
 import { ANONYMOUS_TASK, taskTitleOrNull } from "./identifiers";
 import type { HivemindEvent } from "./projection";
 
+/** Native history serializes object keys in a different order from live SSE.
+ * Identity must ignore that transport detail, including nested event data. */
+export function mergeNewestEvents(live: readonly HivemindEvent[], durable: readonly HivemindEvent[]): HivemindEvent[] {
+  const seen = new Set<string>();
+  return [...live, ...durable].filter((event) => {
+    const key = JSON.stringify(event, (_key, value: unknown) =>
+      value !== null && typeof value === "object" && !Array.isArray(value)
+        ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0))
+        : value
+    );
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).sort((left, right) => right.ts.localeCompare(left.ts));
+}
+
 /* The run thread is a plain-language narrative of what the project did, built
  * only from durable daemon events so it survives a reload. It is deliberately
  * NOT a model transcript: the orchestrator is silent on a clean run, because the

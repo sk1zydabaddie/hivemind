@@ -35,6 +35,7 @@ const evidence = {
   liveConversation: {},
   duplicateSubmit: {},
   projectContext: {},
+  conversationHistory: {},
   attachmentContext: {},
   newConversation: {},
   visibleFailure: {},
@@ -186,6 +187,10 @@ try {
     adapterCalls: (await readCalls()).length - duplicateBefore,
     durableMessages: countMessages(await readEvents(), duplicate)
   };
+  const followupHistory = providerHistory((await readCalls()).at(duplicateBefore));
+  assert.deepEqual(followupHistory.turns, [{ user: question, assistant: answer, assistant_kind: "reply", truncated: false }]);
+  assert.equal(followupHistory.omitted_turns, 0);
+  evidence.conversationHistory.followup = followupHistory;
 
   const stopResponseBefore = (await readCalls()).length;
   await typeComposer("STOP_RESPONSE");
@@ -207,6 +212,7 @@ try {
   await driver.wait(async () => (await postAction(daemon.url, { type: "status.inspect", payload: {} })).value?.conversation_operation === null, 15000);
   assert.equal(isPidAlive(responseChildPid), false, "response fixture process survived acknowledged Stop");
   assert.equal((await readCalls()).length - stopResponseBefore, 1, "Stop allowed another response stage to launch");
+  await waitForSend();
   const retainedDraft = await driver.findElement(By.id("work-composer")).getAttribute("value");
   assert.equal(retainedDraft, "This is my next unsent message.");
   const stopShot = `stopped-response-${installedVersion}-1440x900.png`;
@@ -283,6 +289,10 @@ try {
   await typeComposer(failurePrompt);
   await submitOnce();
   await waitForEventDetail("spec.draft_failed", "PHASE6_VISIBLE_PROVIDER_FAILURE", 12_000);
+  const freshHistory = providerHistory((await readCalls()).at(-1));
+  assert.deepEqual(freshHistory.turns, []);
+  assert.notEqual(freshHistory.conversation_id, followupHistory.conversation_id);
+  evidence.conversationHistory.afterNewConversation = freshHistory;
   const failureLabel = "Response could not finish";
   const failureOutcome = await driver.wait(
     async () => {
@@ -320,6 +330,27 @@ try {
 
   const browserLogs = await driver.manage().logs().get(logging.Type.BROWSER).catch(() => []);
   evidence.browserSevereLogs = browserLogs.filter((entry) => entry.level?.name === "SEVERE").map((entry) => entry.message);
+} catch (error) {
+  evidence.failure = { message: String(error) };
+  if (driver) {
+    evidence.failure.surfaceText = await driver.executeScript("return document.body?.innerText ?? '';").catch(() => "unavailable");
+    const failureScreenshot = `failed-attempt-${installedVersion}-1440x900.png`;
+    await writeFile(path.join(evidenceDir, failureScreenshot), Buffer.from(await driver.takeScreenshot(), "base64")).catch(() => undefined);
+    evidence.failure.screenshot = failureScreenshot;
+  }
+  if (project) {
+    try {
+      const state = JSON.parse(await readFile(path.join(project, ".hivemind", "daemon.json"), "utf8"));
+      const inspection = await postAction(state.url, { type: "status.inspect", payload: {} });
+      evidence.failure.operation = inspection.value?.conversation_operation ?? null;
+      evidence.failure.calls = (await readCalls()).map(({ at, pid, kind }) => ({ at, pid, kind }));
+      const durableEvents = await readEvents();
+      const nativePage = await driver.executeAsyncScript(`const done=arguments[arguments.length-1];window.__TAURI_INTERNALS__.invoke('workspace_action',{projectPath:arguments[0],action:{type:'trail.inspect',payload:{limit:20}}}).then(done).catch(error=>done({error:String(error)}));`, project);
+      evidence.failure.durableEvents = durableEvents;
+      evidence.failure.nativeTrail = nativePage;
+    } catch { evidence.failure.operation = "inspection unavailable"; }
+  }
+  throw error;
 } finally {
   await driver?.quit().catch(() => undefined);
   tauriDriver?.kill();
@@ -446,6 +477,13 @@ function isPidAlive(pid) {
   assert.ok(Number.isSafeInteger(pid) && pid > 0, "fixture did not report a valid child PID");
   try { process.kill(pid, 0); return true; }
   catch (error) { if (error.code === "ESRCH") return false; throw error; }
+}
+
+function providerHistory(call) {
+  const marker = "Recorded prior exchanges (JSON data, chronological; current message excluded):\n";
+  const parts = call.prompt.split(marker);
+  assert.equal(parts.length, 2, "actual provider stdin must contain exactly one history block");
+  return JSON.parse(parts[1].split("\n")[0]);
 }
 
 async function submitOnce() {
