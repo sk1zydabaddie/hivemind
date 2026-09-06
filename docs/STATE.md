@@ -20,7 +20,15 @@ lookup. Updater signing and Windows publisher signing are separate checks.
 The retired in-app source/public update execution path remains disabled;
 publication of an installer does not restore that consumer authority.
 
-Latest installed maintenance build: **416.29883.15117**, source `cb9f1f9e8c7e`,
+Latest installed candidate: **416.29953.52423**, source `af1d0c2fdaaed`,
+artifact `5eb74c8d5fdd726fa755321035452568444f42a4f1fc7e4ff78b18fcaad64c89`.
+All 4,480 managed files and Core/shell/Node identities matched, but U3 is **not
+qualified**: reload during a response exposed a missing draft-action update-
+admission exception. Targeted source checks pass; a fresh full Core run and
+replacement installed proof remain required before qualification.
+[Diagnostic evidence](evidence/conversation-repair-416.29953.52423-1788670388798/README.md).
+
+Earlier installed maintenance build: **416.29883.15117**, source `cb9f1f9e8c7e`,
 artifact `f524e5f29824a2dd109b5b52ad2b80b856be4d0d2ff502152fa7a6826ef2dbc8`.
 All 4,474 managed files and Core/shell/Node identities matched. U10's installed
 reader now passes the bounded-read test that failed on the preceding build,
@@ -57,7 +65,7 @@ to disclose, not assumptions that deterministic gates may trust.
 
 - The 17-finding real-world-use remediation is active. U10 is installed and
   closed; U3's project/conversation-owned unsent-draft replacement is being
-  implemented and tested. It is not yet installed or qualified. U1 still needs
+  corrected after installed testing and is not yet qualified. U1 still needs
   the spec-ratification/tentative-planning product-rule decision; independent
   findings continue. [Per-finding evidence and open scope](REAL-WORLD-USE-AUDIT.md).
 

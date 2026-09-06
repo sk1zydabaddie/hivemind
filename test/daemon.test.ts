@@ -369,7 +369,8 @@ test("read-only inspection and advisory draft saves remain live while a conversa
     const configured = await setProjectConfig(repo, { no_tests_declared: true });
     assert.equal(configured.ok, true, configured.ok ? undefined : configured.reason);
     await writeDelayedPlanner(repo);
-    const daemon = await startDaemon(repo);
+    const coordinator = path.join(repo, ".hivemind", "update.json");
+    const daemon = await startDaemon(repo, coordinator);
     try {
       const conversation = postDaemon(daemon, "/workspace/action", {
         type: "conversation.submit",
@@ -397,6 +398,7 @@ test("read-only inspection and advisory draft saves remain live while a conversa
       const providerPid = (processEvent?.data.process_identity as { pid: number }).pid;
       assert.ok(Number.isSafeInteger(providerPid) && providerPid > 0);
       assert.doesNotThrow(() => process.kill(providerPid, 0));
+      const admissionOwner = await readFile(`${coordinator}.admission/owner.json`, "utf8");
       const saved = await postDaemon(daemon, "/workspace/action", { type: "draft.save", payload: {
         conversation_id: "legacy", expected_revision: null,
         draft: { content_id: "123e4567-e89b-42d3-a456-426614174011", text: "Next unsent draft", attachments: [], submission: null }
@@ -405,6 +407,8 @@ test("read-only inspection and advisory draft saves remain live while a conversa
       const readback = await postDaemon(daemon, "/workspace/action", { type: "draft.inspect", payload: { conversation_id: "legacy" } });
       assert.equal(readback.ok, true);
       assert.deepEqual(readback.value, saved.value);
+      assert.equal(await readFile(`${coordinator}.admission/owner.json`, "utf8"), admissionOwner,
+        "draft operations must not release or replace the running provider's update admission");
       assert.doesNotThrow(() => process.kill(providerPid, 0), "draft save/read must finish while the actual provider process is alive");
       const duringSave = await readEvents(repo);
       assert.ok(duringSave.ok);

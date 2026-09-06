@@ -1829,8 +1829,11 @@ test("Work tab drives configured interruption policy through typed actions and k
      or guidance authority from inspection state; the separate Guide-run dialog
      is an explicit advisory control. */
   const submit = source.slice(source.indexOf("const submitPrompt"), source.indexOf("const [newConversationBusy"));
-  assert.match(submit, /type: "conversation\.submit"/u);
+  assert.match(submit, /await draftSession\.submit\(\)/u);
+  const draftOwner = await readFile(path.resolve("desktop/src/lib/composer-draft.ts"), "utf8");
+  assert.match(draftOwner, /await this\.action\(\{ type: "conversation\.submit", payload: \{ \.\.\.submitted, tool: "planner" \}/u);
   assert.doesNotMatch(submit, /type: "(?:spec\.draft|plan\.prepare|plan\.ratify|manager\.start|guidance\.record)"/u);
+  assert.doesNotMatch(draftOwner, /type: "(?:spec\.draft|plan\.prepare|plan\.ratify|manager\.start|guidance\.record)"/u);
   assert.match(source, /title="Guide the manager"[\s\S]*type: "guidance\.record"/u);
   assert.match(source, /Approve and start/u);
   assert.match(source, /type: "autonomy\.set"/u);

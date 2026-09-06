@@ -14,6 +14,7 @@ export type UpdateAdmissionResult<T> =
 
 const readOnlyWorkspaceActions = new Set([
   "status.inspect",
+  "draft.inspect",
   "trail.inspect",
   "change.inspect",
   "config.inspect",
@@ -37,11 +38,17 @@ export function daemonRequestStartsWork(
   if (method !== "POST") return false;
   if (route === "/status" || route === "/resource/quota") return false;
   if (route !== "/workspace/action") return true;
+  // Unsent input is an independently locked, atomic advisory record. Saving it
+  // cannot start work or change the installation, and must not wait on the
+  // admission held by a response while the person types their next message.
+  // Keep this write exception separate from the read-only classification.
+  if (payload.type === "draft.save") return false;
   return typeof payload.type !== "string" || !readOnlyWorkspaceActions.has(payload.type);
 }
 
 /**
- * Serializes every state-changing daemon request against update admission.
+ * Serializes work-starting and canonical state-changing daemon requests against
+ * update admission. Advisory draft saves use their own project-local lock.
  *
  * The update lease path is supplied only by the installed shell that launched
  * the daemon. Standalone Core use has no desktop artifact to replace and does

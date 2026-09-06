@@ -155,4 +155,16 @@ export class ComposerDraftSession {
     await this.refresh();
     this.publish({ sending: false, startedAt: null });
   }
+
+  /** Saving may finish after navigation. Dispatch through this owner's bound
+   * project action, never a callback that resolves the newly selected project. */
+  async submit(): Promise<void> {
+    const submitted = await this.beginSubmission();
+    if (submitted === null) return;
+    try {
+      await this.action({ type: "conversation.submit", payload: { ...submitted, tool: "planner" } });
+    } finally {
+      await this.finishSubmission();
+    }
+  }
 }

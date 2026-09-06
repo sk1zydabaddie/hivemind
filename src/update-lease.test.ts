@@ -16,6 +16,9 @@ describe("machine-wide update admission", () => {
     assert.equal(daemonRequestStartsWork("GET", "/events/stream", {}), false);
     assert.equal(daemonRequestStartsWork("POST", "/status", {}), false);
     assert.equal(daemonRequestStartsWork("POST", "/workspace/action", { type: "files.read" }), false);
+    assert.equal(daemonRequestStartsWork("POST", "/workspace/action", { type: "draft.inspect" }), false);
+    assert.equal(daemonRequestStartsWork("POST", "/workspace/action", { type: "draft.save" }), false);
+    assert.equal(daemonRequestStartsWork("POST", "/workspace/action", { type: "draft.unknown" }), true);
     assert.equal(daemonRequestStartsWork("POST", "/workspace/action", { type: "conversation.submit" }), true);
     assert.equal(daemonRequestStartsWork("POST", "/run", {}), true);
   });

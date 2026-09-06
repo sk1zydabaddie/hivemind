@@ -62,6 +62,21 @@ Long-running manager and quality generation use the serialized daemon mutation q
 
 The in-process transport is not a queue exception. It exists only while the outer daemon request already owns the queue and invokes the exact registered daemon route locally. The full dispatcher regression asserts that a complete task lifecycle entering through `/workspace/action` emits no nested HTTP route. CLI, MCP, and Tauri transports remain unchanged.
 
+## Advisory draft lifecycle
+
+Unsent `draft.inspect` joins the read-only queue/admission exceptions.
+`draft.save` is a separate advisory-write exception: it uses the existing
+project-local revision lock and atomic writer, cannot launch or authorize work,
+and cannot mutate the replaceable installation or accepted canonical state.
+It does not release the admission held by a running response. This distinction
+is tested with the same update coordinator used by an installed daemon, while
+the actual provider remains alive. Unknown actions retain fail-closed admission.
+
+The renderer's composer session binds both persistence and eventual
+`conversation.submit` to the originating project. A delayed save followed by
+navigation cannot resolve its submission against the newly selected project.
+Both still use the same typed Tauri `workspace_action` bridge and Core dispatcher.
+
 ## Daemon Build Identity
 
 The desktop refuses to attach or submit a workspace action unless the live daemon's startup-captured Core build identity matches the currently configured Hivemind CLI build. Missing identity is treated as a mismatch for a live daemon. The shell never responds to a mismatch by starting a second daemon; it surfaces the stale-build condition so the human can restart the existing writer deliberately. This check is transport provenance, not an authorization override, and it changes no gate semantics.

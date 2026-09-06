@@ -36,7 +36,7 @@ the full durable trail. The prior unconditional attachment clears and duplicate
 conversation-boundary scan are removed. Saved old-conversation drafts remain
 on disk; no archive restoration or execution authority is added in U3.
 
-Targeted results: **9/9 Core draft tests** and **8/8 desktop draft-session
+Targeted results: **9/9 Core draft tests** and **9/9 desktop draft-session
 tests** pass. They cover round trips, delayed/concurrent saves, project and
 conversation separation, full-trail acceptance reconciliation, retained next
 drafts, errors, limits and idempotency. The shared attachment-selection owner
@@ -58,8 +58,42 @@ retained after a save failed, even though no dispatch payload had been returned.
 The corrected owner rolls back that provisional identity without discarding
 new edits or an earlier genuinely uncertain send. The regression now passes;
 the latest full Desktop suite still passes **390/390**. Attachment selection
-also blocks submission until it completes. Source validation is complete;
-commit, installation and installed tab/project/reload proof are pending.
+also blocks submission until it completes.
+
+The initial source was committed as `af1d0c2` and installed as **416.29953.52423**
+(4,480 managed files verified). Installed testing exposed a missing update-
+admission classification: `draft.inspect` and `draft.save` incorrectly waited
+on the lock held by the current response. Reload then showed a draft-load
+refusal while the provider was still running. The earlier daemon test omitted
+the installed update coordinator and therefore could not detect this defect.
+The corrected regression supplies it, measures the actual live provider PID,
+and verifies draft saving/reading leave the provider's admission owner intact.
+Both the classification and live test failed before correction; all **7/7**
+targeted admission/Stop/two-project refusal checks pass afterward. Draft reads
+are read-only; the atomic, independently locked advisory save is explicitly
+separate from read-only actions. Execution and canonical mutations remain gated.
+
+An earlier installed failure was a harness error, not a demonstrated second-send
+regression: Selenium's native `isEnabled()` ignored the shared Button's
+`aria-disabled` state. The corrected predicate waits for both, then the same
+installed app passes the second-send and synchronous duplicate-submit checks.
+[Failure evidence and diagnostic sequence](evidence/conversation-repair-416.29953.52423-1788670388798/README.md).
+
+The session also now dispatches `conversation.submit` through its original
+project binding after persistence finishes; WorkTab no longer resolves the
+newly selected project at that asynchronous boundary. A delayed-save/navigation
+test proves exactly one dispatch to A and none to B, retaining B's draft.
+Focused desktop checks pass **44/44**; full Desktop passes **391/391** across
+43 files. Production typecheck/build passes (713.08 kB chunk warning); 21st
+review reports zero errors and 15 existing warnings over the two reviewed files.
+Rust passes **65/65**. The first repeated full Core attempt was invalidated by
+concurrent Desktop setup rebuilding its output directory. The serial run then
+reported **1,001 total, 998 passed, 1 failed, 2 skipped**, 854.811 seconds: the
+remaining failure expected the submit action text inside WorkTab instead of its
+new project-bound owner. That test now follows the owner and retains the same
+no-approval/no-manager-route assertions; its targeted rerun passes **1/1**.
+The corrected candidate is being committed for installation, not qualification.
+A fresh full Core pass and replacement tab/project/reload proof remain required.
 **U3 remains open**. No paid calls.
 
 ### U10 fixed and installed — 416.29883.15117

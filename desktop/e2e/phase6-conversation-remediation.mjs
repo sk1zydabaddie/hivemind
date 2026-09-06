@@ -179,7 +179,8 @@ try {
   await typeComposer(duplicate);
   await waitForSend();
   const duplicateBefore = (await readCalls()).length;
-  await driver.executeScript(`const form=document.getElementById("work-composer")?.form;if(!form)return false;form.requestSubmit();form.requestSubmit();return true;`);
+  const duplicateDispatched = await driver.executeScript(`const form=document.getElementById("work-composer")?.form;if(!form)return false;form.requestSubmit();form.requestSubmit();return true;`);
+  assert.equal(duplicateDispatched, true, "duplicate-submit probe did not reach the composer form");
   await waitForCallCount(duplicateBefore + 1, 8_000);
   await waitForText("phase-six-conversation-fixture", 12_000);
   await new Promise((resolve) => setTimeout(resolve, 300));
@@ -391,12 +392,15 @@ try {
   }, 10000, "new conversation retained the old draft");
   await waitForDraftSaved();
   await assertAttachmentChips([]);
+  const otherProjectCalls = await readCalls(otherProject);
+  assert.equal(otherProjectCalls.length, 0, "navigation started a provider in project B");
   evidence.usabilityObservations.draftPersistence = {
     screenshot: draftScreenshot, projectAText: navigationDraft, projectBText: otherDraft,
     attachmentsSeededThroughCore: selectedAttachments, removedAttachmentStayedRemovedAfterReload: true,
     projectSwitchPreservedBothDrafts: true, newConversationStartedEmpty: true,
     acceptedMessageDidNotReturnAfterReload: true, nextDraftSavedWhileProviderAlive: true,
-    adapterCallsDuringNavigation: (await readCalls()).length - navigationCallsBefore
+    adapterCallsDuringNavigation: (await readCalls()).length - navigationCallsBefore,
+    projectBAdapterCallsDuringNavigation: otherProjectCalls.length
   };
 
   const browserLogs = await driver.manage().logs().get(logging.Type.BROWSER).catch(() => []);
@@ -404,6 +408,7 @@ try {
 } catch (error) {
   evidence.failure = { message: String(error) };
   if (driver) {
+    evidence.failure.composer = await driver.executeScript(`const box=document.getElementById("work-composer");const send=document.querySelector('button[aria-label="Send"]');return {value:box?.value,readOnly:box?.readOnly,form:!!box?.form,sendDisabled:send?.disabled,sendAriaDisabled:send?.getAttribute("aria-disabled"),composers:document.querySelectorAll('#work-composer').length};`).catch(() => null);
     evidence.failure.surfaceText = await driver.executeScript("return document.body?.innerText ?? '';").catch(() => "unavailable");
     const failureScreenshot = `failed-attempt-${installedVersion}-1440x900.png`;
     await writeFile(path.join(evidenceDir, failureScreenshot), Buffer.from(await driver.takeScreenshot(), "base64")).catch(() => undefined);
@@ -419,6 +424,9 @@ try {
       const nativePage = await driver.executeAsyncScript(`const done=arguments[arguments.length-1];window.__TAURI_INTERNALS__.invoke('workspace_action',{projectPath:arguments[0],action:{type:'trail.inspect',payload:{limit:20}}}).then(done).catch(error=>done({error:String(error)}));`, project);
       evidence.failure.durableEvents = durableEvents;
       evidence.failure.nativeTrail = nativePage;
+      const draftDir = path.join(project, ".hivemind", "ui", "conversation-drafts");
+      const draftFiles = await readdir(draftDir);
+      evidence.failure.savedDrafts = await Promise.all(draftFiles.filter(file => file.endsWith(".json")).map(async file => JSON.parse(await readFile(path.join(draftDir, file), "utf8"))));
     } catch { evidence.failure.operation = "inspection unavailable"; }
   }
   throw error;
@@ -586,7 +594,10 @@ async function submitOnce() {
 async function waitForSend() {
   return driver.wait(async () => {
     const buttons = await driver.findElements(By.css('button[aria-label="Send"]'));
-    return buttons.length === 1 && await buttons[0].isEnabled() ? buttons[0] : false;
+    // Explainable-disabled project buttons remain focusable. Selenium's
+    // isEnabled() alone ignores aria-disabled and can submit before settling.
+    return buttons.length === 1 && await buttons[0].isEnabled() &&
+      await buttons[0].getAttribute("aria-disabled") !== "true" ? buttons[0] : false;
   }, 15000, "Send did not become available after the previous response");
 }
 
@@ -686,8 +697,8 @@ function countMessages(events, text) {
   return events.filter((event) => event.type === "conversation.message_recorded" && event.data?.text === text).length;
 }
 
-async function readCalls() {
-  try { return (await readFile(path.join(project, ".hivemind", "phase6-calls.jsonl"), "utf8")).split(/\r?\n/u).filter(Boolean).map(JSON.parse); }
+async function readCalls(root = project) {
+  try { return (await readFile(path.join(root, ".hivemind", "phase6-calls.jsonl"), "utf8")).split(/\r?\n/u).filter(Boolean).map(JSON.parse); }
   catch (error) { if (error?.code === "ENOENT") return []; throw error; }
 }
 

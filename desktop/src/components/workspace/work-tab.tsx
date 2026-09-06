@@ -540,18 +540,8 @@ export function WorkTab({
     setComposerHasMoved(true);
     setBusy(true);
     setFeedback("");
-    let submittedRequest = false;
     try {
-      const submitted = await draftSession.beginSubmission();
-      if (submitted === null) return;
-      submittedRequest = true;
-      await onAction({
-        type: "conversation.submit",
-        payload: {
-          ...submitted,
-          tool: "planner",
-        }
-      });
+      await draftSession.submit();
       setFeedback("");
     } catch (error) {
       const explanation = plainActionError(error);
@@ -561,7 +551,6 @@ export function WorkTab({
           : "That request stopped before a plan was ready. See the conversation above for details."
       );
     } finally {
-      if (submittedRequest) await draftSession.finishSubmission();
       setBusy(false);
     }
   };

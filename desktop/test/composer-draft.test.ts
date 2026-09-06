@@ -41,6 +41,44 @@ function storage(conversationId = "legacy") {
 }
 
 describe("project-owned unsent composer draft", () => {
+  test("a send delayed by persistence dispatches only through its originating project owner", async () => {
+    const a = storage();
+    const b = storage();
+    const saveGate = deferred();
+    const responseGate = deferred();
+    const dispatched = deferred();
+    const sends: WorkspaceAction[] = [];
+    const oldOwner = new ComposerDraftSession("legacy", async <T,>(action: WorkspaceAction): Promise<T> => {
+      if (action.type !== "conversation.submit") return a.action<T>(action);
+      sends.push(action);
+      expect(action.payload.request_id).toBe(a.read().draft.submission?.request_id);
+      dispatched.resolve();
+      await responseGate.promise;
+      a.receipt(true, true);
+      return undefined as T;
+    });
+    const newOwner = new ComposerDraftSession("legacy", b.action);
+    await Promise.all([oldOwner.refresh(), newOwner.refresh()]);
+    oldOwner.update(draft => ({ ...draft, text: "Send only to A" }));
+    a.delay(saveGate.promise);
+    const sending = oldOwner.submit();
+    // Navigation selects B while A's save is still pending.
+    newOwner.update(draft => ({ ...draft, text: "Unsent B" }));
+    await newOwner.flush();
+    await oldOwner.submit();
+    expect(sends).toEqual([]);
+    saveGate.resolve();
+    await dispatched.promise;
+    expect(sends).toHaveLength(1);
+    expect(sends[0].payload.prompt).toBe("Send only to A");
+    expect(b.requests.some(action => action.type === "conversation.submit")).toBe(false);
+    responseGate.resolve();
+    await sending;
+    expect(oldOwner.getSnapshot().sending).toBe(false);
+    expect(oldOwner.getSnapshot().view?.draft.text).toBe("");
+    expect(b.read().draft.text).toBe("Unsent B");
+  });
+
   test("tab consumers share text and attachments, and a new session reloads the saved record", async () => {
     const disk = storage();
     const session = new ComposerDraftSession("legacy", disk.action);

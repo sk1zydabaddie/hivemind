@@ -45,7 +45,8 @@ describe("React workspace boundary", () => {
     expect(work).toMatch(/invoke<PromptAttachment\[\]?>\("choose_project_attachment_folder"/u);
     const drafts = await readFile(path.join(desktopRoot, "src", "lib", "composer-draft.ts"), "utf8");
     expect(drafts).toMatch(/request_id: requestId, prompt: view\.draft\.text\.trim\(\), attachments: view\.draft\.attachments/u);
-    expect(work).toMatch(/const submitted = await draftSession\.beginSubmission\(\)[\s\S]*type: "conversation\.submit",[\s\S]*\.\.\.submitted/u);
+    expect(work).toMatch(/await draftSession\.submit\(\)/u);
+    expect(drafts).toMatch(/const submitted = await this\.beginSubmission\(\)[\s\S]*type: "conversation\.submit",[\s\S]*\.\.\.submitted/u);
     expect(work).not.toMatch(/Project references:/u);
     expect(work).toMatch(/aria-label="Attached project items"/u);
     expect(shell).toMatch(/choose_project_files/u);
@@ -309,7 +310,8 @@ describe("React workspace boundary", () => {
     expect(projection).not.toMatch(/\.state = "merged"|\.state = "verified"/u);
 
     const audit = await readFile(path.resolve(desktopRoot, "..", "docs", "m8-action-routing-audit.md"), "utf8");
-    const actions = [...work.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
+    const drafts = await readFile(path.join(desktopRoot, "src", "lib", "composer-draft.ts"), "utf8");
+    const actions = [...`${work}\n${drafts}`.matchAll(/type:\s*"([a-z_.]+)"/gu)].map((match) => match[1]);
     expect(new Set(actions)).toEqual(new Set([
       "adapter.connect_model",
       "autonomy.set",
@@ -319,6 +321,8 @@ describe("React workspace boundary", () => {
       "conversation.new",
       "conversation.submit",
       "conversation.stop",
+      "draft.inspect",
+      "draft.save",
       "guidance.record",
       "manager.continue",
       "manager.start",
@@ -447,12 +451,12 @@ describe("React workspace boundary", () => {
     );
 
     const submit = work.slice(work.indexOf("const submitPrompt"), work.indexOf("const [newConversationBusy"));
-    expect(submit).toMatch(/type: "conversation\.submit"/u);
     const drafts = await readFile(path.join(desktopRoot, "src", "lib", "composer-draft.ts"), "utf8");
-    expect(submit).toMatch(/await draftSession\.beginSubmission\(\)/u);
-    expect(submit).toMatch(/\.\.\.submitted/u);
+    expect(submit).toMatch(/await draftSession\.submit\(\)/u);
+    expect(drafts).toMatch(/await this\.action\(\{ type: "conversation\.submit", payload: \{ \.\.\.submitted, tool: "planner" \}/u);
     expect(drafts).toMatch(/request_id: requestId, prompt: view\.draft\.text\.trim\(\), attachments: view\.draft\.attachments/u);
     expect(submit).not.toMatch(/type: "(?:spec\.draft|plan\.prepare|manager\.start)"/u);
+    expect(drafts).not.toMatch(/type: "(?:spec\.draft|plan\.prepare|manager\.start)"/u);
     expect(submit).not.toMatch(/planHasWorkLeft|inspection\?\.active_spec_id|runActive\)/u);
     expect(drafts).toMatch(/this\.snapshot\.sending \|\| this\.snapshot\.selecting\) return null/u);
     expect(work).toMatch(/Start over with a different plan/u);

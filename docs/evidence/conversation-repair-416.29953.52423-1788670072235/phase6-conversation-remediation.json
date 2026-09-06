@@ -1,0 +1,310 @@
+{
+  "installedVersion": "416.29953.52423",
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "viewport": {
+    "devicePixelRatio": 1,
+    "height": 900,
+    "width": 1440
+  },
+  "paidProviderCalls": 0,
+  "liveConversation": {
+    "build": "416.29953.52423",
+    "screenshot": "phase6-live-conversation-416.29953.52423-1440x900.png",
+    "partialScreenshot": "partial-answer-416.29953.52423-1440x900.png",
+    "typed": "Describe what this project does, in one sentence.",
+    "reply": "This installed fixture reports a deterministic TypeScript project status.",
+    "durableMessageVisibleWhileRunning": true,
+    "scopedActivityWhileRunning": "Planner is preparing your response\n3s elapsed\nThis installed fixture reports a deterministic TypeScript project status.",
+    "headerWhileRunning": "Conversation",
+    "scopedActivityLater": "Planner is preparing your response\n6s elapsed\nThis installed fixture reports a deterministic TypeScript project status.",
+    "scopedClockWhileRunning": "3s elapsed",
+    "scopedClockLater": "6s elapsed",
+    "scopedAnswerWhileRunning": "This installed fixture reports a deterministic TypeScript project status.",
+    "scopedPartialAnswerWhileRunning": "This installed fixture re",
+    "providerStillAliveWhenAnswerSampled": true,
+    "readOnlyStatusSettledWhileRunning": true,
+    "readOnlyStatusMs": 62,
+    "adapterCalls": 1
+  },
+  "duplicateSubmit": {},
+  "projectContext": {
+    "readmeContentIncluded": true,
+    "sourceContentIncluded": true,
+    "untrackedNameIncluded": true,
+    "untrackedContentIncluded": false
+  },
+  "conversationHistory": {},
+  "attachmentContext": {},
+  "newConversation": {},
+  "visibleFailure": {},
+  "stopResponse": {},
+  "stopPlanning": {},
+  "usabilityObservations": {},
+  "browserSevereLogs": [],
+  "recentProjects": {
+    "beforeSha256": "9f6c478f93cb98f488fc5e3a1f113abc746e4da228b62ef405a15970e0639d06",
+    "afterSha256": "9f6c478f93cb98f488fc5e3a1f113abc746e4da228b62ef405a15970e0639d06",
+    "restoredExactly": true
+  },
+  "installedIdentity": {
+    "artifact_id": "5eb74c8d5fdd726fa755321035452568444f42a4f1fc7e4ff78b18fcaad64c89",
+    "installed_executable_sha256": "730b02628793be097b696dc97d2a86df3f72a09dfb8baff70c55a46a487aaa44",
+    "kind": "hivemind-local-install-receipt",
+    "schema_version": 1,
+    "source_commit": "af1d0c2fdaaedc80c163ab3057c2e77c1c06a5fd",
+    "verified_at_ms": 1788669773962,
+    "version": "416.29953.52423",
+    "installedExecutableSha256": "730b02628793be097b696dc97d2a86df3f72a09dfb8baff70c55a46a487aaa44",
+    "installedPayloadSource": "af1d0c2fdaaedc80c163ab3057c2e77c1c06a5fd"
+  },
+  "nativeDriver": "C:\\Users\\ethan\\.cache\\selenium\\msedgedriver\\win64\\152.0.4191.66\\msedgedriver.exe",
+  "outerWindow": {
+    "height": 900,
+    "width": 1440,
+    "x": 308,
+    "y": 212
+  },
+  "failure": {
+    "message": "Error: did not observe 2 adapter calls",
+    "composer": {
+      "composers": 1,
+      "form": true,
+      "readOnly": false,
+      "sendDisabled": false,
+      "value": "Give me the fixture name."
+    },
+    "surfaceText": "Hivemind\nWork\nAgents\nProject\nLive\nhivemind-phase6-remediation-kHAw7i\nCtrl+K\nNothing running\nChecks\nNew conversation\nInterruptions\n\nDescribe what this project does, in one sentence.\n\nHIVEMIND\n09:48 PM\n\nThis installed fixture reports a deterministic TypeScript project status.\n\nModels\nDraft saved in this project\nAsk anything, or describe a change. A question is answered here; a change becomes a plan you approve before anything runs.\nCommands\n\nJump to a section or open a project",
+    "screenshot": "failed-attempt-416.29953.52423-1440x900.png",
+    "operation": null,
+    "calls": [
+      {
+        "at": "2026-09-06T04:48:01.858Z",
+        "pid": 47556,
+        "kind": "draft"
+      }
+    ],
+    "durableEvents": [
+      {
+        "ts": "2026-09-06T04:48:01.455Z",
+        "type": "conversation.operation_started",
+        "task_id": null,
+        "data": {
+          "request_id": "081cdcda-3440-4700-9bc7-d17ea81ed57f",
+          "phase": "reading",
+          "tool": "planner",
+          "process_identity": {
+            "pid": 32752,
+            "process_instance_id": "081cdcda-3440-4700-9bc7-d17ea81ed57f"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T04:48:01.662Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "message_id": "M-a543517b-1d6a-4b8e-8048-4dcc65c6fd6b",
+          "conversation_id": "legacy",
+          "request_id": "081cdcda-3440-4700-9bc7-d17ea81ed57f",
+          "text": "Describe what this project does, in one sentence.",
+          "attachments": []
+        }
+      },
+      {
+        "ts": "2026-09-06T04:48:01.681Z",
+        "type": "spec.draft_started",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "tool": "planner",
+          "message_id": "M-a543517b-1d6a-4b8e-8048-4dcc65c6fd6b",
+          "process_identity": {
+            "pid": 32752,
+            "process_instance_id": "M-a543517b-1d6a-4b8e-8048-4dcc65c6fd6b"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T04:48:01.755Z",
+        "type": "conversation.process_started",
+        "task_id": null,
+        "data": {
+          "request_id": "081cdcda-3440-4700-9bc7-d17ea81ed57f",
+          "process_id": "64274629-6d59-4567-975e-5c36c2fa0cfc",
+          "process_identity": {
+            "pid": 47556,
+            "process_instance_id": "64274629-6d59-4567-975e-5c36c2fa0cfc",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T04:48:10.784Z",
+        "type": "conversation.process_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "081cdcda-3440-4700-9bc7-d17ea81ed57f",
+          "process_id": "64274629-6d59-4567-975e-5c36c2fa0cfc",
+          "process_identity": {
+            "pid": 47556,
+            "process_instance_id": "64274629-6d59-4567-975e-5c36c2fa0cfc",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T04:48:10.806Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "version": 1,
+          "message_id": "M-a543517b-1d6a-4b8e-8048-4dcc65c6fd6b",
+          "text": "This installed fixture reports a deterministic TypeScript project status.",
+          "tool": "planner",
+          "advisory_only": true,
+          "authorization_effect": "none"
+        }
+      },
+      {
+        "ts": "2026-09-06T04:48:10.823Z",
+        "type": "spec.draft_failed",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "outcome": "answered",
+          "reason": "the message was answered rather than drafted from; it did not ask for anything to be built"
+        }
+      },
+      {
+        "ts": "2026-09-06T04:48:10.847Z",
+        "type": "conversation.operation_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "081cdcda-3440-4700-9bc7-d17ea81ed57f",
+          "status": "completed"
+        }
+      }
+    ],
+    "nativeTrail": {
+      "events": [
+        {
+          "data": {
+            "request_id": "081cdcda-3440-4700-9bc7-d17ea81ed57f",
+            "status": "completed"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T04:48:10.847Z",
+          "type": "conversation.operation_finished"
+        },
+        {
+          "data": {
+            "outcome": "answered",
+            "reason": "the message was answered rather than drafted from; it did not ask for anything to be built",
+            "spec_id": "S-001"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T04:48:10.823Z",
+          "type": "spec.draft_failed"
+        },
+        {
+          "data": {
+            "advisory_only": true,
+            "authorization_effect": "none",
+            "message_id": "M-a543517b-1d6a-4b8e-8048-4dcc65c6fd6b",
+            "text": "This installed fixture reports a deterministic TypeScript project status.",
+            "tool": "planner",
+            "version": 1
+          },
+          "task_id": null,
+          "ts": "2026-09-06T04:48:10.806Z",
+          "type": "conversation.reply_recorded"
+        },
+        {
+          "data": {
+            "process_id": "64274629-6d59-4567-975e-5c36c2fa0cfc",
+            "process_identity": {
+              "pid": 47556,
+              "process_group_id": null,
+              "process_instance_id": "64274629-6d59-4567-975e-5c36c2fa0cfc"
+            },
+            "request_id": "081cdcda-3440-4700-9bc7-d17ea81ed57f"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T04:48:10.784Z",
+          "type": "conversation.process_finished"
+        },
+        {
+          "data": {
+            "process_id": "64274629-6d59-4567-975e-5c36c2fa0cfc",
+            "process_identity": {
+              "pid": 47556,
+              "process_group_id": null,
+              "process_instance_id": "64274629-6d59-4567-975e-5c36c2fa0cfc"
+            },
+            "request_id": "081cdcda-3440-4700-9bc7-d17ea81ed57f"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T04:48:01.755Z",
+          "type": "conversation.process_started"
+        },
+        {
+          "data": {
+            "message_id": "M-a543517b-1d6a-4b8e-8048-4dcc65c6fd6b",
+            "process_identity": {
+              "pid": 32752,
+              "process_instance_id": "M-a543517b-1d6a-4b8e-8048-4dcc65c6fd6b"
+            },
+            "spec_id": "S-001",
+            "tool": "planner"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T04:48:01.681Z",
+          "type": "spec.draft_started"
+        },
+        {
+          "data": {
+            "attachments": [],
+            "conversation_id": "legacy",
+            "message_id": "M-a543517b-1d6a-4b8e-8048-4dcc65c6fd6b",
+            "request_id": "081cdcda-3440-4700-9bc7-d17ea81ed57f",
+            "text": "Describe what this project does, in one sentence."
+          },
+          "task_id": null,
+          "ts": "2026-09-06T04:48:01.662Z",
+          "type": "conversation.message_recorded"
+        },
+        {
+          "data": {
+            "phase": "reading",
+            "process_identity": {
+              "pid": 32752,
+              "process_instance_id": "081cdcda-3440-4700-9bc7-d17ea81ed57f"
+            },
+            "request_id": "081cdcda-3440-4700-9bc7-d17ea81ed57f",
+            "tool": "planner"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T04:48:01.455Z",
+          "type": "conversation.operation_started"
+        }
+      ],
+      "next_before": null
+    },
+    "savedDrafts": [
+      {
+        "version": 1,
+        "conversation_id": "legacy",
+        "revision": "9ba9d2eb-16dc-4282-a91d-3046d2d08f2a",
+        "draft": {
+          "content_id": "7b8cff71-50e5-4b3e-b929-2bb59fbd7a99",
+          "text": "Give me the fixture name.",
+          "attachments": [],
+          "submission": {
+            "content_id": "6f7a42d4-f998-47d3-a574-90e26876e5cf",
+            "request_id": "081cdcda-3440-4700-9bc7-d17ea81ed57f"
+          }
+        }
+      }
+    ]
+  }
+}
