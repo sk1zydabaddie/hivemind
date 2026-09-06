@@ -33,7 +33,7 @@ that is missing the authoritative facts Core already exposes. File contents
 and earlier assistant text are not a substitute. Supply a small read-only,
 provenance-bearing status context; never turn an answer into a gate verdict.
 
-### U3 — Drafts belong to a tab instance, not the project (High, confirmed code)
+### U3 — Drafts belong to a tab instance, not the project (High, installed reproduction)
 
 `desktop/src/App.tsx:681` mounts separate WorkTab instances for Work and Agents.
 `desktop/src/components/ui/tabs.tsx:59` does not retain inactive tab content;
@@ -43,6 +43,11 @@ no shared draft owner; reconnect/project transitions can also unmount that state
 The code comment describing these as “the same instances” is inaccurate.
 Preserve a project/conversation-keyed draft above the tab lifecycle, separately
 from authoritative Core state. Test tab switch, project switch and reload.
+
+Installed build **416.29838.49352** reproduced this without a provider call:
+`Keep this unsent draft while I inspect Agents.` became an empty composer after
+Work → Agents → Work. The same run retained a newly typed draft across Stop,
+so the tab-loss finding is distinct from the repaired operation-completion race.
 
 ### U4 — Reading history fights live autoscroll (High, confirmed code)
 
@@ -168,8 +173,32 @@ was not fixed. This is a reproduced false-positive weakness, not evidence of a
 production console flash. Use a Rust-aware scan or explicit per-function tests
 before treating it as exhaustive production-spawn coverage.
 
-The review records 14 product/scale findings plus two verification findings.
+### U17 — Failure details expose raw provider diagnostics twice (Medium, installed reproduction)
+
+`src/adapter.ts:1262` builds the failure string from the complete stderr/stdout
+and an absolute log path. `desktop/src/components/workspace/work-tab.tsx:2716`
+renders operation detail directly; the action also populates composer feedback.
+The installed forced-failure screenshot shows the path, provider JSON envelope
+and exit detail both in the transcript and below the composer. The error is
+visible, but this is not a usable explanation of what the person should do next.
+Separate a concise, typed failure summary and recovery action from expandable
+technical diagnostics. Retain the original log; do not silently discard evidence.
+The fixture contains no private reasoning text, so this is not proof of a real
+provider privacy leak. It does demonstrate that raw output bypasses the normal
+readable-activity presentation on the failure path.
+
+The review records 15 product/scale findings plus two verification findings.
 Only the installed observations below should be called runtime reproductions.
+
+## Installed observations and limits
+
+[Build 416.29838.49352 evidence](evidence/conversation-repair-416.29838.49352-1788662305625/README.md)
+contains exact prompts, output, process checks and six inspected screenshots.
+U3 draft loss and U17 raw failure presentation were observed in that app.
+The conversation-repair acceptance check passed; it does not mark any of the
+findings in this document fixed. Other findings retain their stated source-only
+or verification-harness provenance. No paid provider or large-project load test
+was performed, and no exhaustive-bug-coverage claim is made.
 
 ## Recommended order, not implementation authorization
 
@@ -178,8 +207,8 @@ Only the installed observations below should be called runtime reproductions.
    tests before implementation. Execution/ratification/ship remain explicit.
 2. U3 + U4 + U6 + U11: project-owned drafts, stable scroll/focus, useful live
    worker selection and expandable composition. Test during active operations.
-3. U7 + U8 + U9 + U12 + U13: reliable reconnect, honest attachment receipts,
-   explicit supported inputs, structured answers and visible inspection failures.
+3. U7 + U8 + U9 + U12 + U13 + U17: reliable reconnect, honest attachment
+   receipts, explicit supported inputs, structured answers and useful failures.
 4. U5 + U10 + U14: coherent archives and measured long-project resource behavior.
 
 Each future checkpoint needs scoped tests with negative controls, installed

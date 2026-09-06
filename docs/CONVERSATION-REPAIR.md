@@ -4,7 +4,7 @@ Approved scope: the four defects reported on 2026-09-04, plus the associated
 missing Stop and unclear agent-role controls. Execute one checkpoint at a time;
 report validation and obtain approval before the next major checkpoint.
 
-## 1. Durable conversation continuity (committed; installation pending)
+## 1. Durable conversation continuity (installed, no-paid verified)
 
 Acceptance: the actual second provider input for the space-game follow-up contains
 the first user request and actual assistant reply, in order, exactly once; a new
@@ -38,7 +38,7 @@ that a model can never drift.
   checks, then commit. Install/observe if admission allows; a paid provider test
   requires separate approval. Report any gap instead of claiming qualification.
 
-## 2. Controllable, truthful live operations (implemented; installed proof pending)
+## 2. Controllable, truthful live operations (installed, no-paid verified)
 
 Depends on checkpoint 1's durable request/conversation identity.
 
@@ -63,7 +63,7 @@ Depends on checkpoint 1's durable request/conversation identity.
 - Acceptance: one visible activity row per operation, phase changes match Core,
   and Stop kills only the owned operation, with no later stage launched.
 
-## 3. Cohesive transcript and installed verification (implemented; installed proof pending)
+## 3. Cohesive transcript and installed verification (installed, no-paid verified)
 
 Depends on checkpoint 2; no new layout should hide broken lifecycle reporting.
 
@@ -301,3 +301,48 @@ remain recorded proposals requiring explicit review, replacement or a new thread
   sizes, including active operation/header/elapsed assertions. No installed
   processes were running at the replacement-install preflight. The correction
   is ready to commit and install; behavior on that replacement is not yet claimed.
+
+### Final installed qualification (2026-09-05)
+
+- `npm run ship` completed successfully and installed source `ab6c88806aacc`
+  as **416.29838.49352**, artifact
+  `0551057f8df67581bf706739d69b95da4fa64c1433685f311a5af62a10e9cb4f`.
+  All 4,474 managed files and Core/shell/Node identities matched. The installed
+  behavioral harness independently matched the executable hash and payload
+  source to the receipt; version text alone was not used as identity proof.
+- The strict installed harness exited 0. It observed the genuine partial reply
+  `This installed fixture re`, then the exact complete reply while the provider
+  was still alive. The operation's own elapsed element changed from 3s to 6s;
+  there was one transcript activity row and a neutral Conversation header.
+  A read-only status request completed in 34ms during this response. That single
+  observation is not a latency benchmark.
+- Two synchronous submissions created one durable message and one provider call.
+  The actual second provider input contained the exact first user/assistant
+  exchange once; a new conversation's input contained no prior turns and used
+  a different conversation identity. Root-confined file/folder context arrived
+  through the existing dispatcher; this does not qualify a native file picker.
+- Models remained inspectable while running. After a full UI reload, Stop
+  recovered, the exact response child was absent after acknowledgment, and no
+  later stage launched. The next unsent draft survived Stop. Planning handoff
+  displayed the actual task-planning phase; Stop ended that exact child too,
+  and no subsequent stage launched. The previously prepared spec remained until
+  the explicit new-conversation action archived its active pointer.
+- The forced failure appeared in its exact outcome row. Six build-numbered
+  1440x900 screenshots were visually inspected: partial/full/later answer,
+  stopped response, planning handoff and visible failure. Browser severe logs
+  were empty, and the recent-projects file was restored byte-for-byte.
+- [Evidence, commands and limitations](evidence/conversation-repair-416.29838.49352-1788662305625/README.md).
+  No paid providers, user-project history/spec edits, OS preference changes or
+  public release publication occurred. Local deterministic fixtures qualify
+  lifecycle and input delivery, not model quality or every real-provider format.
+- The findings-only follow-up now reproduces draft loss across Work/Agents tabs
+  and noisy duplicated raw failure diagnostics in the installed app. Those
+  remaining usability findings are explicit in the separate review, not hidden
+  by this repair's passing acceptance checks. Older-page replay, connection-only
+  activity replay deduplication and long-session behavior remain unqualified.
+- A second fresh fixture on the same installed bytes also exited 0, including
+  reload, single-row projection and response/planning Stop. Its elapsed element
+  again changed 3s to 6s; status inspection took 35ms. Draft loss across tabs
+  reproduced again. Both sets of six screenshots were visually inspected;
+  [repeat evidence](evidence/conversation-repair-416.29838.49352-1788662405989/README.md)
+  is retained separately. Two passes are not a reliability-rate estimate.

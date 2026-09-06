@@ -20,7 +20,17 @@ lookup. Updater signing and Windows publisher signing are separate checks.
 The retired in-app source/public update execution path remains disabled;
 publication of an installer does not restore that consumer authority.
 
-Latest installed maintenance build: **416.28392.32244**, source `b9858afcf378`,
+Latest installed maintenance build: **416.29838.49352**, source `ab6c88806aacc`,
+artifact `0551057f8df67581bf706739d69b95da4fa64c1433685f311a5af62a10e9cb4f`.
+All 4,474 managed files and Core/shell/Node identities matched. The strict
+no-paid installed check passed conversation history delivery, genuine partial
+answer display, one live row, reload-and-Stop recovery, owned response/planning
+process termination, duplicate-submit protection, attachments and visible failure.
+[Installed evidence and limits](evidence/conversation-repair-416.29838.49352-1788662305625/README.md)
+include an observed unsent-draft loss across tabs; this is not a claim that the
+broader usability audit is resolved or that live-model quality was qualified.
+
+Earlier maintenance build: **416.28392.32244**, source `b9858afcf378`,
 artifact `496daf6a156442ada5fb770dd5df05761354d4741532609c1e4bb4feb4c4daa3`.
 All 4,471 managed files and Core/shell/Node identities matched. The no-paid
 installed check visibly reached setup Done and exercised project previews and
@@ -38,33 +48,22 @@ to disclose, not assumptions that deterministic gates may trust.
 
 ## Current work and where to look
 
-- [Conversation reliability repair](CONVERSATION-REPAIR.md): the reported
-  space-game-to-garden drift was traced to missing prior turns in the drafter's
-  input. Checkpoint 1 is committed as `d9e1ed2`: durable, bounded conversation
-  history and no-paid provider-input regression coverage. The user approved
-  the remaining cancellation, phase-reporting and transcript-alignment repair
-  and installation. Source verification passed: Core 981 with 2 Windows/POSIX
-  skips, Desktop 381, Rust 64, viewport 48, and zero npm/RustSec advisories.
-  Source `b3293b8` was installed as **416.29771.32506**, with all 4,474 managed
-  files verified. Behavioral proof is still pending: a stronger installed check
-  caught buffered structured reply text. Its decoder/output-writer correction
-  passed Core 986/988 (2 platform skips) and Rust 64/64. Screenshot review also
-  caught a duplicate header progress label/clock, now removed with header-scoped
-  regressions. Desktop 381/381 and production viewport 48/48 passed;
-  replacement installation reached **416.29801.33924** with exact-byte checks.
-  Strict installed checks then caught native reload admission blocking Stop
-  and key-order-sensitive event merging. Those corrections passed Desktop
-  382/382, Rust 65/65 and a fresh Core 986/988 (2 platform skips);
-  final production viewport checks passed 48/48. Replacement installation and
-  its strict behavioral check are pending.
-  The older maintenance evidence above remains historical. Legacy rendering
-  remains for old trails;
-  the duplicate live footer has been removed.
-- [Real-world use review](REAL-WORLD-USE-AUDIT.md): 14 product/scale findings
+- [Conversation reliability repair](CONVERSATION-REPAIR.md): the approved
+  history, cancellation, phase-reporting and transcript-alignment checkpoints
+  are implemented and installed with no-paid behavioral proof. Final source
+  validation: Core **986 passed, 2 platform skips, 0 failed** (988 total),
+  Desktop **382/382**, Rust **65/65**, production viewport **48/48**,
+  zero npm/RustSec advisories. Installed source is `ab6c888`; the report retains
+  the failed attempts that exposed buffered replies, duplicate header progress,
+  reload admission and event-key-order defects before final qualification.
+  Legacy history rendering remains for old trails. Duplicate footer/header
+  progress and the obsolete route-local merge path have been removed.
+- [Real-world use review](REAL-WORLD-USE-AUDIT.md): 15 product/scale findings
   plus two verification gaps, not automatically marked fixed. Highest priority:
   active-spec answer-only routing prevents normal conversational revision, and
-  the conversation lacks a typed live-run/check context. Draft persistence and
-  scroll stability also need a separate approved usability phase.
+  the conversation lacks a typed live-run/check context. Draft loss across tabs
+  is now reproduced in the installed app. Draft persistence, scroll stability
+  and raw failure-detail presentation need a separate approved usability phase.
 - [Codebase reduction](CODEBASE-REDUCTION.md): generated-data cleanup,
   current-document consolidation and behavior-preserving implementation audit;
   all three implementation phases committed through `5c69d80`; approved
