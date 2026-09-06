@@ -20,13 +20,20 @@ lookup. Updater signing and Windows publisher signing are separate checks.
 The retired in-app source/public update execution path remains disabled;
 publication of an installer does not restore that consumer authority.
 
-Latest installed candidate: **416.29953.52423**, source `af1d0c2fdaaed`,
-artifact `5eb74c8d5fdd726fa755321035452568444f42a4f1fc7e4ff78b18fcaad64c89`.
-All 4,480 managed files and Core/shell/Node identities matched, but U3 is **not
-qualified**: reload during a response exposed a missing draft-action update-
-admission exception. Targeted source checks pass; a fresh full Core run and
-replacement installed proof remain required before qualification.
-[Diagnostic evidence](evidence/conversation-repair-416.29953.52423-1788670388798/README.md).
+Latest installed candidate: **416.29995.30514**, source `b33049c8d841c`,
+artifact `fd62d2919d83269c989f49eeb821c14a213f0703891d504abaf433624e51330c`.
+All 4,480 managed files and Core/shell/Node identities matched. The strict
+installed check now passes draft/attachment persistence across tabs, projects
+and reload, accepted-send reconciliation, next-draft saving during a live
+response, reload-and-Stop and New conversation separation. Final full Core
+validation passes: **999 passed, 2 platform skips, 0 failed/cancelled** (1,001
+total). Desktop **391/391**, Rust **65/65**, viewport **52/52**. **U3 is closed.**
+[Installed proof and limits](evidence/conversation-repair-416.29995.30514-1788673483480/README.md).
+Earlier first-message timing failures during concurrent full-suite validation
+remain recorded; no timing threshold was relaxed.
+[Timing evidence](evidence/conversation-repair-416.29995.30514-1788672737304/README.md).
+The preceding `af1d0c2` candidate's reload/admission failure remains recorded in
+the [earlier diagnostic evidence](evidence/conversation-repair-416.29953.52423-1788670388798/README.md).
 
 Earlier installed maintenance build: **416.29883.15117**, source `cb9f1f9e8c7e`,
 artifact `f524e5f29824a2dd109b5b52ad2b80b856be4d0d2ff502152fa7a6826ef2dbc8`.
@@ -63,9 +70,9 @@ to disclose, not assumptions that deterministic gates may trust.
 
 ## Current work and where to look
 
-- The 17-finding real-world-use remediation is active. U10 is installed and
-  closed; U3's project/conversation-owned unsent-draft replacement is being
-  corrected after installed testing and is not yet qualified. U1 still needs
+- The 17-finding real-world-use remediation is active. **U3 and U10 are installed
+  and closed; 15 remain open.** Project/conversation-owned unsent drafts passed
+  installed testing and final full Core validation. U1 still needs
   the spec-ratification/tentative-planning product-rule decision; independent
   findings continue. [Per-finding evidence and open scope](REAL-WORLD-USE-AUDIT.md).
 
@@ -80,15 +87,16 @@ to disclose, not assumptions that deterministic gates may trust.
   Legacy history rendering remains for old trails. Duplicate footer/header
   progress and the obsolete route-local merge path have been removed.
 - [Real-world use review](REAL-WORLD-USE-AUDIT.md): 15 product/scale findings
-  plus two verification gaps. The user authorized fixing all 17; **U10 is fixed
-  and installed, 16 remain open**. U10 passed 18 focused tests, Core 990 passed/2
-  platform skips, Desktop 382, Rust 65, viewport 48 and 3 installed reader checks.
-  U3 draft persistence is next. U1 still awaits the documented planning/ratification
-  contract decision. Highest priority:
+  plus two verification gaps. The user authorized fixing all 17; **U3 and U10
+  are fixed and installed, 15 remain open**. U10's historical qualification
+  passed 18 focused tests, Core 990 passed/2 platform skips, Desktop 382, Rust
+  65, viewport 48 and 3 installed reader checks. U3's latest counts and installed
+  draft proof are above. U1 still awaits the documented planning/ratification
+  contract decision. Remaining priorities:
   active-spec answer-only routing prevents normal conversational revision, and
-  the conversation lacks a typed live-run/check context. Draft loss across tabs
-  is now reproduced in the installed app. Draft persistence, scroll stability
-  and raw failure-detail presentation remain in the authorized remediation goal.
+  the conversation lacks a typed live-run/check context. The earlier installed
+  draft-loss reproduction is now fixed; scroll stability and raw failure-detail
+  presentation remain in the authorized remediation goal.
 - [Codebase reduction](CODEBASE-REDUCTION.md): generated-data cleanup,
   current-document consolidation and behavior-preserving implementation audit;
   all three implementation phases committed through `5c69d80`; approved

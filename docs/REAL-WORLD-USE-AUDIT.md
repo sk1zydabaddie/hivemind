@@ -10,8 +10,8 @@ installed reproductions; runtime observations are recorded separately.
 
 The user has now requested fixes for all 17 findings. The historical findings
 below retain their original evidence; a finding closes only after its own
-acceptance evidence is recorded here. **1 of 17 is closed: U10.** The other 16
-remain open; the next independent checkpoint is U3's project-owned draft state.
+acceptance evidence is recorded here. **2 of 17 are closed: U3 and U10.** The
+other 15 remain open and remain part of the authorized goal.
 
 - **U10 closed:** updated only the existing `src/project-files.ts` reader and
   `test/project-files.test.ts`, with this ledger and STATE. Acceptance: actual
@@ -22,9 +22,12 @@ remain open; the next independent checkpoint is U3's project-owned draft state.
 - **U1 decision pending:** Overview's spec-ratification-before-planning rule
   conflicts with current Core's tentative-proposal-before-ratification rule.
   Neither rule is silently changed while that decision is unresolved.
-- U2–U9 and U11–U17 remain open; independent fixes continue under the full goal.
+- **U3 closed:** project/conversation-owned draft persistence is installed and
+  qualified below; saved text/attachments survive navigation and reload without
+  resending accepted content or discarding a next draft during Stop.
+- U2, U4–U9 and U11–U17 remain open; independent fixes continue under the full goal.
 
-### U3 in progress — project/conversation-owned unsent draft
+### U3 fixed and installed — 416.29995.30514
 
 The current change replaces WorkTab-local text, attachment and submission
 ownership with an App-owned advisory session and Core `draft.inspect` / `draft.save`.
@@ -92,9 +95,38 @@ reported **1,001 total, 998 passed, 1 failed, 2 skipped**, 854.811 seconds: the
 remaining failure expected the submit action text inside WorkTab instead of its
 new project-bound owner. That test now follows the owner and retains the same
 no-approval/no-manager-route assertions; its targeted rerun passes **1/1**.
-The corrected candidate is being committed for installation, not qualification.
-A fresh full Core pass and replacement tab/project/reload proof remain required.
-**U3 remains open**. No paid calls.
+The corrected candidate was committed as `b33049c` and installed as
+**416.29995.30514** with all 4,480 managed files verified. Its first installed
+attempts, concurrent with the fresh full Core suite, failed the unchanged
+four-second initial-message deadline. A failure-only diagnostic observed the
+message at 6,477 ms from submission-helper start and a provider then started;
+the test retained its failure. This measures delayed admission, not a permanently
+stuck send, and does not establish the cause of the delay. [Timing evidence](evidence/conversation-repair-416.29995.30514-1788672737304/README.md).
+A subsequent quiet run passed the draft/Stop/reload checks but exposed an
+out-of-band harness sequencing error after its direct Core conversation change.
+The test now waits for the actual old composer to unmount before typing into
+the replacement. The next strict installed run **passes**, exit 0: exact text
+and attachment chips survive tabs, both projects and reload; a removed chip
+stays removed; accepted text stays cleared; the next draft saves while the
+provider is alive and survives Stop; actual UI New conversation starts empty.
+No provider is invoked by navigation in either project. Genuine partial output,
+an advancing clock, duplicate protection, history, response/planning Stop and
+visible failure also pass. Seven screenshots were inspected.
+[Installed qualification and limitations](evidence/conversation-repair-416.29995.30514-1788673483480/README.md).
+
+The full Core run concurrent with the timing attempts reported **1,001 total,
+998 passed, 1 failed, 2 skipped**, 680.504 seconds. The corrected routing
+assertion passed; the failure was the dependent-task MCP fixture's daemon
+readiness deadline. That test passes unchanged in isolation (**1/1**, 11.910
+seconds overall). The fresh full Core run without concurrent installed
+validation **passes**, exit 0: **1,001 total, 999 passed, 2 platform skips,
+0 failed/cancelled**, **529.418 seconds**. No readiness deadline, message
+deadline or later acceptance assertion was relaxed. Final syntax and
+`git diff --check` pass; the cleanup scan reports no action without a consumer
+and no declared event without a producer. The new paths all have production
+consumers; existing test-only export leads are unrelated to U3.
+**U3 is closed** with source `b33049c` and the installed proof above.
+No paid calls; no public release publication.
 
 ### U10 fixed and installed — 416.29883.15117
 

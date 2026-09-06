@@ -1,0 +1,80 @@
+{
+  "installedVersion": "416.29995.30514",
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "viewport": {
+    "devicePixelRatio": 1,
+    "height": 900,
+    "width": 1440
+  },
+  "paidProviderCalls": 0,
+  "liveConversation": {},
+  "duplicateSubmit": {},
+  "projectContext": {},
+  "conversationHistory": {},
+  "attachmentContext": {},
+  "newConversation": {},
+  "visibleFailure": {},
+  "stopResponse": {},
+  "stopPlanning": {},
+  "usabilityObservations": {},
+  "browserSevereLogs": [],
+  "recentProjects": {
+    "beforeSha256": "9f6c478f93cb98f488fc5e3a1f113abc746e4da228b62ef405a15970e0639d06",
+    "afterSha256": "9f6c478f93cb98f488fc5e3a1f113abc746e4da228b62ef405a15970e0639d06",
+    "restoredExactly": true
+  },
+  "installedIdentity": {
+    "artifact_id": "fd62d2919d83269c989f49eeb821c14a213f0703891d504abaf433624e51330c",
+    "installed_executable_sha256": "d8c698d8cfbfc6c024b2e0645895b34327bfb0f6638ebed43ccf4c377183b65f",
+    "kind": "hivemind-local-install-receipt",
+    "schema_version": 1,
+    "source_commit": "b33049c8d841c08723d8476860ff58aa5ad4a737",
+    "verified_at_ms": 1788672496616,
+    "version": "416.29995.30514",
+    "installedExecutableSha256": "d8c698d8cfbfc6c024b2e0645895b34327bfb0f6638ebed43ccf4c377183b65f",
+    "installedPayloadSource": "b33049c8d841c08723d8476860ff58aa5ad4a737"
+  },
+  "nativeDriver": "C:\\Users\\ethan\\.cache\\selenium\\msedgedriver\\win64\\152.0.4191.66\\msedgedriver.exe",
+  "outerWindow": {
+    "height": 900,
+    "width": 1440,
+    "x": 74,
+    "y": 67
+  },
+  "failure": {
+    "message": "Error: did not observe durable conversation.message_recorded",
+    "composer": {
+      "composers": 1,
+      "form": true,
+      "readOnly": false,
+      "sendAriaDisabled": null,
+      "sendDisabled": null,
+      "value": "Describe what this project does, in one sentence."
+    },
+    "surfaceText": "Hivemind\nWork\nAgents\nProject\nLive\nhivemind-phase6-remediation-NBfBze\nCtrl+K\nConversation\nChecks\nNew conversation\nInterruptions\nPlanner is preparing your response\n4s elapsed\nModels\nSaving draft…\nAsk anything, or describe a change. A question is answered here; a change becomes a plan you approve before anything runs.\nCommands\n\nJump to a section or open a project",
+    "screenshot": "failed-attempt-416.29995.30514-1440x900.png",
+    "operation": null,
+    "calls": [],
+    "durableEvents": [],
+    "nativeTrail": {
+      "events": [],
+      "next_before": null
+    },
+    "savedDrafts": [
+      {
+        "version": 1,
+        "conversation_id": "legacy",
+        "revision": "4d178d21-4986-4994-8048-20025cfe80d0",
+        "draft": {
+          "content_id": "281314e8-808a-4de3-a0d7-1f3af0d5c533",
+          "text": "Describe what this project does, in one sentence.",
+          "attachments": [],
+          "submission": {
+            "content_id": "281314e8-808a-4de3-a0d7-1f3af0d5c533",
+            "request_id": "a37ff131-82e0-470f-930d-8454de19c39e"
+          }
+        }
+      }
+    ]
+  }
+}

@@ -104,8 +104,20 @@ try {
   const question = "Describe what this project does, in one sentence.";
   await typeComposer(question);
   const callsBefore = (await readCalls()).length;
+  const firstSubmitAt = Date.now();
   await submitOnce();
-  await waitForEvent("conversation.message_recorded", question, 4_000);
+  try {
+    await waitForEvent("conversation.message_recorded", question, 4_000);
+  } catch (error) {
+    // Preserve the strict failure. A later observation only distinguishes slow
+    // admission under load from a stuck dispatch; it cannot turn this into PASS.
+    evidence.firstAdmissionDeadlineFailure = { elapsedMs: Date.now() - firstSubmitAt };
+    try {
+      await waitForEvent("conversation.message_recorded", question, 15_000);
+      evidence.firstAdmissionDeadlineFailure.observedAfterMs = Date.now() - firstSubmitAt;
+    } catch { evidence.firstAdmissionDeadlineFailure.observedAfterMs = null; }
+    throw error;
+  }
   const statusProbe = timedAction(daemon.url, { type: "status.inspect", payload: {} });
   const progress = await driver.wait(
     until.elementLocated(By.css('[data-testid="conversation-progress"]')),
@@ -284,6 +296,7 @@ try {
   evidence.stopPlanning = { screenshot: planningShot, status: buildResult.value.status, planningChildPid, childAbsentAfterStop: true, adapterCalls: 2 };
   const beforeBoundary = await postAction(daemon.url, { type: "status.inspect", payload: {} });
   assert.equal(beforeBoundary.ok, true, beforeBoundary.reason);
+  const previousComposer = await driver.findElement(By.id("work-composer"));
   const boundary = await postAction(daemon.url, { type: "conversation.new", payload: {} });
   assert.equal(boundary.ok, true, boundary.reason);
   const afterBoundary = await postAction(daemon.url, { type: "status.inspect", payload: {} });
@@ -293,6 +306,10 @@ try {
     activeSpecAfter: afterBoundary.value.active_spec_id,
     archivedPointers: (await readdir(path.join(project, ".hivemind", "spec", "archive"))).length
   };
+  // This fixture changed Core outside the UI. Wait for the old conversation's
+  // actual element to unmount before typing into its replacement, not merely
+  // for an already-enabled textarea belonging to the old conversation.
+  await driver.wait(until.stalenessOf(previousComposer), 10000, "the old conversation composer was not replaced");
 
   const failurePrompt = "FAIL_VISIBLE";
   await typeComposer(failurePrompt);

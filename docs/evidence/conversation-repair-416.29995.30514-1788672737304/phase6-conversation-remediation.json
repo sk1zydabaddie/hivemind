@@ -1,0 +1,204 @@
+{
+  "installedVersion": "416.29995.30514",
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "viewport": {
+    "devicePixelRatio": 1,
+    "height": 900,
+    "width": 1440
+  },
+  "paidProviderCalls": 0,
+  "liveConversation": {},
+  "duplicateSubmit": {},
+  "projectContext": {},
+  "conversationHistory": {},
+  "attachmentContext": {},
+  "newConversation": {},
+  "visibleFailure": {},
+  "stopResponse": {},
+  "stopPlanning": {},
+  "usabilityObservations": {},
+  "browserSevereLogs": [],
+  "recentProjects": {
+    "beforeSha256": "9f6c478f93cb98f488fc5e3a1f113abc746e4da228b62ef405a15970e0639d06",
+    "afterSha256": "9f6c478f93cb98f488fc5e3a1f113abc746e4da228b62ef405a15970e0639d06",
+    "restoredExactly": true
+  },
+  "installedIdentity": {
+    "artifact_id": "fd62d2919d83269c989f49eeb821c14a213f0703891d504abaf433624e51330c",
+    "installed_executable_sha256": "d8c698d8cfbfc6c024b2e0645895b34327bfb0f6638ebed43ccf4c377183b65f",
+    "kind": "hivemind-local-install-receipt",
+    "schema_version": 1,
+    "source_commit": "b33049c8d841c08723d8476860ff58aa5ad4a737",
+    "verified_at_ms": 1788672496616,
+    "version": "416.29995.30514",
+    "installedExecutableSha256": "d8c698d8cfbfc6c024b2e0645895b34327bfb0f6638ebed43ccf4c377183b65f",
+    "installedPayloadSource": "b33049c8d841c08723d8476860ff58aa5ad4a737"
+  },
+  "nativeDriver": "C:\\Users\\ethan\\.cache\\selenium\\msedgedriver\\win64\\152.0.4191.66\\msedgedriver.exe",
+  "outerWindow": {
+    "height": 900,
+    "width": 1440,
+    "x": 178,
+    "y": 171
+  },
+  "firstAdmissionDeadlineFailure": {
+    "elapsedMs": 4368,
+    "observedAfterMs": 6477
+  },
+  "failure": {
+    "message": "Error: did not observe durable conversation.message_recorded",
+    "composer": {
+      "composers": 1,
+      "form": true,
+      "readOnly": false,
+      "sendAriaDisabled": null,
+      "sendDisabled": null,
+      "value": "Describe what this project does, in one sentence."
+    },
+    "surfaceText": "Hivemind\nWork\nAgents\nProject\nLive\nhivemind-phase6-remediation-FXhHzQ\nCtrl+K\nConversation\nChecks\nNew conversation\nInterruptions\n\nDescribe what this project does, in one sentence.\n\nPlanner is preparing your response\n0s elapsed\nModels\nDraft saved in this project\nAsk anything, or describe a change. A question is answered here; a change becomes a plan you approve before anything runs.\nCommands\n\nJump to a section or open a project",
+    "screenshot": "failed-attempt-416.29995.30514-1440x900.png",
+    "operation": {
+      "request_id": "8c741dd1-97f9-42d2-89f6-6f0603ba2092",
+      "started_at": "2026-09-06T05:32:39.448Z",
+      "phase": "reading"
+    },
+    "calls": [
+      {
+        "at": "2026-09-06T05:32:40.090Z",
+        "pid": 98684,
+        "kind": "draft"
+      }
+    ],
+    "durableEvents": [
+      {
+        "ts": "2026-09-06T05:32:39.448Z",
+        "type": "conversation.operation_started",
+        "task_id": null,
+        "data": {
+          "request_id": "8c741dd1-97f9-42d2-89f6-6f0603ba2092",
+          "phase": "reading",
+          "tool": "planner",
+          "process_identity": {
+            "pid": 62356,
+            "process_instance_id": "8c741dd1-97f9-42d2-89f6-6f0603ba2092"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:32:39.735Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "message_id": "M-66c9a5be-9044-4105-a732-5c1d8a06ef4b",
+          "conversation_id": "legacy",
+          "request_id": "8c741dd1-97f9-42d2-89f6-6f0603ba2092",
+          "text": "Describe what this project does, in one sentence.",
+          "attachments": []
+        }
+      },
+      {
+        "ts": "2026-09-06T05:32:39.757Z",
+        "type": "spec.draft_started",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "tool": "planner",
+          "message_id": "M-66c9a5be-9044-4105-a732-5c1d8a06ef4b",
+          "process_identity": {
+            "pid": 62356,
+            "process_instance_id": "M-66c9a5be-9044-4105-a732-5c1d8a06ef4b"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:32:39.842Z",
+        "type": "conversation.process_started",
+        "task_id": null,
+        "data": {
+          "request_id": "8c741dd1-97f9-42d2-89f6-6f0603ba2092",
+          "process_id": "87c5d0e7-ed46-4915-9237-6c0032dbf73f",
+          "process_identity": {
+            "pid": 98684,
+            "process_instance_id": "87c5d0e7-ed46-4915-9237-6c0032dbf73f",
+            "process_group_id": null
+          }
+        }
+      }
+    ],
+    "nativeTrail": {
+      "events": [
+        {
+          "data": {
+            "process_id": "87c5d0e7-ed46-4915-9237-6c0032dbf73f",
+            "process_identity": {
+              "pid": 98684,
+              "process_group_id": null,
+              "process_instance_id": "87c5d0e7-ed46-4915-9237-6c0032dbf73f"
+            },
+            "request_id": "8c741dd1-97f9-42d2-89f6-6f0603ba2092"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:32:39.842Z",
+          "type": "conversation.process_started"
+        },
+        {
+          "data": {
+            "message_id": "M-66c9a5be-9044-4105-a732-5c1d8a06ef4b",
+            "process_identity": {
+              "pid": 62356,
+              "process_instance_id": "M-66c9a5be-9044-4105-a732-5c1d8a06ef4b"
+            },
+            "spec_id": "S-001",
+            "tool": "planner"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:32:39.757Z",
+          "type": "spec.draft_started"
+        },
+        {
+          "data": {
+            "attachments": [],
+            "conversation_id": "legacy",
+            "message_id": "M-66c9a5be-9044-4105-a732-5c1d8a06ef4b",
+            "request_id": "8c741dd1-97f9-42d2-89f6-6f0603ba2092",
+            "text": "Describe what this project does, in one sentence."
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:32:39.735Z",
+          "type": "conversation.message_recorded"
+        },
+        {
+          "data": {
+            "phase": "reading",
+            "process_identity": {
+              "pid": 62356,
+              "process_instance_id": "8c741dd1-97f9-42d2-89f6-6f0603ba2092"
+            },
+            "request_id": "8c741dd1-97f9-42d2-89f6-6f0603ba2092",
+            "tool": "planner"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:32:39.448Z",
+          "type": "conversation.operation_started"
+        }
+      ],
+      "next_before": null
+    },
+    "savedDrafts": [
+      {
+        "version": 1,
+        "conversation_id": "legacy",
+        "revision": "ce4e68cd-7221-48e6-92b1-64a688a6c3f1",
+        "draft": {
+          "content_id": "29ad8f35-0e01-49d5-bd0c-ad41b9d660aa",
+          "text": "Describe what this project does, in one sentence.",
+          "attachments": [],
+          "submission": {
+            "content_id": "29ad8f35-0e01-49d5-bd0c-ad41b9d660aa",
+            "request_id": "8c741dd1-97f9-42d2-89f6-6f0603ba2092"
+          }
+        }
+      }
+    ]
+  }
+}

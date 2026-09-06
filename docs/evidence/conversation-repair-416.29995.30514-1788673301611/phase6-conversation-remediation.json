@@ -1,0 +1,996 @@
+{
+  "installedVersion": "416.29995.30514",
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "viewport": {
+    "devicePixelRatio": 1,
+    "height": 900,
+    "width": 1440
+  },
+  "paidProviderCalls": 0,
+  "liveConversation": {
+    "build": "416.29995.30514",
+    "screenshot": "phase6-live-conversation-416.29995.30514-1440x900.png",
+    "partialScreenshot": "partial-answer-416.29995.30514-1440x900.png",
+    "typed": "Describe what this project does, in one sentence.",
+    "reply": "This installed fixture reports a deterministic TypeScript project status.",
+    "durableMessageVisibleWhileRunning": true,
+    "scopedActivityWhileRunning": "Planner is preparing your response\n2s elapsed\nThis installed fixture reports a deterministic TypeScript project status.",
+    "headerWhileRunning": "Conversation",
+    "scopedActivityLater": "Planner is preparing your response\n5s elapsed\nThis installed fixture reports a deterministic TypeScript project status.",
+    "scopedClockWhileRunning": "2s elapsed",
+    "scopedClockLater": "5s elapsed",
+    "scopedAnswerWhileRunning": "This installed fixture reports a deterministic TypeScript project status.",
+    "scopedPartialAnswerWhileRunning": "This installed fixture re",
+    "providerStillAliveWhenAnswerSampled": true,
+    "readOnlyStatusSettledWhileRunning": true,
+    "readOnlyStatusMs": 26,
+    "adapterCalls": 1
+  },
+  "duplicateSubmit": {
+    "synchronousSubmits": 2,
+    "adapterCalls": 1,
+    "durableMessages": 1
+  },
+  "projectContext": {
+    "readmeContentIncluded": true,
+    "sourceContentIncluded": true,
+    "untrackedNameIncluded": true,
+    "untrackedContentIncluded": false
+  },
+  "conversationHistory": {
+    "followup": {
+      "conversation_id": "legacy",
+      "turns": [
+        {
+          "user": "Describe what this project does, in one sentence.",
+          "truncated": false,
+          "assistant": "This installed fixture reports a deterministic TypeScript project status.",
+          "assistant_kind": "reply"
+        }
+      ],
+      "omitted_turns": 0,
+      "max_turns": 24,
+      "max_bytes": 49152
+    }
+  },
+  "attachmentContext": {
+    "structuredAttachments": [
+      {
+        "kind": "folder",
+        "path": "notes"
+      },
+      {
+        "kind": "file",
+        "path": "UNTRACKED-CURRENT.md"
+      }
+    ],
+    "childNameIncluded": true,
+    "childContentIncluded": true,
+    "untrackedFileContentIncluded": true,
+    "markerTextAppendedToPrompt": false
+  },
+  "newConversation": {
+    "activeSpecBefore": "S-001",
+    "activeSpecAfter": null,
+    "archivedPointers": 1
+  },
+  "visibleFailure": {},
+  "stopResponse": {
+    "screenshot": "stopped-response-416.29995.30514-1440x900.png",
+    "retainedDraft": "This is my next unsent message.",
+    "modelMenuOpenedWhileRunning": true,
+    "stopRecoveredAfterReload": true,
+    "responseChildPid": 7880,
+    "childAbsentAfterStop": true,
+    "adapterCalls": 1
+  },
+  "stopPlanning": {
+    "screenshot": "planning-handoff-416.29995.30514-1440x900.png",
+    "status": "stopped",
+    "planningChildPid": 29144,
+    "childAbsentAfterStop": true,
+    "adapterCalls": 2
+  },
+  "usabilityObservations": {},
+  "browserSevereLogs": [],
+  "recentProjects": {
+    "beforeSha256": "9f6c478f93cb98f488fc5e3a1f113abc746e4da228b62ef405a15970e0639d06",
+    "afterSha256": "9f6c478f93cb98f488fc5e3a1f113abc746e4da228b62ef405a15970e0639d06",
+    "restoredExactly": true
+  },
+  "installedIdentity": {
+    "artifact_id": "fd62d2919d83269c989f49eeb821c14a213f0703891d504abaf433624e51330c",
+    "installed_executable_sha256": "d8c698d8cfbfc6c024b2e0645895b34327bfb0f6638ebed43ccf4c377183b65f",
+    "kind": "hivemind-local-install-receipt",
+    "schema_version": 1,
+    "source_commit": "b33049c8d841c08723d8476860ff58aa5ad4a737",
+    "verified_at_ms": 1788672496616,
+    "version": "416.29995.30514",
+    "installedExecutableSha256": "d8c698d8cfbfc6c024b2e0645895b34327bfb0f6638ebed43ccf4c377183b65f",
+    "installedPayloadSource": "b33049c8d841c08723d8476860ff58aa5ad4a737"
+  },
+  "nativeDriver": "C:\\Users\\ethan\\.cache\\selenium\\msedgedriver\\win64\\152.0.4191.66\\msedgedriver.exe",
+  "outerWindow": {
+    "height": 900,
+    "width": 1440,
+    "x": 126,
+    "y": 119
+  },
+  "failure": {
+    "message": "TimeoutError: Send did not become available after the previous response\nWait timed out after 15103ms",
+    "composer": {
+      "composers": 1,
+      "form": true,
+      "readOnly": false,
+      "sendAriaDisabled": "true",
+      "sendDisabled": false,
+      "value": ""
+    },
+    "surfaceText": "Hivemind\nWork\nAgents\nProject\nLive\nhivemind-phase6-remediation-dsq9VO\nCtrl+K\nNothing running\nChecks\nNew conversation\nInterruptions\nModels\nDraft saved in this project\nAsk anything, or describe a change. A question is answered here; a change becomes a plan you approve before anything runs.\nCommands\n\nJump to a section or open a project",
+    "screenshot": "failed-attempt-416.29995.30514-1440x900.png",
+    "operation": null,
+    "calls": [
+      {
+        "at": "2026-09-06T05:41:53.028Z",
+        "pid": 5688,
+        "kind": "draft"
+      },
+      {
+        "at": "2026-09-06T05:42:07.012Z",
+        "pid": 85756,
+        "kind": "draft"
+      },
+      {
+        "at": "2026-09-06T05:42:14.744Z",
+        "pid": 7880,
+        "kind": "draft"
+      },
+      {
+        "at": "2026-09-06T05:42:22.523Z",
+        "pid": 115424,
+        "kind": "draft"
+      },
+      {
+        "at": "2026-09-06T05:42:27.131Z",
+        "pid": 5740,
+        "kind": "draft"
+      },
+      {
+        "at": "2026-09-06T05:42:31.782Z",
+        "pid": 29144,
+        "kind": "plan"
+      }
+    ],
+    "durableEvents": [
+      {
+        "ts": "2026-09-06T05:41:52.795Z",
+        "type": "conversation.operation_started",
+        "task_id": null,
+        "data": {
+          "request_id": "ef6c61ca-42b5-412d-9688-2665d0432cc9",
+          "phase": "reading",
+          "tool": "planner",
+          "process_identity": {
+            "pid": 47496,
+            "process_instance_id": "ef6c61ca-42b5-412d-9688-2665d0432cc9"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:41:52.890Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "message_id": "M-dbf58368-cf2f-4018-bba9-0b2648a32237",
+          "conversation_id": "legacy",
+          "request_id": "ef6c61ca-42b5-412d-9688-2665d0432cc9",
+          "text": "Describe what this project does, in one sentence.",
+          "attachments": []
+        }
+      },
+      {
+        "ts": "2026-09-06T05:41:52.904Z",
+        "type": "spec.draft_started",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "tool": "planner",
+          "message_id": "M-dbf58368-cf2f-4018-bba9-0b2648a32237",
+          "process_identity": {
+            "pid": 47496,
+            "process_instance_id": "M-dbf58368-cf2f-4018-bba9-0b2648a32237"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:41:52.949Z",
+        "type": "conversation.process_started",
+        "task_id": null,
+        "data": {
+          "request_id": "ef6c61ca-42b5-412d-9688-2665d0432cc9",
+          "process_id": "db87ea93-8408-4420-8bdc-44e9cbff59b5",
+          "process_identity": {
+            "pid": 5688,
+            "process_instance_id": "db87ea93-8408-4420-8bdc-44e9cbff59b5",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:01.958Z",
+        "type": "conversation.process_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "ef6c61ca-42b5-412d-9688-2665d0432cc9",
+          "process_id": "db87ea93-8408-4420-8bdc-44e9cbff59b5",
+          "process_identity": {
+            "pid": 5688,
+            "process_instance_id": "db87ea93-8408-4420-8bdc-44e9cbff59b5",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:01.974Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "version": 1,
+          "message_id": "M-dbf58368-cf2f-4018-bba9-0b2648a32237",
+          "text": "This installed fixture reports a deterministic TypeScript project status.",
+          "tool": "planner",
+          "advisory_only": true,
+          "authorization_effect": "none"
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:01.987Z",
+        "type": "spec.draft_failed",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "outcome": "answered",
+          "reason": "the message was answered rather than drafted from; it did not ask for anything to be built"
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:02.011Z",
+        "type": "conversation.operation_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "ef6c61ca-42b5-412d-9688-2665d0432cc9",
+          "status": "completed"
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:06.789Z",
+        "type": "conversation.operation_started",
+        "task_id": null,
+        "data": {
+          "request_id": "f9db437b-91ed-4791-8a1f-ab5b6c08ff0d",
+          "phase": "reading",
+          "tool": "planner",
+          "process_identity": {
+            "pid": 47496,
+            "process_instance_id": "f9db437b-91ed-4791-8a1f-ab5b6c08ff0d"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:06.888Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "message_id": "M-3de52610-1285-4657-a5bf-a7b23146561c",
+          "conversation_id": "legacy",
+          "request_id": "f9db437b-91ed-4791-8a1f-ab5b6c08ff0d",
+          "text": "Give me the fixture name.",
+          "attachments": []
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:06.901Z",
+        "type": "spec.draft_started",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "tool": "planner",
+          "message_id": "M-3de52610-1285-4657-a5bf-a7b23146561c",
+          "process_identity": {
+            "pid": 47496,
+            "process_instance_id": "M-3de52610-1285-4657-a5bf-a7b23146561c"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:06.944Z",
+        "type": "conversation.process_started",
+        "task_id": null,
+        "data": {
+          "request_id": "f9db437b-91ed-4791-8a1f-ab5b6c08ff0d",
+          "process_id": "5254e5c4-166e-44e8-8eaf-268c0573ca03",
+          "process_identity": {
+            "pid": 85756,
+            "process_instance_id": "5254e5c4-166e-44e8-8eaf-268c0573ca03",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:11.350Z",
+        "type": "conversation.process_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "f9db437b-91ed-4791-8a1f-ab5b6c08ff0d",
+          "process_id": "5254e5c4-166e-44e8-8eaf-268c0573ca03",
+          "process_identity": {
+            "pid": 85756,
+            "process_instance_id": "5254e5c4-166e-44e8-8eaf-268c0573ca03",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:11.366Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "version": 1,
+          "message_id": "M-3de52610-1285-4657-a5bf-a7b23146561c",
+          "text": "phase-six-conversation-fixture",
+          "tool": "planner",
+          "advisory_only": true,
+          "authorization_effect": "none"
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:11.378Z",
+        "type": "spec.draft_failed",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "outcome": "answered",
+          "reason": "the message was answered rather than drafted from; it did not ask for anything to be built"
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:11.399Z",
+        "type": "conversation.operation_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "f9db437b-91ed-4791-8a1f-ab5b6c08ff0d",
+          "status": "completed"
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:14.436Z",
+        "type": "conversation.operation_started",
+        "task_id": null,
+        "data": {
+          "request_id": "454c8d9b-258b-4733-b6bb-6ba64418dbd8",
+          "phase": "reading",
+          "tool": "planner",
+          "process_identity": {
+            "pid": 47496,
+            "process_instance_id": "454c8d9b-258b-4733-b6bb-6ba64418dbd8"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:14.603Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "message_id": "M-09df6a49-c28f-4361-a40d-762f84577850",
+          "conversation_id": "legacy",
+          "request_id": "454c8d9b-258b-4733-b6bb-6ba64418dbd8",
+          "text": "STOP_RESPONSE",
+          "attachments": []
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:14.618Z",
+        "type": "spec.draft_started",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "tool": "planner",
+          "message_id": "M-09df6a49-c28f-4361-a40d-762f84577850",
+          "process_identity": {
+            "pid": 47496,
+            "process_instance_id": "M-09df6a49-c28f-4361-a40d-762f84577850"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:14.663Z",
+        "type": "conversation.process_started",
+        "task_id": null,
+        "data": {
+          "request_id": "454c8d9b-258b-4733-b6bb-6ba64418dbd8",
+          "process_id": "0d191dec-4055-4cd7-8de4-bafe61794929",
+          "process_identity": {
+            "pid": 7880,
+            "process_instance_id": "0d191dec-4055-4cd7-8de4-bafe61794929",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:21.600Z",
+        "type": "conversation.cancel_requested",
+        "task_id": null,
+        "data": {
+          "request_id": "454c8d9b-258b-4733-b6bb-6ba64418dbd8",
+          "requested_by": "human"
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:21.898Z",
+        "type": "conversation.process_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "454c8d9b-258b-4733-b6bb-6ba64418dbd8",
+          "process_id": "0d191dec-4055-4cd7-8de4-bafe61794929",
+          "process_identity": {
+            "pid": 7880,
+            "process_instance_id": "0d191dec-4055-4cd7-8de4-bafe61794929",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:21.913Z",
+        "type": "spec.draft_failed",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "message": null,
+          "detail": "spec drafter \"planner\" exited 130; output log: C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase6-remediation-dsq9VO\\.hivemind\\log\\runs\\2026-09-06T05-42-14-633Z-drafting-M-09df6a49-c28f-4361-a40d-762f84577850-1-39788e2e-eef6-4c74-839a-6470dd5f69cb.adapter.log: {\"type\":\"item.completed\",\"item\":{\"type\":\"reasoning\"}}\n\nadapter cancelled by durable request"
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:21.930Z",
+        "type": "conversation.operation_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "454c8d9b-258b-4733-b6bb-6ba64418dbd8",
+          "status": "stopped"
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:22.253Z",
+        "type": "conversation.operation_started",
+        "task_id": null,
+        "data": {
+          "request_id": "32efcf16-a473-40c7-9cac-6bf10bb772d5",
+          "phase": "reading",
+          "tool": "planner",
+          "process_identity": {
+            "pid": 47496,
+            "process_instance_id": "32efcf16-a473-40c7-9cac-6bf10bb772d5"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:22.340Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "message_id": "M-42c7f92b-4434-4e7e-b14f-9c5d980126e4",
+          "conversation_id": "legacy",
+          "request_id": "32efcf16-a473-40c7-9cac-6bf10bb772d5",
+          "text": "Summarize the attached notes folder.",
+          "attachments": [
+            {
+              "kind": "folder",
+              "path": "notes"
+            },
+            {
+              "kind": "file",
+              "path": "UNTRACKED-CURRENT.md"
+            }
+          ]
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:22.353Z",
+        "type": "spec.draft_started",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "tool": "planner",
+          "message_id": "M-42c7f92b-4434-4e7e-b14f-9c5d980126e4",
+          "process_identity": {
+            "pid": 47496,
+            "process_instance_id": "M-42c7f92b-4434-4e7e-b14f-9c5d980126e4"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:22.457Z",
+        "type": "conversation.process_started",
+        "task_id": null,
+        "data": {
+          "request_id": "32efcf16-a473-40c7-9cac-6bf10bb772d5",
+          "process_id": "27eb6bc1-2e97-4829-a66a-3514253bee51",
+          "process_identity": {
+            "pid": 115424,
+            "process_instance_id": "27eb6bc1-2e97-4829-a66a-3514253bee51",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:26.851Z",
+        "type": "conversation.process_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "32efcf16-a473-40c7-9cac-6bf10bb772d5",
+          "process_id": "27eb6bc1-2e97-4829-a66a-3514253bee51",
+          "process_identity": {
+            "pid": 115424,
+            "process_instance_id": "27eb6bc1-2e97-4829-a66a-3514253bee51",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:26.869Z",
+        "type": "conversation.reply_recorded",
+        "task_id": null,
+        "data": {
+          "version": 1,
+          "message_id": "M-42c7f92b-4434-4e7e-b14f-9c5d980126e4",
+          "text": "The attached notes describe current behavior.",
+          "tool": "planner",
+          "advisory_only": true,
+          "authorization_effect": "none"
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:26.880Z",
+        "type": "spec.draft_failed",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "outcome": "answered",
+          "reason": "the message was answered rather than drafted from; it did not ask for anything to be built"
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:26.902Z",
+        "type": "conversation.operation_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "32efcf16-a473-40c7-9cac-6bf10bb772d5",
+          "status": "completed"
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:26.932Z",
+        "type": "conversation.operation_started",
+        "task_id": null,
+        "data": {
+          "request_id": "42e71ca6-0928-4899-969d-175803b484de",
+          "phase": "reading",
+          "tool": "planner",
+          "process_identity": {
+            "pid": 47496,
+            "process_instance_id": "42e71ca6-0928-4899-969d-175803b484de"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:27.020Z",
+        "type": "conversation.message_recorded",
+        "task_id": null,
+        "data": {
+          "message_id": "M-edab8663-c772-4d3b-b06e-ab8ed1277a44",
+          "conversation_id": "legacy",
+          "request_id": "42e71ca6-0928-4899-969d-175803b484de",
+          "text": "Build a tiny status label for this fixture.",
+          "attachments": []
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:27.031Z",
+        "type": "spec.draft_started",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "tool": "planner",
+          "message_id": "M-edab8663-c772-4d3b-b06e-ab8ed1277a44",
+          "process_identity": {
+            "pid": 47496,
+            "process_instance_id": "M-edab8663-c772-4d3b-b06e-ab8ed1277a44"
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:27.069Z",
+        "type": "conversation.process_started",
+        "task_id": null,
+        "data": {
+          "request_id": "42e71ca6-0928-4899-969d-175803b484de",
+          "process_id": "d17e420a-c9d5-4389-a12b-3660d7c9dd3f",
+          "process_identity": {
+            "pid": 5740,
+            "process_instance_id": "d17e420a-c9d5-4389-a12b-3660d7c9dd3f",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:31.466Z",
+        "type": "conversation.process_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "42e71ca6-0928-4899-969d-175803b484de",
+          "process_id": "d17e420a-c9d5-4389-a12b-3660d7c9dd3f",
+          "process_identity": {
+            "pid": 5740,
+            "process_instance_id": "d17e420a-c9d5-4389-a12b-3660d7c9dd3f",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:31.506Z",
+        "type": "spec.draft_completed",
+        "task_id": null,
+        "data": {
+          "spec_id": "S-001",
+          "title": "Add fixture status label",
+          "goal": "Show one status label.",
+          "open_questions": []
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:31.525Z",
+        "type": "conversation.phase_changed",
+        "task_id": null,
+        "data": {
+          "request_id": "42e71ca6-0928-4899-969d-175803b484de",
+          "phase": "planning",
+          "tool": "planner"
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:31.703Z",
+        "type": "conversation.process_started",
+        "task_id": null,
+        "data": {
+          "request_id": "42e71ca6-0928-4899-969d-175803b484de",
+          "process_id": "4ef3b5b4-5def-4ed9-a61f-429b3496f716",
+          "process_identity": {
+            "pid": 29144,
+            "process_instance_id": "4ef3b5b4-5def-4ed9-a61f-429b3496f716",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:32.682Z",
+        "type": "conversation.cancel_requested",
+        "task_id": null,
+        "data": {
+          "request_id": "42e71ca6-0928-4899-969d-175803b484de",
+          "requested_by": "human"
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:33.046Z",
+        "type": "conversation.process_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "42e71ca6-0928-4899-969d-175803b484de",
+          "process_id": "4ef3b5b4-5def-4ed9-a61f-429b3496f716",
+          "process_identity": {
+            "pid": 29144,
+            "process_instance_id": "4ef3b5b4-5def-4ed9-a61f-429b3496f716",
+            "process_group_id": null
+          }
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:33.067Z",
+        "type": "conversation.operation_finished",
+        "task_id": null,
+        "data": {
+          "request_id": "42e71ca6-0928-4899-969d-175803b484de",
+          "status": "stopped"
+        }
+      },
+      {
+        "ts": "2026-09-06T05:42:33.131Z",
+        "type": "conversation.started",
+        "task_id": null,
+        "data": {
+          "version": 1,
+          "conversation_id": "C-620d39e0-0e22-4a35-b4b4-cf75d1d4fd8d",
+          "active_request_archived": true,
+          "advisory_only": true,
+          "authorization_effect": "none"
+        }
+      }
+    ],
+    "nativeTrail": {
+      "events": [
+        {
+          "data": {
+            "active_request_archived": true,
+            "advisory_only": true,
+            "authorization_effect": "none",
+            "conversation_id": "C-620d39e0-0e22-4a35-b4b4-cf75d1d4fd8d",
+            "version": 1
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:42:33.131Z",
+          "type": "conversation.started"
+        },
+        {
+          "data": {
+            "request_id": "42e71ca6-0928-4899-969d-175803b484de",
+            "status": "stopped"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:42:33.067Z",
+          "type": "conversation.operation_finished"
+        },
+        {
+          "data": {
+            "process_id": "4ef3b5b4-5def-4ed9-a61f-429b3496f716",
+            "process_identity": {
+              "pid": 29144,
+              "process_group_id": null,
+              "process_instance_id": "4ef3b5b4-5def-4ed9-a61f-429b3496f716"
+            },
+            "request_id": "42e71ca6-0928-4899-969d-175803b484de"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:42:33.046Z",
+          "type": "conversation.process_finished"
+        },
+        {
+          "data": {
+            "request_id": "42e71ca6-0928-4899-969d-175803b484de",
+            "requested_by": "human"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:42:32.682Z",
+          "type": "conversation.cancel_requested"
+        },
+        {
+          "data": {
+            "process_id": "4ef3b5b4-5def-4ed9-a61f-429b3496f716",
+            "process_identity": {
+              "pid": 29144,
+              "process_group_id": null,
+              "process_instance_id": "4ef3b5b4-5def-4ed9-a61f-429b3496f716"
+            },
+            "request_id": "42e71ca6-0928-4899-969d-175803b484de"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:42:31.703Z",
+          "type": "conversation.process_started"
+        },
+        {
+          "data": {
+            "phase": "planning",
+            "request_id": "42e71ca6-0928-4899-969d-175803b484de",
+            "tool": "planner"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:42:31.525Z",
+          "type": "conversation.phase_changed"
+        },
+        {
+          "data": {
+            "goal": "Show one status label.",
+            "open_questions": [],
+            "spec_id": "S-001",
+            "title": "Add fixture status label"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:42:31.506Z",
+          "type": "spec.draft_completed"
+        },
+        {
+          "data": {
+            "process_id": "d17e420a-c9d5-4389-a12b-3660d7c9dd3f",
+            "process_identity": {
+              "pid": 5740,
+              "process_group_id": null,
+              "process_instance_id": "d17e420a-c9d5-4389-a12b-3660d7c9dd3f"
+            },
+            "request_id": "42e71ca6-0928-4899-969d-175803b484de"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:42:31.466Z",
+          "type": "conversation.process_finished"
+        },
+        {
+          "data": {
+            "process_id": "d17e420a-c9d5-4389-a12b-3660d7c9dd3f",
+            "process_identity": {
+              "pid": 5740,
+              "process_group_id": null,
+              "process_instance_id": "d17e420a-c9d5-4389-a12b-3660d7c9dd3f"
+            },
+            "request_id": "42e71ca6-0928-4899-969d-175803b484de"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:42:27.069Z",
+          "type": "conversation.process_started"
+        },
+        {
+          "data": {
+            "message_id": "M-edab8663-c772-4d3b-b06e-ab8ed1277a44",
+            "process_identity": {
+              "pid": 47496,
+              "process_instance_id": "M-edab8663-c772-4d3b-b06e-ab8ed1277a44"
+            },
+            "spec_id": "S-001",
+            "tool": "planner"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:42:27.031Z",
+          "type": "spec.draft_started"
+        },
+        {
+          "data": {
+            "attachments": [],
+            "conversation_id": "legacy",
+            "message_id": "M-edab8663-c772-4d3b-b06e-ab8ed1277a44",
+            "request_id": "42e71ca6-0928-4899-969d-175803b484de",
+            "text": "Build a tiny status label for this fixture."
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:42:27.020Z",
+          "type": "conversation.message_recorded"
+        },
+        {
+          "data": {
+            "phase": "reading",
+            "process_identity": {
+              "pid": 47496,
+              "process_instance_id": "42e71ca6-0928-4899-969d-175803b484de"
+            },
+            "request_id": "42e71ca6-0928-4899-969d-175803b484de",
+            "tool": "planner"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:42:26.932Z",
+          "type": "conversation.operation_started"
+        },
+        {
+          "data": {
+            "request_id": "32efcf16-a473-40c7-9cac-6bf10bb772d5",
+            "status": "completed"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:42:26.902Z",
+          "type": "conversation.operation_finished"
+        },
+        {
+          "data": {
+            "outcome": "answered",
+            "reason": "the message was answered rather than drafted from; it did not ask for anything to be built",
+            "spec_id": "S-001"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:42:26.880Z",
+          "type": "spec.draft_failed"
+        },
+        {
+          "data": {
+            "advisory_only": true,
+            "authorization_effect": "none",
+            "message_id": "M-42c7f92b-4434-4e7e-b14f-9c5d980126e4",
+            "text": "The attached notes describe current behavior.",
+            "tool": "planner",
+            "version": 1
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:42:26.869Z",
+          "type": "conversation.reply_recorded"
+        },
+        {
+          "data": {
+            "process_id": "27eb6bc1-2e97-4829-a66a-3514253bee51",
+            "process_identity": {
+              "pid": 115424,
+              "process_group_id": null,
+              "process_instance_id": "27eb6bc1-2e97-4829-a66a-3514253bee51"
+            },
+            "request_id": "32efcf16-a473-40c7-9cac-6bf10bb772d5"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:42:26.851Z",
+          "type": "conversation.process_finished"
+        },
+        {
+          "data": {
+            "process_id": "27eb6bc1-2e97-4829-a66a-3514253bee51",
+            "process_identity": {
+              "pid": 115424,
+              "process_group_id": null,
+              "process_instance_id": "27eb6bc1-2e97-4829-a66a-3514253bee51"
+            },
+            "request_id": "32efcf16-a473-40c7-9cac-6bf10bb772d5"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:42:22.457Z",
+          "type": "conversation.process_started"
+        },
+        {
+          "data": {
+            "message_id": "M-42c7f92b-4434-4e7e-b14f-9c5d980126e4",
+            "process_identity": {
+              "pid": 47496,
+              "process_instance_id": "M-42c7f92b-4434-4e7e-b14f-9c5d980126e4"
+            },
+            "spec_id": "S-001",
+            "tool": "planner"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:42:22.353Z",
+          "type": "spec.draft_started"
+        },
+        {
+          "data": {
+            "attachments": [
+              {
+                "kind": "folder",
+                "path": "notes"
+              },
+              {
+                "kind": "file",
+                "path": "UNTRACKED-CURRENT.md"
+              }
+            ],
+            "conversation_id": "legacy",
+            "message_id": "M-42c7f92b-4434-4e7e-b14f-9c5d980126e4",
+            "request_id": "32efcf16-a473-40c7-9cac-6bf10bb772d5",
+            "text": "Summarize the attached notes folder."
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:42:22.340Z",
+          "type": "conversation.message_recorded"
+        },
+        {
+          "data": {
+            "phase": "reading",
+            "process_identity": {
+              "pid": 47496,
+              "process_instance_id": "32efcf16-a473-40c7-9cac-6bf10bb772d5"
+            },
+            "request_id": "32efcf16-a473-40c7-9cac-6bf10bb772d5",
+            "tool": "planner"
+          },
+          "task_id": null,
+          "ts": "2026-09-06T05:42:22.253Z",
+          "type": "conversation.operation_started"
+        }
+      ],
+      "next_before": 24
+    },
+    "savedDrafts": [
+      {
+        "version": 1,
+        "conversation_id": "legacy",
+        "revision": "86c625d8-7aad-4605-93fe-8d314e6560f6",
+        "draft": {
+          "content_id": "dae5a616-4244-4708-9366-cc5fc0574ca3",
+          "text": "This is my next unsent message.",
+          "attachments": [],
+          "submission": {
+            "content_id": "23c2b71a-7af2-4eec-a3ef-00952d6cdaae",
+            "request_id": "454c8d9b-258b-4733-b6bb-6ba64418dbd8"
+          }
+        }
+      }
+    ]
+  }
+}

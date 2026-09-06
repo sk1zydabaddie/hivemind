@@ -1,0 +1,169 @@
+{
+  "installedVersion": "416.29995.30514",
+  "installedBinary": "C:\\Users\\ethan\\AppData\\Local\\Hivemind AI\\hivemind_desktop.exe",
+  "viewport": {
+    "devicePixelRatio": 1,
+    "height": 900,
+    "width": 1440
+  },
+  "paidProviderCalls": 0,
+  "liveConversation": {
+    "build": "416.29995.30514",
+    "screenshot": "phase6-live-conversation-416.29995.30514-1440x900.png",
+    "partialScreenshot": "partial-answer-416.29995.30514-1440x900.png",
+    "typed": "Describe what this project does, in one sentence.",
+    "reply": "This installed fixture reports a deterministic TypeScript project status.",
+    "durableMessageVisibleWhileRunning": true,
+    "scopedActivityWhileRunning": "Planner is preparing your response\n3s elapsed\nThis installed fixture reports a deterministic TypeScript project status.",
+    "headerWhileRunning": "Conversation",
+    "scopedActivityLater": "Planner is preparing your response\n6s elapsed\nThis installed fixture reports a deterministic TypeScript project status.",
+    "scopedClockWhileRunning": "3s elapsed",
+    "scopedClockLater": "6s elapsed",
+    "scopedAnswerWhileRunning": "This installed fixture reports a deterministic TypeScript project status.",
+    "scopedPartialAnswerWhileRunning": "This installed fixture re",
+    "providerStillAliveWhenAnswerSampled": true,
+    "readOnlyStatusSettledWhileRunning": true,
+    "readOnlyStatusMs": 63,
+    "adapterCalls": 1
+  },
+  "duplicateSubmit": {
+    "synchronousSubmits": 2,
+    "adapterCalls": 1,
+    "durableMessages": 1
+  },
+  "projectContext": {
+    "readmeContentIncluded": true,
+    "sourceContentIncluded": true,
+    "untrackedNameIncluded": true,
+    "untrackedContentIncluded": false
+  },
+  "conversationHistory": {
+    "followup": {
+      "conversation_id": "legacy",
+      "turns": [
+        {
+          "user": "Describe what this project does, in one sentence.",
+          "truncated": false,
+          "assistant": "This installed fixture reports a deterministic TypeScript project status.",
+          "assistant_kind": "reply"
+        }
+      ],
+      "omitted_turns": 0,
+      "max_turns": 24,
+      "max_bytes": 49152
+    },
+    "afterNewConversation": {
+      "conversation_id": "C-9119b6a0-9df2-4a5b-85ed-03e392091965",
+      "turns": [],
+      "omitted_turns": 0,
+      "max_turns": 24,
+      "max_bytes": 49152
+    }
+  },
+  "attachmentContext": {
+    "structuredAttachments": [
+      {
+        "kind": "folder",
+        "path": "notes"
+      },
+      {
+        "kind": "file",
+        "path": "UNTRACKED-CURRENT.md"
+      }
+    ],
+    "childNameIncluded": true,
+    "childContentIncluded": true,
+    "untrackedFileContentIncluded": true,
+    "markerTextAppendedToPrompt": false
+  },
+  "newConversation": {
+    "activeSpecBefore": "S-001",
+    "activeSpecAfter": null,
+    "archivedPointers": 1
+  },
+  "visibleFailure": {
+    "build": "416.29995.30514",
+    "screenshot": "phase6-visible-failure-416.29995.30514-1440x900.png",
+    "statusText": "Response could not finish",
+    "scopedOutcomeText": "Response could not finish\nspec drafter \"planner\" exited 7; output log: C:\\Users\\ethan\\AppData\\Local\\Temp\\hivemind-phase6-remediation-Xov4FJ\\.hivemind\\log\\runs\\2026-09-06T05-45-32-780Z-drafting-M-630d9f62-e094-4891-bb89-18061a00f54e-1-6de51390-4a53-41f7-96f4-c93ad5685484.adapter.log: {\"type\":\"item.completed\",\"item\":{\"type\":\"reasoning\"}}\nPHASE6_VISIBLE_PROVIDER_FAILURE",
+    "durableFailure": true
+  },
+  "stopResponse": {
+    "screenshot": "stopped-response-416.29995.30514-1440x900.png",
+    "retainedDraft": "This is my next unsent message.",
+    "modelMenuOpenedWhileRunning": true,
+    "stopRecoveredAfterReload": true,
+    "responseChildPid": 65028,
+    "childAbsentAfterStop": true,
+    "adapterCalls": 1
+  },
+  "stopPlanning": {
+    "screenshot": "planning-handoff-416.29995.30514-1440x900.png",
+    "status": "stopped",
+    "planningChildPid": 95596,
+    "childAbsentAfterStop": true,
+    "adapterCalls": 2
+  },
+  "usabilityObservations": {
+    "draftAcrossTabs": {
+      "typed": "Keep this unsent draft while I inspect Agents.",
+      "after": "Keep this unsent draft while I inspect Agents.",
+      "attachments": [
+        {
+          "kind": "folder",
+          "path": "notes"
+        },
+        {
+          "kind": "file",
+          "path": "UNTRACKED-CURRENT.md"
+        }
+      ]
+    },
+    "draftPersistence": {
+      "screenshot": "draft-restored-416.29995.30514-1440x900.png",
+      "projectAText": "Keep this unsent draft while I inspect Agents.",
+      "projectBText": "This draft belongs only to project B.",
+      "attachmentsSeededThroughCore": [
+        {
+          "kind": "folder",
+          "path": "notes"
+        },
+        {
+          "kind": "file",
+          "path": "UNTRACKED-CURRENT.md"
+        }
+      ],
+      "removedAttachmentStayedRemovedAfterReload": true,
+      "projectSwitchPreservedBothDrafts": true,
+      "newConversationStartedEmpty": true,
+      "acceptedMessageDidNotReturnAfterReload": true,
+      "nextDraftSavedWhileProviderAlive": true,
+      "adapterCallsDuringNavigation": 0,
+      "projectBAdapterCallsDuringNavigation": 0
+    }
+  },
+  "browserSevereLogs": [],
+  "recentProjects": {
+    "beforeSha256": "9f6c478f93cb98f488fc5e3a1f113abc746e4da228b62ef405a15970e0639d06",
+    "afterSha256": "9f6c478f93cb98f488fc5e3a1f113abc746e4da228b62ef405a15970e0639d06",
+    "restoredExactly": true
+  },
+  "installedIdentity": {
+    "artifact_id": "fd62d2919d83269c989f49eeb821c14a213f0703891d504abaf433624e51330c",
+    "installed_executable_sha256": "d8c698d8cfbfc6c024b2e0645895b34327bfb0f6638ebed43ccf4c377183b65f",
+    "kind": "hivemind-local-install-receipt",
+    "schema_version": 1,
+    "source_commit": "b33049c8d841c08723d8476860ff58aa5ad4a737",
+    "verified_at_ms": 1788672496616,
+    "version": "416.29995.30514",
+    "installedExecutableSha256": "d8c698d8cfbfc6c024b2e0645895b34327bfb0f6638ebed43ccf4c377183b65f",
+    "installedPayloadSource": "b33049c8d841c08723d8476860ff58aa5ad4a737"
+  },
+  "nativeDriver": "C:\\Users\\ethan\\.cache\\selenium\\msedgedriver\\win64\\152.0.4191.66\\msedgedriver.exe",
+  "outerWindow": {
+    "height": 900,
+    "width": 1440,
+    "x": 230,
+    "y": 212
+  }
+}
