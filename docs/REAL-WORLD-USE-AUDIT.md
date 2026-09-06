@@ -1,6 +1,6 @@
 # Real-world use review — 2026-09-05
 
-Scope: follow-up to the approved conversation repair, especially interactions
+Original review scope: follow-up to the approved conversation repair, especially interactions
 that can satisfy tests while frustrating real development. Findings only: this
 review does not authorize an architectural rewrite or weaken approval gates.
 No paid providers were invoked. Source findings below are not presented as
@@ -10,9 +10,10 @@ installed reproductions; runtime observations are recorded separately.
 
 The user has now requested fixes for all 17 findings. The historical findings
 below retain their original evidence; a finding closes only after its own
-acceptance evidence is recorded here. None is closed yet.
+acceptance evidence is recorded here. **1 of 17 is closed: U10.** The other 16
+remain open; the next independent checkpoint is U3's project-owned draft state.
 
-- **U10 active:** update only the existing `src/project-files.ts` reader and
+- **U10 closed:** updated only the existing `src/project-files.ts` reader and
   `test/project-files.test.ts`, with this ledger and STATE. Acceptance: actual
   content reads stay within 512 KiB, full size is stat-derived, short reads and
   UTF-8 boundaries are correct, errors/changes release the handle, and existing
@@ -23,7 +24,7 @@ acceptance evidence is recorded here. None is closed yet.
   Neither rule is silently changed while that decision is unresolved.
 - U2–U9 and U11–U17 remain open; independent fixes continue under the full goal.
 
-### U10 source verified; installation pending
+### U10 fixed and installed — 416.29883.15117
 
 The pre-fix instrumented regression failed as intended: `wholeFileReads: 1`,
 `opened: 0`; the old reader attempted full-file loading. The corrected source
@@ -48,6 +49,16 @@ directory, so its isolated child imported that installation's
 `wholeFileReads: 1`, `opened: 0`. This is an installed pre-fix negative control,
 not a failing result for the corrected source. The identical invocation must
 pass after replacement installation before U10 is closed.
+
+Replacement `npm run ship` completed with build **416.29883.15117**, source
+`cb9f1f9e8c7e6b961016ec73147b5849897e823c`, artifact
+`f524e5f29824a2dd109b5b52ad2b80b856be4d0d2ff502152fa7a6826ef2dbc8`.
+All 4,474 managed files and Core/shell/Node identities matched; all 48 viewport
+checks passed and npm/RustSec reported zero vulnerabilities. The same installed
+bounded-read check now passed, together with the short-read and error/change
+handle checks: **3/3, exit 0**. The installed reader hash matches the tested
+compiled module exactly. [Commands and artifact evidence](evidence/audit-u10-416.29883.15117/README.md).
+U10 is closed on that evidence; no other finding is closed by these checks.
 
 ## Highest-priority workflow findings
 
@@ -151,7 +162,7 @@ For UI development, attaching a screenshot is an ordinary expectation, but the
 surface does not state this limitation. Label current support as project text
 context; a later image path needs explicit size/type limits and provider support.
 
-### U10 — The file read limit is applied after allocating the entire file (Medium)
+### U10 — The file read limit is applied after allocating the entire file (Medium; fixed above)
 
 `src/project-files.ts:216` uses readFile on the complete file, then returns only
 the first 512 KiB. A generated bundle, data dump or large binary can consume
@@ -256,4 +267,4 @@ was performed, and no exhaustive-bug-coverage claim is made.
 
 Each future checkpoint needs scoped tests with negative controls, installed
 behavioral evidence and cleanup of the replaced path. No count of findings is
-a claim of exhaustive coverage. No findings above are marked fixed by this audit.
+a claim of exhaustive coverage. Closure is recorded only in the remediation ledger above.

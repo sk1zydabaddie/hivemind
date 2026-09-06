@@ -20,7 +20,14 @@ lookup. Updater signing and Windows publisher signing are separate checks.
 The retired in-app source/public update execution path remains disabled;
 publication of an installer does not restore that consumer authority.
 
-Latest installed maintenance build: **416.29838.49352**, source `ab6c88806aacc`,
+Latest installed maintenance build: **416.29883.15117**, source `cb9f1f9e8c7e`,
+artifact `f524e5f29824a2dd109b5b52ad2b80b856be4d0d2ff502152fa7a6826ef2dbc8`.
+All 4,474 managed files and Core/shell/Node identities matched. U10's installed
+reader now passes the bounded-read test that failed on the preceding build,
+plus short-read and error/change handle checks (3/3). [U10 evidence](evidence/audit-u10-416.29883.15117/README.md)
+records the exact reader hash, commands, full-suite counts and limitations.
+
+Earlier conversation qualification: **416.29838.49352**, source `ab6c88806aacc`,
 artifact `0551057f8df67581bf706739d69b95da4fa64c1433685f311a5af62a10e9cb4f`.
 All 4,474 managed files and Core/shell/Node identities matched. The strict
 no-paid installed check passed conversation history delivery, genuine partial
@@ -53,22 +60,21 @@ to disclose, not assumptions that deterministic gates may trust.
   are implemented and installed with no-paid behavioral proof. Final source
   validation: Core **986 passed, 2 platform skips, 0 failed** (988 total),
   Desktop **382/382**, Rust **65/65**, production viewport **48/48**,
-  zero npm/RustSec advisories. Installed source is `ab6c888`; the report retains
+  zero npm/RustSec advisories. That qualification used installed source `ab6c888`; the report retains
   the failed attempts that exposed buffered replies, duplicate header progress,
   reload admission and event-key-order defects before final qualification.
   Legacy history rendering remains for old trails. Duplicate footer/header
   progress and the obsolete route-local merge path have been removed.
 - [Real-world use review](REAL-WORLD-USE-AUDIT.md): 15 product/scale findings
-  plus two verification gaps. The user authorized fixing all 17; U10's bounded
-  file reader is source-verified: 18 focused tests, Core 990 passed/2 platform
-  skips, Desktop 382, Rust 65 and production build passed. Its installed
-  pre-fix check fails as expected; replacement installation is pending. U1 awaits the
-  documented planning/ratification contract decision. No audit finding is yet
-  marked fixed. Highest priority:
+  plus two verification gaps. The user authorized fixing all 17; **U10 is fixed
+  and installed, 16 remain open**. U10 passed 18 focused tests, Core 990 passed/2
+  platform skips, Desktop 382, Rust 65, viewport 48 and 3 installed reader checks.
+  U3 draft persistence is next. U1 still awaits the documented planning/ratification
+  contract decision. Highest priority:
   active-spec answer-only routing prevents normal conversational revision, and
   the conversation lacks a typed live-run/check context. Draft loss across tabs
   is now reproduced in the installed app. Draft persistence, scroll stability
-  and raw failure-detail presentation need a separate approved usability phase.
+  and raw failure-detail presentation remain in the authorized remediation goal.
 - [Codebase reduction](CODEBASE-REDUCTION.md): generated-data cleanup,
   current-document consolidation and behavior-preserving implementation audit;
   all three implementation phases committed through `5c69d80`; approved
