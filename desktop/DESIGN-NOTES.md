@@ -87,6 +87,15 @@ the current skin. Preserve the attention hierarchy and remeasure a palette chang
 - The composer has a real attachment action and project-role selection. Keep
   the draft and attachments until Core accepts the request. Durable request IDs
   make retries idempotent; block duplicate submission rather than guessing state.
+- One centered reading column aligns transcript, live activity and docked
+  composer. Do not pin a duplicate activity row below the conversation. Put
+  prompt text above the attachment/model controls with a consistent inset.
+- An active conversational request replaces Send with Stop. Core acknowledges
+  termination; a local spinner disappearing is not proof. Report actual response
+  versus task-planning phase and retain any next draft typed while waiting.
+- The Models menu describes planner/manager/worker assignments, not separate
+  chats. It stays inspectable while running; changing the executing assignment
+  requires finishing or stopping that operation first.
 - The idle hexagon field is low contrast and bounded. It appears only on the
   intended idle/setup surfaces, not behind ongoing work. Hide it synchronously
   at first submission. Decorative drift uses the existing small travel and slow

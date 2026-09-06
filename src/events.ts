@@ -27,6 +27,12 @@ export function setEventPublisher(next: EventPublisher | null): void {
 export const eventTrailRepairCommand = "hivemind events repair";
 
 export const eventTypes = [
+  "conversation.operation_started",
+  "conversation.phase_changed",
+  "conversation.process_started",
+  "conversation.process_finished",
+  "conversation.cancel_requested",
+  "conversation.operation_finished",
   "task.created",
   "task.authoring_base_prepared",
   "task.run_accepted",

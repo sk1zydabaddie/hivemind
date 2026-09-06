@@ -1,0 +1,3 @@
+{"ts":"2026-09-04T20:00:00.000Z","type":"conversation.operation_started","task_id":null,"data":{"request_id":"123e4567-e89b-42d3-a456-426614174088","phase":"reading","tool":"planner"}}
+{"ts":"2026-09-04T20:00:00.050Z","type":"conversation.message_recorded","task_id":null,"data":{"message_id":"M-example","request_id":"123e4567-e89b-42d3-a456-426614174088","text":"Help me plan a space exploration game."}}
+{"ts":"2026-09-04T20:00:00.100Z","type":"spec.draft_started","task_id":null,"data":{"spec_id":"S-001","message_id":"M-example","tool":"planner"}}

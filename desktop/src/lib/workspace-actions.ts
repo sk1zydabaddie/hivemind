@@ -3,6 +3,11 @@ import type { TaskProjection } from "./projection";
 
 export type AutonomyLevel = "auto" | "review_plan" | "review_everything";
 
+export type ConversationStopResult = Extract<
+  Awaited<ReturnType<typeof import("../../../src/conversation-control").stopConversation>>,
+  { ok: true }
+>["value"];
+
 export interface WorkspaceQueueItem {
   id: string;
   kind:
@@ -87,6 +92,7 @@ export interface ActiveAgentView {
 }
 
 export interface WorkspaceInspection {
+  conversation_operation?: import("../../../src/conversation-control").ConversationOperation | null;
   tasks: TaskProjection[];
   /* Rounds Core has judged no longer reporting. Optional: a daemon older than
      the field is a permanent input, and absence means nothing was reconciled --
@@ -616,6 +622,8 @@ export interface AgentsFileProposalView {
  */
 /** The planner's answer as it arrives, keyed to the draft it belongs to. */
 export interface DraftStreamView {
+  request_id?: string;
+  phase?: "reading" | "planning";
   /* Each line with when it happened, so a surface can show only the ones that
      belong to the wait it is in -- the channel replays history on subscribe,
      and replayed history drawn as live is false progress. */
@@ -687,6 +695,7 @@ export type WorkspaceAction = {
     | "manager.retry_blocked"
     | "guidance.record"
     | "conversation.submit"
+    | "conversation.stop"
     | "plan.prepare"
     | "plan.review"
     | "plan.ratify"

@@ -6,6 +6,26 @@ import { buildRunThread, runSpanMs } from "../src/lib/work-thread";
 const TITLES = { "T-001": "Dark mode toggle", "T-002": "Theme tokens" };
 
 describe("run thread", () => {
+  test("one operation replaces its draft indicator and follows the actual planning handoff", () => {
+    const start = [
+      event("conversation.operation_started", null, { request_id: "request" }),
+      event("conversation.message_recorded", null, { request_id: "request", message_id: "message", text: "Make the space game" }),
+      event("spec.draft_started", null, { message_id: "message", spec_id: "S-001" })
+    ];
+    const live = buildRunThread(newestFirst(start), {});
+    expect(live.map(entry => entry.kind)).toEqual(["request", "operation"]);
+    expect(live[1]).toMatchObject({ id: "request", phase: "reading" });
+    const plan = [...start,
+      event("spec.draft_completed", null, { spec_id: "S-001", goal: "Explore a star system" }),
+      event("conversation.phase_changed", null, { request_id: "request", phase: "planning" })
+    ];
+    expect(buildRunThread(newestFirst(plan), {}).map(entry => entry.kind)).toEqual(["request", "assistant", "operation"]);
+    expect(buildRunThread(newestFirst(plan), {}).at(-1)).toMatchObject({ phase: "planning" });
+    const stopping = [...plan, event("conversation.cancel_requested", null, { request_id: "request" })];
+    expect(buildRunThread(newestFirst(stopping), {}).at(-1)).toMatchObject({ phase: "stopping" });
+    expect(buildRunThread(newestFirst([...stopping, event("conversation.operation_finished", null, { request_id: "request", status: "stopped" })]), {}).at(-1)).toMatchObject({ phase: "stopped" });
+    expect(buildRunThread(newestFirst([...plan, event("conversation.operation_finished", null, { request_id: "request", status: "completed" })]), {}).map(entry => entry.kind)).toEqual(["request", "assistant"]);
+  });
   test("reads as a narrative: plan, work, checks, shipped", () => {
     const thread = buildRunThread(
       newestFirst([

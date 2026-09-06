@@ -78,6 +78,18 @@ interface RoundShape {
  */
 export const ROUND_SHAPES: readonly RoundShape[] = [
   {
+    started: "conversation.operation_started",
+    terminal: ["conversation.operation_finished"],
+    idFields: ["request_id"],
+    what: "a conversation response"
+  },
+  {
+    started: "conversation.process_started",
+    terminal: ["conversation.process_finished"],
+    idFields: ["process_id"],
+    what: "a conversation provider process"
+  },
+  {
     started: "spec.draft_started",
     terminal: ["spec.draft_completed", "spec.draft_failed"],
     idFields: ["spec_id"],

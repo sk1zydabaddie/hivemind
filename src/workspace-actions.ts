@@ -1,4 +1,5 @@
 import { isRecord } from "./json.js";
+import { conversationCancelled, currentConversationOperation, stopConversation } from "./conversation-control.js";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { applyAgentsFileAction, proposeAgentsFileAction } from "./agents-file.js";
@@ -52,6 +53,7 @@ export const workspaceActionTypes = [
   "plan.review",
   "plan.ratify",
   "conversation.submit",
+  "conversation.stop",
   "spec.review",
   "spec.adopt",
   "plan.amend",
@@ -169,6 +171,10 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
       : { ok: false, reason: parsed.ok ? "autonomy level must be auto, review_plan, or review_everything" : parsed.reason };
   }
   if (raw.type === "guidance.record") return recordHumanGuidance(repoRoot, payload);
+  if (raw.type === "conversation.stop") {
+    const parsed = exactStrings(payload, ["request_id"]);
+    return parsed.ok ? stopConversation(repoRoot, parsed.value.request_id) : parsed;
+  }
   if (raw.type === "plan.prepare") {
     const parsed = exactStrings(payload, ["prompt", "tool"]);
     return parsed.ok ? prepareWorkspaceTentativePlan(repoRoot, parsed.value.prompt, parsed.value.tool) : parsed;
@@ -441,7 +447,7 @@ export async function executeWorkspaceAction(repoRoot: string, raw: unknown): Pr
     const liveTasks = inspection.value.tasks.some((task) =>
       ["running", "paused", "submitted", "accepted"].includes(task.state)
     );
-    if (liveSession || liveTasks) {
+    if (liveSession || liveTasks || currentConversationOperation(events.value) !== null) {
       return {
         ok: false,
         reason: "the current run must be stopped before starting a new conversation"
@@ -551,11 +557,49 @@ async function submitConversationMessage(
   const events = await readEvents(repoRoot);
   if (!events.ok) return events;
   if (events.value.some((event) =>
-    event.type === "conversation.message_recorded" && event.data.request_id === requestId
+    (event.type === "conversation.message_recorded" || event.type === "conversation.operation_started") && event.data.request_id === requestId
   )) {
     return { ok: true, value: { status: "duplicate", request_id: requestId } };
   }
 
+  if (currentConversationOperation(events.value) !== null) {
+    return { ok: false, reason: "A response is already in progress. Stop it or wait for it to finish before sending another." };
+  }
+  const started = await appendEvent(repoRoot, {
+    type: "conversation.operation_started", task_id: null,
+    data: { request_id: requestId, phase: "reading", tool,
+      process_identity: { pid: process.pid, process_instance_id: requestId } }
+  });
+  if (!started.ok) return started;
+  let result: ActionResult;
+  try {
+    result = await prepareConversationResponse(repoRoot, prompt, tool, requestId, attachments);
+  } catch (error) {
+    result = { ok: false, reason: error instanceof Error ? error.message : String(error) };
+  }
+  const trail = await readEvents(repoRoot);
+  if (!trail.ok) return trail;
+  const own = trail.value.filter((event) => event.data.request_id === requestId);
+  const ended = new Set(own.filter((event) => event.type === "conversation.process_finished")
+    .map((event) => isRecord(event.data.process_identity) ? event.data.process_identity.process_instance_id : null));
+  if (own.some((event) => event.type === "conversation.process_started" &&
+    (!isRecord(event.data.process_identity) || !ended.has(event.data.process_identity.process_instance_id)))) {
+    return { ok: false, reason: "The provider's termination is unconfirmed. This operation remains open; no later stage was started." };
+  }
+  const cancelled = own.some((event) => event.type === "conversation.cancel_requested");
+  const finished = await appendEvent(repoRoot, {
+    type: "conversation.operation_finished", task_id: null,
+    data: { request_id: requestId, status: cancelled ? "stopped" : result.ok ? "completed" : "failed",
+      ...(!result.ok && !cancelled ? { reason: result.reason } : {}) }
+  });
+  if (!finished.ok) return finished;
+  return cancelled ? { ok: true, value: { request_id: requestId, status: "stopped" } } : result;
+}
+
+async function prepareConversationResponse(
+  repoRoot: string, prompt: string, tool: string, requestId: string, attachments: ConversationAttachment[]
+): Promise<ActionResult> {
+  if (await conversationCancelled(repoRoot, requestId)) return { ok: false, reason: "Response stopped." };
   const inspection = await inspectWorkspace(repoRoot);
   if (!inspection.ok) return inspection;
   /* A current request/plan makes this an answer-only turn. The classifier is
@@ -575,7 +619,13 @@ async function submitConversationMessage(
   if (drafted.value.status === "replied") {
     return { ok: true, value: { ...drafted.value, request_id: requestId } };
   }
-  const prepared = await prepareWorkspaceTentativePlan(repoRoot, prompt, tool);
+  if (await conversationCancelled(repoRoot, requestId)) return { ok: false, reason: "Response stopped." };
+  const phase = await appendEvent(repoRoot, {
+    type: "conversation.phase_changed", task_id: null,
+    data: { request_id: requestId, phase: "planning", tool }
+  });
+  if (!phase.ok) return phase;
+  const prepared = await prepareWorkspaceTentativePlan(repoRoot, prompt, tool, requestId);
   return prepared.ok
     ? { ok: true, value: { status: "planned", request_id: requestId, draft: drafted.value, plan: prepared.value } }
     : prepared;

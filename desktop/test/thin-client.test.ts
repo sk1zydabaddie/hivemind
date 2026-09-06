@@ -316,6 +316,7 @@ describe("React workspace boundary", () => {
       // Begin a fresh durable thread boundary.
       "conversation.new",
       "conversation.submit",
+      "conversation.stop",
       "guidance.record",
       "manager.continue",
       "manager.start",
@@ -353,7 +354,7 @@ describe("React workspace boundary", () => {
     expect(work).toMatch(/Work is running/u);
     expect(work).toMatch(/A conversational reply cannot approve, replace, or start work/u);
     expect(work).toMatch(/title="Guide the manager"[\s\S]*type: "guidance\.record"/u);
-    expect(work).toContain('data-testid="conversation-progress"');
+    expect(work).toContain('data-testid={live ? "conversation-progress" : "conversation-outcome"}');
     expect(work).toContain('data-testid="conversation-live-answer"');
     expect(work).toMatch(/Nothing starts until you review and approve this exact plan/u);
     expect(work).not.toMatch(/title="Later"|<h2>Routing<\/h2>|<h2>Draft comparisons<\/h2>/u);

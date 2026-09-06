@@ -101,6 +101,7 @@ import { list } from "@/lib/durable";
 import { adapterModelText } from "@/lib/workspace-actions";
 import type {
   ActiveAgentView,
+  ConversationStopResult,
   DraftStreamView,
   AdapterConnectResult,
   AutonomyLevel,
@@ -248,6 +249,7 @@ export function WorkTab({
   const [feedback, setFeedback] = useState("");
   const [busy, setBusy] = useState(false);
   const submitInFlightRef = useRef(false);
+  const submittedTextRef = useRef<string | null>(null);
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
   const [promptStartedAt, setPromptStartedAt] = useState<number | null>(null);
   const [amendment, setAmendment] = useState<{
@@ -286,10 +288,11 @@ export function WorkTab({
     const accepted = projection.recentEvents.some((event) =>
       event.type === "conversation.message_recorded" && event.data.request_id === pendingRequestId
     );
-    if (!accepted) return;
-    setComposer("");
+    if (!accepted || submittedTextRef.current === null) return;
+    const submitted = submittedTextRef.current;
+    submittedTextRef.current = null;
+    setComposer((current) => current === submitted ? "" : current);
     setAttachments([]);
-    setPendingRequestId(null);
   }, [pendingRequestId, projection.eventCount, projection.recentEvents]);
 
   /* Moving the composer is presentation state, not project truth. Reset it
@@ -471,6 +474,29 @@ export function WorkTab({
     managerSession.status !== "complete" &&
     managerSession.status !== "stopped";
   const continuationAvailable = managerSession?.continuation_available === true;
+  const conversationOperation = inspection?.conversation_operation ?? null;
+  const responseRequestId = conversationOperation?.request_id ?? (promptStartedAt !== null ? pendingRequestId : null);
+  const responseSince = conversationOperation ? Date.parse(conversationOperation.started_at) : promptStartedAt;
+  const responsePhase = conversationOperation?.phase ?? "reading";
+  useEffect(() => {
+    if (pendingRequestId !== null && projection.recentEvents.some((event) =>
+      event.type === "conversation.operation_finished" && event.data.request_id === pendingRequestId
+    )) setPendingRequestId(null);
+  }, [pendingRequestId, projection.recentEvents]);
+  const stopResponse = async (): Promise<void> => {
+    if (responseRequestId === null) return;
+    setStopBusy(true);
+    try {
+      const result = await onAction<ConversationStopResult>({ type: "conversation.stop", payload: { request_id: responseRequestId } });
+      setFeedback(result.status === "stopped"
+        ? "Response stopped. Anything already prepared remains in the conversation."
+        : "The response had already finished. Its outcome remains in the conversation.");
+    } catch (error) {
+      setFeedback(plainActionError(error));
+    } finally {
+      setStopBusy(false);
+    }
+  };
   const managerStartAvailable =
     inspection?.current_plan !== null &&
     inspection?.current_plan !== undefined &&
@@ -520,10 +546,11 @@ export function WorkTab({
     event: React.FormEvent<HTMLFormElement>
   ): Promise<void> => {
     event.preventDefault();
-    if (submitInFlightRef.current) return;
+    if (submitInFlightRef.current || conversationOperation !== null) return;
     const typedMessage = composer.trim();
     if (typedMessage === "") return;
     const requestId = pendingRequestId ?? crypto.randomUUID();
+    submittedTextRef.current = composer;
     setPendingRequestId(requestId);
     submitInFlightRef.current = true;
     setComposerHasMoved(true);
@@ -543,7 +570,7 @@ export function WorkTab({
       /* A successful response can only follow Core's durable message append.
          Clearing here preserves the request through transport/provider failure
          before acceptance while avoiding a second client-side authority test. */
-      setComposer("");
+      setComposer((current) => current === composer ? "" : current);
       setAttachments([]);
       setPendingRequestId(null);
       setFeedback("");
@@ -582,7 +609,9 @@ export function WorkTab({
 
   const runningNow = tasks.filter((task) => task.state === "running");
   const newConversationCost =
-    runningNow.length > 0
+    responseRequestId !== null
+      ? "A response is still being prepared. Starting a new conversation stops it first. The conversation and anything already prepared remain in the project's history."
+      : runningNow.length > 0
       ? `${runningNow.length} ${runningNow.length === 1 ? "agent is" : "agents are"} working right now. Starting a new conversation stops ${runningNow.length === 1 ? "it" : "them"}, and the tokens already spent are spent.`
       : displayedPlan !== null
         ? "The plan waiting for you will be cleared. Nothing has run from it, so nothing is lost but the planning call."
@@ -592,6 +621,9 @@ export function WorkTab({
     setNewConversationBusy(true);
     setNewConversationAsk(false);
     try {
+      if (responseRequestId !== null) {
+        await onAction({ type: "conversation.stop", payload: { request_id: responseRequestId } });
+      }
       /* The existing stop path, not a second one. It cleans up every active
          task on the way out, which is the behaviour a new conversation needs
          and which has already been proven to do it. */
@@ -885,7 +917,10 @@ export function WorkTab({
       attachmentBusy={attachmentBusy}
       attachmentError={attachmentError}
       attachments={attachments}
-      busy={busy}
+      busy={busy || conversationOperation !== null}
+      responseActive={responseRequestId !== null}
+      stopBusy={stopBusy}
+      onStopResponse={stopResponse}
       composerRef={composerRef}
       continuationAvailable={continuationAvailable}
       centered={composerCentered}
@@ -1011,6 +1046,7 @@ export function WorkTab({
               spanMs={runSpanMs(projection.recentEvents)}
               planAvailable={displayedPlan !== null}
               promptStartedAt={promptStartedAt}
+              responsePhase={responseRequestId === null ? null : responsePhase}
               runActive={runActive}
               stopBusy={stopBusy}
               tasks={tasks}
@@ -1070,8 +1106,10 @@ export function WorkTab({
                  takes the canvas alone. */
               <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden">
                 <RunThread
-                  draftText={draftLinesSince(draftStream, promptStartedAt)}
-                  pendingSince={promptStartedAt}
+                  draftText={draftLinesSince(draftStream, responseSince, responseRequestId, responsePhase)}
+                  pendingSince={responseSince}
+                  pendingRequestId={responseRequestId}
+                  pendingPhase={responsePhase}
                   workerStream={workerStream}
                   silentRounds={inspection?.silent_rounds ?? []}
                   endRef={activityEndRef}
@@ -1757,6 +1795,7 @@ function RunHeader({
   runActive,
   planAvailable,
   promptStartedAt,
+  responsePhase,
   integrationStatus,
   configuredLevel,
   busy,
@@ -1777,6 +1816,7 @@ function RunHeader({
   runActive: boolean;
   planAvailable: boolean;
   promptStartedAt: number | null;
+  responsePhase: "reading" | "planning" | "stopping" | "interrupted" | null;
   integrationStatus: string;
   configuredLevel: AutonomyLevel;
   busy: boolean;
@@ -1797,7 +1837,7 @@ function RunHeader({
   const files = filesInFlight(tasks);
   const verification = integrationLanguage(integrationStatus);
   const headline =
-    tasks.length === 0
+    responsePhase !== null ? operationLabel(responsePhase) : tasks.length === 0
       ? runActive || busy
         ? "Preparing your response"
         : "Nothing running"
@@ -2478,6 +2518,8 @@ function InspectorPane({
 
 /* ── The run, told as one story ──────────────────────────────────────────── */
 
+type DisplayThreadEntry = ThreadEntry | { kind: "worker-output"; id: string; title: string; text: string };
+
 function RunThread({
   events,
   taskTitles,
@@ -2486,6 +2528,8 @@ function RunThread({
   draftText,
   silentRounds,
   pendingSince,
+  pendingRequestId,
+  pendingPhase,
   workerStream,
   projectRoot,
   onAction,
@@ -2500,6 +2544,8 @@ function RunThread({
   silentRounds: string[];
   /** When the client submitted and is still waiting, in epoch ms. */
   pendingSince: number | null;
+  pendingRequestId: string | null;
+  pendingPhase: "reading" | "planning" | "stopping" | "interrupted";
   /** The running agent's output as it arrives, or null when none is. */
   workerStream: { taskId: string; title: string; text: string } | null;
   projectRoot: string;
@@ -2540,11 +2586,19 @@ function RunThread({
   const displayedEvents = pageIndex === 0
     ? mergeNewestEvents(events, currentPage?.events ?? [])
     : currentPage?.events ?? [];
-  const entries = useMemo(
+  const durableEntries = useMemo(
     () => buildRunThread(displayedEvents, taskTitles, new Set(silentRounds)),
     [displayedEvents, taskTitles, silentRounds]
   );
-  const showThreadStatus = entries.length === 0 || pendingSince !== null || workerStream !== null;
+  const entries: DisplayThreadEntry[] = pageIndex === 0 && pendingSince !== null &&
+    !durableEntries.some((entry) => entry.kind === "operation" && entry.id === pendingRequestId) &&
+    !displayedEvents.some((event) => event.type === "conversation.operation_finished" && event.data.request_id === pendingRequestId) &&
+    !durableEntries.some((entry) => entry.kind === "draft" && entry.state === "live")
+    ? [...durableEntries, { kind: "operation", id: pendingRequestId ?? "pending-response", at: new Date(pendingSince).toISOString(), phase: pendingPhase, detail: null }]
+    : [...durableEntries];
+  if (pageIndex === 0 && workerStream !== null) {
+    entries.push({ kind: "worker-output", id: `${workerStream.taskId}-output`, title: workerStream.title, text: workerStream.text });
+  }
   const loadOlder = async (): Promise<void> => {
     if (pageIndex + 1 < pages.length) {
       setPageIndex(pageIndex + 1);
@@ -2567,8 +2621,8 @@ function RunThread({
     }
   };
   return (
-    <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto]">
-      <div className="flex min-h-7 items-center gap-1.5 border-b border-rule px-5 py-0.5">
+    <div className="flex h-full min-h-0 flex-col">
+      {pageIndex > 0 || currentPage?.next_before != null || archiveError !== "" ? <div className="flex min-h-7 shrink-0 items-center gap-1.5 border-b border-rule px-5 py-0.5">
         {pageIndex > 0 ? (
           <Button size="xs" type="button" variant="ghost" onClick={() => setPageIndex(pageIndex - 1)}>
             Newer messages
@@ -2589,10 +2643,10 @@ function RunThread({
           </Button>
         ) : null}
         {archiveError === "" ? null : <span className="text-[12px] text-clay">{archiveError}</span>}
-      </div>
+      </div> : null}
       <VirtualList
         ariaLabel="Conversation"
-        className="min-h-0"
+        className="min-h-0 flex-1"
         estimateSize={104}
         followEnd={pageIndex === 0}
         itemKey={(entry) => entry.id}
@@ -2602,9 +2656,9 @@ function RunThread({
         role="log"
         testId="conversation-log"
         renderItem={(entry) => (
-          <div className="px-5 py-1.5">
+          <div className="mx-auto w-full max-w-[800px] px-5 py-2.5" data-testid="conversation-row">
             <ThreadRow
-              draftText={draftText}
+              draftText={pageIndex === 0 ? draftText : null}
               entry={entry}
               plan={plan}
               taskTitles={taskTitles}
@@ -2613,71 +2667,6 @@ function RunThread({
           </div>
         )}
       />
-      {showThreadStatus ? <div className="grid gap-3 px-5 py-2">
-        {entries.length === 0 ? (
-          <p className="m-0 text-[13px] leading-relaxed text-muted-foreground">
-            Nothing has happened yet. Describe what you want below and Hivemind
-            will prepare a plan.
-          </p>
-        ) : null}
-        {/* Working, from the moment you press send.
-            The indicator used to wait for `spec.draft_started` to arrive over
-            the event stream, so for the whole of a short call there was nothing
-            on screen at all -- measured at 8 seconds of silence against a call
-            that took 8 seconds. The client knows it submitted; that knowledge is
-            immediate and true, and the streamed steps fill in underneath as they
-            arrive. */}
-        {pendingSince === null ? null : (
-          <article
-            aria-live="polite"
-            className="max-w-[720px] text-[13px] text-muted-foreground"
-            data-testid="conversation-progress"
-            role="status"
-          >
-            <div className="flex items-center gap-2.5">
-              <span
-                aria-hidden="true"
-                className="grid size-7 shrink-0 place-items-center rounded-full border border-rule bg-surface text-navy"
-              >
-                <Loader aria-hidden="true" className="size-3.5 animate-spin" />
-              </span>
-              <span>Planner is reading your request</span>
-              <span aria-hidden="true" className="font-mono text-[11px]">
-                <LiveElapsed startedAt={new Date(pendingSince).toISOString()} />
-              </span>
-            </div>
-            {draftText === null || draftText.trim() === "" ? null : (
-              <pre
-                className="mt-1.5 mb-0 max-h-40 overflow-auto pl-9 font-mono text-[11.5px] leading-relaxed break-words whitespace-pre-wrap text-muted-foreground"
-                data-testid="conversation-live-answer"
-              >
-                {draftText}
-              </pre>
-            )}
-          </article>
-        )}
-        {/* The agent, working, in its own words.
-            A worker was a spinner and a phase gauge: true, and no answer to
-            "what is it doing". The planner already streams; this is the same
-            thing for the agent that is actually changing the code. It sits at
-            the foot of the thread because that is where the present is. */}
-        {workerStream === null ? null : (
-          <article aria-live="polite" className="max-w-[720px] text-[13px] text-muted-foreground" role="status">
-            <div className="flex items-center gap-2.5">
-              <span
-                aria-hidden="true"
-                className="grid size-7 shrink-0 place-items-center rounded-full border border-rule bg-surface text-navy"
-              >
-                <Loader aria-hidden="true" className="size-3.5 animate-spin" />
-              </span>
-              <span>{workerStream.title} is working</span>
-            </div>
-            <pre className="mt-1.5 mb-0 max-h-44 overflow-auto pl-9 font-mono text-[11.5px] leading-relaxed break-words whitespace-pre-wrap text-muted-foreground">
-              {workerStream.text}
-            </pre>
-          </article>
-        )}
-      </div> : null}
       <div aria-hidden="true" className="sr-only" ref={endRef} />
     </div>
   );
@@ -2717,13 +2706,35 @@ function ThreadRow({
   draftText,
   onOpenPlan
 }: {
-  entry: ThreadEntry;
+  entry: DisplayThreadEntry;
   plan: WorkspacePlanReview | null;
   taskTitles: Record<string, string>;
   /** The planner's answer as it arrives, for the draft still in flight. */
   draftText: string | null;
   onOpenPlan: () => void;
 }): React.JSX.Element {
+  if (entry.kind === "worker-output") {
+    return <article className="text-[13px] text-muted-foreground" role="status">
+      <p>{entry.title} is working</p>
+      <pre className="max-h-44 overflow-auto whitespace-pre-wrap break-words font-mono text-[12px]">{entry.text}</pre>
+    </article>;
+  }
+  if (entry.kind === "operation") {
+    const live = entry.phase === "reading" || entry.phase === "planning" || entry.phase === "stopping";
+    return (
+      <article className="text-[13px] text-muted-foreground" data-testid={live ? "conversation-progress" : "conversation-outcome"} role="status">
+        <div className="flex items-center gap-2.5">
+          {live ? <Loader aria-hidden="true" className="size-4 animate-spin" /> : <CircleStop aria-hidden="true" className="size-4" />}
+          <span>{operationLabel(entry.phase)}</span>
+          {live ? <span className="font-mono text-[11px]"><LiveElapsed startedAt={entry.at} /></span> : null}
+        </div>
+        {live && entry.phase !== "stopping" && draftText ? (
+          <p className="mt-3 whitespace-pre-wrap break-words text-[14px] leading-relaxed text-ink" data-testid="conversation-live-answer">{draftText}</p>
+        ) : null}
+        {entry.detail ? <p className="mt-2 whitespace-pre-wrap break-words text-clay">{entry.detail}</p> : null}
+      </article>
+    );
+  }
   if (entry.kind === "request" || entry.kind === "guidance") {
     const guidance = entry.kind === "guidance";
     return (
@@ -2767,7 +2778,7 @@ function ThreadRow({
             ? "No longer reporting"
             : "Planner could not prepare a response";
     return (
-      <article className="max-w-[720px] text-[13px] text-muted-foreground">
+      <article className="max-w-[720px] text-[13px] text-muted-foreground" data-testid={entry.state === "live" ? "conversation-progress" : undefined}>
         <div className="flex items-center gap-2.5">
         <span aria-hidden="true" className="grid size-7 shrink-0 place-items-center rounded-full border border-rule bg-surface text-navy">
           <Sparkles className="size-3.5" />
@@ -2805,7 +2816,7 @@ function ThreadRow({
           <span className="text-[11px] font-medium tracking-label text-navy uppercase">Hivemind</span>
           <time className="font-mono text-[11px] text-muted-foreground">{formatClock(entry.at)}</time>
         </div>
-        <p className="mt-1.5 mb-0 text-[14px] leading-relaxed break-words text-ink">
+        <p className="mt-1.5 mb-0 whitespace-pre-wrap text-[14px] leading-relaxed break-words text-ink" data-testid="conversation-answer">
           {/* Only a DRAFTED direction is introduced as one. A reply is what the
               planner said back, and prefixing it with "I've prepared this
               direction:" would describe a different event than the one that
@@ -3042,6 +3053,9 @@ function PromptDock({
   continuationAvailable,
   managerStartAvailable,
   busy,
+  responseActive,
+  stopBusy,
+  onStopResponse,
   feedback,
   rolePickerOpen,
   rolePickerView,
@@ -3070,6 +3084,9 @@ function PromptDock({
   continuationAvailable: boolean;
   managerStartAvailable: boolean;
   busy: boolean;
+  responseActive: boolean;
+  stopBusy: boolean;
+  onStopResponse: () => Promise<void>;
   feedback: string;
   rolePickerOpen: boolean;
   rolePickerView: ProjectConfigView | null;
@@ -3117,9 +3134,9 @@ function PromptDock({
   );
   const roleMenu = (
     <ComposerRolePicker
-      busy={busy || rolePickerBusy}
+      busy={rolePickerBusy}
       changingRole={roleChanging}
-      disabled={runActive}
+      disabled={runActive || busy}
       error={rolePickerError}
       models={rolePickerModels}
       open={rolePickerOpen}
@@ -3146,7 +3163,11 @@ function PromptDock({
       : value.trim() === ""
         ? "Type something first"
         : sendLabel;
-  const sendButton = (
+  const sendButton = responseActive ? (
+    <Button aria-label="Stop response" disabled={stopBusy} size="icon-round" type="button" onClick={() => void onStopResponse()}>
+      <CircleStop aria-hidden="true" className="size-4" />
+    </Button>
+  ) : (
     <Button
       aria-label={sendLabel}
       disabled={busy || value.trim() === ""}
@@ -3184,15 +3205,11 @@ function PromptDock({
         </div>
       ) : null}
       <div
-        className={`grid gap-2 rounded-3xl border border-input bg-panel transition-colors focus-within:border-navy/55 focus-within:ring-1 focus-within:ring-navy/20 ${
-          centered ? "grid-cols-[minmax(0,1fr)]" : "grid-cols-[auto_minmax(0,1fr)_auto] items-end"
-        } ${
-          centered ? "min-h-[120px] px-3 py-2.5" : "px-2 py-1.5"
-        }`}
+        className={`grid grid-cols-[minmax(0,1fr)] gap-2 rounded-3xl border border-input bg-panel px-3 py-2.5 transition-colors focus-within:border-navy/55 focus-within:ring-1 focus-within:ring-navy/20 ${centered ? "min-h-[120px]" : ""}`}
       >
         {attachments.length === 0 ? null : (
           <div
-            className={`flex flex-wrap gap-1.5 ${centered ? "" : "col-span-3"}`}
+            className="flex flex-wrap gap-1.5"
             aria-label="Attached project items"
           >
             {attachments.map((attachment) => (
@@ -3216,7 +3233,6 @@ function PromptDock({
             ))}
           </div>
         )}
-        {centered ? null : leftActions}
         <textarea
           aria-label="Message Hivemind"
           className="max-h-[180px] min-h-[44px] w-full resize-none border-0 bg-transparent px-2 py-1.5 text-[15px] leading-relaxed text-ink outline-none placeholder:text-muted-foreground focus-visible:outline-none"
@@ -3246,14 +3262,10 @@ function PromptDock({
             event.currentTarget.form?.requestSubmit();
           }}
         />
-        {centered ? (
-          <div className="flex items-center justify-between">
-            {leftActions}
-            {sendButton}
-          </div>
-        ) : (
-          sendButton
-        )}
+        <div className="flex items-center justify-between">
+          {leftActions}
+          {sendButton}
+        </div>
       </div>
       {attachmentError ? (
         <p className="m-0 text-[12px] leading-snug text-clay" role="alert">
@@ -3323,7 +3335,7 @@ function PromptDock({
       {form}
     </div>
   ) : (
-    <footer className="shrink-0 border-t border-rule bg-canvas p-2.5">
+    <footer className="grid shrink-0 border-t border-rule bg-canvas px-5 py-2.5">
       {form}
     </footer>
   );
@@ -3373,21 +3385,21 @@ function ComposerRolePicker({
       <DropdownMenuTrigger asChild>
         <Button
           aria-label="Choose planner, manager, and worker models"
-          disabled={disabled || (busy && view === null)}
           size="sm"
           title="Choose planner, manager, and worker models"
           type="button"
           variant="ghost"
         >
           <SlidersHorizontal aria-hidden="true" />
-          Agents
+          Models
           <ChevronDown aria-hidden="true" className="size-3" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-[min(380px,calc(100vw-40px))]" side="top">
         <DropdownMenuLabel>Project agents</DropdownMenuLabel>
         <p className="mx-2.5 mt-0 mb-1.5 text-[11px] leading-relaxed text-muted-foreground">
-          Choose the model for each job. Changing one runs that provider&apos;s normal capability check and may use provider quota.
+          Planner prepares your response and plan. Manager coordinates approved work; workers make the changes. These are model assignments, not separate chats.
+          {disabled ? " You can inspect them now; stop or finish the current operation before changing a model." : " Changing one runs a capability check and may use provider quota."}
         </p>
         <DropdownMenuSeparator />
         {busy && view === null ? (
@@ -4444,12 +4456,28 @@ function AgentDials({ agents }: { agents: ActiveAgentView[] }): React.JSX.Elemen
  */
 function draftLinesSince(
   stream: DraftStreamView | null,
-  pendingSince: number | null
+  pendingSince: number | null,
+  requestId: string | null,
+  phase: "reading" | "planning" | "stopping" | "interrupted"
 ): string | null {
   if (stream === null || pendingSince === null) return null;
+  if (requestId !== null && stream.request_id !== requestId) return null;
+  if (requestId !== null && stream.phase !== phase) return null;
   if (stream.answer !== "" && stream.answer_at !== null && stream.answer_at >= pendingSince) {
     return stream.answer;
   }
   const lines = stream.lines.filter((line) => line.at >= pendingSince).map((line) => line.text);
   return lines.length === 0 ? null : lines.slice(-8).join(String.fromCharCode(10));
+}
+
+function operationLabel(phase: "reading" | "planning" | "stopping" | "completed" | "failed" | "stopped" | "interrupted"): string {
+  switch (phase) {
+    case "reading": return "Planner is preparing your response";
+    case "planning": return "Planner is preparing the task plan";
+    case "stopping": return "Stopping response — waiting for the provider to exit";
+    case "completed": return "Response prepared";
+    case "failed": return "Response could not finish";
+    case "stopped": return "Response stopped";
+    case "interrupted": return "Response is no longer reporting — use Stop to check and release it";
+  }
 }

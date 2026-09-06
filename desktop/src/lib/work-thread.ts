@@ -103,6 +103,7 @@ export interface ThreadShipped {
 }
 
 export type ThreadEntry =
+  | ThreadOperation
   | ThreadRequest
   | ThreadDraft
   | ThreadAssistant
@@ -110,6 +111,14 @@ export type ThreadEntry =
   | ThreadPlan
   | ThreadMilestone
   | ThreadShipped;
+
+export interface ThreadOperation {
+  kind: "operation";
+  id: string;
+  at: string;
+  phase: "reading" | "planning" | "stopping" | "completed" | "failed" | "stopped" | "interrupted";
+  detail: string | null;
+}
 
 /* Events a person would recognise as something happening to their work. */
 const TASK_MILESTONES: Record<string, { text: string; tone: ThreadTone }> = {
@@ -272,20 +281,53 @@ export function buildRunThread(
   }
 
   const ordered = [...visibleEvents].reverse();
+  const operationIds = new Set(ordered.filter((event) => event.type === "conversation.operation_started").map((event) => event.data.request_id));
+  const operationMessages = new Set(ordered.filter((event) => event.type === "conversation.message_recorded" && operationIds.has(event.data.request_id))
+    .map((event) => event.data.message_id));
+  const operationSpecs = new Set<string>();
   for (const [index, event] of ordered.entries()) {
     if (SUPPRESSED.has(event.type) || event.type.startsWith("quality.")) continue;
     const id = `${event.ts}-${event.type}-${index}`;
+
+    if (event.type === "conversation.operation_started" && typeof event.data.request_id === "string") {
+      entries.push({ kind: "operation", id: event.data.request_id, at: event.ts, phase: silentRounds.has(event.data.request_id) ? "interrupted" : "reading", detail: null });
+      continue;
+    }
+    if (["conversation.phase_changed", "conversation.cancel_requested", "conversation.operation_finished"].includes(event.type)) {
+      const operation = entries.find((entry): entry is ThreadOperation => entry.kind === "operation" && entry.id === event.data.request_id);
+      if (operation) {
+        operation.phase = event.type !== "conversation.operation_finished" && silentRounds.has(operation.id) ? "interrupted"
+          : event.type === "conversation.cancel_requested" ? "stopping"
+          : event.type === "conversation.phase_changed" ? "planning"
+          : event.data.status === "stopped" ? "stopped" : event.data.status === "failed" ? "failed" : "completed";
+        operation.detail = typeof event.data.reason === "string" ? event.data.reason : null;
+        if (event.type === "conversation.phase_changed") {
+          entries.splice(entries.indexOf(operation), 1);
+          entries.push(operation);
+        }
+      }
+      continue;
+    }
 
     if (event.type === "conversation.message_recorded") {
       const text = readString(event.data.text);
       if (text !== null) {
         entries.push({ kind: "request", id, at: event.ts, text });
+        const operation = entries.find((entry) => entry.kind === "operation" && entry.id === event.data.request_id);
+        if (operation) {
+          entries.splice(entries.indexOf(operation), 1);
+          entries.push(operation);
+        }
       }
       continue;
     }
 
     if (event.type === "spec.draft_started") {
       const specId = readString(event.data.spec_id);
+      if (specId !== null && operationMessages.has(event.data.message_id)) {
+        operationSpecs.add(specId);
+        continue;
+      }
       if (specId !== null) {
         entries.push({
           kind: "draft",
@@ -354,7 +396,7 @@ export function buildRunThread(
         }
       } else {
         const message = readString(event.data.message);
-        if (message !== null) {
+        if (message !== null && !operationSpecs.has(specId ?? "")) {
           entries.push({
             kind: "assistant",
             id,
@@ -473,7 +515,7 @@ export function buildRunThread(
     }
   }
 
-  return entries;
+  return entries.filter((entry) => entry.kind !== "operation" || entry.phase !== "completed");
 }
 
 /* Consecutive milestones collapse only when they are the same thing happening to

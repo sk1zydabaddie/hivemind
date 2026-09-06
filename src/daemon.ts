@@ -235,7 +235,9 @@ export function createDaemonServer(repoRoot: string, buildId: string, authToken:
         invokeInProcess,
         () => handler(payloadResult.value, eventBus)
       );
-      const execute = () => daemonRequestStartsWork(request.method, target.path, payloadResult.value)
+      // A stop cannot launch work, and must not wait behind the admission lock
+      // held by the very operation it needs to interrupt.
+      const execute = () => !isQueueInterrupt(request.method, target.path, payloadResult.value) && daemonRequestStartsWork(request.method, target.path, payloadResult.value)
         ? withUpdateAdmission(executeAction)
         : executeAction();
       const result = isConcurrentObservation(request.method, target.path, payloadResult.value) || isQueueInterrupt(request.method, target.path, payloadResult.value)
@@ -440,7 +442,7 @@ function routeHandler(repoRoot: string, method: string | undefined, url: string 
 function isQueueInterrupt(method: string | undefined, path: string, payload: DaemonPayload): boolean {
   return method === "POST" &&
     path === "/workspace/action" &&
-    (payload.type === "quality.cancel" || payload.type === "task.stop" || payload.type === "run.stop");
+    (payload.type === "quality.cancel" || payload.type === "task.stop" || payload.type === "run.stop" || payload.type === "conversation.stop");
 }
 
 const concurrentWorkspaceObservations = new Set([

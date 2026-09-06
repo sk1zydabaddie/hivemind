@@ -1,4 +1,5 @@
 import { isNodeError } from "./error-detail.js";
+import { conversationCancelled, runConversationAdapter } from "./conversation-control.js";
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
@@ -12,8 +13,7 @@ import {
   adapterRunLogPath,
   findDangerousAdapterArgs,
   formatAdapterProcessFailure,
-  loadAdapterProfile,
-  runAdapterProcess
+  loadAdapterProfile
 } from "./adapter.js";
 import { canonicalizeIntentPath } from "./canonicalize.js";
 import { buildLeaseIndex } from "./lease-index.js";
@@ -332,7 +332,8 @@ async function generateTentativePlanWithSession(
   tool: string,
   outPath: string,
   steering?: string,
-  usageSessionId?: string
+  usageSessionId?: string,
+  requestId?: string
 ): Promise<SpecResult<GeneratedPlanResult>> {
   const allowed = await checkPlanningAllowed(repoRoot, specId);
   if (!allowed.ok) {
@@ -379,9 +380,9 @@ async function generateTentativePlanWithSession(
     return prompt;
   }
   const liveOutput = createLiveOutputWriter(repoRoot, ACTIVITY_STREAM_ID, profileResult.profile.tool, undefined, {
-    structuredAnswers: true
+    structuredAnswers: true, requestId, phase: "planning"
   });
-  const processResult = await runAdapterProcess(repoRoot, profileResult.profile, repoRoot, prompt.value, {
+  const processResult = await runConversationAdapter(repoRoot, profileResult.profile, prompt.value, {
     outputLogPath: adapterRunLogPath(repoRoot, `planning-${specId}`),
     usageSessionId,
     usageRunId: usageSessionId ?? specId,
@@ -389,7 +390,7 @@ async function generateTentativePlanWithSession(
     ...(profileResult.profile.usage_parser === "claude-json"
       ? { structuredOutputSchema: tentativePlanJsonSchema }
       : {})
-  });
+  }, requestId);
   const streamed = await liveOutput.drain();
   if (!streamed.ok) return streamed;
   if (!processResult.ok) {
@@ -400,6 +401,7 @@ async function generateTentativePlanWithSession(
   }
 
   const proposal = parseGeneratedPlan(processResult.value.modelOutput);
+  if (requestId !== undefined && await conversationCancelled(repoRoot, requestId)) return { ok: false, reason: "Response stopped." };
   if (!proposal.ok) {
     return proposal;
   }
@@ -424,7 +426,8 @@ async function generateTentativePlanWithSession(
 export async function prepareWorkspaceTentativePlan(
   repoRoot: string,
   prompt: string,
-  tool: string
+  tool: string,
+  requestId?: string
 ): Promise<SpecResult<WorkspacePreparedPlanResult>> {
   const normalizedPrompt = prompt.trim();
   if (normalizedPrompt === "") {
@@ -456,9 +459,11 @@ export async function prepareWorkspaceTentativePlan(
     tool,
     proposalPath,
     normalizedPrompt,
-    usageSessionId
+    usageSessionId,
+    requestId
   );
   if (!generated.ok) return generated;
+  if (requestId !== undefined && await conversationCancelled(repoRoot, requestId)) return { ok: false, reason: "Response stopped." };
 
   const grounded = await groundTentativePlan(repoRoot, activeSpec.value.spec_id);
   if (!grounded.ok) return grounded;

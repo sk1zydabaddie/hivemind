@@ -46,6 +46,8 @@ export function setTaskOutputPublisher(next: TaskOutputPublisher | null): void {
 }
 
 export interface TaskOutputRecord {
+  request_id?: string;
+  phase?: "reading" | "planning";
   ts: string;
   task_id: string;
   tool: string;
@@ -66,6 +68,8 @@ export interface TaskOutputRecord {
 }
 
 export interface TaskOutputInput {
+  request_id?: string;
+  phase?: "reading" | "planning";
   task_id: string;
   tool: string;
   stream: TaskOutputStream;
@@ -92,7 +96,7 @@ export function createLiveOutputWriter(
   taskId: string,
   tool: string,
   onRecord?: (record: TaskOutputRecord) => void,
-  options: { structuredAnswers?: boolean } = {}
+  options: { structuredAnswers?: boolean; requestId?: string; phase?: "reading" | "planning" } = {}
 ): LiveOutputWriter {
   const decoders = {
     stdout: new AgentStreamDecoder(options),
@@ -106,6 +110,8 @@ export function createLiveOutputWriter(
       previous.ok
         ? appendTaskOutput(repoRoot, {
             task_id: taskId,
+            ...(options.requestId === undefined ? {} : { request_id: options.requestId }),
+            ...(options.phase === undefined ? {} : { phase: options.phase }),
             tool,
             stream: chunk.stream,
             text: chunk.text,
@@ -167,6 +173,8 @@ export async function appendTaskOutput(
   const record: TaskOutputRecord = {
     ts: new Date().toISOString(),
     task_id: input.task_id,
+    ...(input.request_id === undefined ? {} : { request_id: input.request_id }),
+    ...(input.phase === undefined ? {} : { phase: input.phase }),
     tool: input.tool,
     stream: input.stream,
     text: input.text,

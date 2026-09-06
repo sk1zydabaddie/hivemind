@@ -9,9 +9,9 @@ import {
   findDangerousAdapterArgs,
   formatAdapterProcessFailure,
   loadAdapterProfile,
-  runAdapterProcess,
   type AdapterProfile
 } from "./adapter.js";
+import { conversationCancelled, runConversationAdapter } from "./conversation-control.js";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic.js";
 import { loadConfig } from "./config.js";
 import { plainReason } from "./plain-reason.js";
@@ -258,9 +258,12 @@ export async function draftSpecFromPrompt(
     history: history.value,
     answerOnly: options.answerOnly === true
   });
-  const drafted = await draftOnce(repoRoot, profile.profile, tool, turnId, drafting);
+  const drafted = await draftOnce(repoRoot, profile.profile, tool, turnId, drafting, options.requestId);
   if (!drafted.ok) {
     return failDraft(repoRoot, specId.value, drafted.reason);
+  }
+  if (options.requestId !== undefined && await conversationCancelled(repoRoot, options.requestId)) {
+    return failDraft(repoRoot, specId.value, "Response stopped.");
   }
 
   /* Not a build request. The drafter said so in the same call that would have
@@ -726,20 +729,21 @@ async function draftOnce(
      read under the other and no text ever arrived. A parameter named for what
      it is cannot drift that way twice. */
   turnId: string,
-  drafting: string
+  drafting: string,
+  requestId?: string
 ): Promise<SpecResult<DraftedAnswer>> {
   /* Stream it. The harness emits text as it thinks, and this threw it away:
      thirteen seconds of a spinner and then a finished answer. The chunks go to
-     the same durable channel worker output already uses, keyed on the spec id,
+     the existing durable activity channel, tagged with this request and phase,
      so the surface reads them through the endpoint it already has rather than
      through a second mechanism.
 
      Writes are chained rather than fired in parallel: the records are a
      transcript, and a transcript out of order is worse than no transcript. */
   const liveOutput = createLiveOutputWriter(repoRoot, ACTIVITY_STREAM_ID, tool, undefined, {
-    structuredAnswers: true
+    structuredAnswers: true, requestId, phase: "reading"
   });
-  const process = await runAdapterProcess(repoRoot, profile, repoRoot, drafting, {
+  const process = await runConversationAdapter(repoRoot, profile, drafting, {
     outputLogPath: adapterRunLogPath(repoRoot, `drafting-${turnId}-1`),
     usageSessionId: turnId,
     usageRunId: turnId,
@@ -747,7 +751,7 @@ async function draftOnce(
        per process, so framing state never bleeds between concurrent calls. */
     onStreamChunk: liveOutput.onChunk,
     ...(profile.usage_parser === "claude-json" ? { structuredOutputSchema: draftedSpecJsonSchema } : {})
-  });
+  }, requestId);
   const output = await liveOutput.drain();
   if (!output.ok) return output;
   if (!process.ok) return process;

@@ -336,6 +336,7 @@ export function useWorkspace(): WorkspaceView {
         const answer = record.record.answer ?? "";
         if (line === "" && answer === "") return;
         setDraftStream((previous) => {
+          if (previous?.request_id !== record.record.request_id || previous?.phase !== record.record.phase) previous = null;
           const lines = previous?.lines ?? [];
           const nextLines = line === "" || lines.at(-1)?.text === line
             ? lines
@@ -346,6 +347,8 @@ export function useWorkspace(): WorkspaceView {
               ? `${previous?.answer ?? ""}${answer}`
               : answer;
           return {
+            request_id: record.record.request_id,
+            phase: record.record.phase,
             lines: nextLines,
             answer: nextAnswer,
             answer_at: answer === "" ? previous?.answer_at ?? null : Number.isFinite(at) ? at : Date.now()
@@ -819,6 +822,8 @@ function parseOutputMessage(value: string): OutputMessage | null {
   if (record.activity !== undefined && typeof record.activity !== "string") return null;
   if (record.answer !== undefined && typeof record.answer !== "string") return null;
   if (record.answer_mode !== undefined && record.answer_mode !== "complete" && record.answer_mode !== "delta") return null;
+  if (record.request_id !== undefined && typeof record.request_id !== "string") return null;
+  if (record.phase !== undefined && record.phase !== "reading" && record.phase !== "planning") return null;
   return raw as unknown as OutputMessage;
 }
 

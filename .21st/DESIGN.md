@@ -34,7 +34,7 @@ occupy unused Setup and idle Work space; it never becomes wallpaper.
 
 - Preserve the existing information architecture and audited dispatcher.
 - Keep top navigation flat with an underline selected state.
-- Keep example prompts as rule-separated rows without relief.
+- Do not restore example prompts; empty Work owns a centered composer.
 - Keep brand marks untinted and provider-correct.
 - Preserve visible focus, keyboard behavior, responsive reachability, and
   non-motion liveness.

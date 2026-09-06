@@ -43,6 +43,13 @@ const DESKTOP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 /** The surfaces a person MUST be able to finish. */
 const SURFACES = [
   {
+    name: "work — cancellable conversation",
+    url: `${BASE}/replay.html?scenario=conversation-operation-live&section=work`,
+    liveness: true,
+    expectText: ["Planner is preparing your response"],
+    conversationOperation: true
+  },
+  {
     name: "setup — connect a provider",
     url: `${BASE}/replay.html?scenario=e2e-textkit-parallel-run&section=setup`
   },
@@ -172,9 +179,8 @@ const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Only the recorded planner stage may satisfy this liveness assertion.
 const PLANNER_ELAPSED = `
-  const stage = [...document.querySelectorAll('[data-testid="conversation-log"] article')]
-    .find((article) => [...article.querySelectorAll("span")]
-      .some((span) => span.textContent === "Planner is reading your request"));
+  const stages = document.querySelectorAll('[data-testid="conversation-log"] [data-testid="conversation-progress"]');
+  const stage = stages.length === 1 ? stages[0] : null;
   return [...(stage?.querySelectorAll("span") ?? [])]
     .map((span) => span.textContent?.trim() ?? "")
     .find((text) => text.endsWith(" elapsed")) ?? null;
@@ -622,6 +628,25 @@ for (const viewport of selectedViewports) {
       return [];
     });
     const label = `${viewport.width}x${viewport.height}  ${surface.name}`;
+    if (surface.conversationOperation === true) {
+      const conversation = await page.evaluate(`
+        const rows = document.querySelectorAll('[data-testid="conversation-progress"]');
+        const stop = document.querySelector('[aria-label="Stop response"]');
+        const composer = document.getElementById('work-composer');
+        const row = document.querySelector('[data-testid="conversation-row"]');
+        const message = row?.firstElementChild;
+        const form = composer?.form;
+        return { count: rows.length, stop: !!stop && !stop.disabled,
+          insideLog: rows.length === 1 && !!rows[0].closest('[data-testid="conversation-log"]'),
+          centered: !!form && Math.abs(form.getBoundingClientRect().left + form.getBoundingClientRect().width / 2 - row.getBoundingClientRect().left - row.getBoundingClientRect().width / 2) < 3,
+          aligned: !!form && !!message && Math.abs(form.getBoundingClientRect().left - message.getBoundingClientRect().left) < 3 };
+      `);
+      if (conversation.count !== 1 || !conversation.stop || !conversation.insideLog || !conversation.centered || !conversation.aligned) {
+        failures += 1;
+        console.error(`  FAIL ${label}: conversation layout/control contract ${JSON.stringify(conversation)}`);
+        continue;
+      }
+    }
     if (surface.liveness === true) {
       const before = await page.evaluate(PLANNER_ELAPSED);
       await settle(3_100);
@@ -634,6 +659,11 @@ for (const viewport of selectedViewports) {
         console.error(`  FAIL ${label}: functional liveness did not change (${before} -> ${after}); visible: ${visibleText}`);
         continue;
       }
+      // A nearby header clock must not satisfy a missing transcript indicator.
+      await page.evaluate(`document.querySelector('[data-testid="conversation-progress"]').setAttribute('data-testid', 'negative-control-hidden-progress'); return true;`);
+      const unplugged = await page.evaluate(PLANNER_ELAPSED);
+      await page.evaluate(`document.querySelector('[data-testid="negative-control-hidden-progress"]').setAttribute('data-testid', 'conversation-progress'); return true;`);
+      if (unplugged !== null) throw new Error(`${label}: liveness predicate passed without its indicator`);
     }
     if (
       found.unreachable.length === 0 &&

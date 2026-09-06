@@ -165,6 +165,8 @@ export interface AdapterFailureMetering {
 }
 
 export interface AdapterProcessOptions {
+  /** Conversation operations may be cancelled during account/budget admission. */
+  cancelBeforeSpawn?: boolean;
   onStreamChunk?: (chunk: AdapterStreamChunk) => void;
   outputLogPath?: string;
   usageSessionId?: string;
@@ -526,6 +528,17 @@ export async function runAdapterProcess(
     return reservationResult;
   }
   const reservation = reservationResult.value.reservation;
+  if (options.cancelBeforeSpawn === true && options.shouldCancel !== undefined) {
+    let cancelled: boolean;
+    try { cancelled = await options.shouldCancel(); }
+    catch { cancelled = true; }
+    if (cancelled) {
+      if (promptFilePath !== null) await unlink(promptFilePath).catch(() => undefined);
+      const released = reservation === null ? { ok: true as const }
+        : await releaseMeteredCallAfterSpawnFailure(repoRoot, reservation.reservation_id);
+      return released.ok ? { ok: false, reason: "Adapter stopped before provider launch." } : released;
+    }
+  }
   const startedAt = Date.now();
   return new Promise((resolve) => {
     /* HIVEMIND_<AGENT>_PATH, applied here rather than at profile load, so the
@@ -747,7 +760,10 @@ export async function runAdapterProcess(
     });
 
     if (profile.prompt_arg === "stdin") {
-      child.stdin.end(prompt);
+      void processStart.then((recorded) => {
+        if (recorded.ok) child.stdin.end(prompt);
+        else child.stdin.end();
+      });
     }
   });
 }

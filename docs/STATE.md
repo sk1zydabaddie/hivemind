@@ -1,6 +1,6 @@
 # Where Hivemind stands
 
-Current entrypoint, reconciled 2026-09-04. A claim without evidence is a plan.
+Current entrypoint, reconciled 2026-09-05. A claim without evidence is a plan.
 Historical measurements are dated evidence, not a promise about today's build.
 
 ## Readiness and remaining limits
@@ -41,11 +41,18 @@ to disclose, not assumptions that deterministic gates may trust.
 - [Conversation reliability repair](CONVERSATION-REPAIR.md): the reported
   space-game-to-garden drift was traced to missing prior turns in the drafter's
   input. Checkpoint 1 is committed as `d9e1ed2`: durable, bounded conversation
-  history and no-paid provider-input regression coverage. Core passed 976 tests
-  with 2 skipped; Desktop 380, Rust 64, viewport 44. Installation awaits approval
-  to close two installed background services; the installed app still has the
-  old path. Duplicate activity, planner cancellation, phase reporting and
-  transcript alignment remain open checkpoints, not fixed by this Core change.
+  history and no-paid provider-input regression coverage. The user approved
+  the remaining cancellation, phase-reporting and transcript-alignment repair
+  and installation. Source verification passed: Core 981 with 2 Windows/POSIX
+  skips, Desktop 381, Rust 64, viewport 48, and zero npm/RustSec advisories.
+  Installed proof is pending; the identity above is still the old build until
+  a successful ship is recorded. Legacy draft rendering remains for old trails;
+  the duplicate live footer has been removed.
+- [Real-world use review](REAL-WORLD-USE-AUDIT.md): 14 product/scale findings
+  plus one verification gap, not automatically marked fixed. Highest priority:
+  active-spec answer-only routing prevents normal conversational revision, and
+  the conversation lacks a typed live-run/check context. Draft persistence and
+  scroll stability also need a separate approved usability phase.
 - [Codebase reduction](CODEBASE-REDUCTION.md): generated-data cleanup,
   current-document consolidation and behavior-preserving implementation audit;
   all three implementation phases committed through `5c69d80`; approved

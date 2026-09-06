@@ -51,7 +51,10 @@ describe("replay data generated from a clean checkout", () => {
           .digest("hex")
       ];
     }).sort((left, right) => String(left[0]).localeCompare(String(right[0])));
-    expect(actual).toEqual(captured);
+    // Historical captures remain byte-for-byte unchanged; new named regression
+    // fixtures are checked separately rather than replacing that baseline.
+    expect(actual.filter(row => row[0] !== "conversation-operation-live")).toEqual(captured);
+    expect(actual.find(row => row[0] === "conversation-operation-live")?.slice(0, 3)).toEqual(["conversation-operation-live", 3, true]);
   });
 
   test("every npm fixture consumer generates data against freshly built Core first", async () => {

@@ -24,6 +24,41 @@ const execFileAsync = promisify(execFile);
 const testDir = dirname(fileURLToPath(import.meta.url));
 const cliPath = path.resolve(testDir, "../src/cli.js");
 
+test("conversation stop crosses the occupied work queue and installed update admission lock", { timeout: 60000 }, async () => {
+  await withTempRepo(async ({ repo }) => {
+    const configured = await setProjectConfig(repo, { no_tests_declared: true });
+    assert.equal(configured.ok, true, configured.ok ? undefined : configured.reason);
+    const adapter = path.join(repo, ".hivemind", "adapters", "slow.mjs");
+    await mkdir(path.dirname(adapter), { recursive: true });
+    await writeFile(adapter, 'for await (const chunk of process.stdin) {} await new Promise(resolve => setTimeout(resolve, 30000)); console.log(JSON.stringify({kind:"reply",reply:"too late"}));');
+    await writeFile(path.join(path.dirname(adapter), "planner.profile.json"), JSON.stringify({
+      tool: "planner", invoke: [process.execPath, adapter], prompt_arg: "stdin", verified_on: "test", context_window: 200000, timeout_ms: 35000, roles: ["orchestrator"]
+    }));
+    const coordinator = path.join(repo, ".hivemind", "update.json");
+    const daemon = await startDaemon(repo, coordinator);
+    const requestId = "123e4567-e89b-42d3-a456-426614174084";
+    const pending = postDaemon(daemon, "/workspace/action", { type: "conversation.submit", payload: {
+      prompt: "Describe this project.", tool: "planner", request_id: requestId
+    } });
+    try {
+      await Promise.race([
+        waitForEvent(repo, event => event.type === "conversation.process_started"),
+        pending.then(result => { throw new Error(`conversation ended before provider start: ${JSON.stringify(result)}`); })
+      ]);
+      assert.equal((await stat(`${coordinator}.admission`)).isDirectory(), true);
+      const stopped = await postDaemon(daemon, "/workspace/action", { type: "conversation.stop", payload: { request_id: requestId } });
+      assert.equal(stopped.ok, true, JSON.stringify(stopped));
+      assert.equal((stopped.value as { status: string }).status, "stopped");
+      assert.equal((await pending).ok, true);
+      await assert.rejects(stat(`${coordinator}.admission`), { code: "ENOENT" });
+    } finally {
+      await postDaemon(daemon, "/workspace/action", { type: "conversation.stop", payload: { request_id: requestId } });
+      await pending;
+      await stopDaemon(daemon);
+    }
+  });
+});
+
 interface DaemonProcess {
   child: ChildProcessWithoutNullStreams;
   url: string;

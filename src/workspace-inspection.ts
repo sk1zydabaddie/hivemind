@@ -1,4 +1,5 @@
 import { isNodeError } from "./error-detail.js";
+import { currentConversationOperation, type ConversationOperation } from "./conversation-control.js";
 import { createCachedProcessLivenessProbe } from "./process-liveness.js";
 import { openRounds, roundIsReporting, type OpenRound } from "./open-rounds.js";
 import { readFile, readdir } from "node:fs/promises";
@@ -102,6 +103,7 @@ export interface ActiveAgentView {
 }
 
 export interface WorkspaceInspection {
+  conversation_operation: ConversationOperation | null;
   status: HivemindStatus;
   tasks: WorkspaceTaskProjection[];
   execution_groups: WorkspaceExecutionGroupProjection[];
@@ -473,6 +475,7 @@ export async function inspectWorkspace(
         .map((round) => round.id)
         .filter((id): id is string => id !== null),
       active_agents: activeAgents,
+      conversation_operation: currentConversationOperation(events.value),
       active_spec_id: specId,
       active_spec_title: specTitle,
       manager_session: session.value,

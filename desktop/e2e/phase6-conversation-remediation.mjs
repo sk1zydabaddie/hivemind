@@ -1,4 +1,5 @@
 /** No-cost installed-artifact proof for R4 conversation and live orchestration. */
+import "./protect-recent-projects.mjs";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
@@ -18,7 +19,7 @@ const installedRoot = path.join(process.env.LOCALAPPDATA ?? "", "Hivemind AI");
 const installedBinary = path.join(installedRoot, "hivemind_desktop.exe");
 const installedCore = path.join(installedRoot, "core", "dist", "src");
 const recentProjectsPath = path.join(process.env.APPDATA ?? "", "ai.hivemind.desktop", "recent-projects.json");
-const evidenceDir = path.resolve("..", "docs", "evidence", `remediation-phase6-${installedVersion}`);
+const evidenceDir = path.resolve("..", "docs", "evidence", `conversation-repair-${installedVersion}-${Date.now()}`);
 
 let driver;
 let tauriDriver;
@@ -37,6 +38,9 @@ const evidence = {
   attachmentContext: {},
   newConversation: {},
   visibleFailure: {},
+  stopResponse: {},
+  stopPlanning: {},
+  usabilityObservations: {},
   browserSevereLogs: [],
   recentProjects: {}
 };
@@ -46,7 +50,6 @@ try {
   assert.ok(existsSync(path.join(installedCore, "workspace-actions.js")), "installed Core action module missing");
   assert.equal(await isProcessRunning("hivemind_desktop.exe"), false, "close the installed Hivemind app before this proof");
   assert.equal(await isProcessRunning("tauri-driver.exe"), false, "another tauri-driver session is already running");
-  await rm(evidenceDir, { recursive: true, force: true, maxRetries: 5 });
   await mkdir(evidenceDir, { recursive: true });
   if (existsSync(recentProjectsPath)) {
     recentProjectsExisted = true;
@@ -95,9 +98,15 @@ try {
   const activeDuringAnswer = existsSync(path.join(project, ".hivemind", "phase6-provider-active"));
   const progressTextDuringRun = await progress.getText();
   const answerTextDuringRun = await liveAnswer.getText();
+  assert.equal((await driver.findElements(By.css('[data-testid="conversation-progress"]'))).length, 1, "duplicate live operation rows");
   const exactQuestionRowsDuringRun = (await driver.findElements(By.xpath(`//*[normalize-space(.)=${JSON.stringify(question)}]`))).length;
   const liveShot = `phase6-live-conversation-${installedVersion}-1440x900.png`;
   await writeFile(path.join(evidenceDir, liveShot), Buffer.from(await driver.takeScreenshot(), "base64"));
+  await new Promise(resolve => setTimeout(resolve, 3100));
+  assert.equal(existsSync(path.join(project, ".hivemind", "phase6-provider-active")), true, "liveness sampled after operation ended");
+  const laterProgress = await progress.getText();
+  assert.notEqual(laterProgress, progressTextDuringRun, "operation-scoped liveness did not change");
+  await writeFile(path.join(evidenceDir, `phase6-live-later-${installedVersion}-1440x900.png`), Buffer.from(await driver.takeScreenshot(), "base64"));
   await driver.wait(async () => !(existsSync(path.join(project, ".hivemind", "phase6-provider-active"))), 10_000);
   await waitForText(answer, 10_000);
   await waitForComposerReady(10_000);
@@ -109,6 +118,7 @@ try {
     reply: answer,
     durableMessageVisibleWhileRunning: exactQuestionRowsDuringRun > 0,
     scopedActivityWhileRunning: progressTextDuringRun,
+    scopedActivityLater: laterProgress,
     scopedAnswerWhileRunning: answerTextDuringRun,
     providerStillAliveWhenAnswerSampled: activeDuringAnswer,
     readOnlyStatusSettledWhileRunning: statusProbe.settled,
@@ -134,6 +144,26 @@ try {
     adapterCalls: (await readCalls()).length - duplicateBefore,
     durableMessages: countMessages(await readEvents(), duplicate)
   };
+
+  await typeComposer("STOP_RESPONSE");
+  await submitOnce();
+  await driver.wait(until.elementLocated(By.css('[aria-label="Stop response"]')), 5000);
+  await driver.wait(async () => (await postAction(daemon.url, { type: "status.inspect", payload: {} })).value?.conversation_operation?.phase === "reading", 5000);
+  await driver.findElement(By.css('[aria-label="Choose planner, manager, and worker models"]')).click();
+  const modelMenu = await driver.wait(until.elementLocated(By.css('[role="menu"]')), 5000);
+  assert.match(await modelMenu.getText(), /model assignments, not separate chats/);
+  await driver.actions().sendKeys("\uE00C").perform();
+  await driver.navigate().refresh();
+  await driver.wait(until.elementLocated(By.css('[aria-label="Stop response"]')), 10000);
+  assert.equal((await driver.findElements(By.css('[data-testid="conversation-progress"]'))).length, 1, "reload duplicated or lost the active operation");
+  await typeComposer("This is my next unsent message.");
+  await driver.findElement(By.css('[aria-label="Stop response"]')).click();
+  await driver.wait(async () => (await postAction(daemon.url, { type: "status.inspect", payload: {} })).value?.conversation_operation === null, 15000);
+  const retainedDraft = await driver.findElement(By.id("work-composer")).getAttribute("value");
+  assert.equal(retainedDraft, "This is my next unsent message.");
+  const stopShot = `stopped-response-${installedVersion}-1440x900.png`;
+  await writeFile(path.join(evidenceDir, stopShot), Buffer.from(await driver.takeScreenshot(), "base64"));
+  evidence.stopResponse = { screenshot: stopShot, retainedDraft, modelMenuOpenedWhileRunning: true, stopRecoveredAfterReload: true };
 
   const attachmentPrompt = "Summarize the attached notes folder.";
   const attachmentBefore = (await readCalls()).length;
@@ -162,7 +192,7 @@ try {
     markerTextAppendedToPrompt: attachmentCall?.prompt.includes("Project references:") ?? false
   };
 
-  const buildResult = await postAction(daemon.url, {
+  const buildPending = postAction(daemon.url, {
     type: "conversation.submit",
     payload: {
       prompt: "Build a tiny status label for this fixture.",
@@ -171,7 +201,18 @@ try {
       attachments: []
     }
   });
-  assert.equal(buildResult.ok, false, "the deterministic plan refusal should preserve a draft active spec");
+  await driver.wait(async () => (await postAction(daemon.url, { type: "status.inspect", payload: {} })).value?.conversation_operation?.phase === "planning", 15000);
+  await driver.wait(async () => {
+    const rows = await driver.findElements(By.css('[data-testid="conversation-progress"]'));
+    return rows.length === 1 && (await rows[0].getText()).includes("preparing the task plan");
+  }, 5000);
+  const planningShot = `planning-handoff-${installedVersion}-1440x900.png`;
+  await writeFile(path.join(evidenceDir, planningShot), Buffer.from(await driver.takeScreenshot(), "base64"));
+  await driver.findElement(By.css('[aria-label="Stop response"]')).click();
+  const buildResult = await buildPending;
+  assert.equal(buildResult.ok, true, JSON.stringify(buildResult));
+  assert.equal(buildResult.value.status, "stopped");
+  evidence.stopPlanning = { screenshot: planningShot, status: buildResult.value.status };
   const beforeBoundary = await postAction(daemon.url, { type: "status.inspect", payload: {} });
   assert.equal(beforeBoundary.ok, true, beforeBoundary.reason);
   const boundary = await postAction(daemon.url, { type: "conversation.new", payload: {} });
@@ -188,10 +229,15 @@ try {
   await typeComposer(failurePrompt);
   await submitOnce();
   await waitForEventDetail("spec.draft_failed", "PHASE6_VISIBLE_PROVIDER_FAILURE", 12_000);
-  const failureLabel = "Planner could not prepare a response";
-  const conversationLog = await driver.findElement(By.css('[data-testid="conversation-log"]'));
-  await driver.wait(
-    async () => (await conversationLog.getText()).includes(failureLabel),
+  const failureLabel = "Response could not finish";
+  const failureOutcome = await driver.wait(
+    async () => {
+      for (const outcome of await driver.findElements(By.css('[data-testid="conversation-outcome"]'))) {
+        const text = await outcome.getText();
+        if (text.includes(failureLabel) && text.includes("PHASE6_VISIBLE_PROVIDER_FAILURE")) return outcome;
+      }
+      return false;
+    },
     12_000,
     "the exact failed planner round did not become visible in the conversation log"
   );
@@ -201,9 +247,20 @@ try {
     build: installedVersion,
     screenshot: failureShot,
     statusText: failureLabel,
+    scopedOutcomeText: await failureOutcome.getText(),
     durableFailure: (await readEvents()).some((event) =>
       event.type === "spec.draft_failed" && String(event.data?.detail ?? "").includes("PHASE6_VISIBLE_PROVIDER_FAILURE")
     )
+  };
+
+  // Findings-only probe: this is an unsent draft, not another provider call.
+  const navigationDraft = "Keep this unsent draft while I inspect Agents.";
+  await typeComposer(navigationDraft);
+  await driver.findElement(By.xpath("//*[@role='tab' and normalize-space(.)='Agents']")).click();
+  await driver.findElement(By.xpath("//*[@role='tab' and normalize-space(.)='Work']")).click();
+  const draftAfterTabs = await driver.wait(until.elementLocated(By.id("work-composer")), 5000);
+  evidence.usabilityObservations.draftAcrossTabs = {
+    typed: navigationDraft, after: await draftAfterTabs.getAttribute("value")
   };
 
   const browserLogs = await driver.manage().logs().get(logging.Type.BROWSER).catch(() => []);
@@ -296,18 +353,19 @@ let prompt="";for await(const chunk of process.stdin)prompt+=chunk;
 const marker=path.join(process.cwd(),".hivemind","phase6-provider-active");
 writeFileSync(marker,String(process.pid));
 const kind=prompt.includes("TWO KINDS OF ANSWER")?"draft":"plan";
+const current=kind==="draft"?prompt.split("What the person typed, verbatim:\\n").at(-1).split("\\n\\nFiles in this project (")[0]:"";
 appendFileSync(path.join(process.cwd(),".hivemind","phase6-calls.jsonl"),JSON.stringify({at:new Date().toISOString(),kind,prompt})+"\\n");
 const progress=JSON.stringify({type:"item.completed",item:{type:"reasoning"}})+"\\n";
 process.stderr.write(progress.slice(0,Math.floor(progress.length/2)));await new Promise(r=>setTimeout(r,180));process.stderr.write(progress.slice(Math.floor(progress.length/2)));
 await new Promise(r=>setTimeout(r,700));
-if(prompt.includes("FAIL_VISIBLE")){process.stderr.write("PHASE6_VISIBLE_PROVIDER_FAILURE\\n");rmSync(marker,{force:true});process.exit(7);}
-if(kind==="plan"){process.stderr.write("PHASE6_DETERMINISTIC_PLAN_REFUSAL\\n");rmSync(marker,{force:true});process.exit(7);}
+if(current==="FAIL_VISIBLE"){process.stderr.write("PHASE6_VISIBLE_PROVIDER_FAILURE\\n");rmSync(marker,{force:true});process.exit(7);}
+if(current==="STOP_RESPONSE" || kind==="plan"){await new Promise(r=>setTimeout(r,25000));process.stderr.write("PHASE6_DETERMINISTIC_PLAN_REFUSAL\\n");rmSync(marker,{force:true});process.exit(7);}
 let result;
-if(prompt.includes("Build a tiny status label"))result={kind:"spec",title:"Add fixture status label",goal:"Show one status label.",non_goals:[],acceptance:["The fixture displays the status label."],assumptions:["Use the existing entry point."],open_questions:[],alternatives:[{title:"Inline",tradeoffs:["Small","Not reusable"]},{title:"Reusable",tradeoffs:["Reusable","More code"]}],self_critique:{weakest_point:"No UI exists.",cut_or_change:"Keep it minimal."}};
-else if(prompt.includes("Give me the fixture name"))result={kind:"reply",reply:"phase-six-conversation-fixture"};
-else if(prompt.includes("attached notes folder"))result={kind:"reply",reply:"The attached notes describe current behavior."};
+if(current.includes("Build a tiny status label"))result={kind:"spec",title:"Add fixture status label",goal:"Show one status label.",non_goals:[],acceptance:["The fixture displays the status label."],assumptions:["Use the existing entry point."],open_questions:[],alternatives:[{title:"Inline",tradeoffs:["Small","Not reusable"]},{title:"Reusable",tradeoffs:["Reusable","More code"]}],self_critique:{weakest_point:"No UI exists.",cut_or_change:"Keep it minimal."}};
+else if(current.includes("Give me the fixture name"))result={kind:"reply",reply:"phase-six-conversation-fixture"};
+else if(current.includes("attached notes folder"))result={kind:"reply",reply:"The attached notes describe current behavior."};
 else result={kind:"reply",reply:"This installed fixture reports a deterministic TypeScript project status."};
-const text=JSON.stringify(result);const split=Math.floor(text.length/2);process.stdout.write(text.slice(0,split));await new Promise(r=>setTimeout(r,180));process.stdout.write(text.slice(split));await new Promise(r=>setTimeout(r,1400));rmSync(marker,{force:true});`;
+const text=JSON.stringify(result);const split=Math.floor(text.length/2);process.stdout.write(text.slice(0,split));await new Promise(r=>setTimeout(r,1000));process.stdout.write(text.slice(split));await new Promise(r=>setTimeout(r,current.startsWith("Describe what")?6000:1400));rmSync(marker,{force:true});`;
 }
 
 async function openProjectDialog(wantedPath) {
@@ -334,7 +392,11 @@ async function submitOnce() {
 }
 
 async function waitForText(text, timeout) {
-  await driver.wait(async () => (await driver.executeScript("return document.body?.innerText ?? ''")).includes(text), timeout, `did not see ${text}`);
+  await driver.wait(async () => {
+    const answers = await driver.findElements(By.css('[data-testid="conversation-answer"]'));
+    const texts = await Promise.all(answers.map(element => element.getText()));
+    return texts.includes(text);
+  }, timeout, `did not see exact assistant answer: ${text}`);
 }
 
 async function waitForComposerReady(timeout) {

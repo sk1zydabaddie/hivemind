@@ -50,6 +50,8 @@ export interface OutputRecord {
   activity?: string;
   answer?: string;
   answer_mode?: "complete" | "delta";
+  request_id?: string;
+  phase?: "reading" | "planning";
   ts: string;
   task_id: string;
   tool: string;

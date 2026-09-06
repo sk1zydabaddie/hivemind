@@ -38,7 +38,7 @@ that a model can never drift.
   checks, then commit. Install/observe if admission allows; a paid provider test
   requires separate approval. Report any gap instead of claiming qualification.
 
-## 2. Controllable, truthful live operations (pending approval)
+## 2. Controllable, truthful live operations (implemented; installed proof pending)
 
 Depends on checkpoint 1's durable request/conversation identity.
 
@@ -63,7 +63,7 @@ Depends on checkpoint 1's durable request/conversation identity.
 - Acceptance: one visible activity row per operation, phase changes match Core,
   and Stop kills only the owned operation, with no later stage launched.
 
-## 3. Cohesive transcript and installed verification (pending approval)
+## 3. Cohesive transcript and installed verification (implemented; installed proof pending)
 
 Depends on checkpoint 2; no new layout should hide broken lifecycle reporting.
 
@@ -157,9 +157,62 @@ remain recorded proposals requiring explicit review, replacement or a new thread
   fixture has neither a ledger nor a worktree directory. No installed process
   was stopped. Approval to close those services and install was requested.
 - The installed maintenance artifact remains **416.28392.32244**, not this fix.
-  No installed-app/model response is claimed for this checkpoint. The asynchronous
-  phase-approval question also remains pending; checkpoints 2 and 3 are untouched.
+  No installed-app/model response is claimed for that checkpoint. The subsequent
+  user instruction to proceed approved the remaining repair and installation.
 - Original history and the incorrect garden proposal remain intact. One ignored
   intermediate test compilation remains under `node_modules/.cache`; optional
   deletion was denied by the execution policy and was not retried via another
   mechanism. This is not a production code path or a tracked repository change.
+
+## Checkpoints 2 and 3 implementation record
+
+- `conversation.stop` is an audited, request-scoped interrupt across the daemon
+  queue and update admission lock. Durable operation and child identities span
+  response drafting and task planning. Early cancellation is checked before
+  launch and before stdin; cancellation prevents the later provider stage.
+- Stop returns success only after the producer closes its owned processes. A
+  restarted producer reconciles only proven absence, never signals a historical
+  PID, and leaves ambiguous/live children unconfirmed. Previously prepared
+  draft artifacts are retained; Stop does not rewrite the user's history.
+  On Windows, an orphan's missing root PID is not enough: an existing child
+  termination record is required because this path has no durable process group.
+- The transcript owns one live operation. Removed the duplicate pending footer;
+  worker output is in the same scroll region. Legacy draft projection remains
+  only for old histories without operation events. Request/phase tags prevent
+  one stream from being presented as the following response or planning phase.
+- Reused adapter process ownership, output storage, dispatcher and design tokens.
+  No parallel prompt builder, client authority or model-driven gate was added.
+- Models stays openable for inspection while busy and explains role assignments.
+  This does not implement separate planner/manager chats or hot-swap a process.
+- Actual 21st use: catalog search for chat/activity/composer references and local
+  review of Work. No catalog component was installed, no generation was bought.
+  Review: 0 errors, 15 warnings (13 max-width heuristics, existing long-duration
+  motion and autofocus). Viewport checks, not those heuristics, decide reachability.
+- Focused Core regressions: 42 passed (conversation, orphan reconciliation,
+  round catalogue and MCP); separate real-daemon queue/update-lock Stop: 1 passed.
+- Initial full Core run: 982 total, 977 passed, 3 failed, 2 skipped. Failures:
+  incomplete new daemon fixture setup (fixed), missing new round catalogue
+  entries (fixed), and existing MCP readiness timeout (passed unchanged in the
+  focused rerun). This run was not green. Final suite and installed evidence
+  are still pending at this entry; no paid model calls have been made.
+- The next full run ended without a completion summary when execution was
+  interrupted; it is not counted as passing. The Windows orphan rule was then
+  tightened with an explicit regression before a fresh final run.
+- Negative control: reintroducing the update-admission wait in the compiled
+  daemon made the real HTTP Stop regression fail with "Hivemind is preparing
+  an update". Restoring the interrupt exemption made the same test pass. Only
+  generated test output was temporarily altered; production source stayed fixed.
+  The tightened early/reading/planning/orphan checks passed 4/4 separately.
+- Desktop: 381/381 passed across 42 files after the shared response-type guard
+  caught an inline Stop response shape and it was moved into the existing type
+  owner, derived from Core. Rust: 64/64. Production UI build/typecheck passed;
+  the existing large-bundle warning remains. Reachability: 48/48 surface/size
+  cases, including the new active conversation and scoped elapsed negative
+  controls, with loaded-resource/CSP checks. These are production-browser checks,
+  not installed-app proof and not an older-history-pagination qualification.
+- Final Core run on 2026-09-05: **983 total, 981 passed, 2 skipped, 0 failed
+  or cancelled**, exit 0, 712.65 seconds. The skips are live POSIX process-group
+  tests on Windows, not skipped conversational behaviors. Static reachability:
+  0 audited actions without production consumers, 0 events without producers;
+  the 10 existing export leads are not treated as dead-code proof. npm reports
+  0 vulnerabilities; RustSec reports 0 across 483 Windows dependencies.

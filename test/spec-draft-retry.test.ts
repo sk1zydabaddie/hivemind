@@ -18,6 +18,9 @@ test("draft live-output writes are awaited without a success-converting catch", 
   assert.doesNotMatch(draftOnce, /catch\(\(\) => undefined\)/u);
 });
 import { promisify } from "node:util";
+import { setTimeout as delay } from "node:timers/promises";
+import { getProcessLiveness } from "../src/process-liveness.js";
+import { currentConversationOperation } from "../src/conversation-control.js";
 
 import { initProject } from "../src/init.js";
 import { appendEvent, readEvents } from "../src/events.js";
@@ -57,7 +60,7 @@ const VALID = {
 };
 
 /** A fake drafter whose reply depends on how many times it has been called. */
-async function installDrafter(repo: string, replies: string[]): Promise<string> {
+async function installDrafter(repo: string, replies: string[], slowCall = -1): Promise<string> {
   const binDir = path.join(repo, "fake-bin");
   await mkdir(binDir, { recursive: true });
   const counter = path.join(binDir, "calls.txt");
@@ -74,6 +77,7 @@ async function installDrafter(repo: string, replies: string[]): Promise<string> 
       "let seen = 0;",
       "try { seen = readFileSync(counter, 'utf8').trim().split('\\n').filter(Boolean).length; } catch {}",
       "appendFileSync(counter, 'call\\n');",
+      `if (seen === ${slowCall}) await new Promise(resolve => setTimeout(resolve, 30000));`,
       "process.stdout.write(replies[Math.min(seen, replies.length - 1)]);"
     ].join("\n"),
     "utf8"
@@ -141,6 +145,109 @@ async function callCount(counter: string): Promise<number> {
 const projectReads = (repo: string) => ({
   readProjectFile: (filePath: string) => readProjectFile(repo, filePath)
 });
+
+test("a restarted producer can release only a provably abandoned response, never a live historical process", { timeout: 30000 }, async () => {
+  const repo = await scratchRepo();
+  try {
+    const exited = await run(process.execPath, ["-e", "console.log(process.pid)"]);
+    const ownerPid = Number(exited.stdout.trim());
+    assert.equal(getProcessLiveness(ownerPid), "dead");
+    const requestId = "123e4567-e89b-42d3-a456-426614174086";
+    await appendEvent(repo, { type: "conversation.operation_started", task_id: null,
+      data: { request_id: requestId, process_identity: { pid: ownerPid, process_instance_id: requestId } } });
+    const before = await readEvents(repo);
+    assert.equal(before.ok && currentConversationOperation(before.value)?.phase, "interrupted");
+    const stopped = await executeWorkspaceAction(repo, { type: "conversation.stop", payload: { request_id: requestId } });
+    assert.equal(stopped.ok, true);
+    const blockedId = "123e4567-e89b-42d3-a456-426614174087";
+    await appendEvent(repo, { type: "conversation.operation_started", task_id: null,
+      data: { request_id: blockedId, process_identity: { pid: ownerPid, process_instance_id: blockedId } } });
+    await appendEvent(repo, { type: "conversation.process_started", task_id: null,
+      data: { request_id: blockedId, process_id: "unconfirmed", process_identity: { pid: process.pid, process_instance_id: "unconfirmed" } } });
+    const refused = await executeWorkspaceAction(repo, { type: "conversation.stop", payload: { request_id: blockedId } });
+    assert.equal(refused.ok, false, "a live historical PID must not be signalled or treated as dead");
+    const after = await readEvents(repo);
+    assert.ok(after.ok);
+    assert.equal(after.value.some(event => event.type === "conversation.operation_finished" && event.data.request_id === blockedId), false);
+    if (process.platform === "win32") {
+      const orphanId = "123e4567-e89b-42d3-a456-426614174089";
+      await appendEvent(repo, { type: "conversation.operation_started", task_id: null,
+        data: { request_id: orphanId, process_identity: { pid: ownerPid, process_instance_id: orphanId } } });
+      await appendEvent(repo, { type: "conversation.process_started", task_id: null,
+        data: { request_id: orphanId, process_id: "missing-parent", process_identity: { pid: ownerPid, process_instance_id: "missing-parent" } } });
+      const unconfirmed = await executeWorkspaceAction(repo, { type: "conversation.stop", payload: { request_id: orphanId } });
+      assert.equal(unconfirmed.ok, false, "an absent Windows parent does not prove its unrecorded descendants absent");
+      await appendEvent(repo, { type: "conversation.process_finished", task_id: null,
+        data: { request_id: orphanId, process_id: "missing-parent" } });
+      const reconciled = await executeWorkspaceAction(repo, { type: "conversation.stop", payload: { request_id: orphanId } });
+      assert.equal(reconciled.ok, true, "recorded termination permits producer reconciliation");
+    }
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+for (const stage of ["early", "reading", "planning"] as const) {
+  test(`conversation Stop covers ${stage}, is durable and prevents later provider calls`, { timeout: 60000 }, async () => {
+    const repo = await scratchRepo();
+    const other = await scratchRepo();
+    const requestId = "123e4567-e89b-42d3-a456-426614174081";
+    let running: ReturnType<typeof executeWorkspaceAction> | undefined;
+    try {
+      const counter = await installDrafter(repo, [JSON.stringify(VALID), "not needed after stop"], stage === "planning" ? 1 : 0);
+      const unowned = await executeWorkspaceAction(other, { type: "conversation.stop", payload: { request_id: requestId } });
+      assert.equal(unowned.ok, false);
+      running = executeWorkspaceAction(repo, { type: "conversation.submit", payload: {
+        prompt: "Build a greeting helper.", tool: "planner", request_id: requestId
+      } });
+      const deadline = Date.now() + 15000;
+      while (true) {
+        const trail = await readEvents(repo);
+        assert.equal(trail.ok, true);
+        if (!trail.ok) break;
+        const ready = stage === "early"
+          ? trail.value.some(event => event.type === "conversation.operation_started")
+          : trail.value.filter(event => event.type === "conversation.process_started").length === (stage === "planning" ? 2 : 1);
+        if (ready) break;
+        assert.ok(Date.now() < deadline, `never reached ${stage}`);
+        await delay(20);
+      }
+      // Separate Core process, like a reconnect: no in-memory controller handle.
+      const moduleUrl = new URL("../src/workspace-actions.js", import.meta.url).href;
+      const stopped = await run(process.execPath, ["--input-type=module", "-e",
+        `const {executeWorkspaceAction}=await import(${JSON.stringify(moduleUrl)}); console.log(JSON.stringify(await executeWorkspaceAction(${JSON.stringify(repo)},${JSON.stringify({ type: "conversation.stop", payload: { request_id: requestId } })})));`
+      ]);
+      const stopResult = JSON.parse(stopped.stdout);
+      assert.equal(stopResult.ok, true, JSON.stringify(stopResult));
+      assert.equal(stopResult.value.status, "stopped");
+      const result = await running;
+      assert.equal(result.ok, true, result.ok ? undefined : result.reason);
+      const repeated = await executeWorkspaceAction(repo, { type: "conversation.stop", payload: { request_id: requestId } });
+      assert.equal(repeated.ok, true);
+      const trail = await readEvents(repo);
+      assert.equal(trail.ok, true);
+      if (!trail.ok) return;
+      assert.equal(currentConversationOperation(trail.value), null);
+      const starts = trail.value.filter(event => event.type === "conversation.process_started");
+      for (const event of starts) {
+        const identity = event.data.process_identity as { pid: number };
+        assert.equal(getProcessLiveness(identity.pid), "dead", "Stop returned before its provider exited");
+      }
+      assert.equal(trail.value.filter(event => event.type === "conversation.process_finished").length, starts.length);
+      assert.ok(await callCount(counter) <= (stage === "planning" ? 2 : 1));
+      assert.equal(trail.value.some(event => event.type === "plan.prepared" || event.type === "plan.ratified" || event.type === "manager.run_started"), false);
+      const cancelledIndex = trail.value.findIndex(event => event.type === "conversation.cancel_requested");
+      assert.equal(trail.value.slice(cancelledIndex).some(event => event.type === "conversation.phase_changed"), false);
+    } finally {
+      if (running) {
+        await executeWorkspaceAction(repo, { type: "conversation.stop", payload: { request_id: requestId } });
+        await running;
+      }
+      await rm(repo, { recursive: true, force: true });
+      await rm(other, { recursive: true, force: true });
+    }
+  });
+}
 
 test("dispatcher follow-ups deliver the earlier space-game exchange to the provider exactly once, across reload and reset", async () => {
   const repo = await scratchRepo();
