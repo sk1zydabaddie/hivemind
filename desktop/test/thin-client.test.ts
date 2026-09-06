@@ -356,6 +356,9 @@ describe("React workspace boundary", () => {
     expect(work).toMatch(/title="Guide the manager"[\s\S]*type: "guidance\.record"/u);
     expect(work).toContain('data-testid={live ? "conversation-progress" : "conversation-outcome"}');
     expect(work).toContain('data-testid="conversation-live-answer"');
+    const header = work.slice(work.indexOf("function RunHeader("), work.indexOf("function RunProgress("));
+    expect(header).toContain('data-testid="work-run-header"');
+    expect(header).not.toMatch(/LiveElapsed|operationLabel|promptStartedAt/u);
     expect(work).toMatch(/Nothing starts until you review and approve this exact plan/u);
     expect(work).not.toMatch(/title="Later"|<h2>Routing<\/h2>|<h2>Draft comparisons<\/h2>/u);
     expect(work).toMatch(/change_set\??\.changed_files\.map/u);

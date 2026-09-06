@@ -93,13 +93,63 @@ test("structured provider replies expose reply text but never their JSON envelop
   );
 });
 
-test("structured JSON split across provider deltas is buffered until it is safe", () => {
+test("structured JSON waits for its reply discriminator before exposing text", () => {
   const decoder = new AgentStreamDecoder({ structuredAnswers: true });
   assert.deepEqual(decoder.push('{"type":"content_block_delta","delta":{"text":"{\\"kind\\":\\"reply\\","}}\n'), []);
   assert.deepEqual(
     decoder.push('{"type":"content_block_delta","delta":{"text":"\\"reply\\":\\"Across chunks.\\"}"}}\n'),
     [{ answer: "Across chunks.", answer_mode: "complete" }]
   );
+});
+
+test("a received raw reply prefix is visible before its JSON envelope completes", () => {
+  const decoder = new AgentStreamDecoder({ structuredAnswers: true });
+  assert.deepEqual(decoder.push('{"kind":"reply","reply":"Hello '), [{ answer: "Hello ", answer_mode: "complete" }]);
+  assert.deepEqual(decoder.push('world'), [{ answer: "Hello world", answer_mode: "complete" }]);
+  assert.deepEqual(decoder.push('."}'), [{ answer: "Hello world.", answer_mode: "complete" }]);
+  assert.deepEqual(decoder.flush(), []);
+  const jsonAnswer = '{"example":"user-visible code"}';
+  assert.deepEqual(decoder.push(JSON.stringify({ kind: "reply", reply: jsonAnswer })), [
+    { answer: jsonAnswer, answer_mode: "complete" }
+  ]);
+});
+
+test("provider deltas expose cumulative reply snapshots without waiting for closing JSON", () => {
+  const decoder = new AgentStreamDecoder({ structuredAnswers: true });
+  const delta = (text: string) => JSON.stringify({ type: "content_block_delta", delta: { text } }) + "\n";
+  assert.deepEqual(decoder.push(delta('{"kind":"reply","reply":"First ')), [{ answer: "First ", answer_mode: "complete" }]);
+  assert.deepEqual(decoder.push(delta("second")), [{ answer: "First second", answer_mode: "complete" }]);
+  assert.deepEqual(decoder.push(delta('."}')), [{ answer: "First second.", answer_mode: "complete" }]);
+});
+
+test("every transport split preserves escapes and never emits a dangling surrogate", () => {
+  const answer = 'Quoted "text", slash \\, newline\n and a rocket 🚀.';
+  const raw = JSON.stringify({ kind: "reply", reply: answer }).replace("🚀", "\\ud83d\\ude80");
+  for (let split = 1; split < raw.length; split += 1) {
+    const decoder = new AgentStreamDecoder({ structuredAnswers: true });
+    const partial = decoder.push(raw.slice(0, split));
+    for (const item of partial) {
+      assert.ok(item.answer !== undefined && answer.startsWith(item.answer), `invalid prefix at ${split}`);
+      assert.doesNotMatch(item.answer, /[\ud800-\udbff]$/u);
+    }
+    assert.deepEqual(decoder.push(raw.slice(split)), [{ answer, answer_mode: "complete" }], `split ${split}`);
+  }
+});
+
+test("partial extraction never exposes nested envelopes, draft fields or invalid escapes", () => {
+  for (const raw of [
+    '{"kind":"draft","reply":"Hidden',
+    '{"reply":"Unknown kind',
+    '{"kind":"reply_later","reply":"Hidden',
+    '{"type":"reasoning","text":"{\\"kind\\":\\"reply\\",\\"reply\\":\\"Hidden',
+    '{"nested":{"kind":"reply","reply":"Hidden',
+    '{"kind":"reply","reply":"Bad\\x',
+    '{"kind":"reply","reply":"Bad\t',
+    '{"kind":"reply","reply":"Bad"}trailing'
+  ]) {
+    assert.deepEqual(new AgentStreamDecoder({ structuredAnswers: true }).push(raw), [], raw);
+  }
+  assert.deepEqual(new AgentStreamDecoder().push('{"kind":"reply","reply":"Not opted in'), []);
 });
 
 /* "Thinking / Thinking / Thinking" is a stutter, not progress. */

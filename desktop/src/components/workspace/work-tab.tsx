@@ -1045,7 +1045,6 @@ export function WorkTab({
               integrationStatus={projection.integration.status}
               spanMs={runSpanMs(projection.recentEvents)}
               planAvailable={displayedPlan !== null}
-              promptStartedAt={promptStartedAt}
               responsePhase={responseRequestId === null ? null : responsePhase}
               runActive={runActive}
               stopBusy={stopBusy}
@@ -1794,7 +1793,6 @@ function RunHeader({
   spanMs,
   runActive,
   planAvailable,
-  promptStartedAt,
   responsePhase,
   integrationStatus,
   configuredLevel,
@@ -1815,7 +1813,6 @@ function RunHeader({
   spanMs: number | null;
   runActive: boolean;
   planAvailable: boolean;
-  promptStartedAt: number | null;
   responsePhase: "reading" | "planning" | "stopping" | "interrupted" | null;
   integrationStatus: string;
   configuredLevel: AutonomyLevel;
@@ -1837,10 +1834,12 @@ function RunHeader({
   const files = filesInFlight(tasks);
   const verification = integrationLanguage(integrationStatus);
   const headline =
-    responsePhase !== null ? operationLabel(responsePhase) : tasks.length === 0
-      ? runActive || busy
-        ? "Preparing your response"
-        : "Nothing running"
+    tasks.length === 0
+      ? responsePhase !== null
+        ? "Conversation"
+        : runActive || busy
+          ? "Preparing your response"
+          : "Nothing running"
       : working > 0
         ? `${working} ${working === 1 ? "agent is" : "agents are"} working`
         : runActive
@@ -1865,7 +1864,7 @@ function RunHeader({
         );
 
   return (
-    <div className="grid shrink-0 gap-2.5 border-b border-rule bg-canvas px-4 py-3">
+    <div data-testid="work-run-header" className="grid shrink-0 gap-2.5 border-b border-rule bg-canvas px-4 py-3">
       {/* Three kinds of information, in three places instead of on one line:
           what you asked for, what is happening now, and how far it has got.
           They used to be interleaved with an interruption SETTING in a single
@@ -1894,11 +1893,6 @@ function RunHeader({
           )}
           <h2 className="m-0 flex flex-wrap items-baseline gap-x-2.5 text-[15px] leading-tight font-semibold tracking-tight text-ink">
             {headline}
-            {tasks.length === 0 && promptStartedAt !== null ? (
-              <span className="font-mono text-[12px] font-medium text-muted-foreground">
-                <LiveElapsed startedAt={new Date(promptStartedAt).toISOString()} />
-              </span>
-            ) : null}
             {attentionCount > 0 ? (
               <span className="text-[12px] font-medium text-amber">
                 {attentionCount === 1 ? "1 thing needs you" : `${attentionCount} things need you`}

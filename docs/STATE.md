@@ -45,8 +45,15 @@ to disclose, not assumptions that deterministic gates may trust.
   the remaining cancellation, phase-reporting and transcript-alignment repair
   and installation. Source verification passed: Core 981 with 2 Windows/POSIX
   skips, Desktop 381, Rust 64, viewport 48, and zero npm/RustSec advisories.
-  Installed proof is pending; the identity above is still the old build until
-  a successful ship is recorded. Legacy draft rendering remains for old trails;
+  Source `b3293b8` was installed as **416.29771.32506**, with all 4,474 managed
+  files verified. Behavioral proof is still pending: a stronger installed check
+  caught buffered structured reply text. Its decoder/output-writer correction
+  passed Core 986/988 (2 platform skips) and Rust 64/64. Screenshot review also
+  caught a duplicate header progress label/clock, now removed with header-scoped
+  regressions. Desktop 381/381 and production viewport 48/48 passed;
+  replacement installation and behavioral proof remain pending.
+  The older maintenance evidence above remains historical. Legacy rendering
+  remains for old trails;
   the duplicate live footer has been removed.
 - [Real-world use review](REAL-WORLD-USE-AUDIT.md): 14 product/scale findings
   plus one verification gap, not automatically marked fixed. Highest priority:

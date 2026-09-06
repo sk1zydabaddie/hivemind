@@ -636,12 +636,14 @@ for (const viewport of selectedViewports) {
         const row = document.querySelector('[data-testid="conversation-row"]');
         const message = row?.firstElementChild;
         const form = composer?.form;
+        const header = document.querySelector('[data-testid="work-run-header"] h2');
         return { count: rows.length, stop: !!stop && !stop.disabled,
+          header: header?.textContent.trim() ?? null,
           insideLog: rows.length === 1 && !!rows[0].closest('[data-testid="conversation-log"]'),
           centered: !!form && Math.abs(form.getBoundingClientRect().left + form.getBoundingClientRect().width / 2 - row.getBoundingClientRect().left - row.getBoundingClientRect().width / 2) < 3,
           aligned: !!form && !!message && Math.abs(form.getBoundingClientRect().left - message.getBoundingClientRect().left) < 3 };
       `);
-      if (conversation.count !== 1 || !conversation.stop || !conversation.insideLog || !conversation.centered || !conversation.aligned) {
+      if (conversation.count !== 1 || conversation.header !== "Conversation" || !conversation.stop || !conversation.insideLog || !conversation.centered || !conversation.aligned) {
         failures += 1;
         console.error(`  FAIL ${label}: conversation layout/control contract ${JSON.stringify(conversation)}`);
         continue;
@@ -659,7 +661,7 @@ for (const viewport of selectedViewports) {
         console.error(`  FAIL ${label}: functional liveness did not change (${before} -> ${after}); visible: ${visibleText}`);
         continue;
       }
-      // A nearby header clock must not satisfy a missing transcript indicator.
+      // Nearby text must not satisfy a missing transcript indicator.
       await page.evaluate(`document.querySelector('[data-testid="conversation-progress"]').setAttribute('data-testid', 'negative-control-hidden-progress'); return true;`);
       const unplugged = await page.evaluate(PLANNER_ELAPSED);
       await page.evaluate(`document.querySelector('[data-testid="negative-control-hidden-progress"]').setAttribute('data-testid', 'conversation-progress'); return true;`);

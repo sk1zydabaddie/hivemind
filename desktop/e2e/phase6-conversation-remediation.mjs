@@ -48,6 +48,14 @@ const evidence = {
 try {
   assert.ok(existsSync(installedBinary), `installed binary missing: ${installedBinary}`);
   assert.ok(existsSync(path.join(installedCore, "workspace-actions.js")), "installed Core action module missing");
+  const receipt = JSON.parse(await readFile(path.resolve("src-tauri", "gen", "install-receipt.json"), "utf8"));
+  const payload = JSON.parse(await readFile(path.join(installedRoot, "artifact", "payload-manifest.json"), "utf8"));
+  const installedExecutableSha256 = sha256(await readFile(installedBinary));
+  assert.equal(installedVersion, receipt.version);
+  assert.equal(installedVersion, payload.version);
+  assert.equal(installedExecutableSha256, receipt.installed_executable_sha256);
+  assert.equal(payload.source.commit, receipt.source_commit);
+  evidence.installedIdentity = { ...receipt, installedExecutableSha256, installedPayloadSource: payload.source.commit };
   assert.equal(await isProcessRunning("hivemind_desktop.exe"), false, "close the installed Hivemind app before this proof");
   assert.equal(await isProcessRunning("tauri-driver.exe"), false, "another tauri-driver session is already running");
   await mkdir(evidenceDir, { recursive: true });
@@ -59,7 +67,13 @@ try {
 
   const initModule = await import(pathToFileURL(path.join(installedCore, "init.js")).href);
   project = await createFixture(initModule);
-  tauriDriver = spawn("tauri-driver", [], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+  const driverResolution = await run(path.resolve("node_modules", "selenium-webdriver", "bin", "windows", "selenium-manager.exe"),
+    ["--browser", "webview2", "--avoid-browser-download", "--skip-driver-in-path", "--avoid-stats", "--output", "JSON"], { windowsHide: true });
+  const nativeDriver = JSON.parse(driverResolution.stdout).result;
+  assert.equal(nativeDriver.code, 0, nativeDriver.message);
+  assert.ok(existsSync(nativeDriver.driver_path), "matching WebView driver was not resolved");
+  evidence.nativeDriver = nativeDriver.driver_path;
+  tauriDriver = spawn("tauri-driver", ["--native-driver", nativeDriver.driver_path], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   tauriDriver.stdout.on("data", (chunk) => driverLog.push(`stdout ${chunk}`));
   tauriDriver.stderr.on("data", (chunk) => driverLog.push(`stderr ${chunk}`));
   await waitForDriver();
@@ -71,6 +85,16 @@ try {
   driver = await new Builder().usingServer(driverUrl).withCapabilities(capabilities).build();
   await waitForBody();
   await driver.manage().window().setRect({ x: 40, y: 40, width: 1440, height: 900 });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const viewport = await driver.executeScript("return { width: innerWidth, height: innerHeight, devicePixelRatio };");
+    if (viewport.width === 1440 && viewport.height === 900) break;
+    const rect = await driver.manage().window().getRect();
+    await driver.manage().window().setRect({ width: rect.width + 1440 - viewport.width, height: rect.height + 900 - viewport.height });
+  }
+  evidence.viewport = await driver.executeScript("return { width: innerWidth, height: innerHeight, devicePixelRatio };");
+  assert.equal(evidence.viewport.width, 1440);
+  assert.equal(evidence.viewport.height, 900);
+  evidence.outerWindow = await driver.manage().window().getRect();
   await openProjectDialog(project);
   await driver.wait(until.elementLocated(By.id("work-composer")), 45_000);
   const daemon = await waitForDaemon(project);
@@ -94,9 +118,20 @@ try {
     8_000,
     "the scoped live-answer element did not appear"
   );
+  const partialAnswerText = await driver.wait(async () => {
+    const text = await liveAnswer.getText();
+    return text.length > 0 && text !== answer && answer.startsWith(text) ? text : false;
+  }, 8000, "no genuine partial answer was observed before its completion");
+  assert.equal(existsSync(path.join(project, ".hivemind", "phase6-provider-active")), true, "partial answer sampled after provider exit");
+  const partialShot = `partial-answer-${installedVersion}-1440x900.png`;
+  await writeFile(path.join(evidenceDir, partialShot), Buffer.from(await driver.takeScreenshot(), "base64"));
   await driver.wait(async () => (await liveAnswer.getText()).includes(answer), 8_000);
   const activeDuringAnswer = existsSync(path.join(project, ".hivemind", "phase6-provider-active"));
   const progressTextDuringRun = await progress.getText();
+  const headerDuringRun = await driver.findElement(By.css('[data-testid="work-run-header"] h2')).getText();
+  assert.equal(headerDuringRun, "Conversation", "header duplicated conversation progress instead of leaving it to the transcript");
+  const clockDuringRun = await progress.findElement(By.css(".font-mono")).getText();
+  assert.match(clockDuringRun, /elapsed$/);
   const answerTextDuringRun = await liveAnswer.getText();
   assert.equal((await driver.findElements(By.css('[data-testid="conversation-progress"]'))).length, 1, "duplicate live operation rows");
   const exactQuestionRowsDuringRun = (await driver.findElements(By.xpath(`//*[normalize-space(.)=${JSON.stringify(question)}]`))).length;
@@ -105,7 +140,8 @@ try {
   await new Promise(resolve => setTimeout(resolve, 3100));
   assert.equal(existsSync(path.join(project, ".hivemind", "phase6-provider-active")), true, "liveness sampled after operation ended");
   const laterProgress = await progress.getText();
-  assert.notEqual(laterProgress, progressTextDuringRun, "operation-scoped liveness did not change");
+  const clockLater = await progress.findElement(By.css(".font-mono")).getText();
+  assert.notEqual(clockLater, clockDuringRun, "operation's elapsed element did not change");
   await writeFile(path.join(evidenceDir, `phase6-live-later-${installedVersion}-1440x900.png`), Buffer.from(await driver.takeScreenshot(), "base64"));
   await driver.wait(async () => !(existsSync(path.join(project, ".hivemind", "phase6-provider-active"))), 10_000);
   await waitForText(answer, 10_000);
@@ -114,12 +150,17 @@ try {
   evidence.liveConversation = {
     build: installedVersion,
     screenshot: liveShot,
+    partialScreenshot: partialShot,
     typed: question,
     reply: answer,
     durableMessageVisibleWhileRunning: exactQuestionRowsDuringRun > 0,
     scopedActivityWhileRunning: progressTextDuringRun,
+    headerWhileRunning: headerDuringRun,
     scopedActivityLater: laterProgress,
+    scopedClockWhileRunning: clockDuringRun,
+    scopedClockLater: clockLater,
     scopedAnswerWhileRunning: answerTextDuringRun,
+    scopedPartialAnswerWhileRunning: partialAnswerText,
     providerStillAliveWhenAnswerSampled: activeDuringAnswer,
     readOnlyStatusSettledWhileRunning: statusProbe.settled,
     readOnlyStatusMs: statusProbe.elapsedMs,
@@ -134,6 +175,7 @@ try {
 
   const duplicate = "Give me the fixture name.";
   await typeComposer(duplicate);
+  await waitForSend();
   const duplicateBefore = (await readCalls()).length;
   await driver.executeScript(`const form=document.getElementById("work-composer")?.form;if(!form)return false;form.requestSubmit();form.requestSubmit();return true;`);
   await waitForCallCount(duplicateBefore + 1, 8_000);
@@ -145,10 +187,14 @@ try {
     durableMessages: countMessages(await readEvents(), duplicate)
   };
 
+  const stopResponseBefore = (await readCalls()).length;
   await typeComposer("STOP_RESPONSE");
   await submitOnce();
   await driver.wait(until.elementLocated(By.css('[aria-label="Stop response"]')), 5000);
   await driver.wait(async () => (await postAction(daemon.url, { type: "status.inspect", payload: {} })).value?.conversation_operation?.phase === "reading", 5000);
+  await waitForCallCount(stopResponseBefore + 1, 5000);
+  const responseChildPid = (await readCalls()).at(-1).pid;
+  assert.equal(isPidAlive(responseChildPid), true, "response fixture process was not running before Stop");
   await driver.findElement(By.css('[aria-label="Choose planner, manager, and worker models"]')).click();
   const modelMenu = await driver.wait(until.elementLocated(By.css('[role="menu"]')), 5000);
   assert.match(await modelMenu.getText(), /model assignments, not separate chats/);
@@ -159,11 +205,13 @@ try {
   await typeComposer("This is my next unsent message.");
   await driver.findElement(By.css('[aria-label="Stop response"]')).click();
   await driver.wait(async () => (await postAction(daemon.url, { type: "status.inspect", payload: {} })).value?.conversation_operation === null, 15000);
+  assert.equal(isPidAlive(responseChildPid), false, "response fixture process survived acknowledged Stop");
+  assert.equal((await readCalls()).length - stopResponseBefore, 1, "Stop allowed another response stage to launch");
   const retainedDraft = await driver.findElement(By.id("work-composer")).getAttribute("value");
   assert.equal(retainedDraft, "This is my next unsent message.");
   const stopShot = `stopped-response-${installedVersion}-1440x900.png`;
   await writeFile(path.join(evidenceDir, stopShot), Buffer.from(await driver.takeScreenshot(), "base64"));
-  evidence.stopResponse = { screenshot: stopShot, retainedDraft, modelMenuOpenedWhileRunning: true, stopRecoveredAfterReload: true };
+  evidence.stopResponse = { screenshot: stopShot, retainedDraft, modelMenuOpenedWhileRunning: true, stopRecoveredAfterReload: true, responseChildPid, childAbsentAfterStop: true, adapterCalls: 1 };
 
   const attachmentPrompt = "Summarize the attached notes folder.";
   const attachmentBefore = (await readCalls()).length;
@@ -192,6 +240,7 @@ try {
     markerTextAppendedToPrompt: attachmentCall?.prompt.includes("Project references:") ?? false
   };
 
+  const buildCallsBefore = (await readCalls()).length;
   const buildPending = postAction(daemon.url, {
     type: "conversation.submit",
     payload: {
@@ -202,6 +251,9 @@ try {
     }
   });
   await driver.wait(async () => (await postAction(daemon.url, { type: "status.inspect", payload: {} })).value?.conversation_operation?.phase === "planning", 15000);
+  await waitForCallCount(buildCallsBefore + 2, 5000);
+  const planningChildPid = (await readCalls()).at(-1).pid;
+  assert.equal(isPidAlive(planningChildPid), true, "planning fixture process was not running before Stop");
   await driver.wait(async () => {
     const rows = await driver.findElements(By.css('[data-testid="conversation-progress"]'));
     return rows.length === 1 && (await rows[0].getText()).includes("preparing the task plan");
@@ -212,7 +264,9 @@ try {
   const buildResult = await buildPending;
   assert.equal(buildResult.ok, true, JSON.stringify(buildResult));
   assert.equal(buildResult.value.status, "stopped");
-  evidence.stopPlanning = { screenshot: planningShot, status: buildResult.value.status };
+  assert.equal(isPidAlive(planningChildPid), false, "planning fixture process survived acknowledged Stop");
+  assert.equal((await readCalls()).length - buildCallsBefore, 2, "Stop allowed another planning stage to launch");
+  evidence.stopPlanning = { screenshot: planningShot, status: buildResult.value.status, planningChildPid, childAbsentAfterStop: true, adapterCalls: 2 };
   const beforeBoundary = await postAction(daemon.url, { type: "status.inspect", payload: {} });
   assert.equal(beforeBoundary.ok, true, beforeBoundary.reason);
   const boundary = await postAction(daemon.url, { type: "conversation.new", payload: {} });
@@ -256,6 +310,7 @@ try {
   // Findings-only probe: this is an unsent draft, not another provider call.
   const navigationDraft = "Keep this unsent draft while I inspect Agents.";
   await typeComposer(navigationDraft);
+  assert.equal(await driver.findElement(By.id("work-composer")).getAttribute("value"), navigationDraft);
   await driver.findElement(By.xpath("//*[@role='tab' and normalize-space(.)='Agents']")).click();
   await driver.findElement(By.xpath("//*[@role='tab' and normalize-space(.)='Work']")).click();
   const draftAfterTabs = await driver.wait(until.elementLocated(By.id("work-composer")), 5000);
@@ -354,7 +409,7 @@ const marker=path.join(process.cwd(),".hivemind","phase6-provider-active");
 writeFileSync(marker,String(process.pid));
 const kind=prompt.includes("TWO KINDS OF ANSWER")?"draft":"plan";
 const current=kind==="draft"?prompt.split("What the person typed, verbatim:\\n").at(-1).split("\\n\\nFiles in this project (")[0]:"";
-appendFileSync(path.join(process.cwd(),".hivemind","phase6-calls.jsonl"),JSON.stringify({at:new Date().toISOString(),kind,prompt})+"\\n");
+appendFileSync(path.join(process.cwd(),".hivemind","phase6-calls.jsonl"),JSON.stringify({at:new Date().toISOString(),pid:process.pid,kind,prompt})+"\\n");
 const progress=JSON.stringify({type:"item.completed",item:{type:"reasoning"}})+"\\n";
 process.stderr.write(progress.slice(0,Math.floor(progress.length/2)));await new Promise(r=>setTimeout(r,180));process.stderr.write(progress.slice(Math.floor(progress.length/2)));
 await new Promise(r=>setTimeout(r,700));
@@ -365,7 +420,7 @@ if(current.includes("Build a tiny status label"))result={kind:"spec",title:"Add 
 else if(current.includes("Give me the fixture name"))result={kind:"reply",reply:"phase-six-conversation-fixture"};
 else if(current.includes("attached notes folder"))result={kind:"reply",reply:"The attached notes describe current behavior."};
 else result={kind:"reply",reply:"This installed fixture reports a deterministic TypeScript project status."};
-const text=JSON.stringify(result);const split=Math.floor(text.length/2);process.stdout.write(text.slice(0,split));await new Promise(r=>setTimeout(r,1000));process.stdout.write(text.slice(split));await new Promise(r=>setTimeout(r,current.startsWith("Describe what")?6000:1400));rmSync(marker,{force:true});`;
+const text=JSON.stringify(result);const split=Math.floor(text.length/2);process.stdout.write(text.slice(0,split));await new Promise(r=>setTimeout(r,2000));process.stdout.write(text.slice(split));await new Promise(r=>setTimeout(r,current.startsWith("Describe what")?6000:1400));rmSync(marker,{force:true});`;
 }
 
 async function openProjectDialog(wantedPath) {
@@ -387,8 +442,21 @@ async function typeComposer(value) {
   assert.equal(changed, true);
 }
 
+function isPidAlive(pid) {
+  assert.ok(Number.isSafeInteger(pid) && pid > 0, "fixture did not report a valid child PID");
+  try { process.kill(pid, 0); return true; }
+  catch (error) { if (error.code === "ESRCH") return false; throw error; }
+}
+
 async function submitOnce() {
-  assert.equal(await driver.executeScript('const form=document.getElementById("work-composer")?.form;if(!form)return false;form.requestSubmit();return true;'), true);
+  await (await waitForSend()).click();
+}
+
+async function waitForSend() {
+  return driver.wait(async () => {
+    const buttons = await driver.findElements(By.css('button[aria-label="Send"]'));
+    return buttons.length === 1 && await buttons[0].isEnabled() ? buttons[0] : false;
+  }, 15000, "Send did not become available after the previous response");
 }
 
 async function waitForText(text, timeout) {

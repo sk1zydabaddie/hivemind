@@ -115,3 +115,22 @@ test("the shared live writer flushes a final record without a newline", async ()
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("coalesced reply snapshots replace prior prefixes instead of duplicating them", async () => {
+  const dir = await project();
+  try {
+    const writer = createLiveOutputWriter(dir, ACTIVITY_STREAM_ID, "planner", undefined, { structuredAnswers: true });
+    const delta = (text: string) => JSON.stringify({ type: "content_block_delta", delta: { text } }) + "\n";
+    writer.onChunk({ stream: "stdout", text: delta('{"kind":"reply","reply":"First ') + delta("second") });
+    writer.onChunk({ stream: "stdout", text: delta('."}') });
+    assert.equal((await writer.drain()).ok, true);
+    const output = await readTaskOutput(dir, ACTIVITY_STREAM_ID);
+    assert.equal(output.ok, true);
+    if (output.ok) assert.deepEqual(output.value.map(({ answer, answer_mode }) => ({ answer, answer_mode })), [
+      { answer: "First second", answer_mode: "complete" },
+      { answer: "First second.", answer_mode: "complete" }
+    ]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

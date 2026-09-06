@@ -133,14 +133,25 @@ export function createLiveOutputWriter(
         return;
       }
       const activities = decoded.flatMap((entry) => entry.activity === undefined ? [] : [entry.activity]);
-      const answers = decoded.flatMap((entry) => entry.answer === undefined ? [] : [entry.answer]);
+      let answer: string | undefined;
+      let answerMode: "complete" | "delta" | undefined;
+      for (const entry of decoded) {
+        if (entry.answer === undefined) continue;
+        if (entry.answer_mode === "delta") {
+          answer = (answer ?? "") + entry.answer;
+          answerMode ??= "delta";
+        } else {
+          answer = entry.answer;
+          answerMode = "complete";
+        }
+      }
       append(chunk, {
         ...(activities.length === 0 ? {} : { activity: activities.join(" · ") }),
-        ...(answers.length === 0
+        ...(answer === undefined
           ? {}
           : {
-              answer: answers.join(""),
-              answer_mode: decoded.some((entry) => entry.answer_mode === "delta") ? "delta" : "complete"
+              answer,
+              answer_mode: answerMode
             })
       });
     },

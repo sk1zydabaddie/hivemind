@@ -216,3 +216,45 @@ remain recorded proposals requiring explicit review, replacement or a new thread
   0 audited actions without production consumers, 0 events without producers;
   the 10 existing export leads are not treated as dead-code proof. npm reports
   0 vulnerabilities; RustSec reports 0 across 483 Windows dependencies.
+
+### Installed verification correction (2026-09-05)
+
+- `npm run ship` installed source `b3293b8` as **416.29771.32506**;
+  all 4,474 managed files and Core/shell/Node identities matched. This is an
+  installed identity result, not completed behavioral qualification.
+- First installed fixture run observed the complete answer while the provider
+  was still running and a scoped elapsed change from 3 to 6 seconds. It then
+  failed on a test submission race. Its partial-answer check incorrectly
+  admitted `Thinking`; that check is explicitly invalid as streaming evidence.
+- The corrected test waits for enabled Send and requires the live answer to be
+  a nonempty proper prefix of the exact expected reply. The second installed
+  run failed that stronger assertion: structured JSON was buffered until closed.
+  Both failed attempts remain under the build-numbered evidence directories.
+- The existing Core stream decoder now emits received, schema-identified reply
+  prefixes, never synthetic playback. Other field orders remain buffered until
+  full validation; draft/spec and nested provider envelopes remain hidden.
+  Escapes and incomplete surrogate pairs are retained safely. Partial snapshots
+  do not accept drafts, plans or any authoritative state. The output writer now
+  replaces complete snapshots before combining subsequent deltas, removing the
+  old unconditional concatenation that could duplicate coalesced prefixes.
+- Focused decoder/output tests passed 20/20 before the final JSON-literal reply
+  regression was added. Full rerun, replacement installation and the strict
+  installed behavioral check are pending. No paid calls were made.
+- Visual review of the first failed run also caught a second progress label
+  and elapsed clock in the run header. Counting only transcript test IDs missed
+  it. The header now names the taskless surface `Conversation`; its duplicate
+  clock and unused timestamp property are removed. Worker-run status remains
+  in that header, and conversation progress remains in the transcript. Both
+  production viewport and installed checks now inspect the header explicitly.
+  The 21st review/catalog workflow confirmed reuse of the existing system;
+  no component was installed or generated.
+- Final Core rerun after the decoder correction: **988 total, 986 passed,
+  2 skipped, 0 failed or cancelled**, exit 0, 573.67 seconds. Rust: **64/64**.
+  The subsequent header-only correction does not change Core or native behavior;
+  Desktop/production viewport checks and replacement installation are pending.
+- Final normal Desktop `npm test` (including replay/Core build): **381/381**
+  across 42 files. Production reachability: **48/48** at 790x610, 1280x720,
+  1366x768 and 1440x900, including header/transcript assertions and the elapsed
+  negative control. `git diff --check` and static action/event scans passed;
+  the same 10 export leads remain unproven dead code. The 21st rerun reports
+  0 errors and 15 unchanged warnings. Replacement ship/installed proof follows.

@@ -3,9 +3,9 @@ import { isRecord } from "./json.js";
  * Provider-neutral user-visible output.
  *
  * Raw process chunks are transport fragments, not records. This decoder owns
- * the carry buffer for one provider process and emits only complete JSONL
- * records (or bounded readable plain text). Hidden reasoning and raw provider
- * envelopes never cross into the client.
+ * the carry buffer for one provider process. Provider envelopes require complete
+ * records; structured conversational replies may expose an already-received
+ * reply-string prefix. Hidden reasoning and raw envelopes stay internal.
  */
 
 export interface AgentVisibleOutput {
@@ -36,10 +36,13 @@ export class AgentStreamDecoder {
 
     /* Some CLIs emit one JSON object without a trailing newline. Decode it as
        soon as it is complete, while retaining a genuinely split record. */
-    const pending = this.carry.trim();
+    const pending = this.carry.trimStart();
     if (pending.startsWith("{") && parsesAsRecord(pending)) {
       this.carry = "";
       this.decodeRecord(pending, output);
+    } else if (pending.startsWith("{") && this.options.structuredAnswers === true) {
+      const visible = structuredVisibleAnswer(pending);
+      if (visible.state === "reply") output.push({ answer: visible.text, answer_mode: "complete" });
     } else if (pending !== "" && !pending.startsWith("{")) {
       /* Plain progress has no framing contract. A process chunk is therefore
          the only honest liveness boundary available; retain it immediately. */
@@ -68,7 +71,9 @@ export class AgentStreamDecoder {
       }
     }
     if (this.options.structuredAnswers === true && decoded.answer !== undefined) {
-      const normalized = this.normalizeStructuredAnswer(decoded);
+      const normalized = structuredVisibleAnswer(raw).state === "reply"
+        ? decoded
+        : this.normalizeStructuredAnswer(decoded);
       if (normalized.activity !== undefined || normalized.answer !== undefined) output.push(normalized);
       return;
     }
@@ -81,7 +86,7 @@ export class AgentStreamDecoder {
       this.structuredAnswer += answer;
       const visible = structuredVisibleAnswer(this.structuredAnswer);
       if (visible.state === "incomplete") return withoutAnswer(decoded);
-      this.structuredAnswer = "";
+      if (visible.state !== "reply" || visible.complete) this.structuredAnswer = "";
       return visible.state === "reply"
         ? { ...withoutAnswer(decoded), answer: visible.text, answer_mode: "complete" }
         : withoutAnswer(decoded);
@@ -242,17 +247,28 @@ function withoutAnswer(decoded: AgentVisibleOutput): AgentVisibleOutput {
 }
 
 function structuredVisibleAnswer(value: string):
-  | { state: "reply"; text: string }
+  | { state: "reply"; text: string; complete: boolean }
   | { state: "hidden" | "incomplete" | "not_json" } {
-  const trimmed = value.trim();
+  const trimmed = value.trimStart();
   if (!trimmed.startsWith("{")) return { state: "not_json" };
   try {
     const parsed: unknown = JSON.parse(trimmed);
     if (!isRecord(parsed)) return { state: "hidden" };
     return parsed.kind === "reply" && typeof parsed.reply === "string" && parsed.reply.trim() !== ""
-      ? { state: "reply", text: parsed.reply }
+      ? { state: "reply", text: parsed.reply, complete: true }
       : { state: "hidden" };
   } catch {
+    /* Only this unambiguous schema prefix is streamable. Other field orders,
+       nested envelopes and draft/spec objects wait for full JSON validation.
+       Snapshots are presentation, never accepted drafting/planning state. */
+    const prefix = /^\{\s*"kind"\s*:\s*"reply"\s*,\s*"reply"\s*:\s*"((?:[^"\\\u0000-\u001f]|\\(?:["\\/bfnrt]|u[\da-fA-F]{4}))*)/u.exec(trimmed);
+    if (prefix !== null) {
+      const remainder = trimmed.slice(prefix[0].length);
+      if (remainder === "" || /^\\(?:u[\da-fA-F]{0,3})?$/u.test(remainder) || /^"\s*$/u.test(remainder)) {
+        const text = (JSON.parse(`"${prefix[1]}"`) as string).replace(/[\ud800-\udbff]$/u, "");
+        if (text !== "") return { state: "reply", text, complete: false };
+      }
+    }
     return { state: "incomplete" };
   }
 }
